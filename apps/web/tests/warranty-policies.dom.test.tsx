@@ -1,8 +1,10 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   TEST_COMPANY,
   inBranch,
@@ -185,7 +187,20 @@ async function renderListPage(locale = 'en') {
   const ui = inBranch(tree as React.ReactElement, {
     locale: locale === 'ar' ? 'ar' : 'en',
   });
-  return locale === 'ar' ? renderRtl(ui) : renderLtr(ui);
+  return locale === 'ar' ? renderRtl(onMaterial(ui, 'ar')) : renderLtr(onMaterial(ui, 'en'));
+}
+
+/*
+ * Inside the Material foundation, as the locale layout mounts every screen: the
+ * coverage dates are MIT date pickers, which need the localization the
+ * foundation provides.
+ */
+function onMaterial(ui: React.ReactElement, locale: 'en' | 'ar') {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(locale === 'ar' ? ar : en)}>
+      {ui}
+    </UiFoundationProvider>
+  );
 }
 
 async function renderDetailPage(locale = 'en') {
@@ -193,8 +208,23 @@ async function renderDetailPage(locale = 'en') {
     params: Promise.resolve({ locale, policyId: POLICY_ID }),
   });
   return locale === 'ar'
-    ? renderRtl(tree as React.ReactElement)
-    : renderLtr(tree as React.ReactElement);
+    ? renderRtl(onMaterial(tree as React.ReactElement, 'ar'))
+    : renderLtr(onMaterial(tree as React.ReactElement, 'en'));
+}
+
+/**
+ * Types a calendar day into a coverage date picker, part by part, as an operator
+ * does (the English catalogue's day, month, year order).
+ */
+async function typeDay(
+  user: ReturnType<typeof userEvent.setup>,
+  labelKey: string,
+  digits: string
+): Promise<HTMLElement> {
+  const group = screen.getByRole('group', { name: labelled(labelKey) });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(digits);
+  return group;
 }
 
 describe('both route pages decide before they read', () => {
@@ -528,6 +558,101 @@ describe('creating a plan is drawn on the administration code and on nothing els
   });
 });
 
+describe('a plan being changed, and leaving it with unsaved work', () => {
+  /*
+   * The plan screen's two forms declare what was typed and not yet sent, so the
+   * shell asks before a branch switch (and before leaving the page, through the
+   * same declaration), and a stored change declares nothing any more.
+   */
+  afterEach(forgetRememberedBranch);
+
+  async function openPlanInTwoBranches(user: ReturnType<typeof userEvent.setup>) {
+    PERMISSIONS = [READ, MANAGE];
+    const tree = (await PolicyDetailPage({
+      params: Promise.resolve({ locale: 'en', policyId: POLICY_ID }),
+    })) as React.ReactElement;
+    renderLtr(
+      onMaterial(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            {tree}
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        ),
+        'en'
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByRole('form', { name: EN['warranty.policies.renameFormLabel'] as string });
+  }
+  const nameBox = () =>
+    screen.getByRole('textbox', { name: labelled('warranty.policies.nameField') });
+  const monthsBox = () =>
+    screen.getByRole('textbox', { name: labelled('warranty.coverage.durationMonths') });
+
+  it('asks before a switch over a typed new name, and discarding puts the name back', async () => {
+    const user = userEvent.setup();
+    await openPlanInTwoBranches(user);
+    await user.clear(nameBox());
+    await user.type(nameBox(), 'Extended cover');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(nameBox()).toHaveValue('Extended cover');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    expect(nameBox()).toHaveValue('Standard cover');
+    expect(renameWarrantyPolicy).not.toHaveBeenCalled();
+  });
+
+  it('asks before a switch over typed terms, and not once they are stored', async () => {
+    const user = userEvent.setup();
+    await openPlanInTwoBranches(user);
+    await user.type(monthsBox(), '24');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    await typeDay(user, 'warranty.coverage.effectiveFrom', '01022026');
+    await user.click(
+      screen.getByRole('button', { name: EN['warranty.policies.addCoverageSubmit'] as string })
+    );
+    await waitFor(() => expect(createCoverageWindow).toHaveBeenCalled());
+    await waitFor(() => expect(monthsBox()).toHaveValue(''));
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('switches without asking over an untouched plan', async () => {
+    const user = userEvent.setup();
+    await openPlanInTwoBranches(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+});
+
+describe('the new plan form puts the cursor on what to fix', () => {
+  it('focuses the first refused box, keeps what was typed, and withdraws a complaint on edit', async () => {
+    PERMISSIONS = [READ, MANAGE];
+    const user = userEvent.setup();
+    await renderListPage();
+    const form = await screen.findByRole('form', {
+      name: EN['warranty.policies.createFormLabel'] as string,
+    });
+    const code = within(form).getByRole('textbox', {
+      name: labelled('warranty.policies.codeField'),
+    });
+    await user.type(code, 'Not a code!');
+    await user.click(
+      within(form).getByRole('button', { name: EN['warranty.policies.createSubmit'] as string })
+    );
+    expect(createWarrantyPolicy).not.toHaveBeenCalled();
+    await waitFor(() => expect(code).toHaveFocus());
+    expect(code).toHaveAttribute('aria-invalid', 'true');
+    expect(code).toHaveValue('Not a code!');
+    await user.clear(code);
+    expect(code).not.toHaveAttribute('aria-invalid');
+  });
+});
+
 describe('a plan being written and a branch switch', () => {
   /*
    * The company a plan is created for follows the header, so a switch could move
@@ -809,9 +934,7 @@ describe('one plan, and the controls over it', () => {
       screen.getByRole('textbox', { name: labelled('warranty.coverage.odometerAllowance') }),
       '30000'
     );
-    fireEvent.change(screen.getByLabelText(labelled('warranty.coverage.effectiveFrom')), {
-      target: { value: '2026-02-01' },
-    });
+    await typeDay(user, 'warranty.coverage.effectiveFrom', '01022026');
     await user.click(
       screen.getByRole('button', { name: EN['warranty.policies.addCoverageSubmit'] as string })
     );
@@ -827,6 +950,36 @@ describe('one plan, and the controls over it', () => {
     // And this handler re-reads too, so the window that came back is the server’s row
     // rather than the one this side sent.
     await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalledTimes(2));
+    // Stored, so the form empties itself and declares no unsaved work any more.
+    await waitFor(() =>
+      expect(
+        screen.getByRole('textbox', { name: labelled('warranty.coverage.durationMonths') })
+      ).toHaveValue('')
+    );
+  });
+
+  it('keeps every typed value, and puts the cursor on the box to fix, when a window is refused', async () => {
+    PERMISSIONS = [READ, MANAGE];
+    const user = userEvent.setup();
+    await renderDetailPage();
+    await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalled());
+    const months = screen.getByRole('textbox', {
+      name: labelled('warranty.coverage.durationMonths'),
+    });
+    await user.type(months, '0');
+    await user.click(
+      screen.getByRole('button', { name: EN['warranty.policies.addCoverageSubmit'] as string })
+    );
+    // The first invalid control takes the cursor, marked and described by its reason.
+    await waitFor(() => expect(months).toHaveFocus());
+    expect(months).toHaveAttribute('aria-invalid', 'true');
+    expect(months).toHaveAccessibleDescription(EN['warranty.policies.monthsRange'] as string);
+    expect(months).toHaveValue('0');
+    expect(createCoverageWindow).not.toHaveBeenCalled();
+    // Editing the value withdraws the complaint at once.
+    await user.type(months, '6');
+    expect(months).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByText(EN['warranty.policies.monthsRange'] as string)).toBeNull();
   });
 
   it('refuses an inverted window in the control, the way the database refuses it', async () => {
@@ -838,12 +991,9 @@ describe('one plan, and the controls over it', () => {
       screen.getByRole('textbox', { name: labelled('warranty.coverage.durationMonths') }),
       '24'
     );
-    fireEvent.change(screen.getByLabelText(labelled('warranty.coverage.effectiveFrom')), {
-      target: { value: '2026-02-01' },
-    });
-    fireEvent.change(screen.getByLabelText(labelled('warranty.coverage.effectiveTo')), {
-      target: { value: '2026-01-01' },
-    });
+    await typeDay(user, 'warranty.coverage.effectiveFrom', '01022026');
+    // The fifteenth of January: before the first day, so the window is inverted.
+    await typeDay(user, 'warranty.coverage.effectiveTo', '15012026');
     await user.click(
       screen.getByRole('button', { name: EN['warranty.policies.addCoverageSubmit'] as string })
     );
@@ -851,6 +1001,99 @@ describe('one plan, and the controls over it', () => {
       await screen.findByText(EN['warranty.policies.endAfterStart'] as string)
     ).toBeInTheDocument();
     expect(createCoverageWindow).not.toHaveBeenCalled();
+  });
+
+  it('refuses an end date only partly typed, rather than adding the window with no end', async () => {
+    // A regression the native date box never had: the picker publishes nothing
+    // while parts are blank, and the window was sent with no end date at all.
+    PERMISSIONS = [READ, MANAGE];
+    for (const [locale, catalogue] of [
+      ['en', EN],
+      ['ar', AR],
+    ] as const) {
+      createCoverageWindow.mockClear();
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      const user = userEvent.setup();
+      const { unmount } = await renderDetailPage(locale);
+      await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalled());
+      await user.type(
+        screen.getByRole('textbox', { name: named('warranty.coverage.durationMonths') }),
+        '24'
+      );
+      const from = screen.getByRole('group', { name: named('warranty.coverage.effectiveFrom') });
+      await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('01022026');
+      // Two parts of the end date, and not the third.
+      const to = screen.getByRole('group', { name: named('warranty.coverage.effectiveTo') });
+      await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('0103');
+      await user.click(
+        screen.getByRole('button', {
+          name: catalogue['warranty.policies.addCoverageSubmit'] as string,
+        })
+      );
+      await waitFor(() => expect(to, locale).toHaveAttribute('aria-invalid', 'true'));
+      expect(to, locale).toHaveAccessibleDescription(
+        new RegExp(escape(catalogue['warranty.policies.dateFormat'] as string))
+      );
+      // The cursor is put back inside the end date, the one field to fix.
+      await waitFor(() => expect(to.contains(document.activeElement), locale).toBe(true));
+      expect(from, locale).not.toHaveAttribute('aria-invalid');
+      expect(createCoverageWindow, locale).not.toHaveBeenCalled();
+      unmount();
+    }
+  });
+
+  it('withdraws the end date complaint once the half-typed parts are erased, before any resubmit', async () => {
+    // Erasing every part leaves the optional end date validly empty, and the
+    // picker publishes no change for it: the complaint must still go at once.
+    PERMISSIONS = [READ, MANAGE];
+    for (const [locale, catalogue] of [
+      ['en', EN],
+      ['ar', AR],
+    ] as const) {
+      createCoverageWindow.mockClear();
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      const sentence = catalogue['warranty.policies.dateFormat'] as string;
+      const user = userEvent.setup();
+      const submit = () =>
+        user.click(
+          screen.getByRole('button', {
+            name: catalogue['warranty.policies.addCoverageSubmit'] as string,
+          })
+        );
+      const { unmount } = await renderDetailPage(locale);
+      await waitFor(() => expect(readWarrantyPolicy).toHaveBeenCalled());
+      await user.type(
+        screen.getByRole('textbox', { name: named('warranty.coverage.durationMonths') }),
+        '24'
+      );
+      const from = screen.getByRole('group', { name: named('warranty.coverage.effectiveFrom') });
+      await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('01022026');
+      const to = screen.getByRole('group', { name: named('warranty.coverage.effectiveTo') });
+      await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('0103');
+      await submit();
+      await waitFor(() => expect(to, locale).toHaveAttribute('aria-invalid', 'true'));
+      expect(screen.getByText(sentence), locale).toBeInTheDocument();
+
+      // Every part of the end date erased, one by one.
+      for (const part of within(to).getAllByRole('spinbutton')) {
+        await user.click(part);
+        await user.keyboard('{Backspace}');
+      }
+      await waitFor(() => expect(to, locale).not.toHaveAttribute('aria-invalid', 'true'));
+      expect(screen.queryByText(sentence), locale).toBeNull();
+      expect(to, locale).not.toHaveAccessibleDescription(new RegExp(escape(sentence)));
+      expect(createCoverageWindow, locale).not.toHaveBeenCalled();
+
+      // The window then goes out open-ended, as an empty end date means.
+      await submit();
+      await waitFor(() => expect(createCoverageWindow, locale).toHaveBeenCalledTimes(1));
+      expect(createCoverageWindow.mock.calls[0]?.[1], locale).not.toHaveProperty('effectiveTo');
+      unmount();
+    }
   });
 
   it('refuses a distance that is not a whole number, without parsing it', async () => {
@@ -866,9 +1109,7 @@ describe('one plan, and the controls over it', () => {
       screen.getByRole('textbox', { name: labelled('warranty.coverage.odometerAllowance') }),
       '30000.5'
     );
-    fireEvent.change(screen.getByLabelText(labelled('warranty.coverage.effectiveFrom')), {
-      target: { value: '2026-02-01' },
-    });
+    await typeDay(user, 'warranty.coverage.effectiveFrom', '01022026');
     await user.click(
       screen.getByRole('button', { name: EN['warranty.policies.addCoverageSubmit'] as string })
     );

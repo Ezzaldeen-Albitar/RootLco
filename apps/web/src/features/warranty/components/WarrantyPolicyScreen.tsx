@@ -1,12 +1,25 @@
 'use client';
 
 import { useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { SelectField, TextField } from '@/components/forms/Field';
+import { DateField, type DayProblem } from '@/components/forms/mui/DateField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { FailureExplanation } from '@/components/states/States';
-import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 
 import {
   createCoverageWindow,
@@ -36,10 +49,8 @@ import {
   CoveredScopeLabel,
   Distance,
   Fact,
-  PRIMARY_BUTTON,
   ReadFailure,
   Reference,
-  SECONDARY_BUTTON,
   Section,
   isStaleView,
   refusalKeyFor,
@@ -204,13 +215,15 @@ export function WarrantyPolicyScreen({
    * so the re-read is owed here for the same reason as everywhere else: the next
    * guarded command takes its version from what this read returned.
    */
-  const addCoverageWindow = async (body: WarrantyCoverageCreateBody) => {
-    if (busy) return;
+  const addCoverageWindow = async (body: WarrantyCoverageCreateBody): Promise<boolean> => {
+    if (busy) return false;
     setBusy(true);
     const state = await createCoverageWindow(policyId, body);
     setOutcome({ area: 'window', state });
     if (state.status === 'success') await refresh();
     setBusy(false);
+    // Said back to the form, which empties itself only after the terms are stored.
+    return state.status === 'success';
   };
 
   const report = (area: WriteArea) =>
@@ -294,9 +307,9 @@ export function WarrantyPolicyScreen({
           messages={messages}
           description={translate(messages, 'warranty.policies.stateExplain')}
         >
-          <button
+          <Button
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             disabled={busy}
             onClick={() => void changePlanState()}
           >
@@ -306,7 +319,7 @@ export function WarrantyPolicyScreen({
                 ? 'warranty.policies.retirePlan'
                 : 'warranty.policies.restorePlan'
             )}
-          </button>
+          </Button>
           {report('planState')}
         </Section>
       ) : null}
@@ -322,78 +335,80 @@ export function WarrantyPolicyScreen({
             {translate(messages, 'warranty.policies.noCoverage')}
           </p>
         ) : (
-          <table className="w-full text-body">
-            <caption className="sr-only">
-              {translate(messages, 'warranty.policies.coverageTableCaption')}
-            </caption>
-            <thead>
-              <tr className="text-caption text-text-muted">
-                <th scope="col" className="p-2 text-start">
-                  {translate(messages, 'warranty.coverage.coveredScope')}
-                </th>
-                <th scope="col" className="p-2 text-start">
-                  {translate(messages, 'warranty.coverage.durationMonths')}
-                </th>
-                <th scope="col" className="p-2 text-start">
-                  {translate(messages, 'warranty.coverage.odometerAllowance')}
-                </th>
-                <th scope="col" className="p-2 text-start">
-                  {translate(messages, 'warranty.coverage.effectiveFrom')}
-                </th>
-                <th scope="col" className="p-2 text-start">
-                  {translate(messages, 'warranty.coverage.effectiveTo')}
-                </th>
-                <th scope="col" className="p-2 text-start">
-                  {translate(messages, 'warranty.coverage.status')}
-                </th>
-                {canManagePolicies ? (
-                  <th scope="col" className="p-2 text-start">
-                    {translate(messages, 'warranty.policies.columnAction')}
-                  </th>
-                ) : null}
-              </tr>
-            </thead>
-            <tbody>
-              {detail.coverage.map((terms) => (
-                <tr key={terms.id} className="border-t border-border-subtle">
-                  <td className="p-2">
-                    <CoveredScopeLabel messages={messages} scope={terms.coveredScope} />
-                  </td>
-                  <td className="p-2">{terms.durationMonths}</td>
-                  <td className="p-2">
-                    {terms.odometerAllowance === null ? (
-                      translate(messages, 'warranty.coverage.unlimitedDistance')
-                    ) : (
-                      <Distance value={terms.odometerAllowance} />
-                    )}
-                  </td>
-                  <td className="p-2">
-                    <span dir="ltr">{terms.effectiveFrom}</span>
-                  </td>
-                  <td className="p-2">
-                    {terms.effectiveTo === null ? (
-                      translate(messages, 'warranty.coverage.openEnded')
-                    ) : (
-                      <span dir="ltr">{terms.effectiveTo}</span>
-                    )}
-                  </td>
-                  <td className="p-2">
-                    <ConfigurationStatusLabel messages={messages} status={terms.status} />
-                  </td>
+          <TableContainer>
+            <Table size="small">
+              <caption className="sr-only">
+                {translate(messages, 'warranty.policies.coverageTableCaption')}
+              </caption>
+              <TableHead>
+                <TableRow>
+                  <TableCell scope="col">
+                    {translate(messages, 'warranty.coverage.coveredScope')}
+                  </TableCell>
+                  <TableCell scope="col">
+                    {translate(messages, 'warranty.coverage.durationMonths')}
+                  </TableCell>
+                  <TableCell scope="col">
+                    {translate(messages, 'warranty.coverage.odometerAllowance')}
+                  </TableCell>
+                  <TableCell scope="col">
+                    {translate(messages, 'warranty.coverage.effectiveFrom')}
+                  </TableCell>
+                  <TableCell scope="col">
+                    {translate(messages, 'warranty.coverage.effectiveTo')}
+                  </TableCell>
+                  <TableCell scope="col">
+                    {translate(messages, 'warranty.coverage.status')}
+                  </TableCell>
                   {canManagePolicies ? (
-                    <td className="p-2">
-                      <WindowStateButton
-                        messages={messages}
-                        terms={terms}
-                        busy={busy}
-                        onClick={() => void changeWindowState(terms)}
-                      />
-                    </td>
+                    <TableCell scope="col">
+                      {translate(messages, 'warranty.policies.columnAction')}
+                    </TableCell>
                   ) : null}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {detail.coverage.map((terms) => (
+                  <TableRow key={terms.id}>
+                    <TableCell>
+                      <CoveredScopeLabel messages={messages} scope={terms.coveredScope} />
+                    </TableCell>
+                    <TableCell>{terms.durationMonths}</TableCell>
+                    <TableCell>
+                      {terms.odometerAllowance === null ? (
+                        translate(messages, 'warranty.coverage.unlimitedDistance')
+                      ) : (
+                        <Distance value={terms.odometerAllowance} />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <span dir="ltr">{terms.effectiveFrom}</span>
+                    </TableCell>
+                    <TableCell>
+                      {terms.effectiveTo === null ? (
+                        translate(messages, 'warranty.coverage.openEnded')
+                      ) : (
+                        <span dir="ltr">{terms.effectiveTo}</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <ConfigurationStatusLabel messages={messages} status={terms.status} />
+                    </TableCell>
+                    {canManagePolicies ? (
+                      <TableCell>
+                        <WindowStateButton
+                          messages={messages}
+                          terms={terms}
+                          busy={busy}
+                          onClick={() => void changeWindowState(terms)}
+                        />
+                      </TableCell>
+                    ) : null}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         )}
         {report('windowState')}
       </Section>
@@ -408,7 +423,7 @@ export function WarrantyPolicyScreen({
           <CoverageForm
             messages={messages}
             busy={busy}
-            onSubmit={(body) => void addCoverageWindow(body)}
+            onSubmit={(body) => addCoverageWindow(body)}
           />
           {report('window')}
         </Section>
@@ -452,9 +467,9 @@ function WriteOutcome({
         ) : null}
       </p>
       {isStaleView(state) ? (
-        <button type="button" className={SECONDARY_BUTTON} onClick={onReload}>
+        <Button type="button" variant="outlined" size="small" onClick={onReload}>
           {translate(messages, 'warranty.policies.reload')}
-        </button>
+        </Button>
       ) : null}
     </div>
   );
@@ -473,14 +488,14 @@ function WindowStateButton({
   readonly onClick: () => void;
 }) {
   return (
-    <button type="button" className={SECONDARY_BUTTON} disabled={busy} onClick={onClick}>
+    <Button type="button" variant="outlined" size="small" disabled={busy} onClick={onClick}>
       {translate(
         messages,
         terms.status === ACTIVE
           ? 'warranty.policies.retireWindow'
           : 'warranty.policies.restoreWindow'
       )}
-    </button>
+    </Button>
   );
 }
 
@@ -498,16 +513,40 @@ function RenameForm({
 }) {
   const [draft, setDraft] = useState(currentName);
   const [error, setError] = useState<string | null>(null);
+  const [refusals, setRefusals] = useState(0);
+  /*
+   * The box follows the plan's name when the server's answer changes it (after a
+   * rename is read back), adjusted DURING render — React's documented shape for
+   * "reset state when an input changes".
+   */
+  const [lastName, setLastName] = useState(currentName);
+  if (currentName !== lastName) {
+    setLastName(currentName);
+    setDraft(currentName);
+  }
+  // A name typed and not yet sent is unsaved work; leaving puts the plan's name back.
+  useUnsavedGuard(draft.trim() !== currentName, () => {
+    setDraft(currentName);
+    setError(null);
+  });
+  const formRef = useFocusFirstInvalid(
+    error === null
+      ? { status: 'idle', attempt: refusals }
+      : { status: 'invalid', fieldErrors: { name: error }, attempt: refusals }
+  );
 
   return (
     <form
+      ref={formRef}
+      noValidate
       aria-label={translate(messages, 'warranty.policies.renameFormLabel')}
-      className="flex flex-col gap-3 sm:flex-row sm:items-end"
+      className="flex flex-col gap-3 sm:flex-row sm:items-start"
       onSubmit={(event) => {
         event.preventDefault();
         const trimmed = draft.trim();
         if (trimmed.length === 0 || trimmed.length > MAX_POLICY_NAME) {
           setError('warranty.policies.nameLength');
+          setRefusals((count) => count + 1);
           return;
         }
         setError(null);
@@ -515,18 +554,19 @@ function RenameForm({
       }}
     >
       <div className="grow">
-        <TextField
+        <FormTextField
           label={translate(messages, 'warranty.policies.nameField')}
           required
           maxLength={MAX_POLICY_NAME}
           value={draft}
-          onChange={(event) => setDraft(event.target.value)}
+          onEdit={() => setError(null)}
+          onChange={setDraft}
           error={error ? translateDynamic(messages, error) : undefined}
         />
       </div>
-      <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+      <Button type="submit" variant="contained" disabled={busy}>
         {translate(messages, 'warranty.policies.renameSubmit')}
-      </button>
+      </Button>
     </form>
   );
 }
@@ -563,17 +603,76 @@ function CoverageForm({
     readonly odometerAllowance?: string;
     readonly effectiveFrom: string;
     readonly effectiveTo?: string;
-  }) => void;
+  }) => Promise<boolean>;
 }) {
   const [coveredScope, setCoveredScope] = useState<CoveredScope>('all');
   const [durationMonths, setDurationMonths] = useState('');
   const [odometerAllowance, setOdometerAllowance] = useState('');
   const [effectiveFrom, setEffectiveFrom] = useState('');
   const [effectiveTo, setEffectiveTo] = useState('');
+  /*
+   * Whether a date picker holds something that is not a whole day (a part still
+   * being typed). The picker reports its value as `''` then, so without this a
+   * half-typed end date would read as "no end date" and be left out silently.
+   */
+  const [fromUnfinished, setFromUnfinished] = useState(false);
+  const [toUnfinished, setToUnfinished] = useState(false);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [refusals, setRefusals] = useState(0);
+
+  const reset = () => {
+    setCoveredScope('all');
+    setDurationMonths('');
+    setOdometerAllowance('');
+    setEffectiveFrom('');
+    setEffectiveTo('');
+    setFromUnfinished(false);
+    setToUnfinished(false);
+    setErrors({});
+  };
+  // Terms typed and not yet added are unsaved work; leaving drops them unsent.
+  useUnsavedGuard(
+    durationMonths.trim().length > 0 ||
+      odometerAllowance.trim().length > 0 ||
+      effectiveFrom.length > 0 ||
+      effectiveTo.length > 0 ||
+      fromUnfinished ||
+      toUnfinished ||
+      coveredScope !== 'all',
+    reset
+  );
+  const formRef = useFocusFirstInvalid(
+    Object.keys(errors).length > 0
+      ? { status: 'invalid', fieldErrors: errors, attempt: refusals }
+      : { status: 'idle', attempt: refusals }
+  );
+  /** Withdraws one field's complaint the moment its value is edited. */
+  const corrected = (field: string) =>
+    setErrors((previous) => {
+      if (!(field in previous)) return previous;
+      const next = { ...previous };
+      delete next[field];
+      return next;
+    });
+  /**
+   * A date picker's parts stopped being half typed. Either they became a whole
+   * day (the picker's own change already withdrew the complaint) or every part
+   * was erased, which the picker publishes as no change at all — yet an erased
+   * optional end date is a correction, so its complaint is withdrawn here too.
+   */
+  const settled = (
+    field: 'effectiveFrom' | 'effectiveTo',
+    problem: DayProblem,
+    setUnfinished: (unfinished: boolean) => void
+  ) => {
+    setUnfinished(problem !== null);
+    if (problem === null) corrected(field);
+  };
 
   return (
     <form
+      ref={formRef}
+      noValidate
       aria-label={translate(messages, 'warranty.policies.addCoverageFormLabel')}
       className="grid gap-3 sm:grid-cols-2"
       onSubmit={(event) => {
@@ -599,9 +698,9 @@ function CoverageForm({
         ) {
           found['odometerAllowance'] = 'warranty.policies.distanceRange';
         }
-        if (!COVERAGE_DATE_FORMAT.test(from))
+        if (fromUnfinished || !COVERAGE_DATE_FORMAT.test(from))
           found['effectiveFrom'] = 'warranty.policies.dateFormat';
-        if (to.length > 0 && !COVERAGE_DATE_FORMAT.test(to)) {
+        if (toUnfinished || (to.length > 0 && !COVERAGE_DATE_FORMAT.test(to))) {
           found['effectiveTo'] = 'warranty.policies.dateFormat';
         }
         if (to.length > 0 && COVERAGE_DATE_FORMAT.test(to) && to <= from) {
@@ -611,9 +710,12 @@ function CoverageForm({
           found['effectiveTo'] = 'warranty.policies.endAfterStart';
         }
         setErrors(found);
-        if (Object.keys(found).length > 0) return;
+        if (Object.keys(found).length > 0) {
+          setRefusals((count) => count + 1);
+          return;
+        }
 
-        onSubmit({
+        void onSubmit({
           coveredScope,
           durationMonths: monthCount,
           // Omitted rather than sent empty: an absent allowance is what an unlimited
@@ -621,28 +723,31 @@ function CoverageForm({
           ...(distance.length === 0 ? {} : { odometerAllowance: distance }),
           effectiveFrom: from,
           ...(to.length === 0 ? {} : { effectiveTo: to }),
+        }).then((stored) => {
+          // Emptied only once the terms are stored, so a refusal keeps every value.
+          if (stored) reset();
         });
       }}
     >
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'warranty.coverage.coveredScope')}
         required
         value={coveredScope}
-        onChange={(event) => setCoveredScope(event.target.value as CoveredScope)}
+        onChange={(value) => setCoveredScope(value as CoveredScope)}
         options={COVERED_SCOPES.map((scope) => ({
           value: scope,
           label: translate(messages, `warranty.coveredScope.${scope}`),
         }))}
       />
 
-      <TextField
+      <FormTextField
         label={translate(messages, 'warranty.coverage.durationMonths')}
         required
         inputMode="numeric"
-        spellCheck={false}
         dir="ltr"
         value={durationMonths}
-        onChange={(event) => setDurationMonths(event.target.value)}
+        onEdit={() => corrected('durationMonths')}
+        onChange={setDurationMonths}
         error={
           errors['durationMonths']
             ? translateDynamic(messages, errors['durationMonths'])
@@ -650,14 +755,14 @@ function CoverageForm({
         }
       />
 
-      <TextField
+      <FormTextField
         label={translate(messages, 'warranty.coverage.odometerAllowance')}
         description={translate(messages, 'warranty.policies.distanceHelp')}
         inputMode="numeric"
-        spellCheck={false}
         dir="ltr"
         value={odometerAllowance}
-        onChange={(event) => setOdometerAllowance(event.target.value)}
+        onEdit={() => corrected('odometerAllowance')}
+        onChange={setOdometerAllowance}
         error={
           errors['odometerAllowance']
             ? translateDynamic(messages, errors['odometerAllowance'])
@@ -665,32 +770,39 @@ function CoverageForm({
         }
       />
 
-      <TextField
+      {/*
+        Calendar days on the MIT date picker (ADR-022, E1–E4): the value is the
+        same `YYYY-MM-DD` the native box produced and the route accepts, and the
+        picker's own object never leaves the field.
+      */}
+      <DateField
         label={translate(messages, 'warranty.coverage.effectiveFrom')}
-        type="date"
         required
         value={effectiveFrom}
-        onChange={(event) => setEffectiveFrom(event.target.value)}
+        onEdit={() => corrected('effectiveFrom')}
+        onChange={setEffectiveFrom}
+        onProblem={(problem) => settled('effectiveFrom', problem, setFromUnfinished)}
         error={
           errors['effectiveFrom'] ? translateDynamic(messages, errors['effectiveFrom']) : undefined
         }
       />
 
-      <TextField
+      <DateField
         label={translate(messages, 'warranty.coverage.effectiveTo')}
         description={translate(messages, 'warranty.policies.endHelp')}
-        type="date"
         value={effectiveTo}
-        onChange={(event) => setEffectiveTo(event.target.value)}
+        onEdit={() => corrected('effectiveTo')}
+        onChange={setEffectiveTo}
+        onProblem={(problem) => settled('effectiveTo', problem, setToUnfinished)}
         error={
           errors['effectiveTo'] ? translateDynamic(messages, errors['effectiveTo']) : undefined
         }
       />
 
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'warranty.policies.addCoverageSubmit')}
-        </button>
+        </Button>
       </div>
     </form>
   );

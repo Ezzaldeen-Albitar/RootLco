@@ -594,6 +594,39 @@ describe('DateField and DateTimeField: the FieldFrame contract on a picker', () 
     expect(onProblem).toHaveBeenCalledWith('minDate');
   });
 
+  it('reports a day only partly typed as incomplete, and withdraws it once the day is whole', async () => {
+    // The picker itself publishes neither a value nor an error while parts of an
+    // empty field are blank, so without the wrapper's own report a half-typed day
+    // reads as "no day" and a form leaves it out silently.
+    const user = userEvent.setup();
+    const onDay = vi.fn();
+    const onProblem = vi.fn();
+    mount(<DayHost zone="Asia/Amman" onDay={onDay} onProblem={onProblem} />);
+    const group = screen.getByRole('group', { name: /^Visit day/ });
+    expect(onProblem).not.toHaveBeenCalled();
+    await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('0103');
+    expect(onProblem).toHaveBeenLastCalledWith('incomplete');
+    expect(onDay).not.toHaveBeenCalled();
+    await user.keyboard('2026');
+    expect(onDay).toHaveBeenLastCalledWith('2026-03-01');
+    expect(onProblem).toHaveBeenLastCalledWith(null);
+  });
+
+  it('withdraws the incomplete report when the partly typed parts are cleared again', async () => {
+    const user = userEvent.setup();
+    const onProblem = vi.fn();
+    mount(<DayHost zone="Asia/Amman" onProblem={onProblem} />);
+    const group = screen.getByRole('group', { name: /^Visit day/ });
+    const day = within(group).getAllByRole('spinbutton')[0] as HTMLElement;
+    await user.click(day);
+    await user.keyboard('01');
+    expect(onProblem).toHaveBeenLastCalledWith('incomplete');
+    await user.click(day);
+    await user.keyboard('{Backspace}');
+    expect(onProblem).toHaveBeenLastCalledWith(null);
+  });
+
   it('shows and types a moment on the BRANCH clock and emits it with that offset', async () => {
     const user = userEvent.setup();
     const onMoment = vi.fn();

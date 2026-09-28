@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useId, useRef, useState, useTransition } from 'react';
+import Button from '@mui/material/Button';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
-import { EmptyState, FailureExplanation } from '@/components/states/States';
+import { FailureExplanation } from '@/components/states/States';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import { listDocumentCategories } from '@/features/attachments/api';
 import type { DocumentCategory } from '@/features/attachments/attachments-contract';
 import { CaptureFileField } from '@/features/receptions/components/CaptureFileField';
@@ -12,21 +14,14 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { readReceiver } from '../api';
 import {
   RECEIVER_IDENTITY_CATEGORY_CODE,
   type DeliveryReceiverEnvelope,
 } from '../delivery-contract';
 import { verifyReceiverWithEvidence, type ReceiverVerificationOutcome } from '../receiver-capture';
-import {
-  Fact,
-  PRIMARY_BUTTON,
-  Panel,
-  PanelFailure,
-  PanelLoading,
-  Reference,
-  SECONDARY_BUTTON,
-} from './PanelShell';
+import { Fact, Panel, PanelEmpty, PanelFailure, PanelLoading, PersonFact } from './PanelShell';
 
 /**
  * Who is authorised to take this vehicle away, and who confirmed it (FE-003).
@@ -47,11 +42,14 @@ import {
  * way to open it. An identity document is the most sensitive thing this custody
  * chain touches, and a delivery screen has no business displaying one.
  *
- * ## The people are identifiers
+ * ## The people are named, never shown as identifiers
  *
- * The receiver is a partner identifier and the confirming employee is a bare
- * identifier. Nothing in the platform resolves either to a name, so both are
- * rendered as labelled references rather than dressed up as people.
+ * The read publishes the receiver's partner id and the confirming user's id, and
+ * beside each the name the owning module resolved for this caller (Owner
+ * directive, DEF-R2): the CRM read for the receiver, the identity directory for
+ * the confirming user. The names are shown and the ids are not. A name the
+ * caller is not given is said in words ("Name not shown"), never replaced by the
+ * identifier it stands for.
  *
  * ## The caller nominates; the platform decides
  *
@@ -111,6 +109,7 @@ export function ReceiverPanel({
   /** Called after a successful verification so the screen re-reads every panel. */
   readonly onDone?: (() => void) | undefined;
 }) {
+  const [retries, setRetries] = useState(0);
   const [held, setHeld] = useState<{
     readonly key: string;
     readonly deliveryId: string;
@@ -118,7 +117,7 @@ export function ReceiverPanel({
     /** The last answer that succeeded for `deliveryId`, kept across a failed re-read. */
     readonly lastOk: DeliveryReceiverEnvelope | null;
   } | null>(null);
-  const key = `${deliveryId}#${String(revision)}`;
+  const key = `${deliveryId}#${String(revision)}~${String(retries)}`;
 
   useEffect(() => {
     let cancelled = false;
@@ -169,6 +168,7 @@ export function ReceiverPanel({
           messages={messages}
           status={failure.status}
           correlationId={failure.correlationId}
+          onRetry={() => setRetries((count) => count + 1)}
         />
       )}
       {known === null ? (
@@ -177,7 +177,7 @@ export function ReceiverPanel({
         ) : null
       ) : known.receiver === null ? (
         <div className="flex flex-col gap-4">
-          <EmptyState
+          <PanelEmpty
             messages={messages}
             titleKey="delivery.receiver.noneTitle"
             descriptionKey="delivery.receiver.noneDescription"
@@ -195,13 +195,15 @@ export function ReceiverPanel({
         </div>
       ) : (
         <div className="flex flex-col gap-3">
-          <Reference
+          <PersonFact
+            messages={messages}
             label={translate(messages, 'delivery.receiver.partner')}
-            value={known.receiver.receiverPartnerId}
+            name={known.receiver.receiverDisplayName}
           />
-          <Reference
+          <PersonFact
+            messages={messages}
             label={translate(messages, 'delivery.receiver.verifiedBy')}
-            value={known.receiver.verifiedBy}
+            name={known.receiver.verifiedByDisplayName}
           />
           <Fact label={translate(messages, 'delivery.receiver.verifiedAt')}>
             {formatDateTime(known.receiver.verifiedAt, locale)}
@@ -363,14 +365,42 @@ function VerifyForm({
 }) {
   const [partner, setPartner] = useState<SelectedCustomer | null>(null);
   const [missing, setMissing] = useState(false);
+  /* Counts the refusals of a missing partner, so each one moves the cursor again. */
+  const [refusals, setRefusals] = useState(0);
   const [chosen, setChosen] = useState(false);
   /* Remounts the file control, which is how a chosen file is removed. */
   const [fileKey, setFileKey] = useState(0);
   const [refusal, setRefusal] = useState<Refusal | null>(null);
   const [policy, setPolicy] = useState<EvidencePolicy>({ status: 'loading' });
   const [pending, startTransition] = useTransition();
-  const formRef = useRef<HTMLFormElement>(null);
+  /*
+   * The cursor goes to the thing to fix: a Confirm pressed with nobody chosen
+   * marks the person chooser (`CustomerSelector`'s `error`, which carries
+   * `aria-invalid` on its box or `data-invalid` on its Change control) and this
+   * puts the cursor there, once per refusal.
+   */
+  const formRef = useFocusFirstInvalid(
+    missing
+      ? {
+          status: 'invalid',
+          fieldErrors: { receiverPartnerId: 'delivery.receiver.partnerRequired' },
+          attempt: refusals,
+        }
+      : { status: 'idle', attempt: refusals }
+  );
   const refocusFile = useRef(false);
+  /*
+   * Unsaved work (the shell's question before a branch switch or leaving the
+   * page): a chosen person or a chosen document. Leaving discards both, and
+   * nothing is sent.
+   */
+  useUnsavedGuard(partner !== null || chosen, () => {
+    setPartner(null);
+    setMissing(false);
+    setChosen(false);
+    setRefusal(null);
+    setFileKey((previous) => previous + 1);
+  });
   const baseId = useId();
   const headingId = `${baseId}-heading`;
   const fileId = `${baseId}-evidence`;
@@ -402,6 +432,7 @@ function VerifyForm({
   const submit = () => {
     if (partner === null) {
       setMissing(true);
+      setRefusals((count) => count + 1);
       return;
     }
     setMissing(false);
@@ -420,6 +451,7 @@ function VerifyForm({
     if (pending) return;
     if (partner === null) {
       setMissing(true);
+      setRefusals((count) => count + 1);
       return;
     }
     const partnerId = partner.id;
@@ -482,14 +514,14 @@ function VerifyForm({
         name="receiverPartnerId"
         labelKey="delivery.receiver.partnerLabel"
         value={partner}
-        onChange={setPartner}
+        onChange={(next) => {
+          // The complaint is withdrawn the moment somebody is chosen.
+          if (next !== null) setMissing(false);
+          setPartner(next);
+        }}
         required
+        error={missing ? translate(messages, 'delivery.receiver.partnerRequired') : undefined}
       />
-      {missing ? (
-        <p role="alert" className="text-body text-error">
-          {translate(messages, 'delivery.receiver.partnerRequired')}
-        </p>
-      ) : null}
       {canAttachEvidence ? (
         <div className="flex flex-col gap-2">
           <label htmlFor={fileId} className="text-label font-medium text-text-primary">
@@ -535,14 +567,15 @@ function VerifyForm({
               )}
             </p>
             {chosen ? (
-              <button
+              <Button
                 type="button"
-                className={SECONDARY_BUTTON}
+                variant="outlined"
+                size="small"
                 disabled={pending}
                 onClick={removeFile}
               >
                 {translate(messages, 'delivery.receiver.evidenceRemove')}
-              </button>
+              </Button>
             ) : null}
           </div>
         </div>
@@ -589,9 +622,9 @@ function VerifyForm({
         </p>
       ) : null}
       <div>
-        <button type="button" className={PRIMARY_BUTTON} disabled={pending} onClick={submit}>
+        <Button type="button" variant="contained" disabled={pending} onClick={submit}>
           {translate(messages, 'delivery.receiver.verifySubmit')}
-        </button>
+        </Button>
       </div>
     </form>
   );

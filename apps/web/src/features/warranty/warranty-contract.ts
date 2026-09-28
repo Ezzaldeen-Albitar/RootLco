@@ -495,6 +495,8 @@ export interface WarrantyStatusTransition {
   readonly toStatus: string;
   readonly reason: string | null;
   readonly actorId: string;
+  /** The actor's name, or `null` without `iam.user.read` or when unresolved. */
+  readonly actorDisplayName: string | null;
   readonly occurredAt: string;
 }
 

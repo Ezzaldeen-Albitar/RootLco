@@ -2,8 +2,9 @@
 
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
+import Button from '@mui/material/Button';
 
-import { SelectField } from '@/components/forms/Field';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import type { Locale } from '@/i18n/config';
 import { FailureExplanation } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
@@ -16,7 +17,7 @@ import {
   WARRANTY_ERROR_CODES,
 } from '../warranty-contract';
 import type { WarrantyPolicySummary } from '../warranty-contract';
-import { PRIMARY_BUTTON, Section } from './shared';
+import { Section } from './shared';
 
 /**
  * The issue surface (P1-31, FE-008): generate a warranty from a completed handover.
@@ -157,11 +158,11 @@ export function GenerateWarrantyPanel({
         }}
       >
         {offered ? (
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'warranty.generate.policyField')}
             description={translate(messages, 'warranty.generate.policyHelp')}
             value={policyId}
-            onChange={(event) => setPolicyId(event.target.value)}
+            onChange={setPolicyId}
             options={choices.map((policy) => ({
               value: policy.id,
               label: `${policy.policyCode} — ${policy.name}`,
@@ -180,13 +181,13 @@ export function GenerateWarrantyPanel({
         )}
 
         <div>
-          <button
+          <Button
             type="submit"
-            className={PRIMARY_BUTTON}
+            variant="contained"
             disabled={!handedOver || sending || created !== null}
           >
             {translate(messages, 'warranty.generate.submit')}
-          </button>
+          </Button>
         </div>
       </form>
 

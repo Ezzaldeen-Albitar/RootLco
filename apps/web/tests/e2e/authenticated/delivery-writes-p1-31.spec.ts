@@ -302,8 +302,17 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
     const checklistFact = factRow(page, say(locale, 'delivery.blocker.checklistIncomplete'));
     await expect(checklistFact).toContainText(say(locale, 'delivery.eligibility.factBlocking'));
     // Named, not merely counted: the panel publishes the unsatisfied item so an
-    // operator is not sent hunting through a company's templates for it.
-    await expect(panel(page, 'delivery-eligibility-heading')).toContainText(item.itemCode);
+    // operator is not sent hunting through a company's templates for it. It is
+    // named by its label; the code is configuration vocabulary, carried on the
+    // row for addressing and never drawn as text (Owner directive, DEF-R2).
+    const gap = panel(page, 'delivery-eligibility-heading').locator(
+      `li[data-item-code="${item.itemCode}"]`
+    );
+    await expect(gap, 'the unanswered mandatory item is listed among the gaps').toBeVisible();
+    if (item.label !== null) await expect(gap).toContainText(item.label);
+    if (!(item.label ?? '').includes(item.itemCode)) {
+      await expect(gap).not.toContainText(item.itemCode);
+    }
     // The enforcement: the control is not merely explained as unavailable, it is
     // unusable, and the sentence beside it says which of its two states it is in.
     await expect(
@@ -340,10 +349,18 @@ test.describe('P1-31 delivery writes, over handovers the acceptance journey left
       })
     ).toBeVisible();
     await record.click();
+    // The reason box's own refusal (the shared Material field): its sentence beside
+    // the box, drawn with a mark as well as a colour, and the cursor put in the box.
+    const reasonBox = row.getByRole('textbox', {
+      name: say(locale, 'delivery.checklist.waiverReasonLabel'),
+      exact: true,
+    });
     await expect(
       row.getByRole('alert'),
       'a waiver with no reason must be refused where the operator can correct it'
-    ).toHaveText(say(locale, 'form.required'));
+    ).toContainText(say(locale, 'form.required'));
+    await expect(reasonBox).toHaveAttribute('aria-invalid', 'true');
+    await expect(reasonBox).toBeFocused();
 
     // And nothing was written: a reload asks the server, and the item still has no
     // result. Without this the case would only prove that a message appeared.

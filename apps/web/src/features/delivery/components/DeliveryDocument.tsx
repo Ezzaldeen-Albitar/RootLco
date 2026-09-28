@@ -59,14 +59,18 @@ import { BlockerLabel, OutcomeLabel, SignerRoleLabel, StatusLabel } from './Code
  *   - **The signature image and the identity-evidence document.** Both are
  *     stored-document references and both stay references: the sheet states that
  *     the mark or the proof is on file and offers no way to fetch the bytes.
- *   - **A name for an identifier the platform does not resolve.** The vehicle,
- *     the visit, the delivering employee and the final odometer reading are bare
- *     identifiers with no reader anywhere in the platform — the delivering
- *     employee's display name lands with a backend slice that is not merged —
- *     so each is printed as the labelled reference it is. The customer name, the
- *     registration plate and the work-order number are the exception: the work
- *     order's own read publishes them, and they are printed from that read, for
- *     a caller who holds its permission, or not at all.
+ *   - **An identifier.** Not one raw reference is printed (Owner directive,
+ *     DEF-R2): a reader holding this sheet cannot use one. The customer name,
+ *     the registration plate and model and the work-order number come from the
+ *     work order's own read, for a caller who holds its permission, or not at
+ *     all, and a work order with no number or a vehicle with no plate or model
+ *     is said in words. The receiver, the person who confirmed them, the
+ *     delivering employee and every actor in the history are named from the
+ *     names the delivery reads publish beside their ids; a name this reader is
+ *     not given is printed as words, never as the id. The final odometer
+ *     reading is its value when the route resolved it, and otherwise the
+ *     sentence saying whether one was captured. The visit has no name the
+ *     platform publishes, so it is left off rather than printed as a reference.
  *   - **A figure.** Not one delivery read carries an amount, and the release
  *     checks publish blocker CODES rather than numbers. Nothing here formats or
  *     computes money.
@@ -131,9 +135,9 @@ export function DeliveryDocument({
   /**
    * The reading `finalOdometerReadingId` points at, resolved by the route.
    *
-   * Printed as the value when it is there and as the reference when it is not,
-   * for the reason the record gives: the sheet may not print a number nobody
-   * resolved, and it may not hide the identifier it does hold.
+   * Printed as the value when it is there. When it is not, the sheet says in
+   * words whether a reading was captured: it may not print a number nobody
+   * resolved, and the identifier is not something its reader can use.
    */
   readonly finalOdometerReading?: OdometerReadingEntry | null;
 }) {
@@ -165,41 +169,35 @@ export function DeliveryDocument({
         </h2>
         <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
           <WorkOrderFacts locale={locale} messages={messages} workOrder={workOrder} />
-          <Fact label={translate(messages, 'delivery.summary.vehicle')}>
-            <Identifier value={delivery.vehicleId} />
-          </Fact>
-          <Fact label={translate(messages, 'delivery.summary.visit')}>
-            <Identifier value={delivery.receptionVisitId} />
-          </Fact>
           {/*
-            The name the SERVER stamped when the handover was opened — the
-            backend slice that publishes it has merged, so the sheet no longer
-            prints a bare reference where a person belongs. Still not a lookup
-            this side performed: a name invented here would be printed, signed
-            and taken away. A handover recorded before the employee register
-            existed may carry no name, and that one prints the reference it does
-            carry.
+            The name the SERVER stamped when the handover was opened, not a
+            lookup this side performed: a name invented here would be printed,
+            signed and taken away. A handover recorded before the employee
+            register existed may carry no name, and that one prints the words
+            the on-screen summary uses, never the identifier (DEF-R2).
           */}
           <Fact label={translate(messages, 'delivery.summary.deliveringEmployee')}>
-            {delivery.deliveringEmployeeDisplayName === null ? (
-              <Identifier value={delivery.deliveringEmployeeId} />
+            <PersonName messages={messages} name={delivery.deliveringEmployeeDisplayName} />
+          </Fact>
+          {/*
+            The value when the route resolved it; otherwise whether a reading was
+            captured at all, in words, as the on-screen summary says it.
+          */}
+          <Fact label={translate(messages, 'delivery.summary.finalOdometer')}>
+            {finalOdometerReading !== null ? (
+              <span dir="ltr">{odometerDisplay(finalOdometerReading).primary}</span>
             ) : (
-              delivery.deliveringEmployeeDisplayName
+              <span className="text-text-muted" lang={locale}>
+                {translate(
+                  messages,
+                  delivery.finalOdometerReadingId === null
+                    ? 'delivery.summary.finalOdometerNone'
+                    : 'delivery.summary.finalOdometerNotShown'
+                )}
+              </span>
             )}
           </Fact>
-          {finalOdometerReading === null ? (
-            <Fact label={translate(messages, 'delivery.summary.finalOdometerReading')}>
-              <Identifier value={delivery.finalOdometerReadingId} />
-            </Fact>
-          ) : (
-            <Fact label={translate(messages, 'delivery.summary.finalOdometer')}>
-              <span dir="ltr">{odometerDisplay(finalOdometerReading).primary}</span>
-            </Fact>
-          )}
         </dl>
-        <p className="mt-2 text-supporting text-text-muted" lang={locale}>
-          {translate(messages, 'delivery.summary.identifiersExplain')}
-        </p>
       </section>
 
       <section aria-labelledby="delivery-document-checks" className="mb-6">
@@ -260,10 +258,10 @@ export function DeliveryDocument({
         ) : (
           <dl className="grid gap-x-6 gap-y-2 sm:grid-cols-2">
             <Fact label={translate(messages, 'delivery.receiver.partner')}>
-              <Identifier value={receiver.value.receiverPartnerId} />
+              <PersonName messages={messages} name={receiver.value.receiverDisplayName} />
             </Fact>
             <Fact label={translate(messages, 'delivery.receiver.verifiedBy')}>
-              <Identifier value={receiver.value.verifiedBy} />
+              <PersonName messages={messages} name={receiver.value.verifiedByDisplayName} />
             </Fact>
             <Fact label={translate(messages, 'delivery.receiver.verifiedAt')}>
               <bdi>{formatDateTime(receiver.value.verifiedAt, locale)}</bdi>
@@ -293,15 +291,13 @@ export function DeliveryDocument({
           <PrintTable
             caption={translate(messages, 'delivery.document.checklistCaption')}
             headers={[
-              translate(messages, 'delivery.document.column.itemCode'),
               translate(messages, 'delivery.document.column.item'),
               translate(messages, 'delivery.document.column.result'),
               translate(messages, 'delivery.document.column.waiverReason'),
             ]}
             rows={checklist.rows.map((row) => [
-              <code key="c" className="font-mono" dir="ltr">
-                {row.itemCode}
-              </code>,
+              // The item by its label; its code is configuration vocabulary
+              // and is not printed (Browser QA part 7, row 3.2b).
               <bdi key="l">{row.label}</bdi>,
               <OutcomeLabel key="o" messages={messages} outcome={row.outcome} />,
               row.waiverReason === null ? (
@@ -372,7 +368,7 @@ export function DeliveryDocument({
               ),
               <StatusLabel key="t" messages={messages} status={row.toStatus} />,
               <bdi key="w">{formatDateTime(row.occurredAt, locale)}</bdi>,
-              <Identifier key="a" value={row.actorId} />,
+              <PersonName key="a" messages={messages} name={row.actorDisplayName} />,
             ])}
           />
         )}
@@ -384,13 +380,13 @@ export function DeliveryDocument({
 
 /**
  * The work order, the customer and the vehicle as the work-order read publishes
- * them — or as references, when it was not read.
+ * them, or one sentence saying why they are left off when it was not read.
  *
  * `wo.work-order-detail` is the ONLY read reachable from this screen that
  * publishes a customer name, a registration plate or a work-order number, and it
- * declares its own permission. A caller without that permission gets the
- * identifier the delivery record itself carries, and the sheet says why: the
- * alternative is a screen that resolves a name its reader may not see.
+ * declares its own permission. A caller without that permission gets none of
+ * them, and the sheet says why: the alternative is a screen that resolves a name
+ * its reader may not see.
  */
 function WorkOrderFacts({
   locale,
@@ -424,7 +420,9 @@ function WorkOrderFacts({
     <>
       <Fact label={translate(messages, 'delivery.document.workOrder')}>
         {entry.displayNumber === null ? (
-          <Identifier value={entry.id} />
+          <span className="text-text-muted" lang={locale}>
+            {translate(messages, 'delivery.queue.column.noReference')}
+          </span>
         ) : (
           <span className="font-mono" dir="ltr">
             {entry.displayNumber}
@@ -436,7 +434,9 @@ function WorkOrderFacts({
       </Fact>
       <Fact label={translate(messages, 'delivery.document.vehicle')}>
         {entry.vehicle.registrationPlate === null && entry.vehicle.makeModel === null ? (
-          <Identifier value={entry.vehicle.vehicleId} />
+          <span className="text-text-muted" lang={locale}>
+            {translate(messages, 'delivery.queue.column.noVehicleDetail')}
+          </span>
         ) : (
           <bdi>
             {[entry.vehicle.registrationPlate, entry.vehicle.makeModel]
@@ -464,14 +464,20 @@ function Fact({ label, children }: { readonly label: string; readonly children: 
   );
 }
 
-/** An identifier, printed as an identifier: left-to-right in both directions. */
-function Identifier({ value }: { readonly value: string | null }) {
-  if (value === null) return <NotRecorded />;
-  return (
-    <code className="font-mono text-caption" dir="ltr">
-      {value}
-    </code>
-  );
+/**
+ * A person the reads named, or the words for a name this reader is not given
+ * (Owner directive, DEF-R2). Never the identifier: a printed reference is not
+ * something the customer holding this sheet can read.
+ */
+function PersonName({
+  messages,
+  name,
+}: {
+  readonly messages: Messages;
+  readonly name: string | null | undefined;
+}) {
+  if (name) return <bdi>{name}</bdi>;
+  return <span className="text-text-muted">{translate(messages, 'delivery.person.notShown')}</span>;
 }
 
 /** A value the record does not carry. */

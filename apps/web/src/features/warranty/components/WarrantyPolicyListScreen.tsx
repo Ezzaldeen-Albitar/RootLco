@@ -2,9 +2,17 @@
 
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { SelectField, TextField } from '@/components/forms/Field';
-import { EmptyState, FailureExplanation, LoadingState } from '@/components/states/States';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { FailureExplanation } from '@/components/states/States';
 import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import {
@@ -15,6 +23,7 @@ import {
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 
 import { createWarrantyPolicy, listWarrantyPolicies, type PolicyWriteState } from '../warranty-api';
 import {
@@ -26,9 +35,9 @@ import {
 } from '../warranty-contract';
 import {
   ConfigurationStatusLabel,
-  PRIMARY_BUTTON,
+  ReadEmpty,
   ReadFailure,
-  SECONDARY_BUTTON,
+  ReadLoading,
   Section,
   refusalKeyFor,
   type MoreFailure,
@@ -186,10 +195,10 @@ export function WarrantyPolicyListScreen({
           className="max-w-sm"
           onSubmit={(event) => event.preventDefault()}
         >
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'warranty.policies.stateField')}
             value={filter}
-            onChange={(event) => setFilter(event.target.value as WarrantyConfigurationStatus | '')}
+            onChange={(value) => setFilter(value as WarrantyConfigurationStatus | '')}
             options={WARRANTY_CONFIGURATION_STATUSES.map((status) => ({
               value: status,
               label: translate(messages, `warranty.configurationStatus.${status}`),
@@ -205,62 +214,69 @@ export function WarrantyPolicyListScreen({
         messages={messages}
       >
         {current === null ? (
-          <LoadingState messages={messages} />
+          <ReadLoading messages={messages} />
         ) : current.status !== 'ok' ? (
           <ReadFailure
             messages={messages}
             status={current.status}
             correlationId={current.correlationId}
+            onRetry={() => setReloads((count) => count + 1)}
           />
         ) : current.rows.length === 0 ? (
-          <EmptyState
+          <ReadEmpty
             messages={messages}
             titleKey="warranty.policies.noneTitle"
             descriptionKey="warranty.policies.noneDescription"
           />
         ) : (
           <>
-            <table className="w-full text-body">
-              <caption className="sr-only">
-                {translate(messages, 'warranty.policies.tableCaption')}
-              </caption>
-              <thead>
-                <tr className="text-caption text-text-muted">
-                  <th scope="col" className="p-2 text-start">
-                    {translate(messages, 'warranty.policies.columnName')}
-                  </th>
-                  <th scope="col" className="p-2 text-start">
-                    {translate(messages, 'warranty.policies.columnCode')}
-                  </th>
-                  <th scope="col" className="p-2 text-start">
-                    {translate(messages, 'warranty.policies.columnState')}
-                  </th>
-                  <th scope="col" className="p-2 text-start">
-                    {translate(messages, 'warranty.policies.columnCompany')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {current.rows.map((row) => (
-                  <tr key={row.id} className="border-t border-border-subtle">
-                    <td className="p-2">
-                      <Link
-                        href={`/${locale}/warranty/policies/${row.id}`}
-                        className="text-primary underline-offset-2 hover:underline"
-                      >
-                        <bdi>{row.name}</bdi>
-                      </Link>
-                    </td>
-                    <td className="p-2">
-                      <code className="font-mono text-caption" dir="ltr">
-                        {row.policyCode}
-                      </code>
-                    </td>
-                    <td className="p-2">
-                      <ConfigurationStatusLabel messages={messages} status={row.status} />
-                    </td>
-                    <td className="p-2">
-                      {/*
+            {/*
+              The plans are a short, tenant-wide set walked with the server's
+              cursor ("Show more"), so they are Material's table rather than the
+              operational grid, which pages a branch's list page by page.
+            */}
+            <TableContainer>
+              <Table size="small">
+                <caption className="sr-only">
+                  {translate(messages, 'warranty.policies.tableCaption')}
+                </caption>
+                <TableHead>
+                  <TableRow>
+                    <TableCell scope="col">
+                      {translate(messages, 'warranty.policies.columnName')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'warranty.policies.columnCode')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'warranty.policies.columnState')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'warranty.policies.columnCompany')}
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {current.rows.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell>
+                        <Link
+                          href={`/${locale}/warranty/policies/${row.id}`}
+                          className="text-primary underline-offset-2 hover:underline"
+                        >
+                          <bdi>{row.name}</bdi>
+                        </Link>
+                      </TableCell>
+                      <TableCell>
+                        <code className="font-mono text-caption" dir="ltr">
+                          {row.policyCode}
+                        </code>
+                      </TableCell>
+                      <TableCell>
+                        <ConfigurationStatusLabel messages={messages} status={row.status} />
+                      </TableCell>
+                      <TableCell>
+                        {/*
                         The name the platform published for this company, never
                         its reference: a reader cannot recognise a workshop by a
                         string they have never seen. A company outside the
@@ -268,13 +284,14 @@ export function WarrantyPolicyListScreen({
                         is said in words rather than by its reference (Browser
                         QA part 7, row 4.3b).
                       */}
-                      {companyName(row.companyId) ??
-                        translate(messages, 'warranty.policies.companyOutsideContext')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                        {companyName(row.companyId) ??
+                          translate(messages, 'warranty.policies.companyOutsideContext')}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
 
             {current.moreFailed === null ? null : (
               <ReadFailure
@@ -285,14 +302,16 @@ export function WarrantyPolicyListScreen({
             )}
 
             {current.hasMore ? (
-              <button
+              <Button
                 type="button"
-                className={`mt-3 ${SECONDARY_BUTTON}`}
+                variant="outlined"
+                size="small"
+                className="mt-3"
                 disabled={loadingMore}
                 onClick={() => void loadMore()}
               >
                 {translate(messages, 'warranty.policies.loadMore')}
-              </button>
+              </Button>
             ) : null}
           </>
         )}
@@ -349,6 +368,8 @@ function CreatePolicySection({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [state, setState] = useState<PolicyWriteState | null>(null);
   const [sending, setSending] = useState(false);
+  /* Counts the refusals, the form's own and the server's, so each one moves the cursor. */
+  const [refusals, setRefusals] = useState(0);
 
   /*
    * The default follows the header, adjusted DURING render.
@@ -404,6 +425,24 @@ function CreatePolicySection({
   const companyKey = errors['companyId'] ?? state?.fieldErrors?.['companyId'];
   const companyError = companyKey ? translateDynamic(messages, companyKey) : undefined;
 
+  /*
+   * A refused field puts the cursor on its control (`useFocusFirstInvalid`), and
+   * the typed values stay; each complaint is withdrawn as its value is edited.
+   */
+  const standing = companyKey === undefined ? errors : { ...errors, companyId: companyKey };
+  const formRef = useFocusFirstInvalid(
+    Object.keys(standing).length > 0
+      ? { status: 'invalid', fieldErrors: standing, attempt: refusals }
+      : { status: 'idle', attempt: refusals }
+  );
+  const corrected = (field: string) =>
+    setErrors((previous) => {
+      if (!(field in previous)) return previous;
+      const next = { ...previous };
+      delete next[field];
+      return next;
+    });
+
   return (
     <Section
       headingId="warranty-policies-create-heading"
@@ -412,6 +451,8 @@ function CreatePolicySection({
       description={translate(messages, 'warranty.policies.createExplain')}
     >
       <form
+        ref={formRef}
+        noValidate
         aria-label={translate(messages, 'warranty.policies.createFormLabel')}
         className="grid gap-3 sm:grid-cols-2"
         onSubmit={(event) => {
@@ -434,7 +475,10 @@ function CreatePolicySection({
             found['name'] = 'warranty.policies.nameLength';
           }
           setErrors(found);
-          if (Object.keys(found).length > 0) return;
+          if (Object.keys(found).length > 0) {
+            setRefusals((count) => count + 1);
+            return;
+          }
           setSending(true);
           attempt.current += 1;
           const mine = attempt.current;
@@ -449,7 +493,10 @@ function CreatePolicySection({
             }
             setState(outcome);
             setSending(false);
-            if (outcome.status !== 'success') return;
+            if (outcome.status !== 'success') {
+              if (outcome.fieldErrors !== undefined) setRefusals((count) => count + 1);
+              return;
+            }
             setPolicyCode('');
             setName('');
             onCreated();
@@ -457,12 +504,17 @@ function CreatePolicySection({
         }}
       >
         {offered ? (
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'warranty.policies.companyField')}
             description={translate(messages, 'warranty.policies.companyFromDirectory')}
             required
             value={companyId}
-            onChange={(event) => setCompanyId(event.target.value)}
+            onEdit={() => {
+              corrected('companyId');
+              // The server's complaint about the company is about the old choice.
+              if (state?.fieldErrors?.['companyId'] !== undefined) setState(null);
+            }}
+            onChange={setCompanyId}
             options={companies.map((company) => ({ value: company.id, label: company.name }))}
             placeholder={translate(messages, 'warranty.policies.companyPlaceholder')}
             error={companyError}
@@ -475,34 +527,35 @@ function CreatePolicySection({
           />
         )}
 
-        <TextField
+        <FormTextField
           label={translate(messages, 'warranty.policies.codeField')}
           description={translate(messages, 'warranty.policies.codeHelp')}
           required
-          spellCheck={false}
           dir="ltr"
           value={policyCode}
-          onChange={(event) => setPolicyCode(event.target.value)}
+          onEdit={() => corrected('policyCode')}
+          onChange={setPolicyCode}
           error={
             errors['policyCode'] ? translateDynamic(messages, errors['policyCode']) : undefined
           }
         />
 
         <div className="sm:col-span-2">
-          <TextField
+          <FormTextField
             label={translate(messages, 'warranty.policies.nameField')}
             required
             maxLength={MAX_POLICY_NAME}
             value={name}
-            onChange={(event) => setName(event.target.value)}
+            onEdit={() => corrected('name')}
+            onChange={setName}
             error={errors['name'] ? translateDynamic(messages, errors['name']) : undefined}
           />
         </div>
 
         <div className="sm:col-span-2">
-          <button type="submit" className={PRIMARY_BUTTON} disabled={sending}>
+          <Button type="submit" variant="contained" disabled={sending}>
             {translate(messages, 'warranty.policies.createSubmit')}
-          </button>
+          </Button>
         </div>
       </form>
 

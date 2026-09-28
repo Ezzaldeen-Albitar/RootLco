@@ -509,9 +509,14 @@ describe('running low', () => {
     await chooseTheBranch(user);
 
     const frame = card('attention.lowStock.title');
-    const alert = await within(frame).findByRole('alert');
+    // The shared Material refusal, carrying the card's own sentence and the
+    // reference; a refusal offers no retry, because asking again changes nothing.
+    const alert = await within(frame).findByTestId('state-refused');
+    expect(alert).toHaveAttribute('role', 'status');
+    expect(alert).toHaveTextContent(EN['state.denied.title'] as string);
     expect(alert).toHaveTextContent(EN['attention.state.denied'] as string);
     expect(alert).toHaveTextContent('corr-1');
+    expect(within(alert).queryByRole('button')).toBeNull();
     expect(within(frame).queryByRole('table')).toBeNull();
     // A refusal is not an empty branch, and must not be reported as one.
     expect(within(frame).queryByText(EN['attention.lowStock.empty'] as string)).toBeNull();
@@ -607,10 +612,30 @@ describe('differences found by a count', () => {
     await chooseTheBranch(user);
 
     const frame = card('attention.discrepancy.title');
-    expect(await within(frame).findByRole('alert')).toHaveTextContent(
-      EN['attention.state.unavailable'] as string
-    );
+    // A 429 or a 5xx is "unavailable, try again" — never an empty list.
+    const outage = await within(frame).findByTestId('state-unavailable');
+    expect(outage).toHaveTextContent(EN['state.unavailable.title'] as string);
+    expect(outage).toHaveTextContent(EN['attention.state.unavailable'] as string);
     expect(within(frame).queryByText(EN['attention.discrepancy.empty'] as string)).toBeNull();
+  });
+
+  it('reads the card again when Try again is pressed after an outage', async () => {
+    readCountDiscrepancyAlerts
+      .mockResolvedValueOnce(refused('unavailable', null))
+      .mockResolvedValue(discrepancies([]));
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseTheBranch(user);
+
+    const frame = card('attention.discrepancy.title');
+    const outage = await within(frame).findByTestId('state-unavailable');
+    const calls = readCountDiscrepancyAlerts.mock.calls.length;
+    await user.click(within(outage).getByRole('button', { name: EN['state.retry'] as string }));
+    expect(
+      await within(frame).findByText(EN['attention.discrepancy.empty'] as string)
+    ).toBeInTheDocument();
+    expect(readCountDiscrepancyAlerts.mock.calls.length).toBe(calls + 1);
+    expect(within(frame).queryByTestId('state-unavailable')).toBeNull();
   });
 });
 
@@ -643,7 +668,7 @@ describe('leaving faster than usual', () => {
     await chooseTheBranch(user);
 
     const frame = card('attention.consumption.title');
-    expect(await within(frame).findByRole('alert')).toHaveTextContent(
+    expect(await within(frame).findByTestId('state-error')).toHaveTextContent(
       EN['attention.state.error'] as string
     );
     expect(within(frame).queryByText(/Listed when the quantity issued/)).toBeNull();
@@ -743,7 +768,7 @@ describe('subscription limits', () => {
     readCapacityAlerts.mockResolvedValue(refused('denied'));
     renderScreen();
     const frame = card('attention.capacity.title');
-    expect(await within(frame).findByRole('alert')).toHaveTextContent(
+    expect(await within(frame).findByTestId('state-refused')).toHaveTextContent(
       EN['attention.state.denied'] as string
     );
     expect(within(frame).queryByText(EN['attention.capacity.empty'] as string)).toBeNull();

@@ -689,8 +689,9 @@ panel on the work order. **Steps:**
 - The list of people who may hand a vehicle over is populated by an **OPERATOR PROCEDURE**, not a
   screen. If it is empty: _"Nobody at this branch is listed as available to hand a vehicle over. Try
   another branch of the same company, or ask an administrator to add them."_ <!-- delivery.start.noEmployees -->
-- The summary shows references, not names: _"These are internal references. The system holds no
-  names for them, so each reference is shown exactly as it is stored."_ <!-- delivery.summary.identifiersExplain -->
+- The summary names people rather than printing references: the employee handing over appears by
+  name, or as _"Name not shown"_ <!-- delivery.person.notShown --> when the system holds no name you
+  may see, and the final odometer reading appears as its value or in words.
 - **The first warranty you try to issue will be refused, and that is correct.** A warranty is issued
   against the handover, under a warranty plan — and a plan with no window of cover terms covering
   the day the vehicle went back has nothing to issue: _"No warranty terms are set up for the day

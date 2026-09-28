@@ -2,11 +2,24 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
+import {
+  MuiErrorState,
+  MuiExpiredState,
+  MuiLoadingState,
+  MuiRefusedState,
+  MuiUnavailableState,
+} from '@/components/states/MuiStates';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
-import type { ReadState } from '@/lib/api/read-operation';
+import { formatMessage, translateDynamic } from '@/i18n/get-messages';
+import type { ReadFailureStatus, ReadState } from '@/lib/api/read-operation';
 import { formatDateTime, formatInteger } from '@/lib/format';
 import {
   readAgedInTransitAlerts,
@@ -37,6 +50,12 @@ import {
  * and rendering the second as the first is how a screen comes to reassure
  * somebody about stock it never read.
  *
+ * The states are the shared Material ones (ADR-022) carrying the card's own
+ * sentence: a refusal says it with its reference and no retry; an outage (a
+ * throttled or unanswered read included) and a fault say so with Try again,
+ * which reads the card again; an ended session offers the way back to signing
+ * in. The rows are a Material table.
+ *
  * ## Nothing here writes
  *
  * There is no form, no button that submits and no adapter in reach that posts
@@ -53,9 +72,15 @@ export type AlertState<T> =
   | { readonly phase: 'ok'; readonly data: T }
   | {
       readonly phase: 'failed';
+      /** What the read answered, so the card draws the matching state. */
+      readonly status: ReadFailureStatus;
+      /** The card's own sentence for that answer (`refusalKey`). */
       readonly messageKey: string;
       readonly correlationId: string | null;
     };
+
+/** A read's state, and the way to ask again after an outage or a fault. */
+export type AlertRead<T> = AlertState<T> & { readonly retry: () => void };
 
 const IDLE: AlertState<never> = { phase: 'idle' };
 const LOADING: AlertState<never> = { phase: 'loading' };
@@ -80,15 +105,21 @@ const LOADING: AlertState<never> = { phase: 'loading' };
  * A card whose TARGET changes is remounted by its caller's `key`, so no answer
  * about one branch can be left on screen while another is being read.
  */
-export function useAlertRead<T>(
-  load: () => Promise<ReadState<T>>,
-  enabled: boolean
-): AlertState<T> {
-  const [answer, setAnswer] = useState<{ readonly data: T } | null>(null);
+export function useAlertRead<T>(load: () => Promise<ReadState<T>>, enabled: boolean): AlertRead<T> {
+  /*
+   * Every outcome remembers the attempt it answered, and only the current
+   * attempt's is shown: a retry is therefore "in flight" until its own answer
+   * arrives, without a state assigned in the effect's body.
+   */
+  const [attempt, setAttempt] = useState(0);
+  const [answer, setAnswer] = useState<{ readonly attempt: number; readonly data: T } | null>(null);
   const [failure, setFailure] = useState<{
+    readonly attempt: number;
+    readonly status: ReadFailureStatus;
     readonly messageKey: string;
     readonly correlationId: string | null;
   } | null>(null);
+  const retry = useCallback(() => setAttempt((count) => count + 1), []);
 
   useEffect(() => {
     if (!enabled) return;
@@ -96,10 +127,12 @@ export function useAlertRead<T>(
     void load().then((read) => {
       if (!live) return;
       if (read.status === 'ok') {
-        setAnswer({ data: read.data });
+        setAnswer({ attempt, data: read.data });
         return;
       }
       setFailure({
+        attempt,
+        status: read.status,
         messageKey: refusalKey(read.status),
         correlationId: read.correlationId,
       });
@@ -107,14 +140,67 @@ export function useAlertRead<T>(
     return () => {
       live = false;
     };
-  }, [load, enabled]);
+  }, [load, enabled, attempt]);
 
   // Permission first, then failure, then arrival. Nothing outside this function
   // can observe the raw fields, so no caller can read "not asked" as "nothing".
-  if (!enabled) return IDLE;
-  if (failure !== null) return { phase: 'failed', ...failure };
-  if (answer !== null) return { phase: 'ok', data: answer.data };
-  return LOADING;
+  if (!enabled) return { ...IDLE, retry };
+  if (failure !== null && failure.attempt === attempt) {
+    return {
+      phase: 'failed',
+      status: failure.status,
+      messageKey: failure.messageKey,
+      correlationId: failure.correlationId,
+      retry,
+    };
+  }
+  if (answer !== null && answer.attempt === attempt) {
+    return { phase: 'ok', data: answer.data, retry };
+  }
+  return { ...LOADING, retry };
+}
+
+/** The card's failure, as the shared Material state its answer calls for. */
+function CardFailure({
+  messages,
+  locale,
+  state,
+  onRetry,
+}: {
+  readonly messages: Messages;
+  readonly locale: Locale;
+  readonly state: Extract<AlertState<unknown>, { phase: 'failed' }>;
+  readonly onRetry?: (() => void) | undefined;
+}) {
+  const sentence = state.messageKey as keyof Messages;
+  if (state.status === 'denied') {
+    return (
+      <MuiRefusedState
+        messages={messages}
+        correlationId={state.correlationId}
+        descriptionKey={sentence}
+      />
+    );
+  }
+  if (state.status === 'expired') return <MuiExpiredState messages={messages} locale={locale} />;
+  if (state.status === 'unavailable') {
+    return (
+      <MuiUnavailableState
+        messages={messages}
+        correlationId={state.correlationId}
+        descriptionKey={sentence}
+        onRetry={onRetry}
+      />
+    );
+  }
+  return (
+    <MuiErrorState
+      messages={messages}
+      correlationId={state.correlationId}
+      descriptionKey={sentence}
+      onRetry={onRetry}
+    />
+  );
 }
 
 /** A quantity exactly as the server stated it. Nothing is rounded or summed. */
@@ -146,6 +232,7 @@ export function AttentionCard({
   isEmpty,
   children,
   footer,
+  onRetry,
 }: {
   readonly messages: Messages;
   readonly locale: Locale;
@@ -159,6 +246,8 @@ export function AttentionCard({
   readonly isEmpty: boolean;
   readonly children: ReactNode;
   readonly footer?: ReactNode;
+  /** Asks again, for the retry an outage or a fault offers. */
+  readonly onRetry?: (() => void) | undefined;
 }) {
   const t = (key: string) => translateDynamic(messages, key);
   return (
@@ -174,26 +263,15 @@ export function AttentionCard({
       ) : null}
 
       {state.phase === 'loading' ? (
-        <p role="status" aria-live="polite" className="mt-3 text-body text-text-muted">
-          {t('attention.state.loading')}
-        </p>
+        <div className="mt-3">
+          <MuiLoadingState messages={messages} rows={2} />
+        </div>
       ) : null}
 
       {state.phase === 'failed' ? (
-        <p role="alert" className="mt-3 text-body text-error">
-          {t(state.messageKey)}
-          {state.correlationId ? (
-            <>
-              {' '}
-              <span className="text-caption text-text-muted">
-                {translate(messages, 'state.correlationId')}{' '}
-                <code className="font-mono" dir="ltr">
-                  {state.correlationId}
-                </code>
-              </span>
-            </>
-          ) : null}
-        </p>
+        <div className="mt-3">
+          <CardFailure messages={messages} locale={locale} state={state} onRetry={onRetry} />
+        </div>
       ) : null}
 
       {state.phase === 'ok' ? (
@@ -216,7 +294,11 @@ export function AttentionCard({
   );
 }
 
-/** The table every card draws its rows in. Header cells are always start-aligned. */
+/**
+ * The table every card draws its rows in — Material's table, bounded by the
+ * card's one page, so it is not the operational grid (which pages a server
+ * list). Header cells are start-aligned in either direction.
+ */
 function Rows({
   caption,
   headers,
@@ -227,30 +309,26 @@ function Rows({
   readonly children: ReactNode;
 }) {
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full border-collapse text-table-cell">
+    <TableContainer>
+      <Table size="small">
         <caption className="sr-only">{caption}</caption>
-        <thead className="border-b border-table-border bg-table-header">
-          <tr>
+        <TableHead>
+          <TableRow>
             {headers.map((header) => (
-              <th
-                key={header}
-                scope="col"
-                className="px-3 py-2 text-start text-table-header font-semibold text-table-header-text"
-              >
+              <TableCell key={header} scope="col" className="font-semibold">
                 {header}
-              </th>
+              </TableCell>
             ))}
-          </tr>
-        </thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
+          </TableRow>
+        </TableHead>
+        <TableBody>{children}</TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
 function Cell({ children }: { readonly children: ReactNode }) {
-  return <td className="px-3 py-2 text-start text-text-primary">{children}</td>;
+  return <TableCell>{children}</TableCell>;
 }
 
 const LINK = 'text-primary underline-offset-2 hover:underline';
@@ -286,6 +364,7 @@ export function LowStockCard({
       titleKey="attention.lowStock.title"
       ruleText={t('attention.lowStock.rule')}
       state={state}
+      onRetry={state.retry}
       asOf={state.phase === 'ok' ? state.data.asOf : null}
       capped={page?.hasMore ?? false}
       emptyKey="attention.lowStock.empty"
@@ -303,7 +382,7 @@ export function LowStockCard({
         ]}
       >
         {(page?.items ?? []).map((row) => (
-          <tr key={row.reorderLevelId} className="border-t border-border-subtle">
+          <TableRow key={row.reorderLevelId}>
             <Cell>
               <Link href={attentionLink(locale, 'lowStock', row.itemId)} className={LINK}>
                 {row.itemName}
@@ -334,7 +413,7 @@ export function LowStockCard({
                 </>
               )}
             </Cell>
-          </tr>
+          </TableRow>
         ))}
       </Rows>
     </AttentionCard>
@@ -385,6 +464,7 @@ export function CountDiscrepancyCard({
       titleKey="attention.discrepancy.title"
       ruleText={t('attention.discrepancy.rule')}
       state={state}
+      onRetry={state.retry}
       asOf={state.phase === 'ok' ? state.data.asOf : null}
       capped={page?.hasMore ?? false}
       emptyKey="attention.discrepancy.empty"
@@ -400,7 +480,7 @@ export function CountDiscrepancyCard({
         ]}
       >
         {(page?.items ?? []).map((row) => (
-          <tr key={row.lineId} className="border-t border-border-subtle">
+          <TableRow key={row.lineId}>
             <Cell>
               <Link href={attentionLink(locale, 'discrepancy')} className={LINK}>
                 {t('attention.discrepancy.openCount')}
@@ -436,7 +516,7 @@ export function CountDiscrepancyCard({
                 ? t('attention.discrepancy.noAdjustment')
                 : t(`inventory.adjustmentStatus.${row.adjustmentStatus}`)}
             </Cell>
-          </tr>
+          </TableRow>
         ))}
       </Rows>
     </AttentionCard>
@@ -490,6 +570,7 @@ export function UnusualConsumptionCard({
       titleKey="attention.consumption.title"
       ruleText={ruleText}
       state={state}
+      onRetry={state.retry}
       asOf={state.phase === 'ok' ? state.data.asOf : null}
       capped={page?.hasMore ?? false}
       emptyKey="attention.consumption.empty"
@@ -505,7 +586,7 @@ export function UnusualConsumptionCard({
         ]}
       >
         {(page?.items ?? []).map((row) => (
-          <tr key={row.itemId} className="border-t border-border-subtle">
+          <TableRow key={row.itemId}>
             <Cell>
               <Link href={attentionLink(locale, 'consumption')} className={LINK}>
                 {row.itemName}
@@ -530,7 +611,7 @@ export function UnusualConsumptionCard({
                 })}
               </span>
             </Cell>
-          </tr>
+          </TableRow>
         ))}
       </Rows>
     </AttentionCard>
@@ -581,6 +662,7 @@ export function AgedInTransitCard({
       titleKey="attention.inTransit.title"
       ruleText={ruleText}
       state={state}
+      onRetry={state.retry}
       asOf={state.phase === 'ok' ? state.data.asOf : null}
       capped={page?.hasMore ?? false}
       emptyKey="attention.inTransit.empty"
@@ -596,7 +678,7 @@ export function AgedInTransitCard({
         ]}
       >
         {(page?.items ?? []).map((row) => (
-          <tr key={row.transferId} className="border-t border-border-subtle">
+          <TableRow key={row.transferId}>
             <Cell>
               <Link href={attentionLink(locale, 'inTransit')} className={LINK}>
                 {row.itemName}
@@ -633,7 +715,7 @@ export function AgedInTransitCard({
                 {row.fromLocationCode} → {row.toLocationCode}
               </span>
             </Cell>
-          </tr>
+          </TableRow>
         ))}
       </Rows>
     </AttentionCard>
@@ -693,6 +775,7 @@ export function CapacityCard({
       titleKey="attention.capacity.title"
       ruleText={t('attention.capacity.rule')}
       state={state}
+      onRetry={state.retry}
       asOf={data?.asOf ?? null}
       capped={false}
       emptyKey="attention.capacity.empty"

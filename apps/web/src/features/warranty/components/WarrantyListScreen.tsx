@@ -2,11 +2,15 @@
 
 import Link from 'next/link';
 import { useCallback, useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
 
-import { DataTable, type Column } from '@/components/data-table/DataTable';
-import { SearchBox } from '@/components/search/SearchBox';
-import { SearchStates } from '@/components/search/SearchStates';
-import { SessionExpiredState } from '@/components/states/States';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
+import { FilterToolbar } from '@/components/filters/FilterToolbar';
+import {
+  MuiEmptyState,
+  MuiSearchStates,
+  type NoResultsReason,
+} from '@/components/states/MuiStates';
 import {
   RequiresConcreteBranch,
   WorkingBranchField,
@@ -27,14 +31,7 @@ import {
   type WarrantyListCriteria,
   type WarrantyListRow,
 } from '../warranty-contract';
-import {
-  CustomerWords,
-  Distance,
-  SECONDARY_BUTTON,
-  Section,
-  VehicleWords,
-  WarrantyStatusLabel,
-} from './shared';
+import { CustomerWords, Distance, Section, VehicleWords, WarrantyStatusLabel } from './shared';
 
 /**
  * A branch's warranty records (P1-31, FE-008 entry point, FE-009 partial;
@@ -83,6 +80,15 @@ import {
  * and "this branch has issued none" stay two different sentences with two
  * different next steps.
  *
+ * ## On the shared Material wrappers (ADR-022)
+ *
+ * The box is `FilterToolbar`'s search, the rows are `OperationalGrid` over the
+ * same `useSearchRequest(...).table` (server mode, no count, the cursor footer),
+ * and every state other than an answer is `MuiSearchStates` — or `MuiEmptyState`
+ * for a read with nothing narrowing it. Nothing about how the list reads changed:
+ * the same criteria, the same read, the same working-context version key, so a
+ * branch switch still drops a late answer for the branch left.
+ *
  * ## The end of the set is the server's to declare
  *
  * `hasMore` and `nextCursor` come from the response; nothing here infers the end
@@ -99,11 +105,18 @@ export function WarrantyListScreen({
   locale,
   messages,
   initialVehicleId,
+  searchesCustomers = true,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   /** From the address, when the screen was reached from a vehicle. Filters on arrival. */
   readonly initialVehicleId: string | null;
+  /**
+   * Whether the server matches the box against a customer's name and phone for
+   * this account (`crm.customer.read`). Without it an empty search says it was
+   * matched on fewer details rather than that nothing exists.
+   */
+  readonly searchesCustomers?: boolean;
 }) {
   const context = useWorkingContext();
   const branch = useBranchTarget();
@@ -167,6 +180,8 @@ export function WarrantyListScreen({
     criteria: asked,
     load,
     version: context.version,
+    // A read with no term and no vehicle is the branch as it is (G10).
+    narrows: (criteria) => Object.keys(criteria.filters).length > 0,
   });
 
   const clearFilters = () => {
@@ -174,11 +189,17 @@ export function WarrantyListScreen({
     setTerm('');
   };
 
-  const columns = useMemo<readonly Column<WarrantyListRow>[]>(
+  const blocked =
+    branch.kind === 'unchosen' || branch.kind === 'none' || branch.kind === 'unavailable';
+  const spansCompanies = branch.kind === 'all' && scope === null;
+  const spansBranches = branch.kind === 'all';
+
+  const columns = useMemo<readonly OperationalColumn<WarrantyListRow>[]>(
     () => [
       {
         id: 'policy',
         headerKey: 'warranty.list.columnPolicy',
+        flex: 1.4,
         cell: (row) => (
           <Link
             href={`/${locale}/warranty/${row.id}`}
@@ -193,13 +214,20 @@ export function WarrantyListScreen({
         headerKey: 'warranty.list.columnStatus',
         cell: (row) => <WarrantyStatusLabel messages={messages} status={row.status} />,
       },
-      {
-        id: 'branch',
-        headerKey: 'warranty.list.columnBranch',
-        // Rendered only while the list spans branches. The name, never the
-        // identifier: a reference here would be a second thing to look up.
-        cell: (row) => <bdi>{context.branchName(row.branchId) ?? ''}</bdi>,
-      },
+      /*
+       * Passed only while the list spans branches (G7): under one branch the
+       * column would repeat the header's own answer on every row. The name, never
+       * the identifier: a reference here would be a second thing to look up.
+       */
+      ...(spansBranches
+        ? [
+            {
+              id: 'branch',
+              headerKey: 'warranty.list.columnBranch',
+              cell: (row: WarrantyListRow) => <bdi>{context.branchName(row.branchId) ?? ''}</bdi>,
+            },
+          ]
+        : []),
       {
         id: 'start',
         headerKey: 'warranty.list.columnStart',
@@ -233,13 +261,19 @@ export function WarrantyListScreen({
         ),
       },
     ],
-    [context, locale, messages]
+    [context, locale, messages, spansBranches]
   );
 
-  const blocked =
-    branch.kind === 'unchosen' || branch.kind === 'none' || branch.kind === 'unavailable';
-  const spansCompanies = branch.kind === 'all' && scope === null;
-  const spansBranches = branch.kind === 'all';
+  /*
+   * What an empty answer says narrowed it (S5): the term — for an account the
+   * server does not match on a customer's name or phone, said as such — or the
+   * one-vehicle filter that arrived with the address.
+   */
+  const emptyReason: NoResultsReason = termIsSearchable
+    ? searchesCustomers
+      ? 'search'
+      : 'searchLimited'
+    : 'filters';
 
   return (
     <div className="flex flex-col gap-6">
@@ -265,32 +299,43 @@ export function WarrantyListScreen({
         messages={messages}
         description={translate(messages, 'warranty.filter.explain')}
       >
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="flex flex-col gap-3">
           {/*
             The branch is STATED, not asked. A second editable control here would
             be a second authority for the same fact.
           */}
-          <WorkingBranchField
-            messages={messages}
-            testId="warranty-branch-target"
-            acceptsAllBranches
-          />
-          <div className="sm:col-span-2">
-            <SearchBox
+          <div className="max-w-md">
+            <WorkingBranchField
               messages={messages}
-              label={translate(messages, 'warranty.filter.searchLabel')}
-              placeholder={translate(messages, 'warranty.filter.searchPlaceholder')}
-              example={translate(messages, 'warranty.filter.searchExample')}
-              value={term}
-              onChange={setTerm}
-              onSubmit={search.submit}
-              busy={search.phase === 'loading'}
-              maxLength={MAX_WARRANTY_SEARCH}
-              {...(termTooShort
-                ? { error: translate(messages, 'warranty.filter.searchTooShort') }
-                : {})}
+              testId="warranty-branch-target"
+              acceptsAllBranches
             />
           </div>
+          {/*
+            The one box, on the shared toolbar (T1): the term goes to the server
+            as typed — Arabic-Indic digits included, which the server folds, and
+            which the echo under the box shows as Latin — the read hook's pause
+            and Enter decide when, Escape clears, and nothing reaches the address.
+          */}
+          <FilterToolbar
+            messages={messages}
+            label={translate(messages, 'warranty.filter.heading')}
+            testId="warranty-list-toolbar"
+            search={{
+              label: translate(messages, 'warranty.filter.searchLabel'),
+              placeholder: translate(messages, 'warranty.filter.searchPlaceholder'),
+              example: translate(messages, 'warranty.filter.searchExample'),
+              value: term,
+              onChange: setTerm,
+              onSubmit: search.submit,
+              busy: search.phase === 'loading',
+              maxLength: MAX_WARRANTY_SEARCH,
+              error: termTooShort
+                ? translate(messages, 'warranty.filter.searchTooShort')
+                : undefined,
+              echoDigits: true,
+            }}
+          />
         </div>
 
         {vehicleId === null ? null : (
@@ -302,9 +347,14 @@ export function WarrantyListScreen({
             className="mt-3 flex flex-wrap items-center gap-3 rounded-md bg-surface-subtle px-3 py-2 text-supporting text-text-secondary"
           >
             {translate(messages, 'warranty.filter.oneVehicleOnly')}
-            <button type="button" className={SECONDARY_BUTTON} onClick={() => setVehicleId(null)}>
+            <Button
+              type="button"
+              variant="outlined"
+              size="small"
+              onClick={() => setVehicleId(null)}
+            >
               {translate(messages, 'warranty.filter.showAllVehicles')}
-            </button>
+            </Button>
           </p>
         )}
       </Section>
@@ -326,60 +376,49 @@ export function WarrantyListScreen({
           messages={messages}
         >
           {/*
-            An ended session, said as itself. `SearchPhase` collapses it into
-            `failed` and `SearchStates` renders that arm with a Try again control
-            — a button that cannot work for somebody whose session has ended. The
-            finer `table.status` still distinguishes the two. A shared `expired`
-            arm would be the better home for this; `components/search` is owned
-            elsewhere and is left untouched.
+            Every state other than an answer, on the shared Material states: an
+            ended session is said as itself with the way back to signing in and no
+            retry; an outage (a throttled or unanswered read included) or a fault
+            offers Try again; a refusal is never drawn as an empty branch; and an
+            empty answer names what narrowed it.
           */}
-          {search.table.status === 'expired' ? (
-            <SessionExpiredState messages={messages} />
+          {search.phase === 'empty' && search.table.narrowed !== true ? (
+            // Nothing typed and no vehicle named: the branch as it is. An empty
+            // answer there is "nothing here yet", never "no matches" (G10).
+            <MuiEmptyState messages={messages} />
           ) : (
-            <SearchStates
+            <MuiSearchStates
               messages={messages}
+              locale={locale}
               phase={search.phase}
               correlationId={search.correlationId}
-              {...(search.phase === 'empty' && (termIsSearchable || vehicleId !== null)
-                ? {
-                    onClearFilters: (
-                      <button type="button" className={SECONDARY_BUTTON} onClick={clearFilters}>
-                        {translate(messages, 'warranty.filter.clearFilters')}
-                      </button>
-                    ),
-                  }
-                : {})}
-              {...(search.phase === 'unavailable' || search.phase === 'failed'
-                ? {
-                    retry: (
-                      <button type="button" className={SECONDARY_BUTTON} onClick={search.submit}>
-                        {translate(messages, 'state.retry')}
-                      </button>
-                    ),
-                  }
-                : {})}
+              emptyReason={emptyReason}
+              onRetry={search.submit}
+              onClearFilters={
+                search.phase === 'empty' && (termIsSearchable || vehicleId !== null) ? (
+                  <Button type="button" variant="outlined" size="small" onClick={clearFilters}>
+                    {translate(messages, 'warranty.filter.clearFilters')}
+                  </Button>
+                ) : undefined
+              }
             />
           )}
 
           {search.phase === 'ready' ? (
-            <DataTable<WarrantyListRow>
+            <OperationalGrid<WarrantyListRow>
               messages={messages}
+              locale={locale}
+              label={translate(messages, 'warranty.list.tableCaption')}
               columns={columns}
               rowId={(row) => row.id}
-              request={search.table.request}
-              response={search.table.response}
-              status={search.table.status}
-              onRequestChange={search.table.setRequest}
-              onRetry={search.table.refresh}
-              correlationId={search.table.correlationId}
-              caption={translate(messages, 'warranty.list.tableCaption')}
-              hiddenColumnIds={spansBranches ? [] : ['branch']}
+              table={search.table}
               /*
-               * The filters live outside `TableRequest`, so the table's own
-               * empty state would claim something about the whole branch on the
-               * evidence of one filter. `SearchStates` says it instead.
+               * The filters live outside `TableRequest`, so the grid's own empty
+               * state would claim something about the whole branch on the
+               * evidence of one filter. `MuiSearchStates` says it instead.
                */
               suppressEmptyState
+              testId="warranty-list-grid"
             />
           ) : null}
         </Section>

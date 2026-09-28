@@ -64,6 +64,9 @@ async function countPrintCalls(page: Page): Promise<void> {
   });
 }
 
+/** The shape of an internal identifier, which no panel of the handover may print. */
+const UUID_SHAPE = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
+
 /** A catalogue string used inside a pattern, with its own characters kept literal. */
 function escapeForRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -286,7 +289,9 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     await expect(page.getByText(say(locale, 'delivery.queue.orderingNote'))).toBeVisible();
     await expect(page.getByText(say(locale, 'delivery.queue.reasonsExplain'))).toBeVisible();
 
-    const table = page.getByRole('table', { name: say(locale, 'delivery.queue.caption') });
+    // The queue is the operational grid (MUI X, ADR-022): one grid named by its caption,
+    // its headers column headers, its data rows the rows that carry a row index.
+    const table = page.getByRole('grid', { name: say(locale, 'delivery.queue.caption') });
     await expect(table).toBeVisible();
 
     // Every column the four facts are reported through is on the table, so a row can be
@@ -311,7 +316,7 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     // The harness left a second handover open, so the queue is not empty. Every row must
     // carry a verdict: "Ready", or a sentence saying it is not and why. A BLANK verdict is
     // the defect this asserts against — the cell is the whole point of the screen.
-    const rows = table.locator('tbody tr');
+    const rows = table.locator('[role="row"][data-rowindex]');
     const count = await rows.count();
     expect(
       count,
@@ -379,6 +384,15 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     // The receiver the harness verified is on file, so the "no receiver recorded"
     // statement must not be in the panel that would otherwise carry it.
     await expect(receiver).not.toContainText(say(locale, 'delivery.receiver.noneDescription'));
+    // The people are named, never printed as identifiers (Owner directive, DEF-R2): the
+    // receiver, the person who confirmed them, and whoever recorded each move.
+    await expect(receiver).toContainText(say(locale, 'delivery.receiver.partner'));
+    await expect(receiver).toContainText(say(locale, 'delivery.receiver.verifiedBy'));
+    await expect(receiver).not.toContainText(UUID_SHAPE);
+    const history = page.locator('section[aria-labelledby="delivery-history-heading"]');
+    await expect(history).toContainText(say(locale, 'delivery.history.actor'));
+    await expect(history).not.toContainText(UUID_SHAPE);
+    await expect(summary).not.toContainText(UUID_SHAPE);
   });
 
   test('the printable copy is produced and prints exactly once', async ({ page }, testInfo) => {
@@ -573,7 +587,9 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
       'the receiver was verified with a document, so proof of identity must be on file'
     ).toBeVisible();
     await expect(panel.getByText(say(locale, 'delivery.receiver.noneTitle'))).toHaveCount(0);
-    await expect(panel).toContainText(handover.customerId);
+    // The receiver is named, never printed as an identifier (Owner directive, DEF-R2).
+    await expect(panel).toContainText(handover.receiverDisplayName);
+    await expect(panel).not.toContainText(UUID_SHAPE);
     await expect(panel.getByText(say(locale, 'delivery.receiver.refused'))).toHaveCount(0);
 
     // RE-READ: a fresh page composed from the server.
@@ -581,6 +597,7 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     const reread = receiverPanel(page);
     await expect(reread.getByText(say(locale, 'delivery.receiver.evidenceOnFile'))).toBeVisible();
     await expect(reread.getByText(say(locale, 'delivery.receiver.noneTitle'))).toHaveCount(0);
-    await expect(reread).toContainText(handover.customerId);
+    await expect(reread).toContainText(handover.receiverDisplayName);
+    await expect(reread).not.toContainText(UUID_SHAPE);
   });
 });

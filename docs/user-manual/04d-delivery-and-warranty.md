@@ -225,11 +225,15 @@ panel instead of taking the screen down.
 **Handover summary** <!-- delivery.summary.heading --> shows **Stage** <!-- delivery.summary.status -->
 , **Handed over on** <!-- delivery.summary.deliveredAt --> (or <!-- delivery.summary.notDeliveredYet -->
 "Not handed over yet"), the link <!-- delivery.summary.workOrderLink --> **Open the work order**,
-and four labelled references: **Vehicle reference**, **Visit reference**, **Employee handing over,
-reference** and **Final odometer reading**. Beneath them the screen states: "These are internal
-references. The system holds no names for them, so each reference is shown exactly as it is stored." <!-- delivery.summary.identifiersExplain -->
-For a handover started through the selector in 4D.1 the delivering employee is shown by name; older
-records show a bare reference.
+**Vehicle** <!-- delivery.summary.vehicleName --> — the plate, or the make and model — when the
+work order can be read for you (without it there is no vehicle row, and the work-order link still
+leads to the vehicle), **Employee handing over** <!-- delivery.summary.deliveringEmployee --> by
+name, and **Final odometer reading** <!-- delivery.summary.finalOdometer --> as its value. When the
+system holds no name for the delivering employee — for example on a handover recorded before the
+employee list existed — the screen says "Name not shown" <!-- delivery.person.notShown --> . When a
+reading was captured but cannot be shown to you it says "A reading was captured. It is not shown to
+you here." <!-- delivery.summary.finalOdometerNotShown --> , and when none has been captured "Not
+recorded yet" <!-- delivery.summary.finalOdometerNone --> . No internal reference is printed.
 
 **The stages** are **Ready**, **Receiver confirmed**, **Signed**, **Handed over** and **Problem
 raised** <!-- delivery.status.ready / .receiverVerified / .signed / .delivered / .exception --> .
@@ -333,8 +337,9 @@ proof of identity document." <!-- delivery.receiver.evidenceNotPermitted -->
    "Confirming the receiver…"
 
 **Result** — <!-- delivery.receiver.verified --> "The person receiving the vehicle has been
-confirmed." The panel then shows **Person receiving, reference** <!-- delivery.receiver.partner -->
-, **Confirmed by, employee reference** <!-- delivery.receiver.verifiedBy --> , **Confirmed on** <!-- delivery.receiver.verifiedAt -->
+confirmed." The panel then shows **Person receiving** <!-- delivery.receiver.partner --> and
+**Confirmed by** <!-- delivery.receiver.verifiedBy --> , each by name or as "Name not shown" when the
+name cannot be shown to you, **Confirmed on** <!-- delivery.receiver.verifiedAt -->
 and one of two sentences about the document: "Proof of identity is on file. It is not shown here." <!-- delivery.receiver.evidenceOnFile -->
 or "No proof of identity is on file." <!-- delivery.receiver.evidenceAbsent -->
 
@@ -343,9 +348,9 @@ or "No proof of identity is on file." <!-- delivery.receiver.evidenceAbsent -->
 - The receiver must already be recorded on the reception visit as someone allowed to collect the
   vehicle, and that permission must still be valid today. The screen asserts nothing; the platform
   decides and the refusal is the platform's answer.
-- The receiver and the confirming employee are shown as references. The product resolves no names
-  for them, and the stored identity document is never displayed, never linked and cannot be opened
-  from this screen.
+- The receiver and the confirming employee appear by name, or as "Name not shown" <!-- delivery.person.notShown -->
+  when the name cannot be shown to you. The stored identity document is never displayed, never
+  linked and cannot be opened from this screen.
 - One receiver per handover. Once confirmed, the form is gone.
 
 **If it goes wrong**
@@ -614,7 +619,7 @@ at this point and not before.
 
 Panel <!-- delivery.history.heading --> **History** lists the stage changes with <!-- delivery.history.started -->
 **Started at**, <!-- delivery.history.movedFrom --> **Moved from** … <!-- delivery.history.movedTo -->
-**to**, and <!-- delivery.history.actor --> **Recorded by, employee reference**. <!-- delivery.action.loadMore -->
+**to**, and <!-- delivery.history.actor --> **Recorded by** — a name, or "Name not shown". <!-- delivery.action.loadMore -->
 **Show more** pages it. When there is nothing yet: <!-- delivery.history.noneTitle --> "No history
 yet" / <!-- delivery.history.noneDescription --> "No stage change has been recorded for this
 handover."
@@ -643,7 +648,7 @@ allowed to read.
 **Release checks**, <!-- delivery.document.checklistCaption --> **Checklist results** (columns
 **Item code**, **Item**, **Result**, **Reason for waiving**), <!-- delivery.document.signaturesCaption -->
 **Signatures** (**Signed by**, **Signed on**, **Signature image**) and <!-- delivery.document.historyCaption -->
-**Stage history** (**From**, **To**, **When**, **Recorded by, employee reference**).
+**Stage history** (**From**, **To**, **When**, **Recorded by** — a name, or "Name not shown").
 
 **Restrictions**
 
@@ -653,8 +658,8 @@ allowed to read.
   created; nothing is filed.
 - **No PDF is generated.** Printing is the browser's own print, and a PDF only exists if your
   browser makes one.
-- Without `wo.work_order.read`: "The work order, the customer and the vehicle are shown as
-  references only, because you do not have permission to read work orders." <!-- delivery.document.workOrderWithheld -->
+- Without `wo.work_order.read`: "The work order, the customer and the vehicle are left off this
+  printout, because you do not have permission to read work orders." <!-- delivery.document.workOrderWithheld -->
 - Without `sal.finance.view`: "The release checks are left off this printout, because you do not
   have permission to see financial information." <!-- delivery.document.financeWithheld -->
 - Signature images and the proof of identity are **named, never printed**. The sheet states <!-- delivery.document.identityEvidence -->
@@ -666,11 +671,11 @@ allowed to read.
 
 **If it goes wrong**
 
-| What you see                                                                                                                                                                      | What it means                                                                                           | What to do                                       |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
-| "This part could not be read, so it is not on this printout. If you need it, report this reference to support:" <!-- delivery.document.sectionRefused --> followed by a reference | One section could not be read. The sheet refuses to print an empty section as if nothing were recorded. | Quote the reference to support (Part 7).         |
-| "The work order could not be read, so the customer and vehicle details are not on this printout." <!-- delivery.document.workOrderRefused -->                                     | That one read failed.                                                                                   | Try again, or print the identifiers as they are. |
-| "No checklist result has been recorded for this handover." <!-- delivery.document.checklistNone -->                                                                               | Genuinely nothing recorded — this is different from a refusal, and worded differently on purpose.       | Nothing to do.                                   |
+| What you see                                                                                                                                                                      | What it means                                                                                           | What to do                                                     |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| "This part could not be read, so it is not on this printout. If you need it, report this reference to support:" <!-- delivery.document.sectionRefused --> followed by a reference | One section could not be read. The sheet refuses to print an empty section as if nothing were recorded. | Quote the reference to support (Part 7).                       |
+| "The work order could not be read, so the customer and vehicle details are not on this printout." <!-- delivery.document.workOrderRefused -->                                     | That one read failed.                                                                                   | Try again. If it happens again, report it to support (Part 7). |
+| "No checklist result has been recorded for this handover." <!-- delivery.document.checklistNone -->                                                                               | Genuinely nothing recorded — this is different from a refusal, and worded differently on purpose.       | Nothing to do.                                                 |
 
 **Screenshot** — no screenshot available at this version.
 
@@ -735,71 +740,82 @@ code and decides only whether you are offered a choice of plan.
 
 ## 4D.12 The warranty list
 
-**IMPLEMENTED (UI)** · single-branch
+**IMPLEMENTED (UI)** · your working branch, or all your branches in one company
 
 ### Workflow — Find a warranty
 
 **IMPLEMENTED (UI)**
 
-**Label** — <!-- warranty.list.title --> **Warranties** (Arabic: **الضمانات**). Description: "Every
-warranty issued by one branch, newest first. Choose a branch to see its warranties, and name a
-vehicle to see only that vehicle's." <!-- warranty.list.description -->
+**Label** — <!-- warranty.list.title --> **Warranties** (Arabic: **الضمانات**). The page description
+reads: "Every warranty issued by one branch, newest first. Choose a branch to see its warranties,
+and name a vehicle to see only that vehicle's." <!-- warranty.list.description --> The branch is not
+chosen on this page, however: the list follows the working branch at the top of the page.
 
-**Who** — `wty.warranty.read`, checked before anything is read. `org.branch.read` only decides
-whether you get a branch directory to pick from; without it you type the identifiers and reach
-exactly the same rows.
+**Who** — `wty.warranty.read`, checked before anything is read. Without it the page says "You do
+not have access" and reads nothing. Which branches you see is decided by your branch grants, and the
+server checks them again on every read.
 
 **Where** — sidebar <!-- nav.warranty --> **Warranties** (Arabic: **الضمانات**), address
 `/{language}/warranty`.
 
 **Steps**
 
-1. Under <!-- warranty.target.heading --> **Branch** the page explains: "A warranty belongs to one
-   branch. Name the branch to see its warranties; the server checks the choice on every read." <!-- warranty.target.explain -->
-2. Choose **Branch** <!-- warranty.common.branchField --> — **required** (placeholder <!-- warranty.common.branchPlaceholder -->
-   "Choose a branch"). If the directory cannot be read the page says "The branch list could not be
-   read, so the identifiers are typed instead." <!-- warranty.common.branchesRefused --> and offers
-   **Company identifier** <!-- warranty.common.companyIdField --> and **Branch identifier** <!-- warranty.common.branchIdField -->
-   with "Paste the identifier you were given." <!-- warranty.common.identifierHelp -->
-3. Press <!-- warranty.target.choose --> **Show this branch**. To move to another branch, use <!-- warranty.target.change -->
-   **Change branch**.
-4. Optionally narrow by vehicle: <!-- warranty.filter.heading --> **One vehicle** → **Vehicle
-   identifier** <!-- warranty.filter.vehicleField --> → <!-- warranty.filter.apply --> **Apply**.
+1. Open **Warranties**. The list reads straight away, for the branch you are working in. Under <!-- warranty.filter.heading -->
+   **Find a warranty** the page says: "The list opens on the branch you are working in. Search by
+   name, phone, plate, chassis number or job number to narrow it." <!-- warranty.filter.explain -->
+2. The **Working branch** is stated, not asked. When "All my branches" is chosen at the top of the
+   page, the list shows the warranties of every branch you may see in that company, and adds a
+   **Branch** column <!-- warranty.list.columnBranch --> that names each row's branch. To work
+   somewhere else, change your branch at the top of the page.
+3. Optionally type in <!-- warranty.filter.searchLabel --> **Search this list** (placeholder <!-- warranty.filter.searchPlaceholder -->
+   "Name, phone, plate, chassis number or job number"). The search runs on the server, a moment
+   after you stop typing or when you press Enter; Escape clears the box. Digits typed on an Arabic
+   keyboard are accepted, and a line under the box repeats them in Latin digits. <!-- warranty.filter.searchExample -->
+   One character is not enough: "Type at least two characters to search." <!-- warranty.filter.searchTooShort -->
 
 **Result** — the table <!-- warranty.list.tableCaption --> "Warranties issued by the chosen branch"
 under the heading <!-- warranty.list.heading --> **Warranties in this branch**, newest first, with
 **Warranty plan**, **State**, **Cover starts**, **Cover ends**, **Odometer reading at which cover
-ends** and **Vehicle reference** <!-- warranty.list.columnPolicy … .columnVehicle --> . <!-- warranty.list.loadMore -->
-**Show more** pages it. The link <!-- warranty.list.openPolicies --> **Open the warranty plans**
-takes you to plan administration (4D.14) — there is no sidebar entry for it.
+ends**, **Vehicle** and **Customer** <!-- warranty.list.columnPolicy … .columnCustomer --> . The
+vehicle is named by its plate and its make and model, and the customer by name; when either cannot
+be shown, the cell says so in words and never prints an internal reference. The plan name opens the
+warranty (4D.13). **Next page** and **Previous page** under the table move through the list one page
+at a time; no total is shown. The link <!-- warranty.list.openPolicies --> **Open the warranty
+plans** takes you to plan administration (4D.14) — there is no sidebar entry for it.
 
 **Restrictions**
 
-- Nothing is read until you name a branch: "Choose a branch above. A warranty belongs to one branch,
-  so nothing is read until you name one." <!-- warranty.list.chooseBranchFirst -->
-- Vehicle is the **only** filter: "Naming a vehicle shows the warranties issued for it, newest
-  first. It is the only way to narrow this list, because it is the only choice the system offers." <!-- warranty.filter.explain -->
-- The vehicle is named by identifier, not by plate.
+- If you arrive from a vehicle, the list shows only that vehicle's warranties and says so: "Showing
+  the warranties of one vehicle only." <!-- warranty.filter.oneVehicleOnly --> **Show every
+  vehicle** <!-- warranty.filter.showAllVehicles --> lifts it.
+- If your branches belong to more than one company, "All my branches" cannot be listed together:
+  "Your branches belong to more than one company. Choose a single branch at the top of the page to
+  see this list." <!-- workingContext.spansCompanies -->
+- Without `crm.customer.read` the search cannot match customer names or phone numbers; plates,
+  chassis numbers and job numbers still match.
 
 **If it goes wrong**
 
-| What you see                                                                                                                                     | What it means                                                            | What to do                                  |
-| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------ | ------------------------------------------- |
-| "No warranties here" / "This branch has issued no warranty that matches what you asked for." <!-- warranty.list.noneTitle / .noneDescription --> | Genuinely none in that branch, or your vehicle filter excludes them all. | Clear the vehicle filter, or change branch. |
-| "You do not have access" <!-- state.denied.title -->                                                                                             | `wty.warranty.read` is missing; the page refuses before it reads.        | Ask an administrator.                       |
-| "Enter the identifier exactly as it was given." <!-- warranty.common.idFormat -->                                                                | A malformed identifier in the typed fallback.                            | Paste it again.                             |
+| What you see                                                                                                                                 | What it means                                                                    | What to do                                                                          |
+| -------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| "Nothing here yet" / "Once records exist they will be listed here." <!-- state.empty.title / .description -->                                | Nothing is searched or filtered, and the branch has issued no warranty yet.      | Nothing to do.                                                                      |
+| "No matches for this search" <!-- state.noSearchMatches.title -->, or "No matches" <!-- state.noResults.title --> for the one-vehicle filter | Your search or the vehicle filter excludes every warranty.                       | Press <!-- warranty.filter.clearFilters --> **Clear the filters**, or search again. |
+| "No matches among what you may search" <!-- state.noSearchMatchesLimited.title -->                                                           | Nothing matched, and your account cannot search customer names or phone numbers. | Try a plate, a chassis number or a job number.                                      |
+| "Service unavailable" <!-- state.unavailable.title --> or "Something went wrong" <!-- state.error.title -->                                  | The list could not be read this time. It is not shown as an empty list.          | Press **Try again**. If it happens again, report the reference shown (Part 7).      |
+| "You do not have access" <!-- state.denied.title -->                                                                                         | `wty.warranty.read` is missing; the page refuses before it reads.                | Ask an administrator.                                                               |
 
-**Screenshot** — `images/warranty-list-en.png` (before a branch is chosen) and
-`images/warranty-list-en-answered.png` (answered). Right-to-left: `images/warranty-list-ar.png` and
-`images/warranty-list-ar-answered.png`.
+**Screenshot** — `images/warranty-list-en.png`, `images/warranty-list-en-answered.png`, and
+right-to-left `images/warranty-list-ar.png` and `images/warranty-list-ar-answered.png`. These images
+were taken before this screen moved to its current layout and may still show the earlier branch
+step; they are kept until they are retaken.
 
 ![Warranty list, English](images/warranty-list-en.png)
 
-![Warranty list, English, after the branch is answered](images/warranty-list-en-answered.png)
+![Warranty list, English, answered](images/warranty-list-en-answered.png)
 
 ![Warranty list, Arabic](images/warranty-list-ar.png)
 
-![Warranty list, Arabic, after the branch is answered](images/warranty-list-ar-answered.png)
+![Warranty list, Arabic, answered](images/warranty-list-ar-answered.png)
 
 ---
 
@@ -819,7 +835,7 @@ takes you to plan administration (4D.14) — there is no sidebar entry for it.
 - <!-- warranty.summary.heading --> **Warranty summary** — **State** <!-- warranty.summary.status -->
   , **Cover starts**, **Cover ends**, **Odometer reading when issued** <!-- warranty.summary.odometerAtIssue -->
   , **Odometer reading at which cover ends** <!-- warranty.summary.odometerLimit --> (or <!-- warranty.summary.noDistanceLimit -->
-  "No distance limit"), **Vehicle reference**, and the links <!-- warranty.summary.workOrderLink -->
+  "No distance limit"), **Vehicle** <!-- warranty.summary.vehicle --> in words, and the links <!-- warranty.summary.workOrderLink -->
   **Open the work order** and <!-- warranty.summary.deliveryLink --> **Open the vehicle handover**.
 - <!-- warranty.policy.heading --> **Warranty plan** — **Plan**, **Plan reference**, **Plan state**,
   with "The plan this warranty was issued under. Plans are set up by the workshop and are never
@@ -831,13 +847,12 @@ takes you to plan administration (4D.14) — there is no sidebar entry for it.
   was handed over. Every one of them is set up by the workshop, and this screen fills in none of
   them." <!-- warranty.coverage.explain -->
 - <!-- warranty.items.heading --> **What this warranty covers** — the jobs and parts recorded
-  against it, by <!-- warranty.items.sourceJob --> **Job reference** and <!-- warranty.items.sourcePart -->
-  **Part reference**; kinds are <!-- warranty.itemKind.service --> **Job** and <!-- warranty.itemKind.part -->
-  **Part**. If nothing was recorded: <!-- warranty.items.none --> "Nothing was recorded against this
+  against it, each by its kind and description; kinds are <!-- warranty.itemKind.service --> **Job**
+  and <!-- warranty.itemKind.part --> **Part**. No internal reference is printed. If nothing was recorded: <!-- warranty.items.none --> "Nothing was recorded against this
   warranty."
 - <!-- warranty.history.heading --> **History** — every change of state, newest first, with **Issued
-  as** <!-- warranty.history.origin --> , **Moved from** … **to**, and **Recorded by, employee
-  reference**. Empty: <!-- warranty.history.noneTitle --> "No history yet" / <!-- warranty.history.noneDescription -->
+  as** <!-- warranty.history.origin --> , **Moved from** … **to**, and **Recorded by** <!-- warranty.history.actor -->
+  — a name, or "Name not shown" <!-- warranty.history.actorNotShown --> . Empty: <!-- warranty.history.noneTitle --> "No history yet" / <!-- warranty.history.noneDescription -->
   "No change of state has been recorded for this warranty." The panel notes "The workshop keeps this
   record; nothing on this screen adds to it." <!-- warranty.history.explain -->
 
@@ -857,8 +872,9 @@ and <!-- warranty.status.claimedAgainst --> **Claimed against**.
   so none is shown and none is invented.
 - **Cover terms are shown as scopes**: <!-- warranty.coveredScope.all --> **Jobs and parts**, <!-- warranty.coveredScope.service -->
   **Jobs only**, <!-- warranty.coveredScope.part --> **Parts only**.
-- A reference is a reference: "This is an internal reference. The system holds no name for it, so it
-  is shown exactly as it is stored." <!-- warranty.summary.identifiersExplain -->
+- **Names, not references.** The vehicle, the customer and each person on the history appear in
+  words; where a name cannot be shown to you the screen says so in words instead of printing an
+  internal reference.
 
 ### Warranty claims
 
@@ -1053,8 +1069,9 @@ rather than assuming a conflict.
 1. **The readiness queue needs three permissions, including the financial one.** An operator without
    `sal.finance.view` is refused the whole queue and no reduced view exists. The remedy is an
    administrator granting the code.
-2. **Single branch, always.** The readiness queue and the warranty list both read one branch at a
-   time and open on a "choose a branch" state. There is no view across the company.
+2. **One branch, or one company's branches.** The readiness queue reads one branch at a time and
+   opens on a "choose a branch" state. The warranty list reads your working branch, or all your
+   branches in one company (4D.12). Neither shows a view across companies.
 3. **No company, branch, department or employee screen exists.** The people who may hand a vehicle
    over come from a register maintained outside the interface.
 4. **The delivery checklist template has no administration screen** (backlog **P1-31-FU-001**). A
@@ -1065,10 +1082,11 @@ rather than assuming a conflict.
 6. **There is no warranty claims surface at all**, and no money on any warranty screen.
 7. **The printable handover sheet is not an archive.** It says so on the paper. No document version
    is stored and no PDF is generated.
-8. **References are references.** The vehicle, the visit, the receiver, the confirming employee and
-   the covered jobs and parts are shown as stored identifiers, because the product holds no names
-   for them. The delivering employee is the one exception, and only on handovers started through the
-   current selector.
+8. **People are named and internal identifiers are not printed.** The receiver, the confirming
+   employee and the employee handing over appear by name, or as "Name not shown" <!-- delivery.person.notShown -->
+   when the name cannot be shown to you. The vehicle and the reception visit are not printed as
+   identifiers, and the warranty record does not show the identifiers of the jobs and parts it
+   covers.
 9. **The product name, logo and colours are provisional** — the interface renders the placeholder
    **CRM** with the banner **Provisional appearance — final brand pending**.
 10. **Monitoring is local only.** If something on these screens fails, nothing is sent anywhere;

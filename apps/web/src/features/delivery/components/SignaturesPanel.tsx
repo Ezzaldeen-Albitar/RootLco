@@ -1,9 +1,10 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { SelectField } from '@/components/forms/Field';
+import Button from '@mui/material/Button';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { EmptyState, FailureExplanation } from '@/components/states/States';
+import { FailureExplanation } from '@/components/states/States';
 import { CaptureFileField } from '@/features/receptions/components/CaptureFileField';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
@@ -18,7 +19,7 @@ import {
   type DeliverySignaturesEnvelope,
 } from '../delivery-contract';
 import { SignerRoleLabel } from './CodeLabel';
-import { PRIMARY_BUTTON, Panel, PanelFailure, PanelLoading, SECONDARY_BUTTON } from './PanelShell';
+import { Panel, PanelEmpty, PanelFailure, PanelLoading } from './PanelShell';
 import { usePagedList } from './use-paged-list';
 
 /**
@@ -131,9 +132,10 @@ export function SignaturesPanel({
           messages={messages}
           status={page.first.status}
           correlationId={page.first.correlationId}
+          onRetry={page.reload}
         />
       ) : page.rows.length === 0 ? (
-        <EmptyState
+        <PanelEmpty
           messages={messages}
           titleKey="delivery.signatures.noneTitle"
           descriptionKey="delivery.signatures.noneDescription"
@@ -166,14 +168,16 @@ export function SignaturesPanel({
             />
           )}
           {page.hasMore ? (
-            <button
+            <Button
               type="button"
-              className={`mt-3 ${SECONDARY_BUTTON}`}
+              variant="outlined"
+              size="small"
+              className="mt-3"
               disabled={page.loading}
               onClick={() => void page.loadMore()}
             >
               {translate(messages, 'delivery.action.loadMore')}
-            </button>
+            </Button>
           ) : null}
         </>
       )}
@@ -289,13 +293,13 @@ function CaptureForm({
       <p className="text-caption text-text-muted">
         {translate(messages, 'delivery.signatures.captureExplain')}
       </p>
-      <SelectField
+      <FormSelectField
         key={`signerRole-${String(attempt)}`}
         label={translate(messages, 'delivery.signatures.signerRole')}
         name="signerRole"
         required
-        defaultValue={role}
-        onChange={(event) => setRole(event.target.value)}
+        value={role}
+        onChange={setRole}
         options={SIGNER_ROLES.map((value) => ({
           value,
           label: translateDynamic(messages, SIGNER_ROLE_LABEL_KEYS[value] ?? value),
@@ -340,9 +344,9 @@ function CaptureForm({
         </div>
       )}
       <div>
-        <button type="submit" className={PRIMARY_BUTTON} disabled={pending}>
+        <Button type="submit" variant="contained" disabled={pending}>
           {translate(messages, 'delivery.signatures.captureSubmit')}
-        </button>
+        </Button>
       </div>
     </form>
   );

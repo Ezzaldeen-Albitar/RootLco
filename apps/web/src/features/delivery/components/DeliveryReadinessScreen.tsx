@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from 'react';
 import Link from 'next/link';
-import { DataTable, type Column } from '@/components/data-table/DataTable';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import {
@@ -11,7 +11,9 @@ import {
 } from '@/features/working-context/components/WorkingBranchField';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import { workOrderStateLabel } from '@/features/work-orders/work-orders-contract';
 import type { BranchTarget } from '@/lib/api/read-operation';
+import { MuiEmptyState } from '@/components/states/MuiStates';
 import { formatDate } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -74,12 +76,19 @@ import { MAX_READINESS_PAGE_SIZE, type DeliveryReadinessRow } from '../readiness
  * affordance rendered from a read this screen cannot enforce is how a dead
  * control gets in.
  *
- * ## `state` renders as its own code, deliberately
+ * ## `state` is said in words
  *
- * The work-order state catalogue is extensible by the workshop, so a translation
- * table keyed on a code the workshop owns would be a second, rotting copy of
- * their configuration and an unrecognised code would render as its own key. The
- * work-order board takes the same position for the same reason.
+ * The platform's own work-order states are said in the reader's language through
+ * `workOrderStateLabel`, the one function the work-order screens use. A state a
+ * workshop added is not in that vocabulary and this screen reads no catalogue, so
+ * it keeps the workshop's code rather than a guessed name.
+ *
+ * ## On the shared Material wrappers (ADR-022)
+ *
+ * The rows are `OperationalGrid` over the same `useServerTable` read: server
+ * mode, no count, the cursor footer, and the grid's own refused, unavailable
+ * (with a retry — a throttled or unanswered read included), ended-session and
+ * failed states. Nothing about how the queue reads changed.
  */
 
 interface Submitted {
@@ -158,7 +167,7 @@ function ReadinessResults({
     serverReads: 2,
   });
 
-  const columns = useMemo<readonly Column<DeliveryReadinessRow>[]>(
+  const columns = useMemo<readonly OperationalColumn<DeliveryReadinessRow>[]>(
     () => [
       {
         id: 'workOrder',
@@ -234,21 +243,23 @@ function ReadinessResults({
       {
         id: 'opened',
         headerKey: 'delivery.queue.column.opened',
+        hideBelow: 'md',
         cell: (row) => <bdi>{formatDate(row.workOrder.openedAt, locale)}</bdi>,
       },
       {
         id: 'state',
         headerKey: 'delivery.queue.column.state',
-        // The workshop's own catalogue code, rendered as a code. See the docblock.
+        // In words for the platform's states; a workshop's own keeps its code.
         cell: (row) => (
-          <code className="font-mono text-caption" dir="ltr">
-            {row.workOrder.state}
-          </code>
+          <bdi>
+            {workOrderStateLabel(row.workOrder.state, [], (key) => translateDynamic(messages, key))}
+          </bdi>
         ),
       },
       {
         id: 'readiness',
         headerKey: 'delivery.queue.column.readiness',
+        flex: 1.5,
         cell: (row) => <ReadinessCell messages={messages} row={row} />,
       },
       {
@@ -286,29 +297,29 @@ function ReadinessResults({
       <h2 id="delivery-readiness-heading" className="sr-only">
         {translate(messages, 'delivery.queue.resultsHeading')}
       </h2>
-      <DataTable<DeliveryReadinessRow>
+      <OperationalGrid<DeliveryReadinessRow>
         messages={messages}
+        locale={locale}
+        label={translate(messages, 'delivery.queue.caption')}
         columns={columns}
         rowId={(row) => row.workOrder.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'delivery.queue.caption')}
+        table={table}
         /*
          * The branch lives OUTSIDE `TableRequest` — it is an authorization
          * target, not a filter an operator applied — so `isNarrowed` is
-         * permanently false and the table's own empty state would make a claim
+         * permanently false and the grid's own empty state would make a claim
          * about the whole branch. The screen states the true sentence below.
          */
         suppressEmptyState
+        testId="delivery-queue-grid"
       />
-      {table.response && table.response.rows.length === 0 ? (
-        <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
-          {translate(messages, 'delivery.queue.noneMatching')}
-        </p>
+      {table.status === 'idle' && table.response && table.response.rows.length === 0 ? (
+        <MuiEmptyState
+          messages={messages}
+          titleKey="delivery.queue.noneTitle"
+          descriptionKey="delivery.queue.noneMatching"
+          testId="delivery-queue-empty"
+        />
       ) : null}
       {capped ? (
         <p className="px-2 text-caption text-text-secondary" lang={locale}>

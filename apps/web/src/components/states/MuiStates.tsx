@@ -44,6 +44,14 @@ interface StateProps {
   /** A further control the caller owns — "Clear all filters", "Add the first record". */
   readonly action?: ReactNode | undefined;
   readonly testId?: string | undefined;
+  /**
+   * The screen's own sentence under the shared heading, where the shared one would
+   * say less — "this could not be read, so nothing here describes your stock".
+   * Offered by the error, unavailable and refused states; the heading, the retry
+   * rule and the reference stay the shared ones, so one state is still never
+   * drawn as another. Unset, the shared sentence is said.
+   */
+  readonly descriptionKey?: keyof Messages | undefined;
 }
 
 function StateAlert({
@@ -91,14 +99,30 @@ function StateAlert({
   );
 }
 
-/** Nothing exists yet. Not "your filters excluded everything" — see `MuiNoResultsState`. */
-export function MuiEmptyState({ messages, action, testId }: StateProps) {
+/**
+ * Nothing exists yet. Not "your filters excluded everything" — see `MuiNoResultsState`.
+ *
+ * `titleKey` and `descriptionKey` let a panel say WHAT has not happened yet in its
+ * own catalogue words ("Nobody confirmed yet", "No history yet") — the sentence
+ * `EmptyState` in `States.tsx` takes the same two keys for. Unset, the shared
+ * "Nothing here yet" is said, exactly as before.
+ */
+export function MuiEmptyState({
+  messages,
+  action,
+  testId,
+  titleKey = 'state.empty.title',
+  descriptionKey = 'state.empty.description',
+}: StateProps & {
+  readonly titleKey?: keyof Messages;
+  readonly descriptionKey?: keyof Messages;
+}) {
   return (
     <StateAlert
       messages={messages}
       severity="info"
-      titleKey="state.empty.title"
-      descriptionKey="state.empty.description"
+      titleKey={titleKey}
+      descriptionKey={descriptionKey}
       action={action}
       testId={testId ?? 'state-empty'}
     />
@@ -203,13 +227,20 @@ export function MuiLoadingState({
 }
 
 /** A fault. Worth retrying, and the reference is worth reporting. */
-export function MuiErrorState({ messages, onRetry, correlationId, action, testId }: StateProps) {
+export function MuiErrorState({
+  messages,
+  onRetry,
+  correlationId,
+  action,
+  testId,
+  descriptionKey,
+}: StateProps) {
   return (
     <StateAlert
       messages={messages}
       severity="error"
       titleKey="state.error.title"
-      descriptionKey="state.error.description"
+      descriptionKey={descriptionKey ?? 'state.error.description'}
       onRetry={onRetry}
       correlationId={correlationId}
       action={action}
@@ -228,13 +259,14 @@ export function MuiUnavailableState({
   correlationId,
   action,
   testId,
+  descriptionKey,
 }: StateProps) {
   return (
     <StateAlert
       messages={messages}
       severity="error"
       titleKey="state.unavailable.title"
-      descriptionKey="state.unavailable.description"
+      descriptionKey={descriptionKey ?? 'state.unavailable.description'}
       onRetry={onRetry}
       correlationId={correlationId}
       action={action}
@@ -251,13 +283,14 @@ export function MuiRefusedState({
   messages,
   correlationId,
   testId,
+  descriptionKey,
 }: Omit<StateProps, 'onRetry' | 'action'>) {
   return (
     <StateAlert
       messages={messages}
       severity="warning"
       titleKey="state.denied.title"
-      descriptionKey="state.denied.description"
+      descriptionKey={descriptionKey ?? 'state.denied.description'}
       correlationId={correlationId}
       testId={testId ?? 'state-refused'}
     />
