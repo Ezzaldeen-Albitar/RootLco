@@ -2076,9 +2076,24 @@ drives these routes, so none was updated.
 
 Known limitations of this slice, one line each:
 
-- The catalogue search (`svc.service-list`, a starts-with match on code or name) does not fold
-  Arabic-Indic digits on the server; the term is sent as typed and echoed in Latin digits. Folding
-  both sides of that comparison is a backend change to the catalogue repository, not made here.
+- The catalogue search (`svc.service-list`, a starts-with match on code or name) now folds
+  Arabic-Indic and Eastern Arabic-Indic digits on the server, on both sides of the comparison
+  (`foldDigits` on the term, `shared.fold_digits` on each column), so the Latin echo under the box
+  is true (review round 2).
+- Review round 2 checked the round-1 blockers by falsification: restoring the mount-time draft
+  comparison failed two price-list tests, and an unarmed `AssignmentPanel` guard failed one.
+- Catalogue server pagination is not pinned by a test: no case serves a page with `hasMore`, so a
+  catalogue `load` that dropped its cursor would pass; a review probe showed "Next" sends it.
+- The service detail edit panel compares its fields untrimmed with values recomputed from the
+  `service` prop, so a whitespace-only save or a refresh carrying another user's edit still reads
+  as unsaved work (round-1 carry).
+- The pricing service picker (`EntityPicker`, `minLength` 1) lists no first page for an empty term
+  (round-1 carry).
+- No Playwright spec covers `/services` or `/pricing`, so no browser selector was affected or
+  exercised; B.S4 still needs a browser re-measure.
+- The category `TreePicker` has no height cap (layout only).
+- The tree is the Community `@mui/x-tree-view` over the real `parent_category_id` hierarchy; the
+  licence deny-list, manifests, lockfile, scripts and CI files are unchanged.
 - The catalogue and the price lists are still read through Server Actions, so a superseded read is
   ignored, not cancelled; moving them to `/reads/*` routes is its own change.
 - The price-list read has no search, filter or cursor, so that list has no toolbar; its bound of 100
@@ -2105,8 +2120,9 @@ Known limitations of this slice, one line each:
   captured for this part.
 - Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
   they run in hosted CI.
-- The web tier's test count changes (new cases in existing files; no test file was added or
-  removed); the recorded tiers are retaken at the final head.
+- The web tier's test count changes (new cases in existing files; no web test file was added or
+  removed); round 2 adds one root unit file, `tests/unit/p1-32-service-search-digits.test.ts`;
+  the recorded tiers are retaken at the final head.
 
 Residual items recorded at fix round 1 of PR #479, one line each:
 

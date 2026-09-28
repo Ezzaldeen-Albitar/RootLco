@@ -3941,7 +3941,7 @@
   "pricing.common.branchesUnavailable": "قائمة الفروع غير متاحة الآن. أعد المحاولة.",
   "pricing.common.classFormat": "استخدم حروفاً صغيرة وأرقاماً وشرطات سفلية، مع البدء بحرف.",
   "pricing.common.classHelp": "اختياري. حروف صغيرة وأرقام وشرطات سفلية.",
-  "pricing.common.dateFormat": "أدخل التاريخ بصيغة YYYY-MM-DD.",
+  "pricing.common.dateFormat": "أدخل التاريخ بالسنة والشهر واليوم.",
   "pricing.common.idFormat": "أدخل معرّفاً صالحاً.",
   "pricing.create.cancel": "إلغاء",
   "pricing.create.code": "الرمز",

@@ -952,6 +952,18 @@ describe('an assignment is recorded, and the absence of a read is said', () => {
       expect(to, locale).toHaveAccessibleDescription(
         new RegExp(escape(words['pricing.common.dateFormat'] as string))
       );
+      // The sentence asks for what the field takes: it names each part the
+      // field offers, and quotes no typed pattern the parts cannot accept.
+      const said = (words['pricing.common.dateFormat'] as string).toLocaleLowerCase(locale);
+      const parts = within(to)
+        .getAllByRole('spinbutton')
+        .map((part) => (part.getAttribute('aria-label') ?? '').toLocaleLowerCase(locale));
+      expect(parts, locale).toHaveLength(3);
+      for (const part of parts) {
+        expect(part, locale).not.toBe('');
+        expect(said, `${locale}: ${part}`).toContain(part);
+      }
+      expect(to, locale).not.toHaveAccessibleDescription(/YYYY|MM|DD/);
       // The cursor goes back into the end date, the one field to fix.
       await waitFor(() => expect(to.contains(document.activeElement), locale).toBe(true));
       expect(from, locale).not.toHaveAttribute('aria-invalid');

@@ -927,6 +927,58 @@ describe('edits, a typed draft and a held draft are unsaved work', () => {
       expect(screen.queryByText(EN['services.version.draftHeading'] as string)).toBeNull()
     );
   });
+
+  it('a draft created, published and refreshed is saved work: the switch does not ask', async () => {
+    createServiceVersion.mockResolvedValue({
+      state: success('services.version.created'),
+      created: {
+        id: 'v-held',
+        serviceId: SERVICE_ID,
+        versionNo: 2,
+        effectiveFrom: '2026-10-01',
+        effectiveTo: null,
+        status: 'draft',
+        laborTimes: [],
+      },
+    });
+    publishServiceVersion.mockResolvedValue(success('services.version.published'));
+    const user = userEvent.setup();
+    const tree = (svc: ReturnType<typeof service>) =>
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={SECOND_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            <ServiceDetailScreen
+              locale="en"
+              messages={en}
+              service={svc as never}
+              canManage
+              canReadBranches={false}
+            />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, SECOND_BRANCH]) }
+        )
+      );
+    const view = renderLtr(tree(service()));
+    await typeDay(user, 'services.version.effectiveFrom', '01102026');
+    await user.click(
+      screen.getByRole('button', { name: EN['services.version.createDraft'] as string })
+    );
+    expect(await screen.findByText(EN['services.version.draftHeading'] as string)).toBeVisible();
+    await user.click(
+      screen.getByRole('button', { name: EN['services.version.publish'] as string })
+    );
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    // The refresh brings the service back with its new version.
+    view.rerender(tree(service({ recordVersion: 4 })));
+    await waitFor(() =>
+      expect(screen.queryByText(EN['services.version.draftHeading'] as string)).toBeNull()
+    );
+    // The start date that became the published version is not unsaved work.
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(SECOND_BRANCH.id));
+  });
 });
 
 describe('the /services/[serviceId] route page renders the read as what it was', () => {

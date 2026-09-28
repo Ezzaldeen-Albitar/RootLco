@@ -508,8 +508,8 @@ edited. If nothing is publishable the screen says "There is no draft to publish.
   — note that this message appears for a **version** action too: publishing and creating a version
   are both guarded by the **price list's** own version counter, not the version's. Reload the price
   list page, then repeat.
-- "Enter a date as YYYY-MM-DD." <!-- pricing.common.dateFormat --> — the date was typed only in part;
-  the cursor is put on the part still to type.
+- "Enter a date as year, month and day." <!-- pricing.common.dateFormat --> — the date was typed
+  only in part; the cursor is put on the part still to type.
 
 **Screenshot** — no screenshot available at this version.
 
@@ -544,8 +544,8 @@ what you assigned and when.
 **If it goes wrong**
 
 - "The end date must be after the start date." <!-- pricing.assignment.rangeOrder -->
-- "Enter a date as YYYY-MM-DD." <!-- pricing.common.dateFormat --> — a date typed only in part, the
-  end date included: an unfinished end date is refused rather than recorded as "no end".
+- "Enter a date as year, month and day." <!-- pricing.common.dateFormat --> — a date typed only in
+  part, the end date included: an unfinished end date is refused rather than recorded as "no end".
 
 **Screenshot** — no screenshot available at this version.
 

@@ -222,7 +222,12 @@ describe('the catalogue is tenant-wide, so it reads on first paint', () => {
     const box = screen.getByRole('searchbox', { name: EN['services.catalogue.search'] as string });
     await user.type(box, 'OIL-٣');
     await waitFor(() => expect(lastCriteria()).toEqual({ search: 'OIL-٣' }));
-    // The digits are echoed as Latin for reading only.
+    // The digits are echoed as Latin for reading only. The echo is true because
+    // `svc.service-list` folds the digits on both sides of its comparison
+    // (tests/unit/p1-32-service-search-digits.test.ts and the backend suite).
+    expect(screen.getByTestId('digits-echo')).toHaveTextContent(
+      `${EN['form.digitsEcho'] as string} OIL-3`
+    );
     expect(screen.getByText(EN['services.catalogue.searchExample'] as string)).toBeVisible();
   });
 

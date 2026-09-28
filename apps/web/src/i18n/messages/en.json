@@ -3941,7 +3941,7 @@
   "pricing.common.branchesUnavailable": "The branch list is not available right now. Try again.",
   "pricing.common.classFormat": "Use lower-case letters, digits and underscores, starting with a letter.",
   "pricing.common.classHelp": "Optional. Lower-case letters, digits and underscores.",
-  "pricing.common.dateFormat": "Enter a date as YYYY-MM-DD.",
+  "pricing.common.dateFormat": "Enter a date as year, month and day.",
   "pricing.common.idFormat": "Enter a valid identifier.",
   "pricing.create.cancel": "Cancel",
   "pricing.create.code": "Code",

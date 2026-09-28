@@ -775,6 +775,10 @@ function VersionPanel({
     setBusy(false);
     notifyActionResult(result.state, messages);
     if (result.state.status === 'success' && result.created) {
+      // What was typed is now the draft: the form is empty again, so once the
+      // draft is published nothing is left here to call unsaved.
+      setForm(EMPTY_VERSION);
+      setUnfinished({});
       setOutcome(null);
       setDraft(result.created);
       setPublishFrom(result.created.effectiveFrom);
@@ -801,6 +805,8 @@ function VersionPanel({
     setBusy(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
+      setForm(EMPTY_VERSION);
+      setUnfinished({});
       setDraft(null);
       setPublishFrom('');
       setOutcome(null);
