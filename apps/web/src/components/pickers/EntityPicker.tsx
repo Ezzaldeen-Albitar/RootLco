@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import Autocomplete from '@mui/material/Autocomplete';
 import Button from '@mui/material/Button';
 import TextField from '@mui/material/TextField';
@@ -18,8 +18,9 @@ import { useSearchRequest } from '@/lib/api/use-search-request';
  * One record, found on the server and chosen by name — `SearchPicker`'s
  * contract on Material UI's `Autocomplete` (ADR-022 PR1).
  *
- * It takes EXACTLY `SearchPickerProps` (the type is shared, not copied), so a
- * call site moves by changing its import and nothing else. `SearchPicker` itself
+ * It takes `SearchPickerProps` (the type is shared, not copied), so a call site
+ * moves by changing its import and nothing else — plus one optional addition,
+ * `detailOf`, that only a Material call site passes (see below). `SearchPicker` itself
  * is kept: the two render different accessible structures — a search box, a
  * list of match buttons and a Change control there; one combobox with a listbox
  * here — and the screens and their suites that pin the older structure move one
@@ -67,7 +68,17 @@ import { useSearchRequest } from '@/lib/api/use-search-request';
  *   rows, so "Loading" is said once, there, and never again inside the list.
  * - **Pages are the server's.** When the server says more exist, Previous and
  *   Next walk the cursor stack and reopen the list.
+ * - **A row may say more than its name** (`detailOf`, optional): a second line
+ *   under the name on each option — a customer's phone, so two customers of the
+ *   same name can be told apart. The option stays NAMED by `labelOf` alone and
+ *   is DESCRIBED by that line, so the name a screen reader reads, and every
+ *   suite that finds an option by it, is unchanged. No detail, no second line.
  */
+export type EntityPickerProps<Row extends { readonly id: string }> = SearchPickerProps<Row> & {
+  /** A second line under the name on each option, or null for none. */
+  readonly detailOf?: ((row: Row) => ReactNode) | undefined;
+};
+
 export function EntityPicker<Row extends { readonly id: string }>({
   messages,
   locale,
@@ -91,7 +102,8 @@ export function EntityPicker<Row extends { readonly id: string }>({
   countsAsUnsaved = true,
   describedBy,
   testId,
-}: SearchPickerProps<Row>) {
+  detailOf,
+}: EntityPickerProps<Row>) {
   const base = useId();
   const boxId = `${base}-box`;
   const errorId = `${base}-error`;
@@ -261,11 +273,30 @@ export function EntityPicker<Row extends { readonly id: string }>({
           // Named by what it lists, not by the question the box asks.
           listbox: { 'aria-label': resultsLabel, 'aria-labelledby': undefined },
         }}
-        renderOption={(props, row) => {
+        renderOption={(props, row, state) => {
           const { key, ...rest } = props;
+          const detail = detailOf?.(row) ?? null;
+          if (detail === null) {
+            return (
+              <li key={key} {...rest}>
+                <bdi>{labelOf(row)}</bdi>
+              </li>
+            );
+          }
+          // Named by the label alone, described by the second line.
+          const nameId = `${base}-option-${state.index}-name`;
+          const detailId = `${base}-option-${state.index}-detail`;
           return (
-            <li key={key} {...rest}>
-              <bdi>{labelOf(row)}</bdi>
+            <li key={key} {...rest} aria-labelledby={nameId} aria-describedby={detailId}>
+              <span className="flex flex-col">
+                <bdi id={nameId}>{labelOf(row)}</bdi>
+                <span
+                  id={detailId}
+                  className="flex flex-wrap items-center gap-2 text-caption text-text-secondary"
+                >
+                  {detail}
+                </span>
+              </span>
             </li>
           );
         }}

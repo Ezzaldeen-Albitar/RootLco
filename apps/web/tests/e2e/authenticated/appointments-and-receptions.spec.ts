@@ -1331,6 +1331,12 @@ test.describe('the reception acknowledgement', () => {
     await expect(page.getByRole('main')).toContainText(
       say('en', 'receptions.acknowledgement.footerNote')
     );
+    // Printing is offered, and the sheet is the only child of the print scope
+    // that holds a document — so paper carries the sheet and not the toolbar.
+    await expect(
+      page.getByRole('button', { name: say('en', 'receptions.acknowledgement.print') })
+    ).toBeVisible();
+    await expect(page.locator('[data-print-scope] > [data-print="document"]')).toHaveCount(1);
   });
 });
 
@@ -1579,13 +1585,10 @@ test.describe('check-in can originate from an appointment', () => {
     // The appointment half replaces the walk-in half. A requester control still
     // rendered here would be collecting a value the operation refuses (422
     // `incoherent_reference`): the vehicle and the requester come from the
-    // appointment itself.
-    // By test id, not by label: `CustomerSelector` names itself with
-    // `aria-labelledby` on a `role="group"` wrapper rather than a `<label>` for a
-    // control, so a label locator here would be asserting on the shape of the
-    // accessible name rather than on the control being gone.
+    // appointment itself. The requester is ONE combobox on Material UI
+    // (`CustomerPicker`), named by its label.
     await expect(
-      page.getByTestId('customer-selector'),
+      page.getByRole('combobox', { name: say('en', 'receptions.checkIn.requester') }),
       'the walk-in requester control survived the switch to an appointment origin'
     ).toHaveCount(0);
 
@@ -1708,11 +1711,10 @@ test.describe('check-in can originate from an appointment', () => {
       'the appointment picker outlived the switch back to walk-in'
     ).toHaveCount(0);
     // The walk-in half is back, with its own two controls.
-    const requester = page.getByTestId('customer-selector');
-    await expect(requester).toBeVisible();
-    await expect(requester, 'the restored selector is not the requester').toContainText(
-      say('en', 'receptions.checkIn.requester')
-    );
+    const requester = page.getByRole('combobox', {
+      name: say('en', 'receptions.checkIn.requester'),
+    });
+    await expect(requester, 'the restored chooser is not the requester').toBeVisible();
     await expect(page.getByLabel(say('en', 'receptions.checkIn.walkInNote'))).toBeVisible();
   });
 });
@@ -1893,11 +1895,14 @@ test.describe('the walk-in intake confirms a customer before a vehicle', () => {
         say(locale, 'receptions.intake.customer.createOffer')
       );
 
-      // P1-32 closed `G-CRM-PHONE`: the intake offers a phone box where a
-      // receptionist types a caller's number, and the retired notice is gone.
+      // P1-32 closed `G-CRM-PHONE`: the one customer chooser takes a caller's
+      // number as typed (Material UI, `CustomerPicker`), and the retired notice
+      // is gone.
       await expect(
-        page.getByLabel(say(locale, 'customerSelector.phone'), { exact: true }),
-        'the intake offers no phone search box'
+        page.getByRole('combobox', {
+          name: say(locale, 'receptions.intake.customer.selectorLabel'),
+        }),
+        'the intake offers no customer search'
       ).toBeVisible();
       await expect(page.getByTestId('phone-search-notice')).toHaveCount(0);
 
@@ -2885,16 +2890,21 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
 
     await workInBranch(page, manifest.branchId);
 
-    const selector = page.getByTestId('customer-selector');
-    await selector
-      .getByLabel(say('en', 'crm.customers.column.name'), { exact: true })
+    // The requester is one combobox (Material UI, `CustomerPicker`): typed,
+    // then chosen by name from the server's matches.
+    await page
+      .getByRole('combobox', { name: say('en', 'receptions.checkIn.requester') })
       .fill('Acceptance');
-    await selector.getByRole('button', { name: say('en', 'customerSelector.search') }).click();
-    await selector.getByRole('button').filter({ hasText: manifest.customerDisplayName }).click();
+    await page
+      .getByRole('option')
+      .filter({ hasText: manifest.customerDisplayName })
+      .first()
+      .click();
 
+    // The vehicles are a grid; each row's Choose is named with its vehicle.
     const vehicle = page
-      .getByRole('group', { name: say('en', 'receptions.checkIn.vehicleLabel') })
-      .getByRole('button')
+      .getByTestId('check-in-vehicles')
+      .getByRole('button', { name: startsWith(say('en', 'receptions.checkIn.choose')) })
       .filter({ hasText: manifest.vehicleDisplayNumber });
     await expect(vehicle, 'the requester offered no linked vehicle to receive').toHaveCount(1);
     await vehicle.click();

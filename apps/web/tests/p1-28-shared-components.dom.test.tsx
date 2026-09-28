@@ -5,6 +5,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import {
+  BranchSwitch,
+  OTHER_BRANCH,
   TEST_BRANCH,
   TEST_COMPANY,
   branchSnapshot,
@@ -12,6 +14,12 @@ import {
   renderLtr,
   renderRtl,
 } from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+} from './support/branch-switch';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { getMessages } from '@/i18n/get-messages';
@@ -116,7 +124,8 @@ beforeEach(() => {
 /** A `ServerTable` in one state, without running the hook that produces one. */
 function table(over: Record<string, unknown> = {}) {
   return {
-    request: { page: 1, pageSize: 25 },
+    // The whole request `OperationalGrid` draws its pager and chips from.
+    request: { page: 1, pageSize: 25, sort: null, filters: [] },
     setRequest: vi.fn(),
     response: null,
     status: 'idle',
@@ -793,8 +802,13 @@ describe('IntakeCustomerCreate', () => {
         onBack={vi.fn()}
       />
     );
-    expect(screen.getByLabelText(EN['crm.customers.create.givenName'] as string)).toBeVisible();
-    expect(screen.queryByLabelText(EN['crm.customers.create.legalName'] as string)).toBeNull();
+    // Named by its label (the required mark is decorative and not part of the name).
+    expect(
+      screen.getByRole('textbox', { name: EN['crm.customers.create.givenName'] as string })
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('textbox', { name: EN['crm.customers.create.legalName'] as string })
+    ).toBeNull();
     individual.unmount();
 
     renderLtr(
@@ -806,8 +820,12 @@ describe('IntakeCustomerCreate', () => {
         onBack={vi.fn()}
       />
     );
-    expect(screen.getByLabelText(EN['crm.customers.create.legalName'] as string)).toBeVisible();
-    expect(screen.queryByLabelText(EN['crm.customers.create.givenName'] as string)).toBeNull();
+    expect(
+      screen.getByRole('textbox', { name: EN['crm.customers.create.legalName'] as string })
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('textbox', { name: EN['crm.customers.create.givenName'] as string })
+    ).toBeNull();
   });
 
   it('renders in Arabic with the document in RTL', () => {
@@ -914,5 +932,266 @@ describe('IntakeVehicleStep', () => {
       screen.getByRole('button', { name: EN['receptions.intake.vehicle.change'] as string })
     );
     expect(onVehicleCleared).toHaveBeenCalledTimes(1);
+  });
+});
+
+/* ====================================================================== *
+ * The Material UI pieces every step is built from (ADR-022)
+ * ====================================================================== */
+
+const { InstantOrRaw, RecordReadState, RetryButton, SubmitButton, useStepForm } =
+  await import('@/features/receptions/components/steps/EvidencePanels');
+const { PartyRoleGrid } = await import('@/features/receptions/components/steps/PartiesStep');
+const { FormTextField } = await import('@/components/forms/mui/FormTextField');
+const { unreachable } = await import('@/lib/forms/action-result');
+const { useFocusFirstInvalid } = await import('@/lib/forms/use-focus-first-invalid');
+
+describe('RecordReadState', () => {
+  it('says "not found" as itself, never as a fault with a retry', () => {
+    renderLtr(
+      <RecordReadState
+        messages={en}
+        status="not-found"
+        correlationId="corr-404"
+        onRetry={vi.fn()}
+      />
+    );
+    expect(screen.getByText(EN['state.notFound.title'] as string)).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
+  it('says an unanswered read is unavailable, with the reference and a retry that runs', async () => {
+    const retry = vi.fn();
+    renderLtr(
+      <RecordReadState
+        messages={en}
+        status="unavailable"
+        correlationId="corr-503"
+        onRetry={retry}
+      />
+    );
+    expect(screen.getByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    expect(screen.getByText('corr-503')).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('offers no retry at all when the caller has none to offer', () => {
+    renderLtr(<RecordReadState messages={en} status="error" correlationId="corr-500" />);
+    expect(screen.getByText(EN['state.error.title'] as string)).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+});
+
+describe('RetryButton and SubmitButton', () => {
+  it('RetryButton asks again when pressed', async () => {
+    const retry = vi.fn();
+    renderRtl(<RetryButton messages={ar} onRetry={retry} />);
+    await userEvent.click(screen.getByRole('button', { name: AR['state.retry'] as string }));
+    expect(retry).toHaveBeenCalledTimes(1);
+  });
+
+  it('SubmitButton says it is working, and cannot be pressed twice', () => {
+    const { rerender } = renderLtr(
+      <form>
+        <SubmitButton messages={en} pending={false} labelKey="receptions.complaint.record" />
+      </form>
+    );
+    const idle = screen.getByRole('button', { name: EN['receptions.complaint.record'] as string });
+    expect(idle).toBeEnabled();
+    expect(idle).toHaveAttribute('type', 'submit');
+    rerender(
+      <form>
+        <SubmitButton messages={en} pending labelKey="receptions.complaint.record" />
+      </form>
+    );
+    const busy = screen.getByRole('button', { name: EN['form.pending'] as string });
+    expect(busy).toBeDisabled();
+    expect(busy).toHaveAttribute('aria-busy', 'true');
+  });
+});
+
+describe('InstantOrRaw', () => {
+  it('renders an instant as a time, and an unreadable one exactly as it arrived', () => {
+    const { container } = renderLtr(
+      <>
+        <InstantOrRaw value="2026-08-13T07:30:00.000Z" locale="en" />
+        <InstantOrRaw value="not-a-time" locale="en" />
+      </>
+    );
+    expect(container.querySelector('time')).toHaveAttribute('datetime', '2026-08-13T07:30:00.000Z');
+    expect(screen.getByText('not-a-time').tagName).toBe('CODE');
+  });
+});
+
+describe('PartyRoleGrid', () => {
+  const ROLE = {
+    id: 'role-1',
+    partnerId: 'partner-1',
+    partnerDisplayName: 'Layla Haddad',
+    partnerDisplayNumber: 'C-0001',
+    relationshipRole: 'service_requester',
+    validFrom: '2026-08-13T07:00:00.000Z',
+    validTo: null,
+    assignmentSource: 'Front desk',
+    recordVersion: 1,
+  };
+
+  it('names each party and its role, and never the partner identifier', async () => {
+    const { container } = renderLtr(
+      <PartyRoleGrid
+        locale="en"
+        messages={en}
+        table={table({
+          response: { rows: [ROLE], total: null, page: 1, pageSize: 25, hasMore: false },
+        })}
+      />
+    );
+    expect(await screen.findByText('Layla Haddad')).toBeVisible();
+    expect(screen.getByText(EN['receptions.partyRole.service_requester'] as string)).toBeVisible();
+    expect(screen.getByText(EN['receptions.parties.roleActive'] as string)).toBeVisible();
+    expect(container.textContent).not.toContain('partner-1');
+  });
+
+  it('says the empty answer in the words its caller chose', () => {
+    renderLtr(
+      <PartyRoleGrid
+        locale="en"
+        messages={en}
+        table={table({ response: { rows: [], total: null, page: 1, pageSize: 25 } })}
+        showInterval={false}
+        emptyKey="receptions.summary.partiesEmpty"
+      />
+    );
+    expect(screen.getByText(EN['receptions.summary.partiesEmpty'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['receptions.parties.rolesEmpty'] as string)).toBeNull();
+  });
+});
+
+/**
+ * `useStepForm` — the behaviour every capture form of the wizard shares.
+ *
+ * Proved on a one-field harness, so each claim is about the hook rather than
+ * about a step: the refusal on the field, the cursor, the kept entry, the
+ * withdrawn complaint, the answer that never arrives, and the unsaved work.
+ */
+function StepFormHarness({
+  send,
+}: {
+  readonly send: (draft: { readonly zone: string }, attempt: number) => Promise<unknown>;
+}) {
+  const form = useStepForm<{ readonly zone: string }>({
+    messages: en,
+    empty: { zone: '' },
+    // The complaint is filed under the name the service would use.
+    errorNames: { zone: 'vehicleZone' },
+    check: (draft) =>
+      draft.zone.trim() === '' ? { vehicleZone: 'receptions.finding.error.zoneRequired' } : {},
+    send: send as never,
+  });
+  const formRef = useFocusFirstInvalid(form.state);
+  return (
+    <form ref={formRef} aria-label="harness" onSubmit={form.onSubmit} noValidate>
+      <FormTextField
+        label="Zone"
+        value={form.draft.zone}
+        onChange={(value) => {
+          form.update('zone', value);
+        }}
+        onEdit={() => undefined}
+        error={form.fieldError('vehicleZone')}
+      />
+      <p data-testid="harness-state">{form.state.messageKey ?? ''}</p>
+      <SubmitButton messages={en} pending={form.pending} labelKey="receptions.finding.record" />
+    </form>
+  );
+}
+
+describe('useStepForm', () => {
+  const zoneBox = () => screen.getByRole('textbox', { name: 'Zone' });
+  const record = () =>
+    screen.getByRole('button', { name: EN['receptions.finding.record'] as string });
+
+  it('refuses on the field, moves the cursor there, and withdraws the complaint on correction', async () => {
+    const send = vi.fn();
+    const user = userEvent.setup();
+    renderLtr(<StepFormHarness send={send} />);
+    await user.click(record());
+
+    await waitFor(() => expect(zoneBox()).toHaveFocus());
+    expect(zoneBox()).toHaveAttribute('aria-invalid', 'true');
+    expect(zoneBox()).toHaveAccessibleDescription(
+      expect.stringContaining(EN['receptions.finding.error.zoneRequired'] as string)
+    );
+    expect(send).not.toHaveBeenCalled();
+
+    // FALSIFICATION of the clearing half: typing withdraws the complaint.
+    await user.type(zoneBox(), 'rear');
+    expect(zoneBox()).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByText(EN['receptions.finding.error.zoneRequired'] as string)).toBeNull();
+  });
+
+  it('says an answer that never arrived is unavailable, keeps the entry and frees the button', async () => {
+    const send = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    const user = userEvent.setup();
+    renderLtr(<StepFormHarness send={send} />);
+    await user.type(zoneBox(), 'rear bumper');
+    await user.click(record());
+
+    await waitFor(() =>
+      expect(screen.getByTestId('harness-state')).toHaveTextContent('state.unavailable.message')
+    );
+    expect(zoneBox()).toHaveValue('rear bumper');
+    expect(record()).toBeEnabled();
+    expect(unreachable(2)).toEqual({
+      status: 'unavailable',
+      messageKey: 'state.unavailable.message',
+      attempt: 2,
+    });
+  });
+
+  it('empties the form once the write is stored, and is no longer unsaved work', async () => {
+    const send = vi.fn().mockResolvedValue({ status: 'success', attempt: 1 });
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <StepFormHarness send={send} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.type(zoneBox(), 'rear');
+    await user.click(record());
+    await waitFor(() => expect(zoneBox()).toHaveValue(''));
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    forgetRememberedBranch();
+  });
+
+  it('asks before a switch while something is typed: Stay keeps it, Discard empties it', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <StepFormHarness send={vi.fn()} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.type(zoneBox(), 'rear');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'use second'));
+    expect(zoneBox()).toHaveValue('rear');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'use second'));
+    await waitFor(() => expect(zoneBox()).toHaveValue(''));
+    forgetRememberedBranch();
   });
 });

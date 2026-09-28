@@ -245,6 +245,21 @@ export function invalid(
   return { status: 'invalid', messageKey, fieldErrors, attempt };
 }
 
+/**
+ * A write whose answer never arrived: the Server Action's promise was REJECTED
+ * — the connection dropped, or the server did not answer — so there is no
+ * refusal to render, only the fact that nothing came back.
+ *
+ * Without it a handler that set its button pending, awaited the action and then
+ * cleared it left the button pending for good and the rejection unhandled. A
+ * submit handler therefore awaits inside `try`, clears its pending flag in
+ * `finally`, and renders this state from `catch`: the operator's entries stay
+ * on the page and the sentence says to check the connection and try again.
+ */
+export function unreachable(attempt: number): ActionState {
+  return { status: 'unavailable', messageKey: 'state.unavailable.message', attempt };
+}
+
 export function success(messageKey: string, attempt: number): ActionState {
   return { status: 'success', messageKey, attempt };
 }

@@ -340,7 +340,7 @@
         {
           "file": "apps/web/tests/reception-walkin.dom.test.tsx",
           "cases": [
-            "offers a phone box and no longer states that phone search is missing",
+            "asks ONE box, and no longer states that phone search is missing",
             "links the chosen customer to the searched vehicle in the chosen role",
             "completes the customer-first path entirely in Arabic"
           ]
@@ -628,7 +628,7 @@
             "guards the command with the version the shell read",
             "says a re-run on an authorized visit is refused by the STATE (ERR-TRN-001)",
             "sends close-without-work with the version and the trimmed reason",
-            "sends refuse from its own form, and only that one"
+            "sends refuse from its own dialog, and only that one"
           ]
         },
         {

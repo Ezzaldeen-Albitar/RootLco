@@ -1,21 +1,22 @@
 'use client';
 
 import Link from 'next/link';
-import { useState, useTransition } from 'react';
-import { ErrorState, LoadingState, SessionExpiredState } from '@/components/states/States';
+import { useState } from 'react';
+import Button from '@mui/material/Button';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiLoadingState } from '@/components/states/MuiStates';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { workOrderStateMessageKey } from '@/features/work-orders/work-orders-contract';
-import { formatDateTime } from '@/lib/format';
-import type { ActionState } from '@/lib/forms/action-result';
+import { IDLE, unreachable, type ActionState } from '@/lib/forms/action-result';
 import { convertReceptionToWorkOrder } from '../../api';
 import type { ReceptionConverted } from '../../receptions-contract';
 import { readConvertedWorkOrder } from '../../work-order-api';
 import type { ConvertedWorkOrder, ConvertedWorkOrderJob } from '../../work-order-contract';
 import type { CheckInStepProps } from '../../check-in/wizard';
 import { receptionAffordances } from '../../check-in/closure';
+import { InstantOrRaw, RecordReadState } from './EvidencePanels';
 import { CommandOutcome } from './SummaryStep';
 
 /**
@@ -52,9 +53,24 @@ import { CommandOutcome } from './SummaryStep';
  * code rather than as a composed key. And the answer names the work order it
  * created, so the operator is offered a link to it rather than being left to
  * find it on the board (Browser QA part 7, row 5.3).
+ *
+ * ## A visit converted EARLIER links to its work order too (row 5.3, revisited)
+ *
+ * Coming back to a converted visit used to say "already converted" and nothing
+ * else: the conversion's answer is gone with the session that received it. The
+ * visit read now publishes the live ordinary work order it was converted into
+ * (`workOrderId`, `workOrderDisplayNumber` on `rec.reception-detail`), so the
+ * step names it by number and links to it — for a reader who may open work
+ * orders; the link is not offered to anybody whose one outcome would be a
+ * refusal.
+ *
+ * ## On the Material UI wrappers (ADR-022)
+ *
+ * Material buttons and states; the convert handler awaits the send AND the
+ * re-read after it inside one `try` and clears its pending state in its
+ * `finally`, so an answer that never arrives is said as that and the button is
+ * usable again, and the button stays busy until that re-read has landed.
  */
-
-const IDLE: ActionState = { status: 'idle' };
 
 export function ConversionStep({
   locale,
@@ -70,15 +86,23 @@ export function ConversionStep({
   const affordances = receptionAffordances(detail.receptionStatus);
   const [state, setState] = useState<ActionState>(IDLE);
   const [converted, setConverted] = useState<ReceptionConverted | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
-  const submit = () => {
-    startTransition(async () => {
-      const result = await convertReceptionToWorkOrder(
-        visitId,
-        recordVersion,
-        (state.attempt ?? 0) + 1
-      );
+  const submit = async () => {
+    const attempt = (state.attempt ?? 0) + 1;
+    setPending(true);
+    // Pending covers the send AND the re-read after it: until the re-read
+    // lands the only version on hand is the one just spent.
+    try {
+      let result: Awaited<ReturnType<typeof convertReceptionToWorkOrder>>;
+      try {
+        result = await convertReceptionToWorkOrder(visitId, recordVersion, attempt);
+      } catch {
+        // No answer came back: said as that, and the button works again. The
+        // visit is re-read before the next attempt, which a replay also answers.
+        setState(unreachable(attempt));
+        return;
+      }
       setState(result);
       notifyActionResult(result, messages);
       if (result.status === 'success' && result.converted) {
@@ -87,7 +111,9 @@ export function ConversionStep({
       if (result.status === 'success' || result.status === 'conflict') {
         await refresh();
       }
-    });
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
@@ -107,32 +133,38 @@ export function ConversionStep({
           affordances.convert && !writesLocked ? (
             capabilities.convertReceptions ? (
               <div>
-                <button
+                <Button
                   type="button"
-                  onClick={submit}
+                  variant="contained"
+                  onClick={() => {
+                    if (!pending) void submit();
+                  }}
                   disabled={pending}
-                  className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+                  aria-busy={pending || undefined}
                 >
                   {pending
                     ? translate(messages, 'form.pending')
                     : translate(messages, 'receptions.convert.submit')}
-                </button>
+                </Button>
               </div>
             ) : (
               <p className="text-caption text-text-muted" lang={locale}>
                 {translate(messages, 'receptions.convert.denied')}
               </p>
             )
+          ) : detail.receptionStatus === 'converted' ? (
+            <ConvertedEarlier
+              locale={locale}
+              messages={messages}
+              workOrderId={detail.workOrderId ?? null}
+              workOrderDisplayNumber={detail.workOrderDisplayNumber ?? null}
+              canReadWorkOrder={capabilities.readWorkOrders}
+            />
           ) : (
             <p className="text-caption text-text-muted" lang={locale}>
               {/* Derived from the transition graph: `converted` is one edge from
                   `authorized` and from nowhere else. */}
-              {translate(
-                messages,
-                detail.receptionStatus === 'converted'
-                  ? 'receptions.convert.alreadyDone'
-                  : 'receptions.convert.unavailable'
-              )}
+              {translate(messages, 'receptions.convert.unavailable')}
             </p>
           )
         ) : null}
@@ -153,6 +185,61 @@ export function ConversionStep({
           />
         ) : null}
       </section>
+    </div>
+  );
+}
+
+/**
+ * A visit converted before this screen was opened: the work order the visit
+ * read names, by number, and the way to it.
+ *
+ * The read publishes the work order only while it is live, so a visit whose
+ * work order is gone says "already converted" and no more — never a link to
+ * nothing.
+ */
+function ConvertedEarlier({
+  locale,
+  messages,
+  workOrderId,
+  workOrderDisplayNumber,
+  canReadWorkOrder,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly workOrderId: string | null;
+  readonly workOrderDisplayNumber: string | null;
+  readonly canReadWorkOrder: boolean;
+}) {
+  return (
+    <div className="flex flex-col gap-2" data-testid="conversion-converted-earlier">
+      <p className="text-caption text-text-muted" lang={locale}>
+        {translate(messages, 'receptions.convert.alreadyDone')}
+      </p>
+      {workOrderId !== null ? (
+        <>
+          <p className="text-body text-text-primary">
+            {translate(messages, 'receptions.convert.workOrderNumber')}{' '}
+            <bdi>
+              {workOrderDisplayNumber ?? translate(messages, 'receptions.convert.unnumbered')}
+            </bdi>
+          </p>
+          {canReadWorkOrder ? (
+            <div>
+              <Button
+                component={Link}
+                href={`/${locale}/work-orders/${encodeURIComponent(workOrderId)}`}
+                variant="outlined"
+              >
+                {translate(messages, 'receptions.convert.openWorkOrder')}
+              </Button>
+            </div>
+          ) : (
+            <p className="text-caption text-text-muted" lang={locale}>
+              {translate(messages, 'receptions.convert.readDenied')}
+            </p>
+          )}
+        </>
+      ) : null}
     </div>
   );
 }
@@ -216,14 +303,15 @@ function ConversionResult({
         way anywhere.
       */}
       {canReadWorkOrder ? (
-        <p className="text-body">
-          <Link
+        <div>
+          <Button
+            component={Link}
             href={`/${locale}/work-orders/${encodeURIComponent(converted.workOrderId)}`}
-            className="font-medium text-primary underline-offset-2 hover:underline"
+            variant="outlined"
           >
             {translate(messages, 'receptions.convert.openWorkOrder')}
-          </Link>
-        </p>
+          </Button>
+        </div>
       ) : null}
 
       {canReadWorkOrder ? (
@@ -262,6 +350,7 @@ type PanelState =
   | { readonly kind: 'ok'; readonly data: ConvertedWorkOrder }
   | { readonly kind: 'denied'; readonly correlationId: string | null }
   | { readonly kind: 'expired'; readonly correlationId: string | null }
+  | { readonly kind: 'unavailable'; readonly correlationId: string | null }
   | { readonly kind: 'error'; readonly correlationId: string | null };
 
 /**
@@ -282,11 +371,10 @@ function WorkOrderPanel({
   readonly workOrderId: string;
 }) {
   const [panel, setPanel] = useState<PanelState>({ kind: 'idle' });
-  const [pending, startTransition] = useTransition();
 
-  const load = () => {
+  const load = async () => {
     setPanel({ kind: 'loading' });
-    startTransition(async () => {
+    try {
       const result = await readConvertedWorkOrder(workOrderId);
       if (result.status === 'ok') {
         setPanel({ kind: 'ok', data: result.data });
@@ -294,28 +382,31 @@ function WorkOrderPanel({
       }
       setPanel({
         kind:
-          result.status === 'denied' ? 'denied' : result.status === 'expired' ? 'expired' : 'error',
+          result.status === 'denied'
+            ? 'denied'
+            : result.status === 'expired'
+              ? 'expired'
+              : result.status === 'unavailable'
+                ? 'unavailable'
+                : 'error',
         correlationId: result.correlationId,
       });
-    });
+    } catch {
+      // A read that never came back is "unavailable, try again", not a spinner.
+      setPanel({ kind: 'unavailable', correlationId: null });
+    }
   };
 
   if (panel.kind === 'idle') {
     return (
       <div>
-        <button
-          type="button"
-          onClick={load}
-          disabled={pending}
-          className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
+        <Button type="button" variant="outlined" size="small" onClick={() => void load()}>
           {translate(messages, 'receptions.convert.loadWorkOrder')}
-        </button>
+        </Button>
       </div>
     );
   }
-  if (panel.kind === 'loading') return <LoadingState messages={messages} />;
-  if (panel.kind === 'expired') return <SessionExpiredState messages={messages} />;
+  if (panel.kind === 'loading') return <MuiLoadingState messages={messages} variant="inline" />;
   if (panel.kind === 'denied') {
     return (
       <p className="text-caption text-text-muted" lang={locale}>
@@ -326,20 +417,15 @@ function WorkOrderPanel({
       </p>
     );
   }
-  if (panel.kind === 'error') {
+  if (panel.kind !== 'ok') {
+    // An outage and a fault offer "Try again"; an ended session does not.
     return (
-      <ErrorState
+      <RecordReadState
         messages={messages}
-        action={
-          <button
-            type="button"
-            onClick={load}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
-            {translate(messages, 'state.retry')}
-          </button>
-        }
-        {...(panel.correlationId ? { correlationId: panel.correlationId } : {})}
+        locale={locale}
+        status={panel.kind}
+        correlationId={panel.correlationId}
+        onRetry={() => void load()}
       />
     );
   }
@@ -349,7 +435,7 @@ function WorkOrderPanel({
     <div className="flex flex-col gap-2">
       <p className="text-caption text-text-secondary">
         {translate(messages, 'receptions.convert.openedAt')}{' '}
-        <bdi>{formatDateTime(workOrder.openedAt, locale)}</bdi>
+        <InstantOrRaw value={workOrder.openedAt} locale={locale} />
       </p>
       {jobs.length === 0 ? (
         <p className="text-body text-text-secondary" lang={locale}>

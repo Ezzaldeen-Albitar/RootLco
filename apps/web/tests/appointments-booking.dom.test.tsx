@@ -496,6 +496,29 @@ describe('booking', () => {
   });
 });
 
+describe('a booking whose answer never arrives', () => {
+  it('says so, keeps every entry, frees the button, and leaves nothing unhandled', async () => {
+    // The Server Action's promise REJECTS (the connection dropped). The button
+    // used to stay "Working…" for ever and the rejection went unhandled.
+    createAppointment.mockRejectedValue(new TypeError('Failed to fetch'));
+    const user = userEvent.setup();
+    renderScreen();
+    await fillForm(user);
+    await user.click(submit());
+
+    expect(await screen.findByText(en['state.unavailable.message'])).toBeVisible();
+    expect(submit()).toBeEnabled();
+    expect(submit()).toHaveTextContent(en['appointments.book.submit']);
+    expect(customerBox()).toHaveValue('Nadia Khoury — C-0001');
+    expect(push).not.toHaveBeenCalled();
+
+    // And the operator can simply try again.
+    createAppointment.mockResolvedValue({ status: 'invalid', attempt: 2, fieldErrors: {} });
+    await user.click(submit());
+    await waitFor(() => expect(createAppointment).toHaveBeenCalledTimes(2));
+  });
+});
+
 describe('both directions', () => {
   it('renders in Arabic, right to left', () => {
     renderRtl(

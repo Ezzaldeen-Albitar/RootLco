@@ -16,7 +16,9 @@ import {
   pickerToInstant,
   repeatedWallClock,
 } from '@/components/forms/mui/DateField';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
 import { FormMoneyField } from '@/components/forms/mui/FormMoneyField';
+import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
 import { FormNumberField } from '@/components/forms/mui/FormNumberField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
@@ -1348,5 +1350,161 @@ describe('TreePicker — the FieldFrame contract', () => {
     const tree = screen.getByRole('tree', { name: /^Category/ });
     await waitFor(() => expect(tree.contains(document.activeElement)).toBe(true));
     expect(document.activeElement).toHaveAttribute('role', 'treeitem');
+  });
+});
+
+/*
+ * The two wrappers the reception slice added (ADR-022): a yes-or-no answer and
+ * one answer from a short list, each keeping `FieldFrame`'s contract.
+ */
+describe('FormCheckboxField', () => {
+  function Witness({ error }: { readonly error?: string }) {
+    const [checked, setChecked] = useState(false);
+    const [edits, setEdits] = useState(0);
+    return (
+      <>
+        <FormCheckboxField
+          label="I witnessed the declaration"
+          description="Recorded against your account."
+          checked={checked}
+          onChange={setChecked}
+          onEdit={() => setEdits((count) => count + 1)}
+          error={error}
+        />
+        <output data-testid="checkbox-edits">{edits}</output>
+      </>
+    );
+  }
+
+  it('is named by its label, toggles, and reports the edit before the value', async () => {
+    const user = userEvent.setup();
+    mount(<Witness />);
+    const box = screen.getByRole('checkbox', { name: 'I witnessed the declaration' });
+    expect(box).not.toBeChecked();
+    expect(box).not.toHaveAttribute('aria-invalid');
+    expect(box).toHaveAccessibleDescription('Recorded against your account.');
+    await user.click(box);
+    expect(box).toBeChecked();
+    expect(screen.getByTestId('checkbox-edits')).toHaveTextContent('1');
+  });
+
+  it('marks and describes an error, description first, and no native required', () => {
+    mount(<Witness error="Confirm you witnessed it." />);
+    const box = screen.getByRole('checkbox', { name: 'I witnessed the declaration' });
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(box).not.toHaveAttribute('required');
+    const [first, second] = describedByIds(box);
+    expect(document.getElementById(first ?? '')).toHaveTextContent(
+      'Recorded against your account.'
+    );
+    expect(document.getElementById(second ?? '')).toHaveTextContent('Confirm you witnessed it.');
+    expect(screen.getByRole('alert')).toHaveTextContent('Confirm you witnessed it.');
+  });
+
+  it('reads right to left in Arabic, the label at the start', () => {
+    mount(<Witness />, 'ar');
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(screen.getByRole('checkbox', { name: 'I witnessed the declaration' })).toBeVisible();
+  });
+});
+
+describe('FormRadioGroupField', () => {
+  function Origin({
+    error,
+    required = false,
+  }: {
+    readonly error?: string;
+    readonly required?: boolean;
+  }) {
+    const [value, setValue] = useState('walk_in');
+    return (
+      <FormRadioGroupField
+        label="Where the visit came from"
+        description="One origin, never both."
+        required={required}
+        value={value}
+        onChange={setValue}
+        error={error}
+        options={[
+          { value: 'walk_in', label: 'Walk-in', description: 'Nobody booked it.' },
+          { value: 'appointment', label: 'Appointment' },
+        ]}
+      />
+    );
+  }
+
+  it('is a radiogroup named by its label, one answer at a time', async () => {
+    const user = userEvent.setup();
+    mount(<Origin required />);
+    const group = screen.getByRole('radiogroup', { name: /^Where the visit came from/ });
+    expect(group).toHaveAttribute('aria-required', 'true');
+    expect(group).not.toHaveAttribute('aria-invalid');
+    expect(group).toHaveAccessibleDescription('One origin, never both.');
+    const walkIn = within(group).getByRole('radio', { name: /^Walk-in/ });
+    const appointment = within(group).getByRole('radio', { name: 'Appointment' });
+    expect(walkIn).toBeChecked();
+    await user.click(appointment);
+    expect(appointment).toBeChecked();
+    expect(walkIn).not.toBeChecked();
+    // An option's own sentence is read with it.
+    expect(walkIn).toHaveAccessibleName(expect.stringContaining('Nobody booked it.'));
+  });
+
+  it('marks the group invalid, describes it by the error, and a refused form enters it', async () => {
+    function Refused() {
+      const [state, setState] = useState<ActionState>({ status: 'idle' });
+      const formRef = useFocusFirstInvalid(state);
+      const corrections = useClearOnCorrect(state);
+      const [value, setValue] = useState('');
+      return (
+        <form
+          ref={formRef}
+          onSubmit={(event) => {
+            event.preventDefault();
+            setState({
+              status: 'invalid',
+              fieldErrors: { origin: 'form.required' },
+              attempt: (state.attempt ?? 0) + 1,
+            });
+          }}
+        >
+          <FormRadioGroupField
+            label="Where the visit came from"
+            value={value}
+            onChange={setValue}
+            options={[
+              { value: 'walk_in', label: 'Walk-in' },
+              { value: 'appointment', label: 'Appointment' },
+            ]}
+            {...correctionFor(corrections, 'origin', en)}
+          />
+          <button type="submit">Save</button>
+        </form>
+      );
+    }
+    const user = userEvent.setup();
+    mount(<Refused />);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    const group = screen.getByRole('radiogroup', { name: 'Where the visit came from' });
+    expect(group).toHaveAttribute('aria-invalid', 'true');
+    // Marked for `useFocusFirstInvalid` as every other field is (F7).
+    expect(group).toHaveAttribute('data-invalid', 'true');
+    expect(group).toHaveAccessibleDescription(en['form.required']);
+    await waitFor(() =>
+      expect(within(group).getByRole('radio', { name: 'Walk-in' })).toHaveFocus()
+    );
+    // A choice withdraws the complaint.
+    await user.click(within(group).getByRole('radio', { name: 'Appointment' }));
+    expect(group).not.toHaveAttribute('aria-invalid');
+    expect(group).not.toHaveAttribute('data-invalid');
+  });
+
+  it('reads right to left in Arabic', () => {
+    mount(<Origin error="Choose one." />, 'ar');
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(screen.getByRole('radiogroup', { name: 'Where the visit came from' })).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    );
   });
 });

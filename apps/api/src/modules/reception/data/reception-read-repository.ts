@@ -125,6 +125,19 @@ export interface ReceptionDetailRow {
   readonly recordVersion: number;
   readonly createdAt: string;
   readonly updatedAt: string | null;
+  /**
+   * The live ORDINARY work order this visit was converted into, or `null`
+   * (Owner directive, Browser QA part 7 row 5.3). Added so a visit revisited
+   * after its conversion can name and link its work order — the conversion's
+   * own answer is gone with the session that received it. The predicate is the
+   * one `ReceptionConversionRepository.workOrderForVisit` and
+   * `uq_work_orders_ordinary_origin` use (`kind = 'ordinary'`, live), so a
+   * rework order carrying the same visit is never reported here. Read under the
+   * caller's own row security, like every column of this statement.
+   */
+  readonly workOrderId: string | null;
+  /** That work order's human label; nullable where no sequence is provisioned. */
+  readonly workOrderDisplayNumber: string | null;
 }
 
 export interface ReceptionListEntry {
@@ -405,6 +418,8 @@ export class ReceptionReadRepository extends Repository {
       record_version: number;
       created_at: Date;
       updated_at: Date | null;
+      work_order_id: string | null;
+      work_order_display_number: string | null;
     }>(
       db,
       `SELECT rv.id, rv.display_number, rv.reception_status, rv.appointment_id, rv.walk_in_id,
@@ -415,10 +430,18 @@ export class ReceptionReadRepository extends Repository {
               rv.ev_soc_percent::text AS ev_soc_percent,
               rv.receiving_employee_id, rv.receiving_employee_display_name,
               rv.custody_accepted_at, rv.custody_released_at,
-              rv.record_version, rv.created_at, rv.updated_at
+              rv.record_version, rv.created_at, rv.updated_at,
+              wo.id AS work_order_id, wo.display_number AS work_order_display_number
          FROM rec.reception_visits rv
          LEFT JOIN veh.vehicles v ON v.tenant_id = rv.tenant_id AND v.id = rv.vehicle_id
          LEFT JOIN rec.fuel_levels fl ON fl.id = rv.fuel_level_id
+         LEFT JOIN LATERAL (
+                SELECT w.id, w.display_number
+                  FROM wo.work_orders w
+                 WHERE w.tenant_id = rv.tenant_id AND w.reception_visit_id = rv.id
+                   AND w.kind = 'ordinary' AND w.deleted_at IS NULL
+                 LIMIT 1
+              ) wo ON true
         WHERE rv.tenant_id = $1 AND rv.id = $2 AND rv.deleted_at IS NULL`,
       [context.principal.tenantId, receptionVisitId]
     );
@@ -446,6 +469,8 @@ export class ReceptionReadRepository extends Repository {
       recordVersion: row.record_version,
       createdAt: row.created_at.toISOString(),
       updatedAt: iso(row.updated_at),
+      workOrderId: row.work_order_id,
+      workOrderDisplayNumber: row.work_order_display_number,
     };
   }
 

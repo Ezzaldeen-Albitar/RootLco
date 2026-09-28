@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
-import { CursorPager } from '@/components/data-table/CursorPager';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import {
   membershipVerdict,
   readCompleteness,
@@ -11,13 +11,8 @@ import {
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { PartyLabel } from '@/components/party/PartyLabel';
-import {
-  ErrorState,
-  LoadingState,
-  NotFoundState,
-  PermissionDeniedState,
-  SessionExpiredState,
-} from '@/components/states/States';
+import { MuiLoadingState, MuiRefusedState } from '@/components/states/MuiStates';
+import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
@@ -34,6 +29,7 @@ import {
   type CheckInVehicleSummary,
 } from '../../support-api';
 import type { CheckInStepProps } from '../../check-in/wizard';
+import { EvidenceStates, RecordReadState } from './EvidencePanels';
 
 /**
  * Customer and vehicle confirmation (`FE-008`) — identity before evidence.
@@ -63,8 +59,8 @@ import type { CheckInStepProps } from '../../check-in/wizard';
  * the vehicle on the ramp, that no link is recorded. `membershipVerdict`
  * separates the three answers the platform can actually give — recorded, not
  * recorded (whole list read), and not established (page boundary, or a read that
- * never answered) — and the pager below makes the third one reachable instead of
- * merely announced.
+ * never answered) — and the requester's vehicles are drawn in `OperationalGrid`,
+ * whose pager makes the third one reachable instead of merely announced.
  *
  * ## There is deliberately NO "Confirm" control here
  *
@@ -142,7 +138,8 @@ export function ConfirmationStep({
       // A rejected call is a STATE, not a permanent absence of one.
       // `WarningLightsStep` carries the full reasoning.
       .catch(() => {
-        if (!cancelled) setCustomer({ key, result: { status: 'error', correlationId: null } });
+        if (!cancelled)
+          setCustomer({ key, result: { status: 'unavailable', correlationId: null } });
       });
     return () => {
       cancelled = true;
@@ -172,7 +169,7 @@ export function ConfirmationStep({
       // `WarningLightsStep` carries the full reasoning.
       .catch(() => {
         if (!cancelled)
-          setVehicle({ key: readKey, result: { status: 'error', correlationId: null } });
+          setVehicle({ key: readKey, result: { status: 'unavailable', correlationId: null } });
       });
     return () => {
       cancelled = true;
@@ -228,22 +225,93 @@ export function ConfirmationStep({
     customerVehicles.request.page
   );
 
+  const relationshipColumns = useMemo<readonly OperationalColumn<CheckInVehicleRelationship>[]>(
+    () => [
+      {
+        id: 'party',
+        headerKey: 'receptions.acknowledgement.columnParty',
+        flex: 2,
+        cell: (row) => (
+          <PartyLabel
+            messages={messages}
+            party={{
+              partnerName: row.partnerName,
+              partnerNumber: row.partnerNumber,
+              partnerType: row.partnerType,
+            }}
+          />
+        ),
+      },
+      {
+        id: 'role',
+        headerKey: 'receptions.parties.role',
+        // The VEHICLE relationship vocabulary — `vehicles.role.*` — not the
+        // reception party-role one; these rows come from
+        // `veh.vehicle-relationship-list`.
+        cell: (row) => translateDynamic(messages, `vehicles.role.${row.relationshipRole}`),
+      },
+      {
+        id: 'active',
+        headerKey: 'receptions.wizard.status',
+        cell: (row) =>
+          row.active ? translate(messages, 'receptions.confirm.relationshipActive') : '',
+      },
+    ],
+    [messages]
+  );
+
+  const vehicleColumns = useMemo<readonly OperationalColumn<CustomerVehicleEntry>[]>(
+    () => [
+      {
+        id: 'vehicle',
+        headerKey: 'receptions.wizard.vehicle',
+        flex: 2,
+        cell: (row) => (
+          <span dir="ltr">
+            {row.vehicleDisplayNumber ??
+              row.vin ??
+              translate(messages, 'receptions.checkIn.vehicleUnidentified')}
+          </span>
+        ),
+      },
+      {
+        id: 'role',
+        headerKey: 'receptions.parties.role',
+        cell: (row) => translateDynamic(messages, `vehicles.role.${row.relationshipRole}`),
+      },
+      {
+        id: 'link',
+        headerKey: 'receptions.wizard.status',
+        cell: (row) =>
+          row.active
+            ? translate(messages, 'receptions.confirm.relationshipActive')
+            : translate(messages, 'receptions.checkIn.vehicleLinkEnded'),
+      },
+    ],
+    [messages]
+  );
+
   return (
     <div className="grid gap-4 lg:grid-cols-2">
       <section
         aria-labelledby="confirm-customer-heading"
-        className="rounded-lg border border-border bg-surface p-4"
+        className="min-w-0 rounded-lg border border-border bg-surface p-4"
       >
         <h4 id="confirm-customer-heading" className="text-body font-medium text-text-primary">
           {translate(messages, 'receptions.confirm.customerHeading')}
         </h4>
 
         {!capabilities.readCustomers ? (
-          <PermissionDeniedState messages={messages} />
-        ) : roles.status === 'loading' ? (
-          <LoadingState messages={messages} />
+          <MuiRefusedState messages={messages} />
         ) : roles.status !== 'idle' ? (
-          <RolesFailure messages={messages} status={roles.status} table={roles} />
+          <EvidenceStates
+            messages={messages}
+            locale={locale}
+            status={roles.status}
+            correlationId={roles.correlationId}
+            onRetry={roles.refresh}
+            skeleton={false}
+          />
         ) : requester === null ? (
           // A visit always seeds its requester role at creation, so an empty
           // answer is stated as the anomaly it is, not silently skipped.
@@ -260,21 +328,21 @@ export function ConfirmationStep({
                 partnerType: null,
               }}
             />
-            <CustomerIdentity messages={messages} state={customerState} />
+            <CustomerIdentity locale={locale} messages={messages} state={customerState} />
           </div>
         )}
       </section>
 
       <section
         aria-labelledby="confirm-vehicle-heading"
-        className="rounded-lg border border-border bg-surface p-4"
+        className="min-w-0 rounded-lg border border-border bg-surface p-4"
       >
         <h4 id="confirm-vehicle-heading" className="text-body font-medium text-text-primary">
           {translate(messages, 'receptions.confirm.vehicleHeading')}
         </h4>
 
         {!capabilities.readVehicles ? (
-          <PermissionDeniedState messages={messages} />
+          <MuiRefusedState messages={messages} />
         ) : (
           <VehicleIdentity locale={locale} messages={messages} state={vehicleState} />
         )}
@@ -282,55 +350,57 @@ export function ConfirmationStep({
 
       <section
         aria-labelledby="confirm-link-heading"
-        className="rounded-lg border border-border bg-surface p-4 lg:col-span-2"
+        className="flex min-w-0 flex-col gap-2 rounded-lg border border-border bg-surface p-4 lg:col-span-2"
       >
         <h4 id="confirm-link-heading" className="text-body font-medium text-text-primary">
           {translate(messages, 'receptions.confirm.linkHeading')}
         </h4>
 
         {capabilities.readCustomers && requesterPartnerId !== null ? (
-          linkVerdict === 'pending' ? (
-            <LoadingState messages={messages} />
-          ) : (
-            <>
-              <p data-testid="confirm-link-verdict" className="mt-2 text-body text-text-secondary">
+          <>
+            {linkVerdict === 'pending' ? (
+              <MuiLoadingState messages={messages} variant="inline" />
+            ) : (
+              <p data-testid="confirm-link-verdict" className="text-body text-text-secondary">
                 {translate(messages, LINK_VERDICT_KEYS[linkVerdict])}
               </p>
-              {/* Announced AND reachable. A truncation notice with no control
-                  tells the operator their answer is somewhere they cannot go. */}
-              <div className="mt-2">
-                <CursorPager
-                  messages={messages}
-                  table={customerVehicles}
-                  label={translate(messages, 'receptions.confirm.linkPagerLabel')}
-                />
-              </div>
-            </>
-          )
+            )}
+            {/* Announced AND reachable. A truncation notice with no pager tells
+                the operator their answer is somewhere they cannot go. */}
+            <OperationalGrid<CustomerVehicleEntry>
+              messages={messages}
+              locale={locale}
+              label={translate(messages, 'receptions.confirm.customerVehiclesLabel')}
+              columns={vehicleColumns}
+              rowId={(row) => row.id}
+              table={customerVehicles}
+              density="compact"
+              suppressEmptyState
+              testId="confirm-customer-vehicles"
+            />
+          </>
         ) : (
-          <p data-testid="confirm-link-verdict" className="mt-2 text-body text-text-secondary">
+          <p data-testid="confirm-link-verdict" className="text-body text-text-secondary">
             {translate(messages, 'receptions.confirm.linkUnknown')}
           </p>
         )}
 
-        <h5 className="mt-4 text-caption font-medium text-text-secondary">
+        <h5 className="mt-2 text-caption font-medium text-text-secondary">
           {translate(messages, 'receptions.confirm.relationshipsHeading')}
         </h5>
-        {relationships.status === 'loading' ? (
-          <LoadingState messages={messages} />
-        ) : relationships.status === 'denied' ? (
-          <PermissionDeniedState
-            messages={messages}
-            {...(relationships.correlationId ? { correlationId: relationships.correlationId } : {})}
-          />
-        ) : relationships.status !== 'idle' ? (
-          <ErrorState
-            messages={messages}
-            action={<RetryButton messages={messages} onRetry={relationships.refresh} />}
-            {...(relationships.correlationId ? { correlationId: relationships.correlationId } : {})}
-          />
-        ) : (relationships.response?.rows.length ?? 0) === 0 ? (
-          <p className="mt-2 text-body text-text-secondary">
+        <OperationalGrid<CheckInVehicleRelationship>
+          messages={messages}
+          locale={locale}
+          label={translate(messages, 'receptions.confirm.relationshipsHeading')}
+          columns={relationshipColumns}
+          rowId={(row) => row.id}
+          table={relationships}
+          density="compact"
+          suppressEmptyState
+          testId="confirm-relationships"
+        />
+        {relationships.status === 'idle' && (relationships.response?.rows.length ?? 0) === 0 ? (
+          <p className="text-body text-text-secondary">
             {/* The same three states as the link above: an empty page is only
                 "none recorded" when the read covered the set. */}
             {translate(
@@ -344,40 +414,7 @@ export function ConfirmationStep({
                 : 'receptions.confirm.relationshipsEmpty'
             )}
           </p>
-        ) : (
-          <ul className="mt-2 flex flex-col divide-y divide-border rounded-md border border-border">
-            {(relationships.response?.rows ?? []).map((row) => (
-              <li key={row.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
-                <PartyLabel
-                  messages={messages}
-                  party={{
-                    partnerName: row.partnerName,
-                    partnerNumber: row.partnerNumber,
-                    partnerType: row.partnerType,
-                  }}
-                />
-                <span className="text-caption text-text-secondary">
-                  {/* The VEHICLE relationship vocabulary — `vehicles.role.*` —
-                      not the reception party-role one; these rows come from
-                      `veh.vehicle-relationship-list`. */}
-                  {translateDynamic(messages, `vehicles.role.${row.relationshipRole}`)}
-                </span>
-                {row.active ? (
-                  <span className="rounded-full bg-surface-subtle px-2 py-0.5 text-caption text-text-secondary">
-                    {translate(messages, 'receptions.confirm.relationshipActive')}
-                  </span>
-                ) : null}
-              </li>
-            ))}
-          </ul>
-        )}
-        <div className="mt-2">
-          <CursorPager
-            messages={messages}
-            table={relationships}
-            label={translate(messages, 'receptions.confirm.relationshipsPagerLabel')}
-          />
-        </div>
+        ) : null}
       </section>
 
       <p className="text-caption text-text-muted lg:col-span-2" lang={locale}>
@@ -388,56 +425,23 @@ export function ConfirmationStep({
   );
 }
 
-function RolesFailure({
-  messages,
-  status,
-  table,
-}: {
-  readonly messages: Messages;
-  readonly status: string;
-  readonly table: { readonly correlationId: string | undefined; readonly refresh: () => void };
-}) {
-  if (status === 'denied') {
-    return (
-      <PermissionDeniedState
-        messages={messages}
-        {...(table.correlationId ? { correlationId: table.correlationId } : {})}
-      />
-    );
-  }
-  if (status === 'expired') return <SessionExpiredState messages={messages} />;
-  return (
-    <ErrorState
-      messages={messages}
-      action={<RetryButton messages={messages} onRetry={table.refresh} />}
-      {...(table.correlationId ? { correlationId: table.correlationId } : {})}
-    />
-  );
-}
-
 function CustomerIdentity({
+  locale,
   messages,
   state,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly state: ReadState<CheckInCustomerSummary> | null;
 }) {
-  if (state === null) return <LoadingState messages={messages} />;
-  if (state.status === 'denied') {
-    return (
-      <PermissionDeniedState
-        messages={messages}
-        {...(state.correlationId ? { correlationId: state.correlationId } : {})}
-      />
-    );
-  }
-  if (state.status === 'not-found') return <NotFoundState messages={messages} />;
-  if (state.status === 'expired') return <SessionExpiredState messages={messages} />;
+  if (state === null) return <MuiLoadingState messages={messages} variant="inline" />;
   if (state.status !== 'ok' || state.data === null) {
     return (
-      <ErrorState
+      <RecordReadState
         messages={messages}
-        {...(state.correlationId ? { correlationId: state.correlationId } : {})}
+        locale={locale}
+        status={state.status === 'ok' ? 'error' : state.status}
+        correlationId={state.correlationId}
       />
     );
   }
@@ -469,26 +473,18 @@ function VehicleIdentity({
   messages,
   state,
 }: {
-  readonly locale: string;
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly state: ReadState<CheckInVehicleSummary> | null;
 }) {
-  if (state === null) return <LoadingState messages={messages} />;
-  if (state.status === 'denied') {
-    return (
-      <PermissionDeniedState
-        messages={messages}
-        {...(state.correlationId ? { correlationId: state.correlationId } : {})}
-      />
-    );
-  }
-  if (state.status === 'not-found') return <NotFoundState messages={messages} />;
-  if (state.status === 'expired') return <SessionExpiredState messages={messages} />;
+  if (state === null) return <MuiLoadingState messages={messages} variant="inline" />;
   if (state.status !== 'ok' || state.data === null) {
     return (
-      <ErrorState
+      <RecordReadState
         messages={messages}
-        {...(state.correlationId ? { correlationId: state.correlationId } : {})}
+        locale={locale}
+        status={state.status === 'ok' ? 'error' : state.status}
+        correlationId={state.correlationId}
       />
     );
   }
@@ -508,7 +504,7 @@ function VehicleIdentity({
           <p>{translate(messages, 'receptions.confirm.vehicleMerged')}</p>
           <Link
             href={`/${locale}/vehicles/${data.mergedIntoId}`}
-            className="mt-1 inline-block text-body text-primary underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            className="mt-1 inline-block text-body text-primary underline-offset-2 hover:underline"
           >
             {translate(messages, 'receptions.confirm.vehicleMergedLink')}
           </Link>
@@ -568,23 +564,5 @@ function VehicleIdentity({
         </div>
       </dl>
     </div>
-  );
-}
-
-function RetryButton({
-  messages,
-  onRetry,
-}: {
-  readonly messages: Messages;
-  readonly onRetry: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onRetry}
-      className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-    >
-      {translate(messages, 'state.retry')}
-    </button>
   );
 }

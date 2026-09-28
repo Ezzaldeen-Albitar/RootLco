@@ -449,6 +449,27 @@ describe('CustomerPicker', () => {
     expect(screen.getByTestId('customer-picker')).not.toHaveTextContent(CUSTOMER_UUID);
   });
 
+  it('carries the kind the directory answered with the choice, so a screen need not read it again', async () => {
+    searchCustomerDirectory.mockResolvedValue(page([HIT]));
+    const chosen = vi.fn();
+    const user = userEvent.setup();
+    renderLtr(
+      <CustomerPicker
+        messages={en}
+        locale="en"
+        label="Paying customer"
+        value={null}
+        onChange={chosen}
+        canSearch
+      />
+    );
+    await user.type(screen.getByLabelText(/^Paying customer/), 'Layla');
+    await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+    expect(chosen).toHaveBeenCalledWith(
+      expect.objectContaining({ id: CUSTOMER_UUID, partyType: HIT.partyType })
+    );
+  });
+
   it('says a single character is too short and sends nothing', async () => {
     const user = userEvent.setup();
     renderLtr(<PickerHarness />);
@@ -517,6 +538,98 @@ describe('CustomerPicker', () => {
     expect(change).toHaveAccessibleDescription(
       expect.stringContaining('This customer cannot pay this invoice.')
     );
+  });
+});
+
+/*
+ * On Material UI (`material`) each match carries its primary phone exactly as
+ * the backend returned it (the `G-CRM-PHONE` closure): a receptionist tells two
+ * customers of the same name apart by the caller's number. The option is still
+ * NAMED by name and number alone; the phone is its description.
+ */
+describe('CustomerPicker on Material UI shows each match’s phone', () => {
+  const TWIN = { ...HIT, id: '22223333-4444-4555-8666-777788889999', displayNumber: 'C-000777' };
+
+  function renderMaterial(locale: Locale = 'en', messages: Messages = en) {
+    const chosen = vi.fn();
+    const renderIn = locale === 'ar' ? renderRtl : renderLtr;
+    renderIn(
+      <CustomerPicker
+        messages={messages}
+        locale={locale}
+        label="Paying customer"
+        value={null}
+        onChange={chosen}
+        canSearch
+        material
+      />
+    );
+    return chosen;
+  }
+
+  it('draws a masked phone with the partly-hidden hint, and a whole one without it', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([
+        { ...HIT, primaryPhone: '*******4567', phoneMasked: true },
+        { ...TWIN, primaryPhone: '0799876543', phoneMasked: false },
+      ])
+    );
+    const user = userEvent.setup();
+    renderMaterial();
+    await user.type(screen.getByRole('combobox', { name: /^Paying customer/ }), 'Layla');
+
+    const masked = await screen.findByRole('option', { name: 'Layla Haddad — C-000482' });
+    expect(within(masked).getByText('*******4567')).toBeVisible();
+    expect(within(masked).getByText('*******4567')).toHaveAttribute('dir', 'ltr');
+    expect(within(masked).getByText(en['crm.customers.search.phonePartlyHidden'])).toBeVisible();
+    expect(masked).toHaveAccessibleDescription(
+      new RegExp(`^\\*{7}4567\\s*${en['crm.customers.search.phonePartlyHidden']}$`)
+    );
+
+    const whole = screen.getByRole('option', { name: 'Layla Haddad — C-000777' });
+    expect(within(whole).getByText('0799876543')).toBeVisible();
+    expect(within(whole).queryByText(en['crm.customers.search.phonePartlyHidden'])).toBeNull();
+    expect(whole).toHaveAccessibleDescription('0799876543');
+  });
+
+  it('draws no second line for a customer with no phone on record', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([{ ...HIT, primaryPhone: null, phoneMasked: false }])
+    );
+    const user = userEvent.setup();
+    renderMaterial();
+    await user.type(screen.getByRole('combobox', { name: /^Paying customer/ }), 'Layla');
+    const option = await screen.findByRole('option', { name: 'Layla Haddad — C-000482' });
+    expect(option).toHaveTextContent(/^Layla Haddad — C-000482$/);
+    expect(option).not.toHaveAttribute('aria-describedby');
+  });
+
+  it('carries the phone with the choice, and never shows the identifier', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([{ ...HIT, primaryPhone: '*******4567', phoneMasked: true }])
+    );
+    const user = userEvent.setup();
+    const chosen = renderMaterial();
+    await user.type(screen.getByRole('combobox', { name: /^Paying customer/ }), 'Layla');
+    const option = await screen.findByRole('option', { name: 'Layla Haddad — C-000482' });
+    expect(screen.getByTestId('customer-picker')).not.toHaveTextContent(CUSTOMER_UUID);
+    await user.click(option);
+    expect(chosen).toHaveBeenCalledWith(
+      expect.objectContaining({ id: CUSTOMER_UUID, primaryPhone: '*******4567', phoneMasked: true })
+    );
+  });
+
+  it('says the hint in Arabic, keeping the number left to right', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([{ ...HIT, primaryPhone: '*******4567', phoneMasked: true }])
+    );
+    const user = userEvent.setup();
+    renderMaterial('ar', ar);
+    await user.type(screen.getByRole('combobox', { name: /^Paying customer/ }), 'Layla');
+    const option = await screen.findByRole('option', { name: 'Layla Haddad — C-000482' });
+    expect(within(option).getByText(ar['crm.customers.search.phonePartlyHidden'])).toBeVisible();
+    expect(within(option).getByText('*******4567')).toHaveAttribute('dir', 'ltr');
+    expect(option).not.toHaveTextContent(en['crm.customers.search.phonePartlyHidden']);
   });
 });
 

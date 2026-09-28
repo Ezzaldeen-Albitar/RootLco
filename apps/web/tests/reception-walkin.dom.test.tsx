@@ -19,9 +19,12 @@ import {
  * The claims that matter most here:
  *
  *   1. **Phone search is real** (P1-32, closing `G-CRM-PHONE`). The first thing
- *      a receptionist tries is the caller's phone number; the picker sends it
- *      as typed and shows the matched phone exactly as the backend returned
- *      it, partly hidden when it is masked.
+ *      a receptionist tries is the caller's phone number; on Material UI
+ *      (ADR-022) the customer chooser is ONE combobox (`CustomerPicker`), and
+ *      the number goes to the server in its free-text box as typed —
+ *      Arabic-Indic digits included — and each match shows its primary phone
+ *      exactly as the backend returned it, with the "partly hidden" hint when
+ *      it is masked, so two customers of the same name can be told apart.
  *   2. **The customer-first vehicle pick is real** — the customer's own
  *      vehicle list is read through `crm.customer-vehicle-list`, a vehicle
  *      chosen from it needs no relationship step, and a relationship row
@@ -304,71 +307,94 @@ beforeEach(() => {
   listPlates.mockResolvedValue(page([ENDED_PLATE, CURRENT_PLATE]));
 });
 
+/** The customer chooser: one combobox, named by its label. */
+const customerBox = (catalogue: Record<string, string> = en) =>
+  screen.getByRole('combobox', { name: catalogue['receptions.intake.customer.selectorLabel']! });
+
+/** A row action's name begins with its label; what it acts on follows. */
+const named = (label: string) => new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+
 /** Search for the fixture customer and choose them. */
-async function chooseCustomer(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText(en['crm.customers.column.name']), 'Layla');
-  await user.click(screen.getByRole('button', { name: en['customerSelector.search'] }));
-  await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
+async function chooseCustomer(
+  user: ReturnType<typeof userEvent.setup>,
+  catalogue: Record<string, string> = en
+) {
+  await user.type(customerBox(catalogue), 'Layla');
+  await user.click(
+    await screen.findByRole('option', { name: 'Layla Haddad — C-000482' }, { timeout: 5000 })
+  );
   // The vehicle step reads the customer's own vehicles on entry.
-  await screen.findByText(en['receptions.intake.vehicle.ownListTitle']);
+  await screen.findByText(catalogue['receptions.intake.vehicle.ownListTitle']!);
 }
 
 describe('searching for the caller by phone (P1-32, closing G-CRM-PHONE)', () => {
-  const MASKED_HIT = { ...CUSTOMER_HIT, primaryPhone: '*******4567', phoneMasked: true };
-
-  it('offers a phone box and no longer states that phone search is missing', () => {
+  it('asks ONE box, and no longer states that phone search is missing', () => {
     renderLtr(<WalkInIntakeScreen {...props()} />);
-    expect(screen.getByLabelText(en['customerSelector.phone'])).toBeInTheDocument();
+    expect(customerBox()).toBeInTheDocument();
     expect(screen.queryByTestId('phone-search-notice')).not.toBeInTheDocument();
   });
 
-  it('sends the typed phone number as the phone criterion and shows the masked result', async () => {
-    searchCustomerDirectory.mockResolvedValue(page([MASKED_HIT]));
+  it('sends a typed phone number to the server in the one box, as typed', async () => {
     const user = userEvent.setup();
     renderLtr(<WalkInIntakeScreen {...props()} />);
 
-    // Enter searches; it must not submit anything else.
-    await user.type(screen.getByLabelText(en['customerSelector.phone']), '0791234567{Enter}');
+    await user.type(customerBox(), '0791234567');
+    expect(
+      await screen.findByRole('option', { name: 'Layla Haddad — C-000482' }, { timeout: 5000 })
+    ).toBeVisible();
+    const criteria = searchCustomerDirectory.mock.calls.at(-1)?.[2] as Record<string, unknown>;
+    expect(criteria).toEqual({ q: '0791234567' });
+  });
 
-    expect(await screen.findByText('*******4567')).toBeInTheDocument();
-    expect(searchCustomerDirectory).toHaveBeenCalledTimes(1);
-    const [, , criteria] = searchCustomerDirectory.mock.calls[0] as [
-      unknown,
-      unknown,
-      Record<string, unknown>,
-    ];
-    expect(criteria).toEqual({ phone: '0791234567' });
-    // Shown exactly as returned, with the plain-language hint beside it.
-    const choice = screen.getByRole('button', { name: /Layla Haddad/ });
+  it('sends Arabic-Indic digits as typed, in Arabic', async () => {
+    const user = userEvent.setup();
+    renderRtl(<WalkInIntakeScreen {...props({ locale: 'ar', messages: ar })} />);
+    await user.type(customerBox(ar), '٠٧٩١٢٣٤٥٦٧');
+    await waitFor(() => expect(searchCustomerDirectory).toHaveBeenCalled());
+    const criteria = searchCustomerDirectory.mock.calls.at(-1)?.[2] as Record<string, unknown>;
+    expect(criteria).toEqual({ q: '٠٧٩١٢٣٤٥٦٧' });
+  });
+
+  it('shows a masked phone on the match exactly as returned, with the partly-hidden hint', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([{ ...CUSTOMER_HIT, primaryPhone: '*******4567', phoneMasked: true }])
+    );
+    const user = userEvent.setup();
+    renderLtr(<WalkInIntakeScreen {...props()} />);
+    await user.type(customerBox(), '0791234567');
+    const choice = await screen.findByRole(
+      'option',
+      { name: 'Layla Haddad — C-000482' },
+      { timeout: 5000 }
+    );
+    expect(within(choice).getByText('*******4567')).toBeVisible();
     expect(within(choice).getByText(en['crm.customers.search.phonePartlyHidden'])).toBeVisible();
   });
 
-  it('sends Arabic-Indic digits as typed, and only echoes the Western form for reading', async () => {
-    const user = userEvent.setup();
-    renderRtl(<WalkInIntakeScreen {...props({ locale: 'ar', messages: ar })} />);
-    const box = screen.getByLabelText(ar['customerSelector.phone']);
-    await user.type(box, '٠٧٩١٢٣٤٥٦٧');
-
-    expect(screen.getByTestId('digits-echo')).toHaveTextContent('0791234567');
-    await user.type(box, '{Enter}');
-    await screen.findByText('Layla Haddad');
-    const [, , criteria] = searchCustomerDirectory.mock.calls[0] as [
-      unknown,
-      unknown,
-      Record<string, unknown>,
-    ];
-    expect(criteria).toEqual({ phone: '٠٧٩١٢٣٤٥٦٧' });
-  });
-
-  it('does not show the partly-hidden hint when the phone is shown whole', async () => {
+  it('shows a whole phone without the partly-hidden hint', async () => {
     searchCustomerDirectory.mockResolvedValue(
       page([{ ...CUSTOMER_HIT, primaryPhone: '0791234567', phoneMasked: false }])
     );
     const user = userEvent.setup();
     renderLtr(<WalkInIntakeScreen {...props()} />);
-    await user.type(screen.getByLabelText(en['customerSelector.phone']), '1234567{Enter}');
-    expect(await screen.findByText('0791234567')).toBeInTheDocument();
+    await user.type(customerBox(), '1234567');
+    const choice = await screen.findByRole(
+      'option',
+      { name: 'Layla Haddad — C-000482' },
+      { timeout: 5000 }
+    );
+    expect(within(choice).getByText('0791234567')).toBeVisible();
     expect(screen.queryByText(en['crm.customers.search.phonePartlyHidden'])).toBeNull();
+  });
+
+  it('names each match by name and number, never by its identifier', async () => {
+    const user = userEvent.setup();
+    const { container } = renderLtr(<WalkInIntakeScreen {...props()} />);
+    await user.type(customerBox(), 'Layla');
+    expect(
+      await screen.findByRole('option', { name: 'Layla Haddad — C-000482' }, { timeout: 5000 })
+    ).toBeVisible();
+    expect(container.textContent).not.toContain(CUSTOMER_ID);
   });
 });
 
@@ -457,7 +483,7 @@ describe('creating the customer, and its duplicate guard', () => {
     expect(screen.getByText(en['receptions.intake.customer.duplicatesBody'])).toBeInTheDocument();
 
     await user.click(
-      screen.getByRole('button', { name: en['receptions.intake.customer.useExisting'] })
+      screen.getByRole('button', { name: named(en['receptions.intake.customer.useExisting']) })
     );
     await screen.findByText(en['receptions.intake.vehicle.ownListTitle']);
     // Continuing with the EXISTING record, not the one just created.
@@ -475,7 +501,7 @@ describe('the customer-first vehicle pick (crm.customer-vehicle-list)', () => {
     await within(list).findByText('V-0007');
 
     await user.click(
-      within(list).getByRole('button', { name: en['receptions.intake.vehicle.choose'] })
+      within(list).getByRole('button', { name: named(en['receptions.intake.vehicle.choose']) })
     );
 
     // Already on record against this customer — no link step, straight to done.
@@ -493,7 +519,7 @@ describe('the customer-first vehicle pick (crm.customer-vehicle-list)', () => {
     await within(list).findByText(en['receptions.intake.vehicle.noLiveVehicle']);
     // Exactly ONE choose control: the live row. The dead row offers none.
     expect(
-      within(list).getAllByRole('button', { name: en['receptions.intake.vehicle.choose'] })
+      within(list).getAllByRole('button', { name: named(en['receptions.intake.vehicle.choose']) })
     ).toHaveLength(1);
   });
 });
@@ -507,7 +533,7 @@ describe('searching all vehicles, then recording the relationship', () => {
     const results = await screen.findByTestId('intake-vehicle-search-results');
     await within(results).findByText('V-0100');
     await user.click(
-      within(results).getByRole('button', { name: en['receptions.intake.vehicle.choose'] })
+      within(results).getByRole('button', { name: named(en['receptions.intake.vehicle.choose']) })
     );
     await screen.findByTestId('intake-link-step');
   }
@@ -622,6 +648,27 @@ describe('registering a new vehicle, and its duplicate guard', () => {
     expect(screen.queryByTestId('intake-link-step')).not.toBeInTheDocument();
   });
 
+  it('says a registration whose answer never arrived is unavailable, keeping what was typed', async () => {
+    // The Server Action's promise REJECTS (the connection dropped): said as
+    // that, the entry kept, and nothing chosen behind the operator's back.
+    createVehicleAction.mockRejectedValue(new TypeError('Failed to fetch'));
+    const user = userEvent.setup();
+    renderLtr(<WalkInIntakeScreen {...props()} />);
+    await chooseCustomer(user);
+
+    const create = screen.getByTestId('intake-vehicle-create');
+    const vin = within(create).getByLabelText(en['vehicles.create.vin'], { exact: false });
+    await user.type(vin, '2HGCM82633A004999');
+    await user.click(within(create).getByRole('button', { name: en['vehicles.create.submit'] }));
+
+    expect(await within(create).findByText(en['state.unavailable.message'])).toBeVisible();
+    expect(vin).toHaveValue('2HGCM82633A004999');
+    expect(
+      within(create).getByRole('button', { name: en['vehicles.create.submit'] })
+    ).toBeEnabled();
+    expect(screen.queryByTestId('intake-link-step')).not.toBeInTheDocument();
+  });
+
   it('hides the create section from an operator without vehicle manage access', async () => {
     const user = userEvent.setup();
     renderLtr(<WalkInIntakeScreen {...props({ canCreateVehicle: false })} />);
@@ -636,7 +683,7 @@ describe('the truthful handoff', () => {
     const list = screen.getByTestId('customer-vehicle-list');
     await within(list).findByText('V-0007');
     await user.click(
-      within(list).getByRole('button', { name: en['receptions.intake.vehicle.choose'] })
+      within(list).getByRole('button', { name: named(en['receptions.intake.vehicle.choose']) })
     );
     await screen.findByText(en['receptions.intake.done.heading']);
   }
@@ -695,15 +742,11 @@ describe('the Arabic flow end to end', () => {
     const user = userEvent.setup();
     renderRtl(<WalkInIntakeScreen {...props({ locale: 'ar', messages: ar })} />);
 
-    await user.type(screen.getByLabelText(ar['crm.customers.column.name']), 'Layla');
-    await user.click(screen.getByRole('button', { name: ar['customerSelector.search'] }));
-    await user.click(await screen.findByRole('button', { name: /Layla Haddad/ }));
-
-    await screen.findByText(ar['receptions.intake.vehicle.ownListTitle']);
+    await chooseCustomer(user, ar);
     const list = screen.getByTestId('customer-vehicle-list');
     await within(list).findByText('V-0007');
     await user.click(
-      within(list).getByRole('button', { name: ar['receptions.intake.vehicle.choose'] })
+      within(list).getByRole('button', { name: named(ar['receptions.intake.vehicle.choose']) })
     );
 
     await screen.findByText(ar['receptions.intake.done.heading']);
@@ -1119,7 +1162,7 @@ describe('continuing from the customer profile into the existing check-in flow',
     const results = await screen.findByTestId('intake-vehicle-search-results');
     await within(results).findByText('V-0100');
     await user.click(
-      within(results).getByRole('button', { name: en['receptions.intake.vehicle.choose'] })
+      within(results).getByRole('button', { name: named(en['receptions.intake.vehicle.choose']) })
     );
 
     await recordTheRelationship(user);
@@ -1182,7 +1225,7 @@ describe('continuing from the customer profile into the existing check-in flow',
     const results = await screen.findByTestId('intake-vehicle-search-results');
     await within(results).findByText('V-0100');
     await user.click(
-      within(results).getByRole('button', { name: en['receptions.intake.vehicle.choose'] })
+      within(results).getByRole('button', { name: named(en['receptions.intake.vehicle.choose']) })
     );
     await recordTheRelationship(user);
   }
@@ -1391,7 +1434,7 @@ describe('the unsaved-work guard stops at the finished step', () => {
     const list = screen.getByTestId('customer-vehicle-list');
     await within(list).findByText('V-0007');
     await user.click(
-      within(list).getByRole('button', { name: en['receptions.intake.vehicle.choose'] })
+      within(list).getByRole('button', { name: named(en['receptions.intake.vehicle.choose']) })
     );
     await screen.findByText(en['receptions.intake.done.heading']);
 

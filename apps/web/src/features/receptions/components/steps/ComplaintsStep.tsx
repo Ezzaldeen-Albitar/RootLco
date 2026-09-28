@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useTransition } from 'react';
-import { SelectField, TextAreaField } from '@/components/forms/Field';
+import { useState } from 'react';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
+import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
 import { translate, translateDynamic } from '@/i18n/get-messages';
-import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { recordConditionEvidence } from '../../api';
 import {
   COMPLAINT_CATEGORIES,
@@ -20,11 +21,12 @@ import type { CheckInStepProps } from '../../check-in/wizard';
 import {
   EvidenceReadBack,
   EvidenceSection,
-  PRIMARY_BUTTON,
   SessionCaptureList,
   StepOutcome,
+  SubmitButton,
   WriteWithdrawn,
   useEvidenceTable,
+  useStepForm,
 } from './EvidencePanels';
 
 /**
@@ -52,9 +54,28 @@ import {
  * read-back therefore carries the category, the severity and the reporter's
  * resolved name, and says so; what this session typed is shown separately, from
  * the write's own response, and labelled as a session record.
+ *
+ * ## On the Material UI wrappers (ADR-022)
+ *
+ * The form is `useStepForm`: the category and the words are refused ON their
+ * fields when missing (red, the sentence beside them, the cursor moved to the
+ * first), every entry is kept, and anything typed is unsaved work. The reporter
+ * is chosen by name through `CustomerPicker` (one combobox, the server's search).
  */
 
-const IDLE: ActionState = { status: 'idle' };
+interface ComplaintDraft {
+  readonly category: string;
+  readonly severity: string;
+  readonly complaintText: string;
+  readonly reporter: ChosenCustomer | null;
+}
+
+const EMPTY_COMPLAINT: ComplaintDraft = {
+  category: '',
+  severity: '',
+  complaintText: '',
+  reporter: null,
+};
 
 export function ComplaintsStep({
   locale,
@@ -68,55 +89,38 @@ export function ComplaintsStep({
   const table = useEvidenceTable(visitId, 'complaint', `${visitId}:${recordVersion}`);
   const [captured, setCaptured] = useState<readonly SessionEvidence[]>([]);
 
-  const [category, setCategory] = useState('');
-  const [severity, setSeverity] = useState('');
-  const [complaintText, setComplaintText] = useState('');
-  const [reporter, setReporter] = useState<SelectedCustomer | null>(null);
-  const [state, setState] = useState<ActionState>(IDLE);
-  const [pending, startTransition] = useTransition();
-
   // `P1-28-SEC-002`. WF-27: this write needs `iam.sensitive.view` on top of the
   // operation's own code, so a session without it is told before it types four
   // thousand characters into a form that could only be refused.
   const gate = narrativeGate('complaint', capabilities, writesLocked);
-  const denialKey = narrativeDenialKey('complaint', state);
 
-  const submit = () => {
-    const attempt = (state.attempt ?? 0) + 1;
-    if (category === '') {
-      setState({
-        status: 'invalid',
-        messageKey: 'receptions.complaint.error.categoryRequired',
-        attempt,
-      });
-      return;
-    }
-    if (complaintText.trim() === '') {
-      setState({
-        status: 'invalid',
-        messageKey: 'receptions.complaint.error.textRequired',
-        attempt,
-      });
-      return;
-    }
-
-    startTransition(async () => {
+  const form = useStepForm<ComplaintDraft>({
+    messages,
+    empty: EMPTY_COMPLAINT,
+    errorNames: { reporter: 'reportedByPartnerId' },
+    check: (draft) => {
+      const found: Record<string, string> = {};
+      if (draft.category === '') found['category'] = 'receptions.complaint.error.categoryRequired';
+      if (draft.complaintText.trim() === '') {
+        found['complaintText'] = 'receptions.complaint.error.textRequired';
+      }
+      return found;
+    },
+    send: async (draft, attempt) => {
       const result = await recordConditionEvidence(
         visitId,
         {
           kind: 'complaint',
-          category: category as ComplaintCategory,
+          category: draft.category as ComplaintCategory,
           // Omitted rather than blanked: the route schema is `.strict()` and
           // `severity` is `optional()`, so an untouched control leaves the key
           // off the body entirely.
-          ...(severity === '' ? {} : { severity: severity as ComplaintSeverity }),
-          complaintText: complaintText.trim(),
-          ...(reporter === null ? {} : { reportedByPartnerId: reporter.id }),
+          ...(draft.severity === '' ? {} : { severity: draft.severity as ComplaintSeverity }),
+          complaintText: draft.complaintText.trim(),
+          ...(draft.reporter === null ? {} : { reportedByPartnerId: draft.reporter.id }),
         },
         attempt
       );
-      setState(result);
-
       const recorded = result.recorded;
       if (result.status === 'success' && recorded !== undefined) {
         // The operator's own words, held in this tab only — the read cannot
@@ -125,22 +129,23 @@ export function ComplaintsStep({
           appendSessionEvidence(current, {
             evidenceId: recorded.evidenceId,
             kind: 'complaint',
-            summary: complaintText.trim(),
+            summary: draft.complaintText.trim(),
           })
         );
-        setCategory('');
-        setSeverity('');
-        setComplaintText('');
-        setReporter(null);
       }
-
+      return result;
+    },
+    settle: async (result) => {
       notifyActionResult(result, messages);
       if (result.status === 'success' || result.status === 'conflict') {
         await refresh();
         table.refresh();
       }
-    });
-  };
+    },
+  });
+  const denialKey = narrativeDenialKey('complaint', form.state);
+  const { draft } = form;
+  const formRef = useFocusFirstInvalid(form.state);
 
   return (
     <div className="grid gap-4 lg:grid-cols-2">
@@ -180,54 +185,61 @@ export function ComplaintsStep({
           <WriteWithdrawn locale={locale} messages={messages} messageKey={gate.noticeKey} />
         ) : (
           <form
+            ref={formRef}
             aria-label={translate(messages, 'receptions.complaint.formLabel')}
-            onSubmit={(event) => {
-              event.preventDefault();
-              submit();
-            }}
+            onSubmit={form.onSubmit}
+            noValidate
             className="flex flex-col gap-3"
           >
-            <SelectField
+            <FormSelectField
               label={translate(messages, 'receptions.complaint.category')}
               required
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
+              value={draft.category}
+              onChange={(value) => form.update('category', value)}
               options={COMPLAINT_CATEGORIES.map((value) => ({
                 value,
                 label: translateDynamic(messages, `receptions.complaintCategory.${value}`),
               }))}
               placeholder={translate(messages, 'form.select.placeholder')}
+              error={form.fieldError('category')}
             />
-            <SelectField
+            <FormSelectField
               label={translate(messages, 'receptions.complaint.severity')}
               description={translate(messages, 'receptions.complaint.severityHint')}
-              optionalHint={translate(messages, 'form.optional')}
-              value={severity}
-              onChange={(event) => setSeverity(event.target.value)}
+              value={draft.severity}
+              onChange={(value) => form.update('severity', value)}
               options={COMPLAINT_SEVERITIES.map((value) => ({
                 value,
                 label: translateDynamic(messages, `receptions.complaintSeverity.${value}`),
               }))}
               placeholder={translate(messages, 'form.select.placeholder')}
+              error={form.fieldError('severity')}
             />
-            <TextAreaField
+            <FormTextField
               label={translate(messages, 'receptions.complaint.text')}
               description={translate(messages, 'receptions.complaint.textHint')}
               required
-              value={complaintText}
+              multiline
+              rows={4}
+              value={draft.complaintText}
               maxLength={MAX_COMPLAINT_TEXT}
-              onChange={(event) => setComplaintText(event.target.value)}
+              onChange={(value) => form.update('complaintText', value)}
+              error={form.fieldError('complaintText')}
             />
 
             {capabilities.readCustomers ? (
-              <CustomerSelector
-                locale={locale}
+              <CustomerPicker
                 messages={messages}
-                name="reportedByPartnerId"
-                labelKey="receptions.complaint.reportedBy"
-                value={reporter}
-                onChange={setReporter}
-                attempt={state.attempt ?? 0}
+                locale={locale}
+                material
+                label={translate(messages, 'receptions.complaint.reportedBy')}
+                value={draft.reporter}
+                onChange={(chosen) => form.update('reporter', chosen)}
+                canSearch
+                error={form.fieldError('reportedByPartnerId')}
+                // The form declares its own unsaved work, the reporter included.
+                countsAsUnsaved={false}
+                testId="complaint-reporter"
               />
             ) : (
               // The attribution is OPTIONAL, so the form still works without
@@ -239,7 +251,7 @@ export function ComplaintsStep({
               />
             )}
 
-            <StepOutcome messages={messages} state={state} />
+            <StepOutcome messages={messages} state={form.state} />
             {denialKey === null ? null : (
               // The refusal is rendered by `StepOutcome` above and is not
               // rewritten here. This only NAMES the pair, and says that the
@@ -250,13 +262,11 @@ export function ComplaintsStep({
               </p>
             )}
 
-            <div>
-              <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-                {pending
-                  ? translate(messages, 'form.pending')
-                  : translate(messages, 'receptions.complaint.record')}
-              </button>
-            </div>
+            <SubmitButton
+              messages={messages}
+              pending={form.pending}
+              labelKey="receptions.complaint.record"
+            />
           </form>
         )}
       </EvidenceSection>

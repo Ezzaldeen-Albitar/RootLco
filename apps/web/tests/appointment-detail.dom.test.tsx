@@ -611,6 +611,62 @@ describe('no-show is recorded, not assumed (FE-005)', () => {
   });
 });
 
+describe('a command whose answer never arrives (the connection dropped)', () => {
+  it('reschedule: says so, keeps the typed times, frees the button', async () => {
+    rescheduleAppointment.mockRejectedValue(new TypeError('Failed to fetch'));
+    const user = userEvent.setup();
+    renderScreen({ status: 'requested' });
+    await fillWindow(user, '210820260900', '210820261000');
+    await user.click(rescheduleSubmit());
+
+    expect(await screen.findByText(en['state.unavailable.message'])).toBeVisible();
+    expect(rescheduleSubmit()).toBeEnabled();
+    expect(
+      screen.getByRole('group', { name: new RegExp(`^${en['appointments.window.from']}`) })
+    ).toHaveTextContent('2026');
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
+  it('cancel: says so in the dialog, keeps the reason, and the dialog stays usable', async () => {
+    cancelAppointment.mockRejectedValue(new TypeError('Failed to fetch'));
+    const user = userEvent.setup();
+    renderScreen({ status: 'confirmed' });
+    await user.click(screen.getByRole('button', { name: en['appointments.cancel.openDialog'] }));
+    const dialog = screen.getByRole('alertdialog', {
+      name: en['appointments.cancel.dialogTitle'],
+    });
+    await user.selectOptions(
+      within(dialog).getByLabelText(new RegExp(en['appointments.cancel.reason'])),
+      REASONS.options[0]!.id
+    );
+    await user.click(
+      within(dialog).getByRole('button', { name: en['appointments.cancel.confirm'] })
+    );
+
+    expect(await within(dialog).findByText(en['state.unavailable.message'])).toBeVisible();
+    expect(
+      within(dialog).getByRole('button', { name: en['appointments.cancel.confirm'] })
+    ).toBeEnabled();
+    expect(within(dialog).getByLabelText(new RegExp(en['appointments.cancel.reason']))).toHaveValue(
+      REASONS.options[0]!.id
+    );
+  });
+
+  it('no-show: says so in the dialog, and the confirm button works again', async () => {
+    recordAppointmentNoShow.mockRejectedValue(new TypeError('Failed to fetch'));
+    const user = userEvent.setup();
+    renderScreen({ status: 'confirmed' });
+    await user.click(screen.getByRole('button', { name: en['appointments.noShow.openDialog'] }));
+    await user.click(screen.getByRole('button', { name: en['appointments.noShow.confirm'] }));
+
+    const dialog = screen.getByRole('alertdialog');
+    expect(await within(dialog).findByText(en['state.unavailable.message'])).toBeVisible();
+    expect(
+      within(dialog).getByRole('button', { name: en['appointments.noShow.confirm'] })
+    ).toBeEnabled();
+  });
+});
+
 describe('facts and directions', () => {
   it('shows the record facts an operator reports from, by name', () => {
     renderScreen({ status: 'requested' });

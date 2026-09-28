@@ -1353,6 +1353,16 @@ export interface ReceptionDetail {
   readonly recordVersion: number;
   readonly createdAt: string;
   readonly updatedAt: string | null;
+  /**
+   * The live ORDINARY work order this visit was converted into, or `null` —
+   * published so a visit revisited after its conversion can name and link its
+   * work order (Browser QA part 7, row 5.3). Added to the read additively, so a
+   * reply that predates it simply lacks it and the screen names none; `null`
+   * and absent mean the same thing here.
+   */
+  readonly workOrderId?: string | null;
+  /** That work order's number, when it has one. */
+  readonly workOrderDisplayNumber?: string | null;
 }
 
 export interface PartyRoleEntry {

@@ -1,11 +1,12 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import Button from '@mui/material/Button';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
-import { ErrorState } from '@/components/states/States';
+import { MuiErrorState } from '@/components/states/MuiStates';
 import { readReception } from '../api';
 import type { ReceptionDetail } from '../receptions-contract';
 import {
@@ -97,7 +98,15 @@ export function CheckInWizardShell({
   } | null>(null);
 
   const refresh = useCallback(async () => {
-    const result = await readReception(detail.id);
+    let result: Awaited<ReturnType<typeof readReception>>;
+    try {
+      result = await readReception(detail.id);
+    } catch {
+      // The re-read never came back. Said as a failed re-read, like any other,
+      // and never thrown into the step that asked for it.
+      setRefreshFailure({ correlationId: null });
+      return;
+    }
     if (result.status === 'ok' && result.data !== null) {
       setDetail(result.data);
       setRefreshFailure(null);
@@ -215,9 +224,10 @@ export function CheckInWizardShell({
       ) : null}
 
       {refreshFailure !== null ? (
-        <ErrorState
+        <MuiErrorState
           messages={messages}
-          {...(refreshFailure.correlationId ? { correlationId: refreshFailure.correlationId } : {})}
+          correlationId={refreshFailure.correlationId}
+          onRetry={() => void refresh()}
         />
       ) : null}
 
@@ -227,18 +237,15 @@ export function CheckInWizardShell({
             const current = step !== null && candidate.id === step.id;
             return (
               <li key={candidate.id}>
-                <button
+                <Button
                   type="button"
+                  size="small"
+                  variant={current ? 'contained' : 'outlined'}
                   aria-current={current ? 'step' : undefined}
                   onClick={() => setChosenStepId(candidate.id)}
-                  className={
-                    current
-                      ? 'rounded-md bg-primary px-3 py-1.5 text-body font-medium text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
-                      : 'rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring'
-                  }
                 >
                   {index + 1}. {translateDynamic(messages, candidate.titleKey)}
-                </button>
+                </Button>
               </li>
             );
           })}
