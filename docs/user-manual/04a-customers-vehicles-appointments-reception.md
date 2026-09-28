@@ -1138,16 +1138,18 @@ The three steps are shown as **"Customer"**, **"Vehicle"**, **"Check-in"** <!-- 
 
 **Steps**
 
-1. **"Find the customer"** <!-- receptions.intake.customer.heading --> . Search by name or customer
-   reference. If nobody matches, choose **"Customer not found?"** <!-- receptions.intake.customer.createOffer -->
+1. **"Find the customer"** <!-- receptions.intake.customer.heading --> . Type part of the name, the
+   customer number or the phone number into the one search box, then choose the customer from the
+   list that opens under it. If nobody matches, choose **"Customer not found?"** <!-- receptions.intake.customer.createOffer -->
    and create the record on the spot, then **"Continue with this customer"** <!-- receptions.intake.customer.continueCreated -->
    . **"Choose a different customer"** <!-- receptions.intake.customer.change --> and **"Back to
    search"** <!-- receptions.intake.customer.backToSearch --> let you change your mind.
 2. **"Find the vehicle"** <!-- receptions.intake.vehicle.heading --> . Three routes:
-   - **"This customer's vehicles"** <!-- receptions.intake.vehicle.ownListTitle --> — pick one with
-     **"Use this vehicle"** <!-- receptions.intake.vehicle.choose --> .
+   - **"This customer's vehicles"** <!-- receptions.intake.vehicle.ownListTitle --> — a table, one
+     vehicle per row; pick one with **"Use this vehicle"** <!-- receptions.intake.vehicle.choose -->
+     on its row. Longer lists are paged with **Previous** and **Next** under the table.
    - **"Search all vehicles"** <!-- receptions.intake.vehicle.searchTitle --> — by VIN, plate or
-     reference.
+     reference; the matches come back in the same kind of table.
    - **"Register a new vehicle"** <!-- receptions.intake.vehicle.createTitle --> — "Record what is
      known now. Every field is optional; the rest can be completed later on the vehicle page." <!-- receptions.intake.vehicle.createHint -->
 3. **"Record the relationship"** <!-- receptions.intake.link.heading --> , if the vehicle was not
@@ -1175,13 +1177,17 @@ Other exits: **"Open the customer page"**, **"Open the vehicle page"**, **"Start
 
 **Restrictions**
 
-- **You can now search by phone number here**, and this manual said otherwise until this revision.
-  The customer finder on this step is the shared one: "Search by name, customer number or phone
-  number, then choose from the results. Email addresses cannot be searched." <!-- customerSelector.hint -->
-  with its own **"Phone number"** box <!-- customerSelector.phone --> . The two sentences the
-  earlier revision quoted, which said phone search was not available, are gone from the product
-  entirely. Type the whole number, or at least its last seven digits, and Arabic-Indic digits are
-  treated exactly like ASCII ones.
+- **You can search by phone number here.** The customer finder on this step is one search box: type
+  part of the name, the customer number or the phone number, exactly as you have it — Arabic-Indic
+  digits are sent as typed and matched like ASCII ones. Each match is listed by name and customer
+  number; the phone number is not repeated on the list, so choose by name.
+- **What you have typed is kept until it is saved.** While a new customer's details, a new
+  vehicle's details or a relationship role are typed but not yet recorded, leaving the page or
+  changing branch asks first; **Stay** keeps everything, and discarding empties the form. Nothing is
+  asked once the step is recorded.
+- **Refusals are shown on the field they are about**: the field turns red, the reason is written
+  under it, and the cursor moves to the first one. What you typed stays, and the message goes as soon
+  as you correct the field.
 - Without vehicle rights: "Your access does not include searching for or registering vehicles, so
   only this customer's recorded vehicles can be chosen here." <!-- receptions.intake.vehicle.limitedAccess -->
 - Past links stay visible: "Past relationships stay in this list with their end date. Who was
@@ -1200,6 +1206,9 @@ Other exits: **"Open the customer page"**, **"Open the vehicle page"**, **"Start
   company, continue with the existing record instead." <!-- receptions.intake.customer.duplicatesBody -->
   Use **"Use this existing customer"** <!-- receptions.intake.customer.useExisting --> .
 - "This vehicle record is no longer available." <!-- receptions.intake.vehicle.noLiveVehicle -->
+- If the connection drops while a record is being saved: "The connection to the server was lost, or
+  the server did not answer in time. Your entries are still on this page. Check the connection and
+  try again." <!-- state.unavailable.message --> Nothing was recorded; press the button again.
 
 **Screenshot** — no screenshot available at this version.
 
@@ -1289,23 +1298,28 @@ row (`/{locale}/receptions/check-in`). Heading **"Vehicle check-in"** <!-- recep
 
 **Steps**
 
-1. **"Branch"** <!-- receptions.checkIn.targetLegend --> — enter **"Company identifier"** and
-   **"Branch identifier"**, _both required_. "The visit is opened for one branch. The server
-   authorizes this request against exactly the branch named here." <!-- receptions.checkIn.targetHint -->
+1. **"Branch"** <!-- receptions.checkIn.targetLegend --> — the branch chosen in the header is the
+   branch the visit is opened for; this section names it and nothing is typed here. "The visit is
+   opened for one branch. The server authorizes this request against exactly the branch named here." <!-- receptions.checkIn.targetHint -->
+   Under **"All my branches"** the visit cannot be opened: choose one branch in the header first.
 2. **"Origin"** <!-- receptions.checkIn.originLegend --> — _required_. **"How did this vehicle
    arrive?"** <!-- receptions.checkIn.originLabel --> : a walk-in ("The customer arrived without a
    booking." <!-- receptions.checkIn.walkInDescription --> ) or an appointment ("Check in a
    confirmed appointment. The appointment becomes checked-in in the same step." <!-- receptions.checkIn.appointmentDescription -->
    ). "A visit has exactly one origin: a confirmed appointment being checked in, or a walk-in." <!-- receptions.checkIn.originHint -->
    For the appointment route, choose **"Load confirmed appointments"** <!-- receptions.checkIn.loadAppointments -->
-   and pick one.
+   ; the branch's confirmed appointments are listed in a table, their times on the branch's own
+   clock, and you pick one with **"Choose"** <!-- receptions.checkIn.choose --> on its row.
 3. **"Receiving employee"** <!-- receptions.checkIn.employeeLegend --> — _required_. It defaults to
    **"You"** <!-- receptions.checkIn.employeeSelf --> ; **"Choose another user"** <!-- receptions.checkIn.employeeChoose -->
-   picks somebody else and **"Use my account"** <!-- receptions.checkIn.employeeReset --> puts it
-   back.
-4. **"Service requester"** <!-- receptions.checkIn.requester --> — _required_ for a walk-in.
+   opens the table of people eligible in this branch, where **"Choose"** on a row picks them, and
+   **"Use my account"** <!-- receptions.checkIn.employeeReset --> puts it back.
+4. **"Service requester"** <!-- receptions.checkIn.requester --> — _required_ for a walk-in. One
+   search box: type part of the name, the customer number or the phone number and choose the customer
+   from the list under it.
 5. **"Which vehicle is being received?"** <!-- receptions.checkIn.vehicleLabel --> — _required_,
-   from the customer's vehicles.
+   from the customer's vehicles, listed in a table. **"Choose"** on a row picks the vehicle, and the
+   row then reads **"Chosen"** <!-- receptions.checkIn.vehicleChosen --> .
 6. **"Intake readings"** <!-- receptions.checkIn.intakeLegend --> — optional: **"Fuel level"** <!-- receptions.checkIn.fuelLevel -->
    and, for an electric vehicle, **"EV charge (%)"** <!-- receptions.checkIn.evSoc --> ("State of
    charge from 0 to 100. Decimals are allowed." <!-- receptions.checkIn.evSocHint --> ).
@@ -1330,9 +1344,15 @@ row (`/{locale}/receptions/check-in`). Heading **"Vehicle check-in"** <!-- recep
   configured yet. The visit can be opened without one." <!-- receptions.checkIn.fuelEmpty -->
 - Fuel level and state of charge are fixed at this moment: "Both are recorded when the visit is
   opened. No operation changes them afterwards, so there is nothing to edit here." <!-- receptions.fuel.notEditable -->
+- **What you have chosen or typed is kept until the visit is opened.** Changing branch or leaving the
+  page asks first; **Stay** keeps everything, and discarding empties the whole form — the origin and
+  its note, the appointment, the customer, the vehicle and the readings. Nothing is saved on the way.
 
 **If it goes wrong**
 
+- Every refusal is shown on the field it is about — the service requester's search box, the vehicle
+  table, the charge box — in red with the reason under it, and the cursor moves there. What you
+  entered stays, and the message goes once you correct the field.
 - Required fields: "Choose the company and branch." <!-- receptions.checkIn.error.targetRequired -->
   , "Name the receiving employee." <!-- receptions.checkIn.error.employeeRequired --> , "Choose the
   appointment being checked in." <!-- receptions.checkIn.error.appointmentRequired --> , "Choose the
@@ -1355,6 +1375,9 @@ row (`/{locale}/receptions/check-in`). Heading **"Vehicle check-in"** <!-- recep
   Choose someone who is." <!-- receptions.checkIn.employeeSelfIneligible -->
 - "This customer has no recorded vehicles. Link the vehicle to the customer from the vehicle screen
   first." <!-- receptions.checkIn.noCustomerVehicles -->
+- If the connection drops while the visit is being opened, the screen says the connection was lost
+  and that your entries are still on the page <!-- state.unavailable.message --> . Nothing was
+  opened; press **"Open the visit"** again.
 
 **Screenshot** — no screenshot available at this version.
 
@@ -1419,7 +1442,12 @@ first-class records. A declined decision stands until the same party approves la
   session"** <!-- receptions.evidence.sessionHeading --> — "Held in this browser only, so the text
   you typed stays visible. It is not read back from the server and it disappears when the page
   reloads." <!-- receptions.evidence.sessionNote -->
-- Lists on this screen are paged and say so: "More records exist than are shown here." <!-- receptions.evidence.morePages -->
+- Lists on this screen are tables, paged with **Previous** and **Next** under each one, and say so:
+  "More records exist than are shown here." <!-- receptions.evidence.morePages -->
+- **Each form keeps what you typed until it is recorded.** Leaving the page or changing branch with
+  something typed asks first; **Stay** keeps it, and discarding empties that form. A refusal is shown
+  on the field it is about, in red with the reason under it, and the cursor moves there. If the
+  connection drops while something is being recorded, the form says so and keeps your entries.
 
 **If it goes wrong — the two refusals mean different things**
 
@@ -1583,6 +1611,10 @@ platform has no employee register, so no other name can be resolved for this fie
 **Arrival readings** — step **"Arrival readings"**, **"Record a reading"** <!-- receptions.odometer.record -->
 . "A reading recorded here is added to the vehicle's own odometer history. The reading this visit
 refers to is set when the visit is opened and cannot be changed afterwards." <!-- receptions.odometer.vehicleScopeNote -->
+The moment of the reading is typed part by part — day, month, year, hour, minute — on the clock of
+the branch that received the vehicle ("When the reading was taken, on the clock of the branch that
+received the vehicle." <!-- receptions.odometer.observedAtHint --> ). The reading the visit refers to
+is shown by its value, never by a reference.
 Corrections are not made here: "Correcting an earlier reading is done where that history is
 reviewed." <!-- receptions.odometer.correctionElsewhere --> — do that on the vehicle profile
 (4A.3.7).
@@ -1710,15 +1742,18 @@ or "Two steps were applied in one transaction: the visit moved through inspectin
 
 **"Close without work"** <!-- receptions.closure.closeHeading --> — "End the visit without a work
 order and release the vehicle, so it can be received again." <!-- receptions.closure.closeBody -->
-Give **"Reason"** <!-- receptions.closure.reason --> (_required_; "Required. The reason is kept on
-the visit’s permanent record." <!-- receptions.closure.reasonHint --> ) and choose **"Close the
-visit"** <!-- receptions.closure.closeSubmit --> .
+Choose **"Close the visit"** <!-- receptions.closure.closeSubmit --> . A dialog asks before
+anything is sent: give **"Reason"** <!-- receptions.closure.reason --> (_required_; "Required. The
+reason is kept on the visit’s permanent record." <!-- receptions.closure.reasonHint --> ) and choose
+**"Close the visit"** in the dialog. **Cancel** has the cursor when the dialog opens, because ending
+a visit cannot be undone; Escape also cancels.
 
 **Steps — refuse the visit**
 
 **"Refuse the visit"** <!-- receptions.closure.refuseHeading --> — "End the visit as refused and
 release the vehicle. This is the workshop declining the visit, not a party declining a step." <!-- receptions.closure.refuseBody -->
-Give the reason and choose **"Refuse and release"** <!-- receptions.closure.refuseSubmit --> .
+Choose **"Refuse and release"** <!-- receptions.closure.refuseSubmit --> ; the same dialog asks
+for the reason, and **"Refuse and release"** in the dialog ends the visit.
 
 **The one refusal that stops most people, and what it now says**
 
@@ -1789,6 +1824,9 @@ produced — nothing was created twice." <!-- receptions.convert.replayed --> Co
   not the conversion.
 - "Converting a visit needs the reception conversion permission." <!-- receptions.convert.denied -->
 - "This visit has already been converted to a work order." <!-- receptions.convert.alreadyDone -->
+  Coming back to a converted visit names its work order by number and offers
+  **"Open the work order"** <!-- receptions.convert.openWorkOrder --> , for anybody who may read
+  work orders.
 - Without work-order access you see only the confirmation: "The work order exists. Your access does
   not include reading work orders, so only what the conversion answered is shown." <!-- receptions.convert.readDenied -->
 
@@ -1806,8 +1844,10 @@ on the summary step, or **"Acknowledgement"** on the reception queue row
 acknowledgement"** <!-- receptions.acknowledgement.title --> , described as "The visit record, laid
 out for printing and for handing to the customer." <!-- receptions.acknowledgement.description -->
 
-**Steps** — open the page and use your browser's own print command. There is no generated PDF and no
-server-side document route.
+**Steps** — open the page and choose **"Print the acknowledgement"** <!-- receptions.acknowledgement.print -->
+(or use your browser's own print command). The printout carries the whole sheet, over as many pages
+as it needs, and nothing else — the print button and **"Back to the visit"** <!-- receptions.acknowledgement.backToVisit -->
+stay off the paper. There is no generated PDF and no server-side document route.
 
 **Result** — a sheet under **"The visit"** <!-- receptions.acknowledgement.visitHeading --> with
 columns **"Party"**, **"From"**, **"Record"**, **"Evidence"**, **"Source"**, **"Media"**,
