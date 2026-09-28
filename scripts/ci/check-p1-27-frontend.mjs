@@ -379,12 +379,16 @@ export const MODULE_DISPOSITION = Object.freeze({
    * so `in-surface` rather than transport.
    */
   'apps/web/src/components/notifications': 'in-surface',
-  /**
-   * The confirmation dialogs the appointment detail screen raises before it
+  /*
+   * The decision dialogs the appointment detail screen raises before it
    * cancels an appointment or records a no-show — both terminal, both
-   * irreversible. Newly visible when the P1-28 appointment tree was adopted;
-   * operator-facing, so `in-surface`.   */
-  'apps/web/src/components/overlays': 'in-surface',
+   * irreversible. They were `components/overlays` until the appointment screens
+   * moved onto the Material UI wrappers (ADR-022): the same questions now ask
+   * through `components/dialogs` (`DecisionDialog`, the frame `ConfirmDialog`
+   * and `ReasonDialog` share), and no scanned tree imports `overlays` any more,
+   * so its record left with it. Operator-facing, so `in-surface`.
+   */
+  'apps/web/src/components/dialogs': 'in-surface',
   /**
    * `PrintDocument`/`PrintTable` — the page geometry of the acknowledgement
    * sheet a customer is handed. Newly visible with the adopted tree, and about
