@@ -69,9 +69,52 @@ export interface TransactionOptions {
   readonly access?: 'read write' | 'read only';
 }
 
+/**
+ * One statement at a time on one connection.
+ *
+ * A request's transaction owns ONE pooled client, and several reads on it are
+ * often started together — `Promise.all` over two repository calls, a module
+ * that fans out to its neighbours, a savepoint handle and its parent. `pg`
+ * sends a statement only after the previous one has returned, so those calls
+ * were never parallel; they were QUEUED inside the client. `pg` 8 now warns
+ * about exactly that ("Calling client.query() when the client is already
+ * executing a query is deprecated", seen on the acceptance runtime's stderr)
+ * and `pg` 9 removes the queue, at which point every such call site would fail.
+ *
+ * So the queue is made explicit here, where every statement of a request
+ * passes: each statement is handed to the client only once the one before it
+ * has settled — fulfilled or rejected — in the order the calls were made. That
+ * is the order `pg` itself used, so a statement after a failed one still runs
+ * and still meets the aborted transaction, exactly as before; what changes is
+ * only that the client never holds two statements at once. The transaction's
+ * own `BEGIN`, context, `COMMIT` and `ROLLBACK` go through the same queue, so a
+ * rollback issued while a sibling read is still waiting runs AFTER it rather
+ * than beside it.
+ */
+class SerialClient {
+  private tail: Promise<unknown> = Promise.resolve();
+
+  constructor(private readonly client: PoolClient) {}
+
+  query<R extends QueryResultRow = QueryResultRow>(
+    text: string,
+    values: readonly unknown[] = []
+  ): Promise<QueryResult<R>> {
+    const run = () => this.client.query<R>(text, values as unknown[]);
+    const next = this.tail.then(run, run);
+    // The tail only orders the next statement; it never carries this one's
+    // failure, which belongs to the caller that asked for it.
+    this.tail = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  }
+}
+
 class TransactionHandle implements DbHandle {
   constructor(
-    private readonly client: PoolClient,
+    private readonly client: SerialClient,
     public readonly context: RequestContext,
     public readonly depth: number,
     /** Which pool the client came from. Read by withPlatformTarget, which refuses the primary. */
@@ -107,7 +150,7 @@ class TransactionHandle implements DbHandle {
  * Values are bound as parameters — never interpolated — so a context value can
  * never become SQL. `set_config(..., true)` is the transaction-local form.
  */
-async function applyContext(client: PoolClient, context: RequestContext): Promise<void> {
+async function applyContext(client: SerialClient, context: RequestContext): Promise<void> {
   const pairs: Array<[string, string]> = [
     ['app.tenant_id', context.principal.tenantId],
     ['app.user_id', context.principal.userId],
@@ -144,10 +187,11 @@ export async function withTransaction<T>(
   // platform policy is written TO that role, so serving a platform operation
   // from the primary pool would be refused by all of them while every
   // structural gate stayed green — the PC-1 shape.
-  const client =
+  const pooled =
     options.connection === 'platform'
       ? await acquirePlatformClient()
       : await acquirePrimaryClient();
+  const client = new SerialClient(pooled);
   let rolledBackCleanly = true;
   try {
     await client.query(`BEGIN ${access === 'read only' ? 'READ ONLY' : 'READ WRITE'}`);
@@ -186,7 +230,7 @@ export async function withTransaction<T>(
     }
     throw error;
   } finally {
-    client.release(rolledBackCleanly ? undefined : true);
+    pooled.release(rolledBackCleanly ? undefined : true);
   }
 }
 
