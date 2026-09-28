@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -142,6 +142,23 @@ function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
     visitId: detail.id,
     recordVersion: detail.recordVersion,
   } as CheckInStepProps;
+}
+
+/**
+ * Holds the NEXT `refresh()` open until the returned release is called: the
+ * re-read after a command is the slow part on a slow network, and the command
+ * must stay busy through it (the version it sent is spent, and only the re-read
+ * brings the next one).
+ */
+function holdNextRefresh(): () => void {
+  let release: () => void = () => {};
+  refresh.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      })
+  );
+  return () => release();
 }
 
 function withStatus(status: ReceptionStatus, over: Partial<CheckInStepProps> = {}) {
@@ -431,6 +448,39 @@ describe('approve sends the read’s version and presents the answer’s', () =>
     );
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
+
+  it('stays busy until the re-read after a success lands, so the spent version is never sent twice', async () => {
+    approveReception.mockResolvedValue({
+      status: 'success',
+      approved: {
+        receptionVisitId: 'rv-1',
+        receptionStatus: 'authorized',
+        appliedTransitions: ['inspecting', 'authorized'],
+        recordVersion: 9,
+      },
+      correlationId: 'corr-ok',
+      attempt: 1,
+    });
+    const release = holdNextRefresh();
+    const user = userEvent.setup();
+    renderLtr(<SummaryStep {...stepProps()} />);
+    const approve = await screen.findByRole('button', {
+      name: EN['receptions.summary.approve'] as string,
+    });
+    await user.click(approve);
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId('approved-record-version')).toHaveTextContent('9');
+    // The approval landed but the re-read has not: the button is still busy.
+    expect(approve).toBeDisabled();
+    expect(approve).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(approve);
+    expect(approveReception).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(approve).toBeEnabled());
+    // The success stays said; no stale-version conflict replaced it.
+    expect(screen.getByTestId('approved-record-version')).toHaveTextContent('9');
+    expect(screen.queryByText(EN['receptions.command.conflictStale'] as string)).toBeNull();
+  });
 });
 
 describe('the two conflicts a guarded command meets are told apart', () => {
@@ -710,6 +760,38 @@ describe('the terminal exits release the vehicle, and both demand a reason', () 
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
+  it('keeps the exit busy until the re-read after it lands', async () => {
+    closeReceptionWithoutWork.mockResolvedValue({
+      status: 'success',
+      closed: {
+        receptionVisitId: 'rv-1',
+        receptionStatus: 'closed_without_work',
+        recordVersion: 8,
+      },
+      correlationId: 'corr-ok',
+      attempt: 1,
+    });
+    const release = holdNextRefresh();
+    const user = userEvent.setup();
+    renderLtr(<SummaryStep {...stepProps()} />);
+    const dialog = await openExit(user, 'receptions.closure.closeSubmit');
+    await user.type(reasonBox(dialog), 'abandoned');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['receptions.closure.closeSubmit'] as string })
+    );
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    // The dialog is gone, but the exit that opens it again stays busy until
+    // the re-read has brought the visit's new state and version.
+    const exit = screen.getByRole('button', {
+      name: EN['receptions.closure.closeSubmit'] as string,
+    });
+    expect(exit).toBeDisabled();
+    release();
+    await waitFor(() => expect(exit).toBeEnabled());
+    expect(closeReceptionWithoutWork).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps the dialog and the reason when the answer never arrives, and says so', async () => {
     // A rejected Server Action (the connection dropped): not a pending button
     // for ever, not an unhandled rejection — the dialog stays with the reason.
@@ -836,6 +918,30 @@ describe('conversion to a work order', () => {
       await screen.findByText(EN['receptions.command.conflictBlocked'] as string)
     ).toBeVisible();
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  it('stays busy after a conflict until the re-read lands, so the stale version is not sent again', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'state.conflict.title',
+      correlationId: 'corr-412',
+      attempt: 1,
+    });
+    const release = holdNextRefresh();
+    const user = userEvent.setup();
+    renderLtr(<ConversionStep {...withStatus('authorized')} />);
+    const convert = await screen.findByRole('button', {
+      name: EN['receptions.convert.submit'] as string,
+    });
+    await user.click(convert);
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(convert).toBeDisabled();
+    expect(convert).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(convert);
+    expect(convertReceptionToWorkOrder).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(convert).toBeEnabled());
+    expect(convertReceptionToWorkOrder).toHaveBeenCalledTimes(1);
   });
 
   /**

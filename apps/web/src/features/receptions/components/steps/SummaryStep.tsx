@@ -99,9 +99,11 @@ import { PartyRoleGrid, authorizationColumns } from './PartiesStep';
  * ## On the Material UI wrappers (ADR-022)
  *
  * The three read-backs are `OperationalGrid` (the server's pages, never
- * counted); the commands are Material buttons whose handlers await inside
- * `try` and clear their pending state in `finally`, so an answer that never
- * arrives is said as that and the button is usable again.
+ * counted); the commands are Material buttons whose handlers await the send
+ * AND the re-read that settles it inside one `try` and clear their pending
+ * state in its `finally`: an answer that never arrives is said as that and the
+ * button is usable again, and a command cannot be pressed a second time with
+ * the version it has just spent while that re-read is still running.
  */
 
 export function SummaryStep({
@@ -458,24 +460,29 @@ function ApprovalPanel({
   const submit = async () => {
     const attempt = (state.attempt ?? 0) + 1;
     setPending(true);
-    let result: Awaited<ReturnType<typeof approveReception>>;
+    // Pending covers the send AND the re-read that settles it: until the
+    // re-read lands the only version on hand is the one just spent, so a
+    // second press would send it again and meet a stale-version conflict.
     try {
-      result = await approveReception(visitId, recordVersion, attempt);
-    } catch {
-      // No answer came back: said as that, and the button works again.
-      setState(unreachable(attempt));
-      return;
+      let result: Awaited<ReturnType<typeof approveReception>>;
+      try {
+        result = await approveReception(visitId, recordVersion, attempt);
+      } catch {
+        // No answer came back: said as that, and the button works again.
+        setState(unreachable(attempt));
+        return;
+      }
+      setState(result);
+      if (result.status === 'success' && result.approved) {
+        // The RESPONSE's version, never `recordVersion + 1`: approve applies one
+        // edge from `inspecting` and two from `opened`.
+        setApprovedVersion(nextVersionAfter(recordVersion, result.approved.recordVersion));
+        setAppliedTransitions(result.approved.appliedTransitions);
+      }
+      await settle(result);
     } finally {
       setPending(false);
     }
-    setState(result);
-    if (result.status === 'success' && result.approved) {
-      // The RESPONSE's version, never `recordVersion + 1`: approve applies one
-      // edge from `inspecting` and two from `opened`.
-      setApprovedVersion(nextVersionAfter(recordVersion, result.approved.recordVersion));
-      setAppliedTransitions(result.approved.appliedTransitions);
-    }
-    await settle(result);
   };
 
   return (
@@ -601,31 +608,35 @@ function ClosurePanel({
     const attempt = (state.attempt ?? 0) + 1;
     const input = { reason: reason.trim() };
     setPending(true);
-    let result: ActionState;
+    // Pending covers the send AND the re-read that settles it, so the exit
+    // cannot be pressed again with the version this command just spent.
     try {
-      result =
-        kind === 'refuse'
-          ? await refuseReception(visitId, recordVersion, input, attempt)
-          : await closeReceptionWithoutWork(visitId, recordVersion, input, attempt);
-    } catch {
-      // No answer came back: the dialog stays open with the reason typed.
-      const lost = unreachable(attempt);
-      setState(lost);
-      setDialogError(translate(messages, 'state.unavailable.message'));
-      return;
+      let result: ActionState;
+      try {
+        result =
+          kind === 'refuse'
+            ? await refuseReception(visitId, recordVersion, input, attempt)
+            : await closeReceptionWithoutWork(visitId, recordVersion, input, attempt);
+      } catch {
+        // No answer came back: the dialog stays open with the reason typed.
+        const lost = unreachable(attempt);
+        setState(lost);
+        setDialogError(translate(messages, 'state.unavailable.message'));
+        return;
+      }
+      const refusedReason = result.fieldErrors?.['reason'];
+      if (result.status === 'invalid' && refusedReason !== undefined) {
+        // The service refused the reason itself: said on the box, still open.
+        setState(result);
+        setReasonError(translateDynamic(messages, refusedReason));
+        return;
+      }
+      setState(result);
+      close();
+      await settle(result);
     } finally {
       setPending(false);
     }
-    const refusedReason = result.fieldErrors?.['reason'];
-    if (result.status === 'invalid' && refusedReason !== undefined) {
-      // The service refused the reason itself: said on the box, still open.
-      setState(result);
-      setReasonError(translateDynamic(messages, refusedReason));
-      return;
-    }
-    setState(result);
-    close();
-    await settle(result);
   };
 
   return (

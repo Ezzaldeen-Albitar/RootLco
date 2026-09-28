@@ -66,9 +66,10 @@ import { CommandOutcome } from './SummaryStep';
  *
  * ## On the Material UI wrappers (ADR-022)
  *
- * Material buttons and states; the convert handler awaits inside `try` and
- * clears its pending state in `finally`, so an answer that never arrives is
- * said as that and the button is usable again.
+ * Material buttons and states; the convert handler awaits the send AND the
+ * re-read after it inside one `try` and clears its pending state in its
+ * `finally`, so an answer that never arrives is said as that and the button is
+ * usable again, and the button stays busy until that re-read has landed.
  */
 
 export function ConversionStep({
@@ -90,24 +91,28 @@ export function ConversionStep({
   const submit = async () => {
     const attempt = (state.attempt ?? 0) + 1;
     setPending(true);
-    let result: Awaited<ReturnType<typeof convertReceptionToWorkOrder>>;
+    // Pending covers the send AND the re-read after it: until the re-read
+    // lands the only version on hand is the one just spent.
     try {
-      result = await convertReceptionToWorkOrder(visitId, recordVersion, attempt);
-    } catch {
-      // No answer came back: said as that, and the button works again. The
-      // visit is re-read before the next attempt, which a replay also answers.
-      setState(unreachable(attempt));
-      return;
+      let result: Awaited<ReturnType<typeof convertReceptionToWorkOrder>>;
+      try {
+        result = await convertReceptionToWorkOrder(visitId, recordVersion, attempt);
+      } catch {
+        // No answer came back: said as that, and the button works again. The
+        // visit is re-read before the next attempt, which a replay also answers.
+        setState(unreachable(attempt));
+        return;
+      }
+      setState(result);
+      notifyActionResult(result, messages);
+      if (result.status === 'success' && result.converted) {
+        setConverted(result.converted);
+      }
+      if (result.status === 'success' || result.status === 'conflict') {
+        await refresh();
+      }
     } finally {
       setPending(false);
-    }
-    setState(result);
-    notifyActionResult(result, messages);
-    if (result.status === 'success' && result.converted) {
-      setConverted(result.converted);
-    }
-    if (result.status === 'success' || result.status === 'conflict') {
-      await refresh();
     }
   };
 

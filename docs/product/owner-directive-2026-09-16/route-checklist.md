@@ -2486,5 +2486,29 @@ Known limitations of this slice, one line each:
   work order under the caller's row-level security.
 - A surviving mutation: removing the requester's discard key (`key=requester-${discarded}`) goes
   undetected, because `EntityPicker` already forgets the term on a working-context switch.
-- A probe with the post-conversion refresh held open found Convert is not offered again during the
-  re-read (one convert call, the button not enabled), so no double-submit window opened.
+- Approve, Convert and the two exits now stay busy until the re-read after their answer lands (one
+  `try` around the send and the settle, `finally` clears pending), as the old `startTransition`
+  handler did; before round 3 a second press during a slow re-read resent the spent version and a
+  successful approval was re-said as a conflict. Three DOM cases hold `refresh()` open and fail when
+  pending is cleared before the settle.
+- `useStepForm` (`EvidencePanels.tsx`) still clears pending before its `settle`; every call site
+  checked (for example `InspectionStep.tsx`) re-reads inside `send`, and a success resets the draft
+  to one `check()` refuses, so no double-submit path through the step forms was found.
+  `OpenInspectionForm`'s empty draft passes `check()`, but its settle is inside `send` too.
+- `PrintToolbar`'s `backHref` interpolates the reception id without `encodeURIComponent`, as the
+  page's existing breadcrumb does; the same route parameter feeds the reads. Convention drift only.
+- The e2e selector changes (requester combobox, `role=option`, the check-in vehicle grid test id, the
+  print button, the print-scope document count) were not run locally; the authenticated-browser job
+  at 902185ba passed in hosted CI.
+- The MUIRI-04 floor raise (5500 -> 6850, measured 6941/186 from hosted run 36476788035,
+  job 109112526557) moved together with the clean-room evidence, the closing-value ledger and the
+  P1-27 evidence manifest; the local root unit tier ran 3821/3821 across 143 files, including WTF-08,
+  WTF-09 and the baseline-integrity case. Nothing was lowered or exempted.
+- `customer-selector.dom.test.tsx:264` ("lets the operator change their mind", unchanged by this
+  slice) failed once while the root unit tier ran in parallel on the same machine and passed 37/37
+  alone; its assertion is a synchronous `getByText` right after a click. Recorded as a flake.
+- The Owner-only acceptances above stay open: no party-type filter and no Western-digit echo in the
+  customer box, the orphaned keys, the lost visual asterisk, the branch-timezone dependency of the
+  odometer moment and the surviving requester discard-key mutation.
+- The round-3 review probes ran from a scratch directory outside the repository and wrote nothing
+  into it.
