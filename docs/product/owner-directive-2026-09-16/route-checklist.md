@@ -2133,3 +2133,11 @@ Residual items recorded at fix round 1 of PR #479, one line each:
 - One run of the web tier under full-tier load failed an unrelated case, `reception-queue.dom` "offers the way back for a PERIOD that matched nothing" (`aria-pressed`); it passed 66/66 on its own and the hosted web-quality job was green, so it reads as a load flake not caused by this slice.
 - B.S4 (the assignment panel's success wording within 5 s) still needs the browser re-measure; no browser spec covers `/services` or `/pricing`, so no browser selector was broken and none was exercised.
 - Probes that produced no finding: clearing the catalogue's published-on day (select-all and Backspace, or part by part) lifts the filter; the tree is the Community `@mui/x-tree-view` only and the licence deny-list in `api-boundary-gate.test.ts` is unchanged; the category hierarchy is real (`parent_category_id` with the no-cycle guard, and the category create route accepts a parent); no manifest, lockfile, script, workflow or baseline changed; `align='right'` is flipped by the RTL plugin in `UiFoundationProvider`.
+
+Residual items recorded at fix round 3 of PR #479, one line each:
+
+- Round 3 found the P1-24 operation register stale: the new root unit test names `svc.service-list`, so the generator lists it among that operation's evidence; the register was regenerated with `node scripts/p1-24-operation-register.mjs`, not edited by hand.
+- The service detail clears the form and its unsaved mark after create and after publish; removing both resets fails "a draft created, published and refreshed is saved work", but removing only one fails nothing, because on the create-then-publish path each reset covers the other (the behaviour is pinned, each reset alone is not).
+- The date-format message now names the year, month and day parts in both languages; the two remaining `YYYY-MM-DD` manual lines belong to the discount-approval limits screen, outside this slice.
+- Folding each column with `shared.fold_digits()` means the catalogue search cannot use a plain index on `service_code` or `name`; the previous `ILIKE` could not either, so this is a performance note only.
+- The backend cases for the folded search were not run on this machine; they run in hosted CI (integration and database jobs).
