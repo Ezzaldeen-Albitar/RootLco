@@ -13,6 +13,7 @@ import {
   callsTo,
   classifyVersionExpression,
   declarations,
+  editBaselineHookProblems,
   guardedAdaptersIn,
   guardedOperations,
   parameterNames,
@@ -131,6 +132,8 @@ interface Report {
     enclosing: string | null;
     ok: boolean;
     renews?: boolean;
+    /** `response`, `supplied`, or `baseline` when traced through the edit-baseline hook. */
+    kind?: string;
   }[];
   violations: string[];
 }
@@ -1166,5 +1169,182 @@ export function SyntheticRelockPanel({ visitId, recordVersion, settle }) {
     const report = judge({ sources: withExtra(mixed) });
     expect(report.accountedFor).toContain('sealOtherThing');
     expect(report.violations.join('\n')).toContain('tree exports 3 adapters');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The edit-baseline hook: `edit.version` traced to what fed it
+ * ------------------------------------------------------------------ */
+
+/**
+ * An edit form sends the version its BASELINE was stored at, held by
+ * `useEditBaseline`, so its call sites read `edit.version`. The gate follows
+ * that member to the hook's `storedVersion` and to every `rebase` version on
+ * the binding, and reads the hook's own source. Every case below mutates one of
+ * those and asserts the gate goes red; the name `version` alone admits nothing.
+ */
+const HOOK_FILE = 'apps/web/src/lib/forms/use-edit-baseline.ts';
+const HOOK_SOURCE = readFileSync(join(REPOSITORY_ROOT, ...HOOK_FILE.split('/')), 'utf8');
+
+const BASELINE_SCREEN = `
+'use client';
+import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
+import { lockSyntheticVisit, unlockSyntheticVisit } from '../lock-actions';
+
+export function SyntheticLockPanel({ visitId, detail, settle }) {
+  const edit = useEditBaseline({ stored: formOf(detail), storedVersion: detail.recordVersion });
+  const { values, setValues } = edit;
+  const submit = async () => {
+    const result = await lockSyntheticVisit(visitId, edit.version, 1);
+    if (result.status === 'success') edit.rebase(values, result.recordVersion);
+    await settle(result);
+  };
+  return submit;
+}
+
+export function SyntheticUnlockPanel({ visitId, recordVersion, refresh }) {
+  const edit = useEditBaseline({ stored: EMPTY, storedVersion: recordVersion });
+  const submit = async () => {
+    const result = await unlockSyntheticVisit(visitId, edit.version, 1);
+    edit.rebase(EMPTY);
+    await refresh();
+  };
+  return submit;
+}
+`;
+
+function withBaseline(screen: string = BASELINE_SCREEN, hook: string | null = HOOK_SOURCE) {
+  return [...withScreen(screen), ...(hook === null ? [] : [[HOOK_FILE, hook] as const])] as const;
+}
+
+function baselineReport(screen: string, hook: string | null = HOOK_SOURCE) {
+  return judge({ sources: withBaseline(screen, hook) });
+}
+
+function violationsOf(screen: string, hook: string | null = HOOK_SOURCE): string {
+  return baselineReport(screen, hook).violations.join('\n');
+}
+
+describe('a version held by the edit-baseline hook is traced, not trusted by name', () => {
+  it('on the live tree, every edit-form site is traced through the hook, and the hook vouches', () => {
+    const live = run() as Report;
+    const traced = live.sites.filter((site) => site.kind === 'baseline');
+    expect(traced.map((site) => site.adapter).sort()).toEqual([
+      'createPriceListVersion',
+      'publishPriceListVersion',
+      'updateService',
+    ]);
+    expect(editBaselineHookProblems(HOOK_SOURCE)).toEqual([]);
+  });
+
+  it('accepts a hook fed a read version, re-based on a response or on nothing', () => {
+    const report = baselineReport(BASELINE_SCREEN);
+    expect(report.violations).toEqual([]);
+    expect(report.sites.map((site) => site.kind)).toEqual(['baseline', 'baseline']);
+  });
+
+  it('refuses a hook FED a computed version', () => {
+    const text = violationsOf(
+      BASELINE_SCREEN.replace(
+        'storedVersion: detail.recordVersion',
+        'storedVersion: detail.recordVersion + 1'
+      )
+    );
+    expect(text).toContain('lockSyntheticVisit is sent an If-Match this gate refuses');
+    expect(text).toContain('the storedVersion it is fed is refused');
+    expect(text).toContain('computes a version');
+  });
+
+  it('refuses a hook FED a cached version', () => {
+    const text = violationsOf(
+      BASELINE_SCREEN.replace(
+        '  const edit = useEditBaseline({ stored: formOf(detail), storedVersion: detail.recordVersion });',
+        '  const [held, setHeld] = useState(detail.recordVersion);\n' +
+          '  const edit = useEditBaseline({ stored: formOf(detail), storedVersion: held });'
+      )
+    );
+    expect(text).toContain('the storedVersion it is fed is refused');
+    expect(text).toContain('holds in its own state');
+  });
+
+  it('refuses a rebase that hands the hook a computed or cached version', () => {
+    const computed = violationsOf(
+      BASELINE_SCREEN.replace(
+        'edit.rebase(values, result.recordVersion)',
+        'edit.rebase(values, result.recordVersion + 1)'
+      )
+    );
+    expect(computed).toContain('re-bases on a version that is not a response');
+    const cached = violationsOf(
+      BASELINE_SCREEN.replace(
+        '  const { values, setValues } = edit;',
+        '  const { values, setValues } = edit;\n  const [kept, setKept] = useState(0);'
+      ).replace('edit.rebase(values, result.recordVersion)', 'edit.rebase(values, kept)')
+    );
+    expect(cached).toContain('re-bases on a version that is not a response');
+    expect(cached).toContain('holds in its own state');
+  });
+
+  it('refuses a rebase that escapes the reading: destructured, or the binding handed away', () => {
+    expect(
+      violationsOf(
+        BASELINE_SCREEN.replace(
+          'const { values, setValues } = edit;',
+          'const { values, rebase } = edit;'
+        )
+      )
+    ).toContain('takes rebase');
+    expect(
+      violationsOf(BASELINE_SCREEN.replace('await settle(result);', 'await settle(edit);'))
+    ).toContain('used as a bare value');
+  });
+
+  it('refuses a look-alike hook that is not imported, unaliased, from its module', () => {
+    const local = BASELINE_SCREEN.replace(
+      "import { useEditBaseline } from '@/lib/forms/use-edit-baseline';",
+      "import { useEditBaseline } from './my-own-baseline';"
+    );
+    expect(violationsOf(local)).toContain('does not import it, unaliased');
+    const aliased = BASELINE_SCREEN.replace(
+      "import { useEditBaseline } from '@/lib/forms/use-edit-baseline';",
+      "import { useEditBaseline as other } from '@/lib/forms/use-edit-baseline';\n" +
+        "import { useEditBaseline } from './my-own-baseline';"
+    );
+    expect(violationsOf(aliased)).toContain('does not import it, unaliased');
+  });
+
+  it('resolves the binding the call can SEE: a correct panel beside a defective one', () => {
+    const report = baselineReport(
+      BASELINE_SCREEN.replace(
+        'storedVersion: recordVersion }',
+        'storedVersion: recordVersion * 2 }'
+      )
+    );
+    const byAdapter = new Map(report.sites.map((site) => [site.adapter, site.ok]));
+    expect(byAdapter.get('lockSyntheticVisit')).toBe(true);
+    expect(byAdapter.get('unlockSyntheticVisit')).toBe(false);
+    expect(report.violations.join('\n')).toContain('computes a version');
+  });
+
+  it('refuses when the hook is missing from the sweep, or its own source invents a version', () => {
+    expect(violationsOf(BASELINE_SCREEN, null)).toContain('could not be read or parsed');
+    const inventing = HOOK_SOURCE.replace(
+      'current = { values: stored, baseline: stored, version: storedVersion, seen: storedVersion };',
+      'current = { values: stored, baseline: stored, version: storedVersion + 1, seen: storedVersion };'
+    );
+    expect(inventing).not.toBe(HOOK_SOURCE);
+    expect(violationsOf(BASELINE_SCREEN, inventing)).toContain(
+      'neither the storedVersion it was fed, a rebase answer, nor one it already held'
+    );
+  });
+
+  it('still refuses a member named version off anything that is not the hook', () => {
+    const text = violationsOf(
+      BASELINE_SCREEN.replace(
+        'lockSyntheticVisit(visitId, edit.version, 1)',
+        'lockSyntheticVisit(visitId, detail.version, 1)'
+      )
+    );
+    expect(text).toContain('"detail.version" is not a recordVersion the server stated');
   });
 });
