@@ -196,8 +196,20 @@ export function AppShell({
      * `h-dvh` + `overflow-hidden` here is what makes every inner region's own
      * scrolling meaningful: the sidebar stays put, the header stays put, and the
      * main region scrolls inside its own box however many rows arrive.
+     *
+     * `data-app-shell` names each box of that viewport contract for the PRINT
+     * sheet (`styles/print/_index.scss`). Paper has no viewport, so on paper
+     * every one of them releases its fixed height and its clipping and the
+     * document flows over as many pages as it needs — without it a printout
+     * was the one screenful at the current scroll position (checkpoint browser
+     * QA, DEF-01). An attribute rather than the utility classes, because the
+     * print sheet must outrank those classes by specificity and must not
+     * depend on how a class list happens to be spelled.
      */
-    <div className="relative flex h-dvh overflow-hidden bg-app-background text-text-primary">
+    <div
+      data-app-shell="root"
+      className="relative flex h-dvh overflow-hidden bg-app-background text-text-primary"
+    >
       <Sidebar
         locale={locale}
         messages={messages}
@@ -270,7 +282,7 @@ export function AppShell({
         </div>
       ) : null}
 
-      <div className="flex min-w-0 flex-1 flex-col">
+      <div data-app-shell="column" className="flex min-w-0 flex-1 flex-col">
         <AppHeader
           locale={locale}
           messages={messages}
@@ -282,7 +294,7 @@ export function AppShell({
           contextLabel={contextLabel}
           workingContext={workingContext}
         />
-        <div className="flex min-h-0 flex-1">
+        <div data-app-shell="body" className="flex min-h-0 flex-1">
           {/*
             `tabIndex={-1}` is what makes the skip link work. Without it the
             browser moves the scroll position to #main but leaves focus in the
@@ -337,6 +349,7 @@ export function AppShell({
           {secondaryPanel ? (
             <aside
               aria-label={translate(messages, 'shell.secondaryPanel')}
+              data-print="hide"
               className="relative hidden w-80 shrink-0 overflow-y-auto overscroll-contain border-s border-border bg-surface xl:block"
             >
               {secondaryPanel}
@@ -379,7 +392,12 @@ function AppHeader({
     // person to "fix" a scrolling problem by adding `overflow` somewhere in the
     // chain, which is how the containing-block contract gets broken. `z-header`
     // stays — that is what keeps it above a table's `z-sticky` header.
-    <header className="z-header flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-4 shadow-xs">
+    // `data-print="hide"`: the header is the screen's chrome — the working
+    // branch, the account, the toggles — and has no place on a printed document.
+    <header
+      data-print="hide"
+      className="z-header flex h-16 shrink-0 items-center gap-2 border-b border-border-subtle bg-surface px-4 shadow-xs"
+    >
       <button
         ref={drawerTriggerRef}
         type="button"

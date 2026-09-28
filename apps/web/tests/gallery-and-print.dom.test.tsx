@@ -1,5 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
+import postcss, { type AtRule } from 'postcss';
+import * as sass from 'sass';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
@@ -209,6 +211,190 @@ describe('the print stylesheet hides interactive chrome', () => {
   it('uses no raw colour, only the paper token', () => {
     expect(source).toContain('var(--color-paper)');
     expect(source).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+  });
+});
+
+/**
+ * Checkpoint browser QA, DEF-01: every printable document printed as ONE page —
+ * the screenful at the current scroll position, the sheet cut after its title.
+ * The print sheet's releases loaded and LOST: the sheet and the Tailwind
+ * utilities are both unlayered (`styles/_layers.scss`), the utilities are
+ * emitted after it (`app/globals.scss`), so a print selector must OUTRANK the
+ * one utility class it overrides — and `main` (0,0,1), plain `body` and a bare
+ * `[data-scroll-region]` (0,1,0, a tie lost on order) did not, while the shell
+ * root was not selected at all.
+ *
+ * jsdom neither lays out nor applies `@media print`, so what is held here is the
+ * cascade arithmetic itself, on the COMPILED stylesheet: each release is in
+ * `@media print`, outside every layer, and more specific than what it beats.
+ * The printed result — more than one page — is asserted in the browser tier
+ * (`tests/e2e/foundation.spec.ts`, "prints the whole page").
+ */
+describe('the print sheet releases the application shell on paper', () => {
+  interface Found {
+    readonly selector: string;
+    readonly order: number;
+    readonly print: boolean;
+    readonly layered: boolean;
+    readonly declarations: Readonly<Record<string, string>>;
+  }
+
+  function compiledGlobals(): string {
+    return sass.compile(join(__dirname, '..', 'src', 'app', 'globals.scss')).css;
+  }
+
+  /** Every selector of every rule, with where it sits in the cascade. */
+  function rulesOf(css: string): Found[] {
+    const found: Found[] = [];
+    let order = 0;
+    postcss.parse(css).walkRules((rule) => {
+      order += 1;
+      let print = false;
+      let layered = false;
+      for (let node = rule.parent; node && node.type !== 'root'; node = node.parent) {
+        if (node.type === 'atrule' && (node as AtRule).name === 'media') {
+          print ||= /\bprint\b/.test((node as AtRule).params);
+        }
+        if (node.type === 'atrule' && (node as AtRule).name === 'layer') layered = true;
+      }
+      const declarations: Record<string, string> = {};
+      rule.walkDecls((decl) => {
+        declarations[decl.prop] = decl.value;
+      });
+      for (const selector of rule.selectors) {
+        found.push({ selector: selector.trim(), order, print, layered, declarations });
+      }
+    });
+    return found;
+  }
+
+  /** (ids, classes/attributes/pseudo-classes, elements) of a simple selector. */
+  function specificity(selector: string): readonly [number, number, number] {
+    const ids = (selector.match(/#[\w-]+/g) ?? []).length;
+    const classes =
+      (selector.match(/\.[\w-]+/g) ?? []).length +
+      (selector.match(/\[[^\]]+\]/g) ?? []).length +
+      (selector.match(/:(?!:)[\w-]+/g) ?? []).length;
+    const elements = (
+      selector
+        .replace(/\[[^\]]+\]/g, ' ')
+        .replace(/[.#:][\w-]+/g, ' ')
+        .match(/(^|[\s>+~])([a-z][\w-]*)/gi) ?? []
+    ).length;
+    return [ids, classes, elements];
+  }
+
+  function outranks(a: readonly number[], b: readonly number[]): number {
+    for (let i = 0; i < 3; i += 1) {
+      if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) - (b[i] ?? 0);
+    }
+    return 0;
+  }
+
+  /** The utility class each release has to beat: one class, (0,1,0). */
+  const ONE_UTILITY = [0, 1, 0] as const;
+
+  /**
+   * What must hold, as a list of broken rules — empty when the sheet is right.
+   * Written as a function so the falsification below can run it on a sheet
+   * that has fallen back to the selectors that lost.
+   */
+  function problems(css: string): string[] {
+    const rules = rulesOf(css);
+    const broken: string[] = [];
+    const releases = (test: (selector: string) => boolean) =>
+      rules.filter((rule) => rule.print && test(rule.selector));
+
+    const lock = rules.find(
+      (rule) => !rule.print && rule.selector === 'body.app-viewport' && !rule.layered
+    );
+    if (lock === undefined) broken.push('the screen lock body.app-viewport was not found');
+    const body = releases((selector) => selector === 'body.app-viewport');
+    if (
+      !body.some(
+        (rule) =>
+          !rule.layered &&
+          rule.declarations['overflow'] === 'visible' &&
+          rule.declarations['height'] === 'auto' &&
+          lock !== undefined &&
+          rule.order > lock.order &&
+          outranks(specificity(rule.selector), specificity(lock.selector)) >= 0
+      )
+    ) {
+      broken.push('body.app-viewport is not released after, and at least as specific as, its lock');
+    }
+
+    const targets: {
+      readonly name: string;
+      readonly matches: (selector: string) => boolean;
+      readonly needs: Readonly<Record<string, string>>;
+    }[] = [
+      {
+        name: 'the shell boxes',
+        matches: (selector) => /\[data-app-shell\]$/.test(selector),
+        needs: { display: 'block', 'block-size': 'auto', overflow: 'visible' },
+      },
+      {
+        name: 'the main region',
+        matches: (selector) => /(^|\s)main$/.test(selector),
+        needs: { 'block-size': 'auto', overflow: 'visible' },
+      },
+      {
+        name: 'the scroll regions',
+        matches: (selector) => /\[data-scroll-region\]$/.test(selector),
+        needs: { 'max-block-size': 'none', overflow: 'visible' },
+      },
+    ];
+    for (const target of targets) {
+      const winning = releases(target.matches).filter(
+        (rule) =>
+          !rule.layered &&
+          outranks(specificity(rule.selector), ONE_UTILITY) > 0 &&
+          Object.entries(target.needs).every(([prop, value]) => rule.declarations[prop] === value)
+      );
+      if (winning.length === 0) {
+        broken.push(`${target.name}: no print release outranks a utility class`);
+      }
+    }
+    return broken;
+  }
+
+  const compiled = compiledGlobals();
+
+  it('releases the body, the shell, main and every scroll region on paper, and wins', () => {
+    expect(problems(compiled)).toEqual([]);
+  });
+
+  it('competes with the utilities because it is unlayered, and they are emitted after it', () => {
+    const printAt = compiled.indexOf('[data-app-shell]');
+    const utilitiesAt = compiled.indexOf('@tailwind utilities');
+    expect(printAt).toBeGreaterThan(-1);
+    expect(utilitiesAt).toBeGreaterThan(printAt);
+  });
+
+  it('leaves the working panels off the paper only where a screen opted in and a document is open', () => {
+    const scoped = rulesOf(compiled).find(
+      (rule) =>
+        rule.print &&
+        rule.selector.startsWith('[data-print-scope]:has([data-print=') &&
+        rule.declarations['display'] === 'none'
+    );
+    expect(scoped).toBeDefined();
+    expect(scoped?.layered).toBe(false);
+  });
+
+  it('FALSIFICATION: the selectors that lost are refused', () => {
+    // The sheet as it was when every printout came out as one page.
+    const regressed = compiled
+      .replace(/:root \[data-app-shell\],\s*:root main/g, 'main')
+      .replace(/:root \[data-scroll-region\]/g, '[data-scroll-region]')
+      .replace(/,\s*body\.app-viewport\s*\{/g, ' {');
+    expect(regressed).not.toBe(compiled);
+    const broken = problems(regressed).join('\n');
+    expect(broken).toMatch(/body\.app-viewport is not released/);
+    expect(broken).toMatch(/the shell boxes: no print release/);
+    expect(broken).toMatch(/the main region: no print release/);
+    expect(broken).toMatch(/the scroll regions: no print release/);
   });
 });
 

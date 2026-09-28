@@ -573,4 +573,24 @@ describe('printing', () => {
       .closest('[data-print="hide"]');
     expect(toolbar).not.toBeNull();
   });
+
+  it('prints the sheet alone once it is open, and the screen as it is while it is closed', async () => {
+    // Checkpoint browser QA, DEF-01: the printout carried the checklist, the
+    // release form and the history before the sheet. The screen opts into the
+    // print scope, whose rule leaves off every direct child holding no document
+    // (`styles/print/_index.scss`) — so exactly one child may hold the sheet,
+    // and every working panel must be a sibling of it rather than its parent.
+    const { container } = renderScreen();
+    const scope = container.querySelector('[data-print-scope]') as HTMLElement;
+    expect(scope).not.toBeNull();
+    const holding = () =>
+      [...scope.children].filter((child) => child.querySelector('[data-print="document"]'));
+    expect(holding()).toHaveLength(0);
+
+    await openDocument();
+    expect(holding()).toHaveLength(1);
+    expect(scope.children.length).toBeGreaterThan(1);
+    const summary = screen.getByRole('heading', { name: EN['delivery.summary.heading'] as string });
+    expect(holding()[0]?.contains(summary)).toBe(false);
+  });
 });

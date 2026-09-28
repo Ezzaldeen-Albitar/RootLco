@@ -219,6 +219,10 @@ export function Sidebar({
   return (
     <aside
       data-collapsed={collapsed ? 'true' : 'false'}
+      // Navigation chrome: its links are already hidden on paper (`nav`), and
+      // the brand block and the column around them would otherwise print as an
+      // empty band beside the document.
+      data-print="hide"
       className={[
         // `h-full`, not `h-dvh`: the shell is now exactly the viewport, so the
         // sidebar fills its column rather than declaring its own height and

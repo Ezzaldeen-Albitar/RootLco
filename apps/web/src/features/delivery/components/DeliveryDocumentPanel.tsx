@@ -139,7 +139,7 @@ export function DeliveryDocumentPanel({
   return (
     <section
       aria-labelledby="delivery-document-heading"
-      className="flex min-h-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+      className="flex min-h-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4 print:border-0 print:p-0"
       lang={locale}
     >
       <div className="flex flex-wrap items-center gap-3" data-print="hide">
