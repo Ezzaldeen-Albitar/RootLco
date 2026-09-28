@@ -70,6 +70,24 @@ import type { ActionState } from './action-result';
  * does (for the picker, its date parts), so the cursor still lands in the field
  * that is wrong and never in a neighbour.
  *
+ * ## A composite control that keeps its own cursor is ASKED, not focused
+ *
+ * Landing in the right field is not enough when the field keeps its own idea of
+ * where the cursor is. The date picker tracks which of its parts is selected
+ * and whether it holds focus, and it only takes keystrokes into a part it
+ * focused itself. Focused from outside — on the group's own container, the
+ * first thing in it with a tab stop — it could believe it still held focus on
+ * the part the operator had left, so a click on the year highlighted it and
+ * dropped every digit typed after a refusal (checkpoint browser QA, DEF-02:
+ * "01/03/YYYY" could not be finished until focus left the field and came back).
+ *
+ * So before focusing anything, the hook dispatches `FOCUS_REQUEST_EVENT` on the
+ * marked element. It bubbles, and a control that knows how to take the cursor
+ * itself answers it — the picker through its own field API, on its first
+ * unfinished part — and cancels the event. Only an unanswered request falls
+ * back to focusing the element as above, so every ordinary control behaves
+ * exactly as it did.
+ *
  * ## Revealing before focusing
  *
  * Focusing an element inside a closed `<details>` scrolls nowhere and announces
@@ -92,12 +110,24 @@ import type { ActionState } from './action-result';
 
 const INVALID = '[aria-invalid="true"], [data-invalid="true"]';
 
+/**
+ * Asked of a refused control before the cursor is moved into it. A control that
+ * places the cursor itself (a date picker, on its first unfinished part) calls
+ * `preventDefault()`; see "A composite control that keeps its own cursor".
+ */
+export const FOCUS_REQUEST_EVENT = 'rootlco:focus-request';
+
 /** What can take the cursor inside a composite control, in document order. */
 const FOCUSABLE =
   'input:not([type="hidden"]):not([aria-hidden="true"]):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
-/** Focuses the element, or — when it cannot take focus — the first thing inside it that can. */
+/**
+ * Lets the control place the cursor itself; otherwise focuses the element, or —
+ * when it cannot take focus — the first thing inside it that can.
+ */
 function focusInto(element: HTMLElement): void {
+  const request = new CustomEvent(FOCUS_REQUEST_EVENT, { bubbles: true, cancelable: true });
+  if (!element.dispatchEvent(request) && element.contains(document.activeElement)) return;
   element.focus({ preventScroll: true });
   if (element.contains(document.activeElement)) return;
   element.querySelector<HTMLElement>(FOCUSABLE)?.focus({ preventScroll: true });

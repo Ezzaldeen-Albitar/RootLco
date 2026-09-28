@@ -12,7 +12,7 @@ import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { flattenNavigation } from '@/config/navigation';
 import { formatMessage } from '@/i18n/get-messages';
 import { CLIENT_READ_TIMEOUT_MS, SERVER_READ_WORST_CASE_MS } from '@/lib/api/use-search-request';
-import { formatDayInZone, formatInZone, zoneLabelAt } from '@/lib/branch-time';
+import { formatDayInZone, formatInZone, formatPeriodInZone, zoneLabelAt } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
 import {
   ALL_BRANCHES,
@@ -675,6 +675,98 @@ describe('leaving faster than usual', () => {
     expect(
       within(frame).getByText(EN['attention.consumption.ruleUnread'] as string)
     ).toBeInTheDocument();
+  });
+});
+
+/**
+ * The observed window, written as a person writes a period (checkpoint browser
+ * QA, DEF-03). The read reports a rolling window as two instants with
+ * microseconds and a `Z`; the card printed them verbatim, in both languages.
+ */
+describe('the period a finding was observed over', () => {
+  // A window that opened and closed at 22:35 UTC: on the branch's clock
+  // (Asia/Riyadh, three hours east) those are the 21st and the 28th, and on
+  // UTC they would be the 20th and the 27th.
+  const window = {
+    from: '2026-09-20T22:35:22.361629Z',
+    to: '2026-09-27T22:35:22.361629Z',
+    issuedQty: '40.000',
+  };
+  const RAW = /\d{4}-\d{2}-\d{2}|T\d{2}:|\.\d{3,}|Z\b/;
+
+  it('writes the window as a plain range of days on the branch clock, in English', async () => {
+    readUnusualConsumptionAlerts.mockResolvedValue(
+      consumption([consumptionRow({ observedPeriod: window })])
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseTheBranch(user);
+
+    const frame = card('attention.consumption.title');
+    const row = await within(frame).findByRole('row', { name: /Brake pad/ });
+    const period = within(row).getAllByRole('cell')[1] as HTMLElement;
+    expect(period.textContent).not.toMatch(RAW);
+    expect(period.textContent).toMatch(/^21\s?–\s?28 Sept 2026$/);
+  });
+
+  it('writes the same window in Arabic, right to left, with no machine timestamp', async () => {
+    readUnusualConsumptionAlerts.mockResolvedValue(
+      consumption([consumptionRow({ observedPeriod: window })])
+    );
+    renderRtl(
+      inBranch(
+        <AttentionScreen
+          locale="ar"
+          messages={messagesFor('ar')}
+          canReadStock
+          canReadCapacity
+          canReadBranches
+        />,
+        { locale: 'ar' }
+      )
+    );
+    const heading = await screen.findByRole('heading', {
+      name: AR['attention.consumption.title'] as string,
+    });
+    const frame = heading.closest('section') as HTMLElement;
+    const row = await within(frame).findByRole('row', { name: /Brake pad/ });
+    const period = within(row).getAllByRole('cell')[1] as HTMLElement;
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(period.textContent).not.toMatch(RAW);
+    expect(period.textContent).toBe(
+      formatPeriodInZone(window.from, window.to, intlLocale('ar'), 'Asia/Riyadh')
+    );
+    // The Arabic locale's own written form of a day, with the product's Latin
+    // digits, on the branch's days (the 21st and the 28th, not UTC's 20th).
+    expect(period.textContent).toMatch(/^21\D/);
+    expect(period.textContent).toMatch(/28/);
+    expect(period.textContent).toMatch(/2026$/);
+    expect(period.textContent).not.toMatch(/[٠-٩]/);
+  });
+
+  it('places each end on the clock it is given, and never moves a calendar day', () => {
+    const en = intlLocale('en');
+    expect(formatPeriodInZone(window.from, window.to, en, 'Asia/Riyadh')).toMatch(
+      /^21\s?–\s?28 Sept 2026$/
+    );
+    // "All my branches" writes days on UTC, where the same window is a day earlier.
+    expect(formatPeriodInZone(window.from, window.to, en, 'UTC')).toMatch(
+      /^20\s?–\s?27 Sept 2026$/
+    );
+    // A calendar day is already that zone's day, even far west of UTC.
+    expect(formatPeriodInZone('2026-09-11', '2026-09-18', en, 'America/Los_Angeles')).toMatch(
+      /^11\s?–\s?18 Sept 2026$/
+    );
+    // Across a month the month is written at each end, and the year once.
+    expect(formatPeriodInZone('2026-08-28', '2026-09-04', en, 'UTC')).toMatch(
+      /^28 Aug\s?–\s?4 Sept 2026$/
+    );
+  });
+
+  it('writes nothing for an end that is not a moment, rather than its raw text', () => {
+    const en = intlLocale('en');
+    expect(formatPeriodInZone('not-a-moment', 'also-not', en, 'UTC')).toBe('');
+    expect(formatPeriodInZone('not-a-moment', '2026-09-18', en, 'UTC')).toBe('18 Sept 2026');
   });
 });
 

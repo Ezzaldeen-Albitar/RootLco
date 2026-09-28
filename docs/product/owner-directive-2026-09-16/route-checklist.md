@@ -689,6 +689,87 @@ Known limitations of this slice, one line each:
   **Resolved on 2026-09-27:** the Owner decided the administrator carries the code; see
   "Organisation settings for tenant administrators" below.
 
+### Checkpoint browser QA findings (2026-09-28, served at `4b3d5d87`)
+
+- **DEF-01 (printing) — fixed; the printed result is asserted in the browser tier, not re-measured
+  by hand.** Every printable screen prints through the application shell: the handover sheet on
+  `/delivery/[deliveryId]`, the invoice, the payment receipt, the reception acknowledgement, the
+  shelf labels, and any later document built on `PrintDocument`. On paper the shell stops being a
+  viewport: the body lock (`body.app-viewport`), the shell's boxes (`data-app-shell` on the root,
+  the column and the body row), `main` and every `[data-scroll-region]` release their fixed height
+  and their clipping, so a document runs over as many A4 pages as it needs, in English and Arabic
+  alike (direction is inherited, never restated for print). The header, the navigation column and
+  the secondary panel are marked `data-print="hide"`; navigation links, buttons and the notification
+  region were already hidden. Why it failed: the print sheet and the Tailwind utilities are both
+  unlayered (`styles/_layers.scss`) and the utilities are emitted after it, so a print selector must
+  outrank the utility class it overrides — `main`, plain `body` and a bare `[data-scroll-region]` did
+  not, and the shell root was not selected at all. No `!important` was added and no layer was
+  reordered. A screen that shows a document among its working panels opts in with
+  `data-print-scope`: while the document is open inside it, only the document prints (the delivery
+  screen does this, so the handover prints as the sheet rather than after the release form, the
+  checklist and the history). Held by the compiled-stylesheet contract in
+  `gallery-and-print.dom.test.tsx` (each release is in `@media print`, unlayered and more specific
+  than what it beats, with a falsification on the selectors that lost), the shell markers in
+  `shell.dom.test.tsx`, the delivery scope in `delivery-document.dom.test.tsx`, and in the browser
+  tier by `tests/e2e/foundation.spec.ts` ("prints the whole page"), which emulates print media on
+  the gallery, finds no box clipping the printable document, and requires the generated PDF to run
+  over more than one page — the defect's signature was a PDF of exactly one page.
+- **DEF-02 (a date corrected after a refusal) — fixed.** A half-typed day (`01/03/YYYY`) is still
+  refused; the cursor now lands on the first EMPTY part (the year), placed by the picker itself
+  through its own field API (`fieldRef.focusField`) in answer to the refused form's focus request
+  (`FOCUS_REQUEST_EVENT` in `lib/forms/use-focus-first-invalid.ts`), and typing or clicking edits
+  at once. The complaint clears as soon as the day is whole and valid. This covers every
+  `DateField` and `DateTimeField`, so the warranty plan's cover terms, the reception and
+  work-order period filters and every other date form. On `DateTimeField` the first empty part
+  follows the locale's own section order: English lists the day first and the time last, Arabic
+  lists the time (with its morning/afternoon part) first and the day after it, so the same answer
+  lands on a different part in each. DOM tests in English and Arabic
+  (`mui-form-fields.dom.test.tsx`, including a refused half-typed `DateTimeField` in each locale that
+  fails when the field's focus-request answer or its reporting text-field slot is removed;
+  `warranty-policies.dom.test.tsx`); the reception and work-order
+  range refusals still move the cursor to the refused field. The browser's own focus race (the
+  picker believing it still held focus) cannot be reproduced in jsdom; the tests hold where the
+  cursor lands and that typing finishes the day.
+- **DEF-03 (`/attention`, "Leaving faster than usual") — fixed.** The observed period is written as
+  a plain range of days on the working branch's clock (`UTC` when no single branch is in force), in
+  the reader's language: `21–28 Sept 2026` in English, the Arabic locale's own day form in Arabic,
+  never the two raw timestamps (`formatPeriodInZone` in `lib/branch-time.ts`). DOM tests in English
+  and Arabic, and on the zone boundary.
+- **OBS-5 (the API's `pg` warning) — fixed at the one place every statement passes.** "Calling
+  client.query() when the client is already executing a query" came from reads started together
+  (`Promise.all`) on the one client a request's transaction owns — around twenty call sites across
+  delivery, warranty, work orders, diagnostics, quality, reporting and exports. `pg` queued them, so
+  they were never parallel; `pg` 9 removes that queue. `server/db/transaction.ts` now hands the
+  client one statement at a time, in the order they were asked for, including the transaction's own
+  `BEGIN`, context, `COMMIT` and `ROLLBACK` — so behaviour is what `pg`'s queue produced, including a
+  statement after a failed one meeting the aborted transaction. Held by
+  `tests/unit/p1-32-shared-client-serial-queries.test.ts`, whose stand-in client throws on an
+  overlapping statement.
+- **Not changed here:** OBS-3 (the plan's cover-terms table shows its start date as a raw calendar
+  day) was observed, not listed as a defect, and is left for its own slice.
+
+Known limitations of this checkpoint, one line each:
+
+- The invoice (`features/billing/components/InvoiceScreen.tsx`) and the receipt
+  (`features/payments/components/PaymentsScreen.tsx`) do not opt into `data-print-scope`: they now
+  print at full length, but still print their detail, outstanding, actions and allocate panels ahead
+  of the document — the shape fixed here for delivery. This predates this change and was not part
+  of DEF-01, which was truncation only.
+- DEF-02 in a real browser: jsdom cannot reproduce Chromium's stale-focus race, so the "click the
+  year after a refusal" cases pass with or without the fix, and no Playwright case covers the date
+  correction; the click path in a browser rests on the hosted QA re-run, not on CI.
+- The browser print check (`tests/e2e/foundation.spec.ts`, "prints the whole page") measures only
+  `/gallery`; the delivery handover, invoice, receipt, acknowledgement and labels printouts have no
+  browser-tier print assertion, and the DOM contract for the delivery scope is structural only.
+- The delivery printout still includes the `PageHeader` above the sheet, because the print scope
+  wraps only the `DeliveryDetailScreen` body.
+- The outbox worker (`apps/api/src/server/worker/worker-db.ts`) hands consumers a raw `PoolClient`
+  without the one-statement-at-a-time queue; no `Promise.all` on a `WorkerDb` exists today, and the
+  worker is a separate process from the API that emitted OBS-5.
+- The serial-queue unit test uses a stand-in client; the database and integration tiers ran against
+  the change in hosted CI, but no test asserts that `pg`'s overlapping-query warning is absent on a
+  live request.
+
 ## Organisation settings for tenant administrators (Owner decision of 2026-09-27)
 
 The Owner decided that the standard tenant administrator edits its own organisation's operational

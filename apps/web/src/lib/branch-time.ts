@@ -295,3 +295,45 @@ export function formatDayInZone(day: CalendarDay, intlLocale: string, zone: stri
     dateStyle: 'medium',
   }).format(startOfDay(zone, day));
 }
+
+/**
+ * A period between two moments, as a plain range of days on the branch's clock
+ * (`21–28 Sept 2026`), in the reader's language.
+ *
+ * Each end may be an instant (`2026-09-21T02:35:22.361629Z`, what a rolling
+ * window reports) or a calendar day (`2026-09-21`). An instant is placed on
+ * `zone`'s clock before its day is taken, so a window that opened at 23:30 UTC
+ * reads as the NEXT day in a zone east of it; a calendar day is that zone's own
+ * day and is never moved. The two ends share one formatter, so the month and
+ * year are written once when both ends share them — the way a person writes a
+ * period, not two machine timestamps with a dash between them (checkpoint
+ * browser QA, DEF-03).
+ *
+ * An end that is not a moment at all renders as nothing rather than as its raw
+ * text: a period the server did not state is not replaced by developer text.
+ */
+export function formatPeriodInZone(
+  from: string,
+  to: string,
+  intlLocale: string,
+  zone: string
+): string {
+  const start = periodEnd(from, zone);
+  const end = periodEnd(to, zone);
+  const format = new Intl.DateTimeFormat(intlLocale, { timeZone: zone, dateStyle: 'medium' });
+  if (start !== null && end !== null) {
+    // A range the wrong way round is written as it came, end by end, rather
+    // than silently turned into a different period.
+    return start.getTime() <= end.getTime()
+      ? format.formatRange(start, end)
+      : `${format.format(start)} – ${format.format(end)}`;
+  }
+  const only = start ?? end;
+  return only === null ? '' : format.format(only);
+}
+
+function periodEnd(value: string, zone: string): Date | null {
+  if (isCalendarDay(value)) return startOfDay(zone, value);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}

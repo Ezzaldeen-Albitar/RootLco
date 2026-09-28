@@ -174,7 +174,13 @@ export function DeliveryDetailScreen({
   const eligibility = useEligibility(delivery.id, canReadFinance, revision);
 
   return (
-    <div className="flex min-h-0 flex-col gap-6">
+    /*
+     * `data-print-scope`: once the handover sheet is open below, printing
+     * carries the sheet and leaves these working panels off the paper
+     * (`styles/print/_index.scss`). With the sheet closed the screen prints as
+     * it is.
+     */
+    <div data-print-scope="document" className="flex min-h-0 flex-col gap-6">
       <Panel
         headingId="delivery-summary-heading"
         titleKey="delivery.summary.heading"

@@ -2036,6 +2036,55 @@ describe('BranchSelector, the drawing on its own', () => {
 });
 
 /**
+ * Checkpoint browser QA, DEF-01: a printed document came out as the one
+ * screenful at the current scroll position. The print sheet releases the
+ * shell's viewport contract by ATTRIBUTE (`styles/print/_index.scss`), so every
+ * box between the page and `main` must carry `data-app-shell`, and the chrome
+ * around the document must be marked to leave the paper. The cascade half —
+ * that those releases outrank the utilities — is held on the compiled sheet in
+ * `gallery-and-print.dom.test.tsx`; the printed result in the browser tier.
+ */
+describe('the shell on paper', () => {
+  for (const locale of ['en', 'ar'] as const) {
+    it(`names every box of the viewport contract for the print sheet (${locale})`, () => {
+      const catalogue = locale === 'ar' ? arabic : messages;
+      const render = locale === 'ar' ? renderRtl : renderLtr;
+      const { container } = render(
+        <UiFoundationProvider locale={locale} text={muiTextOf(catalogue)}>
+          <AppShell locale={locale} messages={catalogue} secondaryPanel={<p>aside</p>}>
+            <p>content</p>
+          </AppShell>
+        </UiFoundationProvider>
+      );
+      const root = container.querySelector('[data-app-shell="root"]') as HTMLElement;
+      expect(root).not.toBeNull();
+      // The box the print sheet must release is the one that clips the screen.
+      expect(root.className).toMatch(/(^|\s)h-dvh(\s|$)/);
+      expect(root.className).toMatch(/(^|\s)overflow-hidden(\s|$)/);
+
+      const main = container.querySelector('main') as HTMLElement;
+      expect(root.contains(main)).toBe(true);
+      const unnamed: string[] = [];
+      for (let node = main.parentElement; node && node !== root; node = node.parentElement) {
+        if (!node.hasAttribute('data-app-shell')) unnamed.push(node.className);
+      }
+      expect(unnamed, 'every box between the shell root and main').toEqual([]);
+
+      // The chrome leaves the paper: the header, the navigation column and the
+      // secondary panel.
+      expect(container.querySelector('header')).toHaveAttribute('data-print', 'hide');
+      expect(
+        container.querySelector('aside[data-collapsed]'),
+        'the navigation column'
+      ).toHaveAttribute('data-print', 'hide');
+      expect(
+        screen.getByRole('complementary', { name: catalogue['shell.secondaryPanel'] })
+      ).toHaveAttribute('data-print', 'hide');
+    });
+  }
+});
+
+/**
  * Browser QA part 7, row 9.5: at 375 px the language switcher was drawn over
  * the working-branch select, in English and in Arabic.
  *

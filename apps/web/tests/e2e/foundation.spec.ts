@@ -347,6 +347,62 @@ test.describe('print emulation', () => {
 
       await page.emulateMedia({ media: 'screen' });
     });
+
+    /*
+     * Checkpoint browser QA, DEF-01: every printed document came out as ONE
+     * page — the screenful at the current scroll position — because the print
+     * sheet's releases lost to the shell's viewport utilities (`h-dvh`,
+     * `overflow-hidden`, `overflow-y-auto`, `body.app-viewport`). The gallery is
+     * far taller than one viewport and renders the shared printable document
+     * inside the application shell, so it is the frame every document prints
+     * through.
+     */
+    test(`prints the whole page across as many pages as it needs, not one screenful, in ${locale}`, async ({
+      page,
+    }) => {
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.goto(`/${locale}/gallery`);
+      await page.emulateMedia({ media: 'print' });
+
+      const layout = await page.evaluate(() => {
+        const root = globalThis.document.querySelector('[data-app-shell="root"]');
+        const main = globalThis.document.querySelector('main');
+        const sheet = globalThis.document.querySelector('[data-print="document"]');
+        // Every box between the printable document and the page: none may clip.
+        const clipping: string[] = [];
+        for (let node = sheet?.parentElement ?? null; node !== null; node = node.parentElement) {
+          const style = globalThis.getComputedStyle(node);
+          const clips = style.overflowY !== 'visible' && node.scrollHeight > node.clientHeight + 1;
+          if (clips) clipping.push(`${node.tagName.toLowerCase()}.${node.className}`);
+        }
+        return {
+          viewport: globalThis.innerHeight,
+          documentHeight: globalThis.document.documentElement.scrollHeight,
+          rootHeight: root?.getBoundingClientRect().height ?? 0,
+          mainHeight: main?.getBoundingClientRect().height ?? 0,
+          mainOverflow: main === null ? '' : globalThis.getComputedStyle(main).overflowY,
+          bodyOverflow: globalThis.getComputedStyle(globalThis.document.body).overflowY,
+          sheetBottom: (sheet?.getBoundingClientRect().bottom ?? 0) + (globalThis.scrollY ?? 0),
+          clipping,
+        };
+      });
+      expect(layout.clipping, 'no box around the document may clip it on paper').toEqual([]);
+      expect(layout.bodyOverflow).toBe('visible');
+      expect(layout.mainOverflow).toBe('visible');
+      expect(layout.rootHeight, 'the shell grows past the viewport').toBeGreaterThan(
+        layout.viewport
+      );
+      expect(layout.mainHeight).toBeGreaterThan(layout.viewport);
+      expect(layout.documentHeight).toBeGreaterThanOrEqual(layout.sheetBottom - 1);
+
+      // What the printer is actually handed: more than one page. The defect's
+      // own signature was a PDF of exactly one page (`/Count 1`).
+      const pdf = await page.pdf({ preferCSSPageSize: true });
+      const pages = pdf.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) ?? [];
+      expect(pages.length, 'the printout runs over more than one page').toBeGreaterThan(1);
+
+      await page.emulateMedia({ media: 'screen' });
+    });
   }
 });
 
