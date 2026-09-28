@@ -1048,23 +1048,61 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      * version is passed explicitly so a header change abandons the read in
      * flight rather than letting it land under the new branch's name.
      */
-    // The reception and work-order boards are held by
-    // `boardReadContractViolations` in the cases below — their syntax trees, not
-    // their text. The calendar keeps this text check until its own Material UI
-    // slice replaces it the same way.
-    for (const relative of [
-      ['features', 'appointments', 'components', 'AppointmentCalendarScreen.tsx'],
-    ]) {
-      const source = webFile(...relative);
-      expect(source, relative.join('/')).toContain('useSearchRequest');
-      expect(source, relative.join('/')).toMatch(/version:\s*context\.version/);
-      // The scope is part of what the read is filed under, so a branch change
-      // is a new ordering contract and never a reused cursor.
-      expect(source, relative.join('/')).toMatch(/readonly scope:\s*BranchScope/);
-      expect(source, relative.join('/')).toMatch(/criteria:\s*asked/);
-      // And no screen spends a cursor of its own: the stack is the hook's.
-      expect(source, relative.join('/')).not.toMatch(/atob\(|Buffer\.from\(|JSON\.parse\(cursor/);
-    }
+    // All three boards are held by `boardReadContractViolations` — their syntax
+    // trees, not their text. The calendar's text check was replaced when it
+    // moved onto the Material UI wrappers; its falsification is the case below.
+    const relative = ['features', 'appointments', 'components', 'AppointmentCalendarScreen.tsx'];
+    const source = webFile(...relative);
+    expect(boardReadContractViolations(source, 'listAppointments'), relative.join('/')).toEqual([]);
+    // And no screen spends a cursor of its own: the stack is the hook's.
+    expect(source, relative.join('/')).not.toMatch(/atob\(|Buffer\.from\(|JSON\.parse\(cursor/);
+  });
+
+  it('3/3 cursor: the calendar contract check fails when any of its three rules is broken', () => {
+    const source = webFile(
+      'features',
+      'appointments',
+      'components',
+      'AppointmentCalendarScreen.tsx'
+    );
+    const check = (text: string) => boardReadContractViolations(text, 'listAppointments');
+    const broken = (from: RegExp, to: string) => {
+      expect(source, `the falsification anchor ${from} is gone from the source`).toMatch(from);
+      return check(source.replace(from, to));
+    };
+    // No version: the read would land under the next branch's name.
+    expect(broken(/version: context\.version,/, '')).toEqual([
+      'version: the read is not keyed on the working-context version',
+    ]);
+    // A version that is not the working context's.
+    expect(broken(/version: context\.version,/, 'version: 0,')).toEqual([
+      'version: the read is not keyed on the working-context version',
+    ]);
+    // Criteria whose type no longer carries a BranchScope scope.
+    expect(broken(/readonly scope: BranchScope;/, 'readonly scope: string;')).toEqual([
+      'scope: the criteria the read is filed under do not carry a BranchScope scope',
+    ]);
+    // Criteria that are no longer the asked object.
+    expect(broken(/criteria: asked,/, 'criteria: null,')).toEqual([
+      'scope: the criteria the read is filed under do not carry a BranchScope scope',
+    ]);
+    // A loader that sends something other than what the calendar is keyed on.
+    expect(broken(/criteria\.scope,\n(\s*)criteria\.filters,/, 'criteria.scope,\n$1{},')).toEqual([
+      'asked: the read is not sent the scope and filters the board is keyed on',
+    ]);
+    // The calendar's own read, not another board's: the check names the call.
+    expect(boardReadContractViolations(source, 'listWorkOrdersCancellable')).toEqual([
+      'asked: the read is not sent the scope and filters the board is keyed on',
+    ]);
+    // No comment can keep it green: the same words in a comment are not a call.
+    expect(
+      check(
+        `// useSearchRequest({ criteria: asked, load, version: context.version })\n${source.replace(
+          /version: context\.version,/,
+          ''
+        )}`
+      )
+    ).toContain('version: the read is not keyed on the working-context version');
   });
 
   it('3/3 cursor: the reception board keys its reads on the version and the scope it sends', () => {

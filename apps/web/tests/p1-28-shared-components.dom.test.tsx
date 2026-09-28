@@ -1,5 +1,6 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
@@ -11,6 +12,9 @@ import {
   renderLtr,
   renderRtl,
 } from './render';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 
 /**
  * The shared pieces the appointment and reception screens are built out of
@@ -597,8 +601,17 @@ describe('BranchTargetFields', () => {
  * ====================================================================== */
 
 describe('WindowFields', () => {
-  function fields(over: Record<string, unknown> = {}) {
+  /** The product's Material provider, around a working context. */
+  function framed(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
     return (
+      <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+        {inBranch(ui, { locale })}
+      </UiFoundationProvider>
+    );
+  }
+
+  function fields(over: Record<string, unknown> = {}) {
+    return framed(
       <WindowFields
         messages={en}
         locale="en"
@@ -608,27 +621,42 @@ describe('WindowFields', () => {
         draft={{ from: '', to: '' }}
         onChange={vi.fn()}
         errors={{}}
+        timezone={TEST_BRANCH.timezone}
         {...over}
       />
     );
   }
 
-  it('names the clock the composed instants will carry', () => {
+  it('names the branch clock the moments are typed on', () => {
     // A booking made in Amman for a branch in Riyadh is a decision the operator
     // must be able to SEE, not discover afterwards.
     renderLtr(fields());
     expect(
       screen.getByText(EN['appointments.window.clockNote'] as string, { exact: false })
     ).toBeVisible();
+    expect(screen.getByTestId('appointment-window-zone')).toHaveTextContent(TEST_BRANCH.timezone);
   });
 
-  it('shows what will actually be sent, once a half is complete', () => {
-    renderLtr(fields({ draft: { from: '2026-09-01T09:00', to: '' } }));
-    const willSend = EN['appointments.window.willSend'] as string;
-    const shown = screen.getAllByText(new RegExp(willSend));
-    expect(shown).toHaveLength(1);
-    // The offset is what makes the value unambiguous, and it is visible.
-    expect(shown[0]?.textContent).toMatch(/2026-09-01T09:00:00(Z|[+-]\d{2}:\d{2})/);
+  it('names the clock it is given, whatever the working branch', () => {
+    renderLtr(fields({ timezone: 'Asia/Tokyo' }));
+    expect(screen.getByTestId('appointment-window-zone')).toHaveTextContent('Asia/Tokyo');
+  });
+
+  it('takes no moment without a clock, and says what the caller says instead', () => {
+    renderLtr(fields({ timezone: null, refusal: <p>No single clock</p> }));
+    expect(screen.getByTestId('appointment-window-refused')).toHaveTextContent('No single clock');
+    expect(screen.queryByRole('group', { name: /^From/ })).toBeNull();
+    expect(screen.queryByTestId('appointment-window-zone')).toBeNull();
+  });
+
+  it('shows a stored moment on that clock', () => {
+    renderLtr(fields({ draft: { from: '2026-09-01T09:00:00+03:00', to: '' } }));
+    const from = screen.getByRole('group', { name: /^From/ });
+    // The Riyadh wall clock, part by part: nothing converted to the reader's.
+    expect(from).toHaveTextContent('01');
+    expect(from).toHaveTextContent('09');
+    expect(from).toHaveTextContent('2026');
+    expect(from).toHaveTextContent('00');
   });
 
   it('renders a SERVER window complaint once, under the pair', () => {
@@ -652,30 +680,38 @@ describe('WindowFields', () => {
     renderLtr(fields({ errors: { from: 'field.required', to: 'field.windowEndsBeforeStart' } }));
     expect(screen.getByText(EN['field.required'] as string)).toBeVisible();
     expect(screen.getByText(EN['field.windowEndsBeforeStart'] as string)).toBeVisible();
+    expect(screen.getByRole('group', { name: /^From/ })).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByRole('group', { name: /^To/ })).toHaveAttribute('aria-invalid', 'true');
   });
 
-  it('reports every keystroke to its owner, keeping the other half untouched', async () => {
+  it('reports a whole moment with the branch offset, keeping the other half untouched', async () => {
     const onChange = vi.fn();
-    renderLtr(fields({ onChange }));
-    const inputs = screen.getAllByLabelText(/From|To/);
-    await userEvent.type(inputs[0] as HTMLElement, '2026-09-01T09:00');
-    expect(onChange).toHaveBeenCalled();
-    const last = onChange.mock.calls.at(-1)?.[0] as { from: string; to: string };
-    expect(last.to).toBe('');
+    const onEdit = vi.fn();
+    const user = userEvent.setup();
+    renderLtr(fields({ onChange, onEdit }));
+    const from = screen.getByRole('group', { name: /^From/ });
+    await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('010920260900');
+    expect(onEdit).toHaveBeenCalledWith('from');
+    expect(onChange).toHaveBeenLastCalledWith({ from: '2026-09-01T09:00:00+03:00', to: '' });
   });
 
   it('carries real Arabic for the clock note', () => {
     renderRtl(
-      <WindowFields
-        messages={ar}
-        locale="ar"
-        legend="نافذة"
-        fromLabel="من"
-        toLabel="إلى"
-        draft={{ from: '', to: '' }}
-        onChange={vi.fn()}
-        errors={{}}
-      />
+      framed(
+        <WindowFields
+          messages={ar}
+          locale="ar"
+          legend="نافذة"
+          fromLabel="من"
+          toLabel="إلى"
+          draft={{ from: '', to: '' }}
+          onChange={vi.fn()}
+          errors={{}}
+          timezone={TEST_BRANCH.timezone}
+        />,
+        'ar'
+      )
     );
     expect(/[؀-ۿ]/.test(AR['appointments.window.clockNote'] as string)).toBe(true);
     expect(

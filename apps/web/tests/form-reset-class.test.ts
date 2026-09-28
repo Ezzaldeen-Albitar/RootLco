@@ -834,10 +834,15 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
      * conditions until it stopped rendering a control at all: the company and
      * branch pair is now the working context's named selection, shown as text,
      * so there is nothing there for a form reset to strand. The exemplar moved
-     * rather than the claim — `WindowFields` is its sibling in the same form and
-     * is reachable only the same way.
+     * rather than the claim — to `WindowFields`, its sibling in the same form —
+     * and moved again when the appointment forms moved onto the Material UI
+     * wrappers (ADR-022): booking and the lifecycle commands now submit through
+     * their own handler (`<form onSubmit>`), never a Server Action, so no reset
+     * reaches them. `VinField` satisfies the same three conditions: the VIN box
+     * owns no form, hands controls to none, is in no hand-written list, and is
+     * rendered into the vehicle forms that do own one.
      */
-    const target = 'features/appointments/components/WindowFields.tsx';
+    const target = 'features/vehicles/components/VinField.tsx';
     const src = stripComments(readFileSync(join(SRC, ...target.split('/')), 'utf8'));
 
     expect(OWNS_FORM.test(src), `${target} owns a form, so it proves nothing here`).toBe(false);
@@ -885,17 +890,39 @@ describe('every reset-sensitive control in the form-owning trees is protected', 
     for (const required of [
       'features/vehicles/components/VehicleRelationsSections.tsx',
       'features/vehicles/components/VehicleCreateScreen.tsx',
-      'features/appointments/components/AppointmentDetailScreen.tsx',
-      'features/appointments/components/AppointmentBookingScreen.tsx',
-      // Was `BranchTargetFields.tsx`, which renders no control any more — see
-      // the derived-edge case above. Its sibling in the same form stands in.
-      'features/appointments/components/WindowFields.tsx',
+      // The three appointment files left this list with the Material UI slice:
+      // their forms submit through their own handler, so no reset reaches them
+      // and they hold no guarded control — the case below holds them to that.
       'features/administration/access/components/ApprovalLimitsScreen.tsx',
     ]) {
       expect(
         guarded.some((c) => c.file === required),
         `${required} contributes no guarded control — the scan is not reading it`
       ).toBe(true);
+    }
+  });
+
+  it('holds the appointment forms to their own submit handler, which no form reset reaches', () => {
+    /*
+     * Round six found the cancellation reason, the appointment type and the
+     * branch pair stranded by a Server Action's reset. Those forms now submit
+     * through `onSubmit` with Material's controlled fields, so the reset class
+     * cannot occur there — and that is only true while none of them owns a
+     * `<form action={…}>`. One that did would re-enter this inventory, and its
+     * controls would be judged by the case below.
+     */
+    const appointmentFiles = scanned.filter((one) =>
+      one.file.startsWith('features/appointments/components/')
+    );
+    expect(appointmentFiles.length, 'the appointment screens are not in the scan').toBeGreaterThan(
+      2
+    );
+    expect(
+      appointmentFiles.filter((one) => one.ownsForm).map((one) => one.file),
+      'an appointment screen owns a Server Action form again'
+    ).toEqual([]);
+    for (const one of appointmentFiles) {
+      expect(one.src, one.file).not.toMatch(/useActionState/);
     }
   });
 

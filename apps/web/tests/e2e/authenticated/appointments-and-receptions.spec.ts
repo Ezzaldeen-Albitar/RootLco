@@ -869,18 +869,18 @@ test.describe('the appointment calendar reads only for a named branch', () => {
     await segmentRendered(page, '/en/appointments');
 
     await workInBranch(page, BRANCH_A);
-    await page
-      .getByRole('button', { name: say('en', 'appointments.calendar.period.custom') })
-      .click();
-    await page.getByLabel(say('en', 'appointments.calendar.fromDay')).fill('2026-08-20');
-    await page.getByLabel(say('en', 'appointments.calendar.toDay')).fill('2026-08-10');
+    // The chosen days are the toolbar's two date pickers, beside the views.
+    await typeIntoPicker(page, say('en', 'appointments.calendar.fromDay'), '2026-08-20');
+    await typeIntoPicker(page, say('en', 'appointments.calendar.toDay'), '2026-08-10');
     await page
       .getByRole('button', { name: say('en', 'appointments.calendar.applyPeriod') })
       .click();
 
-    await expect(page.getByRole('main')).toContainText(
-      say('en', 'appointments.calendar.rangeInverted')
-    );
+    await expect(page.getByRole('main')).toContainText(say('en', 'filters.period.inverted'));
+    // Refused on the box to fix, which is marked for assistive technology too.
+    await expect(
+      page.getByRole('group', { name: startsWith(say('en', 'appointments.calendar.toDay')) })
+    ).toHaveAttribute('aria-invalid', 'true');
   });
 });
 
@@ -2483,6 +2483,11 @@ function exactly(value: string): RegExp {
   return new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`);
 }
 
+/** A literal a name or a value must START with — a required field's name ends in its mark. */
+function startsWith(value: string): RegExp {
+  return new RegExp(`^${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+}
+
 /**
  * The VALUE of one labelled fact, located through its own term.
  *
@@ -2499,7 +2504,23 @@ function factValue(page: Page, term: string): Locator {
     .locator('dd');
 }
 
-/** `datetime-local` wants exactly this, in the operator's own clock. */
+/**
+ * Types a day or a moment into a Material date picker, part by part — the
+ * picker is a group of spin buttons, one per part, not a text box a value can
+ * be filled into. English writes the day first: day, month, year, then hour and
+ * minute on the 24-hour clock. `value` is `YYYY-MM-DD` or `YYYY-MM-DDTHH:mm`;
+ * a moment is typed as the wall clock of the branch the picker is on.
+ */
+async function typeIntoPicker(page: Page, label: string, value: string): Promise<void> {
+  const [day = '', time] = value.split('T');
+  const [year, month, date] = day.split('-');
+  const digits = `${date}${month}${year}${time === undefined ? '' : time.replace(':', '')}`;
+  const group = page.getByRole('group', { name: startsWith(label) });
+  await group.getByRole('spinbutton').first().click();
+  await page.keyboard.type(digits);
+}
+
+/** A wall-clock moment, `YYYY-MM-DDTHH:mm`, typed into the pickers part by part (`typeIntoPicker`). */
 function localDateTime(moment: Date): string {
   const pad = (value: number) => String(value).padStart(2, '0');
   return (
@@ -2688,21 +2709,24 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
     await expect(main).toContainText(say('en', 'appointments.book.requesterRequired'));
     expect(posts.length, 'an incomplete booking was sent to the server').toBe(0);
 
-    // The customer, by NAME — the whole reason `CustomerSelector` exists.
-    const selector = page.getByTestId('customer-selector');
-    await selector
-      .getByLabel(say('en', 'crm.customers.column.name'), { exact: true })
-      .fill('Acceptance');
-    await selector.getByRole('button', { name: say('en', 'customerSelector.search') }).click();
-    await selector.getByRole('button').filter({ hasText: manifest.customerDisplayName }).click();
+    // The customer, by NAME, found on the server through the one combobox.
+    const customer = page.getByRole('combobox', { name: say('en', 'appointments.book.requester') });
+    await customer.fill('Acceptance');
+    await page
+      .getByRole('option')
+      .filter({ hasText: manifest.customerDisplayName })
+      .first()
+      .click();
     await expect(
-      page.getByTestId('customer-selector-value'),
-      'choosing a customer did not carry an identifier into the form'
-    ).toHaveAttribute('value', manifest.customerId);
+      customer,
+      'choosing a customer did not put the customer, by name, into the form'
+    ).toHaveValue(startsWith(manifest.customerDisplayName));
 
-    // The vehicle, from THAT customer's own vehicles.
+    // The vehicle, from THAT customer's own vehicles: a "Choose" on its row.
     const vehicles = page.getByTestId('vehicle-picker');
-    const offered = vehicles.getByRole('button').filter({ hasText: manifest.vehicleDisplayNumber });
+    const offered = vehicles
+      .getByRole('button', { name: startsWith(say('en', 'appointments.book.vehicleChoose')) })
+      .filter({ hasText: manifest.vehicleDisplayNumber });
     await expect(offered, 'the chosen customer offered no linked vehicle').toHaveCount(1);
     await offered.click();
     await expect(
@@ -2721,8 +2745,8 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
     const channel = page.getByLabel(say('en', 'appointments.book.channel'));
     await channel.selectOption(manifest.catalogues.sourceChannel.id);
 
-    await page.getByLabel(say('en', 'appointments.window.from')).fill(window.from);
-    await page.getByLabel(say('en', 'appointments.window.to')).fill(window.to);
+    await typeIntoPicker(page, say('en', 'appointments.window.from'), window.from);
+    await typeIntoPicker(page, say('en', 'appointments.window.to'), window.to);
 
     await submit.click();
     await page.waitForURL(/\/en\/appointments\/[0-9a-f-]{36}$/, { timeout: 30_000 });
@@ -2746,8 +2770,8 @@ test.describe('the configured workspace: the four catalogue-blocked capabilities
     page: Page,
     window: { readonly from: string; readonly to: string }
   ): Promise<void> {
-    await page.getByLabel(say('en', 'appointments.window.from')).fill(window.from);
-    await page.getByLabel(say('en', 'appointments.window.to')).fill(window.to);
+    await typeIntoPicker(page, say('en', 'appointments.window.from'), window.from);
+    await typeIntoPicker(page, say('en', 'appointments.window.to'), window.to);
     await page.getByRole('button', { name: say('en', 'appointments.reschedule.submit') }).click();
     await expect(factValue(page, say('en', 'appointments.column.status'))).toHaveText(
       say('en', 'appointments.status.confirmed'),

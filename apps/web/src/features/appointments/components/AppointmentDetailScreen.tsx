@@ -1,14 +1,23 @@
 'use client';
 
-import { useActionState, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { SelectField } from '@/components/forms/Field';
-import { Dialog } from '@/components/overlays/Overlays';
+import Button from '@mui/material/Button';
+import { DecisionActions, DecisionDialog } from '@/components/dialogs/ConfirmDialog';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { IDLE, invalid, type ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
+import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
+import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { formatInZone, zoneLabelAt } from '@/lib/branch-time';
+import { intlLocale } from '@/lib/format';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -27,42 +36,51 @@ import {
   type AppointmentDetail,
   type AppointmentStatus,
 } from '../appointments-contract';
-import {
-  EMPTY_WINDOW,
-  WindowFields,
-  composeWindow,
-  windowErrors,
-  type WindowDraft,
-} from './WindowFields';
+import { EMPTY_WINDOW, WindowFields, windowErrors, type WindowDraft } from './WindowFields';
 
 /**
  * One appointment (`P1-28-FE-001` detail), and the three lifecycle commands
- * (`FE-003` reschedule/confirmation, `FE-004` cancellation, `FE-005` no-show).
+ * (`FE-003` reschedule/confirmation, `FE-004` cancellation, `FE-005` no-show),
+ * on the Material UI wrappers (ADR-022).
  *
  * ## Affordances come from the frozen transition graph, never a hand list
  *
  * Which commands this screen offers is decided by the contract's own
  * predicates — `canReschedule`, `canCancel`, `canRecordNoShow` — over the
  * frozen `apt.guard_appointment_transition` graph. A status the graph refuses
- * gets no control: a button whose only possible outcome is a refusal is worse
- * than no button. `pending_confirmation` is RENDER-ONLY (no operation reaches
+ * gets no control. `pending_confirmation` is RENDER-ONLY (no operation reaches
  * it) and is labelled, never offered as a destination.
  *
  * ## There is NO confirm operation, and no control here pretends otherwise
  *
  * Confirmation is a side effect of `apt.appointment-reschedule`: setting a
  * firm window IS confirming (UC-APT-001). The affordance says so in its own
- * words — "Confirm by rescheduling" — because a control is labelled as what it
- * truthfully calls.
+ * words — "Confirm by rescheduling".
+ *
+ * ## Whose clock
+ *
+ * The appointment's own branch's, which is not necessarily the branch in the
+ * header: the record is reached by its address. Its times are drawn on that
+ * clock with the clock's name beside them, and the confirmed window is typed
+ * on it (`DateTimeField`). A branch whose zone the working context does not
+ * publish (the directory could not be read, or does not list the record's
+ * branch) is DRAWN on `UTC`, and every time says `UTC` — but no confirmed
+ * window is TAKEN on it: `UTC` there is a display fallback, not the branch's
+ * clock, and a moment typed on it would be sent off by the branch's real
+ * offset. The reschedule form says why it takes no moment and its submit is
+ * disabled, as booking does without a known clock.
  *
  * ## Where the record version comes from (QA-004)
  *
  * Every guarded command sends the version from the detail READ this page made,
  * or from the immediately preceding command's own response — whichever is
- * newer — never a cached guess across user-visible staleness. After every
- * success the page re-reads (`router.refresh()`), and the loser of a real race
- * is told so: the conflict renders with a reload affordance rather than being
- * silently overwritten.
+ * newer — never a cached guess across user-visible staleness. The reschedule
+ * form holds that version as its BASELINE (`useEditBaseline`): a clean form
+ * follows the page, a form holding typed times keeps the version its work was
+ * based on, so work built on a record that has since moved is the server's
+ * conflict rather than a silent overwrite. The conflict offers "Load the latest
+ * version", which discards the typed times and reads the page again. After
+ * every success the page re-reads (`router.refresh()`).
  */
 
 interface Props {
@@ -89,6 +107,7 @@ export function AppointmentDetailScreen({
   cancellationReasons,
 }: Props) {
   const router = useRouter();
+  const context = useWorkingContext();
 
   /*
    * The freshest truth this client has seen. The page's server read is the
@@ -100,6 +119,15 @@ export function AppointmentDetailScreen({
   const fresher = lastChanged !== null && lastChanged.recordVersion > detail.recordVersion;
   const status: AppointmentStatus = fresher ? lastChanged.lifecycleStatus : detail.lifecycleStatus;
   const version = fresher ? lastChanged.recordVersion : detail.recordVersion;
+
+  /**
+   * The appointment's own branch clock, or `null` when the working context does
+   * not publish it. Only a known clock may TAKE a moment (the reschedule form);
+   * the facts are DRAWN on `UTC`, named as such, when it is unknown.
+   */
+  const branchZone =
+    context.branches.find((entry) => entry.id === detail.branchId)?.timezone || null;
+  const zone = branchZone ?? 'UTC';
 
   const changed = (result: AppointmentChangeState) => {
     notifyActionResult(result, messages);
@@ -117,7 +145,14 @@ export function AppointmentDetailScreen({
 
   return (
     <div className="flex flex-col gap-6">
-      <AppointmentFacts locale={locale} messages={messages} detail={detail} status={status} />
+      <AppointmentFacts
+        locale={locale}
+        messages={messages}
+        detail={detail}
+        status={status}
+        zone={zone}
+        branchName={context.branchName(detail.branchId)}
+      />
 
       {status === 'pending_confirmation' ? (
         // A state no operation reaches — labelled, with the truthful way out.
@@ -146,6 +181,7 @@ export function AppointmentDetailScreen({
           messages={messages}
           appointmentId={detail.id}
           version={version}
+          zone={branchZone}
           onResult={changed}
           onReload={() => router.refresh()}
         />
@@ -186,19 +222,33 @@ function AppointmentFacts({
   messages,
   detail,
   status,
+  zone,
+  branchName,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly detail: AppointmentDetail;
   readonly status: AppointmentStatus;
+  readonly zone: string;
+  readonly branchName: string | null;
 }) {
+  const language = intlLocale(locale);
   const dash = <span className="text-text-muted">—</span>;
+  /** A moment on the branch's clock, with the clock's name beside it. */
+  const moment = (value: string): ReactNode => (
+    <span>
+      <bdi>{formatInZone(value, language, zone)}</bdi>{' '}
+      <bdi className="text-caption text-text-muted" data-testid="appointment-clock">
+        {zoneLabelAt(value, language, zone)}
+      </bdi>
+    </span>
+  );
   const windowValue = (from: string | null, to: string | null): ReactNode =>
     from && to ? (
       <span className="flex flex-col">
-        <bdi>{formatDateTime(from, locale)}</bdi>
+        {moment(from)}
         <span className="text-caption text-text-muted">
-          {translate(messages, 'appointments.window.until')} <bdi>{formatDateTime(to, locale)}</bdi>
+          {translate(messages, 'appointments.window.until')} {moment(to)}
         </span>
       </span>
     ) : (
@@ -236,6 +286,13 @@ function AppointmentFacts({
           labelKey="appointments.column.status"
           value={translateDynamic(messages, `appointments.status.${status}`)}
         />
+        {branchName === null ? null : (
+          <Fact
+            messages={messages}
+            labelKey="appointments.column.branch"
+            value={<bdi>{branchName}</bdi>}
+          />
+        )}
         <Fact
           messages={messages}
           labelKey="appointments.column.type"
@@ -299,9 +356,7 @@ function AppointmentFacts({
               <span className="flex flex-col">
                 <span>{detail.cancellationReasonName ?? dash}</span>
                 {detail.cancelledAt ? (
-                  <span className="text-caption text-text-muted">
-                    <bdi>{formatDateTime(detail.cancelledAt, locale)}</bdi>
-                  </span>
+                  <span className="text-caption text-text-muted">{moment(detail.cancelledAt)}</span>
                 ) : null}
               </span>
             }
@@ -311,7 +366,7 @@ function AppointmentFacts({
           <Fact
             messages={messages}
             labelKey="appointments.detail.noShowAt"
-            value={<bdi>{formatDateTime(detail.noShowRecordedAt, locale)}</bdi>}
+            value={moment(detail.noShowRecordedAt)}
           />
         ) : null}
       </dl>
@@ -356,13 +411,9 @@ function Outcome({
         // The re-read affordance. `state.conflict.description` already says
         // "reload to see the current version"; this is the control that does.
         <div>
-          <button
-            type="button"
-            onClick={onReload}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle"
-          >
+          <Button type="button" variant="outlined" size="small" onClick={onReload}>
             {translate(messages, 'appointments.detail.reload')}
-          </button>
+          </Button>
         </div>
       ) : null}
     </>
@@ -378,6 +429,7 @@ function RescheduleSection({
   messages,
   appointmentId,
   version,
+  zone,
   onResult,
   onReload,
 }: {
@@ -385,39 +437,77 @@ function RescheduleSection({
   readonly messages: Messages;
   readonly appointmentId: string;
   readonly version: number;
+  /** The record's branch clock, or `null` when it is not known — then no moment is taken. */
+  readonly zone: string | null;
   readonly onResult: (result: AppointmentChangeState) => void;
   readonly onReload: () => void;
 }) {
-  const [draft, setDraft] = useState<WindowDraft>(EMPTY_WINDOW);
+  /*
+   * The typed window and the version it is based on (`useEditBaseline`). The
+   * form opens empty — a firm time is entered, never assumed — so the stored
+   * values are the empty window; what the baseline holds is the VERSION: a
+   * clean form follows the page, a form holding typed times keeps the version
+   * its work was based on, and a save sends that one.
+   */
+  const edit = useEditBaseline<WindowDraft>({ stored: EMPTY_WINDOW, storedVersion: version });
+  const { values: draft, setValues: setDraft } = edit;
+  const [state, setState] = useState<AppointmentChangeState>(IDLE);
+  const [pending, setPending] = useState(false);
+  const formRef = useFocusFirstInvalid(state);
+  const corrections = useClearOnCorrect(state);
 
-  const [state, submit, pending] = useActionState<AppointmentChangeState, FormData>(
-    async (previous) => {
-      const attempt = (previous.attempt ?? 0) + 1;
-      const issues = windowErrors(draft);
-      if (issues.from || issues.to) {
-        const found: Record<string, string> = {};
-        if (issues.from) found['confirmedFrom'] = issues.from;
-        if (issues.to) found['confirmedTo'] = issues.to;
-        return invalid(found, attempt);
-      }
-      const composed = composeWindow(draft);
-      const result = await rescheduleAppointment(
-        appointmentId,
-        version,
-        { confirmedFrom: composed.from as string, confirmedTo: composed.to as string },
-        attempt
-      );
-      if (result.status === 'success') setDraft(EMPTY_WINDOW);
-      onResult(result);
-      return result;
-    },
-    IDLE
-  );
+  // Typed times are unsaved work: a branch switch or leaving the page asks,
+  // and a confirmed discard empties the form.
+  useUnsavedGuard(edit.dirty, () => {
+    edit.discard();
+    setState(IDLE);
+  });
+
+  /*
+   * The conflict's way out: what is stored now replaces the stale work, and
+   * the page is read again so the newer record arrives too.
+   */
+  const reload = () => {
+    edit.discard();
+    setState(IDLE);
+    onReload();
+  };
+
+  const submit = async () => {
+    // No known clock, no moment: a window typed on a fallback would be sent
+    // off by the branch's real offset.
+    if (zone === null) return;
+    const attempt = (state.attempt ?? 0) + 1;
+    const issues = windowErrors(draft);
+    if (issues.from || issues.to) {
+      const found: Record<string, string> = {};
+      if (issues.from) found['confirmedFrom'] = issues.from;
+      if (issues.to) found['confirmedTo'] = issues.to;
+      setState(invalid(found, attempt));
+      return;
+    }
+    setPending(true);
+    // The BASELINE's version: typed times built on a record that has since
+    // moved are the server's conflict, never a silent overwrite.
+    const result = await rescheduleAppointment(
+      appointmentId,
+      edit.version,
+      { confirmedFrom: draft.from, confirmedTo: draft.to },
+      attempt
+    );
+    setPending(false);
+    if (result.status === 'success' && result.changed) {
+      // Stored: the form is clean again, on the version the answer carried.
+      edit.rebase(EMPTY_WINDOW, result.changed.recordVersion);
+    }
+    setState(result);
+    onResult(result);
+  };
 
   const isServerKey = (key: string | undefined): boolean =>
     typeof key === 'string' && key.startsWith('form.violation.');
-  const fromKey = state.fieldErrors?.['confirmedFrom'];
-  const toKey = state.fieldErrors?.['confirmedTo'];
+  const fromKey = corrections.errorFor('confirmedFrom');
+  const toKey = corrections.errorFor('confirmedTo');
 
   return (
     <section
@@ -437,8 +527,22 @@ function RescheduleSection({
         {translate(messages, 'appointments.reschedule.explain')}
       </p>
 
-      <form action={submit} noValidate className="mt-4 flex flex-col gap-4">
-        <Outcome messages={messages} state={state} onReload={onReload} />
+      <form
+        ref={formRef}
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (pending) return;
+          void submit();
+        }}
+        noValidate
+        aria-labelledby="appointment-reschedule-heading"
+        className="mt-4 flex flex-col gap-4"
+      >
+        <Outcome
+          messages={messages}
+          state={state.status === 'success' ? IDLE : state}
+          onReload={reload}
+        />
         <WindowFields
           messages={messages}
           locale={locale}
@@ -447,23 +551,37 @@ function RescheduleSection({
           toLabel={translate(messages, 'appointments.window.to')}
           draft={draft}
           onChange={setDraft}
+          onEdit={(half) =>
+            corrections.noteEdited(half === 'from' ? 'confirmedFrom' : 'confirmedTo')
+          }
           errors={{
             from: isServerKey(fromKey) ? undefined : fromKey,
             to: isServerKey(toKey) ? undefined : toKey,
           }}
           serverError={[fromKey, toKey].find(isServerKey)}
+          timezone={zone}
+          refusal={
+            <p
+              role="status"
+              data-testid="appointment-reschedule-zone-unknown"
+              className="rounded-md bg-warning-subtle px-3 py-2 text-supporting text-text-secondary"
+            >
+              {translate(messages, 'dateField.zoneUnknown')}
+            </p>
+          }
+          testId="appointment-reschedule-window"
         />
         <div>
-          <button
+          <Button
             type="submit"
-            disabled={pending}
+            variant="contained"
+            disabled={pending || zone === null}
             aria-busy={pending || undefined}
-            className="rounded-lg bg-primary px-5 py-2.5 text-button font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70"
           >
             {pending
               ? translate(messages, 'form.pending')
               : translate(messages, 'appointments.reschedule.submit')}
-          </button>
+          </Button>
         </div>
       </form>
     </section>
@@ -493,25 +611,34 @@ function CancelSection({
 }) {
   const [open, setOpen] = useState(false);
   const [reasonId, setReasonId] = useState('');
+  const [state, setState] = useState<AppointmentChangeState>(IDLE);
+  const [pending, setPending] = useState(false);
+  const corrections = useClearOnCorrect(state);
 
-  const [state, submit, pending] = useActionState<AppointmentChangeState, FormData>(
-    async (previous) => {
-      const attempt = (previous.attempt ?? 0) + 1;
-      if (reasonId.length === 0) {
-        return invalid({ cancellationReasonId: 'field.required' }, attempt);
-      }
-      const result = await cancelAppointment(
-        appointmentId,
-        version,
-        { cancellationReasonId: reasonId },
-        attempt
-      );
-      if (result.status === 'success') setOpen(false);
-      onResult(result);
-      return result;
-    },
-    IDLE
-  );
+  const close = () => {
+    setOpen(false);
+    setReasonId('');
+    setState(IDLE);
+  };
+
+  const confirm = async () => {
+    const attempt = (state.attempt ?? 0) + 1;
+    if (reasonId.length === 0) {
+      setState(invalid({ cancellationReasonId: 'field.required' }, attempt));
+      return;
+    }
+    setPending(true);
+    const result = await cancelAppointment(
+      appointmentId,
+      version,
+      { cancellationReasonId: reasonId },
+      attempt
+    );
+    setPending(false);
+    if (result.status === 'success') close();
+    else setState(result);
+    onResult(result);
+  };
 
   const heading = (
     <h2
@@ -566,6 +693,8 @@ function CancelSection({
     );
   }
 
+  const reasonError = corrections.errorFor('cancellationReasonId');
+
   return (
     <section
       aria-labelledby="appointment-cancel-heading"
@@ -576,74 +705,65 @@ function CancelSection({
         {translate(messages, 'appointments.cancel.explain')}
       </p>
       <div className="mt-3">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="rounded-md border border-error px-4 py-2 text-body font-medium text-error transition-colors duration-fast ease-standard hover:bg-error-subtle"
-        >
+        <Button type="button" variant="outlined" color="error" onClick={() => setOpen(true)}>
           {translate(messages, 'appointments.cancel.openDialog')}
-        </button>
+        </Button>
       </div>
 
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        messages={messages}
-        title={translate(messages, 'appointments.cancel.dialogTitle')}
-        description={translate(messages, 'appointments.cancel.dialogBody')}
-      >
-        <form action={submit} noValidate className="flex flex-col gap-4">
-          <Outcome messages={messages} state={state} onReload={onReload} />
-          {/*
-            Uncontrolled + remounted per attempt + `onChange`, never a controlled
-            `value=`. React resets the form DOM once the Server Action settles,
-            and on the render that follows an unchanged `value` prop is not
-            re-written by the reconciler — so the reset wins and the control
-            reads "Select…" while `reasonId` still holds the id.
-
-            On THIS control that is the worst version of the defect in the
-            product. Cancellation is irreversible and the reason is mandatory:
-            the operator sees an empty required field, presses Confirm again to
-            find out why, and the retained id is sent — an irreversible lifecycle
-            command executed against a reason nothing on screen was showing.
-            `key` forces the remount, `defaultValue` seeds it from state and is
-            what `form.reset()` restores TO, and `onChange` keeps state current.
-          */}
-          <SelectField
-            key={`cancellation-reason-${state.attempt ?? 0}`}
-            label={translate(messages, 'appointments.cancel.reason')}
-            required
-            defaultValue={reasonId}
-            onChange={(event) => setReasonId(event.target.value)}
-            options={reasons.options.map((option) => ({ value: option.id, label: option.name }))}
-            placeholder={translate(messages, 'field.selectPlaceholder')}
-            error={
-              state.fieldErrors?.['cancellationReasonId']
-                ? translateDynamic(messages, state.fieldErrors['cancellationReasonId'])
-                : undefined
-            }
-          />
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-md border border-border px-4 py-2 text-body text-text-primary"
-            >
-              {translate(messages, 'form.cancel')}
-            </button>
-            <button
-              type="submit"
+      {open ? (
+        /*
+         * The decision dialog (`ConfirmDialog`'s frame): an alert dialog, Cancel
+         * focused because ending an appointment cannot be undone, Escape
+         * cancels and a click outside does not. The reason is the workshop's
+         * own catalogued list, never free text, and a missing reason is refused
+         * on the select itself.
+         */
+        <DecisionDialog
+          title={translate(messages, 'appointments.cancel.dialogTitle')}
+          description={translate(messages, 'appointments.cancel.dialogBody')}
+          onCancel={close}
+          pending={pending}
+          testId="appointment-cancel-dialog"
+          actions={
+            <DecisionActions
+              messages={messages}
+              error={undefined}
+              pending={pending}
+              destructive
+              confirmLabel={translate(messages, 'appointments.cancel.confirm')}
+              onCancel={close}
+              onConfirm={() => void confirm()}
+              focusCancel
+            />
+          }
+        >
+          <div className="flex flex-col gap-4 pt-2">
+            <Outcome
+              messages={messages}
+              state={state.status === 'invalid' && !state.correlationId ? IDLE : state}
+              onReload={() => {
+                close();
+                onReload();
+              }}
+            />
+            <FormSelectField
+              label={translate(messages, 'appointments.cancel.reason')}
+              required
+              value={reasonId}
+              onChange={setReasonId}
+              onEdit={() => corrections.noteEdited('cancellationReasonId')}
+              options={reasons.options.map((option) => ({
+                value: option.id,
+                label: option.name,
+              }))}
+              placeholder={translate(messages, 'field.selectPlaceholder')}
+              error={reasonError ? translateDynamic(messages, reasonError) : undefined}
               disabled={pending}
-              aria-busy={pending || undefined}
-              className="rounded-md bg-error px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {pending
-                ? translate(messages, 'form.pending')
-                : translate(messages, 'appointments.cancel.confirm')}
-            </button>
+              testId="appointment-cancel-reason"
+            />
           </div>
-        </form>
-      </Dialog>
+        </DecisionDialog>
+      ) : null}
     </section>
   );
 }
@@ -668,17 +788,23 @@ function NoShowSection({
   readonly onReload: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [state, setState] = useState<AppointmentChangeState>(IDLE);
+  const [pending, setPending] = useState(false);
 
-  const [state, submit, pending] = useActionState<AppointmentChangeState, FormData>(
-    async (previous) => {
-      const attempt = (previous.attempt ?? 0) + 1;
-      const result = await recordAppointmentNoShow(appointmentId, version, attempt);
-      if (result.status === 'success') setOpen(false);
-      onResult(result);
-      return result;
-    },
-    IDLE
-  );
+  const close = () => {
+    setOpen(false);
+    setState(IDLE);
+  };
+
+  const confirm = async () => {
+    const attempt = (state.attempt ?? 0) + 1;
+    setPending(true);
+    const result = await recordAppointmentNoShow(appointmentId, version, attempt);
+    setPending(false);
+    if (result.status === 'success') close();
+    else setState(result);
+    onResult(result);
+  };
 
   return (
     <section
@@ -695,46 +821,45 @@ function NoShowSection({
         {translate(messages, 'appointments.noShow.explain')}
       </p>
       <div className="mt-3">
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          className="rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle"
-        >
+        <Button type="button" variant="outlined" onClick={() => setOpen(true)}>
           {translate(messages, 'appointments.noShow.openDialog')}
-        </button>
+        </Button>
       </div>
 
-      <Dialog
-        open={open}
-        onClose={() => setOpen(false)}
-        messages={messages}
-        role="alertdialog"
-        title={translate(messages, 'appointments.noShow.dialogTitle')}
-        description={translate(messages, 'appointments.noShow.dialogBody')}
-      >
-        <form action={submit} noValidate className="flex flex-col gap-4">
-          <Outcome messages={messages} state={state} onReload={onReload} />
-          <div className="flex items-center justify-end gap-2">
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="rounded-md border border-border px-4 py-2 text-body text-text-primary"
-            >
-              {translate(messages, 'form.cancel')}
-            </button>
-            <button
-              type="submit"
-              disabled={pending}
-              aria-busy={pending || undefined}
-              className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70"
-            >
-              {pending
-                ? translate(messages, 'form.pending')
-                : translate(messages, 'appointments.noShow.confirm')}
-            </button>
-          </div>
-        </form>
-      </Dialog>
+      {open ? (
+        <DecisionDialog
+          title={translate(messages, 'appointments.noShow.dialogTitle')}
+          description={translate(messages, 'appointments.noShow.dialogBody')}
+          onCancel={close}
+          pending={pending}
+          testId="appointment-no-show-dialog"
+          actions={
+            <DecisionActions
+              messages={messages}
+              error={undefined}
+              pending={pending}
+              destructive
+              confirmLabel={translate(messages, 'appointments.noShow.confirm')}
+              onCancel={close}
+              onConfirm={() => void confirm()}
+              focusCancel
+            />
+          }
+        >
+          {state.status === 'idle' ? null : (
+            <div className="flex flex-col gap-2 pt-2">
+              <Outcome
+                messages={messages}
+                state={state}
+                onReload={() => {
+                  close();
+                  onReload();
+                }}
+              />
+            </div>
+          )}
+        </DecisionDialog>
+      ) : null}
     </section>
   );
 }

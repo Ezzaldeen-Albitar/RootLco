@@ -1232,6 +1232,9 @@ describe('a version held by the edit-baseline hook is traced, not trusted by nam
     expect(traced.map((site) => site.adapter).sort()).toEqual([
       'createPriceListVersion',
       'publishPriceListVersion',
+      // The appointment reschedule form, since the appointments slice: its
+      // confirmed times are held through the hook, fed the detail's version.
+      'rescheduleAppointment',
       'updateService',
     ]);
     expect(editBaselineHookProblems(HOOK_SOURCE)).toEqual([]);

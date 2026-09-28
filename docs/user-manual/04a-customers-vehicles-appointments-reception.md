@@ -48,12 +48,12 @@ by design, not a fault, and there is no workspace-wide view of any of them.
 
 The single-branch screens in this part are:
 
-| Screen                                                   | What it opens on                                                                                                                                                                                                                 |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Appointments** <!-- appointments.calendar.title -->    | "Choose a branch to see its calendar" <!-- appointments.calendar.idleTitle --> — "Choose which branch's calendar to show, and the days you care about. Nothing is loaded until you ask." <!-- appointments.calendar.idleBody --> |
-| **Book an appointment** <!-- appointments.book.title --> | The booking will not submit without a company and a branch                                                                                                                                                                       |
-| **Reception queue** <!-- receptions.queue.title -->      | Today's visits for the branch you are working in, loaded as the page opens. The branch is the one named at the top of every page; you can also read **all your branches** at once here.                                          |
-| **Vehicle check-in** <!-- receptions.checkIn.title -->   | "The visit is opened for one branch. The server authorizes this request against exactly the branch named here." <!-- receptions.checkIn.targetHint -->                                                                           |
+| Screen                                                   | What it opens on                                                                                                                                                                        |
+| -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Appointments** <!-- appointments.calendar.title -->    | Today's appointments for the branch you are working in, loaded as the page opens, on that branch's clock. You can also read **all your branches** at once here.                         |
+| **Book an appointment** <!-- appointments.book.title --> | Booked into the one branch named at the top of the page; under **all your branches** the booking waits until you choose one.                                                            |
+| **Reception queue** <!-- receptions.queue.title -->      | Today's visits for the branch you are working in, loaded as the page opens. The branch is the one named at the top of every page; you can also read **all your branches** at once here. |
+| **Vehicle check-in** <!-- receptions.checkIn.title -->   | "The visit is opened for one branch. The server authorizes this request against exactly the branch named here." <!-- receptions.checkIn.targetHint -->                                  |
 
 Customer search, vehicle search and both duplicate queues are **not** branch-scoped: they read
 across the whole workspace.
@@ -839,30 +839,50 @@ and what needs attention." <!-- appointments.calendar.description -->
 
 **Steps**
 
-1. Enter **"Company reference"** and **"Branch reference"** (4A.1) — _both required_.
-2. Set **"From day"** <!-- appointments.calendar.fromDay --> and **"To day"** <!-- appointments.calendar.toDay -->
-   . **"Today"** <!-- appointments.calendar.today --> is offered as a shortcut.
-3. Optionally narrow by **"State"** <!-- appointments.calendar.statusFilter --> , default **"Any
-   state"** <!-- appointments.calendar.anyStatus --> .
-4. Choose **"Show calendar"** <!-- appointments.calendar.show --> .
+1. The list opens on **today** for the branch named at the top of the page (4A.1) and reads as the
+   page opens — there is no button to press. Under **all your branches** it lists every branch of
+   the company, with a **"Branch"** <!-- appointments.column.branch --> column.
+2. Choose the **"Period"** <!-- appointments.calendar.periodLabel --> : **"Today"** <!-- appointments.calendar.period.today -->
+   or **"Next 7 days"** <!-- appointments.calendar.period.next7 --> (today and the six days after
+   it).
+3. For other days, type **"From day"** <!-- appointments.calendar.fromDay --> and **"To day"** <!-- appointments.calendar.toDay -->
+   (day, month and year, part by part, or pick them from the calendar) and choose **"Use these
+   dates"** <!-- appointments.calendar.applyPeriod --> . **"Clear the dates"** <!-- appointments.calendar.clearDays -->
+   goes back to today.
+4. Optionally narrow by **"State"** <!-- appointments.calendar.statusFilter --> , default **"Any
+   state"** <!-- appointments.calendar.anyStatus --> , or type into **"Search this calendar"** <!-- appointments.calendar.searchLabel -->
+   : part of a name, the last digits of a phone number, part of a plate, part of the chassis number,
+   or the appointment number. Digits typed on an Arabic keyboard are accepted and shown back in
+   Latin digits under the box. The list follows every change; Enter searches at once.
 
-**Result** — heading **"Appointments"** <!-- appointments.calendar.resultsHeading --> , caption
-"Appointments for the chosen branch, soonest first" <!-- appointments.calendar.caption --> , with
-columns **"Reference"**, **"Customer"**, **"Vehicle"**, **"Type"**, **"Requested time"**,
-**"Confirmed time"**, **"State"** <!-- appointments.column.* --> . The ordering is explained:
-"Ordered by the time that counts: the confirmed time where one exists, otherwise the requested time
-— soonest first." <!-- appointments.calendar.orderingNote --> Row actions: **"Open"** <!-- appointments.calendar.open -->
-and, where permitted, **"Check in"**.
+**Result** — a line under the filters says which period is shown and on whose clock: "Days and
+times follow the clock in …" <!-- appointments.calendar.zoneNote --> . The list is "Appointments for
+the chosen branch, soonest first" <!-- appointments.calendar.caption --> , with columns
+**"Reference"**, **"State"**, **"Requested time"**, **"Confirmed time"**, **"Vehicle"**,
+**"Customer"**, **"Type"** <!-- appointments.column.* --> . Times are shown on the branch's clock;
+under all your branches each time also names its clock. The ordering is explained: "Ordered by the
+time that counts: the confirmed time where one exists, otherwise the requested time — soonest
+first." <!-- appointments.calendar.orderingNote --> Row actions: **"Open"** <!-- appointments.calendar.open -->
+and, on a confirmed appointment where permitted, **"Check in"**. **"Next page"** reaches further
+appointments while the platform says more exist; no total is shown, because none is published.
 
 The states you will see are **"Requested"**, **"Awaiting confirmation"**, **"Confirmed"**,
 **"Checked in"**, **"Cancelled"**, **"No-show"** <!-- appointments.status.* --> .
 
-**Restrictions** — one branch at a time; there is no workspace-wide calendar.
+**Restrictions** — all your branches reads one company at a time; a selection spanning companies
+asks you to choose one company's branches <!-- workingContext.spansCompanies --> .
 
 **If it goes wrong**
 
-- "The last day must not be before the first day." <!-- appointments.calendar.rangeInverted -->
-- "No appointments match this branch, range and state. A different range may hold some." <!-- appointments.calendar.noneInRange -->
+- "The second date cannot be earlier than the first." <!-- filters.period.inverted --> — on the To
+  box, with the cursor placed there and your dates kept; "Choose both dates." <!-- filters.period.incomplete -->
+  when one of them is missing.
+- "Type at least two characters to search." <!-- appointments.calendar.searchTooShort -->
+- **"No matches"** <!-- state.noResults.title --> — nothing in this period and state; **"Clear the
+  filters"** <!-- appointments.calendar.clearFilters --> is offered when something narrowed the
+  list.
+- If the service is busy or unreachable the list says so and offers **"Try again"** <!-- state.retry -->
+  ; a refusal says you may not view it, and an ended session asks you to sign in again.
 - A customer or vehicle the screen may not read shows as "Name not available" <!-- appointments.column.nameUnavailable -->
   or "No vehicle reference" <!-- appointments.column.noVehicleReference --> .
 
@@ -872,7 +892,8 @@ The states you will see are **"Requested"**, **"Awaiting confirmation"**, **"Con
 
 **Label: IMPLEMENTED (UI)**
 
-**Who** — `apt.appointment.manage`.
+**Who** — `apt.appointment.manage`. Finding the customer needs `crm.customer.read`; without it the
+search answers that you may not look customers up.
 
 **Where** — **Appointments** > **"Book an appointment"** (`/{locale}/appointments/new`). Heading
 **"Book an appointment"** <!-- appointments.book.title --> , described as "Book a workshop visit for
@@ -880,27 +901,29 @@ a customer's vehicle. Booking records the requested time; confirming happens aft
 
 **Steps**
 
-1. **"Company reference"** and **"Branch reference"** — _both required_.
-2. **"Customer"** <!-- appointments.book.requester --> — _required_. Use **"Search customers"** <!-- customerSelector.search -->
-   ; the hint states what can be searched: "Search by name, customer number or phone number, then
-   choose from the results. Email addresses cannot be searched." <!-- customerSelector.hint -->
-   **"Choose a different customer"** <!-- customerSelector.change --> swaps the selection.
+1. Check the branch named at the top of the form — the booking goes to that branch (4A.1).
+2. **"Customer"** <!-- appointments.book.requester --> — _required_. Type part of a name, a customer
+   number or a phone number; matching customers are listed as you type, and you choose one by name.
+   **"Choose a different customer"** <!-- customerSelector.change --> puts the choice back.
 3. **"Vehicle"** <!-- appointments.book.vehicle --> — _required_. The customer's vehicles are listed
    once the customer is chosen: "Choose the customer first; their vehicles are then listed here to
-   pick from." <!-- appointments.book.vehicleAfterCustomer --> A vehicle whose link has ended is
-   marked **"Former link"** <!-- appointments.book.vehicleFormerLink --> .
+   pick from." <!-- appointments.book.vehicleAfterCustomer --> Choose **"Choose"** <!-- appointments.book.vehicleChoose -->
+   on the vehicle's row. A vehicle whose link has ended is marked **"Former link"** <!-- appointments.book.vehicleFormerLink -->
+   ; **"Choose a different vehicle"** <!-- appointments.book.vehicleChange --> puts the choice
+   back.
 4. **"Appointment type"** <!-- appointments.book.type --> — _required_, from the workshop's own
    list.
 5. **"Requested time"** <!-- appointments.book.window --> — _required_: **"Starts"** <!-- appointments.window.from -->
-   and **"Ends"** <!-- appointments.window.to --> . Times are read from your own clock: "Times are
-   entered on your own clock:" <!-- appointments.window.clockNote --> and the screen echoes what
-   will be stored under "Recorded as:" <!-- appointments.window.willSend --> .
+   and **"Ends"** <!-- appointments.window.to --> . Type day, month, year, hour and minute part by
+   part, or pick them. "Times are entered and shown on the branch's clock:" <!-- appointments.window.clockNote -->
+   names that clock.
 6. **"How the booking came in"** <!-- appointments.book.channel --> — optional.
 7. Choose **"Book appointment"** <!-- appointments.book.submit --> .
 
-**Result** — "The appointment was booked." <!-- appointments.book.booked --> The appointment starts
-as **Requested**: "Booking records what the customer asked for. The appointment starts as Requested;
-giving it a firm, confirmed time happens on the appointment page afterwards." <!-- appointments.book.requestedNote -->
+**Result** — "The appointment was booked." <!-- appointments.book.booked --> and the appointment
+opens. It starts as **Requested**: "Booking records what the customer asked for. The appointment
+starts as Requested; giving it a firm, confirmed time happens on the appointment page
+afterwards." <!-- appointments.book.requestedNote -->
 
 **Restrictions**
 
@@ -912,12 +935,20 @@ giving it a firm, confirmed time happens on the appointment page afterwards." <!
   **This catalogue has no screen — Label: OPERATOR PROCEDURE.**
 - If no booking channels exist the booking still goes through: "No booking channels have been set up
   yet, so this booking is recorded without one." <!-- appointments.book.noChannels -->
+- Under **all your branches**, or for a branch whose time zone is not known yet, no time can be
+  entered and the booking waits: "The time zone of this branch is not known yet, so a time cannot
+  be chosen here." <!-- dateField.zoneUnknown -->
+- Changing branch, or leaving the page, with anything entered asks first; confirming empties the
+  form.
 
-**If it goes wrong**
+**If it goes wrong** — every problem is marked on its own field, in red with the reason beside it,
+the cursor is placed on the first one, and what you entered is kept. The mark goes as soon as you
+correct the field.
 
 - "Choose the customer this appointment is for." <!-- appointments.book.requesterRequired -->
 - "Choose which of the customer's vehicles this appointment is for." <!-- appointments.book.vehicleRequired -->
 - "The end must be after the start." <!-- field.windowEndsBeforeStart -->
+- A time typed only in part is refused on its field, with the cursor on the part still to type.
 - "This list could not be loaded right now. The rest of the form still works; try again shortly." <!-- appointments.book.catalogueUnavailable -->
 - "More vehicles are linked to this customer than are shown here. Use the pages below to reach
   them." <!-- appointments.book.vehiclesTruncated -->
@@ -932,12 +963,14 @@ giving it a firm, confirmed time happens on the appointment page afterwards." <!
 
 **Where** — **Appointments** > **"Open"** on the row (`/{locale}/appointments/{appointmentId}`).
 Heading **"Appointment"** <!-- appointments.detail.title --> , panel **"Appointment details"** <!-- appointments.detail.factsHeading -->
-.
+. The details name the branch, the customer, the vehicle and the type; every time is shown on the
+appointment's own branch clock with that clock named beside it.
 
 **Steps**
 
 1. Find the panel **"Confirm or reschedule"** <!-- appointments.reschedule.title --> .
-2. Set **"Confirmed time"** <!-- appointments.reschedule.window --> — _required_.
+2. Set **"Confirmed time"** <!-- appointments.reschedule.window --> — _required_: **"Starts"** and
+   **"Ends"**, typed on the appointment's branch clock, which the panel names.
 3. Choose **"Confirm by rescheduling"** <!-- appointments.reschedule.submit --> .
 
 **Result** — the appointment moves to **"Confirmed"** <!-- appointments.status.confirmed --> and the
@@ -953,14 +986,17 @@ confirmed time appears in the calendar column.
 > action here, and there is no separate confirmation step."
 > <!-- appointments.reschedule.explain -->
 
+Typed times are unsaved work: changing branch or leaving the page asks first.
+
 **If it goes wrong**
 
 - "You can view this appointment, but not change it." <!-- appointments.detail.readOnly --> — you
   hold read access only.
 - "This appointment is in a state that takes no further appointment actions." <!-- appointments.detail.noActions -->
   — it is cancelled, a no-show, or already checked in.
-- **"Reload this appointment"** <!-- appointments.detail.reload --> re-reads the record if you think
-  it has moved on.
+- If someone else changed the appointment first, the panel says so and offers **"Load the latest
+  version"** <!-- appointments.detail.reload --> , which drops the times you typed and shows the
+  appointment as it now stands.
 
 **Screenshot** — no screenshot available at this version.
 
@@ -977,7 +1013,8 @@ fact on the record." <!-- appointments.noShow.explain -->
 **Steps** — **"Record no-show…"** <!-- appointments.noShow.openDialog --> opens the dialog **"Record
 a no-show?"** <!-- appointments.noShow.dialogTitle --> / "This records that the customer did not
 arrive for a confirmed appointment. It ends the appointment and cannot be undone." <!-- appointments.noShow.dialogBody -->
-Confirm with **"Record the no-show"** <!-- appointments.noShow.confirm --> .
+Confirm with **"Record the no-show"** <!-- appointments.noShow.confirm --> . The cursor starts on
+**"Cancel"**, so Enter alone does not record it; Escape closes the dialog.
 
 **Result** — the state becomes **"No-show"** <!-- appointments.status.no_show --> and **"No-show
 recorded"** <!-- appointments.detail.noShowAt --> carries the time.
@@ -1002,8 +1039,9 @@ be undone.
 2. In the dialog **"Cancel this appointment?"** <!-- appointments.cancel.dialogTitle --> read "A
    cancelled appointment cannot be reopened. The reason you choose is kept with it." <!-- appointments.cancel.dialogBody -->
 3. Choose **"Reason for cancelling"** <!-- appointments.cancel.reason --> — _required_, from the
-   workshop's own list.
-4. Confirm with **"Cancel the appointment"** <!-- appointments.cancel.confirm --> .
+   workshop's own list. Without one the field is marked and nothing is sent.
+4. Confirm with **"Cancel the appointment"** <!-- appointments.cancel.confirm --> . The cursor
+   starts on **"Cancel"**, so Enter alone does not cancel; Escape closes the dialog.
 
 **Result** — the state becomes **"Cancelled"** <!-- appointments.status.cancelled --> . It cannot be
 reopened; book a new appointment instead.

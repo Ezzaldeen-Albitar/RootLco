@@ -67,7 +67,10 @@ import {
  * known zone is in force, the field is NOT drawn: its label and the shared
  * "choose one branch" sentence (`RequiresConcreteBranch`) are, instead —
  * `data-zone-refused` marks it. A screen that genuinely means another clock
- * passes `timezone` explicitly. `DateField` holds a calendar day, which names
+ * passes `timezone` explicitly — or renders `ZonedDateTimeField`, the same
+ * field on a clock the caller must name, which reads no working context at all
+ * (a record reached by its address, on its own branch's clock, has no business
+ * reading the working branch). `DateField` holds a calendar day, which names
  * no instant, and keeps the browser's calendar only for drawing the picker.
  *
  * ## The hour that happens twice
@@ -453,6 +456,42 @@ export function DateField(props: DateFieldProps) {
 }
 
 export function DateTimeField(props: DateTimeFieldProps) {
+  const context = useWorkingContext();
+  const zone = props.timezone ?? workingZone(context);
+
+  if (zone === undefined) {
+    // No clock the typed time could honestly mean. See "A moment needs a
+    // concrete branch" above.
+    return (
+      <div className="flex flex-col gap-1.5" data-testid={props.testId} data-zone-refused="true">
+        <span className="text-label font-medium text-text-primary">{props.label}</span>
+        <RequiresConcreteBranch
+          messages={props.messages}
+          fallbackKey="dateField.zoneUnknown"
+          testId="date-time-requires-branch"
+        />
+      </div>
+    );
+  }
+
+  return <ZonedDateTimeField {...props} timezone={zone} />;
+}
+
+export interface ZonedDateTimeFieldProps extends DateTimeFieldProps {
+  /** The IANA zone the moment is shown, typed and emitted on. Required. */
+  readonly timezone: string;
+}
+
+/**
+ * `DateTimeField` on a clock the caller NAMES, and nothing else: it reads no
+ * working context, so a screen addressed to a record rather than to the
+ * working branch — an appointment reached by its address, whose clock is its
+ * own branch's — can take a moment without reaching the working branch at all.
+ * Everything else is `DateTimeField`'s: the wall clock on that zone, the
+ * offset of that moment, the repeated hour named, the `FieldFrame` wiring and
+ * the cursor on the first unfinished part after a refusal.
+ */
+export function ZonedDateTimeField(props: ZonedDateTimeFieldProps) {
   const {
     messages,
     label,
@@ -460,15 +499,13 @@ export function DateTimeField(props: DateTimeFieldProps) {
     onChange,
     min,
     max,
-    timezone,
+    timezone: zone,
     onProblem,
     onEdit,
     disabled,
     readOnly,
   } = props;
-  const context = useWorkingContext();
-  const zone = timezone ?? workingZone(context);
-  const repeated = zone === undefined ? null : repeatedWallClock(value, zone);
+  const repeated = repeatedWallClock(value, zone);
   const repeatedNote =
     repeated === null
       ? undefined
@@ -487,21 +524,6 @@ export function DateTimeField(props: DateTimeFieldProps) {
     ...textFieldSlot(wiring, { ...props, description }),
     onFocusRequest: enterField,
   };
-
-  if (zone === undefined) {
-    // No clock the typed time could honestly mean. See "A moment needs a
-    // concrete branch" above.
-    return (
-      <div className="flex flex-col gap-1.5" data-testid={props.testId} data-zone-refused="true">
-        <span className="text-label font-medium text-text-primary">{label}</span>
-        <RequiresConcreteBranch
-          messages={messages}
-          fallbackKey="dateField.zoneUnknown"
-          testId="date-time-requires-branch"
-        />
-      </div>
-    );
-  }
 
   return (
     <DateTimePicker
