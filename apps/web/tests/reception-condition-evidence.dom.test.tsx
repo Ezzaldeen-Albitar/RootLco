@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -420,6 +420,83 @@ describe('the complaints step (FE-010)', () => {
     expect(
       screen.queryByRole('button', { name: EN['receptions.complaint.record']! })
     ).not.toBeInTheDocument();
+  });
+
+  /**
+   * The step forms (`useStepForm`) re-read in their `settle`, so pending must
+   * cover it. Before round 4 pending cleared as the answer landed: after a
+   * success a second press during the re-read refused the freshly cleared form
+   * ("Choose a category.") and moved the cursor to it although the save had
+   * worked, and after a conflict it sent the same write again.
+   */
+  const heldRefresh = () => {
+    let release: () => void = () => {};
+    const refresh = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    return { refresh, release: () => release() };
+  };
+
+  const fillComplaint = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(EN['receptions.complaint.category']!)),
+      'noise'
+    );
+    await user.type(
+      screen.getByLabelText(new RegExp(EN['receptions.complaint.text']!)),
+      'It squeaks'
+    );
+  };
+
+  it('stays busy through the re-read after a success, and a second press says no error', async () => {
+    recordConditionEvidence.mockResolvedValue(recorded('ev-1', 'complaint'));
+    const { refresh, release } = heldRefresh();
+    const user = userEvent.setup();
+    renderLtr(<ComplaintsStep {...stepProps({ refresh })} />);
+    await fillComplaint(user);
+    const record = screen.getByRole('button', { name: EN['receptions.complaint.record']! });
+    await user.click(record);
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    // The write landed and the form was cleared, but the re-read is still out.
+    expect(record).toBeDisabled();
+    expect(record).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(record);
+    expect(screen.queryByText(EN['receptions.complaint.error.categoryRequired']!)).toBeNull();
+    expect(recordConditionEvidence).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(record).toBeEnabled());
+    expect(screen.queryByText(EN['receptions.complaint.error.categoryRequired']!)).toBeNull();
+  });
+
+  it('stays busy through the re-read after a conflict, so the write is sent once', async () => {
+    recordConditionEvidence.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'state.conflict.title',
+      correlationId: 'corr-409',
+      attempt: 1,
+    });
+    const { refresh, release } = heldRefresh();
+    const user = userEvent.setup();
+    renderLtr(<ComplaintsStep {...stepProps({ refresh })} />);
+    await fillComplaint(user);
+    const record = screen.getByRole('button', { name: EN['receptions.complaint.record']! });
+    await user.click(record);
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    // The draft is kept after a conflict, so an enabled button would resend it.
+    expect(record).toBeDisabled();
+    expect(record).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(record);
+    expect(recordConditionEvidence).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(record).toBeEnabled());
+    expect(recordConditionEvidence).toHaveBeenCalledTimes(1);
   });
 
   it('renders in Arabic, RTL, from the same catalogue', async () => {

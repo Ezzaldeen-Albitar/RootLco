@@ -743,23 +743,29 @@ export function useStepForm<Draft extends object>({
       return;
     }
     setPending(true);
-    let result: ActionState;
+    // Pending covers the send AND the settle: several forms re-read in their
+    // `settle`, and until that re-read lands a second press would either
+    // refuse the freshly cleared form (after a success) or send the same
+    // write again (after a conflict).
     try {
-      result = await send(draft, attempt);
-    } catch {
-      // No answer came back: said as that, with every entry kept.
-      setState(unreachable(attempt));
-      return;
+      let result: ActionState;
+      try {
+        result = await send(draft, attempt);
+      } catch {
+        // No answer came back: said as that, with every entry kept.
+        setState(unreachable(attempt));
+        return;
+      }
+      setState(result);
+      if (result.status === 'success') {
+        const next = afterStored ? afterStored(draft) : empty;
+        setBaseline(next);
+        setDraft(next);
+      }
+      await settle?.(result, draft);
     } finally {
       setPending(false);
     }
-    setState(result);
-    if (result.status === 'success') {
-      const next = afterStored ? afterStored(draft) : empty;
-      setBaseline(next);
-      setDraft(next);
-    }
-    await settle?.(result, draft);
   };
 
   return {

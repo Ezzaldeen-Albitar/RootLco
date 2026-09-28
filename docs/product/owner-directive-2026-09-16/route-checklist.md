@@ -2491,10 +2491,13 @@ Known limitations of this slice, one line each:
   handler did; before round 3 a second press during a slow re-read resent the spent version and a
   successful approval was re-said as a conflict. Three DOM cases hold `refresh()` open and fail when
   pending is cleared before the settle.
-- `useStepForm` (`EvidencePanels.tsx`) still clears pending before its `settle`; every call site
-  checked (for example `InspectionStep.tsx`) re-reads inside `send`, and a success resets the draft
-  to one `check()` refuses, so no double-submit path through the step forms was found.
-  `OpenInspectionForm`'s empty draft passes `check()`, but its settle is inside `send` too.
+- Round 4: `useStepForm` (`EvidencePanels.tsx`) now keeps pending through its `settle` (one outer
+  `try`, `finally` clears pending; the inner catch still reports an unreachable network). The round-3
+  record that every call site re-reads inside `send` was wrong: the complaint, contents, refusal,
+  party-role and authorization forms re-read in `settle`, so after a success a second press during
+  the re-read refused the cleared form, and after a conflict it resent the write. Two
+  `ComplaintsStep` cases and one `PartiesStep` authorization case hold `refresh()` open and fail when
+  pending is cleared before the settle.
 - `PrintToolbar`'s `backHref` interpolates the reception id without `encodeURIComponent`, as the
   page's existing breadcrumb does; the same route parameter feeds the reads. Convention drift only.
 - The e2e selector changes (requester combobox, `role=option`, the check-in vehicle grid test id, the
@@ -2512,3 +2515,17 @@ Known limitations of this slice, one line each:
   odometer moment and the surviving requester discard-key mutation.
 - The round-3 review probes ran from a scratch directory outside the repository and wrote nothing
   into it.
+- Round 4 review: MUIRI-05 confirmed. `SummaryStep` approve and closure and `ConversionStep` keep
+  pending through the settle, and the outer `finally` clears it on every exit path.
+- Round 4 review: re-inserting the early pending release fails exactly one MUIRI-05 case each time
+  (approve, closure, convert); unmutated, the summary suite passed 58/58.
+- Round 4 review probe (outside the repository) passed 5/5: approve conflict, Refuse exit, approve
+  network failure with retry, service-refused closure reason, and the Arabic busy label.
+- `CheckInStartScreen.tsx` and the appointment reschedule, cancel and no-show handlers release
+  pending in the same synchronous batch as their result; no window, not a regression.
+- The Owner-only acceptances above are carried unchanged, with `PrintToolbar`'s `backHref`
+  convention drift.
+- The e2e selector changes were not run locally; the authenticated-browser job at 8c36069a passed in
+  hosted CI.
+- The round-4 review probes and mutation configs lived in a scratch directory and wrote nothing into
+  the repository.

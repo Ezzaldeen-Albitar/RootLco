@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -1573,6 +1573,67 @@ describe('the parties step', () => {
     await waitFor(() => {
       expect(refresh).toHaveBeenCalled();
     });
+  });
+
+  it('keeps the authorization form busy through the 409 re-read, so it is sent once', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([
+        {
+          id: 'partner-3',
+          displayName: 'Huda Salem',
+          displayNumber: 'C-0003',
+          partyType: 'individual',
+          lifecycleStatus: 'active',
+        },
+      ])
+    );
+    recordAuthorization.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'state.conflict.title',
+      correlationId: 'corr-trn',
+      attempt: 1,
+    });
+    // The re-read is held open: the settle awaits it, and until it lands the
+    // kept draft must not be sendable a second time.
+    let release: () => void = () => {};
+    const refresh = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    const user = userEvent.setup();
+    renderLtr(<PartiesStep {...stepProps({ refresh })} />);
+
+    await screen.findByRole('form', { name: EN['receptions.authorization.formLabel']! });
+    await user.type(
+      screen.getByRole('combobox', { name: EN['receptions.authorization.partner']! }),
+      'Huda'
+    );
+    await user.click(
+      await screen.findByRole('option', { name: 'Huda Salem — C-0003' }, { timeout: 5000 })
+    );
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(EN['receptions.authorization.role']!)),
+      'vehicle_owner'
+    );
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${EN['receptions.authorization.decision']!}`)),
+      'declined'
+    );
+    const record = screen.getByRole('button', { name: EN['receptions.authorization.record']! });
+    await user.click(record);
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(record).toBeDisabled();
+    expect(record).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(record);
+    expect(recordAuthorization).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(record).toBeEnabled());
+    expect(recordAuthorization).toHaveBeenCalledTimes(1);
   });
 
   /**
