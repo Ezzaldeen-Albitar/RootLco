@@ -6,8 +6,8 @@
   "tiers": {
     "unit": {
       "command": "npx vitest run --reporter=json",
-      "tests": 3811,
-      "passed": 3808,
+      "tests": 3821,
+      "passed": 3818,
       "failed": 0,
       "skipped": 3,
       "files": 143,
@@ -15,20 +15,20 @@
       "reporterSuccess": true,
       "failedSuites": [],
       "filesWithoutCases": [],
-      "measuredAtCommit": "7c949bffba712e639ffab23f837df50a92a4ec85",
+      "measuredAtCommit": "fa7047584271cc0e674f44db8e309d37a6b87334",
       "dirtyExecutablePaths": [],
-      "measuredAt": "2026-09-28T08:22:33Z",
+      "measuredAt": "2026-09-28T11:30:14Z",
       "provenance": {
         "source": "hosted",
-        "runId": "36396648638",
-        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/36396648638",
+        "runId": "36415754091",
+        "runUrl": "https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/36415754091",
         "workflow": "PR CI",
-        "job": "108844632702",
+        "job": "108906500216",
         "jobName": "unit-tests-coverage / unit-coverage",
         "step": "Unit tier with coverage",
-        "headSha": "7c949bffba712e639ffab23f837df50a92a4ec85",
+        "headSha": "fa7047584271cc0e674f44db8e309d37a6b87334",
         "artifact": "evidence-unit-coverage",
-        "artifactDigest": "sha256:6534eef10954bb5ef66aef6b46646c8d3375042aca9979d90b0522a630cc6986",
+        "artifactDigest": "sha256:f62f13d7fdc255b515c61c0c0811a7f5fceb603e37dcff67a1dbc470a5e33a2b",
         "field": "vitest-unit.json"
       }
     },
