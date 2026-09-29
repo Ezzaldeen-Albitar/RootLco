@@ -25,9 +25,13 @@
  *
  * The five residuals, and where each is compensated:
  *
- *   1. SB1  — a credit note in one currency is accepted against an invoice in
- *             another, approved, and subtracted from the gross.
- *             Compensated by `assertCurrencyMatches` (billing domain). P1-22-L-02.
+ *   1. SB1  — a credit note in one currency was accepted against an invoice in
+ *             another, approved, and subtracted from the gross (P1-22-L-02).
+ *             CLOSED for credit notes by `20260930090000_sal_finance_controls.sql`
+ *             (GAP-13): the case below now proves the refusal, exactly as this
+ *             header said a closing migration would require. The reversal half
+ *             (a reversal in another currency than its receipt) is still a
+ *             residual and is still pinned as one.
  *   2. BR-SAL-002 — a raw INSERT into `sal.payment_allocations` is unbounded, so
  *             `Σ allocations` may exceed both the receipt and the invoice.
  *             Compensated by routing every allocation through
@@ -93,8 +97,8 @@ afterAll(async () => {
   await admin.end();
 });
 
-describe('P1-22 residual 1 (SB1) — credit-note currency equality is enforced by nothing', () => {
-  it('accepts, approves, and subtracts a JOD credit note from a USD invoice', async () => {
+describe('P1-22 residual 1 (SB1) — credit-note currency equality, closed by GAP-13', () => {
+  it('refuses a JOD credit note against a USD invoice, so nothing is subtracted', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       // A USD invoice, issued, gross 100.0000 and nothing paid against it. USD is
       // the fixture default; the mismatch below is introduced on the credit note.
@@ -106,51 +110,43 @@ describe('P1-22 residual 1 (SB1) — credit-note currency equality is enforced b
       ).rows[0]!.o;
       expect(openBefore).toBe('100.0000');
 
-      // A credit note in a DIFFERENT currency. Nothing refuses it: five triggers
-      // fire on sal.credit_notes and not one of them reads
-      // sal.invoices.currency_code.
+      // The same raw insert on the app_runtime login that used to be stored and
+      // then approved. sal.guard_credit_note_currency now reads the invoice's
+      // currency and refuses the mismatch as check_violation.
+      await expectFail(
+        c,
+        '23514',
+        `INSERT INTO sal.credit_notes
+           (tenant_id, company_id, branch_id, invoice_id, currency_code, amount, reason, requested_by, created_by)
+         VALUES ($1,$2,$3,$4,'JOD',40,'residual proof',$5,$5)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, invoice, USER_A]
+      );
+      expect(
+        (
+          await c.query<{ n: string }>(
+            `SELECT count(*)::text AS n FROM sal.credit_notes WHERE invoice_id=$1`,
+            [invoice]
+          )
+        ).rows[0]!.n
+      ).toBe('0');
+
+      // The matching currency is still accepted, so the refusal is about the code
+      // and not about credit notes in general.
       const credit = (
         await c.query<{ id: string }>(
           `INSERT INTO sal.credit_notes
              (tenant_id, company_id, branch_id, invoice_id, currency_code, amount, reason, requested_by, created_by)
-           VALUES ($1,$2,$3,$4,'JOD',40,'residual proof',$5,$5) RETURNING id`,
+           VALUES ($1,$2,$3,$4,'USD',40,'currency matches',$5,$5) RETURNING id`,
           [TENANT_A, COMPANY_A1, BRANCH_A1, invoice, USER_A]
         )
       ).rows[0]!.id;
+      expect(credit).toMatch(/^[0-9a-f-]{36}$/);
 
-      // It is stored with the mismatched currency intact.
-      expect(
-        (
-          await c.query<{ cc: string }>(
-            `SELECT currency_code AS cc FROM sal.credit_notes WHERE id=$1`,
-            [credit]
-          )
-        ).rows[0]!.cc
-      ).toBe('JOD');
-
-      // And it APPROVES. sal.approve_credit_note compares the amount against the
-      // open receivable and never compares the currency, so a different approver
-      // completes dual control and the note becomes real.
-      await setUser(c, P11.APPROVER_USER);
-      await c.query(`SELECT sal.approve_credit_note($1)`, [credit]);
-      await setUser(c, USER_A);
-
-      expect(
-        (
-          await c.query<{ s: string }>(
-            `SELECT approval_state AS s FROM sal.credit_notes WHERE id=$1`,
-            [credit]
-          )
-        ).rows[0]!.s
-      ).toBe('approved');
-
-      // The consequence, which is the actual finding: 40 JOD has been subtracted
-      // from a USD gross as though the two were the same unit. There is no
-      // currency predicate anywhere in sal.invoice_open_receivable.
+      // Nothing in a foreign currency reached the receivable.
       const openAfter = (
         await c.query<{ o: string }>(`SELECT sal.invoice_open_receivable($1)::text AS o`, [invoice])
       ).rows[0]!.o;
-      expect(openAfter).toBe('60.0000');
+      expect(openAfter).toBe('100.0000');
     });
   });
 

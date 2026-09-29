@@ -444,6 +444,24 @@ The predicate is `true` for the reason the existing `sel_*_all` policies give:
 the registers hold no tenant data. Reference rows are still written only by the
 declared seed and the migration role.
 
+### 5.9 Dual-control requests narrowed to their decision columns (DBCR-P1-32-PRE-OD-FIN-001, migration `20260930090000`)
+
+A pending credit note or receipt reversal is a request one person raises and a
+second person decides. The runtime role used to hold table-level `UPDATE` on both
+tables, so the facts of a pending request — who raised it, for how much and why —
+could be rewritten before the decision (finance review M-01). Rule 5.3 now applies:
+`app_runtime` holds `UPDATE` only on the columns a decision writes, and a trigger
+freezes the request's facts for any role that can still write them.
+
+| Object                  | `app_runtime` UPDATE (was: every column) | Frozen by `sal.guard_dual_control_request_frozen`                                                                         |
+| ----------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `sal.credit_notes`      | `approval_state`, `issued_at`            | `requested_by`, `amount`, `currency_code`, `reason`, `invoice_id`, `idempotency_key`, `created_at`, `created_by`          |
+| `sal.receipt_reversals` | `approval_state`, `reversed_at`          | `requested_by`, `amount`, `currency_code`, `reason`, `original_receipt_id`, `idempotency_key`, `created_at`, `created_by` |
+
+`approved_by`, `approved_at` and the row metadata are assigned by triggers, which
+needs no privilege of the caller. `SELECT` and `INSERT` are unchanged, no policy
+changes, and `app_readonly` keeps `SELECT` only.
+
 ---
 
 ## 6. How later phases attach real logins
