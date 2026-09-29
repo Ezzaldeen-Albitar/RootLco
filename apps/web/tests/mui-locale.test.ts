@@ -5,6 +5,7 @@ import { enUS as pickersEnglish } from '@mui/x-date-pickers/locales';
 import { describe, expect, it } from 'vitest';
 import {
   ARABIC_DAYJS_LOCALE,
+  ProductDayjsAdapter,
   arabicDayjsLocale,
   dayjsLocaleFor,
 } from '@/components/ui-foundation/dayjs-locale';
@@ -194,5 +195,67 @@ describe('the Arabic date locale', () => {
     expect(dayjsLocaleFor('ar')).toBe(ARABIC_DAYJS_LOCALE);
     expect(dayjsLocaleFor('en')).toBe('en-gb');
     expect(dayjs('2026-03-15').locale('en-gb').format('L')).toBe('15/03/2026');
+  });
+});
+
+describe('the Arabic 12-hour clock, both ways', () => {
+  // The format a 12-hour date-time field builds from its sections.
+  const FIELD_FORMAT = 'DD/MM/YYYY hh:mm A';
+  const arabic = new ProductDayjsAdapter({ locale: ARABIC_DAYJS_LOCALE });
+  const english = new ProductDayjsAdapter({ locale: 'en-gb' });
+  const morning = arabicDayjsLocale.meridiem(9);
+  const evening = arabicDayjsLocale.meridiem(21);
+
+  it('writes the day periods the product date formatter writes', () => {
+    const period = (hour: number) =>
+      new Intl.DateTimeFormat(intlLocale('ar'), { hour: 'numeric', hour12: true, timeZone: 'UTC' })
+        .formatToParts(new Date(Date.UTC(2026, 0, 4, hour)))
+        .find((part) => part.type === 'dayPeriod')?.value;
+    expect(morning).not.toBe(evening);
+    for (const hour of [0, 11, 12, 15, 23]) {
+      expect(arabicDayjsLocale.meridiem(hour)).toBe(period(hour));
+    }
+  });
+
+  it('reads a typed afternoon time as an afternoon hour', () => {
+    const value = arabic.parse(`30/09/2026 03:00 ${evening}`, FIELD_FORMAT);
+    expect(value?.isValid()).toBe(true);
+    expect(value?.format('YYYY-MM-DD HH:mm')).toBe('2026-09-30 15:00');
+  });
+
+  it('reads noon and midnight on the right side of the day', () => {
+    expect(arabic.parse(`30/09/2026 12:30 ${evening}`, FIELD_FORMAT)?.format('HH:mm')).toBe(
+      '12:30'
+    );
+    expect(arabic.parse(`30/09/2026 12:30 ${morning}`, FIELD_FORMAT)?.format('HH:mm')).toBe(
+      '00:30'
+    );
+    expect(arabic.parse(`30/09/2026 03:00 ${morning}`, FIELD_FORMAT)?.format('HH:mm')).toBe(
+      '03:00'
+    );
+  });
+
+  it('reads back every hour it writes', () => {
+    for (let hour = 0; hour < 24; hour += 1) {
+      const moment = dayjs(new Date(2026, 8, 30, hour, 5)).locale(ARABIC_DAYJS_LOCALE);
+      const shown = moment.format(FIELD_FORMAT);
+      expect(shown).not.toMatch(ARABIC_INDIC_DIGIT);
+      const read = arabic.parse(shown, FIELD_FORMAT);
+      expect(read?.format('HH:mm'), shown).toBe(moment.format('HH:mm'));
+      expect(read?.locale()).toBe(ARABIC_DAYJS_LOCALE);
+    }
+  });
+
+  it('stays strict: a malformed or half-typed moment is not a date', () => {
+    expect(arabic.parse('30/09/2026 03:00', FIELD_FORMAT)?.isValid()).toBe(false);
+    expect(arabic.parse(`31/02/2026 03:00 ${evening}`, FIELD_FORMAT)?.isValid()).toBe(false);
+    expect(arabic.parse(`30/09/2026 13:00 ${evening}`, FIELD_FORMAT)?.isValid()).toBe(false);
+    expect(arabic.parse('', FIELD_FORMAT)).toBeNull();
+  });
+
+  it('leaves the English 24-hour clock as the stock adapter reads it', () => {
+    expect(english.parse('30/09/2026 15:00', 'DD/MM/YYYY HH:mm')?.format('HH:mm')).toBe('15:00');
+    expect(english.parse('30/09/2026 03:00 PM', FIELD_FORMAT)?.format('HH:mm')).toBe('15:00');
+    expect(english.parse('30/09/2026 25:00', 'DD/MM/YYYY HH:mm')?.isValid()).toBe(false);
   });
 });

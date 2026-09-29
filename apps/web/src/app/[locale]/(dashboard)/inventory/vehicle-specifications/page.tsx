@@ -31,7 +31,7 @@ export default async function InventoryVehicleSpecificationsPage({
   const session = await requireSession(locale);
   const messages = getMessages(locale);
   const crumbs = [
-    { labelKey: 'nav.inventory', href: '/inventory' },
+    { labelKey: 'nav.inventory', href: `/${locale}/inventory` },
     { labelKey: 'inventory.specifications.title' },
   ];
 

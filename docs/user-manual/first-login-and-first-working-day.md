@@ -366,8 +366,12 @@ the appointment page afterwards."_ <!-- appointments.book.requestedNote --> **Re
   confirm button."_ <!-- appointments.status.pendingNote --> Use **Confirm by rescheduling** <!-- appointments.reschedule.submit -->
   .
 - Cancelling needs a reason from the organisation's own list, entered on the same **Appointment
-  setup** screen: _"The list of cancellation reasons has not been set up for this workspace yet, so
-  an appointment cannot be cancelled here. An administrator adds the reasons."_ <!-- appointments.cancel.noReasons -->
+  setup** screen. Until one exists, someone who may set them up reads _"The list of cancellation
+  reasons has not been set up yet, so an appointment cannot be cancelled here. Set up cancellation
+  reasons first."_ <!-- appointments.cancel.noReasonsSetUp --> with the link **"Open appointment
+  setup"** <!-- appointments.cancel.openSetup --> ; anyone else reads _"The list of cancellation
+  reasons has not been set up for this workspace yet, so an appointment cannot be cancelled here.
+  Ask an administrator to add the reasons."_ <!-- appointments.cancel.noReasons -->
 - If the vehicle is not linked to the customer: _"No vehicles are linked to this customer yet. Link
   the vehicle on its own page first, then book the appointment."_ <!-- appointments.book.noVehicles -->
 

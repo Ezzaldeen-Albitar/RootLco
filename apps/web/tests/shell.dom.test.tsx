@@ -18,6 +18,7 @@ import { PageHeader } from '@/components/shell/PageHeader';
 import { LocaleSwitcher, swapLocale } from '@/components/shell/LocaleSwitcher';
 import { Sidebar } from '@/components/shell/Sidebar';
 import { NAVIGATION, flattenNavigation, hrefFor, navigationLinks } from '@/config/navigation';
+import type { Locale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { visibleNavigation } from '@/lib/permissions';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
@@ -579,6 +580,76 @@ describe('exactly one breadcrumb says it is the current page', () => {
   );
 });
 
+/**
+ * Every breadcrumb link keeps the operator in their language (DEF-02).
+ *
+ * The work-order and inventory trails passed `'/work-orders'`,
+ * `` `/work-orders/${workOrderId}` `` and `'/inventory'`: every route lives under
+ * `[locale]`, so a click landed on the not-found page and the link prefetch
+ * logged a 404 on every load of the closure, job-diagnostics and template
+ * pages. The corpus is the same parsed one as above, so a route added tomorrow
+ * is held to this the day it is written.
+ */
+describe('every breadcrumb link carries the locale', () => {
+  const TRAILS = crumbTrailsInSource();
+  const LINKED = TRAILS.flatMap((trail) =>
+    trail.crumbs
+      .filter((crumb) => crumb.hasHref)
+      .map((crumb) => ({ file: trail.file, where: `${trail.file}:${trail.line}`, crumb }))
+  );
+
+  it('reads the hrefs from the source, including the trails that lost the locale', () => {
+    // Anti-vacuity: the corpus holds the work-order and inventory trails.
+    expect(LINKED.length).toBeGreaterThan(40);
+    const files = new Set(LINKED.map((entry) => entry.file));
+    for (const file of [
+      'src/app/[locale]/(dashboard)/work-orders/[workOrderId]/page.tsx',
+      'src/app/[locale]/(dashboard)/work-orders/[workOrderId]/closure/page.tsx',
+      'src/app/[locale]/(dashboard)/work-orders/[workOrderId]/jobs/[jobId]/diagnostics/page.tsx',
+      'src/app/[locale]/(dashboard)/work-orders/diagnostics/page.tsx',
+      'src/app/[locale]/(dashboard)/work-orders/diagnostics/[templateId]/page.tsx',
+      'src/app/[locale]/(dashboard)/work-orders/quality/page.tsx',
+      'src/app/[locale]/(dashboard)/inventory/parts/page.tsx',
+    ]) {
+      expect(files, `${file} passes no linked crumb`).toContain(file);
+    }
+  });
+
+  it('opens every crumb href with the route locale', () => {
+    const bare = LINKED.filter((entry) => !entry.crumb.localeLed).map(
+      (entry) => `${entry.where} (${entry.crumb.href ?? 'unreadable'})`
+    );
+    expect(bare, `crumb hrefs without the locale: ${bare.join(', ')}`).toEqual([]);
+  });
+
+  it.each(
+    TRAILS.filter((trail) => trail.crumbs.length > 1).map(
+      (trail) => [`${trail.file}:${trail.line}`, trail] as const
+    )
+  )('links every ancestor to an Arabic page in the Arabic trail at %s', (_where, trail) => {
+    const arabic = getMessages('ar');
+    const runtimeLabelKeys = ['nav.dashboard', 'nav.gallery', 'nav.profile'];
+    const { container } = renderRtl(
+      <PageHeader
+        locale="ar"
+        messages={arabic}
+        titleKey="dashboard.title"
+        crumbs={trail.crumbs.map((crumb, index) => ({
+          labelKey: crumb.labelKey ?? (runtimeLabelKeys[index] as string),
+          ...(crumb.arabicHref === null ? {} : { href: crumb.arabicHref }),
+        }))}
+      />
+    );
+    const nav = container.querySelector(`nav[aria-label="${arabic['shell.breadcrumbs']}"]`);
+    expect(nav, 'the breadcrumb landmark did not render').not.toBeNull();
+    const hrefs = Array.from(nav?.querySelectorAll('a[href]') ?? []).map(
+      (link) => link.getAttribute('href') ?? ''
+    );
+    expect(hrefs).toHaveLength(trail.crumbs.length - 1);
+    for (const href of hrefs) expect(href).toMatch(/^\/ar(\/|$)/);
+  });
+});
+
 describe('locale switcher', () => {
   it('swaps only the locale segment', () => {
     expect(swapLocale('/en/gallery', 'ar')).toBe('/ar/gallery');
@@ -776,6 +847,16 @@ interface SourceCrumb {
   readonly labelKey: string | null;
   readonly href: string | null;
   readonly hasHref: boolean;
+  /** The same href with the locale resolved to `ar`, to render an Arabic trail. */
+  readonly arabicHref: string | null;
+  /**
+   * The href is a template that OPENS with the route's own locale segment —
+   * `` `/${locale}` `` or `` `/${locale}/…` ``. A bare `'/work-orders'` is not:
+   * the application has no route outside `[locale]`, so it lands on the
+   * not-found page and its prefetch fails on every load (DEF-02). A literal
+   * `'/en/…'` is not either: it would send an Arabic operator to English.
+   */
+  readonly localeLed: boolean;
 }
 
 interface SourceTrail {
@@ -859,20 +940,34 @@ function crumbArrayOf(node: ts.Node): ts.ArrayLiteralExpression | null {
 
 function readSourceCrumb(element: ts.Expression): SourceCrumb {
   if (!ts.isObjectLiteralExpression(element)) {
-    return { labelKey: null, href: null, hasHref: true };
+    return { labelKey: null, href: null, hasHref: true, arabicHref: null, localeLed: false };
   }
   let labelKey: string | null = null;
   let href: string | null = null;
+  let arabicHref: string | null = null;
   let hasHref = false;
+  let localeLed = false;
   for (const property of element.properties) {
     if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)) continue;
     if (property.name.text === 'labelKey') labelKey = staticText(property.initializer);
     if (property.name.text === 'href') {
       hasHref = true;
       href = staticText(property.initializer);
+      arabicHref = staticText(property.initializer, 'ar');
+      localeLed = opensWithLocale(property.initializer);
     }
   }
-  return { labelKey, href, hasHref };
+  return { labelKey, href, hasHref, arabicHref, localeLed };
+}
+
+/** `` `/${locale}` `` or `` `/${locale}/…` ``, read from the syntax. */
+function opensWithLocale(node: ts.Expression): boolean {
+  if (!ts.isTemplateExpression(node) || node.head.text !== '/') return false;
+  const first = node.templateSpans[0];
+  if (!first || !ts.isIdentifier(first.expression) || first.expression.text !== 'locale') {
+    return false;
+  }
+  return first.literal.text === '' || first.literal.text.startsWith('/');
 }
 
 /**
@@ -893,13 +988,13 @@ function readSourceCrumb(element: ts.Expression): SourceCrumb {
  * property this function exists to protect: an unreadable href must never be
  * silently downgraded into "this crumb is the current page".
  */
-function staticText(node: ts.Expression): string | null {
+function staticText(node: ts.Expression, locale: Locale = 'en'): string | null {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
   if (ts.isTemplateExpression(node)) {
     let text = node.head.text;
     for (const span of node.templateSpans) {
       if (!ts.isIdentifier(span.expression)) return null;
-      text += `${span.expression.text === 'locale' ? 'en' : 'record-id'}${span.literal.text}`;
+      text += `${span.expression.text === 'locale' ? locale : 'record-id'}${span.literal.text}`;
     }
     return text;
   }

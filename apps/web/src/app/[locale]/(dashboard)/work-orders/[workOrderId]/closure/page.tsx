@@ -32,8 +32,8 @@ export default async function WorkOrderClosurePage({
   const session = await requireSession(locale);
   const messages = getMessages(locale);
   const crumbs = [
-    { labelKey: 'nav.workOrders', href: '/work-orders' },
-    { labelKey: 'workOrders.detail.crumb', href: `/work-orders/${workOrderId}` },
+    { labelKey: 'nav.workOrders', href: `/${locale}/work-orders` },
+    { labelKey: 'workOrders.detail.crumb', href: `/${locale}/work-orders/${workOrderId}` },
     { labelKey: 'quality.closure.crumb' },
   ];
 

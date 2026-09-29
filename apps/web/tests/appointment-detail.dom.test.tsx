@@ -129,6 +129,7 @@ interface RenderOptions {
   readonly canEndLifecycle?: boolean;
   readonly reasons?: IntakeCatalogueResult | null;
   readonly base?: Partial<AppointmentDetail>;
+  readonly canSetUpCatalogue?: boolean;
 }
 
 function screenFor({
@@ -137,6 +138,7 @@ function screenFor({
   canEndLifecycle = true,
   reasons = REASONS,
   base = {},
+  canSetUpCatalogue = false,
 }: RenderOptions = {}): ReactElement {
   return (
     <AppointmentDetailScreen
@@ -146,6 +148,7 @@ function screenFor({
       canManage={canManage}
       canEndLifecycle={canEndLifecycle}
       cancellationReasons={reasons}
+      canSetUpCatalogue={canSetUpCatalogue}
     />
   );
 }
@@ -300,6 +303,45 @@ describe('confirm by rescheduling (FE-003)', () => {
     await waitFor(() => expect(rescheduleAppointment).toHaveBeenCalledTimes(1));
     const input = rescheduleAppointment.mock.calls[0]?.[2] as { confirmedFrom: string };
     expect(input.confirmedFrom).toBe('2026-08-21T09:00:00+09:00');
+  });
+
+  it('confirms an afternoon window typed in Arabic on the branch clock (DEF-01)', async () => {
+    // Arabic writes the morning/afternoon part first, then the time, then the
+    // day. Every afternoon time was refused as empty and nothing was sent.
+    rescheduleAppointment.mockResolvedValue(rescheduled(8));
+    const user = userEvent.setup();
+    renderRtl(
+      withMui(
+        inBranch(
+          <AppointmentDetailScreen
+            locale="ar"
+            messages={ar}
+            detail={detail()}
+            canManage
+            canEndLifecycle
+            cancellationReasons={REASONS}
+          />,
+          { locale: 'ar', snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: 'Asia/Amman' }]) }
+        ),
+        'ar'
+      )
+    );
+    for (const [key, typed] of [
+      ['appointments.window.from', 'م030021082026'],
+      ['appointments.window.to', 'م040021082026'],
+    ] as const) {
+      const group = screen.getByRole('group', { name: new RegExp(`^${ar[key]}`) });
+      await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard(typed);
+    }
+    await user.click(screen.getByRole('button', { name: ar['appointments.reschedule.submit'] }));
+
+    await waitFor(() => expect(rescheduleAppointment).toHaveBeenCalledTimes(1));
+    // Asia/Amman, UTC+3 all year: 03:00 and 04:00 in the afternoon.
+    expect(rescheduleAppointment.mock.calls[0]?.[2]).toEqual({
+      confirmedFrom: '2026-08-21T15:00:00+03:00',
+      confirmedTo: '2026-08-21T16:00:00+03:00',
+    });
   });
 
   it('refuses an inverted window locally, against the end field, without a request', async () => {
@@ -532,6 +574,61 @@ describe('cancellation needs its catalogued reason (FE-004)', () => {
     expect(screen.getByText(en['appointments.cancel.noReasons'])).toBeInTheDocument();
     expect(cancelButton()).toBeNull();
     expect(screen.queryByText(en['state.error.title'])).toBeNull();
+    // An operator who may not set the reasons up is sent to an administrator,
+    // never to a screen they cannot open.
+    expect(en['appointments.cancel.noReasons']).toMatch(/ask an administrator/i);
+    expect(screen.queryByTestId('appointment-cancel-setup-link')).toBeNull();
+    expect(screen.queryByText(en['appointments.cancel.noReasonsSetUp'])).toBeNull();
+  });
+
+  it('links a holder of appointment setup to the setup screen when the reason list is empty', () => {
+    renderScreen({
+      status: 'confirmed',
+      canSetUpCatalogue: true,
+      reasons: { status: 'ok', options: [], truncated: false, correlationId: null },
+    });
+    expect(screen.getByText(en['appointments.cancel.noReasonsSetUp'])).toBeInTheDocument();
+    expect(screen.queryByText(en['appointments.cancel.noReasons'])).toBeNull();
+    const link = screen.getByRole('link', { name: en['appointments.cancel.openSetup'] });
+    expect(link).toHaveAttribute('href', '/en/administration/appointment-setup');
+    expect(cancelButton()).toBeNull();
+  });
+
+  it('offers no setup link once reasons exist, even to a holder of appointment setup', () => {
+    renderScreen({ status: 'confirmed', canSetUpCatalogue: true });
+    expect(cancelButton()).not.toBeNull();
+    expect(screen.queryByTestId('appointment-cancel-setup-link')).toBeNull();
+  });
+
+  it('says the empty-list guidance in Arabic, right to left, with the link', () => {
+    renderRtl(
+      withMui(
+        inBranch(
+          <AppointmentDetailScreen
+            locale="ar"
+            messages={ar}
+            detail={detail({ lifecycleStatus: 'confirmed' })}
+            canManage
+            canEndLifecycle
+            cancellationReasons={{
+              status: 'ok',
+              options: [],
+              truncated: false,
+              correlationId: null,
+            }}
+            canSetUpCatalogue
+          />,
+          { locale: 'ar' }
+        ),
+        'ar'
+      )
+    );
+    expect(screen.getByText(ar['appointments.cancel.noReasonsSetUp'])).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: ar['appointments.cancel.openSetup'] })).toHaveAttribute(
+      'href',
+      '/ar/administration/appointment-setup'
+    );
+    expect(document.documentElement.dir).toBe('rtl');
   });
 
   it('says a FAILED catalogue read is unavailable, with the reference', () => {
