@@ -286,3 +286,37 @@ code among the five an 85-code organisation is offered.
 
 The run is an operator act taken after this change merges. This addendum does not claim it was
 performed anywhere.
+
+---
+
+## 10. Addendum — the four appointment codes, run selectively (Owner decision of 2026-09-29)
+
+The Owner decided that the standard tenant administrator holds `apt.appointment.read`,
+`apt.appointment.manage`, `apt.appointment.lifecycle.manage` and `apt.catalogue.manage`, and that
+the appointment setup screen is built so each organisation enters its own appointment types,
+booking channels and cancellation reasons. The four codes are carried in
+`TENANT_ADMINISTRATOR_ROLE`, so the bundle is now 94 codes, and new organisations receive them at
+provisioning. The scope was measured before the codes were carried; it is recorded in
+`bootstrap-roles.ts` and in `docs/product/owner-directive-2026-09-16/route-checklist.md`.
+Front-desk and reception roles gain nothing by this decision.
+
+The shape of the run for existing organisations is the one section 9 set:
+
+- **Selective.** Only the previously authorised QA organisations are named:
+  `--tenant odqa_alpha --tenant odqa_beta`. `--all` is not used, and every other existing
+  organisation is left unchanged.
+- **Customised roles are preserved.** An administrator role showing any sign of customisation is
+  skipped whole and reported with the four codes under `withheld`.
+- **Dry run first.** For an organisation already current with the settings widening the dry run
+  lists exactly the four appointment codes and nothing else.
+
+The script needed no change: it reads the bundle from `bootstrap-roles.ts` at run time. **BF-19**
+proves the shape on real rows — two named organisations on the 90-code bundle, the standard one
+offered exactly the four codes by a dry run that writes nothing and then widened (a front-desk role
+it built gains nothing), the customised one skipped with the four withheld, an organisation nobody
+named untouched row for row, and a second run a no-op. **BF-10** now counts the four among the nine
+codes an 85-code organisation is offered, and **BF-18** measures the settings widening on a role
+lacking only that code.
+
+The run is an operator act taken after this change merges. This addendum does not claim it was
+performed anywhere.
