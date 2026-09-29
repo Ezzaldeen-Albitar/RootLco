@@ -295,6 +295,13 @@ receipt (6.3.5).
   - "Line descriptions are not available: the accepted quotation shows amounts, which the person who
     printed this copy may not see." <!-- invoices.print.descriptionsNeedFinance -->
   - "Amounts are not available to the person who printed this copy." <!-- invoices.print.amountsUnavailable -->
+- **A counter sale is printed from the Counter sales screen.** It has no work order, so it never
+  opens on this screen. With the sale open there, press "Show printable copy"; the copy is the same
+  document, ready at once, and each line is described by the item it sold, by name and code, under
+  the note "Each line is described by the item that was sold." <!-- invoices.print.descriptionsFromItems -->
+- **Amounts are written in their currency's own decimals** — three for JOD, two for USD — on
+  screen and on paper. A figure with a digit below that is shown in full rather than rounded, so a
+  fraction no payment can settle is visible instead of hidden.
 - **Screenshot:** no screenshot available at this version.
 
 ### 6.2.9 When amounts are hidden from you
@@ -665,6 +672,11 @@ filtered to one invoice, `/en/payments?invoiceId=<identifier>`.
     route that reverses one. Check the invoice and the amount before applying." <!-- payments.allocate.explain -->
     Allocations are append-only.
   - The invoice must be **issued**, and in the **same branch and the same currency** as the receipt.
+  - **A lost answer is safe to retry.** If the screen could not tell whether an allocation went
+    through, pressing **Apply** again for the same invoice and the same amount — even after closing
+    and reopening the receipt — sends the same request again, and the service answers with the
+    allocation it already made rather than booking a second one. A different invoice or amount is a
+    new allocation.
   - Without `sal.payment.allocate`: "Applying a receipt needs the allocation permission, which this
     account does not hold." <!-- payments.allocate.needsCode -->
 - **If it goes wrong:**
@@ -929,12 +941,13 @@ Three things to expect in the cells:
 
 ### 6.5.5 Drill-through from a report row
 
-**IMPLEMENTED (UI)** for work orders · **DEFERRED** for the others
+**IMPLEMENTED (UI)** for work orders and credit notes · **DEFERRED** for the others
 
 Where a row names a record this application has a screen for, the reference is a link. **Today that
-is work orders only.** There is no per-technician page, no invoice detail page and no receipt detail
-page in this release, so references to those render as plain text rather than as a link that would
-lead nowhere. A credit note has no read operation at all and its reference carries no target.
+is work orders and credit notes.** A credit note in the "Invoices and payments" report opens the
+Credit notes screen on that note; that screen asks for its own permissions, as it always does. There
+is no per-technician page, no invoice detail page and no receipt detail page in this release, so
+references to those render as plain text rather than as a link that would lead nowhere.
 
 Where a reference has no label at all, the cell reads "No reference" <!-- reports.cell.noReference -->
 rather than showing an internal identifier.
