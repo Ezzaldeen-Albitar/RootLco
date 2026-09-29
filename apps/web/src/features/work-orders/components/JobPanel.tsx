@@ -1,14 +1,27 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { SelectField, TextField } from '@/components/forms/Field';
+import Button from '@mui/material/Button';
+import { ZonedDateTimeField } from '@/components/forms/mui/DateField';
+import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiLoadingState } from '@/components/states/MuiStates';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
+import type { ActionState } from '@/lib/forms/action-result';
+import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { assignTechnician, listJobAssignments, updateJob } from '../api';
-import type { DepartmentOption, JobAssignment, WorkOrderJob } from '../work-orders-contract';
+import {
+  assignmentRoleLabel,
+  type DepartmentOption,
+  type JobAssignment,
+  type WorkOrderJob,
+} from '../work-orders-contract';
 import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 
 /**
@@ -31,11 +44,24 @@ import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
  * safety here. Assignment eligibility — skills, certifications, availability —
  * is likewise the platform's to judge against the technician's own profile. This
  * panel sends what the operator chose and renders what came back.
+ *
+ * ## On the shared Material wrappers (ADR-022, Owner directive slice 4)
+ *
+ * The routing is an EDIT of a stored record, so it rides `useEditBaseline`: the
+ * baseline's version is the `If-Match`, a refresh that arrives while a
+ * department is chosen does not move it, a conflict offers "Load the latest
+ * version", a discard re-bases on what is stored, and a stored routing leaves
+ * the form clean — nothing prompts after a save. The assignment window is two
+ * `ZonedDateTimeField`s on the WORK ORDER's branch clock (a record reached by
+ * its address is on its own branch's clock), so the moment typed is the moment
+ * sent, with its offset — where the native `datetime-local` boxes this replaced
+ * were read on the laptop's clock.
  */
 export function JobPanel({
   locale,
   messages,
   job,
+  zone,
   departments,
   departmentsRefused,
   canManageJobs,
@@ -46,13 +72,16 @@ export function JobPanel({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly job: WorkOrderJob;
+  /** The work order's branch clock, or `null` when it is not known — then no moment is taken. */
+  readonly zone: string | null;
   /** `null` while the branch's departments are still loading. */
   readonly departments: readonly DepartmentOption[] | null;
   readonly departmentsRefused: string | null;
   readonly canManageJobs: boolean;
   readonly canReadTechnicians: boolean;
   readonly canAssign: boolean;
-  readonly onDone: () => void;
+  /** Re-reads the work order; the routing stays busy until it resolves. */
+  readonly onDone: () => Promise<void>;
 }) {
   return (
     <div className="mt-3 flex flex-col gap-4 border-t border-border pt-3">
@@ -68,11 +97,16 @@ export function JobPanel({
         locale={locale}
         messages={messages}
         job={job}
+        zone={zone}
         canReadTechnicians={canReadTechnicians}
         canAssign={canAssign}
       />
     </div>
   );
+}
+
+interface RoutingDraft {
+  readonly departmentId: string;
 }
 
 /** Department routing — BR-02's `wo.jobs.department_id`, through `wo.job-update`. */
@@ -89,42 +123,88 @@ function RoutingPanel({
   readonly departments: readonly DepartmentOption[] | null;
   readonly departmentsRefused: string | null;
   readonly canManageJobs: boolean;
-  readonly onDone: () => void;
+  readonly onDone: () => Promise<void>;
 }) {
-  const [choice, setChoice] = useState<string>(job.departmentId ?? '');
+  /*
+   * What is stored, and the version it is stored at. A clean form follows the
+   * job as the detail re-reads it; a form holding a choice keeps the version
+   * its choice was based on, and a save sends that one.
+   */
+  const edit = useEditBaseline<RoutingDraft>({
+    stored: { departmentId: job.departmentId ?? '' },
+    storedVersion: job.recordVersion,
+  });
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [conflict, setConflict] = useState(false);
+
+  // A chosen department not yet applied is unsaved work: a branch switch or
+  // leaving the page asks, and a confirmed discard puts back what is stored.
+  useUnsavedGuard(edit.dirty, () => {
+    edit.discard();
+    setProblem(null);
+    setConflict(false);
+  });
 
   const route = async () => {
     setProblem(null);
+    setConflict(false);
     setBusy(true);
-    const result = await updateJob(
-      job.id,
-      {
-        // REQUIRED by the contract and a full replacement, so the job's current
-        // title is sent back unchanged. Safe only because the write is version
-        // guarded: a concurrent rename moves the version and this is refused
-        // rather than reverting it.
-        title: job.title,
-        // Three-way. An empty choice CLEARS the routing and must travel as
-        // `null`; `undefined` would mean "leave it alone", which is a different
-        // instruction the operator did not give.
-        departmentId: choice === '' ? null : choice,
-      },
-      job.recordVersion
-    );
-    setBusy(false);
-    notifyActionResult(result, messages);
+    try {
+      let result: ActionState;
+      try {
+        result = await updateJob(
+          job.id,
+          {
+            // REQUIRED by the contract and a full replacement, so the job's current
+            // title is sent back unchanged. Safe only because the write is version
+            // guarded: a concurrent rename moves the version and this is refused
+            // rather than reverting it.
+            title: job.title,
+            // Three-way. An empty choice CLEARS the routing and must travel as
+            // `null`; `undefined` would mean "leave it alone", which is a different
+            // instruction the operator did not give.
+            departmentId: edit.values.departmentId === '' ? null : edit.values.departmentId,
+          },
+          // The BASELINE's version: a choice built on a job that has since moved
+          // is the server's conflict, never a silent overwrite.
+          edit.version
+        );
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(result, messages);
 
-    if (result.status === 'success') {
-      onDone();
-      return;
+      if (result.status === 'success') {
+        // Stored: the form is clean on what was written; the re-read brings the
+        // new version, and the button waits for it.
+        edit.rebase(edit.values);
+        await onDone();
+        return;
+      }
+      setConflict(result.status === 'conflict');
+      setProblem(
+        result.status === 'conflict'
+          ? 'workOrders.detail.conflict'
+          : (result.messageKey ?? 'action.failed')
+      );
+    } finally {
+      setBusy(false);
     }
-    setProblem(
-      result.status === 'conflict'
-        ? 'workOrders.detail.conflict'
-        : (result.messageKey ?? 'action.failed')
-    );
+  };
+
+  /** The conflict's way out: what is stored now replaces the stale choice. */
+  const loadLatest = async () => {
+    setBusy(true);
+    try {
+      edit.discard();
+      setProblem(null);
+      setConflict(false);
+      await onDone();
+    } finally {
+      setBusy(false);
+    }
   };
 
   if (!canManageJobs) {
@@ -147,57 +227,85 @@ function RoutingPanel({
           {translate(messages, 'workOrders.detail.departmentsUnavailable')}
         </p>
       ) : departments === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+        <MuiLoadingState messages={messages} variant="inline" />
       ) : departments.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'workOrders.detail.noDepartments')}
         </p>
       ) : (
-        <div className="flex flex-wrap items-end gap-3">
-          <SelectField
-            label={translate(messages, 'workOrders.detail.department')}
-            value={choice}
-            onChange={(event) => setChoice(event.target.value)}
-            options={departments.map((department) => ({
-              value: department.id,
-              label: `${department.departmentCode} — ${department.name}`,
-            }))}
-            placeholder={translate(messages, 'workOrders.detail.unrouted')}
-          />
-          <button
-            type="button"
-            disabled={busy || choice === (job.departmentId ?? '')}
-            onClick={() => void route()}
-            className="rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle disabled:opacity-60"
+        <form
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (busy || !edit.dirty) return;
+            void route();
+          }}
+          className="flex flex-wrap items-start gap-3"
+        >
+          <div className="grow">
+            <FormSelectField
+              label={translate(messages, 'workOrders.detail.department')}
+              name={`department-${job.id}`}
+              value={edit.values.departmentId}
+              onChange={(departmentId) => edit.setValues({ departmentId })}
+              options={departments.map((department) => ({
+                value: department.id,
+                label: `${department.departmentCode} — ${department.name}`,
+              }))}
+              placeholder={translate(messages, 'workOrders.detail.unrouted')}
+            />
+          </div>
+          <Button
+            type="submit"
+            variant="outlined"
+            disabled={busy || !edit.dirty}
+            aria-busy={busy || undefined}
           >
             {translate(
               messages,
               busy ? 'workOrders.detail.routing' : 'workOrders.detail.applyRouting'
             )}
-          </button>
-        </div>
+          </Button>
+        </form>
       )}
 
       {problem === null ? null : (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, problem)}
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <p role="alert" className="text-body text-error">
+            {translateDynamic(messages, problem)}
+          </p>
+          {conflict ? (
+            <Button
+              type="button"
+              variant="outlined"
+              size="small"
+              onClick={() => void loadLatest()}
+              disabled={busy}
+            >
+              {translate(messages, 'form.loadLatest')}
+            </Button>
+          ) : null}
+        </div>
       )}
     </div>
   );
 }
+
+const ROLES = ['primary', 'assist'] as const;
 
 /** Technician assignment — `wo.job-assignment-list` and `wo.job-assignment-create`. */
 function AssignmentPanel({
   locale,
   messages,
   job,
+  zone,
   canReadTechnicians,
   canAssign,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly job: WorkOrderJob;
+  readonly zone: string | null;
   readonly canReadTechnicians: boolean;
   readonly canAssign: boolean;
 }) {
@@ -210,7 +318,7 @@ function AssignmentPanel({
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   /**
-   * The refusals that name one of the two controls above.
+   * The refusals that name one of the controls above.
    *
    * `wo.job-assignment-create` refuses a second lead with a violation on
    * `body.assignmentRole` and refuses a technician who already holds the job
@@ -228,6 +336,21 @@ function AssignmentPanel({
     windowFrom: from,
     windowTo: to,
   });
+
+  const discard = () => {
+    setTechnicianProfileId('');
+    setRole('primary');
+    setFrom('');
+    setTo('');
+    setFieldErrors({});
+    setProblem(null);
+  };
+  // Typed work is unsaved: a branch switch or leaving the page asks, and a
+  // confirmed discard empties the form.
+  useUnsavedGuard(
+    technicianProfileId.trim().length > 0 || from !== '' || to !== '' || role !== 'primary',
+    discard
+  );
 
   /**
    * Re-read this job's assignments.
@@ -261,11 +384,14 @@ function AssignmentPanel({
   }, [canReadTechnicians, job.id, reload]);
 
   const assign = async () => {
-    if (technicianProfileId.trim() === '' || from === '' || to === '') {
-      const missing: Record<string, string> = {};
-      if (technicianProfileId.trim() === '') missing['technicianProfileId'] = 'field.required';
-      if (from === '') missing['windowFrom'] = 'field.required';
-      if (to === '') missing['windowTo'] = 'field.required';
+    const missing: Record<string, string> = {};
+    if (technicianProfileId.trim() === '') missing['technicianProfileId'] = 'field.required';
+    if (from === '') missing['windowFrom'] = 'field.required';
+    if (to === '') missing['windowTo'] = 'field.required';
+    if (from !== '' && to !== '' && Date.parse(to) <= Date.parse(from)) {
+      missing['windowTo'] = 'workOrders.detail.windowInverted';
+    }
+    if (Object.keys(missing).length > 0) {
       setFieldErrors(missing);
       setProblem('workOrders.detail.assignmentIncomplete');
       return;
@@ -273,27 +399,34 @@ function AssignmentPanel({
     setProblem(null);
     setFieldErrors({});
     setBusy(true);
-    const result = await assignTechnician(job.id, {
-      technicianProfileId: technicianProfileId.trim(),
-      assignmentRole: role,
-      // Both bounds are required instants. Sent as the operator entered them,
-      // converted to an offset-bearing instant the schema accepts.
-      window: { from: new Date(from).toISOString(), to: new Date(to).toISOString() },
-    });
-    setBusy(false);
-    notifyActionResult(result, messages);
+    try {
+      let result: ActionState;
+      try {
+        result = await assignTechnician(job.id, {
+          technicianProfileId: technicianProfileId.trim(),
+          assignmentRole: role,
+          // Both bounds are instants with the branch's offset for that moment,
+          // exactly as the fields hold them.
+          window: { from, to },
+        });
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(result, messages);
 
-    if (result.status === 'success') {
-      setTechnicianProfileId('');
-      setFrom('');
-      setTo('');
-      // The assignment list is this panel's own read, so it refreshes itself
-      // rather than reloading the whole work order for an append.
-      if (canReadTechnicians) refresh();
-      return;
+      if (result.status === 'success') {
+        discard();
+        // The assignment list is this panel's own read, so it refreshes itself
+        // rather than reloading the whole work order for an append.
+        if (canReadTechnicians) refresh();
+        return;
+      }
+      if (result.fieldErrors) setFieldErrors(result.fieldErrors);
+      setProblem(result.messageKey ?? 'action.failed');
+    } finally {
+      setBusy(false);
     }
-    if (result.fieldErrors) setFieldErrors(result.fieldErrors);
-    setProblem(result.messageKey ?? 'action.failed');
   };
 
   const errorFor = (name: string): string | undefined => {
@@ -316,7 +449,7 @@ function AssignmentPanel({
       ) : refused !== null ? (
         <p className="text-body text-text-secondary">{translateDynamic(messages, refused)}</p>
       ) : assignments === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+        <MuiLoadingState messages={messages} variant="inline" />
       ) : assignments.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'workOrders.detail.noAssignments')}
@@ -325,13 +458,17 @@ function AssignmentPanel({
         <ul className="flex flex-col gap-1">
           {assignments.map((assignment) => (
             <li key={assignment.id} className="flex flex-wrap items-baseline gap-x-3 text-body">
+              {/*
+                The roster reference, because the roster read publishes no name
+                (route checklist, recorded gap 13); a name, when the read
+                carries one, replaces it.
+              */}
               <code className="font-mono text-caption" dir="ltr">
                 {assignment.technicianProfileId}
               </code>
               <span className="text-caption text-text-muted">
-                {translateDynamic(
-                  messages,
-                  `workOrders.assignmentRole.${assignment.assignmentRole}`
+                {assignmentRoleLabel(assignment.assignmentRole, (key) =>
+                  translateDynamic(messages, key)
                 )}
               </span>
               <span className="text-caption text-text-muted">
@@ -357,54 +494,78 @@ function AssignmentPanel({
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
+            if (busy) return;
             void assign();
           }}
-          className="mt-2 grid gap-3 sm:grid-cols-2 lg:grid-cols-4"
+          className="mt-2 grid gap-3 sm:grid-cols-2"
         >
-          <TextField
+          <FormTextField
             label={translate(messages, 'workOrders.detail.technicianProfileId')}
+            name={`technicianProfileId-${job.id}`}
             description={translate(messages, 'workOrders.detail.technicianProfileIdHint')}
-            spellCheck={false}
             dir="ltr"
+            autoComplete="off"
+            required
             value={technicianProfileId}
-            onChange={(event) => setTechnicianProfileId(event.target.value)}
+            onChange={setTechnicianProfileId}
             error={errorFor('technicianProfileId')}
           />
-          <SelectField
+          <FormRadioGroupField
             label={translate(messages, 'workOrders.detail.assignmentRole')}
+            name={`assignmentRole-${job.id}`}
             value={role}
-            onChange={(event) => setRole(event.target.value as 'primary' | 'assist')}
-            options={[
-              { value: 'primary', label: translate(messages, 'workOrders.assignmentRole.primary') },
-              { value: 'assist', label: translate(messages, 'workOrders.assignmentRole.assist') },
-            ]}
+            onChange={(value) => setRole(value === 'assist' ? 'assist' : 'primary')}
+            options={ROLES.map((value) => ({
+              value,
+              label: translate(messages, `workOrders.assignmentRole.${value}`),
+            }))}
             error={errorFor('assignmentRole')}
           />
-          <TextField
-            label={translate(messages, 'workOrders.detail.windowFrom')}
-            type="datetime-local"
-            value={from}
-            onChange={(event) => setFrom(event.target.value)}
-            error={errorFor('windowFrom')}
-          />
-          <TextField
-            label={translate(messages, 'workOrders.detail.windowTo')}
-            type="datetime-local"
-            value={to}
-            onChange={(event) => setTo(event.target.value)}
-            error={errorFor('windowTo')}
-          />
-          <div className="sm:col-span-2 lg:col-span-4">
-            <button
+          {zone === null ? (
+            <p
+              role="status"
+              data-testid="assignment-zone-unknown"
+              className="rounded-md bg-warning-subtle px-3 py-2 text-supporting text-text-secondary sm:col-span-2"
+            >
+              {translate(messages, 'dateField.zoneUnknown')}
+            </p>
+          ) : (
+            <>
+              <ZonedDateTimeField
+                messages={messages}
+                timezone={zone}
+                label={translate(messages, 'workOrders.detail.windowFrom')}
+                name={`windowFrom-${job.id}`}
+                required
+                value={from}
+                onChange={setFrom}
+                error={errorFor('windowFrom')}
+              />
+              <ZonedDateTimeField
+                messages={messages}
+                timezone={zone}
+                label={translate(messages, 'workOrders.detail.windowTo')}
+                name={`windowTo-${job.id}`}
+                required
+                value={to}
+                onChange={setTo}
+                min={from === '' ? undefined : from}
+                error={errorFor('windowTo')}
+              />
+            </>
+          )}
+          <div className="sm:col-span-2">
+            <Button
               type="submit"
-              disabled={busy}
-              className="rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle disabled:opacity-60"
+              variant="outlined"
+              disabled={busy || zone === null}
+              aria-busy={busy || undefined}
             >
               {translate(
                 messages,
                 busy ? 'workOrders.detail.assigning' : 'workOrders.detail.assignTechnician'
               )}
-            </button>
+            </Button>
           </div>
         </form>
       ) : (

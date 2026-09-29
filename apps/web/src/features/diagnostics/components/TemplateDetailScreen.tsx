@@ -13,16 +13,33 @@
  * because no such operation exists — "create a new version to change what an
  * inspection asks" is the backend's own refusal text, and it is the rule here.
  *
- * Every select and checkbox inside a `<form action>` carries the epoch-key shape
- * (`key` from the form's `attempt`, `defaultValue`/`defaultChecked`, `onChange`):
- * React resets the form DOM once the action settles, and that shape is the one
- * measured to keep the operator's choice when the write is refused.
+ * ## On the shared Material wrappers (ADR-022, Owner directive slice 4)
+ *
+ * - The template's name and status are an EDIT of a stored record, so the form
+ *   rides `useEditBaseline`: the baseline's version is the `If-Match`, a
+ *   refresh arriving while the form is dirty neither moves the version nor
+ *   overwrites what was typed, a conflict offers "Load the latest version", a
+ *   discard re-bases on what is stored, and a save leaves the form clean — no
+ *   prompt after it. Its submit stays busy until the template has been read
+ *   again.
+ * - Publishing freezes a version and retiring withdraws it; both are asked
+ *   first (`ConfirmDialog`).
+ * - Every form is `forms/mui/*` with the `FieldFrame` contract, and holds its
+ *   typed work as unsaved work until it is stored.
  */
-import { useCallback, useEffect, useState } from 'react';
-import { CheckboxField, SelectField, TextField } from '@/components/forms/Field';
+import { useCallback, useState } from 'react';
+import Button from '@mui/material/Button';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import type { ItemsOnly, ReadState } from '@/lib/api/read-operation';
+import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
+import { useReread } from '@/lib/api/use-reread';
+import type { ReadFailureStatus } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -38,28 +55,67 @@ import {
 import {
   unattachedRefusalKey,
   type TemplateDetail,
-  type TemplateItem,
   type TemplateVersion,
 } from '../diagnostics-contract';
 import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 
-const PRIMARY_BUTTON =
-  'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:opacity-60';
-const SECONDARY_BUTTON =
-  'rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle disabled:opacity-60';
-
 const RESPONSE_TYPES = ['numeric', 'text', 'boolean', 'select'] as const;
 type ResponseType = (typeof RESPONSE_TYPES)[number];
+const TEMPLATE_STATUSES = ['active', 'inactive'] as const;
 
 function problemKeyOf(result: ActionState): string {
   if (result.status === 'conflict') return 'diagnostics.template.conflict';
   return result.messageKey ?? 'action.failed';
 }
 
-function useReload(): readonly [number, () => void] {
-  const [reloadCount, setReloadCount] = useState(0);
-  const reload = useCallback(() => setReloadCount((n) => n + 1), []);
-  return [reloadCount, reload];
+/** A form's one submit, saying "Working…" while its write — and its re-read — is in flight. */
+function Submit({
+  messages,
+  pending,
+  labelKey,
+  variant = 'contained',
+  disabled = false,
+}: {
+  readonly messages: Messages;
+  readonly pending: boolean;
+  readonly labelKey: string;
+  readonly variant?: 'contained' | 'outlined';
+  readonly disabled?: boolean;
+}) {
+  return (
+    <Button
+      type="submit"
+      variant={variant}
+      disabled={pending || disabled}
+      aria-busy={pending || undefined}
+    >
+      {pending ? translate(messages, 'form.pending') : translateDynamic(messages, labelKey)}
+    </Button>
+  );
+}
+
+function Problem({
+  messages,
+  problem,
+  onReload,
+}: {
+  readonly messages: Messages;
+  readonly problem: string | null;
+  readonly onReload?: (() => void) | undefined;
+}) {
+  if (problem === null) return null;
+  return (
+    <div className="flex basis-full flex-wrap items-center gap-3">
+      <p role="alert" className="text-body text-error">
+        {translateDynamic(messages, problem)}
+      </p>
+      {onReload !== undefined && problem === 'diagnostics.template.conflict' ? (
+        <Button type="button" variant="outlined" size="small" onClick={onReload}>
+          {translate(messages, 'form.loadLatest')}
+        </Button>
+      ) : null}
+    </div>
+  );
 }
 
 export function TemplateDetailScreen({
@@ -76,26 +132,25 @@ export function TemplateDetailScreen({
   readonly canManage: boolean;
 }) {
   const [detail, setDetail] = useState<TemplateDetail>(initial);
-  const [readProblem, setReadProblem] = useState<string | null>(null);
-  const [reloadCount, reload] = useReload();
+  const [readProblem, setReadProblem] = useState<{
+    readonly status: ReadFailureStatus;
+    readonly correlationId: string | null;
+  } | null>(null);
   const [openVersionId, setOpenVersionId] = useState<string | null>(
     initial.versions[0]?.id ?? null
   );
 
-  useEffect(() => {
-    if (reloadCount === 0) return;
-    let cancelled = false;
-    void readTemplate(templateId).then((next) => {
-      if (cancelled) return;
-      if (next.status === 'ok') {
-        setDetail(next.data);
-        setReadProblem(null);
-      } else setReadProblem(`state.${next.status}.title`);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [templateId, reloadCount]);
+  /** Reads the template again; every command here waits for it before it lets go. */
+  const reload = useCallback(async (): Promise<void> => {
+    const next = await readTemplate(templateId);
+    if (next.status === 'ok') {
+      setDetail(next.data);
+      setReadProblem(null);
+      return;
+    }
+    // The last template read stays on screen, and the failure says so.
+    setReadProblem({ status: next.status, correlationId: next.correlationId });
+  }, [templateId]);
 
   const openVersion = detail.versions.find((v) => v.id === openVersionId) ?? null;
 
@@ -117,9 +172,15 @@ export function TemplateDetailScreen({
           </span>
         </div>
         {readProblem === null ? null : (
-          <p role="alert" className="mt-2 text-body text-error">
-            {translateDynamic(messages, readProblem)}
-          </p>
+          <div className="mt-2">
+            <MuiReadFailureState
+              messages={messages}
+              locale={locale}
+              status={readProblem.status}
+              correlationId={readProblem.correlationId}
+              onRetry={() => void reload()}
+            />
+          </div>
         )}
         {canManage ? (
           <TemplateSettingsForm
@@ -156,55 +217,62 @@ export function TemplateDetailScreen({
           </p>
         ) : (
           <ul className="flex flex-col gap-2">
-            {detail.versions.map((version) => (
-              <li key={version.id} className="rounded-md border border-border p-3">
-                <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                  <span className="text-body font-medium text-text-primary">
-                    {translate(messages, 'diagnostics.template.version')} {version.versionNumber}
-                  </span>
-                  <span className="text-caption text-text-muted">
-                    {translateDynamic(messages, `diagnostics.versionStatus.${version.status}`)}
-                  </span>
-                  <span className="text-caption text-text-muted">
-                    {translate(messages, 'diagnostics.template.itemCount')}: {version.itemCount}
-                  </span>
-                  {version.publishedAt ? (
+            {detail.versions.map((version) => {
+              const open = openVersionId === version.id;
+              const versionName = `${translate(messages, 'diagnostics.template.version')} ${version.versionNumber}`;
+              return (
+                <li key={version.id} className="rounded-md border border-border p-3">
+                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                    <span className="text-body font-medium text-text-primary">{versionName}</span>
                     <span className="text-caption text-text-muted">
-                      {translate(messages, 'diagnostics.template.publishedAt')}{' '}
-                      {formatDateTime(version.publishedAt, locale)}
+                      {translateDynamic(messages, `diagnostics.versionStatus.${version.status}`)}
                     </span>
+                    <span className="text-caption text-text-muted">
+                      {translate(messages, 'diagnostics.template.itemCount')}: {version.itemCount}
+                    </span>
+                    {version.publishedAt ? (
+                      <span className="text-caption text-text-muted">
+                        {translate(messages, 'diagnostics.template.publishedAt')}{' '}
+                        <bdi>{formatDateTime(version.publishedAt, locale)}</bdi>
+                      </span>
+                    ) : null}
+                    <Button
+                      type="button"
+                      size="small"
+                      variant="text"
+                      onClick={() => setOpenVersionId(open ? null : version.id)}
+                      aria-expanded={open}
+                      className="ms-auto"
+                    >
+                      {translate(
+                        messages,
+                        open ? 'diagnostics.template.closeItems' : 'diagnostics.template.openItems'
+                      )}
+                      <span className="sr-only"> — {versionName}</span>
+                    </Button>
+                  </div>
+                  {openVersion?.id === version.id ? (
+                    <VersionItems
+                      locale={locale}
+                      messages={messages}
+                      version={version}
+                      canManage={canManage}
+                      onChanged={reload}
+                    />
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setOpenVersionId(openVersionId === version.id ? null : version.id)
-                    }
-                    aria-expanded={openVersionId === version.id}
-                    className="ms-auto text-primary underline-offset-2 hover:underline"
-                  >
-                    {translate(
-                      messages,
-                      openVersionId === version.id
-                        ? 'diagnostics.template.closeItems'
-                        : 'diagnostics.template.openItems'
-                    )}
-                  </button>
-                </div>
-                {openVersion?.id === version.id ? (
-                  <VersionItems
-                    messages={messages}
-                    version={version}
-                    canManage={canManage}
-                    onChanged={reload}
-                  />
-                ) : null}
-              </li>
-            ))}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
     </div>
   );
+}
+
+interface SettingsDraft {
+  readonly name: string;
+  readonly status: string;
 }
 
 function TemplateSettingsForm({
@@ -220,76 +288,124 @@ function TemplateSettingsForm({
   readonly name: string;
   readonly status: string;
   readonly recordVersion: number;
-  readonly onDone: () => void;
+  readonly onDone: () => Promise<void>;
 }) {
-  const [nextName, setNextName] = useState(name);
-  const [nextStatus, setNextStatus] = useState(status);
+  /*
+   * What is stored and the version it is stored at. A clean form follows the
+   * template as it is read again; a form holding typed work keeps the version
+   * its work was based on, and a save sends that one.
+   */
+  const edit = useEditBaseline<SettingsDraft>({
+    stored: { name, status },
+    storedVersion: recordVersion,
+    differs: (values, baseline) =>
+      values.name.trim() !== baseline.name.trim() || values.status !== baseline.status,
+  });
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  const { errors, formRef } = useHeldRefusal(fieldErrors, { ...edit.values });
 
-  // Derived from props during render, not in an effect: when the template the
-  // form edits changes underneath it, the draft follows in the same render.
-  const [seen, setSeen] = useState({ name, status });
-  if (seen.name !== name || seen.status !== status) {
-    setSeen({ name, status });
-    setNextName(name);
-    setNextStatus(status);
-  }
+  // Typed work is unsaved: a branch switch or leaving the page asks, and a
+  // confirmed discard puts back what is stored.
+  useUnsavedGuard(edit.dirty, () => {
+    edit.discard();
+    setProblem(null);
+    setFieldErrors({});
+  });
+
+  const save = async () => {
+    setProblem(null);
+    if (edit.values.name.trim().length === 0) {
+      setFieldErrors({ name: 'field.required' });
+      return;
+    }
+    const body = {
+      ...(edit.values.name.trim() !== edit.baseline.name ? { name: edit.values.name.trim() } : {}),
+      ...(edit.values.status !== edit.baseline.status
+        ? { status: edit.values.status as 'active' | 'inactive' }
+        : {}),
+    };
+    if (Object.keys(body).length === 0) {
+      setProblem('diagnostics.template.nothingChanged');
+      return;
+    }
+    setFieldErrors({});
+    setPending(true);
+    try {
+      let outcome: ActionState;
+      try {
+        // The BASELINE's version: work built on a template that has since moved
+        // is the server's conflict, never a silent overwrite.
+        outcome = await updateTemplate(templateId, body, edit.version);
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        // Stored: clean on what was written; the re-read brings the version.
+        edit.rebase({ name: edit.values.name.trim(), status: edit.values.status });
+        await onDone();
+        return;
+      }
+      setFieldErrors(outcome.fieldErrors ?? {});
+      setProblem(problemKeyOf(outcome));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  /** The conflict's way out: what is stored now replaces the stale work. */
+  const loadLatest = async () => {
+    setPending(true);
+    try {
+      edit.discard();
+      setProblem(null);
+      setFieldErrors({});
+      await onDone();
+    } finally {
+      setPending(false);
+    }
+  };
 
   return (
     <form
-      action={async () => {
-        setPending(true);
-        setProblem(null);
-        const body = {
-          ...(nextName.trim() !== name ? { name: nextName.trim() } : {}),
-          ...(nextStatus !== status ? { status: nextStatus as 'active' | 'inactive' } : {}),
-        };
-        if (Object.keys(body).length === 0) {
-          setPending(false);
-          setAttempt((n) => n + 1);
-          setProblem('diagnostics.template.nothingChanged');
-          return;
-        }
-        const outcome = await updateTemplate(templateId, body, recordVersion);
-        setPending(false);
-        setAttempt((n) => n + 1);
-        notifyActionResult(outcome, messages);
-        if (outcome.status === 'success') {
-          onDone();
-          return;
-        }
-        setProblem(problemKeyOf(outcome));
+      ref={formRef}
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending) return;
+        void save();
       }}
-      className="mt-3 flex flex-wrap items-end gap-3"
+      className="mt-3 flex flex-wrap items-start gap-3"
     >
-      <TextField
+      <FormTextField
         name="name"
         label={translate(messages, 'diagnostics.catalogue.name')}
-        value={nextName}
-        onChange={(event) => setNextName(event.target.value)}
+        value={edit.values.name}
+        onChange={(value) => edit.setValues((current) => ({ ...current, name: value }))}
+        error={errors['name'] ? translateDynamic(messages, errors['name']) : undefined}
         required
       />
-      <SelectField
-        key={`status-${attempt}`}
+      <FormSelectField
         name="status"
         label={translate(messages, 'diagnostics.catalogue.filterStatus')}
-        defaultValue={nextStatus}
-        onChange={(event) => setNextStatus(event.target.value)}
-        options={['active', 'inactive'].map((value) => ({
+        value={edit.values.status}
+        onChange={(value) => edit.setValues((current) => ({ ...current, status: value }))}
+        options={TEMPLATE_STATUSES.map((value) => ({
           value,
-          label: translate(messages, `diagnostics.templateStatus.${value}` as keyof Messages),
+          label: translate(messages, `diagnostics.templateStatus.${value}`),
         }))}
+        error={errors['status'] ? translateDynamic(messages, errors['status']) : undefined}
       />
-      <button type="submit" disabled={pending} className={SECONDARY_BUTTON}>
-        {translate(messages, pending ? 'diagnostics.template.saving' : 'diagnostics.template.save')}
-      </button>
-      {problem === null ? null : (
-        <p role="alert" className="basis-full text-body text-error">
-          {translateDynamic(messages, problem)}
-        </p>
-      )}
+      <Submit
+        messages={messages}
+        pending={pending}
+        labelKey="diagnostics.template.save"
+        variant="outlined"
+      />
+      <Problem messages={messages} problem={problem} onReload={() => void loadLatest()} />
     </form>
   );
 }
@@ -303,7 +419,7 @@ function NewVersionForm({
   readonly messages: Messages;
   readonly templateId: string;
   readonly versions: readonly TemplateVersion[];
-  readonly onDone: () => void;
+  readonly onDone: () => Promise<void>;
 }) {
   const [copyFromVersionId, setCopyFromVersionId] = useState('');
   const [pending, setPending] = useState(false);
@@ -321,38 +437,48 @@ function NewVersionForm({
     fieldErrors,
     { copyFromVersionId }
   );
-  const [attempt, setAttempt] = useState(0);
+
+  const submit = async () => {
+    setPending(true);
+    setProblem(null);
+    setFieldErrors({});
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await createVersion(templateId, copyFromVersionId ? { copyFromVersionId } : {});
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        setCopyFromVersionId('');
+        await onDone();
+        return;
+      }
+      setFieldErrors(outcome.fieldErrors ?? {});
+      setProblem(problemKeyOf(outcome));
+    } finally {
+      setPending(false);
+    }
+  };
 
   return (
     <form
       ref={fieldErrorsRefusalFormRef}
-      action={async () => {
-        setPending(true);
-        setProblem(null);
-        setFieldErrors({});
-        const outcome = await createVersion(
-          templateId,
-          copyFromVersionId ? { copyFromVersionId } : {}
-        );
-        setPending(false);
-        setAttempt((n) => n + 1);
-        notifyActionResult(outcome, messages);
-        if (outcome.status === 'success') {
-          setCopyFromVersionId('');
-          onDone();
-          return;
-        }
-        setFieldErrors(outcome.fieldErrors ?? {});
-        setProblem(problemKeyOf(outcome));
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending) return;
+        void submit();
       }}
-      className="flex flex-wrap items-end gap-3"
+      className="flex flex-wrap items-start gap-3"
     >
-      <SelectField
-        key={`copyFromVersionId-${attempt}`}
+      <FormSelectField
         name="copyFromVersionId"
         label={translate(messages, 'diagnostics.template.copyFrom')}
-        defaultValue={copyFromVersionId}
-        onChange={(event) => setCopyFromVersionId(event.target.value)}
+        value={copyFromVersionId}
+        onChange={setCopyFromVersionId}
         options={versions.map((version) => ({
           value: version.id,
           label: `${translate(messages, 'diagnostics.template.version')} ${version.versionNumber}`,
@@ -364,84 +490,80 @@ function NewVersionForm({
             : undefined
         }
       />
-      <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-        {translate(
-          messages,
-          pending ? 'diagnostics.template.openingVersion' : 'diagnostics.template.newVersion'
-        )}
-      </button>
-      {problem === null ? null : (
-        <p role="alert" className="basis-full text-body text-error">
-          {translateDynamic(messages, problem)}
-        </p>
-      )}
+      <Submit messages={messages} pending={pending} labelKey="diagnostics.template.newVersion" />
+      <Problem messages={messages} problem={problem} />
     </form>
   );
 }
 
 function VersionItems({
+  locale,
   messages,
   version,
   canManage,
   onChanged,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly version: TemplateVersion;
   readonly canManage: boolean;
-  readonly onChanged: () => void;
+  readonly onChanged: () => Promise<void>;
 }) {
-  const [items, setItems] = useState<ReadState<ItemsOnly<TemplateItem>> | null>(null);
-  const [reloadCount, reloadItems] = useReload();
-  const reload = useCallback(() => {
-    setItems(null);
-    reloadItems();
-  }, [reloadItems]);
+  const readItems = useCallback(() => listVersionItems(version.id), [version.id]);
+  const items = useReread(readItems);
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void listVersionItems(version.id).then((next) => {
-      if (!cancelled) setItems(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [version.id, reloadCount]);
+  const [asking, setAsking] = useState<'published' | 'retired' | null>(null);
 
   const move = async (toStatus: 'published' | 'retired') => {
     setPending(true);
     setProblem(null);
-    const outcome = await setVersionStatus(version.id, { toStatus }, version.recordVersion);
-    setPending(false);
-    notifyActionResult(outcome, messages);
-    if (outcome.status === 'success') {
-      onChanged();
-      return;
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await setVersionStatus(version.id, { toStatus }, version.recordVersion);
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        await onChanged();
+        return;
+      }
+      /*
+       * Publishing an empty version is refused against `versionId`, which is a
+       * button and not a box, so the sentence saying to add an item first had
+       * nowhere to appear. It is shown here beside the button that raised it.
+       */
+      setProblem(unattachedRefusalKey(outcome.fieldErrors, []) ?? problemKeyOf(outcome));
+    } finally {
+      setPending(false);
+      setAsking(null);
     }
-    /*
-     * Publishing an empty version is refused against `versionId`, which is a
-     * button and not a box, so the sentence saying to add an item first had
-     * nowhere to appear. It is shown here beside the button that raised it.
-     */
-    setProblem(unattachedRefusalKey(outcome.fieldErrors, []) ?? problemKeyOf(outcome));
   };
+
+  const list = items.value;
 
   return (
     <div className="mt-3 flex flex-col gap-3">
-      {items === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-      ) : items.status !== 'ok' ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, `state.${items.status}.title`)}
-        </p>
-      ) : items.data.items.length === 0 ? (
+      {list === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : list.status !== 'ok' ? (
+        <MuiReadFailureState
+          messages={messages}
+          locale={locale}
+          status={list.status}
+          correlationId={list.correlationId}
+          onRetry={() => void items.reload()}
+        />
+      ) : list.data.items.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'diagnostics.template.noItems')}
         </p>
       ) : (
         <ol className="flex flex-col gap-1">
-          {items.data.items.map((item) => (
+          {list.data.items.map((item) => (
             <li
               key={item.id}
               className="flex flex-wrap items-baseline gap-x-3 rounded-md bg-surface-subtle px-3 py-2"
@@ -471,9 +593,8 @@ function VersionItems({
         <NewItemForm
           messages={messages}
           versionId={version.id}
-          onDone={() => {
-            reload();
-            onChanged();
+          onDone={async () => {
+            await Promise.all([items.reload(), onChanged()]);
           }}
         />
       ) : null}
@@ -481,35 +602,74 @@ function VersionItems({
       {canManage ? (
         <div className="flex flex-wrap items-center gap-3">
           {version.status === 'draft' ? (
-            <button
+            <Button
               type="button"
-              onClick={() => void move('published')}
+              variant="contained"
+              onClick={() => setAsking('published')}
               disabled={pending}
-              className={PRIMARY_BUTTON}
             >
               {translate(messages, 'diagnostics.template.publish')}
-            </button>
+            </Button>
           ) : null}
           {version.status === 'published' ? (
-            <button
+            <Button
               type="button"
-              onClick={() => void move('retired')}
+              variant="outlined"
+              onClick={() => setAsking('retired')}
               disabled={pending}
-              className={SECONDARY_BUTTON}
             >
               {translate(messages, 'diagnostics.template.retire')}
-            </button>
+            </Button>
           ) : null}
-          {problem === null ? null : (
-            <p role="alert" className="basis-full text-body text-error">
-              {translateDynamic(messages, problem)}
-            </p>
-          )}
+          <Problem messages={messages} problem={problem} onReload={() => void onChanged()} />
         </div>
       ) : null}
+      <ConfirmDialog
+        open={asking !== null}
+        onCancel={() => setAsking(null)}
+        onConfirm={() => {
+          if (asking !== null) void move(asking);
+        }}
+        title={translate(
+          messages,
+          asking === 'retired'
+            ? 'diagnostics.template.confirmRetireTitle'
+            : 'diagnostics.template.confirmPublishTitle'
+        )}
+        description={translate(
+          messages,
+          asking === 'retired'
+            ? 'diagnostics.template.confirmRetireBody'
+            : 'diagnostics.template.confirmPublishBody'
+        )}
+        confirmLabel={translate(
+          messages,
+          asking === 'retired' ? 'diagnostics.template.retire' : 'diagnostics.template.publish'
+        )}
+        messages={messages}
+        destructive={asking === 'retired'}
+        pending={pending}
+        testId="version-status-confirm"
+      />
     </div>
   );
 }
+
+interface ItemDraft {
+  readonly itemCode: string;
+  readonly prompt: string;
+  readonly responseType: string;
+  readonly unit: string;
+  readonly isMandatory: boolean;
+}
+
+const EMPTY_ITEM: ItemDraft = {
+  itemCode: '',
+  prompt: '',
+  responseType: '',
+  unit: '',
+  isMandatory: false,
+};
 
 function NewItemForm({
   messages,
@@ -518,13 +678,9 @@ function NewItemForm({
 }: {
   readonly messages: Messages;
   readonly versionId: string;
-  readonly onDone: () => void;
+  readonly onDone: () => Promise<void>;
 }) {
-  const [itemCode, setItemCode] = useState('');
-  const [prompt, setPrompt] = useState('');
-  const [responseType, setResponseType] = useState('');
-  const [unit, setUnit] = useState('');
-  const [isMandatory, setIsMandatory] = useState(false);
+  const [draft, setDraft] = useState<ItemDraft>(EMPTY_ITEM);
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
@@ -532,118 +688,134 @@ function NewItemForm({
   // goes once its field changes (route sweep B3).
   const { errors: fieldErrorsRefusalErrors, formRef: fieldErrorsRefusalFormRef } = useHeldRefusal(
     fieldErrors,
-    { itemCode, prompt, responseType, unit }
+    {
+      itemCode: draft.itemCode,
+      prompt: draft.prompt,
+      responseType: draft.responseType,
+      unit: draft.unit,
+    }
   );
-  const [attempt, setAttempt] = useState(0);
+  useUnsavedGuard(
+    draft.itemCode.trim().length > 0 ||
+      draft.prompt.trim().length > 0 ||
+      draft.responseType !== '' ||
+      draft.unit.trim().length > 0 ||
+      draft.isMandatory,
+    () => {
+      setDraft(EMPTY_ITEM);
+      setFieldErrors({});
+      setProblem(null);
+    }
+  );
 
   const errorFor = (field: string): string | undefined => {
     const key = fieldErrorsRefusalErrors[field];
     return key ? translateDynamic(messages, key) : undefined;
   };
+  const set = <K extends keyof ItemDraft>(field: K, value: ItemDraft[K]) =>
+    setDraft((current) => ({ ...current, [field]: value }));
+
+  const submit = async () => {
+    setProblem(null);
+    const errors: Record<string, string> = {};
+    if (draft.itemCode.trim().length === 0) errors['itemCode'] = 'field.required';
+    if (draft.prompt.trim().length === 0) errors['prompt'] = 'field.required';
+    if (draft.responseType.length === 0) errors['responseType'] = 'field.required';
+    if (draft.responseType === 'numeric' && draft.unit.trim().length === 0) {
+      errors['unit'] = 'diagnostics.template.unitRequired';
+    }
+    setFieldErrors(errors);
+    if (Object.keys(errors).length > 0) return;
+    setPending(true);
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await createItem(versionId, {
+          itemCode: draft.itemCode.trim(),
+          prompt: draft.prompt.trim(),
+          responseType: draft.responseType as ResponseType,
+          ...(draft.unit.trim().length > 0 ? { unit: draft.unit.trim() } : {}),
+          ...(draft.isMandatory ? { isMandatory: true } : {}),
+        });
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        setDraft(EMPTY_ITEM);
+        await onDone();
+        return;
+      }
+      if (outcome.fieldErrors) setFieldErrors(outcome.fieldErrors);
+      setProblem(problemKeyOf(outcome));
+    } finally {
+      setPending(false);
+    }
+  };
 
   return (
     <form
       ref={fieldErrorsRefusalFormRef}
-      action={async () => {
-        setPending(true);
-        setProblem(null);
-        setFieldErrors({});
-        const errors: Record<string, string> = {};
-        if (itemCode.trim().length === 0) errors['itemCode'] = 'field.required';
-        if (prompt.trim().length === 0) errors['prompt'] = 'field.required';
-        if (responseType.length === 0) errors['responseType'] = 'field.required';
-        if (responseType === 'numeric' && unit.trim().length === 0) {
-          errors['unit'] = 'diagnostics.template.unitRequired';
-        }
-        if (Object.keys(errors).length > 0) {
-          setFieldErrors(errors);
-          setPending(false);
-          setAttempt((n) => n + 1);
-          return;
-        }
-        const outcome = await createItem(versionId, {
-          itemCode: itemCode.trim(),
-          prompt: prompt.trim(),
-          responseType: responseType as ResponseType,
-          ...(unit.trim().length > 0 ? { unit: unit.trim() } : {}),
-          ...(isMandatory ? { isMandatory: true } : {}),
-        });
-        setPending(false);
-        setAttempt((n) => n + 1);
-        notifyActionResult(outcome, messages);
-        if (outcome.status === 'success') {
-          setItemCode('');
-          setPrompt('');
-          setResponseType('');
-          setUnit('');
-          setIsMandatory(false);
-          onDone();
-          return;
-        }
-        if (outcome.fieldErrors) setFieldErrors(outcome.fieldErrors);
-        setProblem(problemKeyOf(outcome));
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending) return;
+        void submit();
       }}
-      className="flex flex-wrap items-end gap-3 rounded-md border border-dashed border-border p-3"
+      className="grid gap-3 rounded-md border border-dashed border-border p-3 sm:grid-cols-2"
     >
-      <TextField
+      <FormTextField
         name="itemCode"
         label={translate(messages, 'diagnostics.template.itemCode')}
         description={translate(messages, 'diagnostics.template.itemCodeHint')}
-        value={itemCode}
-        onChange={(event) => setItemCode(event.target.value)}
+        value={draft.itemCode}
+        onChange={(value) => set('itemCode', value)}
         error={errorFor('itemCode')}
         required
         dir="ltr"
+        autoComplete="off"
       />
-      <TextField
+      <FormTextField
         name="prompt"
         label={translate(messages, 'diagnostics.template.prompt')}
-        value={prompt}
-        onChange={(event) => setPrompt(event.target.value)}
+        value={draft.prompt}
+        onChange={(value) => set('prompt', value)}
         error={errorFor('prompt')}
         required
       />
-      <SelectField
-        key={`responseType-${attempt}`}
+      <FormSelectField
         name="responseType"
         label={translate(messages, 'diagnostics.template.responseType')}
-        defaultValue={responseType}
-        onChange={(event) => setResponseType(event.target.value)}
+        value={draft.responseType}
+        onChange={(value) => set('responseType', value)}
         options={RESPONSE_TYPES.map((value) => ({
           value,
-          label: translate(messages, `diagnostics.responseType.${value}` as keyof Messages),
+          label: translate(messages, `diagnostics.responseType.${value}`),
         }))}
         placeholder={translate(messages, 'diagnostics.template.chooseResponseType')}
         error={errorFor('responseType')}
         required
       />
-      <TextField
+      <FormTextField
         name="unit"
         label={translate(messages, 'diagnostics.template.unit')}
         description={translate(messages, 'diagnostics.template.unitHint')}
-        value={unit}
-        onChange={(event) => setUnit(event.target.value)}
+        value={draft.unit}
+        onChange={(value) => set('unit', value)}
         error={errorFor('unit')}
         dir="ltr"
       />
-      <CheckboxField
-        key={`isMandatory-${attempt}`}
+      <FormCheckboxField
         name="isMandatory"
         label={translate(messages, 'diagnostics.template.mandatory')}
-        defaultChecked={isMandatory}
-        onChange={(event) => setIsMandatory(event.target.checked)}
+        checked={draft.isMandatory}
+        onChange={(checked) => set('isMandatory', checked)}
       />
-      <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-        {translate(
-          messages,
-          pending ? 'diagnostics.template.addingItem' : 'diagnostics.template.addItem'
-        )}
-      </button>
-      {problem === null ? null : (
-        <p role="alert" className="basis-full text-body text-error">
-          {translateDynamic(messages, problem)}
-        </p>
-      )}
+      <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+        <Submit messages={messages} pending={pending} labelKey="diagnostics.template.addItem" />
+        <Problem messages={messages} problem={problem} />
+      </div>
     </form>
   );
 }

@@ -25,28 +25,58 @@
  * - **Closure** — `wo.work-order-closure` with the order's `If-Match`, to a
  *   terminal, non-cancelling state the order's own `nextStates` name.
  *
- * Every select inside a `<form action>` carries the epoch-key shape; every
- * version-guarded command hands its outcome onward so the version the screen
- * holds is renewed. Submit-for-QA is not here: it is `wo.work-order-transition`
- * on the detail, to whichever state the catalogue permits.
+ * Every version-guarded command hands its outcome onward so the version the
+ * screen holds is renewed. Submit-for-QA is not here: it is
+ * `wo.work-order-transition` on the detail, to whichever state the catalogue
+ * permits.
+ *
+ * ## On the shared Material wrappers (ADR-022, Owner directive slice 4)
+ *
+ * - **Fields** are `forms/mui/*` with the `FieldFrame` contract: a missing
+ *   answer is refused on its own field (red, the sentence beside it, the cursor
+ *   moved to the first), where the forms here used to return silently from a
+ *   press; a refusal from the service lands on the field it names; a complaint
+ *   goes once its field changes; what was typed survives every refusal.
+ * - **Decisions are asked**: finalizing a quality check and closing the order
+ *   are `ConfirmDialog`s — neither can be walked back here — and a reopen
+ *   attempt and a withdrawal take their reason through `ReasonDialog`.
+ * - **Every command stays busy until the re-read it caused has landed**
+ *   (`useReread`): the screen's reads and the panel's own. A second press in
+ *   between would re-send a write, or send a version the re-read is about to
+ *   replace.
+ * - **Every read failure is its own state** (`MuiReadFailureState`): an outage
+ *   — a throttled or unanswered service included — offers a retry, a refusal
+ *   does not.
+ * - **Every state is said in words** — the order's (`workOrderStateLabel`), an
+ *   extra-work request's and its fulfilment's — never the code (browser QA row
+ *   B.S3); the order is named by its number, never its reference.
  */
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { useCallback, useState } from 'react';
+import Button from '@mui/material/Button';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { EmptyState } from '@/components/states/States';
+import { MuiEmptyState, MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import { readWorkOrderDetail } from '@/features/work-orders/api';
 import {
   WORK_ORDER_REFUSAL_KEYS,
+  workOrderStateLabel,
   type WorkOrderDetail,
 } from '@/features/work-orders/work-orders-contract';
-import type { ItemsOnly, ReadState } from '@/lib/api/read-operation';
+import { useReread } from '@/lib/api/use-reread';
+import type { ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import {
   closeWorkOrder,
   createRework,
@@ -74,29 +104,23 @@ import {
 } from '../api';
 import {
   unattachedRefusalKey,
-  type AdditionalWorkDetail,
   type AdditionalWorkRequest,
   type ClosureBlocker,
   type ClosureEligibility,
-  type CustomerApproval,
   type QcCheckVocabularyEntry,
-  type QcRecord,
-  type QcRecordDetail,
-  type ReopenAttempt,
   type ReworkLink,
 } from '../quality-contract';
 import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
-
-const PRIMARY_BUTTON =
-  'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:opacity-60';
-const SECONDARY_BUTTON =
-  'rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle disabled:opacity-60';
 
 const CHECK_RESULTS = ['pass', 'fail', 'na'] as const;
 const OVERALL_RESULTS = ['passed', 'failed'] as const;
 const DECISIONS = ['approved', 'rejected'] as const;
 const CHANNELS = ['in_person', 'phone', 'email', 'sms', 'portal', 'other'] as const;
 const FULFILLMENT = ['fulfilled', 'waived'] as const;
+/** `wo.additional_work_requests.state`'s CHECK vocabulary. */
+const REQUEST_STATES = ['pending', 'approved', 'rejected', 'withdrawn'];
+/** `wo.additional_work_requests.fulfillment_state`'s CHECK vocabulary. */
+const FULFILLMENT_STATES = ['unfulfilled', 'fulfilled', 'waived'];
 
 export interface ClosureCapabilities {
   readonly canReadQc: boolean;
@@ -111,11 +135,8 @@ export interface ClosureCapabilities {
   readonly canViewSensitive: boolean;
 }
 
-function useReload(): readonly [number, () => void] {
-  const [count, setCount] = useState(0);
-  const reload = useCallback(() => setCount((n) => n + 1), []);
-  return [count, reload];
-}
+/** What a panel is told to re-read the screen with, awaited by the command that asked. */
+type Renew = () => Promise<void>;
 
 /**
  * The sentence a refused command shows on this screen.
@@ -141,35 +162,51 @@ function problemKeyOf(result: ActionState): string {
   return result.messageKey ?? 'action.failed';
 }
 
+/** A read's failure as its own state, with a retry where one can help. */
 function ReadProblem({
+  locale,
   messages,
   state,
+  onRetry,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
-  readonly state: { readonly status: string; readonly correlationId: string | null };
+  readonly state: Exclude<ReadState<unknown>, { readonly status: 'ok' }>;
+  readonly onRetry: () => void;
 }) {
   return (
-    <p role="alert" className="text-body text-error">
-      {translateDynamic(messages, `state.${state.status}.title`)}
-      {state.correlationId
-        ? ` ${translate(messages, 'action.reference')} ${state.correlationId}`
-        : ''}
-    </p>
+    <MuiReadFailureState
+      messages={messages}
+      locale={locale}
+      status={state.status}
+      correlationId={state.correlationId}
+      onRetry={onRetry}
+    />
   );
 }
 
 function Problem({
   messages,
   problem,
+  onReload,
 }: {
   readonly messages: Messages;
   readonly problem: string | null;
+  /** Offered with the fixed conflict sentence: re-read what this view holds. */
+  readonly onReload?: (() => void) | undefined;
 }) {
   if (problem === null) return null;
   return (
-    <p role="alert" className="basis-full text-body text-error">
-      {translateDynamic(messages, problem)}
-    </p>
+    <div className="flex basis-full flex-wrap items-center gap-3">
+      <p role="alert" className="text-body text-error">
+        {translateDynamic(messages, problem)}
+      </p>
+      {onReload !== undefined && problem === 'quality.closure.conflict' ? (
+        <Button type="button" variant="outlined" size="small" onClick={onReload}>
+          {translate(messages, 'form.loadLatest')}
+        </Button>
+      ) : null}
+    </div>
   );
 }
 
@@ -194,50 +231,77 @@ function Panel({
   );
 }
 
+/** A form's one submit, saying "Working…" while its write — and its re-read — is in flight. */
+function Submit({
+  messages,
+  pending,
+  labelKey,
+  variant = 'contained',
+  disabled = false,
+}: {
+  readonly messages: Messages;
+  readonly pending: boolean;
+  readonly labelKey: string;
+  readonly variant?: 'contained' | 'outlined';
+  readonly disabled?: boolean;
+}) {
+  return (
+    <Button
+      type="submit"
+      variant={variant}
+      disabled={pending || disabled}
+      aria-busy={pending || undefined}
+    >
+      {pending ? translate(messages, 'form.pending') : translateDynamic(messages, labelKey)}
+    </Button>
+  );
+}
+
 /**
- * The shared settle-and-report of every command form: pending, problem, epoch.
+ * The shared settle-and-report of every command form: pending, problem, and the
+ * refusal's field errors.
+ *
+ * `run` awaits the write AND the re-read it causes (`onDone`) before it lets go
+ * of `pending`, inside a `finally`, so a rejected promise never leaves a form
+ * saying "Working…" for ever.
  *
  * A refusal that names a control no form here renders — the closure refused
  * blocker by blocker is the one that reaches this — is preferred over the
  * generic banner, because it is the only thing in the response that says what
  * was wrong. `unattachedRefusalKey` recognises a short list, so anything else
- * leaves the banner exactly as it was.
- *
- * `rendered` names the controls the calling form really does show, so a sentence
- * that already sits beside a control is never repeated in the banner; a form
- * that shows one takes the field errors through `onFieldErrors` and renders them
- * itself.
+ * leaves the banner exactly as it was. `rendered` names the controls the
+ * calling form really does show, so a sentence that already sits beside a
+ * control is never repeated in the banner.
  */
-function useCommand(
-  messages: Messages,
-  onDone: () => void,
-  options?: {
-    readonly rendered?: readonly string[];
-    readonly onFieldErrors?: (fieldErrors: Readonly<Record<string, string>>) => void;
-  }
-) {
+function useCommand(messages: Messages, onDone: Renew, rendered: readonly string[] = []) {
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const run = async (action: () => Promise<ActionState>): Promise<boolean> => {
     setPending(true);
     setProblem(null);
-    options?.onFieldErrors?.({});
-    const outcome = await action();
-    setPending(false);
-    setAttempt((n) => n + 1);
-    notifyActionResult(outcome, messages);
-    if (outcome.status === 'success') {
-      onDone();
-      return true;
+    setFieldErrors({});
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await action();
+      } catch {
+        setProblem('state.unavailable.message');
+        return false;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        await onDone();
+        return true;
+      }
+      setFieldErrors(outcome.fieldErrors ?? {});
+      setProblem(unattachedRefusalKey(outcome.fieldErrors, rendered) ?? problemKeyOf(outcome));
+      return false;
+    } finally {
+      setPending(false);
     }
-    options?.onFieldErrors?.(outcome.fieldErrors ?? {});
-    setProblem(
-      unattachedRefusalKey(outcome.fieldErrors, options?.rendered ?? []) ?? problemKeyOf(outcome)
-    );
-    return false;
   };
-  return { pending, problem, attempt, run } as const;
+  return { pending, problem, setProblem, fieldErrors, setFieldErrors, run } as const;
 }
 
 export function WorkOrderClosureScreen({
@@ -251,26 +315,29 @@ export function WorkOrderClosureScreen({
   readonly workOrderId: string;
   readonly capabilities: ClosureCapabilities;
 }) {
-  const [detail, setDetail] = useState<ReadState<WorkOrderDetail> | null>(null);
-  const [eligibility, setEligibility] = useState<ReadState<ClosureEligibility> | null>(null);
-  const [reloadCount, reload] = useReload();
+  const readDetail = useCallback(() => readWorkOrderDetail(workOrderId), [workOrderId]);
+  const readEligibility = useCallback(() => readClosureEligibility(workOrderId), [workOrderId]);
+  const detailRead = useReread(readDetail);
+  const eligibilityRead = useReread(readEligibility);
+  const detail = detailRead.value;
+  const eligibility = eligibilityRead.value;
+  const reloadDetail = detailRead.reload;
+  const reloadEligibility = eligibilityRead.reload;
 
-  useEffect(() => {
-    let cancelled = false;
-    void readWorkOrderDetail(workOrderId).then((next) => {
-      if (!cancelled) setDetail(next);
-    });
-    void readClosureEligibility(workOrderId).then((next) => {
-      if (!cancelled) setEligibility(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [workOrderId, reloadCount]);
+  /** The order and its gate, read again — every panel's writes move them. */
+  const reload = useCallback(async () => {
+    await Promise.all([reloadDetail(), reloadEligibility()]);
+  }, [reloadDetail, reloadEligibility]);
 
   return (
     <div className="flex flex-col gap-6">
-      <GatePanel messages={messages} eligibility={eligibility} detail={detail} />
+      <GatePanel
+        locale={locale}
+        messages={messages}
+        eligibility={eligibility}
+        detail={detail}
+        onRetry={() => void reload()}
+      />
       {capabilities.canReadQc ? (
         <QcPanel
           locale={locale}
@@ -344,29 +411,44 @@ export function closureBlockerText(messages: Messages, blocker: ClosureBlocker):
   return key === undefined ? blocker.message : translateDynamic(messages, key);
 }
 
+/** A work-order state in words; a workshop's own code keeps its code. */
+function orderStateText(messages: Messages, code: string): string {
+  return workOrderStateLabel(code, [], (key) => translateDynamic(messages, key));
+}
+
 function GatePanel({
+  locale,
   messages,
   eligibility,
   detail,
+  onRetry,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly eligibility: ReadState<ClosureEligibility> | null;
   readonly detail: ReadState<WorkOrderDetail> | null;
+  readonly onRetry: () => void;
 }) {
   return (
     <Panel id="closure-gate-heading" titleKey="quality.closure.gateHeading" messages={messages}>
       {detail?.status === 'ok' ? (
-        <p className="mb-2 text-body text-text-secondary">
-          <bdi>{detail.data.workOrder.displayNumber ?? detail.data.workOrder.id}</bdi> ·{' '}
-          <code className="font-mono" dir="ltr">
-            {detail.data.workOrder.state}
-          </code>
+        <p className="mb-2 text-body text-text-secondary" data-testid="closure-order">
+          {detail.data.workOrder.displayNumber ? (
+            <code className="font-mono" dir="ltr">
+              {detail.data.workOrder.displayNumber}
+            </code>
+          ) : (
+            // Never the internal reference: a reference slot showing one reads
+            // as the work order's number.
+            translate(messages, 'workOrders.queue.column.noReference')
+          )}{' '}
+          · <bdi>{orderStateText(messages, detail.data.workOrder.state)}</bdi>
         </p>
       ) : null}
       {eligibility === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+        <MuiLoadingState messages={messages} variant="inline" />
       ) : eligibility.status !== 'ok' ? (
-        <ReadProblem messages={messages} state={eligibility} />
+        <ReadProblem locale={locale} messages={messages} state={eligibility} onRetry={onRetry} />
       ) : (
         <div className="flex flex-col gap-2">
           <p className="text-body font-medium text-text-primary">
@@ -433,12 +515,12 @@ function QcPanel({
   readonly messages: Messages;
   readonly workOrderId: string;
   readonly capabilities: ClosureCapabilities;
-  readonly onChanged: () => void;
+  readonly onChanged: Renew;
 }) {
-  const [records, setRecords] = useState<ReadState<ItemsOnly<QcRecord>> | null>(null);
-  const [checks, setChecks] = useState<ReadState<ItemsOnly<QcCheckVocabularyEntry>> | null>(null);
+  const readRecords = useCallback(() => listQcRecords(workOrderId), [workOrderId]);
+  const records = useReread(readRecords);
+  const checks = useReread(listQcChecks);
   const [openId, setOpenId] = useState<string | null>(null);
-  const [reloadCount, reload] = useReload();
   const [notes, setNotes] = useState('');
 
   /*
@@ -448,68 +530,59 @@ function QcPanel({
    * empties the draft itself — the question said it would go.
    */
   useUnsavedGuard(notes.trim().length > 0, () => setNotes(''));
-  const { pending, problem, run } = useCommand(messages, () => {
-    reload();
-    onChanged();
-  });
+  const reloadRecords = records.reload;
+  const renew = useCallback(async () => {
+    await Promise.all([reloadRecords(), onChanged()]);
+  }, [reloadRecords, onChanged]);
+  const { pending, problem, run } = useCommand(messages, renew);
 
-  useEffect(() => {
-    let cancelled = false;
-    void listQcRecords(workOrderId).then((next) => {
-      if (!cancelled) setRecords(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [workOrderId, reloadCount]);
-
-  useEffect(() => {
-    let cancelled = false;
-    void listQcChecks().then((next) => {
-      if (!cancelled) setChecks(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const list = records.value;
 
   return (
     <Panel id="qc-heading" titleKey="quality.closure.qcHeading" messages={messages}>
       {capabilities.canRecordQc ? (
         <form
-          action={async () => {
-            const ok = await run(() =>
-              openQcRecord(workOrderId, notes.trim().length > 0 ? { notes: notes.trim() } : {})
-            );
-            if (ok) setNotes('');
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (pending) return;
+            void (async () => {
+              const ok = await run(() =>
+                openQcRecord(workOrderId, notes.trim().length > 0 ? { notes: notes.trim() } : {})
+              );
+              if (ok) setNotes('');
+            })();
           }}
-          className="mb-3 flex flex-wrap items-end gap-3"
+          className="mb-3 flex flex-wrap items-start gap-3"
         >
-          <TextField
+          <FormTextField
             name="notes"
             label={translate(messages, 'quality.closure.qcNotes')}
             value={notes}
-            onChange={(event) => setNotes(event.target.value)}
+            onChange={setNotes}
           />
-          <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-            {translate(messages, pending ? 'quality.closure.opening' : 'quality.closure.openQc')}
-          </button>
+          <Submit messages={messages} pending={pending} labelKey="quality.closure.openQc" />
           <Problem messages={messages} problem={problem} />
         </form>
       ) : null}
-      {records === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-      ) : records.status !== 'ok' ? (
-        <ReadProblem messages={messages} state={records} />
-      ) : records.data.items.length === 0 ? (
-        <EmptyState
+      {list === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : list.status !== 'ok' ? (
+        <ReadProblem
+          locale={locale}
+          messages={messages}
+          state={list}
+          onRetry={() => void records.reload()}
+        />
+      ) : list.data.items.length === 0 ? (
+        <MuiEmptyState
           messages={messages}
           titleKey="quality.closure.noQcTitle"
           descriptionKey="quality.closure.noQcBody"
         />
       ) : (
         <ul className="flex flex-col gap-2">
-          {records.data.items.map((record) => (
+          {list.data.items.map((record) => (
             <li key={record.id} className="rounded-md border border-border p-3">
               <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
                 <span className="text-body font-medium text-text-primary">
@@ -518,14 +591,16 @@ function QcPanel({
                 {record.finalizedAt ? (
                   <span className="text-caption text-text-muted">
                     {translate(messages, 'quality.queue.finalizedAt')}{' '}
-                    {formatDateTime(record.finalizedAt, locale)}
+                    <bdi>{formatDateTime(record.finalizedAt, locale)}</bdi>
                   </span>
                 ) : null}
-                <button
+                <Button
                   type="button"
+                  size="small"
+                  variant="text"
                   onClick={() => setOpenId(openId === record.id ? null : record.id)}
                   aria-expanded={openId === record.id}
-                  className="ms-auto text-primary underline-offset-2 hover:underline"
+                  className="ms-auto"
                 >
                   {translate(
                     messages,
@@ -533,18 +608,17 @@ function QcPanel({
                       ? 'quality.closure.closeRecord'
                       : 'quality.closure.openRecord'
                   )}
-                </button>
+                </Button>
               </div>
               {openId === record.id ? (
                 <QcRecordWorkbench
+                  locale={locale}
                   messages={messages}
                   recordId={record.id}
-                  checks={checks}
+                  checks={checks.value}
+                  onRetryChecks={() => void checks.reload()}
                   capabilities={capabilities}
-                  onChanged={() => {
-                    reload();
-                    onChanged();
-                  }}
+                  onChanged={renew}
                 />
               ) : null}
             </li>
@@ -556,59 +630,76 @@ function QcPanel({
 }
 
 function QcRecordWorkbench({
+  locale,
   messages,
   recordId,
   checks,
+  onRetryChecks,
   capabilities,
   onChanged,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly recordId: string;
-  readonly checks: ReadState<ItemsOnly<QcCheckVocabularyEntry>> | null;
+  readonly checks: ReadState<{ readonly items: readonly QcCheckVocabularyEntry[] }> | null;
+  readonly onRetryChecks: () => void;
   readonly capabilities: ClosureCapabilities;
-  readonly onChanged: () => void;
+  readonly onChanged: Renew;
 }) {
-  const [detail, setDetail] = useState<ReadState<QcRecordDetail> | null>(null);
-  const [reloadCount, reload] = useReload();
+  const readRecord = useCallback(() => readQcRecord(recordId), [recordId]);
+  const record = useReread(readRecord);
   const [pendingCheck, setPendingCheck] = useState<string | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    void readQcRecord(recordId).then((next) => {
-      if (!cancelled) setDetail(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [recordId, reloadCount]);
-
+  const detail = record.value;
   if (detail === null) {
     return (
-      <p className="mt-3 text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+      <div className="mt-3">
+        <MuiLoadingState messages={messages} variant="inline" />
+      </div>
     );
   }
   if (detail.status !== 'ok') {
     return (
       <div className="mt-3">
-        <ReadProblem messages={messages} state={detail} />
+        <ReadProblem
+          locale={locale}
+          messages={messages}
+          state={detail}
+          onRetry={() => void record.reload()}
+        />
       </div>
     );
   }
   const data = detail.data;
   const open = data.record.finalizedAt === null;
+  const vocabulary = checks?.status === 'ok' ? checks.data.items : [];
 
-  const answer = async (qcCheckId: string, result: string, note: string) => {
+  /** Records one check's answer, and waits for the record to be read again. */
+  const answer = async (qcCheckId: string, result: string, note: string): Promise<boolean> => {
     setPendingCheck(qcCheckId);
     setProblem(null);
-    const outcome = await writeQcCheckResult(recordId, qcCheckId, {
-      result: result as (typeof CHECK_RESULTS)[number],
-      ...(note.trim().length > 0 ? { note: note.trim() } : {}),
-    });
-    setPendingCheck(null);
-    notifyActionResult(outcome, messages);
-    if (outcome.status === 'success') reload();
-    else setProblem(problemKeyOf(outcome));
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await writeQcCheckResult(recordId, qcCheckId, {
+          result: result as (typeof CHECK_RESULTS)[number],
+          ...(note.trim().length > 0 ? { note: note.trim() } : {}),
+        });
+      } catch {
+        setProblem('state.unavailable.message');
+        return false;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        await record.reload();
+        return true;
+      }
+      setProblem(problemKeyOf(outcome));
+      return false;
+    } finally {
+      setPendingCheck(null);
+    }
   };
 
   return (
@@ -616,16 +707,17 @@ function QcRecordWorkbench({
       {data.unresolvedMandatory.length > 0 ? (
         <p className="text-caption text-text-muted">
           {translate(messages, 'quality.closure.unresolvedMandatory')}{' '}
-          {data.unresolvedMandatory.map((c) => c.code).join(', ')}
+          {/* The checks by NAME, as the checklist below names them. */}
+          {data.unresolvedMandatory.map((check) => check.name).join(', ')}
         </p>
       ) : null}
       {checks === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+        <MuiLoadingState messages={messages} variant="inline" />
       ) : checks.status !== 'ok' ? (
-        <ReadProblem messages={messages} state={checks} />
+        <ReadProblem locale={locale} messages={messages} state={checks} onRetry={onRetryChecks} />
       ) : (
         <ol className="flex flex-col gap-2">
-          {checks.data.items.map((check) => {
+          {vocabulary.map((check) => {
             const result = data.results.find((r) => r.qcCheckId === check.id) ?? null;
             return (
               <li key={check.id} className="rounded-md bg-surface-subtle px-3 py-2">
@@ -633,9 +725,6 @@ function QcRecordWorkbench({
                   <span className="text-body text-text-primary">
                     <bdi>{check.name}</bdi>
                   </span>
-                  <code className="font-mono text-caption" dir="ltr">
-                    {check.code}
-                  </code>
                   <span className="text-caption text-text-muted">
                     {check.isMandatory ? translate(messages, 'quality.closure.mandatory') : ''}
                     {check.isSafetyCritical
@@ -645,7 +734,10 @@ function QcRecordWorkbench({
                       ? ` · ${translateDynamic(messages, `quality.checkStatus.${check.status}`)}`
                       : ''}
                   </span>
-                  <span className="ms-auto text-caption text-text-secondary">
+                  <span
+                    className="ms-auto text-caption text-text-secondary"
+                    data-testid="check-result"
+                  >
                     {result === null
                       ? translate(messages, 'quality.closure.unanswered')
                       : `${translateDynamic(messages, `quality.checkResult.${result.result}`)}${result.note ? ` — ${result.note}` : ''}`}
@@ -654,9 +746,10 @@ function QcRecordWorkbench({
                 {open && capabilities.canRecordQc && check.status === 'active' ? (
                   <CheckAnswerForm
                     messages={messages}
-                    checkId={check.id}
+                    check={check}
                     pending={pendingCheck === check.id}
-                    onSubmit={(result, note) => answer(check.id, result, note)}
+                    busy={pendingCheck !== null}
+                    onSubmit={(value, note) => answer(check.id, value, note)}
                   />
                 ) : null}
               </li>
@@ -664,15 +757,14 @@ function QcRecordWorkbench({
           })}
         </ol>
       )}
-      <Problem messages={messages} problem={problem} />
+      <Problem messages={messages} problem={problem} onReload={() => void record.reload()} />
       {open && capabilities.canFinalizeQc ? (
         <FinalizeForm
           messages={messages}
           recordId={recordId}
           recordVersion={data.record.recordVersion}
-          onDone={() => {
-            reload();
-            onChanged();
+          onDone={async () => {
+            await Promise.all([record.reload(), onChanged()]);
           }}
         />
       ) : null}
@@ -682,24 +774,25 @@ function QcRecordWorkbench({
 
 function CheckAnswerForm({
   messages,
-  checkId,
+  check,
   pending,
+  busy,
   onSubmit,
 }: {
   readonly messages: Messages;
-  readonly checkId: string;
+  readonly check: QcCheckVocabularyEntry;
   readonly pending: boolean;
-  readonly onSubmit: (result: string, note: string) => Promise<void>;
+  readonly busy: boolean;
+  readonly onSubmit: (result: string, note: string) => Promise<boolean>;
 }) {
   const [result, setResult] = useState('');
   const [note, setNote] = useState('');
   /*
    * The result that was last RECORDED, not merely chosen.
    *
-   * The result is deliberately retained after a successful submit: it seeds the
-   * `defaultValue` of a select that React remounts on `attempt`, and blanking
-   * it would leave the operator looking at a placeholder for a check they have
-   * just recorded. So "the draft is non-empty" is not the same question as
+   * The result is deliberately retained after a successful submit, so the
+   * operator keeps looking at the answer they have just recorded rather than an
+   * empty choice. So "the draft is non-empty" is not the same question as
    * "there is unsaved work" here, and using the first for the second left the
    * guard permanently dirty — the shell asked about every later branch switch
    * for a check that was saved.
@@ -708,7 +801,8 @@ function CheckAnswerForm({
    * operator has changed SINCE the save is unsaved work; the same one is not.
    */
   const [savedResult, setSavedResult] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  const { errors, formRef } = useHeldRefusal(fieldErrors, { result });
 
   /*
    * Unsaved work, declared to the shell, so a branch changed in the header asks
@@ -719,42 +813,54 @@ function CheckAnswerForm({
   useUnsavedGuard(result !== (savedResult ?? '') || note.trim().length > 0, () => {
     setResult(savedResult ?? '');
     setNote('');
-    // The select is seeded through `defaultValue`: only a remount shows the reset.
-    setAttempt((n) => n + 1);
+    setFieldErrors({});
   });
 
   return (
     <form
-      action={async () => {
-        if (!result) return;
-        await onSubmit(result, note);
-        setAttempt((n) => n + 1);
-        setSavedResult(result);
-        setNote('');
+      ref={formRef}
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (busy) return;
+        if (!result) {
+          setFieldErrors({ result: 'field.required' });
+          return;
+        }
+        setFieldErrors({});
+        void onSubmit(result, note).then((stored) => {
+          if (!stored) return;
+          setSavedResult(result);
+          setNote('');
+        });
       }}
-      className="mt-2 flex flex-wrap items-end gap-2"
+      className="mt-2 flex flex-wrap items-start gap-3"
     >
-      <SelectField
-        key={`result-${checkId}-${attempt}`}
-        name={`result-${checkId}`}
+      <FormRadioGroupField
+        name={`result-${check.id}`}
         label={translate(messages, 'quality.closure.checkResult')}
-        defaultValue={result}
-        onChange={(event) => setResult(event.target.value)}
+        value={result}
+        onChange={setResult}
+        required
         options={CHECK_RESULTS.map((value) => ({
           value,
-          label: translate(messages, `quality.checkResult.${value}` as keyof Messages),
+          label: translate(messages, `quality.checkResult.${value}`),
         }))}
-        placeholder={translate(messages, 'quality.closure.chooseResult')}
+        error={errors['result'] ? translateDynamic(messages, errors['result']) : undefined}
       />
-      <TextField
-        name={`note-${checkId}`}
+      <FormTextField
+        name={`note-${check.id}`}
         label={translate(messages, 'quality.closure.note')}
         value={note}
-        onChange={(event) => setNote(event.target.value)}
+        onChange={setNote}
       />
-      <button type="submit" disabled={pending || !result} className={SECONDARY_BUTTON}>
-        {translate(messages, pending ? 'quality.closure.recording' : 'quality.closure.record')}
-      </button>
+      <Submit
+        messages={messages}
+        pending={pending}
+        disabled={busy && !pending}
+        labelKey="quality.closure.record"
+        variant="outlined"
+      />
     </form>
   );
 }
@@ -768,14 +874,15 @@ function FinalizeForm({
   readonly messages: Messages;
   readonly recordId: string;
   readonly recordVersion: number;
-  readonly onDone: () => void;
+  readonly onDone: Renew;
 }) {
   const [overallResult, setOverallResult] = useState('');
   const [notes, setNotes] = useState('');
-
+  const [asking, setAsking] = useState(false);
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  const { errors, formRef } = useHeldRefusal(fieldErrors, { overallResult });
   /*
    * Unsaved work, declared to the shell, so a branch changed in the header asks
    * before it discards what is typed here. The work order is not addressed to
@@ -786,16 +893,22 @@ function FinalizeForm({
     setOverallResult('');
     setNotes('');
     setProblem(null);
-    // The select is seeded through `defaultValue`: only a remount shows the reset.
-    setAttempt((n) => n + 1);
+    setFieldErrors({});
   });
-  return (
-    <form
-      action={async () => {
-        if (!overallResult) return;
-        setPending(true);
-        setProblem(null);
-        const outcome = await finalizeQcRecord(
+
+  /*
+   * Version-guarded on the record's version as this form was rendered from it;
+   * `onDone` re-reads the record and the order, so the next command carries the
+   * renewed version rather than a stale one — and the dialog stays busy until
+   * that re-read has landed.
+   */
+  const finalize = async () => {
+    setPending(true);
+    setProblem(null);
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await finalizeQcRecord(
           recordId,
           {
             overallResult: overallResult as (typeof OVERALL_RESULTS)[number],
@@ -803,50 +916,101 @@ function FinalizeForm({
           },
           recordVersion
         );
-        setPending(false);
-        setAttempt((n) => n + 1);
-        notifyActionResult(outcome, messages);
-        if (outcome.status === 'success') {
-          setOverallResult('');
-          setNotes('');
-          onDone();
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        await onDone();
+        setOverallResult('');
+        setNotes('');
+        return;
+      }
+      setProblem(problemKeyOf(outcome));
+    } finally {
+      setPending(false);
+      setAsking(false);
+    }
+  };
+
+  return (
+    <form
+      ref={formRef}
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending) return;
+        if (!overallResult) {
+          setFieldErrors({ overallResult: 'field.required' });
           return;
         }
-        setProblem(problemKeyOf(outcome));
+        setFieldErrors({});
+        setAsking(true);
       }}
-      className="flex flex-wrap items-end gap-2 rounded-md border border-dashed border-border p-3"
+      className="flex flex-wrap items-start gap-3 rounded-md border border-dashed border-border p-3"
     >
       <span className="basis-full text-caption font-medium text-text-secondary">
         {translate(messages, 'quality.closure.finalizeHeading')}
       </span>
-      <SelectField
-        key={`overallResult-${attempt}`}
-        name="overallResult"
+      <FormRadioGroupField
+        name={`overallResult-${recordId}`}
         label={translate(messages, 'quality.closure.overallResult')}
-        defaultValue={overallResult}
-        onChange={(event) => setOverallResult(event.target.value)}
+        value={overallResult}
+        onChange={setOverallResult}
+        required
         options={OVERALL_RESULTS.map((value) => ({
           value,
-          label: translate(messages, `quality.result.${value}` as keyof Messages),
+          label: translate(messages, `quality.result.${value}`),
         }))}
-        placeholder={translate(messages, 'quality.closure.chooseOverall')}
-        required
+        error={
+          errors['overallResult'] ? translateDynamic(messages, errors['overallResult']) : undefined
+        }
       />
-      <TextField
-        name="notes"
+      <FormTextField
+        name={`finalizeNotes-${recordId}`}
         label={translate(messages, 'quality.closure.note')}
         value={notes}
-        onChange={(event) => setNotes(event.target.value)}
+        onChange={setNotes}
       />
-      <button type="submit" disabled={pending || !overallResult} className={PRIMARY_BUTTON}>
-        {translate(messages, pending ? 'quality.closure.finalizing' : 'quality.closure.finalize')}
-      </button>
-      <Problem messages={messages} problem={problem} />
+      <Submit messages={messages} pending={pending} labelKey="quality.closure.finalize" />
+      <Problem messages={messages} problem={problem} onReload={() => void onDone()} />
+      <ConfirmDialog
+        open={asking}
+        onCancel={() => setAsking(false)}
+        onConfirm={() => void finalize()}
+        title={translate(messages, 'quality.closure.confirmFinalizeTitle')}
+        description={formatMessage(translate(messages, 'quality.closure.confirmFinalizeBody'), {
+          result: overallResult
+            ? translateDynamic(messages, `quality.result.${overallResult}`)
+            : '',
+        })}
+        confirmLabel={translate(messages, 'quality.closure.finalize')}
+        messages={messages}
+        pending={pending}
+        testId="qc-finalize-confirm"
+      />
     </form>
   );
 }
 
 /* ---------------------------------------------------------------- rework */
+
+interface ReworkDraft {
+  readonly rootCause: string;
+  readonly correctiveAction: string;
+  readonly responsibility: string;
+  readonly leadTechnicianId: string;
+  readonly safetyCritical: boolean;
+}
+
+const EMPTY_REWORK: ReworkDraft = {
+  rootCause: '',
+  correctiveAction: '',
+  responsibility: '',
+  leadTechnicianId: '',
+  safetyCritical: false,
+};
 
 function ReworkPanel({
   locale,
@@ -862,47 +1026,74 @@ function ReworkPanel({
   readonly capabilities: ClosureCapabilities;
   /** The gate's `alreadyTerminal`; rework corrects a closed order, so the form waits for it. `null` while unknown. */
   readonly terminal: boolean | null;
-  readonly onChanged: () => void;
+  readonly onChanged: Renew;
 }) {
-  const [links, setLinks] = useState<ReadState<ItemsOnly<ReworkLink>> | null>(null);
-  const [reloadCount, reload] = useReload();
-  const [rootCause, setRootCause] = useState('');
-
-  const [correctiveAction, setCorrectiveAction] = useState('');
-  const [responsibility, setResponsibility] = useState('');
-  const [safetyCritical, setSafetyCritical] = useState('');
-  const [leadTechnicianId, setLeadTechnicianId] = useState('');
-  // Confirmed discards, part of the safety select's key: it is seeded through
-  // `defaultValue`, so only a remount shows it emptied.
-  const [discards, setDiscards] = useState(0);
+  const readLinks = useCallback(() => listReworkLinks(workOrderId), [workOrderId]);
+  const links = useReread(readLinks);
+  const [draft, setDraft] = useState<ReworkDraft>(EMPTY_REWORK);
+  const [localErrors, setLocalErrors] = useState<Readonly<Record<string, string>>>({});
+  const set = <K extends keyof ReworkDraft>(field: K, value: ReworkDraft[K]) =>
+    setDraft((current) => ({ ...current, [field]: value }));
   /*
    * Unsaved work, declared to the shell, so a branch changed in the header asks
    * before it discards what is typed here. The work order is not addressed to
    * the working branch and nothing here is keyed on it, so a confirmed discard
    * empties the draft itself — the question said it would go.
    */
-  useUnsavedGuard(rootCause.trim().length > 0, () => {
-    setRootCause('');
-    setCorrectiveAction('');
-    setResponsibility('');
-    setSafetyCritical('');
-    setLeadTechnicianId('');
-    setDiscards((n) => n + 1);
+  useUnsavedGuard(
+    draft.rootCause.trim().length > 0 ||
+      draft.correctiveAction.trim().length > 0 ||
+      draft.responsibility.trim().length > 0 ||
+      draft.leadTechnicianId.trim().length > 0 ||
+      draft.safetyCritical,
+    () => {
+      setDraft(EMPTY_REWORK);
+      setLocalErrors({});
+    }
+  );
+  const reloadLinks = links.reload;
+  const renew = useCallback(async () => {
+    await Promise.all([reloadLinks(), onChanged()]);
+  }, [reloadLinks, onChanged]);
+  const command = useCommand(messages, renew, [
+    'rootCause',
+    'correctiveAction',
+    'responsibility',
+    'leadTechnicianId',
+  ]);
+  const shownErrors = Object.keys(localErrors).length > 0 ? localErrors : command.fieldErrors;
+  const { errors, formRef } = useHeldRefusal(shownErrors, {
+    rootCause: draft.rootCause,
+    correctiveAction: draft.correctiveAction,
+    responsibility: draft.responsibility,
+    leadTechnicianId: draft.leadTechnicianId,
   });
-  const { pending, problem, attempt, run } = useCommand(messages, () => {
-    reload();
-    onChanged();
-  });
+  const errorFor = (field: string) =>
+    errors[field] ? translateDynamic(messages, errors[field]) : undefined;
 
-  useEffect(() => {
-    let cancelled = false;
-    void listReworkLinks(workOrderId).then((next) => {
-      if (!cancelled) setLinks(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [workOrderId, reloadCount]);
+  const submit = async () => {
+    const missing: Record<string, string> = {};
+    if (draft.rootCause.trim().length === 0) missing['rootCause'] = 'field.required';
+    if (draft.correctiveAction.trim().length === 0) missing['correctiveAction'] = 'field.required';
+    setLocalErrors(missing);
+    if (Object.keys(missing).length > 0) return;
+    const ok = await command.run(() =>
+      createRework(workOrderId, {
+        rootCause: draft.rootCause.trim(),
+        correctiveAction: draft.correctiveAction.trim(),
+        ...(draft.responsibility.trim().length > 0
+          ? { responsibility: draft.responsibility.trim() }
+          : {}),
+        ...(draft.leadTechnicianId.trim().length > 0
+          ? { leadTechnicianId: draft.leadTechnicianId.trim() }
+          : {}),
+        ...(draft.safetyCritical ? { isSafetyCritical: true } : {}),
+      })
+    );
+    if (ok) setDraft(EMPTY_REWORK);
+  };
+
+  const list = links.value;
 
   return (
     <Panel id="rework-heading" titleKey="quality.closure.reworkHeading" messages={messages}>
@@ -913,106 +1104,94 @@ function ReworkPanel({
       ) : null}
       {capabilities.canManageRework && terminal === true ? (
         <form
-          action={async () => {
-            if (rootCause.trim().length === 0 || correctiveAction.trim().length === 0) return;
-            const ok = await run(() =>
-              createRework(workOrderId, {
-                rootCause: rootCause.trim(),
-                correctiveAction: correctiveAction.trim(),
-                ...(responsibility.trim().length > 0
-                  ? { responsibility: responsibility.trim() }
-                  : {}),
-                ...(leadTechnicianId.trim().length > 0
-                  ? { leadTechnicianId: leadTechnicianId.trim() }
-                  : {}),
-                ...(safetyCritical === 'yes' ? { isSafetyCritical: true } : {}),
-              })
-            );
-            if (ok) {
-              setRootCause('');
-              setCorrectiveAction('');
-              setResponsibility('');
-              setSafetyCritical('');
-              setLeadTechnicianId('');
-            }
+          ref={formRef}
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (command.pending) return;
+            void submit();
           }}
-          className="mb-3 flex flex-wrap items-end gap-3 rounded-md border border-dashed border-border p-3"
+          className="mb-3 grid gap-3 rounded-md border border-dashed border-border p-3 sm:grid-cols-2"
         >
-          <span className="basis-full text-caption font-medium text-text-secondary">
+          <span className="text-caption font-medium text-text-secondary sm:col-span-2">
             {translate(messages, 'quality.closure.openRework')}
           </span>
-          <TextAreaField
+          <FormTextField
             name="rootCause"
             label={translate(messages, 'quality.closure.rootCause')}
-            value={rootCause}
-            onChange={(event) => setRootCause(event.target.value)}
+            value={draft.rootCause}
+            onChange={(value) => set('rootCause', value)}
+            multiline
             rows={2}
             required
+            error={errorFor('rootCause')}
           />
-          <TextAreaField
+          <FormTextField
             name="correctiveAction"
             label={translate(messages, 'quality.closure.correctiveAction')}
-            value={correctiveAction}
-            onChange={(event) => setCorrectiveAction(event.target.value)}
+            value={draft.correctiveAction}
+            onChange={(value) => set('correctiveAction', value)}
+            multiline
             rows={2}
             required
+            error={errorFor('correctiveAction')}
           />
-          <TextField
+          <FormTextField
             name="responsibility"
             label={translate(messages, 'quality.closure.responsibility')}
-            value={responsibility}
-            onChange={(event) => setResponsibility(event.target.value)}
+            value={draft.responsibility}
+            onChange={(value) => set('responsibility', value)}
+            error={errorFor('responsibility')}
           />
-          <TextField
+          <FormTextField
             name="leadTechnicianId"
             label={translate(messages, 'quality.closure.leadTechnician')}
             description={translate(messages, 'quality.closure.leadTechnicianHint')}
-            value={leadTechnicianId}
-            onChange={(event) => setLeadTechnicianId(event.target.value)}
+            value={draft.leadTechnicianId}
+            onChange={(value) => set('leadTechnicianId', value)}
             dir="ltr"
+            autoComplete="off"
+            error={errorFor('leadTechnicianId')}
           />
-          <SelectField
-            key={`safetyCritical-${attempt}-${discards}`}
+          <FormCheckboxField
             name="safetyCritical"
             label={translate(messages, 'quality.closure.safetyCritical')}
-            defaultValue={safetyCritical}
-            onChange={(event) => setSafetyCritical(event.target.value)}
-            options={[
-              { value: 'yes', label: translate(messages, 'quality.closure.yes') },
-              { value: 'no', label: translate(messages, 'quality.closure.no') },
-            ]}
-            placeholder={translate(messages, 'quality.closure.no')}
+            checked={draft.safetyCritical}
+            onChange={(checked) => set('safetyCritical', checked)}
           />
-          <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-            {translate(
-              messages,
-              pending ? 'quality.closure.opening' : 'quality.closure.createRework'
-            )}
-          </button>
-          <Problem messages={messages} problem={problem} />
+          <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+            <Submit
+              messages={messages}
+              pending={command.pending}
+              labelKey="quality.closure.createRework"
+            />
+            <Problem messages={messages} problem={command.problem} />
+          </div>
         </form>
       ) : null}
-      {links === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-      ) : links.status !== 'ok' ? (
-        <ReadProblem messages={messages} state={links} />
-      ) : links.data.items.length === 0 ? (
+      {list === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : list.status !== 'ok' ? (
+        <ReadProblem
+          locale={locale}
+          messages={messages}
+          state={list}
+          onRetry={() => void links.reload()}
+        />
+      ) : list.data.items.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'quality.closure.noRework')}
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {links.data.items.map((link) => (
+          {list.data.items.map((link) => (
             <ReworkRow
               key={link.id}
               locale={locale}
               messages={messages}
               link={link}
               capabilities={capabilities}
-              onChanged={() => {
-                reload();
-                onChanged();
-              }}
+              onChanged={renew}
             />
           ))}
         </ul>
@@ -1032,7 +1211,7 @@ function ReworkRow({
   readonly messages: Messages;
   readonly link: ReworkLink;
   readonly capabilities: ClosureCapabilities;
-  readonly onChanged: () => void;
+  readonly onChanged: Renew;
 }) {
   const [signOffBy, setSignOffBy] = useState('');
   /**
@@ -1045,26 +1224,33 @@ function ReworkRow({
   );
   // Question f: the cursor goes to the first refused field, and a complaint
   // goes once its field changes (route sweep B3).
-  const { errors: signOffFieldErrorsRefusalErrors, formRef: signOffFieldErrorsRefusalFormRef } =
-    useHeldRefusal(signOffFieldErrors, { signOffBy });
-  const [cost, setCost] = useState<ReadState<{ reworkCost: string; costCurrency: string }> | null>(
-    null
-  );
+  const { errors: signOffErrors, formRef: signOffFormRef } = useHeldRefusal(signOffFieldErrors, {
+    signOffBy,
+  });
+  const readCost = useCallback(() => readReworkCost(link.id), [link.id]);
+  const cost = useReread(capabilities.canViewSensitive ? readCost : null);
   const [reworkCost, setReworkCost] = useState('');
   const [costCurrency, setCostCurrency] = useState('');
-  const [pending, setPending] = useState(false);
+  const [costFieldErrors, setCostFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  const { errors: costErrors, formRef: costFormRef } = useHeldRefusal(costFieldErrors, {
+    reworkCost,
+    costCurrency,
+  });
+  const [pending, setPending] = useState<'signOff' | 'cost' | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!capabilities.canViewSensitive) return;
-    let cancelled = false;
-    void readReworkCost(link.id).then((next) => {
-      if (!cancelled) setCost(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [capabilities.canViewSensitive, link.id, link.recordVersion]);
+  // Typed work on this row is unsaved: the question is asked, and a confirmed
+  // discard empties it.
+  useUnsavedGuard(
+    signOffBy.trim().length > 0 || reworkCost.trim().length > 0 || costCurrency.trim().length > 0,
+    () => {
+      setSignOffBy('');
+      setReworkCost('');
+      setCostCurrency('');
+      setSignOffFieldErrors({});
+      setCostFieldErrors({});
+    }
+  );
 
   /*
    * The sign-off is version-guarded: the `If-Match` is the link's version this
@@ -1072,44 +1258,71 @@ function ReworkRow({
    * command carries the renewed version rather than a stale one.
    */
   const signOff = async () => {
-    if (signOffBy.trim().length === 0) return;
-    setPending(true);
-    setProblem(null);
-    setSignOffFieldErrors({});
-    const outcome = await signOffRework(
-      link.id,
-      { signOffBy: signOffBy.trim() },
-      link.recordVersion
-    );
-    setPending(false);
-    notifyActionResult(outcome, messages);
-    if (outcome.status === 'success') {
-      setSignOffBy('');
-      onChanged();
+    if (signOffBy.trim().length === 0) {
+      setSignOffFieldErrors({ signOffBy: 'field.required' });
       return;
     }
-    setSignOffFieldErrors(outcome.fieldErrors ?? {});
-    setProblem(problemKeyOf(outcome));
+    setPending('signOff');
+    setProblem(null);
+    setSignOffFieldErrors({});
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await signOffRework(link.id, { signOffBy: signOffBy.trim() }, link.recordVersion);
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        setSignOffBy('');
+        await onChanged();
+        return;
+      }
+      setSignOffFieldErrors(outcome.fieldErrors ?? {});
+      setProblem(problemKeyOf(outcome));
+    } finally {
+      setPending(null);
+    }
   };
 
   const recordCost = async () => {
-    if (reworkCost.trim().length === 0 || costCurrency.trim().length === 0) return;
-    setPending(true);
-    setProblem(null);
-    const outcome = await recordReworkCost(link.id, {
-      reworkCost: reworkCost.trim(),
-      costCurrency: costCurrency.trim(),
-    });
-    setPending(false);
-    notifyActionResult(outcome, messages);
-    if (outcome.status === 'success') {
-      setReworkCost('');
-      setCostCurrency('');
-      onChanged();
+    const missing: Record<string, string> = {};
+    if (reworkCost.trim().length === 0) missing['reworkCost'] = 'field.required';
+    if (costCurrency.trim().length === 0) missing['costCurrency'] = 'field.required';
+    if (Object.keys(missing).length > 0) {
+      setCostFieldErrors(missing);
       return;
     }
-    setProblem(problemKeyOf(outcome));
+    setPending('cost');
+    setProblem(null);
+    setCostFieldErrors({});
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await recordReworkCost(link.id, {
+          reworkCost: reworkCost.trim(),
+          costCurrency: costCurrency.trim(),
+        });
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        setReworkCost('');
+        setCostCurrency('');
+        await Promise.all([cost.reload(), onChanged()]);
+        return;
+      }
+      setCostFieldErrors(outcome.fieldErrors ?? {});
+      setProblem(problemKeyOf(outcome));
+    } finally {
+      setPending(null);
+    }
   };
+
+  const costRead = cost.value;
 
   return (
     <li className="rounded-md border border-border p-3">
@@ -1127,82 +1340,124 @@ function ReworkRow({
           </span>
         ) : null}
         <span className="text-caption text-text-muted">
-          {link.signOffAt
-            ? `${translate(messages, 'quality.closure.signedOff')} ${formatDateTime(link.signOffAt, locale)}`
-            : translate(messages, 'quality.closure.notSignedOff')}
+          {link.signOffAt ? (
+            <>
+              {translate(messages, 'quality.closure.signedOff')}{' '}
+              <bdi>{formatDateTime(link.signOffAt, locale)}</bdi>
+            </>
+          ) : (
+            translate(messages, 'quality.closure.notSignedOff')
+          )}
         </span>
         {/*
           The rework order by a link in words: no rework read publishes the
           order's number, and a bare reference read as the record's own number
-          (route sweep B3).
+          (route sweep B3). Named with the root cause for assistive technology,
+          so two rework links are two different links.
         */}
         <Link
           href={`/${locale}/work-orders/${link.reworkWorkOrderId}`}
           className="ms-auto text-caption text-primary underline-offset-2 hover:underline"
         >
           {translate(messages, 'quality.closure.openReworkOrder')}
+          <span className="sr-only"> — {link.rootCause}</span>
         </Link>
       </div>
       {capabilities.canViewSensitive ? (
         <p className="mt-1 text-caption text-text-secondary">
           {translate(messages, 'quality.closure.cost')}:{' '}
-          {cost === null
+          {costRead === null
             ? translate(messages, 'state.loading')
-            : cost.status === 'ok'
-              ? `${cost.data.reworkCost} ${cost.data.costCurrency}`
-              : cost.status === 'not-found'
+            : costRead.status === 'ok'
+              ? `${costRead.data.reworkCost} ${costRead.data.costCurrency}`
+              : costRead.status === 'not-found'
                 ? translate(messages, 'quality.closure.noCost')
-                : translateDynamic(messages, `state.${cost.status}.title`)}
+                : translateDynamic(messages, `state.${costRead.status}.title`)}
         </p>
       ) : null}
       {capabilities.canSignOffRework && link.signOffAt === null ? (
         <form
-          ref={signOffFieldErrorsRefusalFormRef}
-          action={() => void signOff()}
-          className="mt-2 flex flex-wrap items-end gap-2"
+          ref={signOffFormRef}
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (pending !== null) return;
+            void signOff();
+          }}
+          className="mt-2 flex flex-wrap items-start gap-3"
         >
-          <TextField
+          <FormTextField
             name={`signOffBy-${link.id}`}
             label={translate(messages, 'quality.closure.signOffBy')}
             description={translate(messages, 'quality.closure.signOffByHint')}
             value={signOffBy}
-            onChange={(event) => setSignOffBy(event.target.value)}
+            onChange={setSignOffBy}
             error={
-              signOffFieldErrorsRefusalErrors['signOffBy']
-                ? translateDynamic(messages, signOffFieldErrorsRefusalErrors['signOffBy'])
+              signOffErrors['signOffBy']
+                ? translateDynamic(messages, signOffErrors['signOffBy'])
                 : undefined
             }
             dir="ltr"
+            autoComplete="off"
             required
           />
-          <button type="submit" disabled={pending} className={SECONDARY_BUTTON}>
-            {translate(messages, 'quality.closure.signOff')}
-          </button>
+          <Submit
+            messages={messages}
+            pending={pending === 'signOff'}
+            disabled={pending !== null}
+            labelKey="quality.closure.signOff"
+            variant="outlined"
+          />
         </form>
       ) : null}
       {capabilities.canManageRework && capabilities.canViewSensitive ? (
-        <form action={() => void recordCost()} className="mt-2 flex flex-wrap items-end gap-2">
-          <TextField
+        <form
+          ref={costFormRef}
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (pending !== null) return;
+            void recordCost();
+          }}
+          className="mt-2 flex flex-wrap items-start gap-3"
+        >
+          <FormNumberField
             name={`reworkCost-${link.id}`}
             label={translate(messages, 'quality.closure.cost')}
             value={reworkCost}
-            onChange={(event) => setReworkCost(event.target.value)}
-            inputMode="decimal"
-            dir="ltr"
+            onChange={setReworkCost}
+            required
+            error={
+              costErrors['reworkCost']
+                ? translateDynamic(messages, costErrors['reworkCost'])
+                : undefined
+            }
           />
-          <TextField
+          <FormTextField
             name={`costCurrency-${link.id}`}
             label={translate(messages, 'quality.closure.currency')}
             value={costCurrency}
-            onChange={(event) => setCostCurrency(event.target.value)}
+            onChange={setCostCurrency}
             dir="ltr"
+            maxLength={3}
+            autoComplete="off"
+            required
+            error={
+              costErrors['costCurrency']
+                ? translateDynamic(messages, costErrors['costCurrency'])
+                : undefined
+            }
           />
-          <button type="submit" disabled={pending} className={SECONDARY_BUTTON}>
-            {translate(messages, 'quality.closure.recordCost')}
-          </button>
+          <Submit
+            messages={messages}
+            pending={pending === 'cost'}
+            disabled={pending !== null}
+            labelKey="quality.closure.recordCost"
+            variant="outlined"
+          />
         </form>
       ) : null}
-      <Problem messages={messages} problem={problem} />
+      <Problem messages={messages} problem={problem} onReload={() => void onChanged()} />
     </li>
   );
 }
@@ -1220,25 +1475,18 @@ function ReopenPanel({
   readonly messages: Messages;
   readonly workOrderId: string;
   readonly capabilities: ClosureCapabilities;
-  readonly onChanged: () => void;
+  readonly onChanged: Renew;
 }) {
-  const [attempts, setAttempts] = useState<ReadState<ItemsOnly<ReopenAttempt>> | null>(null);
-  const [reloadCount, reload] = useReload();
-  const [reason, setReason] = useState('');
-  const { pending, problem, run } = useCommand(messages, () => {
-    reload();
-    onChanged();
-  });
+  const readAttempts = useCallback(() => listReopenAttempts(workOrderId), [workOrderId]);
+  const attempts = useReread(readAttempts);
+  const [asking, setAsking] = useState(false);
+  const reloadAttempts = attempts.reload;
+  const renew = useCallback(async () => {
+    await Promise.all([reloadAttempts(), onChanged()]);
+  }, [reloadAttempts, onChanged]);
+  const command = useCommand(messages, renew, ['reason']);
 
-  useEffect(() => {
-    let cancelled = false;
-    void listReopenAttempts(workOrderId).then((next) => {
-      if (!cancelled) setAttempts(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [workOrderId, reloadCount]);
+  const list = attempts.value;
 
   return (
     <Panel id="reopen-heading" titleKey="quality.closure.reopenHeading" messages={messages}>
@@ -1246,47 +1494,69 @@ function ReopenPanel({
         {translate(messages, 'quality.closure.reopenNote')}
       </p>
       {capabilities.canTransition ? (
-        <form
-          action={async () => {
-            if (reason.trim().length === 0) return;
-            const ok = await run(() => raiseReopenAttempt(workOrderId, { reason: reason.trim() }));
-            if (ok) setReason('');
-          }}
-          className="mb-3 flex flex-wrap items-end gap-3"
-        >
-          <TextField
-            name="reason"
-            label={translate(messages, 'quality.closure.reopenReason')}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-            required
-          />
-          <button type="submit" disabled={pending} className={SECONDARY_BUTTON}>
-            {translate(
-              messages,
-              pending ? 'quality.closure.recording' : 'quality.closure.attemptReopen'
-            )}
-          </button>
-          <Problem messages={messages} problem={problem} />
-        </form>
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <Button
+            type="button"
+            variant="outlined"
+            onClick={() => {
+              command.setProblem(null);
+              command.setFieldErrors({});
+              setAsking(true);
+            }}
+            disabled={command.pending}
+          >
+            {translate(messages, 'quality.closure.attemptReopen')}
+          </Button>
+          {asking ? null : <Problem messages={messages} problem={command.problem} />}
+        </div>
       ) : null}
-      {attempts === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-      ) : attempts.status !== 'ok' ? (
-        <ReadProblem messages={messages} state={attempts} />
-      ) : attempts.data.items.length === 0 ? (
+      <ReasonDialog
+        open={asking}
+        onCancel={() => setAsking(false)}
+        onConfirm={(reason) =>
+          void command
+            .run(() => raiseReopenAttempt(workOrderId, { reason }))
+            .then((ok) => {
+              if (ok) setAsking(false);
+            })
+        }
+        title={translate(messages, 'quality.closure.reopenDialogTitle')}
+        description={translate(messages, 'quality.closure.reopenDialogBody')}
+        confirmLabel={translate(messages, 'quality.closure.attemptReopen')}
+        reasonLabel={translate(messages, 'quality.closure.reopenReason')}
+        messages={messages}
+        pending={command.pending}
+        error={command.problem === null ? undefined : translateDynamic(messages, command.problem)}
+        reasonError={
+          command.fieldErrors['reason']
+            ? translateDynamic(messages, command.fieldErrors['reason'])
+            : undefined
+        }
+        maxLength={500}
+        testId="reopen-reason-dialog"
+      />
+      {list === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : list.status !== 'ok' ? (
+        <ReadProblem
+          locale={locale}
+          messages={messages}
+          state={list}
+          onRetry={() => void attempts.reload()}
+        />
+      ) : list.data.items.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'quality.closure.noReopen')}
         </p>
       ) : (
         <ul className="flex flex-col gap-1">
-          {attempts.data.items.map((attempt) => (
+          {list.data.items.map((attempt) => (
             <li key={attempt.id} className="text-body text-text-primary">
               <bdi>{attempt.reason}</bdi> —{' '}
               {translateDynamic(messages, `quality.reopenOutcome.${attempt.outcome}`)}
               <span className="text-caption text-text-muted">
                 {' '}
-                · {formatDateTime(attempt.requestedAt, locale)}
+                · <bdi>{formatDateTime(attempt.requestedAt, locale)}</bdi>
               </span>
             </li>
           ))}
@@ -1297,6 +1567,14 @@ function ReopenPanel({
 }
 
 /* ------------------------------------------------------- additional work */
+
+interface WorkRequestDraft {
+  readonly summary: string;
+  readonly originatingJobId: string;
+  readonly required: boolean;
+}
+
+const EMPTY_WORK_REQUEST: WorkRequestDraft = { summary: '', originatingJobId: '', required: false };
 
 /**
  * Requesting extra work, and the origin every request must carry.
@@ -1316,7 +1594,7 @@ function ReopenPanel({
  * through the diagnostics screen, which is where findings are.
  *
  * `origin_required` and `origin_conflict` are published against
- * `body.originatingJobId`, so both now land beside the picker rather than in the
+ * `body.originatingJobId`, so both land beside the picker rather than in the
  * form's alert. The typed summary survives a refusal: it is cleared on success
  * only.
  */
@@ -1333,43 +1611,60 @@ function AdditionalWorkPanel({
   readonly workOrderId: string;
   readonly detail: ReadState<WorkOrderDetail> | null;
   readonly capabilities: ClosureCapabilities;
-  readonly onChanged: () => void;
+  readonly onChanged: Renew;
 }) {
-  const [requests, setRequests] = useState<ReadState<ItemsOnly<AdditionalWorkRequest>> | null>(
-    null
-  );
-  const [reloadCount, reload] = useReload();
-  const [summary, setSummary] = useState('');
-  const [required, setRequired] = useState('');
-  const [originatingJobId, setOriginatingJobId] = useState('');
-  const [originError, setOriginError] = useState<string | null>(null);
+  const readRequests = useCallback(() => listAdditionalWork(workOrderId), [workOrderId]);
+  const requests = useReread(readRequests);
+  const [draft, setDraft] = useState<WorkRequestDraft>(EMPTY_WORK_REQUEST);
+  const [localErrors, setLocalErrors] = useState<Readonly<Record<string, string>>>({});
   // Two different emptinesses. `detail` is null while the read is in flight and
   // carries a problem when it failed, and in both the job list is simply not
   // known — saying "this work order has no jobs yet" there would state a cause
   // that has not been established, on every first paint.
   const jobsKnown = detail !== null && detail.status === 'ok';
   const jobs = jobsKnown ? detail.data.jobs : [];
-  const { pending, problem, attempt, run } = useCommand(
-    messages,
+  const reloadRequests = requests.reload;
+  const renew = useCallback(async () => {
+    await Promise.all([reloadRequests(), onChanged()]);
+  }, [reloadRequests, onChanged]);
+  const command = useCommand(messages, renew, ['originatingJobId', 'summary']);
+  const shownErrors = Object.keys(localErrors).length > 0 ? localErrors : command.fieldErrors;
+  const { errors, formRef } = useHeldRefusal(shownErrors, {
+    summary: draft.summary,
+    originatingJobId: draft.originatingJobId,
+  });
+  const errorFor = (field: string) =>
+    errors[field] ? translateDynamic(messages, errors[field]) : undefined;
+
+  useUnsavedGuard(
+    draft.summary.trim().length > 0 || draft.originatingJobId !== '' || draft.required,
     () => {
-      reload();
-      onChanged();
-    },
-    {
-      rendered: ['originatingJobId'],
-      onFieldErrors: (fieldErrors) => setOriginError(fieldErrors['originatingJobId'] ?? null),
+      setDraft(EMPTY_WORK_REQUEST);
+      setLocalErrors({});
     }
   );
 
-  useEffect(() => {
-    let cancelled = false;
-    void listAdditionalWork(workOrderId).then((next) => {
-      if (!cancelled) setRequests(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [workOrderId, reloadCount]);
+  const submit = async () => {
+    const missing: Record<string, string> = {};
+    if (draft.summary.trim().length === 0) missing['summary'] = 'field.required';
+    // The origin is refused here rather than sent empty, because the service
+    // refuses it anyway and a round trip that can only fail is a slower way of
+    // saying the same thing.
+    if (draft.originatingJobId === '')
+      missing['originatingJobId'] = 'form.violation.origin_required';
+    setLocalErrors(missing);
+    if (Object.keys(missing).length > 0) return;
+    const ok = await command.run(() =>
+      requestAdditionalWork(workOrderId, {
+        originatingJobId: draft.originatingJobId,
+        summary: draft.summary.trim(),
+        ...(draft.required ? { isRequired: true } : {}),
+      })
+    );
+    if (ok) setDraft(EMPTY_WORK_REQUEST);
+  };
+
+  const list = requests.value;
 
   return (
     <Panel
@@ -1379,54 +1674,24 @@ function AdditionalWorkPanel({
     >
       {capabilities.canRequestAdditionalWork ? (
         <form
-          action={async () => {
-            if (summary.trim().length === 0) return;
-            // The origin is refused here rather than sent empty, because the
-            // service refuses it anyway and a round trip that can only fail is
-            // a slower way of saying the same thing.
-            if (originatingJobId === '') {
-              setOriginError('form.violation.origin_required');
-              return;
-            }
-            const ok = await run(() =>
-              requestAdditionalWork(workOrderId, {
-                originatingJobId,
-                summary: summary.trim(),
-                ...(required === 'yes' ? { isRequired: true } : {}),
-              })
-            );
-            if (ok) {
-              setSummary('');
-              setRequired('');
-              setOriginatingJobId('');
-            }
+          ref={formRef}
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (command.pending) return;
+            void submit();
           }}
-          className="mb-3 flex flex-wrap items-end gap-3"
+          className="mb-3 grid gap-3 sm:grid-cols-2"
         >
-          <TextField
+          <FormTextField
             name="summary"
             label={translate(messages, 'quality.closure.additionalWorkSummary')}
-            value={summary}
-            onChange={(event) => setSummary(event.target.value)}
+            value={draft.summary}
+            onChange={(summary) => setDraft((current) => ({ ...current, summary }))}
             required
+            error={errorFor('summary')}
           />
-          <SelectField
-            /*
-             * Remounted per attempt with an UNCONTROLLED value, which is the
-             * shape the sibling picker beside it already uses.
-             *
-             * A controlled `value=` that does not change between renders is not
-             * re-written to the DOM, and the form reset that follows an action
-             * wins: the box then showed a job the state no longer held. The
-             * remount key is what makes the reset harmless, and `defaultValue`
-             * is read from the state the refusal did NOT clear — it is emptied
-             * only when the request succeeded — so the operator's choice
-             * survives a refusal and is gone once the work was actually
-             * requested. The field error rides the same remount: the new node
-             * carries the new `aria-describedby`, so the sentence stays beside
-             * the control it is about.
-             */
-            key={`originating-job-${attempt}`}
+          <FormSelectField
             name="originatingJobId"
             label={translate(messages, 'quality.closure.originatingJob')}
             description={translate(
@@ -1437,58 +1702,54 @@ function AdditionalWorkPanel({
                   ? 'quality.closure.originatingJobNone'
                   : 'quality.closure.originatingJobHint'
             )}
-            defaultValue={originatingJobId}
-            onChange={(event) => {
-              setOriginatingJobId(event.target.value);
-              setOriginError(null);
-            }}
-            error={originError ? translateDynamic(messages, originError) : undefined}
+            value={draft.originatingJobId}
+            onChange={(originatingJobId) =>
+              setDraft((current) => ({ ...current, originatingJobId }))
+            }
+            error={errorFor('originatingJobId')}
             options={jobs.map((job) => ({ value: job.id, label: job.title }))}
             placeholder={translate(messages, 'quality.closure.originatingJobPlaceholder')}
             required
           />
-          <SelectField
-            key={`required-${attempt}`}
+          <FormCheckboxField
             name="isRequired"
             label={translate(messages, 'quality.closure.required')}
-            defaultValue={required}
-            onChange={(event) => setRequired(event.target.value)}
-            options={[
-              { value: 'yes', label: translate(messages, 'quality.closure.yes') },
-              { value: 'no', label: translate(messages, 'quality.closure.no') },
-            ]}
-            placeholder={translate(messages, 'quality.closure.no')}
+            checked={draft.required}
+            onChange={(required) => setDraft((current) => ({ ...current, required }))}
           />
-          <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-            {translate(
-              messages,
-              pending ? 'quality.closure.recording' : 'quality.closure.requestWork'
-            )}
-          </button>
-          <Problem messages={messages} problem={problem} />
+          <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+            <Submit
+              messages={messages}
+              pending={command.pending}
+              labelKey="quality.closure.requestWork"
+            />
+            <Problem messages={messages} problem={command.problem} />
+          </div>
         </form>
       ) : null}
-      {requests === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-      ) : requests.status !== 'ok' ? (
-        <ReadProblem messages={messages} state={requests} />
-      ) : requests.data.items.length === 0 ? (
+      {list === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : list.status !== 'ok' ? (
+        <ReadProblem
+          locale={locale}
+          messages={messages}
+          state={list}
+          onRetry={() => void requests.reload()}
+        />
+      ) : list.data.items.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'quality.closure.noAdditionalWork')}
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {requests.data.items.map((request) => (
+          {list.data.items.map((request) => (
             <AdditionalWorkRow
               key={request.id}
               locale={locale}
               messages={messages}
               request={request}
               capabilities={capabilities}
-              onChanged={() => {
-                reload();
-                onChanged();
-              }}
+              onChanged={renew}
             />
           ))}
         </ul>
@@ -1496,6 +1757,20 @@ function AdditionalWorkPanel({
     </Panel>
   );
 }
+
+interface ApprovalDraft {
+  readonly decision: string;
+  readonly channel: string;
+  readonly decidingPartyRoleId: string;
+  readonly presentedScope: string;
+}
+
+const EMPTY_APPROVAL: ApprovalDraft = {
+  decision: '',
+  channel: '',
+  decidingPartyRoleId: '',
+  presentedScope: '',
+};
 
 function AdditionalWorkRow({
   locale,
@@ -1508,18 +1783,25 @@ function AdditionalWorkRow({
   readonly messages: Messages;
   readonly request: AdditionalWorkRequest;
   readonly capabilities: ClosureCapabilities;
-  readonly onChanged: () => void;
+  readonly onChanged: Renew;
 }) {
-  const [approval, setApproval] = useState<ReadState<CustomerApproval> | null>(null);
-  const [detail, setDetail] = useState<ReadState<AdditionalWorkDetail> | null>(null);
+  const readApproval = useCallback(() => readAdditionalWorkApproval(request.id), [request.id]);
+  const readDetail = useCallback(() => readAdditionalWorkDetail(request.id), [request.id]);
+  const approval = useReread(readApproval);
+  const detail = useReread(capabilities.canViewSensitive ? readDetail : null);
   const [description, setDescription] = useState('');
-  const [decision, setDecision] = useState('');
-  const [channel, setChannel] = useState('');
-  const [decidingPartyRoleId, setDecidingPartyRoleId] = useState('');
-  const [presentedScope, setPresentedScope] = useState('');
+  const [approvalDraft, setApprovalDraft] = useState<ApprovalDraft>(EMPTY_APPROVAL);
   const [fulfillment, setFulfillment] = useState('');
-  const [reason, setReason] = useState('');
-  const { pending, problem, attempt, run } = useCommand(messages, onChanged);
+  const [fulfillmentReason, setFulfillmentReason] = useState('');
+  const [withdrawing, setWithdrawing] = useState(false);
+  const reloadApproval = approval.reload;
+  const reloadDetail = detail.reload;
+  const renew = useCallback(async () => {
+    await Promise.all([reloadApproval(), reloadDetail(), onChanged()]);
+  }, [reloadApproval, reloadDetail, onChanged]);
+  const descriptionCommand = useCommand(messages, renew, ['description']);
+  const fulfillmentCommand = useCommand(messages, renew, ['fulfillmentState', 'reason']);
+  const withdrawCommand = useCommand(messages, renew, ['reason']);
   const [approvalPending, setApprovalPending] = useState(false);
   const [approvalProblem, setApprovalProblem] = useState<string | null>(null);
   /**
@@ -1533,74 +1815,97 @@ function AdditionalWorkRow({
   );
   // Question f: the cursor goes to the first refused field, and a complaint
   // goes once its field changes (route sweep B3).
-  const { errors: approvalFieldErrorsRefusalErrors, formRef: approvalFieldErrorsRefusalFormRef } =
-    useHeldRefusal(approvalFieldErrors, {
-      decision,
-      channel,
-      decidingPartyRoleId,
-      presentedScope,
-      reason,
-    });
+  const { errors: approvalErrors, formRef: approvalFormRef } = useHeldRefusal(approvalFieldErrors, {
+    ...approvalDraft,
+  });
+  const [descriptionErrors, setDescriptionErrors] = useState<Readonly<Record<string, string>>>({});
+  const { errors: descriptionShown, formRef: descriptionFormRef } = useHeldRefusal(
+    Object.keys(descriptionErrors).length > 0 ? descriptionErrors : descriptionCommand.fieldErrors,
+    { description }
+  );
+  const [fulfillmentErrors, setFulfillmentErrors] = useState<Readonly<Record<string, string>>>({});
+  const { errors: fulfillmentShown, formRef: fulfillmentFormRef } = useHeldRefusal(
+    Object.keys(fulfillmentErrors).length > 0 ? fulfillmentErrors : fulfillmentCommand.fieldErrors,
+    { fulfillmentState: fulfillment, reason: fulfillmentReason }
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-    void readAdditionalWorkApproval(request.id).then((next) => {
-      if (!cancelled) setApproval(next);
-    });
-    if (capabilities.canViewSensitive) {
-      void readAdditionalWorkDetail(request.id).then((next) => {
-        if (!cancelled) setDetail(next);
-      });
+  useUnsavedGuard(
+    description.trim().length > 0 ||
+      Object.values(approvalDraft).some((value) => value.trim().length > 0) ||
+      fulfillment !== '' ||
+      fulfillmentReason.trim().length > 0,
+    () => {
+      setDescription('');
+      setApprovalDraft(EMPTY_APPROVAL);
+      setFulfillment('');
+      setFulfillmentReason('');
+      setApprovalFieldErrors({});
+      setDescriptionErrors({});
+      setFulfillmentErrors({});
     }
-    return () => {
-      cancelled = true;
-    };
-  }, [request.id, request.recordVersion, capabilities.canViewSensitive]);
+  );
+
+  const setApproval = <K extends keyof ApprovalDraft>(field: K, value: string) =>
+    setApprovalDraft((current) => ({ ...current, [field]: value }));
 
   /*
    * The approval is version-guarded on the request's version this row was
    * rendered from; `onChanged` re-reads the list so the version is renewed.
-   */
-  /*
-   * The approval is version-guarded on the request's version this row was
-   * rendered from; `onChanged` re-reads the list so the version is renewed.
-   * Called directly, not through `run`, so the outcome is visibly handed onward.
+   * Called directly, not through `useCommand`, so the outcome is visibly handed
+   * onward.
    */
   const approve = async () => {
-    if (
-      !decision ||
-      !channel ||
-      decidingPartyRoleId.trim().length === 0 ||
-      presentedScope.trim().length === 0
-    ) {
+    const missing: Record<string, string> = {};
+    if (!approvalDraft.decision) missing['decision'] = 'field.required';
+    if (!approvalDraft.channel) missing['channel'] = 'field.required';
+    if (approvalDraft.decidingPartyRoleId.trim().length === 0) {
+      missing['decidingPartyRoleId'] = 'field.required';
+    }
+    if (approvalDraft.presentedScope.trim().length === 0) {
+      missing['presentedScope'] = 'field.required';
+    }
+    if (Object.keys(missing).length > 0) {
+      setApprovalFieldErrors(missing);
       return;
     }
     setApprovalPending(true);
     setApprovalProblem(null);
     setApprovalFieldErrors({});
-    const outcome = await recordAdditionalWorkApproval(
-      request.id,
-      {
-        decision: decision as (typeof DECISIONS)[number],
-        channel: channel as (typeof CHANNELS)[number],
-        decidingPartyRoleId: decidingPartyRoleId.trim(),
-        presentedScope: presentedScope.trim(),
-      },
-      request.recordVersion
-    );
-    setApprovalPending(false);
-    notifyActionResult(outcome, messages);
-    if (outcome.status === 'success') {
-      setDecision('');
-      setChannel('');
-      setDecidingPartyRoleId('');
-      setPresentedScope('');
-      onChanged();
-      return;
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await recordAdditionalWorkApproval(
+          request.id,
+          {
+            decision: approvalDraft.decision as (typeof DECISIONS)[number],
+            channel: approvalDraft.channel as (typeof CHANNELS)[number],
+            decidingPartyRoleId: approvalDraft.decidingPartyRoleId.trim(),
+            presentedScope: approvalDraft.presentedScope.trim(),
+          },
+          request.recordVersion
+        );
+      } catch {
+        setApprovalProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        setApprovalDraft(EMPTY_APPROVAL);
+        // The approval is this row's own read: it is read again with the list.
+        await Promise.all([reloadApproval(), onChanged()]);
+        return;
+      }
+      setApprovalFieldErrors(outcome.fieldErrors ?? {});
+      setApprovalProblem(problemKeyOf(outcome));
+    } finally {
+      setApprovalPending(false);
     }
-    setApprovalFieldErrors(outcome.fieldErrors ?? {});
-    setApprovalProblem(problemKeyOf(outcome));
   };
+
+  const approvalRead = approval.value;
+  const detailRead = detail.value;
+  const errorOf = (errors: Readonly<Record<string, string>>, field: string) =>
+    errors[field] ? translateDynamic(messages, errors[field]) : undefined;
 
   return (
     <li className="rounded-md border border-border p-3">
@@ -1608,178 +1913,258 @@ function AdditionalWorkRow({
         <span className="text-body font-medium text-text-primary">
           <bdi>{request.summary}</bdi>
         </span>
-        <code className="font-mono text-caption" dir="ltr">
-          {request.state}
-        </code>
-        <code className="font-mono text-caption" dir="ltr">
-          {request.fulfillmentState}
-        </code>
+        <span className="text-caption text-text-secondary" data-testid="request-state">
+          {REQUEST_STATES.includes(request.state)
+            ? translateDynamic(messages, `quality.requestState.${request.state}`)
+            : request.state}
+        </span>
+        <span className="text-caption text-text-secondary" data-testid="request-fulfillment">
+          {FULFILLMENT_STATES.includes(request.fulfillmentState)
+            ? translateDynamic(messages, `quality.fulfillment.${request.fulfillmentState}`)
+            : request.fulfillmentState}
+        </span>
         {request.isRequired ? (
           <span className="text-caption text-text-muted">
             {translate(messages, 'quality.closure.required')}
           </span>
         ) : null}
         <span className="ms-auto text-caption text-text-muted">
-          {formatDateTime(request.createdAt, locale)}
+          <bdi>{formatDateTime(request.createdAt, locale)}</bdi>
         </span>
       </div>
       {capabilities.canViewSensitive ? (
         <p className="mt-1 text-caption text-text-secondary">
           {translate(messages, 'quality.closure.description')}:{' '}
-          {detail === null
+          {detailRead === null
             ? translate(messages, 'state.loading')
-            : detail.status === 'ok'
-              ? detail.data.description
-              : detail.status === 'not-found'
+            : detailRead.status === 'ok'
+              ? detailRead.data.description
+              : detailRead.status === 'not-found'
                 ? translate(messages, 'quality.closure.noDescription')
-                : translateDynamic(messages, `state.${detail.status}.title`)}
+                : translateDynamic(messages, `state.${detailRead.status}.title`)}
         </p>
       ) : null}
       <p className="mt-1 text-caption text-text-secondary">
         {translate(messages, 'quality.closure.approval')}:{' '}
-        {approval === null
+        {approvalRead === null
           ? translate(messages, 'state.loading')
-          : approval.status === 'ok'
-            ? `${translateDynamic(messages, `quality.decision.${approval.data.decision}`)} · ${translateDynamic(messages, `quality.channel.${approval.data.channel}`)} · ${formatDateTime(approval.data.decidedAt, locale)}`
-            : approval.status === 'not-found'
+          : approvalRead.status === 'ok'
+            ? `${translateDynamic(messages, `quality.decision.${approvalRead.data.decision}`)} · ${translateDynamic(messages, `quality.channel.${approvalRead.data.channel}`)} · ${formatDateTime(approvalRead.data.decidedAt, locale)}`
+            : approvalRead.status === 'not-found'
               ? translate(messages, 'quality.closure.noApproval')
-              : translateDynamic(messages, `state.${approval.status}.title`)}
+              : translateDynamic(messages, `state.${approvalRead.status}.title`)}
       </p>
       {capabilities.canRequestAdditionalWork && capabilities.canViewSensitive ? (
         <form
-          action={async () => {
-            if (description.trim().length === 0) return;
-            const ok = await run(() =>
-              recordAdditionalWorkDetail(request.id, { description: description.trim() })
-            );
-            if (ok) setDescription('');
+          ref={descriptionFormRef}
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (descriptionCommand.pending) return;
+            if (description.trim().length === 0) {
+              setDescriptionErrors({ description: 'field.required' });
+              return;
+            }
+            setDescriptionErrors({});
+            void descriptionCommand
+              .run(() =>
+                recordAdditionalWorkDetail(request.id, { description: description.trim() })
+              )
+              .then((ok) => {
+                if (ok) setDescription('');
+              });
           }}
-          className="mt-2 flex flex-wrap items-end gap-2"
+          className="mt-2 flex flex-wrap items-start gap-3"
         >
-          <TextField
+          <FormTextField
             name={`description-${request.id}`}
             label={translate(messages, 'quality.closure.description')}
             value={description}
-            onChange={(event) => setDescription(event.target.value)}
+            onChange={setDescription}
+            required
+            error={errorOf(descriptionShown, 'description')}
           />
-          <button type="submit" disabled={pending} className={SECONDARY_BUTTON}>
-            {translate(messages, 'quality.closure.recordDescription')}
-          </button>
+          <Submit
+            messages={messages}
+            pending={descriptionCommand.pending}
+            labelKey="quality.closure.recordDescription"
+            variant="outlined"
+          />
+          <Problem messages={messages} problem={descriptionCommand.problem} />
         </form>
       ) : null}
-      {capabilities.canApproveAdditionalWork && approval?.status === 'not-found' ? (
+      {capabilities.canApproveAdditionalWork && approvalRead?.status === 'not-found' ? (
         <form
-          ref={approvalFieldErrorsRefusalFormRef}
-          action={() => void approve()}
-          className="mt-2 flex flex-wrap items-end gap-2"
+          ref={approvalFormRef}
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (approvalPending) return;
+            void approve();
+          }}
+          className="mt-2 grid gap-3 sm:grid-cols-2"
         >
-          <SelectField
-            key={`decision-${request.id}-${attempt}`}
+          <FormRadioGroupField
             name={`decision-${request.id}`}
             label={translate(messages, 'quality.closure.decision')}
-            defaultValue={decision}
-            onChange={(event) => setDecision(event.target.value)}
+            value={approvalDraft.decision}
+            onChange={(value) => setApproval('decision', value)}
             options={DECISIONS.map((value) => ({
               value,
-              label: translate(messages, `quality.decision.${value}` as keyof Messages),
+              label: translate(messages, `quality.decision.${value}`),
             }))}
-            placeholder={translate(messages, 'quality.closure.chooseDecision')}
             required
+            error={errorOf(approvalErrors, 'decision')}
           />
-          <SelectField
-            key={`channel-${request.id}-${attempt}`}
+          <FormSelectField
             name={`channel-${request.id}`}
             label={translate(messages, 'quality.closure.channel')}
-            defaultValue={channel}
-            onChange={(event) => setChannel(event.target.value)}
+            value={approvalDraft.channel}
+            onChange={(value) => setApproval('channel', value)}
             options={CHANNELS.map((value) => ({
               value,
-              label: translate(messages, `quality.channel.${value}` as keyof Messages),
+              label: translate(messages, `quality.channel.${value}`),
             }))}
             placeholder={translate(messages, 'quality.closure.chooseChannel')}
             required
+            error={errorOf(approvalErrors, 'channel')}
           />
-          <TextField
+          <FormTextField
             name={`decidingPartyRoleId-${request.id}`}
             label={translate(messages, 'quality.closure.decidingParty')}
             description={translate(messages, 'quality.closure.decidingPartyHint')}
-            value={decidingPartyRoleId}
-            onChange={(event) => setDecidingPartyRoleId(event.target.value)}
-            error={
-              approvalFieldErrorsRefusalErrors['decidingPartyRoleId']
-                ? translateDynamic(
-                    messages,
-                    approvalFieldErrorsRefusalErrors['decidingPartyRoleId']
-                  )
-                : undefined
-            }
+            value={approvalDraft.decidingPartyRoleId}
+            onChange={(value) => setApproval('decidingPartyRoleId', value)}
+            error={errorOf(approvalErrors, 'decidingPartyRoleId')}
             dir="ltr"
+            autoComplete="off"
             required
           />
-          <TextField
+          <FormTextField
             name={`presentedScope-${request.id}`}
             label={translate(messages, 'quality.closure.presentedScope')}
-            value={presentedScope}
-            onChange={(event) => setPresentedScope(event.target.value)}
+            value={approvalDraft.presentedScope}
+            onChange={(value) => setApproval('presentedScope', value)}
+            error={errorOf(approvalErrors, 'presentedScope')}
             required
           />
-          <button type="submit" disabled={approvalPending} className={PRIMARY_BUTTON}>
-            {translate(messages, 'quality.closure.recordApproval')}
-          </button>
-          <Problem messages={messages} problem={approvalProblem} />
+          <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+            <Submit
+              messages={messages}
+              pending={approvalPending}
+              labelKey="quality.closure.recordApproval"
+            />
+            <Problem
+              messages={messages}
+              problem={approvalProblem}
+              onReload={() => void onChanged()}
+            />
+          </div>
         </form>
       ) : null}
       {capabilities.canRequestAdditionalWork ? (
-        <form
-          action={async () => {
-            if (fulfillment) {
-              const ok = await run(() =>
-                fulfillAdditionalWork(request.id, {
-                  fulfillmentState: fulfillment as (typeof FULFILLMENT)[number],
-                  ...(reason.trim().length > 0 ? { reason: reason.trim() } : {}),
-                })
-              );
-              if (ok) {
-                setFulfillment('');
-                setReason('');
+        <div className="mt-2 flex flex-wrap items-start gap-3">
+          <form
+            ref={fulfillmentFormRef}
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (fulfillmentCommand.pending) return;
+              if (!fulfillment) {
+                setFulfillmentErrors({ fulfillmentState: 'field.required' });
+                return;
               }
-              return;
+              setFulfillmentErrors({});
+              void fulfillmentCommand
+                .run(() =>
+                  fulfillAdditionalWork(request.id, {
+                    fulfillmentState: fulfillment as (typeof FULFILLMENT)[number],
+                    ...(fulfillmentReason.trim().length > 0
+                      ? { reason: fulfillmentReason.trim() }
+                      : {}),
+                  })
+                )
+                .then((ok) => {
+                  if (!ok) return;
+                  setFulfillment('');
+                  setFulfillmentReason('');
+                });
+            }}
+            className="flex flex-wrap items-start gap-3"
+          >
+            <FormRadioGroupField
+              name={`fulfillment-${request.id}`}
+              label={translate(messages, 'quality.closure.fulfillment')}
+              value={fulfillment}
+              onChange={setFulfillment}
+              options={FULFILLMENT.map((value) => ({
+                value,
+                label: translate(messages, `quality.fulfillment.${value}`),
+              }))}
+              required
+              error={errorOf(fulfillmentShown, 'fulfillmentState')}
+            />
+            <FormTextField
+              name={`reason-${request.id}`}
+              label={translate(messages, 'quality.closure.reason')}
+              value={fulfillmentReason}
+              onChange={setFulfillmentReason}
+              error={errorOf(fulfillmentShown, 'reason')}
+            />
+            <Submit
+              messages={messages}
+              pending={fulfillmentCommand.pending}
+              labelKey="quality.closure.recordFulfillment"
+              variant="outlined"
+            />
+            <Problem messages={messages} problem={fulfillmentCommand.problem} />
+          </form>
+          <Button
+            type="button"
+            variant="text"
+            color="error"
+            onClick={() => {
+              withdrawCommand.setProblem(null);
+              withdrawCommand.setFieldErrors({});
+              setWithdrawing(true);
+            }}
+            disabled={withdrawCommand.pending}
+          >
+            {translate(messages, 'quality.closure.withdraw')}
+            <span className="sr-only"> — {request.summary}</span>
+          </Button>
+          <ReasonDialog
+            open={withdrawing}
+            onCancel={() => setWithdrawing(false)}
+            onConfirm={(reason) =>
+              void withdrawCommand
+                .run(() => withdrawAdditionalWork(request.id, { reason }))
+                .then((ok) => {
+                  if (ok) setWithdrawing(false);
+                })
             }
-            if (reason.trim().length === 0) return;
-            const ok = await run(() =>
-              withdrawAdditionalWork(request.id, { reason: reason.trim() })
-            );
-            if (ok) setReason('');
-          }}
-          className="mt-2 flex flex-wrap items-end gap-2"
-        >
-          <SelectField
-            key={`fulfillment-${request.id}-${attempt}`}
-            name={`fulfillment-${request.id}`}
-            label={translate(messages, 'quality.closure.fulfillment')}
-            defaultValue={fulfillment}
-            onChange={(event) => setFulfillment(event.target.value)}
-            options={FULFILLMENT.map((value) => ({
-              value,
-              label: translate(messages, `quality.fulfillment.${value}` as keyof Messages),
-            }))}
-            placeholder={translate(messages, 'quality.closure.withdrawInstead')}
+            title={translate(messages, 'quality.closure.withdrawDialogTitle')}
+            description={translate(messages, 'quality.closure.withdrawDialogBody')}
+            confirmLabel={translate(messages, 'quality.closure.withdraw')}
+            reasonLabel={translate(messages, 'quality.closure.reason')}
+            messages={messages}
+            destructive
+            pending={withdrawCommand.pending}
+            error={
+              withdrawCommand.problem === null
+                ? undefined
+                : translateDynamic(messages, withdrawCommand.problem)
+            }
+            reasonError={
+              withdrawCommand.fieldErrors['reason']
+                ? translateDynamic(messages, withdrawCommand.fieldErrors['reason'])
+                : undefined
+            }
+            maxLength={500}
+            testId="withdraw-reason-dialog"
           />
-          <TextField
-            name={`reason-${request.id}`}
-            label={translate(messages, 'quality.closure.reason')}
-            value={reason}
-            onChange={(event) => setReason(event.target.value)}
-          />
-          <button type="submit" disabled={pending} className={SECONDARY_BUTTON}>
-            {translate(
-              messages,
-              fulfillment ? 'quality.closure.recordFulfillment' : 'quality.closure.withdraw'
-            )}
-          </button>
-        </form>
+        </div>
       ) : null}
-      <Problem messages={messages} problem={problem} />
     </li>
   );
 }
@@ -1799,10 +2184,11 @@ function ClosurePanel({
   readonly detail: ReadState<WorkOrderDetail> | null;
   readonly eligibility: ReadState<ClosureEligibility> | null;
   readonly capabilities: ClosureCapabilities;
-  readonly onDone: () => void;
+  readonly onDone: Renew;
 }) {
   const [toState, setToState] = useState('');
   const [reason, setReason] = useState('');
+  const [asking, setAsking] = useState(false);
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   /**
@@ -1816,11 +2202,13 @@ function ClosurePanel({
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   // Question f: the cursor goes to the first refused field, and a complaint
   // goes once its field changes (route sweep B3).
-  const { errors: fieldErrorsRefusalErrors, formRef: fieldErrorsRefusalFormRef } = useHeldRefusal(
-    fieldErrors,
-    { toState, reason }
-  );
-  const [attempt, setAttempt] = useState(0);
+  const { errors, formRef } = useHeldRefusal(fieldErrors, { toState, reason });
+  useUnsavedGuard(toState !== '' || reason.trim().length > 0, () => {
+    setToState('');
+    setReason('');
+    setFieldErrors({});
+    setProblem(null);
+  });
 
   if (!capabilities.canTransition || !capabilities.canClose) return null;
   if (detail === null || detail.status !== 'ok') return null;
@@ -1836,32 +2224,38 @@ function ClosurePanel({
    */
   const close = async () => {
     if (chosen === null) return;
-    if (chosen.requiresReason && reason.trim().length === 0) {
-      setProblem('quality.closure.reasonRequired');
-      return;
-    }
     setPending(true);
     setProblem(null);
     setFieldErrors({});
-    const outcome = await closeWorkOrder(
-      workOrderId,
-      { toState: chosen.code, ...(reason.trim().length > 0 ? { reason: reason.trim() } : {}) },
-      version
-    );
-    setPending(false);
-    setAttempt((n) => n + 1);
-    notifyActionResult(outcome, messages);
-    if (outcome.status === 'success') {
-      setToState('');
-      setReason('');
-      onDone();
-      return;
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await closeWorkOrder(
+          workOrderId,
+          { toState: chosen.code, ...(reason.trim().length > 0 ? { reason: reason.trim() } : {}) },
+          version
+        );
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        // The dialog stays up, busy, until the order has been read again.
+        await onDone();
+        setToState('');
+        setReason('');
+        return;
+      }
+      setFieldErrors(outcome.fieldErrors ?? {});
+      setProblem(
+        unattachedRefusalKey(outcome.fieldErrors, ['toState', 'reason']) ?? problemKeyOf(outcome)
+      );
+      await onDone();
+    } finally {
+      setPending(false);
+      setAsking(false);
     }
-    setFieldErrors(outcome.fieldErrors ?? {});
-    setProblem(
-      unattachedRefusalKey(outcome.fieldErrors, ['toState', 'reason']) ?? problemKeyOf(outcome)
-    );
-    onDone();
   };
 
   return (
@@ -1872,45 +2266,76 @@ function ClosurePanel({
         </p>
       ) : (
         <form
-          ref={fieldErrorsRefusalFormRef}
-          action={() => void close()}
-          className="flex flex-wrap items-end gap-3"
+          ref={formRef}
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (pending || !eligible) return;
+            if (chosen === null) {
+              setFieldErrors({ toState: 'field.required' });
+              return;
+            }
+            if (chosen.requiresReason && reason.trim().length === 0) {
+              setFieldErrors({ reason: 'quality.closure.reasonRequired' });
+              return;
+            }
+            setFieldErrors({});
+            setAsking(true);
+          }}
+          className="flex flex-wrap items-start gap-3"
         >
-          <SelectField
-            key={`toState-${attempt}`}
+          <FormSelectField
             name="toState"
             label={translate(messages, 'quality.closure.closeTo')}
-            defaultValue={toState}
-            onChange={(event) => setToState(event.target.value)}
-            options={targets.map((s) => ({ value: s.code, label: s.code }))}
+            value={toState}
+            onChange={setToState}
+            // The closing states in words; a workshop's own keeps its code.
+            options={targets.map((s) => ({
+              value: s.code,
+              label: orderStateText(messages, s.code),
+            }))}
             placeholder={translate(messages, 'quality.closure.chooseState')}
-            error={
-              fieldErrorsRefusalErrors['toState']
-                ? translateDynamic(messages, fieldErrorsRefusalErrors['toState'])
-                : undefined
-            }
+            error={errors['toState'] ? translateDynamic(messages, errors['toState']) : undefined}
             required
           />
-          <TextField
+          <FormTextField
             name="reason"
             label={translate(messages, 'quality.closure.reason')}
             value={reason}
-            onChange={(event) => setReason(event.target.value)}
+            onChange={setReason}
             required={chosen?.requiresReason ?? false}
+            maxLength={500}
+            error={errors['reason'] ? translateDynamic(messages, errors['reason']) : undefined}
           />
-          <button
-            type="submit"
-            disabled={pending || chosen === null || !eligible}
-            className={PRIMARY_BUTTON}
-          >
-            {translate(messages, pending ? 'quality.closure.closing' : 'quality.closure.close')}
-          </button>
+          <Submit
+            messages={messages}
+            pending={pending}
+            disabled={!eligible}
+            labelKey="quality.closure.close"
+          />
           {!eligible ? (
             <p className="basis-full text-caption text-text-muted">
               {translate(messages, 'quality.closure.closeBlocked')}
             </p>
           ) : null}
-          <Problem messages={messages} problem={problem} />
+          <Problem messages={messages} problem={problem} onReload={() => void onDone()} />
+          <ConfirmDialog
+            open={asking && chosen !== null}
+            onCancel={() => setAsking(false)}
+            onConfirm={() => void close()}
+            title={translate(messages, 'quality.closure.confirmCloseTitle')}
+            description={
+              chosen === null
+                ? undefined
+                : formatMessage(translate(messages, 'quality.closure.confirmCloseBody'), {
+                    state: orderStateText(messages, chosen.code),
+                  })
+            }
+            confirmLabel={translate(messages, 'quality.closure.close')}
+            messages={messages}
+            pending={pending}
+            testId="closure-confirm"
+          />
         </form>
       )}
     </Panel>

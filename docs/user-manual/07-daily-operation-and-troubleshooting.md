@@ -167,8 +167,9 @@ Read the honesty notes on these lists; they are there because the list is not th
 - Vehicle: "Changes to this vehicle's own details. Owners, plates, odometer readings and linked
   vehicles each have their own tab." <!-- vehicles.history.scopeNote --> and, where a value is not
   shown, "Changed; the values are not shown here." <!-- vehicles.history.noDetail -->
-- Work order: entries you may not read are marked "Not shown to you:" <!-- workOrders.detail.historyOmitted -->
-  followed by "needs" <!-- workOrders.detail.historyRequires --> and the permission. The history is
+- Work order: the kinds of entry you may not read are named after "Some entries are not shown to
+  you, because your role does not include them:" <!-- workOrders.history.omitted --> — by what they
+  are, not by the permission. The history is
   complete; your view of it is not.
 - Warranty: "Every change of state recorded for this warranty, newest first. The workshop keeps this
   record; nothing on this screen adds to it." <!-- warranty.history.explain -->

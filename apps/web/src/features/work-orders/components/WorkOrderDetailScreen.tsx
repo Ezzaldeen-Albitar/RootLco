@@ -1,14 +1,23 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState, useTransition } from 'react';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { useCallback, useEffect, useState } from 'react';
+import Button from '@mui/material/Button';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { EmptyState } from '@/components/states/States';
+import { MuiEmptyState, MuiReadFailureState } from '@/components/states/MuiStates';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
+import type { ReadFailureStatus } from '@/lib/api/read-operation';
+import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import { listDepartments, readWorkOrderDetail, transitionWorkOrder } from '../api';
 import type {
   DepartmentOption,
@@ -16,7 +25,7 @@ import type {
   WorkOrderJob,
   WorkOrderReachableState,
 } from '../work-orders-contract';
-import { workOrderStateMessageKey } from '../work-orders-contract';
+import { jobStateLabel, workOrderStateMessageKey } from '../work-orders-contract';
 import { WorkOrderDeliveryPanel } from '@/features/delivery/components/WorkOrderDeliveryPanel';
 import { JobBlockersPanel } from '@/features/quality/components/JobBlockersPanel';
 import { WorkOrderHistorySection } from '@/features/quality/components/WorkOrderHistorySection';
@@ -31,25 +40,33 @@ import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
  * Every guarded write here sends the `recordVersion` this screen is currently
  * displaying, never one fetched a moment earlier for the purpose. That is what
  * makes a conflict MEAN something: if the record moved since the operator last
- * looked, the write is refused and they are told to re-read rather than having
+ * looked, the write is refused and they are told to re-read — and offered
+ * "Load the latest version", which does exactly that — rather than having
  * their view silently overwrite someone else's work. Nothing here retries a
- * stale write, and nothing re-reads and resubmits on their behalf — an invisible
- * retry is the same lost update with better manners.
+ * stale write, and nothing re-reads and resubmits on their behalf.
  *
  * ## The lifecycle graph is DATA
  *
  * `nextStates` comes from the backend, which owns the tenant's transition graph.
  * This screen offers exactly those codes, asks for a reason exactly when
- * `requiresReason` says to, and holds no copy of the rules. A frontend that
- * decided reachability would be a second, rotting authority — and would be
- * confidently wrong the first time a tenant edited their own graph.
+ * `requiresReason` says to, and holds no copy of the rules. A move to a
+ * terminal or cancelling state — one no state follows — is asked about first
+ * (`ConfirmDialog`), because it cannot be walked back from this screen.
  *
- * ## After a write, the truth is re-read
+ * ## After a write, the truth is re-read — and the form waits for it
  *
  * A successful command refreshes from `wo.work-order-detail` rather than
- * patching local state. Optimistically mutating the view would show the
- * operator a state the database may not hold, which is exactly the class of
- * defect a screen like this exists to avoid.
+ * patching local state, and the command's submit stays busy until that re-read
+ * has landed: a second press in between would send the version the re-read is
+ * about to replace (the reception forms' rule of #481).
+ *
+ * ## On the shared Material wrappers (ADR-022, Owner directive slice 4)
+ *
+ * The move is `FormSelectField` and `FormTextField` (the `FieldFrame` contract:
+ * the refusal beside its field, the cursor on the first one, a complaint gone
+ * once its field changes), the question is `ConfirmDialog`, a failed re-read is
+ * `MuiReadFailureState` with a retry, and every state — the order's, a job's —
+ * is said in words (browser QA rows B.S3 and DEF-02).
  */
 export function WorkOrderDetailScreen({
   locale,
@@ -128,9 +145,12 @@ export function WorkOrderDetailScreen({
    */
   readonly canReadBranches?: boolean;
 }) {
+  const context = useWorkingContext();
   const [detail, setDetail] = useState<WorkOrderDetail>(initial);
-  const [reloadError, setReloadError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
+  const [reloadFailure, setReloadFailure] = useState<{
+    readonly status: ReadFailureStatus;
+    readonly correlationId: string | null;
+  } | null>(null);
   /*
    * P1-29 W8: the history section re-reads whenever the detail does. Every
    * command on this screen hands its outcome to `refresh`, so one epoch that
@@ -139,86 +159,88 @@ export function WorkOrderDetailScreen({
   const [historyEpoch, setHistoryEpoch] = useState(0);
 
   const workOrder = detail.workOrder;
+  /**
+   * The work order's OWN branch clock — a record reached by its address is on
+   * its branch's clock, not the working branch's — or `null` when the working
+   * context does not publish it; then no moment is taken (the assignment
+   * window says why instead).
+   */
+  const zone =
+    context.branches.find((branch) => branch.id === workOrder.branchId)?.timezone || null;
 
-  /** Re-read the aggregate. The single way this screen learns what is true. */
-  const refresh = useCallback(async () => {
+  /**
+   * Re-read the aggregate. The single way this screen learns what is true, and
+   * a promise the command that asked for it waits on.
+   */
+  const refresh = useCallback(async (): Promise<void> => {
     const next = await readWorkOrderDetail(workOrder.id);
     if (next.status === 'ok') {
       setDetail(next.data);
-      setReloadError(null);
+      setReloadFailure(null);
       setHistoryEpoch((n) => n + 1);
       return;
     }
     // A failed refresh leaves the LAST KNOWN state on screen and says so. Wiping
     // it would lose the operator's context to a transient network fault.
-    setReloadError(`state.${next.status}.title`);
+    setReloadFailure({ status: next.status, correlationId: next.correlationId });
   }, [workOrder.id]);
 
   return (
     <div className="flex min-h-0 flex-col gap-6">
       <WorkOrderFacts locale={locale} messages={messages} detail={detail} />
 
-      {reloadError === null ? null : (
-        <p role="status" className="rounded-md border border-border bg-surface p-3 text-body">
-          {translateDynamic(messages, reloadError)}{' '}
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            className="text-primary underline-offset-2 hover:underline"
-          >
-            {translate(messages, 'action.retry')}
-          </button>
-        </p>
+      {reloadFailure === null ? null : (
+        <MuiReadFailureState
+          messages={messages}
+          locale={locale}
+          status={reloadFailure.status}
+          correlationId={reloadFailure.correlationId}
+          onRetry={() => void refresh()}
+          descriptionKey="workOrders.detail.reloadFailed"
+          testId="work-order-reload-failure"
+        />
       )}
 
-      <p className="text-body">
+      <div className="flex flex-wrap gap-x-6 gap-y-2 text-body">
         <Link
           href={`/${locale}/work-orders/${workOrder.id}/closure`}
           className="text-primary underline-offset-2 hover:underline"
         >
           {translate(messages, 'workOrders.detail.closureLink')}
         </Link>
-      </p>
-
-      {canReadQuotations ? (
-        <p className="text-body">
+        {canReadQuotations ? (
           <Link
             href={`/${locale}/quotations?workOrderId=${workOrder.id}`}
             className="text-primary underline-offset-2 hover:underline"
           >
             {translate(messages, 'workOrders.detail.quotationsLink')}
           </Link>
-        </p>
-      ) : null}
-
-      {canReadStock ? (
-        <p className="text-body">
-          <Link
-            href={`/${locale}/inventory?workOrderId=${workOrder.id}`}
-            className="text-primary underline-offset-2 hover:underline"
-          >
-            {translate(messages, 'workOrders.detail.stockLink')}
-          </Link>
-          {' · '}
-          <Link
-            href={`/${locale}/inventory/parts?workOrderId=${workOrder.id}`}
-            className="text-primary underline-offset-2 hover:underline"
-          >
-            {translate(messages, 'workOrders.detail.partsLink')}
-          </Link>
-        </p>
-      ) : null}
-
-      {canReadInvoice ? (
-        <p className="text-body">
+        ) : null}
+        {canReadStock ? (
+          <>
+            <Link
+              href={`/${locale}/inventory?workOrderId=${workOrder.id}`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'workOrders.detail.stockLink')}
+            </Link>
+            <Link
+              href={`/${locale}/inventory/parts?workOrderId=${workOrder.id}`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'workOrders.detail.partsLink')}
+            </Link>
+          </>
+        ) : null}
+        {canReadInvoice ? (
           <Link
             href={`/${locale}/invoices?workOrderId=${workOrder.id}`}
             className="text-primary underline-offset-2 hover:underline"
           >
             {translate(messages, 'workOrders.detail.invoiceLink')}
           </Link>
-        </p>
-      ) : null}
+        ) : null}
+      </div>
 
       {canReadDelivery ? (
         <WorkOrderDeliveryPanel
@@ -240,8 +262,7 @@ export function WorkOrderDetailScreen({
         currentState={workOrder.state}
         nextStates={detail.nextStates}
         canTransition={canTransition}
-        pending={pending}
-        onDone={() => startTransition(() => void refresh())}
+        onDone={refresh}
       />
 
       <JobsSection
@@ -250,13 +271,14 @@ export function WorkOrderDetailScreen({
         jobs={detail.jobs}
         companyId={workOrder.companyId}
         branchId={workOrder.branchId}
+        zone={zone}
         canManageJobs={canManageJobs}
         canReadTechnicians={canReadTechnicians}
         canAssign={canAssign}
         canReadDepartments={canReadDepartments}
         canReadDiagnostics={canReadDiagnostics}
         canRecordLabor={canRecordLabor}
-        onDone={() => startTransition(() => void refresh())}
+        onDone={refresh}
       />
 
       <WorkOrderHistorySection
@@ -264,6 +286,7 @@ export function WorkOrderDetailScreen({
         messages={messages}
         workOrderId={workOrder.id}
         reloadCount={historyEpoch}
+        jobs={detail.jobs}
       />
     </div>
   );
@@ -397,7 +420,6 @@ function LifecyclePanel({
   currentState,
   nextStates,
   canTransition,
-  pending,
   onDone,
 }: {
   readonly messages: Messages;
@@ -406,13 +428,15 @@ function LifecyclePanel({
   readonly currentState: string;
   readonly nextStates: readonly WorkOrderReachableState[];
   readonly canTransition: boolean;
-  readonly pending: boolean;
-  readonly onDone: () => void;
+  /** Re-reads the detail; the move stays busy until it resolves. */
+  readonly onDone: () => Promise<void>;
 }) {
   const [toState, setToState] = useState('');
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
+  const [asking, setAsking] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [conflict, setConflict] = useState(false);
   /**
    * The refusals that name the state the operator chose.
    *
@@ -431,47 +455,95 @@ function LifecyclePanel({
     reason,
   });
 
+  /*
+   * A chosen move or a typed reason is unsaved work: a branch switch or leaving
+   * the page asks, and a confirmed discard empties both. The work order is not
+   * addressed to the working branch, so nothing here is keyed on it.
+   */
+  const discard = () => {
+    setToState('');
+    setReason('');
+    setFieldErrors({});
+    setProblem(null);
+    setConflict(false);
+  };
+  useUnsavedGuard(toState !== '' || reason.trim().length > 0, discard);
+
   const chosen = nextStates.find((state) => state.code === toState) ?? null;
   const needsReason = chosen?.requiresReason ?? false;
+  /** A move no state follows — terminal or cancelling — is asked about first. */
+  const final = chosen !== null && (chosen.isTerminal || chosen.isCancellation);
 
-  const submit = async () => {
-    if (toState === '') return;
+  const check = (): boolean => {
+    if (toState === '') {
+      setProblem(null);
+      setFieldErrors({ toState: 'field.required' });
+      return false;
+    }
     if (needsReason && reason.trim().length === 0) {
       // Said on the reason itself, where the cursor is taken.
       setProblem(null);
       setFieldErrors({ reason: 'workOrders.detail.reasonRequired' });
-      return;
+      return false;
     }
+    return true;
+  };
+
+  const send = async () => {
+    setAsking(false);
     setProblem(null);
+    setConflict(false);
     setFieldErrors({});
     setBusy(true);
-    const result = await transitionWorkOrder(
-      workOrderId,
-      {
-        toState,
-        // Sent only when the graph asks for one: `.strict()` refuses an unknown
-        // key, and an empty string would fail the backend's own 1..500 bound.
-        ...(needsReason ? { reason: reason.trim() } : {}),
-      },
-      recordVersion
-    );
-    setBusy(false);
-    notifyActionResult(result, messages);
+    try {
+      let result: ActionState;
+      try {
+        result = await transitionWorkOrder(
+          workOrderId,
+          {
+            toState,
+            // Sent only when the graph asks for one: `.strict()` refuses an unknown
+            // key, and an empty string would fail the backend's own 1..500 bound.
+            ...(needsReason ? { reason: reason.trim() } : {}),
+          },
+          recordVersion
+        );
+      } catch {
+        // No answer came back: what was chosen stays, and the move works again.
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(result, messages);
 
-    if (result.status === 'success') {
-      setToState('');
-      setReason('');
-      onDone();
-      return;
+      if (result.status === 'success') {
+        // The move stays busy — and its question up — until the re-read lands.
+        await onDone();
+        setToState('');
+        setReason('');
+        return;
+      }
+      if (result.fieldErrors) setFieldErrors(result.fieldErrors);
+      // A conflict is stated, never retried. The version this screen holds is
+      // stale, and the only correct next step is to look again — offered below.
+      setConflict(result.status === 'conflict');
+      setProblem(
+        result.status === 'conflict'
+          ? 'workOrders.detail.conflict'
+          : (result.messageKey ?? 'action.failed')
+      );
+    } finally {
+      setBusy(false);
     }
-    if (result.fieldErrors) setFieldErrors(result.fieldErrors);
-    // A conflict is stated, never retried. The version this screen holds is
-    // stale, and the only correct next step is to look again.
-    setProblem(
-      result.status === 'conflict'
-        ? 'workOrders.detail.conflict'
-        : (result.messageKey ?? 'action.failed')
-    );
+  };
+
+  const loadLatest = async () => {
+    setBusy(true);
+    try {
+      discard();
+      await onDone();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -487,6 +559,10 @@ function LifecyclePanel({
       </h2>
       <p className="mb-3 text-caption text-text-muted">
         {translate(messages, 'workOrders.detail.lifecycleNote')}
+      </p>
+      <p className="mb-3 text-body text-text-secondary">
+        {translate(messages, 'workOrders.detail.currentState')}{' '}
+        <bdi className="font-medium text-text-primary">{stateText(messages, currentState)}</bdi>
       </p>
 
       {!canTransition ? (
@@ -505,16 +581,23 @@ function LifecyclePanel({
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            void submit();
+            if (busy || !check()) return;
+            if (final) {
+              setAsking(true);
+              return;
+            }
+            void send();
           }}
           aria-labelledby="work-order-lifecycle-heading"
           className="flex flex-col gap-3"
         >
           <div className="grid gap-3 sm:grid-cols-2">
-            <SelectField
+            <FormSelectField
               label={translate(messages, 'workOrders.detail.toState')}
+              name="toState"
+              required
               value={toState}
-              onChange={(event) => setToState(event.target.value)}
+              onChange={setToState}
               options={nextStates.map((state) => ({
                 value: state.code,
                 // The state in words (a code outside the platform vocabulary
@@ -534,12 +617,14 @@ function LifecyclePanel({
               }
             />
             {needsReason ? (
-              <TextField
+              <FormTextField
                 label={translate(messages, 'workOrders.detail.reason')}
+                name="reason"
                 description={translate(messages, 'workOrders.detail.reasonRequiredHint')}
                 required
                 value={reason}
-                onChange={(event) => setReason(event.target.value)}
+                onChange={setReason}
+                maxLength={500}
                 error={
                   refusalErrors['reason']
                     ? translateDynamic(messages, refusalErrors['reason'])
@@ -549,30 +634,59 @@ function LifecyclePanel({
             ) : null}
           </div>
 
-          {problem !== null && problem !== 'workOrders.detail.reasonRequired' ? (
-            <p role="alert" className="text-body text-error">
-              {translateDynamic(messages, problem)}
-            </p>
+          {problem !== null ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <p role="alert" className="text-body text-error">
+                {translateDynamic(messages, problem)}
+              </p>
+              {conflict ? (
+                <Button
+                  type="button"
+                  variant="outlined"
+                  size="small"
+                  onClick={() => void loadLatest()}
+                  disabled={busy}
+                >
+                  {translate(messages, 'form.loadLatest')}
+                </Button>
+              ) : null}
+            </div>
           ) : null}
 
           <div>
-            <button
-              type="submit"
-              disabled={toState === '' || busy || pending}
-              className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:opacity-60"
-            >
+            <Button type="submit" variant="contained" disabled={busy} aria-busy={busy || undefined}>
               {translate(
                 messages,
                 busy ? 'workOrders.detail.moving' : 'workOrders.detail.moveWorkOrder'
               )}
-            </button>
-            <span className="ms-3 text-caption text-text-muted">
-              {translate(messages, 'workOrders.detail.currentState')}{' '}
-              <bdi>{stateText(messages, currentState)}</bdi>
-            </span>
+            </Button>
           </div>
         </form>
       )}
+      <ConfirmDialog
+        open={asking && chosen !== null}
+        onCancel={() => setAsking(false)}
+        onConfirm={() => void send()}
+        title={translate(messages, 'workOrders.detail.confirmMoveTitle')}
+        description={
+          chosen === null
+            ? undefined
+            : formatMessage(
+                translate(
+                  messages,
+                  chosen.isCancellation
+                    ? 'workOrders.detail.confirmMoveCancel'
+                    : 'workOrders.detail.confirmMoveTerminal'
+                ),
+                { state: stateText(messages, chosen.code) }
+              )
+        }
+        confirmLabel={translate(messages, 'workOrders.detail.moveWorkOrder')}
+        messages={messages}
+        destructive={chosen?.isCancellation ?? false}
+        pending={busy}
+        testId="work-order-move-confirm"
+      />
     </section>
   );
 }
@@ -584,6 +698,7 @@ function JobsSection({
   jobs,
   companyId,
   branchId,
+  zone,
   canManageJobs,
   canReadTechnicians,
   canAssign,
@@ -597,13 +712,14 @@ function JobsSection({
   readonly jobs: readonly WorkOrderJob[];
   readonly companyId: string;
   readonly branchId: string;
+  readonly zone: string | null;
   readonly canManageJobs: boolean;
   readonly canReadTechnicians: boolean;
   readonly canAssign: boolean;
   readonly canReadDepartments: boolean;
   readonly canReadDiagnostics: boolean;
   readonly canRecordLabor: boolean;
-  readonly onDone: () => void;
+  readonly onDone: () => Promise<void>;
 }) {
   const [openJobId, setOpenJobId] = useState<string | null>(null);
   const [departments, setDepartments] = useState<readonly DepartmentOption[] | null>(null);
@@ -639,85 +755,97 @@ function JobsSection({
       </h2>
 
       {jobs.length === 0 ? (
-        <EmptyState
+        <MuiEmptyState
           messages={messages}
           titleKey="workOrders.detail.noJobsTitle"
           descriptionKey="workOrders.detail.noJobsBody"
         />
       ) : (
         <ul className="flex flex-col gap-2">
-          {jobs.map((job) => (
-            <li key={job.id} className="rounded-md border border-border p-3">
-              <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                <bdi className="text-body font-medium text-text-primary">{job.title}</bdi>
-                <code className="font-mono text-caption" dir="ltr">
-                  {job.state}
-                </code>
-                {job.jobType ? (
-                  <span className="text-caption text-text-muted">
-                    <bdi>{job.jobType}</bdi>
+          {jobs.map((job) => {
+            const open = openJobId === job.id;
+            return (
+              <li key={job.id} className="rounded-md border border-border p-3" data-job={job.id}>
+                <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                  <bdi className="text-body font-medium text-text-primary">{job.title}</bdi>
+                  <span className="text-caption text-text-secondary" data-testid="job-state">
+                    {jobStateLabel(job.state, (key) => translateDynamic(messages, key))}
                   </span>
-                ) : null}
-                {job.requiresDiagnostic ? (
+                  {job.jobType ? (
+                    <span className="text-caption text-text-muted">
+                      <bdi>{job.jobType}</bdi>
+                    </span>
+                  ) : null}
+                  {job.requiresDiagnostic ? (
+                    <span className="text-caption text-text-muted">
+                      {translate(messages, 'workOrders.detail.requiresDiagnostic')}
+                    </span>
+                  ) : null}
+                  {canReadDiagnostics ? (
+                    <Link
+                      href={`/${locale}/work-orders/${job.workOrderId}/jobs/${job.id}/diagnostics`}
+                      className="text-caption text-primary underline-offset-2 hover:underline"
+                    >
+                      {translate(messages, 'workOrders.detail.diagnosticsLink')}
+                      <span className="sr-only"> — {job.title}</span>
+                    </Link>
+                  ) : null}
                   <span className="text-caption text-text-muted">
-                    {translate(messages, 'workOrders.detail.requiresDiagnostic')}
+                    {translate(messages, 'workOrders.detail.department')}:{' '}
+                    {job.departmentId === null ? (
+                      translate(messages, 'workOrders.detail.unrouted')
+                    ) : (
+                      <bdi>{departmentName(messages, departments, job.departmentId)}</bdi>
+                    )}
                   </span>
-                ) : null}
-                {canReadDiagnostics ? (
-                  <Link
-                    href={`/${locale}/work-orders/${job.workOrderId}/jobs/${job.id}/diagnostics`}
-                    className="text-caption text-primary underline-offset-2 hover:underline"
+                  <Button
+                    type="button"
+                    size="small"
+                    variant="text"
+                    onClick={() => setOpenJobId(open ? null : job.id)}
+                    aria-expanded={open}
+                    aria-label={formatMessage(
+                      translate(
+                        messages,
+                        open ? 'workOrders.detail.closeJobNamed' : 'workOrders.detail.openJobNamed'
+                      ),
+                      { title: job.title }
+                    )}
+                    className="ms-auto"
                   >
-                    {translate(messages, 'workOrders.detail.diagnosticsLink')}
-                  </Link>
-                ) : null}
-                <span className="text-caption text-text-muted">
-                  {translate(messages, 'workOrders.detail.department')}:{' '}
-                  {job.departmentId === null ? (
-                    translate(messages, 'workOrders.detail.unrouted')
-                  ) : (
-                    <bdi>{departmentName(departments, job.departmentId)}</bdi>
-                  )}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setOpenJobId(openJobId === job.id ? null : job.id)}
-                  aria-expanded={openJobId === job.id}
-                  className="ms-auto text-primary underline-offset-2 hover:underline"
-                >
-                  {translate(
-                    messages,
-                    openJobId === job.id
-                      ? 'workOrders.detail.closeJob'
-                      : 'workOrders.detail.openJob'
-                  )}
-                </button>
-              </div>
+                    {translate(
+                      messages,
+                      open ? 'workOrders.detail.closeJob' : 'workOrders.detail.openJob'
+                    )}
+                  </Button>
+                </div>
 
-              {openJob !== null && openJob.id === job.id ? (
-                <JobPanel
-                  locale={locale}
-                  messages={messages}
-                  job={openJob}
-                  departments={departments}
-                  departmentsRefused={departmentsRefused}
-                  canManageJobs={canManageJobs}
-                  canReadTechnicians={canReadTechnicians}
-                  canAssign={canAssign}
-                  onDone={onDone}
-                />
-              ) : null}
-              {openJob !== null && openJob.id === job.id ? (
-                <JobBlockersPanel
-                  locale={locale}
-                  messages={messages}
-                  jobId={job.id}
-                  canRecord={canRecordLabor}
-                  onChanged={onDone}
-                />
-              ) : null}
-            </li>
-          ))}
+                {openJob !== null && openJob.id === job.id ? (
+                  <JobPanel
+                    locale={locale}
+                    messages={messages}
+                    job={openJob}
+                    zone={zone}
+                    departments={departments}
+                    departmentsRefused={departmentsRefused}
+                    canManageJobs={canManageJobs}
+                    canReadTechnicians={canReadTechnicians}
+                    canAssign={canAssign}
+                    onDone={onDone}
+                  />
+                ) : null}
+                {openJob !== null && openJob.id === job.id ? (
+                  <JobBlockersPanel
+                    locale={locale}
+                    messages={messages}
+                    jobId={job.id}
+                    canRecord={canRecordLabor}
+                    onChanged={onDone}
+                  />
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>
@@ -725,16 +853,19 @@ function JobsSection({
 }
 
 /**
- * The department's NAME when the list is readable, its id when it is not.
+ * The department's NAME when the list is readable; when it is not, the fact
+ * that the job IS routed, in words.
  *
  * An operator without `org.department.read` still sees that the job is routed —
  * rendering nothing there would read as "unrouted", which is a different and
- * false statement about the work.
+ * false statement about the work — but never the department's reference, which
+ * is not a name anybody can read (Owner directive: names, not identifiers).
  */
 function departmentName(
+  messages: Messages,
   departments: readonly DepartmentOption[] | null,
   departmentId: string
 ): string {
   const found = departments?.find((department) => department.id === departmentId);
-  return found ? found.name : departmentId;
+  return found ? found.name : translate(messages, 'workOrders.detail.routedUnnamed');
 }

@@ -1,9 +1,21 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr, renderRtl } from './render';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 
 /**
  * The handover panel on the work-order record, mounted where it ships (P1-31,
@@ -17,6 +29,10 @@ import { renderLtr, renderRtl } from './render';
  * assert both: the panel's own content inside the record for a caller who may
  * see a handover, its absence (and no read) for one who may not, and the page's
  * refusal, before anything is read, for a caller without the work-order read.
+ *
+ * The record is mounted as the dashboard mounts it — inside the working context
+ * (the work order's branch is `TEST_BRANCH`, whose clock the assignment window
+ * is typed on) and the Material provider (ADR-022, Owner directive slice 4).
  */
 
 const EN = en as Record<string, string>;
@@ -36,12 +52,14 @@ const readWorkOrderDetail = vi.fn();
 const transitionWorkOrder = vi.fn();
 const listJobAssignments = vi.fn();
 const assignTechnician = vi.fn();
+const listDepartments = vi.fn();
+const updateJob = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
   transitionWorkOrder: (...args: unknown[]) => transitionWorkOrder(...args),
-  listDepartments: vi.fn(),
+  listDepartments: (...args: unknown[]) => listDepartments(...args),
   listJobAssignments: (...args: unknown[]) => listJobAssignments(...args),
-  updateJob: vi.fn(),
+  updateJob: (...args: unknown[]) => updateJob(...args),
   assignTechnician: (...args: unknown[]) => assignTechnician(...args),
 }));
 vi.mock('@/features/work-orders/work-order-list-read', () => ({
@@ -119,11 +137,20 @@ const detail = {
   nextStates: [],
 };
 
+/** The dashboard's providers: the working context and the Material foundation. */
+function mounted(tree: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {inBranch(tree, { locale })}
+    </UiFoundationProvider>
+  );
+}
+
 async function renderRecord() {
   const tree = await WorkOrderPage({
     params: Promise.resolve({ locale: 'en', workOrderId: WORK_ORDER_ID }),
   });
-  return renderLtr(tree as React.ReactElement);
+  return renderLtr(mounted(tree as ReactElement, 'en'));
 }
 
 /** The same record in Arabic, so a refusal is read in the direction it ships in. */
@@ -131,7 +158,17 @@ async function renderRecordInArabic() {
   const tree = await WorkOrderPage({
     params: Promise.resolve({ locale: 'ar', workOrderId: WORK_ORDER_ID }),
   });
-  return renderRtl(tree as React.ReactElement);
+  return renderRtl(mounted(tree as ReactElement, 'ar'));
+}
+
+/** The field error's own element — the one `aria-describedby` names. */
+const errorElement = (text: HTMLElement) => text.closest('[role="alert"]') as HTMLElement;
+
+/** A moment typed into a date-time field, part by part: day, month, year, hour, minute. */
+async function typeMoment(user: ReturnType<typeof userEvent.setup>, label: string, digits: string) {
+  const group = screen.getByRole('group', { name: new RegExp(`^${label}`) });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(digits);
 }
 
 /** The handover section, addressed by the heading its own `aria-labelledby` names. */
@@ -282,10 +319,17 @@ describe('the work-order record says why a command was refused', () => {
     await user.click(
       screen.getByRole('button', { name: EN['workOrders.detail.moveWorkOrder'] as string })
     );
+    // A move no state follows is asked about first; nothing is sent before the answer.
+    expect(transitionWorkOrder).not.toHaveBeenCalled();
+    const question = within(await screen.findByTestId('work-order-move-confirm'));
+    await user.click(
+      question.getByRole('button', { name: EN['workOrders.detail.moveWorkOrder'] as string })
+    );
 
     const sentence = EN['form.violation.closure_requires_closure_operation'] as string;
-    const alert = await screen.findByText(sentence);
+    const alert = errorElement(await screen.findByText(sentence));
     expect(alert).toBeVisible();
+    expect(alert.id).not.toBe('');
     // Attached, not merely present: the control names the paragraph that
     // carries the sentence, which is what a screen reader follows.
     expect(select.getAttribute('aria-describedby') ?? '').toContain(alert.id);
@@ -318,6 +362,10 @@ describe('the work-order record says why a command was refused', () => {
     await user.selectOptions(select, 'closed');
     await user.click(
       screen.getByRole('button', { name: AR['workOrders.detail.moveWorkOrder'] as string })
+    );
+    const question = within(await screen.findByTestId('work-order-move-confirm'));
+    await user.click(
+      question.getByRole('button', { name: AR['workOrders.detail.moveWorkOrder'] as string })
     );
 
     expect(
@@ -353,31 +401,32 @@ describe('the work-order record says why a command was refused', () => {
     const user = userEvent.setup();
     await renderRecord();
 
-    await user.click(
-      await screen.findByRole('button', { name: EN['workOrders.detail.openJob'] as string })
-    );
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
     const profile = await screen.findByLabelText(
       new RegExp(`^${EN['workOrders.detail.technicianProfileId'] as string}`)
     );
     await user.type(profile, 'the-reference-on-screen');
-    await user.type(
-      screen.getByLabelText(new RegExp(`^${EN['workOrders.detail.windowFrom'] as string}`)),
-      '2026-09-01T08:00'
-    );
-    await user.type(
-      screen.getByLabelText(new RegExp(`^${EN['workOrders.detail.windowTo'] as string}`)),
-      '2026-09-01T12:00'
-    );
+    await typeMoment(user, EN['workOrders.detail.windowFrom'] as string, '010920260800');
+    await typeMoment(user, EN['workOrders.detail.windowTo'] as string, '010920261200');
     await user.click(
       screen.getByRole('button', { name: EN['workOrders.detail.assignTechnician'] as string })
     );
 
-    const role = screen.getByLabelText(
-      new RegExp(`^${EN['workOrders.detail.assignmentRole'] as string}`)
+    const role = screen.getByRole('radiogroup', {
+      name: new RegExp(`^${EN['workOrders.detail.assignmentRole'] as string}`),
+    });
+    const alert = errorElement(
+      await screen.findByText(EN['form.violation.primary_already_assigned'] as string)
     );
-    const alert = await screen.findByText(EN['form.violation.primary_already_assigned'] as string);
     expect(alert).toBeVisible();
+    expect(alert.id).not.toBe('');
     expect(role.getAttribute('aria-describedby') ?? '').toContain(alert.id);
+    // The window went as the branch's instants, with the branch's offset.
+    expect(assignTechnician.mock.calls[0]?.[1]).toEqual({
+      technicianProfileId: 'the-reference-on-screen',
+      assignmentRole: 'primary',
+      window: { from: '2026-09-01T08:00:00+03:00', to: '2026-09-01T12:00:00+03:00' },
+    });
     // Nothing the operator typed was thrown away by the refusal.
     expect((profile as HTMLInputElement).value).toBe('the-reference-on-screen');
     expect(document.body.textContent).not.toContain('primary_already_assigned');
@@ -403,23 +452,21 @@ describe('the work-order record says why a command was refused', () => {
     const user = userEvent.setup();
     await renderRecord();
 
-    await user.click(
-      await screen.findByRole('button', { name: EN['workOrders.detail.openJob'] as string })
-    );
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
     const profile = await screen.findByLabelText(
       new RegExp(`^${EN['workOrders.detail.technicianProfileId'] as string}`)
     );
-    const from = screen.getByLabelText(
-      new RegExp(`^${EN['workOrders.detail.windowFrom'] as string}`)
-    );
+    const from = screen.getByRole('group', {
+      name: new RegExp(`^${EN['workOrders.detail.windowFrom'] as string}`),
+    });
     await user.click(
       screen.getByRole('button', { name: EN['workOrders.detail.assignTechnician'] as string })
     );
     await waitFor(() => expect(profile).toHaveFocus());
     expect(profile).toHaveAttribute('aria-invalid', 'true');
     expect(from).toHaveAttribute('aria-invalid', 'true');
-    await user.type(from, '2026-09-01T08:00');
-    expect(from).not.toHaveAttribute('aria-invalid', 'true');
+    await typeMoment(user, EN['workOrders.detail.windowFrom'] as string, '010920260800');
+    await waitFor(() => expect(from).not.toHaveAttribute('aria-invalid', 'true'));
     expect(profile).toHaveAttribute('aria-invalid', 'true');
     expect(assignTechnician).not.toHaveBeenCalled();
   });
@@ -455,27 +502,22 @@ describe('the work-order record says why a command was refused', () => {
     const user = userEvent.setup();
     await renderRecord();
 
-    await user.click(
-      await screen.findByRole('button', { name: EN['workOrders.detail.openJob'] as string })
-    );
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
     const profile = await screen.findByLabelText(
       new RegExp(`^${EN['workOrders.detail.technicianProfileId'] as string}`)
     );
     await user.type(profile, 'the-reference-on-screen');
-    await user.type(
-      screen.getByLabelText(new RegExp(`^${EN['workOrders.detail.windowFrom'] as string}`)),
-      '2026-09-01T08:00'
-    );
-    await user.type(
-      screen.getByLabelText(new RegExp(`^${EN['workOrders.detail.windowTo'] as string}`)),
-      '2026-09-01T12:00'
-    );
+    await typeMoment(user, EN['workOrders.detail.windowFrom'] as string, '010920260800');
+    await typeMoment(user, EN['workOrders.detail.windowTo'] as string, '010920261200');
     await user.click(
       screen.getByRole('button', { name: EN['workOrders.detail.assignTechnician'] as string })
     );
 
-    const alert = await screen.findByText(EN['form.violation.profile-inactive'] as string);
+    const alert = errorElement(
+      await screen.findByText(EN['form.violation.profile-inactive'] as string)
+    );
     expect(alert).toBeVisible();
+    expect(alert.id).not.toBe('');
     expect(profile.getAttribute('aria-describedby') ?? '').toContain(alert.id);
     // The sentence has to hold on THIS screen too: the refusal here is that the
     // technician cannot be given the job, not only that time cannot be logged.
@@ -506,9 +548,7 @@ describe('the work-order record says why a command was refused', () => {
     const user = userEvent.setup();
     await renderRecord();
 
-    await user.click(
-      await screen.findByRole('button', { name: EN['workOrders.detail.openJob'] as string })
-    );
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
     const note = await screen.findByLabelText(
       new RegExp(`^${EN['workOrders.detail.blockerNote'] as string}`)
     );
@@ -517,8 +557,9 @@ describe('the work-order record says why a command was refused', () => {
       screen.getByRole('button', { name: EN['workOrders.detail.raiseBlocker'] as string })
     );
 
-    const alert = await screen.findByText(EN['form.violation.refused'] as string);
+    const alert = errorElement(await screen.findByText(EN['form.violation.refused'] as string));
     expect(alert).toBeVisible();
+    expect(alert.id).not.toBe('');
     expect(note.getAttribute('aria-describedby') ?? '').toContain(alert.id);
     expect((note as HTMLInputElement).value).toBe('Waiting on the hoist');
   });
@@ -592,5 +633,317 @@ describe('the work-order facts are said in words (checkpoint browser QA, DEF-02)
     expect(transitionWorkOrder.mock.calls[0]?.[0]).toBe(WORK_ORDER_ID);
     expect(transitionWorkOrder.mock.calls[0]?.[1]).toEqual({ toState: 'awaiting_parts' });
     expect(transitionWorkOrder.mock.calls[0]?.[2]).toBe(detail.workOrder.recordVersion);
+  });
+});
+
+/*
+ * Browser QA at 305e79c8 (DEF-R1): the History block printed every move as
+ * the read carries it — "work_order_status", "ready_to_close → closed" — in
+ * English and inside the Arabic page. Each entry is now said in words, the job
+ * a job-level entry belongs to by its title, and the kinds withheld from the
+ * caller without the permission code that would show them.
+ */
+describe('the history says each move in words (DEF-R1)', () => {
+  const timeline = {
+    workOrderId: WORK_ORDER_ID,
+    items: [
+      {
+        kind: 'work_order_status',
+        id: 'h1',
+        jobId: null,
+        actorId: 'actor-reference',
+        occurredAt: '2026-09-03T10:00:00.000Z',
+        fromState: 'ready_to_close',
+        toState: 'closed',
+        note: null,
+        reference: null,
+        detail: null,
+      },
+      {
+        kind: 'job_status',
+        id: 'h2',
+        jobId: JOB_ID,
+        actorId: null,
+        occurredAt: '2026-09-02T10:00:00.000Z',
+        fromState: 'assigned',
+        toState: 'in_progress',
+        note: null,
+        reference: null,
+        detail: null,
+      },
+    ],
+    nextCursor: null,
+    hasMore: false,
+    omittedKinds: [
+      { kind: 'assignment', requires: 'tech.technician.read' },
+      { kind: 'qc_status', requires: 'qms.quality_control.read' },
+    ],
+  };
+
+  it('in English: the kind, both states and the job in words, and no code', async () => {
+    PERMISSIONS = [WORK_ORDER_READ];
+    readWorkOrderDetail.mockResolvedValue({ status: 'ok', data: movable, correlationId: 'c' });
+    readWorkOrderTimeline.mockResolvedValue({ status: 'ok', data: timeline, correlationId: 'c' });
+    await renderRecord();
+    const history = within(await screen.findByTestId('work-order-history'));
+    expect(
+      await history.findByText(EN['workOrders.history.kind.work_order_status'] as string)
+    ).toBeVisible();
+    expect(
+      history.getByText(
+        `from ${EN['workOrders.state.ready_to_close'] as string} to ${EN['workOrders.state.closed'] as string}`
+      )
+    ).toBeVisible();
+    expect(history.getByText(EN['workOrders.history.kind.job_status'] as string)).toBeVisible();
+    expect(
+      history.getByText(
+        `from ${EN['workOrders.jobState.assigned'] as string} to ${EN['workOrders.jobState.in_progress'] as string}`
+      )
+    ).toBeVisible();
+    expect(history.getByText('Job: Front brake overhaul')).toBeVisible();
+    const text = screen.getByTestId('work-order-history').textContent ?? '';
+    for (const code of [
+      'work_order_status',
+      'job_status',
+      'ready_to_close',
+      'in_progress',
+      'tech.technician.read',
+      'qms.quality_control.read',
+      'actor-reference',
+    ]) {
+      expect(text, code).not.toContain(code);
+    }
+    expect(history.getByTestId('work-order-history-omitted')).toHaveTextContent(
+      EN['workOrders.history.kind.assignment'] as string
+    );
+  });
+
+  it('in Arabic, right to left', async () => {
+    PERMISSIONS = [WORK_ORDER_READ];
+    readWorkOrderDetail.mockResolvedValue({ status: 'ok', data: movable, correlationId: 'c' });
+    readWorkOrderTimeline.mockResolvedValue({ status: 'ok', data: timeline, correlationId: 'c' });
+    await renderRecordInArabic();
+    const history = within(await screen.findByTestId('work-order-history'));
+    expect(
+      await history.findByText(AR['workOrders.history.kind.work_order_status'] as string)
+    ).toBeVisible();
+    expect(screen.getByTestId('work-order-history').textContent).not.toContain('ready_to_close');
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('says an unanswered history is unavailable, with a retry that reads again', async () => {
+    PERMISSIONS = [WORK_ORDER_READ];
+    readWorkOrderTimeline.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'down' });
+    const user = userEvent.setup();
+    await renderRecord();
+    const failure = await screen.findByTestId('work-order-history-failure');
+    expect(failure).toHaveTextContent(EN['workOrders.history.unavailable'] as string);
+    await user.click(within(failure).getByRole('button', { name: EN['state.retry'] as string }));
+    expect(
+      await within(screen.getByTestId('work-order-history')).findByText(
+        EN['workOrders.detail.noHistory'] as string
+      )
+    ).toBeVisible();
+  });
+});
+
+describe('a job is said in words, and its routing rides the edit baseline', () => {
+  const departments = [
+    { id: 'dep-1', departmentCode: 'MECH', name: 'Mechanical' },
+    { id: 'dep-2', departmentCode: 'ELEC', name: 'Electrical' },
+  ];
+
+  it('says the job state in words, never its code', async () => {
+    PERMISSIONS = [WORK_ORDER_READ];
+    readWorkOrderDetail.mockResolvedValue({ status: 'ok', data: movable, correlationId: 'c' });
+    await renderRecord();
+    const state = await screen.findByTestId('job-state');
+    expect(state).toHaveTextContent(EN['workOrders.jobState.in_progress'] as string);
+    const jobs = screen.getByRole('region', {
+      name: EN['workOrders.detail.jobsHeading'] as string,
+    });
+    expect(jobs.textContent).not.toContain('in_progress');
+  });
+
+  it('routes with the job version, offers the latest version on a conflict, and discards to it', async () => {
+    PERMISSIONS = [WORK_ORDER_READ, 'wo.job.manage', 'org.department.read'];
+    readWorkOrderDetail.mockResolvedValue({ status: 'ok', data: movable, correlationId: 'c' });
+    listDepartments.mockResolvedValue({
+      status: 'ok',
+      data: { items: departments },
+      correlationId: 'c',
+    });
+    listJobBlockers.mockResolvedValue({ status: 'ok', data: { items: [] }, correlationId: 'c' });
+    updateJob.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'state.conflict.message',
+      correlationId: 'corr-stale',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    await renderRecord();
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
+    const department = await screen.findByLabelText(
+      new RegExp(`^${EN['workOrders.detail.department'] as string}`)
+    );
+    // Nothing chosen differs from what is stored: nothing to apply.
+    const apply = screen.getByRole('button', {
+      name: EN['workOrders.detail.applyRouting'] as string,
+    });
+    expect(apply).toBeDisabled();
+    await user.selectOptions(department, 'dep-2');
+    await user.click(apply);
+    await waitFor(() =>
+      expect(updateJob).toHaveBeenCalledWith(
+        JOB_ID,
+        { title: 'Front brake overhaul', departmentId: 'dep-2' },
+        2
+      )
+    );
+    expect(await screen.findByText(EN['workOrders.detail.conflict'] as string)).toBeVisible();
+    // The choice survives the refusal until the operator asks for the latest.
+    expect((department as HTMLSelectElement).value).toBe('dep-2');
+    readWorkOrderDetail.mockResolvedValue({
+      status: 'ok',
+      data: { ...movable, jobs: [{ ...job, departmentId: 'dep-1', recordVersion: 5 }] },
+      correlationId: 'c',
+    });
+    await user.click(screen.getByRole('button', { name: EN['form.loadLatest'] as string }));
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByLabelText(
+            new RegExp(`^${EN['workOrders.detail.department'] as string}`)
+          ) as HTMLSelectElement
+        ).value
+      ).toBe('dep-1')
+    );
+    // The next routing is built on the version the re-read brought.
+    updateJob.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${EN['workOrders.detail.department'] as string}`)),
+      ''
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['workOrders.detail.applyRouting'] as string })
+    );
+    await waitFor(() =>
+      expect(updateJob).toHaveBeenLastCalledWith(
+        JOB_ID,
+        { title: 'Front brake overhaul', departmentId: null },
+        5
+      )
+    );
+  });
+
+  /*
+   * The two cases below are where the baseline's version and the live one
+   * DIFFER. In the conflict case above they are the same number, so sending the
+   * live `job.recordVersion` instead of `edit.version`, or dropping the
+   * post-save `edit.rebase`, left every case green (fix round 2, PR #482).
+   */
+  const departmentBox = () =>
+    screen.getByLabelText(
+      new RegExp(`^${EN['workOrders.detail.department'] as string}`)
+    ) as HTMLSelectElement;
+  const applyButton = () =>
+    screen.getByRole('button', { name: EN['workOrders.detail.applyRouting'] as string });
+
+  function routable() {
+    PERMISSIONS = [WORK_ORDER_READ, 'wo.job.manage', 'org.department.read', 'tech.labor.record'];
+    readWorkOrderDetail.mockResolvedValue({ status: 'ok', data: movable, correlationId: 'c' });
+    listDepartments.mockResolvedValue({
+      status: 'ok',
+      data: { items: departments },
+      correlationId: 'c',
+    });
+    listJobBlockers.mockResolvedValue({ status: 'ok', data: { items: [] }, correlationId: 'c' });
+  }
+
+  it('keeps the chosen department on its baseline version when another command re-reads a newer job', async () => {
+    routable();
+    raiseJobBlocker.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    updateJob.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    const user = userEvent.setup();
+    await renderRecord();
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
+    await screen.findByLabelText(new RegExp(`^${EN['workOrders.detail.department'] as string}`));
+    await user.selectOptions(departmentBox(), 'dep-2');
+
+    // Another panel's command stores something and re-reads the work order,
+    // which brings the job at a newer version while the choice is unapplied.
+    readWorkOrderDetail.mockResolvedValue({
+      status: 'ok',
+      data: { ...movable, jobs: [{ ...job, recordVersion: 4 }] },
+      correlationId: 'c',
+    });
+    const readsBefore = readWorkOrderDetail.mock.calls.length;
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['workOrders.detail.blockerNote'] as string}`)),
+      'Waiting on the hoist'
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['workOrders.detail.raiseBlocker'] as string })
+    );
+    await waitFor(() => expect(readWorkOrderDetail.mock.calls.length).toBeGreaterThan(readsBefore));
+    // The choice survives the re-read.
+    await waitFor(() => expect(applyButton()).toBeEnabled());
+    expect(departmentBox().value).toBe('dep-2');
+
+    await user.click(applyButton());
+    // Built on version 2, so it is sent at version 2: the job moved since, and
+    // that is the server's conflict to decide, never a silent overwrite.
+    await waitFor(() =>
+      expect(updateJob).toHaveBeenCalledWith(
+        JOB_ID,
+        { title: 'Front brake overhaul', departmentId: 'dep-2' },
+        2
+      )
+    );
+  });
+
+  it('leaves the form clean after a stored routing: Apply is off and a branch switch asks nothing', async () => {
+    routable();
+    updateJob.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    const user = userEvent.setup();
+    const tree = await WorkOrderPage({
+      params: Promise.resolve({ locale: 'en', workOrderId: WORK_ORDER_ID }),
+    });
+    renderLtr(
+      <UiFoundationProvider locale="en" text={muiTextOf(getMessages('en'))}>
+        {inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            {tree as ReactElement}
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]), locale: 'en' }
+        )}
+      </UiFoundationProvider>
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
+    await screen.findByLabelText(new RegExp(`^${EN['workOrders.detail.department'] as string}`));
+    await user.selectOptions(departmentBox(), 'dep-2');
+
+    // The re-read after the save brings the routing as stored, one version on.
+    readWorkOrderDetail.mockResolvedValue({
+      status: 'ok',
+      data: { ...movable, jobs: [{ ...job, departmentId: 'dep-2', recordVersion: 3 }] },
+      correlationId: 'c',
+    });
+    const readsBefore = readWorkOrderDetail.mock.calls.length;
+    await user.click(applyButton());
+    await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(readWorkOrderDetail.mock.calls.length).toBeGreaterThan(readsBefore));
+    await waitFor(() =>
+      expect(applyButton()).toHaveTextContent(EN['workOrders.detail.applyRouting'] as string)
+    );
+    expect(departmentBox().value).toBe('dep-2');
+    // Nothing is left to apply, so nothing is unsaved.
+    expect(applyButton()).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });

@@ -85,7 +85,17 @@
   // inside it, paper carries the document and not the screen around it: every
   // direct child that holds no document is left off. Nothing changes while no
   // document is open, so printing the screen itself still prints the screen.
-  [data-print-scope]:has([data-print='document']) > :not(:has([data-print='document'])) {
+  //
+  // The document itself is never one of the children left off. `:has()` looks
+  // only at DESCENDANTS, so a document that is itself a direct child of the
+  // scope (the reception acknowledgement: the toolbar and the sheet side by
+  // side) holds no document below it and matched `:not(:has(…))` — the sheet
+  // hid itself and the page printed blank (checkpoint browser QA at 78602752,
+  // RI3). Naming the document itself in the `:not()` list keeps it; a document
+  // nested deeper (the delivery sheet inside its panel) is still kept through
+  // its panel.
+  [data-print-scope]:has([data-print='document'])
+    > :not([data-print='document'], :has([data-print='document'])) {
     display: none;
   }
 

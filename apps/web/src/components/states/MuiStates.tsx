@@ -368,6 +368,73 @@ export function MuiStaleState({ messages, onRetry, action, testId }: StateProps)
 }
 
 /**
+ * A read that came back as anything but an answer — a `ReadState` failure — as
+ * the state it is (Owner directive, slice 4: the work-order detail, closure,
+ * diagnostics, quality and technician panels).
+ *
+ * Those panels each printed a failed read as one red line — "the service is
+ * unavailable" and "you may not see this" in the same shape, with no retry for
+ * either. The mapping is `MuiSearchStates`' one, keyed on the read's own status:
+ * an outage (a throttled, unanswered or failed service — 429 and 5xx arrive as
+ * `unavailable`) and a fault offer a retry; a refusal, an ended session and an
+ * absent record never do. `descriptionKey` lets a panel say what could not be
+ * read in its own words; the heading and the retry rule stay the shared ones.
+ */
+export function MuiReadFailureState({
+  messages,
+  locale,
+  status,
+  correlationId,
+  onRetry,
+  descriptionKey,
+  testId,
+}: {
+  readonly messages: Messages;
+  readonly locale?: Locale | undefined;
+  readonly status: 'denied' | 'expired' | 'unavailable' | 'error' | 'not-found';
+  readonly correlationId?: string | null | undefined;
+  readonly onRetry?: (() => void) | undefined;
+  readonly descriptionKey?: keyof Messages | undefined;
+  readonly testId?: string | undefined;
+}) {
+  switch (status) {
+    case 'denied':
+      return (
+        <MuiRefusedState
+          messages={messages}
+          correlationId={correlationId}
+          descriptionKey={descriptionKey}
+          testId={testId}
+        />
+      );
+    case 'expired':
+      return <MuiExpiredState messages={messages} locale={locale} testId={testId} />;
+    case 'not-found':
+      return <MuiNotFoundState messages={messages} testId={testId} />;
+    case 'unavailable':
+      return (
+        <MuiUnavailableState
+          messages={messages}
+          onRetry={onRetry}
+          correlationId={correlationId}
+          descriptionKey={descriptionKey}
+          testId={testId}
+        />
+      );
+    case 'error':
+      return (
+        <MuiErrorState
+          messages={messages}
+          onRetry={onRetry}
+          correlationId={correlationId}
+          descriptionKey={descriptionKey}
+          testId={testId}
+        />
+      );
+  }
+}
+
+/**
  * Everything a search can be except an answer — `SearchStates`, on Material UI.
  *
  * The same phases and the same decisions: `ready` renders nothing (the caller

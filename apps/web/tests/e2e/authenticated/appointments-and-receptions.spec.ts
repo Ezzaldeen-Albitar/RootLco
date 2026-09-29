@@ -1338,6 +1338,46 @@ test.describe('the reception acknowledgement', () => {
     ).toBeVisible();
     await expect(page.locator('[data-print-scope] > [data-print="document"]')).toHaveCount(1);
   });
+
+  /*
+   * Printed, the sheet is on the paper — in both languages.
+   *
+   * Checkpoint browser QA at 78602752 (RI3, DEF-01): the printed page carried
+   * only the page title, because the print sheet's scope rule hid every direct
+   * child of the scope holding no document BELOW it, and the sheet — itself a
+   * direct child — holds none below itself. The case above proved the sheet was
+   * the scope's child; nothing proved the child survived print media. This one
+   * prints (print media emulated) and measures the sheet: displayed, with
+   * height, its sections present, and the toolbar off the paper.
+   */
+  for (const locale of LOCALES) {
+    test(`${locale}: the printed acknowledgement carries the sheet, not a blank page`, async ({
+      page,
+      request,
+    }) => {
+      const token = await ownerBearer(request);
+      const receptionId = await firstReceptionId(request, token);
+      // test-honesty-allow: TH-002 -- no reception visit is readable by the acceptance owner on this database, so there is no sheet to print; the case above holds the not-found branch
+      test.skip(receptionId === null, 'no readable reception visit: no acknowledgement to print');
+      const route = `/${locale}/receptions/check-in/${String(receptionId)}/acknowledgement`;
+      await page.goto(route);
+      await segmentRendered(page, route);
+      const sheet = page.locator('[data-print-scope] > [data-print="document"]');
+      await expect(sheet).toHaveCount(1);
+
+      await page.emulateMedia({ media: 'print' });
+      await expect(sheet).toBeVisible();
+      const box = await sheet.boundingBox();
+      expect(box?.height ?? 0, 'the printed sheet has no height').toBeGreaterThan(0);
+      await expect(sheet).toContainText(say(locale, 'receptions.acknowledgement.visitHeading'));
+      await expect(sheet).toContainText(say(locale, 'receptions.acknowledgement.footerNote'));
+      // The toolbar — Print and the way back — stays off the paper.
+      await expect(page.getByTestId('acknowledgement-toolbar')).toBeHidden();
+      const direction = await sheet.evaluate((node) => getComputedStyle(node).direction);
+      expect(direction).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+      await page.emulateMedia({ media: 'screen' });
+    });
+  }
 });
 
 /* ================================================================== *

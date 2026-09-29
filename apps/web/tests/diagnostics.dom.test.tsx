@@ -5,10 +5,20 @@
  * name). The adapters are mocked at the module boundary; the request they
  * build is proved in `diagnostics-api.test.ts`, the response they receive in
  * `tests/backend/p1-29-w7-diagnostics-experience.test.ts`.
+ *
+ * On the Material UI wrappers (ADR-022, Owner directive slice 4): the catalogue
+ * is `OperationalGrid` (each row's action named with the template), every
+ * form is `forms/mui/*`, completing and cancelling a report and publishing or
+ * retiring a version are asked first (`ConfirmDialog`), and every status is
+ * said in words — the raw codes are held absent.
  */
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import { renderLtr, renderRtl } from './render';
@@ -18,6 +28,30 @@ const AR = ar as Record<string, string>;
 /** A message by key, as a string: the catalogue is complete, so a miss is a test defect. */
 const t = (key: string): string => EN[key] ?? key;
 const arT = (key: string): string => AR[key] ?? key;
+
+/** The product's Material provider, as the locale layout mounts it. */
+function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const mount = (ui: ReactElement) => renderLtr(withMui(ui));
+const mountAr = (ui: ReactElement) => renderRtl(withMui(ui, 'ar'));
+
+/** The question a decision dialog asks, answered with its own confirm button. */
+async function confirmIn(user: ReturnType<typeof userEvent.setup>, testId: string, name: string) {
+  const dialog = await screen.findByTestId(testId);
+  await user.click(within(dialog).getByRole('button', { name }));
+}
+
+/** The report's toggle: "Open", named with the report for assistive technology. */
+const openReport = (label = t('diagnostics.job.openReport')) =>
+  screen.findByRole('button', { name: new RegExp(`^${label}`) });
+
+/** The field error's own element — the one `aria-describedby` names. */
+const errorElement = (text: HTMLElement) => text.closest('[role="alert"]') as HTMLElement;
 
 const listDiagnosticTypes = vi.fn();
 const listTemplates = vi.fn();
@@ -35,6 +69,7 @@ const completeReport = vi.fn();
 const createVersion = vi.fn();
 const setVersionStatus = vi.fn();
 const reviewReport = vi.fn();
+const updateTemplate = vi.fn();
 vi.mock('@/features/diagnostics/api', () => ({
   listDiagnosticTypes: () => listDiagnosticTypes(),
   listTemplates: (...args: unknown[]) => listTemplates(...args),
@@ -45,7 +80,7 @@ vi.mock('@/features/diagnostics/api', () => ({
   readReport: (...args: unknown[]) => readReport(...args),
   readReportHistory: (...args: unknown[]) => readReportHistory(...args),
   createTemplate: (...args: unknown[]) => createTemplate(...args),
-  updateTemplate: vi.fn(),
+  updateTemplate: (...args: unknown[]) => updateTemplate(...args),
   createVersion: (...args: unknown[]) => createVersion(...args),
   createItem: vi.fn(),
   setVersionStatus: (...args: unknown[]) => setVersionStatus(...args),
@@ -183,6 +218,7 @@ beforeEach(() => {
     createVersion,
     setVersionStatus,
     reviewReport,
+    updateTemplate,
   ]) {
     fn.mockReset();
   }
@@ -194,9 +230,11 @@ describe('the catalogue', () => {
   it('renders the list from the response and links each template to its detail', async () => {
     listDiagnosticTypes.mockResolvedValue(ok({ items: [] }));
     listTemplates.mockResolvedValue(ok({ items: [template], nextCursor: null, hasMore: false }));
-    renderLtr(<TemplateCatalogueScreen locale="en" messages={en} canManage={false} />);
-    const link = await screen.findByRole('link', { name: 'Brake check' });
+    mount(<TemplateCatalogueScreen locale="en" messages={en} canManage={false} />);
+    const link = await screen.findByRole('link', { name: /Brake check/ });
     expect(link).toHaveAttribute('href', `/en/work-orders/diagnostics/${TEMPLATE}`);
+    // The row names its type by the type's name, never the reference.
+    expect(document.body.textContent).not.toContain('type-1');
     expect(
       screen.queryByRole('heading', { name: t('diagnostics.catalogue.createHeading') })
     ).toBeNull();
@@ -205,7 +243,7 @@ describe('the catalogue', () => {
   it('with catalogue rights and NO configured type, says so and offers no form', async () => {
     listDiagnosticTypes.mockResolvedValue(ok({ items: [] }));
     listTemplates.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
-    renderLtr(<TemplateCatalogueScreen locale="en" messages={en} canManage />);
+    mount(<TemplateCatalogueScreen locale="en" messages={en} canManage />);
     expect(await screen.findByText(t('diagnostics.catalogue.noTypesTitle'))).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: t('diagnostics.catalogue.create') })).toBeNull();
     expect(createTemplate).not.toHaveBeenCalled();
@@ -229,7 +267,7 @@ describe('the catalogue', () => {
     listTemplates.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
     createTemplate.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
     const user = userEvent.setup();
-    renderLtr(<TemplateCatalogueScreen locale="en" messages={en} canManage />);
+    mount(<TemplateCatalogueScreen locale="en" messages={en} canManage />);
     await user.type(
       await screen.findByLabelText(new RegExp(t('diagnostics.catalogue.code'))),
       'brake_check'
@@ -256,15 +294,33 @@ describe('the catalogue', () => {
   it('shows a refused list as the refusal it was, with its reference', async () => {
     listDiagnosticTypes.mockResolvedValue(ok({ items: [] }));
     listTemplates.mockResolvedValue(denied);
-    renderLtr(<TemplateCatalogueScreen locale="en" messages={en} canManage={false} />);
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('corr-denied');
+    mount(<TemplateCatalogueScreen locale="en" messages={en} canManage={false} />);
+    // The grid's own refusal: the shared heading and the reference, and no rows.
+    expect(await screen.findByText('corr-denied')).toBeInTheDocument();
+    expect(screen.getByText(t('state.denied.title'))).toBeInTheDocument();
+  });
+
+  it("narrows by status as the read's key, back on page one", async () => {
+    listDiagnosticTypes.mockResolvedValue(ok({ items: [] }));
+    listTemplates.mockResolvedValue(ok({ items: [], nextCursor: null, hasMore: false }));
+    const user = userEvent.setup();
+    mount(<TemplateCatalogueScreen locale="en" messages={en} canManage={false} />);
+    await screen.findByText(t('diagnostics.catalogue.emptyTitle'));
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${t('diagnostics.catalogue.filterStatus')}`)),
+      'inactive'
+    );
+    await waitFor(() =>
+      expect(listTemplates).toHaveBeenLastCalledWith({ status: 'inactive', limit: 25 }, null)
+    );
+    // "None with this status" — not "none yet", a claim about every template.
+    expect(await screen.findByText(t('diagnostics.catalogue.noneMatchingTitle'))).toBeVisible();
   });
 });
 
 describe('the template detail', () => {
   it('renders the versions and, opened, the items of one in checklist order', async () => {
-    renderLtr(
+    mount(
       <TemplateDetailScreen
         locale="en"
         messages={en}
@@ -286,7 +342,7 @@ describe('the template detail', () => {
   });
 
   it('offers authoring on a draft version only to catalogue rights, and not on a published one', async () => {
-    renderLtr(
+    mount(
       <TemplateDetailScreen
         locale="en"
         messages={en}
@@ -309,10 +365,109 @@ describe('the template detail', () => {
   });
 });
 
+/**
+ * The template's name and status are an EDIT of a stored record
+ * (`useEditBaseline`): the baseline's version is the If-Match, a conflict
+ * offers "Load the latest version" and discards the stale work, and a save
+ * re-bases so the next save sends the version the re-read brought.
+ */
+describe('the template settings ride the edit baseline', () => {
+  const renderSettings = () =>
+    mount(
+      <TemplateDetailScreen
+        locale="en"
+        messages={en}
+        templateId={TEMPLATE}
+        initial={{ template, versions: [] }}
+        canManage
+      />
+    );
+  const nameBox = () =>
+    screen.getByLabelText(new RegExp(`^${t('diagnostics.catalogue.name')}`)) as HTMLInputElement;
+
+  it('sends the baseline version, and after a save sends the version the re-read brought', async () => {
+    updateTemplate.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    readTemplate.mockResolvedValue(
+      ok({ template: { ...template, name: 'Brake check v2', recordVersion: 2 }, versions: [] })
+    );
+    const user = userEvent.setup();
+    renderSettings();
+    await user.clear(nameBox());
+    await user.type(nameBox(), 'Brake check v2');
+    await user.click(screen.getByRole('button', { name: t('diagnostics.template.save') }));
+    await waitFor(() =>
+      expect(updateTemplate).toHaveBeenCalledWith(TEMPLATE, { name: 'Brake check v2' }, 1)
+    );
+    // The re-read landed: the form is clean on what is stored, at version 2.
+    await waitFor(() => expect(readTemplate).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(nameBox().value).toBe('Brake check v2'));
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${t('diagnostics.catalogue.filterStatus')}`)),
+      'inactive'
+    );
+    await user.click(screen.getByRole('button', { name: t('diagnostics.template.save') }));
+    await waitFor(() =>
+      expect(updateTemplate).toHaveBeenLastCalledWith(TEMPLATE, { status: 'inactive' }, 2)
+    );
+  });
+
+  /*
+   * The baseline's version and the live one DIFFER here: another command's
+   * re-read brings the template one version on while a rename is typed. Sending
+   * the live `recordVersion` instead of `edit.version` left every other case
+   * green, because there the two are the same number (fix round 2, PR #482).
+   */
+  it('keeps typed work on its baseline version when another command re-reads a newer template', async () => {
+    createVersion.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    updateTemplate.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    readTemplate.mockResolvedValue(
+      ok({ template: { ...template, recordVersion: 2 }, versions: [draftVersion] })
+    );
+    const user = userEvent.setup();
+    renderSettings();
+    await user.clear(nameBox());
+    await user.type(nameBox(), 'Brake inspection');
+    await user.click(screen.getByRole('button', { name: t('diagnostics.template.newVersion') }));
+    await waitFor(() => expect(readTemplate).toHaveBeenCalledTimes(1));
+    // The re-read landed (the new version is listed) and the typed name survived it.
+    await waitFor(() =>
+      expect(screen.queryByText(t('diagnostics.template.noVersions'))).toBeNull()
+    );
+    expect(nameBox().value).toBe('Brake inspection');
+    await user.click(screen.getByRole('button', { name: t('diagnostics.template.save') }));
+    await waitFor(() =>
+      expect(updateTemplate).toHaveBeenCalledWith(TEMPLATE, { name: 'Brake inspection' }, 1)
+    );
+  });
+
+  it('says a conflict and offers the latest version, which discards the stale work', async () => {
+    updateTemplate.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'state.conflict.message',
+      correlationId: 'corr-stale',
+      attempt: 1,
+    });
+    readTemplate.mockResolvedValue(
+      ok({ template: { ...template, name: 'Brakes, as renamed', recordVersion: 5 }, versions: [] })
+    );
+    const user = userEvent.setup();
+    renderSettings();
+    await user.clear(nameBox());
+    await user.type(nameBox(), 'My stale rename');
+    await user.click(screen.getByRole('button', { name: t('diagnostics.template.save') }));
+    expect(await screen.findByText(t('diagnostics.template.conflict'))).toBeVisible();
+    // The typed work survives the refusal until the operator chooses otherwise.
+    expect(nameBox().value).toBe('My stale rename');
+    await user.click(screen.getByRole('button', { name: t('form.loadLatest') }));
+    await waitFor(() => expect(nameBox().value).toBe('Brakes, as renamed'));
+    expect(screen.queryByText(t('diagnostics.template.conflict'))).toBeNull();
+  });
+});
+
 describe('the item form points at what to fix (route sweep B3)', () => {
   it('moves the cursor to the first missing field and withdraws its complaint once it is filled', async () => {
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <TemplateDetailScreen
         locale="en"
         messages={en}
@@ -339,7 +494,7 @@ describe('the job workbench', () => {
     listPublishableVersions.mockResolvedValue(ok({ items: [] }));
     readReport.mockResolvedValue(ok(detail));
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <JobDiagnosticsScreen
         locale="en"
         messages={en}
@@ -347,15 +502,25 @@ describe('the job workbench', () => {
         capabilities={{ canRecord: true, canComplete: false, canReview: false, canCapture: false }}
       />
     );
-    await user.click(await screen.findByRole('button', { name: t('diagnostics.job.openReport') }));
+    await user.click(await openReport());
     expect(await screen.findByText('Measure the pad depth')).toBeInTheDocument();
     // The answered item shows its answer; the unanswered one says so.
     expect(screen.getByText(`${t('diagnostics.report.answer')}: 24.5`)).toBeInTheDocument();
     expect(screen.getByText(t('diagnostics.report.unanswered'))).toBeInTheDocument();
-    // The moves offered are the report's own, and completion is withheld without the code.
-    expect(screen.getByRole('button', { name: /cancelled/ })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /in_progress/ })).toBeNull();
+    // The moves offered are the report's own, said in words, and completion is
+    // withheld without the code.
+    expect(
+      screen.getByRole('button', {
+        name: `${t('diagnostics.report.moveTo')} ${t('diagnostics.reportStatus.cancelled')}`,
+      })
+    ).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: t('diagnostics.report.complete') })).toBeNull();
+    // Browser QA row B.S3: no status reaches the page as its code.
+    expect(screen.getByTestId('report-status')).toHaveTextContent(
+      t('diagnostics.reportStatus.in_progress')
+    );
+    expect(document.body.textContent).not.toContain('in_progress');
+    expect(document.body.textContent).not.toContain(' cancelled');
   });
 
   it('records an answer to the item by its id and re-reads the report', async () => {
@@ -364,7 +529,7 @@ describe('the job workbench', () => {
     readReport.mockResolvedValue(ok(detail));
     writeItemResult.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <JobDiagnosticsScreen
         locale="en"
         messages={en}
@@ -372,14 +537,40 @@ describe('the job workbench', () => {
         capabilities={{ canRecord: true, canComplete: false, canReview: false, canCapture: false }}
       />
     );
-    await user.click(await screen.findByRole('button', { name: t('diagnostics.job.openReport') }));
+    await user.click(await openReport());
     const row = (await screen.findByText('Road test performed')).closest('li') as HTMLElement;
-    await user.selectOptions(within(row).getByRole('combobox'), 'true');
+    await user.click(within(row).getByRole('radio', { name: t('diagnostics.report.yes') }));
     await user.click(within(row).getByRole('button', { name: t('diagnostics.report.record') }));
     await waitFor(() =>
       expect(writeItemResult).toHaveBeenCalledWith(REPORT, ITEM_B, { resultValue: 'true' })
     );
     await waitFor(() => expect(readReport).toHaveBeenCalledTimes(2));
+  });
+
+  it('refuses an item with neither an answer nor a reason on the answer, sending nothing', async () => {
+    listJobReports.mockResolvedValue(ok({ items: [report] }));
+    listPublishableVersions.mockResolvedValue(ok({ items: [] }));
+    readReport.mockResolvedValue(ok(detail));
+    const user = userEvent.setup();
+    mount(
+      <JobDiagnosticsScreen
+        locale="en"
+        messages={en}
+        jobId={JOB}
+        capabilities={{ canRecord: true, canComplete: false, canReview: false, canCapture: false }}
+      />
+    );
+    await user.click(await openReport());
+    const row = (await screen.findByText('Measure the pad depth')).closest('li') as HTMLElement;
+    await user.click(within(row).getByRole('button', { name: t('diagnostics.report.record') }));
+    const answer = within(row).getByLabelText(new RegExp(`^${t('diagnostics.report.answer')}`));
+    await waitFor(() => expect(answer).toHaveAttribute('aria-invalid', 'true'));
+    await waitFor(() => expect(answer).toHaveFocus());
+    expect(within(row).getByText(t('diagnostics.report.answerOrReason'))).toBeVisible();
+    expect(writeItemResult).not.toHaveBeenCalled();
+    // Typed, the complaint goes.
+    await user.type(answer, '4');
+    expect(answer).not.toHaveAttribute('aria-invalid');
   });
 
   it('completes with the version the detail was rendered from and hands the outcome onward', async () => {
@@ -388,7 +579,7 @@ describe('the job workbench', () => {
     readReport.mockResolvedValue(ok(detail));
     completeReport.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <JobDiagnosticsScreen
         locale="en"
         messages={en}
@@ -396,8 +587,11 @@ describe('the job workbench', () => {
         capabilities={{ canRecord: true, canComplete: true, canReview: false, canCapture: false }}
       />
     );
-    await user.click(await screen.findByRole('button', { name: t('diagnostics.job.openReport') }));
+    await user.click(await openReport());
     await user.click(await screen.findByRole('button', { name: t('diagnostics.report.complete') }));
+    // Asked first: nothing is sent until the question is answered.
+    expect(completeReport).not.toHaveBeenCalled();
+    await confirmIn(user, 'report-status-confirm', t('diagnostics.report.complete'));
     await waitFor(() => expect(completeReport).toHaveBeenCalledWith(REPORT, {}, 3));
     await waitFor(() => expect(listJobReports).toHaveBeenCalledTimes(2));
   });
@@ -405,7 +599,7 @@ describe('the job workbench', () => {
   it('without a published template, says a diagnostic cannot start and offers no form', async () => {
     listJobReports.mockResolvedValue(ok({ items: [] }));
     listPublishableVersions.mockResolvedValue(ok({ items: [] }));
-    renderLtr(
+    mount(
       <JobDiagnosticsScreen
         locale="en"
         messages={en}
@@ -420,7 +614,7 @@ describe('the job workbench', () => {
 
   it('renders a refused report list as the refusal it was', async () => {
     listJobReports.mockResolvedValue(denied);
-    renderLtr(
+    mount(
       <JobDiagnosticsScreen
         locale="en"
         messages={en}
@@ -428,7 +622,8 @@ describe('the job workbench', () => {
         capabilities={{ canRecord: false, canComplete: false, canReview: false, canCapture: false }}
       />
     );
-    expect(await screen.findByRole('alert')).toHaveTextContent('corr-denied');
+    expect(await screen.findByText('corr-denied')).toBeInTheDocument();
+    expect(screen.getByText(t('state.denied.title'))).toBeInTheDocument();
     expect(listPublishableVersions).not.toHaveBeenCalled();
   });
 });
@@ -453,7 +648,7 @@ describe('the diagnostics screens say why a command was refused', () => {
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <TemplateDetailScreen
         locale="en"
         messages={en}
@@ -468,8 +663,9 @@ describe('the diagnostics screens say why a command was refused', () => {
     await user.selectOptions(copyFrom, VERSION);
     await user.click(screen.getByRole('button', { name: t('diagnostics.template.newVersion') }));
 
-    const alert = await screen.findByText(t('form.violation.foreign_template'));
+    const alert = errorElement(await screen.findByText(t('form.violation.foreign_template')));
     expect(alert).toBeVisible();
+    expect(alert.id).not.toBe('');
     const settled = screen.getByLabelText(new RegExp(`^${t('diagnostics.template.copyFrom')}`));
     expect(settled.getAttribute('aria-describedby') ?? '').toContain(alert.id);
     expect((settled as HTMLSelectElement).value).toBe(VERSION);
@@ -485,7 +681,7 @@ describe('the diagnostics screens say why a command was refused', () => {
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <TemplateDetailScreen
         locale="en"
         messages={en}
@@ -497,6 +693,8 @@ describe('the diagnostics screens say why a command was refused', () => {
     await user.click(
       await screen.findByRole('button', { name: t('diagnostics.template.publish') })
     );
+    expect(setVersionStatus).not.toHaveBeenCalled();
+    await confirmIn(user, 'version-status-confirm', t('diagnostics.template.publish'));
 
     expect(await screen.findByText(t('form.violation.no_items'))).toBeVisible();
     expect(screen.queryByText(t('diagnostics.template.conflict'))).toBeNull();
@@ -526,7 +724,7 @@ describe('the diagnostics screens say why a command was refused', () => {
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <JobDiagnosticsScreen
         locale="en"
         messages={en}
@@ -540,8 +738,9 @@ describe('the diagnostics screens say why a command was refused', () => {
     );
     await user.click(screen.getByRole('button', { name: t('diagnostics.job.start') }));
 
-    const alert = await screen.findByText(t('form.violation.not_published'));
+    const alert = errorElement(await screen.findByText(t('form.violation.not_published')));
     expect(alert).toBeVisible();
+    expect(alert.id).not.toBe('');
     const settled = screen.getByLabelText(new RegExp(`^${t('diagnostics.job.template')}`));
     expect(settled.getAttribute('aria-describedby') ?? '').toContain(alert.id);
     expect((settled as HTMLSelectElement).value).toBe(VERSION);
@@ -562,7 +761,7 @@ describe('the diagnostics screens say why a command was refused', () => {
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <JobDiagnosticsScreen
         locale="en"
         messages={en}
@@ -570,8 +769,9 @@ describe('the diagnostics screens say why a command was refused', () => {
         capabilities={{ canRecord: true, canComplete: true, canReview: false, canCapture: false }}
       />
     );
-    await user.click(await screen.findByRole('button', { name: t('diagnostics.job.openReport') }));
+    await user.click(await openReport());
     await user.click(await screen.findByRole('button', { name: t('diagnostics.report.complete') }));
+    await confirmIn(user, 'report-status-confirm', t('diagnostics.report.complete'));
 
     expect(await screen.findByText(t('form.violation.mandatory_item_unresolved'))).toBeVisible();
     expect(screen.queryByText(t('diagnostics.report.conflict'))).toBeNull();
@@ -590,7 +790,7 @@ describe('the diagnostics screens say why a command was refused', () => {
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderRtl(
+    mountAr(
       <JobDiagnosticsScreen
         locale="ar"
         messages={ar}
@@ -598,12 +798,11 @@ describe('the diagnostics screens say why a command was refused', () => {
         capabilities={{ canRecord: true, canComplete: true, canReview: false, canCapture: false }}
       />
     );
-    await user.click(
-      await screen.findByRole('button', { name: arT('diagnostics.job.openReport') })
-    );
+    await user.click(await openReport(arT('diagnostics.job.openReport')));
     await user.click(
       await screen.findByRole('button', { name: arT('diagnostics.report.complete') })
     );
+    await confirmIn(user, 'report-status-confirm', arT('diagnostics.report.complete'));
 
     expect(await screen.findByText(arT('form.violation.mandatory_item_unresolved'))).toBeVisible();
     expect(document.documentElement.dir).toBe('rtl');
@@ -623,7 +822,7 @@ describe('the diagnostics screens say why a command was refused', () => {
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <JobDiagnosticsScreen
         locale="en"
         messages={en}
@@ -631,10 +830,9 @@ describe('the diagnostics screens say why a command was refused', () => {
         capabilities={{ canRecord: true, canComplete: false, canReview: true, canCapture: false }}
       />
     );
-    await user.click(await screen.findByRole('button', { name: t('diagnostics.job.openReport') }));
-    await user.selectOptions(
-      await screen.findByLabelText(new RegExp(`^${t('diagnostics.report.reviewResult')}`)),
-      'approved'
+    await user.click(await openReport());
+    await user.click(
+      await screen.findByRole('radio', { name: t('diagnostics.reviewResult.approved') })
     );
     const notes = screen.getByLabelText(new RegExp(`^${t('diagnostics.report.reviewNotes')}`));
     await user.type(notes, 'Checked against the job card');
@@ -655,7 +853,7 @@ describe('the diagnostics screens say why a command was refused', () => {
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderLtr(
+    mount(
       <TemplateDetailScreen
         locale="en"
         messages={en}
@@ -667,6 +865,7 @@ describe('the diagnostics screens say why a command was refused', () => {
     await user.click(
       await screen.findByRole('button', { name: t('diagnostics.template.publish') })
     );
+    await confirmIn(user, 'version-status-confirm', t('diagnostics.template.publish'));
 
     expect(await screen.findByText(t('form.violation.invalid'))).toBeVisible();
     expect(document.body.textContent).not.toContain('a_rule_this_screen_never_heard_of');

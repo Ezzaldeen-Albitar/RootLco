@@ -188,8 +188,14 @@ export function PaymentsScreen({
     setEpoch((n) => n + 1);
   }, []);
 
+  /*
+   * `data-print-scope`: while the receipt's printable copy is open, printing
+   * carries the copy and not the screen around it — the notices, the record
+   * form, the receipt list and the allocation panel (the delivery sheet's
+   * rule, `styles/print/_index.scss`).
+   */
   return (
-    <div className="flex flex-col gap-6">
+    <div data-print-scope="document" className="flex flex-col gap-6">
       <TargetPanel
         messages={messages}
         onChosen={(next) => {

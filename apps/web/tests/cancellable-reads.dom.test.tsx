@@ -595,3 +595,94 @@ describe('a throttled board read says busy, never empty (en and ar)', () => {
     });
   }
 });
+
+/*
+ * `useReread` — the read a work-order, closure, diagnostics or technician panel
+ * shows, asked for again after a write and AWAITED (Owner directive slice 4).
+ * The panel's command stays busy until `reload()` resolves, so the promise has
+ * to mean "the new answer is on screen" — and only the newest answer may ever
+ * be written.
+ */
+describe('a re-read the panel waits for (useReread)', () => {
+  type Answer = { readonly status: 'ok'; readonly data: string; readonly correlationId: null };
+  const answer = (data: string): Answer => ({ status: 'ok', data, correlationId: null });
+  function deferred() {
+    let resolve: (value: Answer) => void = () => undefined;
+    const promise = new Promise<Answer>((settle) => (resolve = settle));
+    return { promise, resolve };
+  }
+
+  it('reads on arrival, keeps the answer through a reload, and resolves once the new one is shown', async () => {
+    const { useReread } = await import('@/lib/api/use-reread');
+    const first = deferred();
+    const second = deferred();
+    const read = vi.fn().mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise);
+    const { result } = renderHook(() => useReread(read));
+    expect(result.current.value).toBeNull();
+    first.resolve(answer('one'));
+    await waitFor(() => expect(result.current.value).toEqual(answer('one')));
+
+    let settled = false;
+    let reloading: Promise<void> = Promise.resolve();
+    act(() => {
+      reloading = result.current.reload().then(() => {
+        settled = true;
+      });
+    });
+    // Re-reading: the last answer stays on screen, and the promise is still owed.
+    expect(result.current.value).toEqual(answer('one'));
+    expect(settled).toBe(false);
+    await act(async () => {
+      second.resolve(answer('two'));
+      await reloading;
+    });
+    expect(settled).toBe(true);
+    expect(result.current.value).toEqual(answer('two'));
+  });
+
+  it('writes only the newest answer: a slow older read never paints over a newer one', async () => {
+    const { useReread } = await import('@/lib/api/use-reread');
+    const slow = deferred();
+    const fast = deferred();
+    const read = vi.fn().mockReturnValueOnce(slow.promise).mockReturnValueOnce(fast.promise);
+    const { result } = renderHook(() => useReread(read));
+    let reloading: Promise<void> = Promise.resolve();
+    act(() => {
+      reloading = result.current.reload();
+    });
+    await act(async () => {
+      fast.resolve(answer('newer'));
+      await reloading;
+    });
+    expect(result.current.value).toEqual(answer('newer'));
+    await act(async () => {
+      slow.resolve(answer('older'));
+      await slow.promise;
+    });
+    expect(result.current.value).toEqual(answer('newer'));
+  });
+
+  it('shows no answer from another read, reads nothing for null, and settles a rejected read as unavailable', async () => {
+    const { useReread } = await import('@/lib/api/use-reread');
+    const readA = vi.fn().mockResolvedValue(answer('record A'));
+    const readB = vi.fn().mockRejectedValue(new Error('the web tier did not answer'));
+    const { result, rerender } = renderHook(
+      ({ read }: { read: (() => Promise<Answer>) | null }) => useReread(read),
+      { initialProps: { read: null as (() => Promise<Answer>) | null } }
+    );
+    expect(result.current.value).toBeNull();
+    await act(async () => {
+      await result.current.reload();
+    });
+    expect(result.current.value).toBeNull();
+
+    rerender({ read: readA });
+    await waitFor(() => expect(result.current.value).toEqual(answer('record A')));
+    // Another record: record A's answer is not shown under it.
+    rerender({ read: readB });
+    expect(result.current.value).toBeNull();
+    await waitFor(() =>
+      expect(result.current.value).toEqual({ status: 'unavailable', correlationId: null })
+    );
+  });
+});

@@ -150,8 +150,15 @@ export function InvoiceScreen({
     router.refresh();
   };
 
+  /*
+   * `data-print-scope`: while the invoice's printable copy is open below,
+   * printing carries the copy and not the panels around it (the delivery
+   * sheet's rule, `styles/print/_index.scss`). Each panel is also marked
+   * `data-print="hide"` on its own; the scope covers what is not — the
+   * write notice, a refusal — so no stray panel reaches the paper.
+   */
   return (
-    <div className="flex min-h-0 flex-col gap-4">
+    <div data-print-scope="document" className="flex min-h-0 flex-col gap-4">
       <section
         aria-labelledby="invoice-work-order-heading"
         className="rounded-lg border border-border bg-surface p-4"

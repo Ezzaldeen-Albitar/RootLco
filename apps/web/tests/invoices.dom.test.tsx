@@ -1300,6 +1300,17 @@ describe('FE-020 — the printable copy', () => {
     await user.click(screen.getByRole('button', { name: EN['invoices.print.print'] as string }));
     expect(print).toHaveBeenCalledTimes(1);
     print.mockRestore();
+    /*
+     * The copy prints alone (the residual #478 recorded): the screen opts into
+     * the print scope, and the copy is reached through the one child of the
+     * scope that holds it — every other panel is a sibling the print sheet
+     * leaves off the paper.
+     */
+    const scope = document.closest('[data-print-scope]') as HTMLElement;
+    expect(scope).not.toBeNull();
+    const holders = [...scope.children].filter((child) => child.contains(document));
+    expect(holders).toHaveLength(1);
+    expect(scope.children.length).toBeGreaterThan(1);
   });
 
   it('with a preview of another revision, prints without descriptions and says so', async () => {
