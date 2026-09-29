@@ -33,7 +33,7 @@ import {
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import type { Locale } from '@/i18n/config';
-import { getMessages } from '@/i18n/get-messages';
+import { getMessages, type Messages } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
@@ -707,15 +707,17 @@ function MomentHost({
   initial = '',
   zone,
   onMoment,
+  messages = en,
 }: {
   readonly initial?: string;
   readonly zone?: string;
   readonly onMoment?: (moment: string) => void;
+  readonly messages?: Messages;
 }) {
   const [value, setValue] = useState(initial);
   return (
     <DateTimeField
-      messages={en}
+      messages={messages}
       label="Visit time"
       value={value}
       onChange={(next) => {
@@ -913,14 +915,16 @@ describe('DateField and DateTimeField: the FieldFrame contract on a picker', () 
   function ZonedHost({
     zone,
     onMoment,
+    messages = en,
   }: {
     readonly zone: string;
     readonly onMoment?: (moment: string) => void;
+    readonly messages?: Messages;
   }) {
     const [value, setValue] = useState('2026-01-15T12:00:00Z');
     return (
       <ZonedDateTimeField
-        messages={en}
+        messages={messages}
         label="Visit time"
         value={value}
         onChange={(next) => {
@@ -959,6 +963,76 @@ describe('DateField and DateTimeField: the FieldFrame contract on a picker', () 
     mount(<ZonedHost zone="America/New_York" />);
     const group = screen.getByRole('group', { name: /^Visit time/ });
     expect(pickerInput(group)).toHaveValue('15/01/2026 07:00');
+  });
+
+  /*
+   * The Arabic 12-hour clock (DEF-01). Arabic writes a moment with its
+   * morning/afternoon part FIRST, then the time, then the day. Every afternoon
+   * time was shown in the field and then refused as empty, because the date
+   * library read the afternoon word back as the morning and the strict
+   * read-back failed. Falsified by mounting the stock MUI X adapter in
+   * `UiFoundationProvider`: every afternoon case below then emits nothing.
+   */
+  const arabic = getMessages('ar');
+  const MORNING_WORD = 'ص';
+  const AFTERNOON_WORD = 'م';
+
+  for (const { typed, moment } of [
+    { typed: `${AFTERNOON_WORD}0300`, moment: '2026-09-30T15:00:00+03:00' },
+    { typed: `${AFTERNOON_WORD}1230`, moment: '2026-09-30T12:30:00+03:00' },
+    { typed: `${MORNING_WORD}0300`, moment: '2026-09-30T03:00:00+03:00' },
+    { typed: `${MORNING_WORD}1230`, moment: '2026-09-30T00:30:00+03:00' },
+  ]) {
+    it(`DateTimeField in Arabic: takes ${typed} on the branch clock as ${moment}`, async () => {
+      const user = userEvent.setup();
+      const onMoment = vi.fn();
+      mount(<MomentHost zone="Asia/Amman" onMoment={onMoment} messages={arabic} />, 'ar');
+      const group = screen.getByRole('group', { name: /^Visit time/ });
+      await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard(typed);
+      // The time alone is half a moment: nothing is emitted yet.
+      expect(onMoment).not.toHaveBeenCalled();
+      await user.keyboard('30092026');
+      expect(onMoment).toHaveBeenLastCalledWith(moment);
+      expect(pickerInput(group).value).toContain('30/09/2026');
+      expect(pickerInput(group).value).not.toMatch(/[٠-٩۰-۹]/);
+      expect(group).not.toHaveAttribute('aria-invalid');
+    });
+  }
+
+  it('DateTimeField in Arabic: turning a morning into the afternoon moves the moment by twelve hours', async () => {
+    const user = userEvent.setup();
+    const onMoment = vi.fn();
+    mount(
+      <MomentHost
+        initial="2026-09-30T00:00:00Z"
+        zone="Asia/Amman"
+        onMoment={onMoment}
+        messages={arabic}
+      />,
+      'ar'
+    );
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    const meridiem = within(group).getAllByRole('spinbutton')[0] as HTMLElement;
+    expect(meridiem).toHaveTextContent(MORNING_WORD);
+    await user.click(meridiem);
+    await user.keyboard('{ArrowUp}');
+    expect(onMoment).toHaveBeenLastCalledWith('2026-09-30T15:00:00+03:00');
+    expect(meridiem).toHaveTextContent(AFTERNOON_WORD);
+  });
+
+  it('ZonedDateTimeField in Arabic: an afternoon moment it holds stays editable in the afternoon', async () => {
+    // The reschedule form's case: 12:00 UTC is 15:00 in Amman, drawn with the
+    // afternoon word; changing the hour must keep the afternoon.
+    const user = userEvent.setup();
+    const onMoment = vi.fn();
+    mount(<ZonedHost zone="Asia/Amman" onMoment={onMoment} messages={arabic} />, 'ar');
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    const parts = within(group).getAllByRole('spinbutton');
+    expect(parts[0]).toHaveTextContent(AFTERNOON_WORD);
+    await user.click(parts[1] as HTMLElement);
+    await user.keyboard('04');
+    expect(onMoment).toHaveBeenLastCalledWith('2026-01-15T16:00:00+03:00');
   });
 
   it('takes the EARLIER of the two 01:30s on the night the clocks go back, and says so', async () => {

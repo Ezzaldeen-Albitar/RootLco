@@ -1,4 +1,5 @@
-import dayjs from 'dayjs';
+import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
+import dayjs, { type Dayjs } from 'dayjs';
 import 'dayjs/locale/en-gb';
 import timezone from 'dayjs/plugin/timezone';
 import utc from 'dayjs/plugin/utc';
@@ -82,6 +83,62 @@ export const arabicDayjsLocale = {
 };
 
 dayjs.locale(arabicDayjsLocale, undefined, true);
+
+/**
+ * The Arabic locale's READING companion: the same locale, with the day period
+ * placed where the date library's reader looks for it.
+ *
+ * When dayjs reads a typed day period it asks the locale's `meridiem` for each
+ * hour from 1 to 24 and takes the first hour whose word the input contains,
+ * counting only hours AFTER 12 as the afternoon. The Arabic locale writes noon
+ * with the afternoon word — as `Intl` does — so the reader finds the afternoon
+ * word at hour 12 and decides it is the morning. Every afternoon time then
+ * failed the pickers' strict read-back and the field held no value (DEF-01).
+ *
+ * Writing noon with the morning word would be wrong on screen, so the writer
+ * stays exact and only the reader uses this companion.
+ */
+export const ARABIC_READING_LOCALE = `${ARABIC_DAYJS_LOCALE}-reading`;
+
+const arabicReadingLocale = {
+  ...arabicDayjsLocale,
+  name: ARABIC_READING_LOCALE,
+  meridiem: (hour: number) => (hour > 12 ? EVENING : MORNING),
+};
+
+dayjs.locale(arabicReadingLocale, undefined, true);
+
+/** The locales whose day period is read through a companion. */
+const READING_LOCALES: Readonly<Record<string, string>> = {
+  [ARABIC_DAYJS_LOCALE]: ARABIC_READING_LOCALE,
+};
+
+/**
+ * The pickers' date adapter: MUI X's dayjs adapter, reading the Arabic 12-hour
+ * clock both ways.
+ *
+ * A locale with a reading companion is read in the companion and then held to
+ * the stock adapter's strictness in its OWN locale: the moment must write back
+ * to exactly the text the operator typed, or it is not a date. So a half-typed
+ * or impossible moment is still refused, and every other locale goes through
+ * the stock reader unchanged.
+ */
+export class ProductDayjsAdapter extends AdapterDayjs {
+  constructor(options?: ConstructorParameters<typeof AdapterDayjs>[0]) {
+    super(options);
+    // The stock reader is an instance property, so it is kept here and the
+    // replacement delegates to it for every locale without a companion.
+    const stockParse = this.parse;
+    this.parse = (value: string, format: string): Dayjs | null => {
+      const shownIn = this.getCurrentLocaleCode();
+      const readIn = READING_LOCALES[shownIn];
+      if (readIn === undefined || value === '') return stockParse(value, format);
+      const read = dayjs(value, format, readIn).locale(shownIn);
+      if (read.isValid() && read.format(format) === value) return read;
+      return dayjs(new Date(Number.NaN)).locale(shownIn);
+    };
+  }
+}
 
 /** The dayjs locale the pickers use for a product locale. */
 export function dayjsLocaleFor(locale: Locale): string {

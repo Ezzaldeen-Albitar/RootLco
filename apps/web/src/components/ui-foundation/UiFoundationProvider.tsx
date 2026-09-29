@@ -5,11 +5,10 @@ import { AppRouterCacheProvider } from '@mui/material-nextjs/v16-appRouter';
 import { ThemeProvider } from '@mui/material/styles';
 import rtlPlugin from '@mui/stylis-plugin-rtl';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { prefixer } from 'stylis';
 import type { Locale } from '@/i18n/config';
 import { directionOf } from '@/i18n/config';
-import { dayjsLocaleFor } from './dayjs-locale';
+import { ProductDayjsAdapter, dayjsLocaleFor } from './dayjs-locale';
 import type { MuiText } from './mui-text';
 import { createRootTheme } from './theme';
 
@@ -63,7 +62,10 @@ export function UiFoundationProvider({
       }}
     >
       <ThemeProvider theme={theme}>
-        <LocalizationProvider dateAdapter={AdapterDayjs} adapterLocale={dayjsLocaleFor(locale)}>
+        <LocalizationProvider
+          dateAdapter={ProductDayjsAdapter}
+          adapterLocale={dayjsLocaleFor(locale)}
+        >
           {children}
         </LocalizationProvider>
       </ThemeProvider>

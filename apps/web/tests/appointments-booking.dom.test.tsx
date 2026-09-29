@@ -593,6 +593,43 @@ describe('both directions', () => {
     ).toBeInTheDocument();
     expect(document.documentElement.dir).toBe('rtl');
   });
+
+  it('books an afternoon window typed in Arabic on the branch clock (DEF-01)', async () => {
+    // Arabic writes the morning/afternoon part first, then the time, then the
+    // day. The afternoon word was read back as the morning and every afternoon
+    // time was refused as empty, so no request was sent.
+    createAppointment.mockResolvedValue({ status: 'invalid', attempt: 1, fieldErrors: {} });
+    const user = userEvent.setup();
+    renderRtl(
+      withMui(
+        inBranch(
+          <AppointmentBookingScreen locale="ar" messages={ar} types={TYPES} channels={CHANNELS} />,
+          { locale: 'ar', snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: 'Asia/Amman' }]) }
+        ),
+        'ar'
+      )
+    );
+    await chooseCustomer(user, ar);
+    await user.click(
+      await screen.findByRole('button', {
+        name: `${ar['appointments.book.vehicleChoose']} ${VEHICLE_LABEL}`,
+      })
+    );
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(ar['appointments.book.type'])),
+      TYPES.options[0]!.id
+    );
+    await typeMoment(user, ar['appointments.window.from'], 'م030021082026');
+    await typeMoment(user, ar['appointments.window.to'], 'م040021082026');
+    await user.click(screen.getByRole('button', { name: ar['appointments.book.submit'] }));
+
+    await waitFor(() => expect(createAppointment).toHaveBeenCalledTimes(1));
+    const [input] = createAppointment.mock.calls[0] as [Record<string, unknown>];
+    // Asia/Amman, UTC+3 all year: 03:00 and 04:00 in the afternoon.
+    expect(input['requestedFrom']).toBe('2026-08-21T15:00:00+03:00');
+    expect(input['requestedTo']).toBe('2026-08-21T16:00:00+03:00');
+    expect(screen.queryByText(ar['form.required'])).toBeNull();
+  });
 });
 
 describe('F1 — one page of ten was every vehicle this picker could offer', () => {
