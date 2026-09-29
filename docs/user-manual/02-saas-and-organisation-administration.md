@@ -852,6 +852,49 @@ withheld values are revealed; the first administrator holds that too. **Where** 
 
 ![Audit log, Arabic, after the branch is answered](images/audit-log-ar-answered.png)
 
+### 2.10.11 Appointment setup — IMPLEMENTED (UI)
+
+**Label** **Appointment setup** <!-- appointmentSetup.title --> (إعداد المواعيد) — _"Enter your
+own appointment types, booking channels and cancellation reasons. Nothing is preset: each list
+starts empty."_ <!-- appointmentSetup.description --> **Who** Anyone holding the appointment
+setup permission, which the first administrator holds since the Owner decision of 2026-09-29.
+**Where** Sidebar → **Administration** → **Appointment setup** <!-- nav.appointmentSetup --> , or
+its card on the Administration page. The screen is the whole organisation's; it does not ask for a
+branch. **Steps**
+
+1. The screen has three lists: **Appointment types** <!-- appointmentSetup.types.heading --> (what
+   can be booked; booking needs at least one in use), **Booking channels** <!-- appointmentSetup.channels.heading -->
+   (how a booking came in; optional when booking) and **Cancellation reasons** <!-- appointmentSetup.reasons.heading -->
+   (cancelling needs at least one in use).
+2. To add an entry, type its **Name** <!-- appointmentSetup.field.name --> and a **Short
+   reference** <!-- appointmentSetup.field.code --> — _"Lower-case letters, digits and underscores,
+   starting with a letter. It cannot be changed later."_ <!-- appointmentSetup.field.codeHint --> —
+   then choose **Add** <!-- appointmentSetup.add --> .
+3. To change a name, choose **Rename** <!-- appointmentSetup.rename --> on its row, type the new
+   name and choose **Save name** <!-- appointmentSetup.save --> .
+4. To stop offering an entry, choose **Retire** <!-- appointmentSetup.retire --> and answer the
+   question; **Restore** <!-- appointmentSetup.restore --> offers it again. **Result** Each list
+   shows the entry by name with its status in words: **In use** <!-- appointmentSetup.status.active -->
+   or **Retired** <!-- appointmentSetup.status.inactive --> . An entry in use is offered on the
+   booking form and in the cancellation dialog; a retired one is not, and appointments that already
+   use it keep it. **Restrictions**
+
+- Nothing is filled in for you. An empty list reads **"No entries yet"** <!-- appointmentSetup.emptyTitle -->
+  — _"Nothing has been added to this list yet. Add the first one above."_ <!-- appointmentSetup.emptyBody -->
+- There is no delete; retire an entry instead.
+- An entry marked **"Shared default, cannot be changed here"** <!-- appointmentSetup.owner.shared -->
+  is not your organisation's and offers no change.
+- Typed and unsaved work is protected: leaving the page asks first. **If it goes wrong** Every
+  problem is marked on its own field, in red with the reason beside it, the cursor is placed on the
+  first one, and what you typed is kept; the mark goes as soon as you correct the field.
+- _"This short reference is already used in this list, perhaps by a retired entry. Restore that
+  entry instead, or choose another."_ <!-- appointmentSetup.codeTaken -->
+- _"Use lower-case letters, digits and underscores only, starting with a letter, 2 to 63
+  characters."_ <!-- appointmentSetup.codeInvalid -->
+- If someone else changed the entry while you were renaming it, the dialog says so and offers
+  **"Load the latest version"** <!-- form.loadLatest --> , which shows the name as it is stored now.
+  **Screenshot** no screenshot available at this version.
+
 ---
 
 ## 2.11 What the first administrator of a new workspace can actually open
@@ -887,6 +930,14 @@ An organisation provisioned before this change gets the permission when the plat
 the administrator backfill for it, and only if its administrator role is still the standard one.
 Part 6, §6.2a.
 
+**Appointments are now in the set, by Owner decision.** Since 2026-09-29 the first administrator
+can open **Appointments**, book, reschedule, cancel and record a no-show, and set up the
+organisation's own appointment types, booking channels and cancellation reasons on **Appointment
+setup** (2.10.11). Nothing is preset: an organisation enters its own. No front-desk or reception
+role receives these permissions automatically; the administrator may give them to a role it builds.
+An organisation provisioned before this change gets them only if the platform operator runs the
+administrator backfill for it, which by that decision is done for named organisations only.
+
 **Organisation settings are now in the set, by Owner decision.** Since 2026-09-27 the first
 administrator can change the workspace's display name, default language and default time zone, the
 company and branch settings, branch status, and the settings screens below. Changing the default
@@ -911,7 +962,8 @@ administrator backfill for it, which by that decision is done for named organisa
 | **Currencies**                               | Yes                                 | Same.                                                                                                              |
 | **System settings**                          | Yes                                 | Same.                                                                                                              |
 | **Notifications**, **Documents**             | **No**                              | Planned, not built — see 2.13.                                                                                     |
-| **Appointments**                             | **No**                              | No appointment permission is in the set. See Part 4A.                                                              |
+| **Appointments**                             | Yes                                 | The four appointment permissions are in the set since the Owner decision of 2026-09-29. See Part 4A.               |
+| **Appointment setup**                        | Yes, and fully usable               | Same decision. The lists start empty; the organisation enters its own (2.10.11).                                   |
 | **Credit notes**                             | Yes                                 | The credit and finance-view permissions are both in the set. Approving still needs a second person. Part 6, §6.2a. |
 
 **You still cannot fix the gaps from inside the workspace.** A role may only be given a permission

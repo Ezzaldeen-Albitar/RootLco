@@ -63,8 +63,8 @@
       "bytes": 2816
     },
     "docs/phase-1/phase-1-28/contract-archaeology.md": {
-      "sha256": "87b4cf1e85b6c5a0f7b1437d95bbf3356faa1c1c28922acd512776d7c3592abb",
-      "bytes": 77210
+      "sha256": "9375c29af3a97278ad67cb0368e8b510b82b44b50545f17e69f6b391a48c692e",
+      "bytes": 77404
     },
     "docs/phase-1/phase-1-28/developer-guide.md": {
       "sha256": "702466a4898aea653d855b146d5e9496fc854547e6da8a9297a0ea9292a01a20",
@@ -119,8 +119,8 @@
       "bytes": 409391
     },
     "docs/phase-1/phase-1-28/write-reachability.json": {
-      "sha256": "7112975f3c7bd14e4eec1938b630a8038ec7c97ccf3cef228081b55278634bb7",
-      "bytes": 21174
+      "sha256": "a82f1997324d76ad406ac567abc3c0367d4182be06b152489160506d9e37bc27",
+      "bytes": 22521
     }
   }
 }
