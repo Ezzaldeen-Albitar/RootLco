@@ -106,9 +106,17 @@ export function JobWorkPanel({
   readonly capabilities: WorkspaceCapabilities;
   readonly onBack: () => void;
 }) {
+  // Keyed on the branch's two ids, never on the `target` object:
+  // `useBranchTarget` builds a new object on every render, and the screen
+  // re-renders on working-context changes that do not move the branch — the
+  // "discard unsaved work?" dialog opening and closing among them. A new read is
+  // a new record to `useReread`, so keying on the object dropped the answer,
+  // unmounted the work-log and evidence forms (and the file chosen in them) and
+  // turned Stop into Start exactly when the operator chose to keep their work.
+  const { companyId, branchId } = target;
   const resolve = useCallback(
-    () => resolveOwnAssignment(target, entry.jobId, entry.assignmentId),
-    [target, entry.jobId, entry.assignmentId]
+    () => resolveOwnAssignment({ companyId, branchId }, entry.jobId, entry.assignmentId),
+    [companyId, branchId, entry.jobId, entry.assignmentId]
   );
   const own = useReread(resolve).value;
   const identity = own !== null && own.status === 'ok' ? own.data : null;

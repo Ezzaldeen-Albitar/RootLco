@@ -1235,7 +1235,12 @@ describe('a version held by the edit-baseline hook is traced, not trusted by nam
       // The appointment reschedule form, since the appointments slice: its
       // confirmed times are held through the hook, fed the detail's version.
       'rescheduleAppointment',
+      'updateJob',
       'updateService',
+      // The job's routing panel and the template settings, since the Material
+      // UI slice 4: both hold their stored values and version through the hook,
+      // fed the job's and the template's read version.
+      'updateTemplate',
     ]);
     expect(editBaselineHookProblems(HOOK_SOURCE)).toEqual([]);
   });

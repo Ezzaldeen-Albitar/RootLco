@@ -2685,6 +2685,30 @@ Known limitations of this slice, one line each:
   refresh has no promise); the create form is busy through the write only.
 - The delivery print assertion runs only with the P1-31 acceptance handoff; the acknowledgement one
   skips, with its reason, when no reception visit is readable.
+- Print evidence: in hosted authenticated-browser job 109233414911 at 7d00de21 all six acknowledgement
+  print cases (`appointments-and-receptions.spec.ts`, en and ar, three projects) and all three
+  delivery print cases (`delivery-p1-31.spec.ts`) were skipped, so the only executed proof of the RI3
+  fix is the selector evaluator in `gallery-and-print.dom` (its old-rule case fails); the delivery
+  assertion is a non-regression check that the old rule would also pass.
+- No browser spec covers any route of this slice (work-order detail, closure, diagnostics, quality
+  queue, technician workspace): no selector broke, and no browser tier exercises these screens.
+- Names instead of identifiers, recorded backend gaps: the quality queue shows the raw work-order
+  reference in a column and in each row action's accessible name (gap 11,
+  `QualityQueueScreen.tsx`), and the assignment list shows the roster reference (gap 13,
+  `JobPanel.tsx`).
+- Behaviour change: the technician assignment window is disabled when the work order's branch is not
+  among the operator's context branches or publishes no zone (`JobPanel.tsx`); it used to take
+  times on the laptop's clock. Deliberate.
+- `JobWorkPanel`'s session correction: with an unknown working zone the time field shows its refusal
+  but the correction submit stays enabled and would send the session's original times; not reachable
+  today, because the technician route requires a concrete branch.
+- `useReread` reads for ever when a caller passes a read that is not memoised; all 25 current call
+  sites are stable (`useCallback` or a module function), but nothing guards a future caller.
+- `ReworkRow`'s cost read is no longer re-issued when the link's record version changes; it is read
+  again only after that row records a cost. Minor.
+- `WorkOrderDetailScreen`'s lifecycle panel: its comment says the question stays up during the
+  re-read, but `send()` closes it before the write; the button does stay busy throughout. Only the
+  comment is wrong.
 - Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
   they run in hosted CI.
 - The web tier's test count changes (new cases in existing files; no web test file added or

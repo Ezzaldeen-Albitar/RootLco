@@ -704,6 +704,64 @@ describe('the unsaved-work guard stands down once the work is recorded', () => {
     expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 
+  it('keeps the forms, the chosen file and Stop when the operator keeps their work', async () => {
+    /*
+     * Choosing "keep my work" must keep it.
+     *
+     * The screen re-renders when the discard question opens and closes (the
+     * working context's pending switch flips) without the branch moving. The
+     * job panel's identity read was keyed on the target OBJECT, which is new on
+     * every render, so each re-render was a new read: the confirmed identity
+     * dropped to nothing until it answered again, the work-log and evidence
+     * forms unmounted — the uncontrolled file input losing the file with them —
+     * and Stop turned back into Start, at exactly the moment the operator had
+     * said their unsaved work mattered. Every read after the first is left
+     * hanging here, so a re-issued read cannot hide behind a quick answer.
+     */
+    listDocumentCategories.mockResolvedValue(
+      ok({ items: [{ categoryCode: 'inspection_photo', name: 'Inspection photo' }] })
+    );
+    listLaborSessions.mockResolvedValue(
+      page([{ ...stoppedSession, id: 'mine-open', endedAt: null, recordVersion: 4 }])
+    );
+    resolveOwnAssignment
+      .mockResolvedValueOnce(ok(own))
+      .mockReturnValue(new Promise(() => undefined));
+    const user = userEvent.setup();
+    const { container } = renderWorkspace();
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.click(await screen.findByRole('button', OPEN));
+
+    const stop = await screen.findByRole('button', { name: EN['technicians.workspace.stop']! });
+    // By its field name: the evidence form beside it has a note of its own.
+    const entryBox = container.querySelector<HTMLTextAreaElement>('textarea[name="entry"]')!;
+    await user.type(entryBox, 'Road test pending.');
+    await screen.findByLabelText(new RegExp(`^${EN['technicians.workspace.evidenceCategory']!}`));
+    const fileInput = container.querySelector<HTMLInputElement>('input[name="evidenceFile"]')!;
+    const photo = new File(['bytes'], 'pads.jpg', { type: 'image/jpeg' });
+    await user.upload(fileInput, photo);
+    expect(fileInput.files?.[0]).toBe(photo);
+
+    // Typed and unsent: the switch asks, and the operator keeps their work.
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    // Nothing was read again, and nothing was taken off the screen.
+    expect(resolveOwnAssignment).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: EN['technicians.workspace.stop']! })).toBe(stop);
+    expect(screen.queryByRole('button', { name: EN['technicians.workspace.start']! })).toBeNull();
+    const keptEntry = container.querySelector<HTMLTextAreaElement>('textarea[name="entry"]');
+    expect(keptEntry).toBe(entryBox);
+    expect(keptEntry).toHaveValue('Road test pending.');
+    const keptFile = container.querySelector<HTMLInputElement>('input[name="evidenceFile"]');
+    expect(keptFile).toBe(fileInput);
+    expect(keptFile?.files?.[0]).toBe(photo);
+  });
+
   it('asks while a correction reason is typed, and NOT after it is accepted', async () => {
     listLaborSessions.mockResolvedValue(page([stoppedSession]));
     correctLaborSession.mockResolvedValue({ status: 'success', attempt: 1 });
