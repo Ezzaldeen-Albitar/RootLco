@@ -7,7 +7,15 @@ import en from '../src/i18n/messages/en.json';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { getMessages } from '@/i18n/get-messages';
-import { inBranch, renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 
 /**
  * The handover panel on the work-order record, mounted where it ships (P1-31,
@@ -826,5 +834,116 @@ describe('a job is said in words, and its routing rides the edit baseline', () =
         5
       )
     );
+  });
+
+  /*
+   * The two cases below are where the baseline's version and the live one
+   * DIFFER. In the conflict case above they are the same number, so sending the
+   * live `job.recordVersion` instead of `edit.version`, or dropping the
+   * post-save `edit.rebase`, left every case green (fix round 2, PR #482).
+   */
+  const departmentBox = () =>
+    screen.getByLabelText(
+      new RegExp(`^${EN['workOrders.detail.department'] as string}`)
+    ) as HTMLSelectElement;
+  const applyButton = () =>
+    screen.getByRole('button', { name: EN['workOrders.detail.applyRouting'] as string });
+
+  function routable() {
+    PERMISSIONS = [WORK_ORDER_READ, 'wo.job.manage', 'org.department.read', 'tech.labor.record'];
+    readWorkOrderDetail.mockResolvedValue({ status: 'ok', data: movable, correlationId: 'c' });
+    listDepartments.mockResolvedValue({
+      status: 'ok',
+      data: { items: departments },
+      correlationId: 'c',
+    });
+    listJobBlockers.mockResolvedValue({ status: 'ok', data: { items: [] }, correlationId: 'c' });
+  }
+
+  it('keeps the chosen department on its baseline version when another command re-reads a newer job', async () => {
+    routable();
+    raiseJobBlocker.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    updateJob.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    const user = userEvent.setup();
+    await renderRecord();
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
+    await screen.findByLabelText(new RegExp(`^${EN['workOrders.detail.department'] as string}`));
+    await user.selectOptions(departmentBox(), 'dep-2');
+
+    // Another panel's command stores something and re-reads the work order,
+    // which brings the job at a newer version while the choice is unapplied.
+    readWorkOrderDetail.mockResolvedValue({
+      status: 'ok',
+      data: { ...movable, jobs: [{ ...job, recordVersion: 4 }] },
+      correlationId: 'c',
+    });
+    const readsBefore = readWorkOrderDetail.mock.calls.length;
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['workOrders.detail.blockerNote'] as string}`)),
+      'Waiting on the hoist'
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['workOrders.detail.raiseBlocker'] as string })
+    );
+    await waitFor(() => expect(readWorkOrderDetail.mock.calls.length).toBeGreaterThan(readsBefore));
+    // The choice survives the re-read.
+    await waitFor(() => expect(applyButton()).toBeEnabled());
+    expect(departmentBox().value).toBe('dep-2');
+
+    await user.click(applyButton());
+    // Built on version 2, so it is sent at version 2: the job moved since, and
+    // that is the server's conflict to decide, never a silent overwrite.
+    await waitFor(() =>
+      expect(updateJob).toHaveBeenCalledWith(
+        JOB_ID,
+        { title: 'Front brake overhaul', departmentId: 'dep-2' },
+        2
+      )
+    );
+  });
+
+  it('leaves the form clean after a stored routing: Apply is off and a branch switch asks nothing', async () => {
+    routable();
+    updateJob.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    const user = userEvent.setup();
+    const tree = await WorkOrderPage({
+      params: Promise.resolve({ locale: 'en', workOrderId: WORK_ORDER_ID }),
+    });
+    renderLtr(
+      <UiFoundationProvider locale="en" text={muiTextOf(getMessages('en'))}>
+        {inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            {tree as ReactElement}
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]), locale: 'en' }
+        )}
+      </UiFoundationProvider>
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
+    await screen.findByLabelText(new RegExp(`^${EN['workOrders.detail.department'] as string}`));
+    await user.selectOptions(departmentBox(), 'dep-2');
+
+    // The re-read after the save brings the routing as stored, one version on.
+    readWorkOrderDetail.mockResolvedValue({
+      status: 'ok',
+      data: { ...movable, jobs: [{ ...job, departmentId: 'dep-2', recordVersion: 3 }] },
+      correlationId: 'c',
+    });
+    const readsBefore = readWorkOrderDetail.mock.calls.length;
+    await user.click(applyButton());
+    await waitFor(() => expect(updateJob).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(readWorkOrderDetail.mock.calls.length).toBeGreaterThan(readsBefore));
+    await waitFor(() =>
+      expect(applyButton()).toHaveTextContent(EN['workOrders.detail.applyRouting'] as string)
+    );
+    expect(departmentBox().value).toBe('dep-2');
+    // Nothing is left to apply, so nothing is unsaved.
+    expect(applyButton()).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });

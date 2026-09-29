@@ -411,6 +411,35 @@ describe('the template settings ride the edit baseline', () => {
     );
   });
 
+  /*
+   * The baseline's version and the live one DIFFER here: another command's
+   * re-read brings the template one version on while a rename is typed. Sending
+   * the live `recordVersion` instead of `edit.version` left every other case
+   * green, because there the two are the same number (fix round 2, PR #482).
+   */
+  it('keeps typed work on its baseline version when another command re-reads a newer template', async () => {
+    createVersion.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    updateTemplate.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
+    readTemplate.mockResolvedValue(
+      ok({ template: { ...template, recordVersion: 2 }, versions: [draftVersion] })
+    );
+    const user = userEvent.setup();
+    renderSettings();
+    await user.clear(nameBox());
+    await user.type(nameBox(), 'Brake inspection');
+    await user.click(screen.getByRole('button', { name: t('diagnostics.template.newVersion') }));
+    await waitFor(() => expect(readTemplate).toHaveBeenCalledTimes(1));
+    // The re-read landed (the new version is listed) and the typed name survived it.
+    await waitFor(() =>
+      expect(screen.queryByText(t('diagnostics.template.noVersions'))).toBeNull()
+    );
+    expect(nameBox().value).toBe('Brake inspection');
+    await user.click(screen.getByRole('button', { name: t('diagnostics.template.save') }));
+    await waitFor(() =>
+      expect(updateTemplate).toHaveBeenCalledWith(TEMPLATE, { name: 'Brake inspection' }, 1)
+    );
+  });
+
   it('says a conflict and offers the latest version, which discards the stale work', async () => {
     updateTemplate.mockResolvedValue({
       status: 'conflict',

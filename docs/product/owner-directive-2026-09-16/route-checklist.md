@@ -2713,3 +2713,33 @@ Known limitations of this slice, one line each:
   they run in hosted CI.
 - The web tier's test count changes (new cases in existing files; no web test file added or
   removed); the recorded tiers are retaken at the final head.
+
+Fix round 2 (review of `3940795b`), residual items, one line each:
+
+- The edit baseline at the routing (`JobPanel.tsx`) and template settings
+  (`TemplateDetailScreen.tsx`) is now held where the baseline and live versions differ: sending the
+  live version, or dropping the post-save rebase, fails a case in `work-order-delivery-mount.dom`
+  or `diagnostics.dom` (each shown failing under its mutation). The version-sourcing gate alone
+  would not catch either swap, since any member ending in `.recordVersion` counts for it.
+- Round-1 defects are closed: `tests/ci/p1-28-version-sourcing.test.ts` registers `updateJob` and
+  `updateTemplate` (reviewer's local run 74/74); `JobWorkPanel.tsx` keys its identity read on
+  `companyId` and `branchId`, and the case "keeps the forms, the chosen file and Stop…" fails when
+  the old `[target, …]` key is restored (`resolveOwnAssignment` called 3 times, not 1).
+- Print evidence is still jsdom-only: in hosted authenticated-browser job 109240346932 at `3940795b`
+  all 6 "printed acknowledgement" cases (`appointments-and-receptions.spec.ts:1354`, en and ar,
+  three projects) were skipped again for want of a readable reception visit (TH-002); the case would
+  fail on the old rule if it ran, and the delivery print assertion is a non-regression check only.
+- `JobPanel.tsx`: the assignment submit does not await its list `refresh()` (as in the base code),
+  so "every command stays busy until its re-read has landed" does not hold for the assignment; low
+  risk, since the form is cleared and a second press only raises the required-field errors.
+- `WorkOrderHistorySection` "load more": an older page still in flight when a reload lands is
+  appended to the new first page. Pre-existing and unchanged.
+- `WorkOrderHistorySection` gives `MuiReadFailureState` the "try again in a moment" description,
+  which would also show under a refusal; not reachable today, because the timeline needs the same
+  work-order read as the detail.
+- The diagnostic review list (`JobDiagnosticsScreen` status panel) no longer prints the reviewer's
+  reference, and no name replaces it: names-not-references holds, but the reviewer is not shown.
+- The quality queue and technician workspace loaders do not pass `useServerTable`'s abort signal on
+  to `listQcQueue` or `readMyQueue`: a stale answer is dropped, not cancelled (as in the base code).
+- hosted-clean-room stopped at `validate:p1-27-closing-values` (the recorded unit and web runs are
+  stale at this head), so its later steps did not run on `3940795b`.
