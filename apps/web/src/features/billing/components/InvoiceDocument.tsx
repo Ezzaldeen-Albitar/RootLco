@@ -1,5 +1,7 @@
 'use client';
 
+import type { ReactNode } from 'react';
+
 import { PrintDocument, PrintTable } from '@/components/print/PrintDocument';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -23,13 +25,16 @@ export type PayerName =
  * `matched` — the preview describes the revision this invoice was made from;
  * `mismatch` — a preview was read but describes another revision;
  * `refused` — the preview read failed, with its reference;
- * `notRead` — no read was made, because the caller may not see amounts.
+ * `notRead` — no read was made, because the caller may not see amounts;
+ * `items` — a counter sale: each line names the item it sold on the detail
+ * itself, so no preview exists or is needed (GAP-09).
  */
 export type DescriptionSource =
   | { readonly kind: 'matched'; readonly preview: InvoicePreview }
   | { readonly kind: 'mismatch' }
   | { readonly kind: 'refused'; readonly reference: string | null }
-  | { readonly kind: 'notRead' };
+  | { readonly kind: 'notRead' }
+  | { readonly kind: 'items' };
 
 /**
  * The printable invoice (P1-30, `W6`, FE-020).
@@ -68,12 +73,24 @@ export function InvoiceDocument({
   readonly payer: PayerName;
 }) {
   const invoice = detail.invoice;
-  const describe = (sourceQuotationItemId: string | null): string | null => {
-    if (descriptions.kind !== 'matched' || sourceQuotationItemId === null) return null;
-    const line = descriptions.preview.lines.find(
-      (row) => row.sourceQuotationItemId === sourceQuotationItemId
+  const describe = (line: InvoiceDetail['lines'][number]): ReactNode | null => {
+    if (descriptions.kind === 'items') {
+      // The item the line sold, by name and code. The code is isolated left to
+      // right so an Arabic copy does not reorder its characters.
+      return line.item ? (
+        <>
+          <bdi>{line.item.name}</bdi>{' '}
+          <span className="font-mono text-text-muted" dir="ltr">
+            {line.item.code}
+          </span>
+        </>
+      ) : null;
+    }
+    if (descriptions.kind !== 'matched' || line.sourceQuotationItemId === null) return null;
+    const found = descriptions.preview.lines.find(
+      (row) => row.sourceQuotationItemId === line.sourceQuotationItemId
     );
-    return line?.description ?? null;
+    return found?.description ? <bdi>{found.description}</bdi> : null;
   };
   const amountsVisible = invoice.totals !== null;
 
@@ -88,13 +105,13 @@ export function InvoiceDocument({
     translate(messages, 'invoices.print.column.gross'),
   ];
   const rows = detail.lines.map((line) => {
-    const description = describe(line.sourceQuotationItemId);
+    const description = describe(line);
     return [
       <span key="n" dir="ltr">
         {String(line.lineNumber)}
       </span>,
       description !== null ? (
-        <bdi key="d">{description}</bdi>
+        <span key="d">{description}</span>
       ) : (
         <span key="d" className="text-text-muted">
           {translate(messages, 'invoices.print.noDescription')}
@@ -188,11 +205,13 @@ export function InvoiceDocument({
         <p>
           {descriptions.kind === 'matched'
             ? translate(messages, 'invoices.print.descriptionsFromQuotation')
-            : descriptions.kind === 'mismatch'
-              ? translate(messages, 'invoices.print.descriptionsUnavailable')
-              : descriptions.kind === 'refused'
-                ? translate(messages, 'invoices.print.previewRefused')
-                : translate(messages, 'invoices.print.descriptionsNeedFinance')}
+            : descriptions.kind === 'items'
+              ? translate(messages, 'invoices.print.descriptionsFromItems')
+              : descriptions.kind === 'mismatch'
+                ? translate(messages, 'invoices.print.descriptionsUnavailable')
+                : descriptions.kind === 'refused'
+                  ? translate(messages, 'invoices.print.previewRefused')
+                  : translate(messages, 'invoices.print.descriptionsNeedFinance')}
           {descriptions.kind === 'refused' && descriptions.reference ? (
             <>
               {' '}

@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -1716,6 +1716,87 @@ describe('applying a receipt to an invoice', () => {
     const user = userEvent.setup();
     const region = await openReceipt(user);
     expect(within(region).getByText(EN['payments.allocate.nothingLeft'] as string)).toBeVisible();
+  });
+
+  /**
+   * M-09. An allocation cannot be undone, and its answer can be lost. A retry of
+   * the SAME request after a lost answer goes under the SAME key — even from a
+   * form that was closed and opened again — so the server answers with the
+   * allocation it may already have made instead of booking a second one.
+   */
+  it('retries an allocation whose answer was lost under the same key, even from a reopened form', async () => {
+    const send = async (user: ReturnType<typeof userEvent.setup>, amount: string) => {
+      const form = await screen.findByRole('form', {
+        name: EN['payments.allocate.formLabel'] as string,
+      });
+      await chooseInvoice(user, form);
+      await user.type(within(form).getByLabelText(labelled('payments.allocate.amount')), amount);
+      await user.click(
+        within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
+      );
+      const dialog = await screen.findByRole('alertdialog', {
+        name: EN['payments.allocate.confirmTitle'] as string,
+      });
+      await user.click(
+        within(dialog).getByRole('button', { name: EN['payments.allocate.submit'] as string })
+      );
+    };
+    allocatePayment.mockRejectedValueOnce(new Error('the answer was lost'));
+    const user = userEvent.setup();
+    await openReceipt(user);
+    await send(user, '41.0000');
+    await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(1));
+    const lostKey = String(allocatePayment.mock.calls[0]?.[2]);
+    expect(lostKey).toMatch(UUID_SHAPE);
+
+    // The operator closes everything and comes back to the same receipt.
+    cleanup();
+    await openReceipt(user);
+    await send(user, '41.0000');
+    await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(2));
+    expect(String(allocatePayment.mock.calls[1]?.[2])).toBe(lostKey);
+
+    // That answer was definite, so the remembered key is spent: the next
+    // allocation, even of the same amount, is a new one under a new key.
+    cleanup();
+    await openReceipt(user);
+    await send(user, '41.0000');
+    await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(3));
+    expect(String(allocatePayment.mock.calls[2]?.[2])).not.toBe(lostKey);
+  });
+
+  it('a different request after a lost answer is a new allocation under a new key', async () => {
+    const send = async (user: ReturnType<typeof userEvent.setup>, amount: string) => {
+      const form = await screen.findByRole('form', {
+        name: EN['payments.allocate.formLabel'] as string,
+      });
+      await chooseInvoice(user, form);
+      await user.type(within(form).getByLabelText(labelled('payments.allocate.amount')), amount);
+      await user.click(
+        within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
+      );
+      const dialog = await screen.findByRole('alertdialog', {
+        name: EN['payments.allocate.confirmTitle'] as string,
+      });
+      await user.click(
+        within(dialog).getByRole('button', { name: EN['payments.allocate.submit'] as string })
+      );
+    };
+    allocatePayment.mockResolvedValueOnce({
+      state: { status: 'unavailable', messageKey: 'state.unavailable.message', attempt: 1 },
+      created: null,
+    });
+    const user = userEvent.setup();
+    await openReceipt(user);
+    await send(user, '42.0000');
+    await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(1));
+    const lostKey = String(allocatePayment.mock.calls[0]?.[2]);
+
+    cleanup();
+    await openReceipt(user);
+    await send(user, '43.0000');
+    await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(2));
+    expect(String(allocatePayment.mock.calls[1]?.[2])).not.toBe(lostKey);
   });
 
   it('a refused allocation is stated with its reference and nothing is claimed', async () => {

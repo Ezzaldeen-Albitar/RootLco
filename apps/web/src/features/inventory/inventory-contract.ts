@@ -1125,8 +1125,19 @@ export type ReturnCondition = (typeof RETURN_CONDITIONS)[number];
 export const SALES_RETURN_SOURCE_KINDS = ['part_issue', 'invoice_line'] as const;
 export type SalesReturnSourceKind = (typeof SALES_RETURN_SOURCE_KINDS)[number];
 
-/** `SALES_RETURN_STATES`, mirrored. `credited` means a PENDING credit note was raised. */
-export const SALES_RETURN_STATES = ['received', 'credited'] as const;
+/**
+ * `SALES_RETURN_DISPLAY_STATES`, mirrored: what a return SHOWS, derived by the
+ * server from its credit note's own decision (GAP-04). `credit_requested` waits
+ * for a second person, `credited` was approved, `credit_rejected` was refused,
+ * and `credit_raised` names a note whose decision this reader may not see.
+ */
+export const SALES_RETURN_STATES = [
+  'received',
+  'credit_requested',
+  'credited',
+  'credit_rejected',
+  'credit_raised',
+] as const;
 export type SalesReturnState = (typeof SALES_RETURN_STATES)[number];
 
 /** The states a configured selling price is in. Exactly one live row per signature. */

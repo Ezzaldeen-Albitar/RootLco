@@ -1225,6 +1225,33 @@ function Row({ label, children }: { readonly label: string; readonly children: R
  * Allocating
  * ------------------------------------------------------------------ */
 
+/**
+ * Allocation attempts whose outcome is NOT known, by receipt (P1-32-PRE-OD-FIN, M-09).
+ *
+ * An allocation cannot be undone, and the answer to one can be lost — the network
+ * fails, the server fails, or the request is cancelled after it was sent. The form
+ * keeps one transport key while it is open, but a closed and reopened form would
+ * mint a new one, and a new key is a new allocation. So an uncertain attempt is
+ * remembered here, beyond the form's own life, and a retry of the SAME request —
+ * same receipt, same invoice, same amount as typed — is sent under the SAME key:
+ * the server then answers with the allocation it already made instead of booking
+ * a second one (`sal.payment_allocations.idempotency_key`). A different request is
+ * a new allocation and takes the form's own key. A definite answer under the
+ * remembered key forgets it. Held in memory only: browser storage is not used on
+ * this surface.
+ */
+const uncertainAllocations = new Map<
+  string,
+  { readonly key: string; readonly invoiceId: string; readonly amount: string }
+>();
+
+/** The answers that do not say whether the allocation was booked. */
+const UNCERTAIN_OUTCOMES: ReadonlySet<ActionState['status']> = new Set<ActionState['status']>([
+  'unavailable',
+  'error',
+  'cancelled',
+]);
+
 function AllocateForm({
   locale,
   messages,
@@ -1310,6 +1337,14 @@ function AllocateForm({
     if (invoiceId === null) return;
     setBusy(true);
     let applied = false;
+    const typed = amount.trim();
+    // The same request as an attempt whose answer was lost goes under ITS key.
+    const pending = uncertainAllocations.get(receipt.id);
+    const key =
+      pending !== undefined && pending.invoiceId === invoiceId && pending.amount === typed
+        ? pending.key
+        : attemptKey;
+    const remember = () => uncertainAllocations.set(receipt.id, { key, invoiceId, amount: typed });
     try {
       let result: Awaited<ReturnType<typeof allocatePayment>>;
       try {
@@ -1317,17 +1352,23 @@ function AllocateForm({
           receipt.id,
           {
             invoiceId,
-            amount: amount.trim(),
+            amount: typed,
             // The receipt's own currency: the route compares the declared code
             // against the receipt AND the invoice, and refuses any disagreement.
             currency: receipt.money.currency,
           },
-          attemptKey
+          key
         );
       } catch {
+        remember();
         setAsking(false);
         setOutcome(unreachable(1));
         return;
+      }
+      if (UNCERTAIN_OUTCOMES.has(result.state.status)) {
+        remember();
+      } else if (uncertainAllocations.get(receipt.id)?.key === key) {
+        uncertainAllocations.delete(receipt.id);
       }
       setAsking(false);
       setOutcome(result.state);

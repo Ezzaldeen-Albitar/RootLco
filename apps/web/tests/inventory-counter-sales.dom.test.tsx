@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
@@ -92,12 +92,18 @@ const issueInvoice = vi.fn();
 const cancelInvoice = vi.fn();
 const listCounterSales = vi.fn();
 const readInvoice = vi.fn();
+const listInvoices = vi.fn();
+const readInvoicePreview = vi.fn();
 vi.mock('@/features/billing/api', () => ({
   createCounterSale: (...args: unknown[]) => createCounterSale(...args),
   issueInvoice: (...args: unknown[]) => issueInvoice(...args),
   cancelInvoice: (...args: unknown[]) => cancelInvoice(...args),
   listCounterSales: (...args: unknown[]) => listCounterSales(...args),
   readInvoice: (...args: unknown[]) => readInvoice(...args),
+  // The printable copy (GAP-09) finds the payer's name through the invoice list,
+  // and must never ask for a work-order preview a counter sale does not have.
+  listInvoices: (...args: unknown[]) => listInvoices(...args),
+  readInvoicePreview: (...args: unknown[]) => readInvoicePreview(...args),
 }));
 
 const searchCustomerDirectory = vi.fn();
@@ -246,7 +252,36 @@ beforeEach(() => {
   // are not about the list see exactly what they saw before it existed.
   listCounterSales.mockResolvedValue(okRead({ items: [], nextCursor: null, hasMore: false }));
   readInvoice.mockResolvedValue(okRead(drafted()));
+  listInvoices.mockResolvedValue(
+    okRead({
+      items: [{ id: INVOICE_ID, payer: { displayName: 'Another garage' } }],
+      nextCursor: null,
+      hasMore: false,
+    })
+  );
 });
+
+/** A counter-sale line as `sal.invoice-detail` publishes it: it names its item. */
+const soldLine = {
+  id: 'line-1',
+  lineNumber: 1,
+  lineType: 'part',
+  quantity: '2.000',
+  currency: 'JOD',
+  sourceQuotationItemId: null,
+  item: { id: ITEM_ID, code: 'BRK-001', name: 'Brake pad' },
+  recordVersion: 1,
+  money: {
+    unitPrice: { amount: '6.2500', currency: 'JOD' },
+    net: { amount: '12.5000', currency: 'JOD' },
+    tax: { amount: '0.0000', currency: 'JOD' },
+    gross: { amount: '12.5000', currency: 'JOD' },
+    payerSplit: {
+      customer: { amount: '12.5000', currency: 'JOD' },
+      warranty: { amount: '0.0000', currency: 'JOD' },
+    },
+  },
+};
 
 const screenAt = () => (
   <CounterSalesScreen locale="en" messages={en} canSell canIssue canReadCustomers canReadBranches />
@@ -610,7 +645,51 @@ describe('issuing and voiding', () => {
     const user = userEvent.setup();
     renderLtr(screenAt());
     await toDraft(user);
-    expect(screen.getByText(/12\.5/)).toBeTruthy();
+    // In the currency's own minor unit: JOD is written with three decimals
+    // (GAP-15), so 12.5000 reads 12.500 and never 12.50.
+    expect(screen.getByText('12.500 JOD')).toBeTruthy();
+  });
+
+  it('prints an issued counter sale: no preview is waited for, each line names its item', async () => {
+    const user = userEvent.setup();
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    createCounterSale.mockResolvedValue(
+      succeeded('invoices.counterSale.create.success', drafted({ lines: [soldLine] }))
+    );
+    renderLtr(screenAt());
+    await toDraft(user);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.issue.action'] as string })
+    );
+    await waitFor(() =>
+      expect(screen.getByText(EN['inventory.counterSales.sale.issuedNote'] as string)).toBeTruthy()
+    );
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    // Ready at once: a counter sale has no work-order preview, and none is asked for.
+    expect(readInvoicePreview).not.toHaveBeenCalled();
+    expect(within(document).getByText('Brake pad')).toBeTruthy();
+    expect(within(document).getByText('BRK-001')).toBeTruthy();
+    expect(
+      within(document).getByText(EN['invoices.print.descriptionsFromItems'] as string)
+    ).toBeTruthy();
+    expect(within(document).queryByText(EN['invoices.print.noDescription'] as string)).toBeNull();
+    expect(within(document).getAllByText('12.500 JOD').length).toBeGreaterThan(0);
+    await waitFor(() =>
+      expect(within(document).getByTestId('invoice-print-payer')).toHaveTextContent(
+        'Another garage'
+      )
+    );
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.print'] as string }));
+    expect(print).toHaveBeenCalledTimes(1);
+    print.mockRestore();
+    // The copy prints alone: it is held by exactly one direct child of the print
+    // scope, beside the working panel the print sheet leaves off the paper.
+    const scope = document.closest('[data-print-scope]') as HTMLElement;
+    expect(scope).not.toBeNull();
+    const holders = [...scope.children].filter((child) => child.contains(document));
+    expect(holders).toHaveLength(1);
+    expect(scope.children.length).toBeGreaterThan(1);
   });
 
   it('says amounts are not visible rather than showing a zero', async () => {

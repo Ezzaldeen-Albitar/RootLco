@@ -17,8 +17,9 @@
  *   - no `toFixed`, which formats a double
  *   - comparison and scaling are done on the DIGITS
  *
- * `Intl.NumberFormat` appears exactly once, in `formatMoney`, and only to
- * produce text for a human to read. Its output is never parsed back.
+ * `Intl.NumberFormat` produces text for a human to read in `formatMoney`, and
+ * is asked once more, in `minorUnitOf`, only for the number of decimals a
+ * currency is written with. Neither output is ever parsed back into an amount.
  *
  * ## Scale
  *
@@ -143,18 +144,49 @@ export function isNegativeMoney(value: string): boolean {
  * multi-company tenant may hold. It is never parsed back — `formatMoney` is a
  * one-way function and the canonical string remains the value of record.
  *
+ * ## Decimals follow the currency (P1-32-PRE-OD-FIN, GAP-15)
+ *
+ * An amount is written with its currency's minor unit — three decimals for JOD,
+ * two for USD, none for JPY — so `12.5000 JOD` reads `12.500 JOD`, not
+ * `12.50 JOD`. A digit BELOW the minor unit is never rounded away: `1.9752 JOD`
+ * is shown as `1.9752 JOD`, because a residue a customer cannot pay is a
+ * discrepancy to surface, not a figure to tidy. The count of decimals shown is
+ * therefore the larger of the minor unit and the amount's own significant ones,
+ * and `Intl` is never asked to round.
+ *
  * `Intl` takes a number, which is the one place a double is unavoidable. It is
  * safe here and only here: a rendering error of one ulp changes a pixel, not a
  * ledger. The canonical string is what gets submitted.
  */
 export function formatMoney(money: Money, locale: string): string {
   const canonical = toCanonicalMoney(money.amount);
+  const fraction = canonical.split('.')[1] ?? '';
+  const significant = fraction.replace(/0+$/, '').length;
+  const minorUnit = minorUnitOf(money.currency);
+  const digits = significant > minorUnit ? significant : minorUnit;
   const formatted = new Intl.NumberFormat(locale, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: MONEY_SCALE,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
     useGrouping: true,
   }).format(displayNumber(canonical));
   return `${formatted} ${money.currency}`;
+}
+
+/**
+ * How many decimals a currency is written with — its ISO 4217 minor unit, the
+ * same figure `shared.currencies.minor_unit` records — as the platform's `Intl`
+ * reports it. A code `Intl` refuses falls back to two, and nothing above the
+ * four decimals `numeric(18,4)` carries is ever used.
+ */
+function minorUnitOf(currency: CurrencyCode): number {
+  try {
+    const digits = new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions()
+      .maximumFractionDigits;
+    if (typeof digits !== 'number' || digits < 0) return 2;
+    return digits > MONEY_SCALE ? MONEY_SCALE : digits;
+  } catch {
+    return 2;
+  }
 }
 
 /**

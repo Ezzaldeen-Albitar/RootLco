@@ -177,8 +177,21 @@ export interface InvoiceLine {
   readonly quantity: string;
   readonly currency: string;
   readonly sourceQuotationItemId: string | null;
+  /**
+   * `InvoiceLineItemView` — what a counter-sale line sold, by code and name, so
+   * the printed copy can describe the line (GAP-09). `null` on a work-order line,
+   * which is described by its quotation item instead. Not money.
+   */
+  readonly item: InvoiceLineItem | null;
   readonly recordVersion: number;
   readonly money: InvoiceLineMoney | null;
+}
+
+/** `InvoiceLineItemView` — an item a counter-sale line sold. `code` is its SKU. */
+export interface InvoiceLineItem {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
 }
 
 /** `sal.invoice-detail` — `InvoiceDetailView`; `recordVersion` mirrors the header's. */

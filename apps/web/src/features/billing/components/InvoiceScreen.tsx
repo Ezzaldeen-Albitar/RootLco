@@ -1555,6 +1555,40 @@ function ActionsPanel({
   );
 }
 
+/**
+ * The printable copy of a COUNTER SALE (P1-32-PRE-OD-FIN, GAP-09).
+ *
+ * A counter sale has no work order, so it never reaches the invoice screen above,
+ * which is entered through one — and the counter-sales screen offered no copy at
+ * all. This is the same paper view: the same document, the same Print button, the
+ * payer found the same way, and lines described by the item each one sold, which
+ * the detail itself now names. The caller places it as its own direct child of a
+ * `data-print-scope`, so paper carries the copy and not the working panels.
+ */
+export function CounterSalePrintPanel({
+  locale,
+  messages,
+  detail,
+  canViewFinance,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly detail: InvoiceDetail;
+  readonly canViewFinance: boolean;
+}) {
+  const payer = usePayerName(detail.invoice, null, canViewFinance);
+  return (
+    <PrintPanel
+      locale={locale}
+      messages={messages}
+      detail={detail}
+      workOrderNumber={null}
+      payer={payer}
+      canViewFinance={canViewFinance}
+    />
+  );
+}
+
 function PrintPanel({
   locale,
   messages,
@@ -1591,7 +1625,11 @@ function PrintPanel({
     };
   }, [open, canViewFinance, preview, workOrderId]);
 
-  const ready = !canViewFinance || preview !== null;
+  // A counter sale has no preview to wait for: its lines name their items on the
+  // detail itself (GAP-09). Waiting for a preview that is never requested left the
+  // panel loading forever and offered no Print button.
+  const counterSale = workOrderId === null;
+  const ready = counterSale || !canViewFinance || preview !== null;
 
   return (
     <section
@@ -1627,13 +1665,15 @@ function PrintPanel({
             detail={detail}
             payer={payer}
             descriptions={
-              !canViewFinance
-                ? { kind: 'notRead' }
-                : preview === null || preview.status !== 'ok'
-                  ? { kind: 'refused', reference: preview?.correlationId ?? null }
-                  : preview.data.quotationRevisionId === detail.invoice.quotationRevisionId
-                    ? { kind: 'matched', preview: preview.data }
-                    : { kind: 'mismatch' }
+              counterSale
+                ? { kind: 'items' }
+                : !canViewFinance
+                  ? { kind: 'notRead' }
+                  : preview === null || preview.status !== 'ok'
+                    ? { kind: 'refused', reference: preview?.correlationId ?? null }
+                    : preview.data.quotationRevisionId === detail.invoice.quotationRevisionId
+                      ? { kind: 'matched', preview: preview.data }
+                      : { kind: 'mismatch' }
             }
             workOrderNumber={workOrderNumber}
           />

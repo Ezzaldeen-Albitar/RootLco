@@ -65,6 +65,7 @@ import {
   type CreatedInvoice,
   type Invoice,
 } from '@/features/billing/billing-contract';
+import { CounterSalePrintPanel } from '@/features/billing/components/InvoiceScreen';
 import { searchCustomerDirectoryCancellable } from '@/lib/customers/directory-read';
 import type { CustomerSearchHit } from '@/lib/customers/directory-contract';
 import type { Locale } from '@/i18n/config';
@@ -247,24 +248,34 @@ function BranchCounter({
           />
         </>
       ) : (
-        <SalePanel
-          locale={locale}
-          messages={messages}
-          sale={sale}
-          canIssue={canIssue}
-          onChanged={(next, noticeKey) => {
-            setSale(next);
-            drafts.reload();
-            setNotice(noticeKey);
-          }}
-          onNewSale={() => {
-            setSale(null);
-            setLines([]);
-            setBuyer(null);
-            setNotice(null);
-            drafts.reload();
-          }}
-        />
+        // The sale and its printable copy side by side in one print scope: while
+        // the copy is open, paper carries it and not the working panel (GAP-09).
+        <div data-print-scope="document" className="flex min-h-0 flex-col gap-4">
+          <SalePanel
+            locale={locale}
+            messages={messages}
+            sale={sale}
+            canIssue={canIssue}
+            onChanged={(next, noticeKey) => {
+              setSale(next);
+              drafts.reload();
+              setNotice(noticeKey);
+            }}
+            onNewSale={() => {
+              setSale(null);
+              setLines([]);
+              setBuyer(null);
+              setNotice(null);
+              drafts.reload();
+            }}
+          />
+          <CounterSalePrintPanel
+            locale={locale}
+            messages={messages}
+            detail={sale}
+            canViewFinance={sale.invoice.totals !== null}
+          />
+        </div>
       )}
     </>
   );

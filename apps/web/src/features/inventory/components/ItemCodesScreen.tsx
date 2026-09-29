@@ -40,6 +40,7 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
+import { formatMoney } from '@/lib/money';
 
 import {
   addIdentifier,
@@ -137,7 +138,7 @@ export function ItemCodesScreen({
   return (
     <div className="flex min-h-0 flex-col gap-4">
       <IdentifiersPanel locale={locale} messages={messages} itemId={itemId} canManage={canManage} />
-      <PricesPanel messages={messages} itemId={itemId} canManage={canManage} />
+      <PricesPanel locale={locale} messages={messages} itemId={itemId} canManage={canManage} />
     </div>
   );
 }
@@ -566,10 +567,12 @@ function InternalCodeAction({
  * ------------------------------------------------------------------ */
 
 function PricesPanel({
+  locale,
   messages,
   itemId,
   canManage,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly itemId: string;
   readonly canManage: boolean;
@@ -637,7 +640,10 @@ function PricesPanel({
                   </td>
                   <td className="text-end">
                     <span dir="ltr" className="font-mono text-caption">
-                      {price.unitPrice} {price.currencyCode}
+                      {formatMoney(
+                        { amount: price.unitPrice, currency: price.currencyCode },
+                        locale
+                      )}
                     </span>
                   </td>
                   <td>

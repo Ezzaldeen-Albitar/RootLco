@@ -243,9 +243,16 @@ function BranchReturns({
                       {translateDynamic(messages, `inventory.returnStatus.${row.status}`)}
                       {row.creditNoteId !== null ? (
                         <>
-                          <span className="block text-caption text-text-muted">
-                            {translate(messages, 'inventory.returns.creditPending')}
-                          </span>
+                          {/*
+                           * GAP-04. Only a note that is still waiting says so: the
+                           * status is the note's own decision, and an approved or
+                           * refused credit is no longer waiting for anybody.
+                           */}
+                          {row.status === 'credit_requested' ? (
+                            <span className="block text-caption text-text-muted">
+                              {translate(messages, 'inventory.returns.creditPending')}
+                            </span>
+                          ) : null}
                           {/*
                            * DEF-T-07. The credit a return raises used to be
                            * named here and reachable nowhere. The credit-note
