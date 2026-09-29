@@ -87,6 +87,7 @@ export type {
   ReceiptAllocationView,
   ReceiptDetailView,
   ReceiptListView,
+  ReceiptPayerView,
 } from './application/payment-read-service';
 
 export type {

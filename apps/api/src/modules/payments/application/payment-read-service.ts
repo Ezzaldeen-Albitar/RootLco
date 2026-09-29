@@ -33,7 +33,8 @@
 import { AppFailure } from '@/server/errors/app-failure';
 import { MAX_PAGE_SIZE, pageRequest, type Page } from '@/server/db/pagination';
 import type { DbHandle } from '@/server/db/transaction';
-import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { callerHoldsPermissionAnywhere, type ScopeAuthorizer } from '@/server/auth/authorization';
+import { CUSTOMER_SEARCH_PERMISSION } from '@/shared/text/search-terms';
 import { moneyView, type MoneyView } from '@/modules/pricing';
 import { RECEIPT_ORDER } from '../data/payments-repository';
 import type {
@@ -178,6 +179,29 @@ const toAllocationView = (row: PaymentAllocationRow): ReceiptAllocationView => (
  * `iam.current_user_id()`, it is never a client input, and who handled the money
  * is a question the audit trail answers.
  */
+/**
+ * Who paid, by name (Owner directive, browser QA row 5.6b).
+ *
+ * The same shape and the same rule as the invoice list's payer block
+ * (`InvoicePayerView`): every field is `null` exactly when the payer is not
+ * named to THIS caller - withheld because the caller does not hold
+ * `crm.customer.read`, or not a live partner (retired since the receipt was
+ * taken, or not visible). The block keeps its shape either way. The id is
+ * `payerPartnerId` on the row and is not repeated here.
+ */
+export interface ReceiptPayerView {
+  readonly displayName: string | null;
+  readonly displayNumber: string | null;
+  readonly partyType: string | null;
+}
+
+/** The payer block of a caller the payer may not be named to. Same shape, every field null. */
+const WITHHELD_PAYER: ReceiptPayerView = Object.freeze({
+  displayName: null,
+  displayNumber: null,
+  partyType: null,
+});
+
 export interface ReceiptListView {
   readonly id: string;
   /** `sal.receipts.receipt_number` - opaque text, never parsed or sorted by. */
@@ -185,6 +209,8 @@ export interface ReceiptListView {
   readonly companyId: string;
   readonly branchId: string;
   readonly payerPartnerId: string;
+  /** The payer's name, where this caller may read customers. See `ReceiptPayerView`. */
+  readonly payer: ReceiptPayerView;
   readonly method: {
     readonly id: string;
     readonly scope: string;
@@ -236,6 +262,16 @@ export class PaymentReadService {
    * loading the whole method set ONCE per page and labelling rows from it: one
    * extra statement, not one per receipt, and still no second copy of the
    * predicate.
+   *
+   * ## The payer, named only where the caller may read customers
+   *
+   * The gate is `sal.finance.view`, and that code reaches money, never a
+   * customer's name. So the page names the payer only for a caller holding
+   * `crm.customer.read`, asked ONCE per page with the scope-blind
+   * `iam.has_permission` statement the invoice list asks - the same answer, so a
+   * payer the invoice list would not name is not named here either. The answer
+   * can only withhold a name, never widen the page: the rows, their order and
+   * their ids are exactly those read before the question was asked.
    */
   public async listReceipts(
     db: DbHandle,
@@ -255,15 +291,17 @@ export class PaymentReadService {
     const methods = new Map<string, PaymentMethodRow>(
       (await this.repository.listPaymentMethods(db)).map((row) => [row.id, row])
     );
+    const mayNamePayer = await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION);
     return {
       ...result,
-      items: result.items.map((row) => this.toReceiptListView(row, methods)),
+      items: result.items.map((row) => this.toReceiptListView(row, methods, mayNamePayer)),
     };
   }
 
   private toReceiptListView(
     row: ReceiptListRow,
-    methods: ReadonlyMap<string, PaymentMethodRow>
+    methods: ReadonlyMap<string, PaymentMethodRow>,
+    mayNamePayer: boolean
   ): ReceiptListView {
     const method = methods.get(row.paymentMethodId);
     return {
@@ -272,6 +310,13 @@ export class PaymentReadService {
       companyId: row.companyId,
       branchId: row.branchId,
       payerPartnerId: row.payerPartnerId,
+      payer: mayNamePayer
+        ? {
+            displayName: row.payerDisplayName,
+            displayNumber: row.payerDisplayNumber,
+            partyType: row.payerPartyType,
+          }
+        : WITHHELD_PAYER,
       // `null` when the method is not visible to this tenant rather than a
       // fabricated label. `readReceipt` renders the same absence the same way.
       method:
