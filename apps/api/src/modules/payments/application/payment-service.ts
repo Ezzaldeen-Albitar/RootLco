@@ -63,6 +63,7 @@ import {
   PAYMENT_SQLSTATE,
   type PaymentsRepository,
   type ReceiptRow,
+  type ReceiptScope,
 } from '../data/payments-repository';
 import {
   PaymentRuleError,
@@ -238,6 +239,12 @@ export interface AllocatePaymentInput {
    * against a JOD receipt succeeds in a currency it did not intend.
    */
   readonly currencyCode: string;
+  /**
+   * The request's `Idempotency-Key`, stored on the allocation as its business key
+   * (P1-32-PRE-OD-FIN, M-09). A repeat of the key answers with the allocation it
+   * already made; a key reused for another receipt, invoice or amount is refused.
+   */
+  readonly idempotencyKey?: string | undefined;
 }
 
 /**
@@ -402,6 +409,10 @@ export class PaymentService {
         return this.toReceiptView(existing, true);
       }
     }
+
+    // After the replay check for the same reason as the method below: a currency
+    // withdrawn since a receipt was recorded must not refuse that receipt's retry.
+    await this.assertCurrencyRecordable(db, currencyCode);
 
     const method = await this.repository.findPaymentMethod(db, input.paymentMethodId);
     // A withdrawn method is treated as absent rather than as a state conflict: the
@@ -591,6 +602,31 @@ export class PaymentService {
     const scope = { companyId: receipt.companyId, branchId: receipt.branchId };
     await authorizeScope(scope);
 
+    // 2a. A repeated business key is answered BEFORE any state or bound is
+    //     re-evaluated, under the receipt lock just taken: the allocation already
+    //     happened, and re-checking the bounds would refuse a retry of an
+    //     allocation that consumed the whole receipt as an over-allocation. The key
+    //     is tenant-wide, so a found allocation for another receipt, invoice or
+    //     amount is a reused key and is refused, never replayed (M-09).
+    if (input.idempotencyKey !== undefined) {
+      const prior = await this.repository.findAllocationByIdempotencyKey(db, input.idempotencyKey);
+      if (prior) {
+        if (
+          prior.receiptId !== receipt.id ||
+          prior.invoiceId !== input.invoiceId ||
+          !Decimal.fromDatabase(prior.amount, MONEY).equals(amount) ||
+          prior.currencyCode !== declaredCurrency
+        ) {
+          throw new AppFailure('ERR-INT-001', {
+            message:
+              'That idempotency key already booked a different allocation. Reuse a key only ' +
+              'for an identical request.',
+          });
+        }
+        return this.allocationView(db, prior.id, receipt.id, scope);
+      }
+    }
+
     // Checked against the RECEIPT's currency, which is the stored record rather than the
     // request's claim about it. A half-cent allocation is refused here rather than
     // leaving a residue on the invoice that no tenderable payment can ever settle.
@@ -671,7 +707,8 @@ export class PaymentService {
         receipt.id,
         invoice.id,
         amount.toString(),
-        db.context.correlationId
+        db.context.correlationId,
+        input.idempotencyKey ?? null
       );
       allocationId = created.id;
     } catch (error) {
@@ -770,9 +807,66 @@ export class PaymentService {
     };
   }
 
+  /**
+   * The allocation a repeated key already made, as the first answer described it.
+   *
+   * No audit record and no event: the command happened once, and both were written
+   * then. The receipt's status and remainder are read as they stand now, because
+   * those are the database's current answer rather than a figure this service keeps.
+   */
+  private async allocationView(
+    db: DbHandle,
+    allocationId: string,
+    receiptId: string,
+    scope: ReceiptScope
+  ): Promise<AllocationView> {
+    const allocation = await this.repository.findAllocation(db, allocationId, scope);
+    const after = await this.repository.findReceipt(db, receiptId);
+    const remainder = await this.repository.receiptUnallocated(db, receiptId, scope);
+    /* c8 ignore next 5 -- the receipt is held FOR UPDATE and allocations are append-only. */
+    if (!allocation || !after || !remainder) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'An allocation or its receipt vanished while answering a repeated key',
+      });
+    }
+    return {
+      id: allocation.id,
+      sequence: allocation.seq,
+      receiptId: allocation.receiptId,
+      invoiceId: allocation.invoiceId,
+      companyId: allocation.companyId,
+      branchId: allocation.branchId,
+      money: moneyView(allocation.amount, allocation.currencyCode),
+      allocatedAt: allocation.allocatedAt.toISOString(),
+      receiptStatus: after.status,
+      receiptUnallocated: moneyView(remainder.unallocated, remainder.currencyCode),
+    };
+  }
+
   // -------------------------------------------------------------------------
   // Helpers.
   // -------------------------------------------------------------------------
+
+  /**
+   * Refuses a receipt in a currency the platform does not offer (M-09).
+   *
+   * A receipt's currency is frozen once recorded (`sal.guard_receipt_freeze`) and an
+   * allocation must match the invoice's, so a mistyped code makes money that can
+   * never be applied and never be corrected. An unknown code and a WITHDRAWN one
+   * (`shared.currencies.status = 'inactive'`) are both refused here, on the currency
+   * field, before anything is written; `sal.guard_receipt_currency_active` refuses
+   * the same insert in the database. Only the NEW receipt is checked: allocating a
+   * receipt recorded before its currency was withdrawn stays possible.
+   */
+  private async assertCurrencyRecordable(db: DbHandle, currency: string): Promise<void> {
+    const found = await this.repository.findCurrency(db, currency);
+    if (!found || found.status !== 'active') {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `Currency ${currency} is not a supported currency.`,
+        safeDetails: { violations: [{ path: 'body.currency', rule: 'unknown_currency' }] },
+      });
+    }
+  }
 
   /**
    * Refuses an amount more precise than its currency.

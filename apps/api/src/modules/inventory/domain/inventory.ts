@@ -66,12 +66,57 @@ export const SALES_RETURN_SOURCE_KINDS = Object.freeze(['part_issue', 'invoice_l
 export type SalesReturnSourceKind = (typeof SALES_RETURN_SOURCE_KINDS)[number];
 
 /**
- * `ck_sales_returns_status`. `credited` means the return raised a pending credit
- * note; a second person still approves it. There is no third state: nothing in this
- * slice closes a return.
+ * `ck_sales_returns_status`, the STORED value. `credited` is written the moment the
+ * return raises its credit note, while that note is still only PENDING — so it is
+ * never shown as it stands. What a reader is told is `SalesReturnDisplayState`.
  */
 export const SALES_RETURN_STATES = Object.freeze(['received', 'credited'] as const);
 export type SalesReturnState = (typeof SALES_RETURN_STATES)[number];
+
+/**
+ * What a return SHOWS (P1-32-PRE-OD-FIN, GAP-04): its credit note's own decision,
+ * never the stored `credited`, which is written while the note is still pending.
+ *
+ *  - `received`         — the return raised no credit note (a part issued to a job).
+ *  - `credit_requested` — the note waits for a second person.
+ *  - `credited`         — the note was approved; the credit is real.
+ *  - `credit_rejected`  — the note was refused.
+ *  - `credit_raised`    — a note exists but its decision is not visible to this
+ *                         reader: credit notes are gated whole-row by
+ *                         `sal.finance.view`, so the state is not guessed.
+ */
+export const SALES_RETURN_DISPLAY_STATES = Object.freeze([
+  'received',
+  'credit_requested',
+  'credited',
+  'credit_rejected',
+  'credit_raised',
+] as const);
+export type SalesReturnDisplayState = (typeof SALES_RETURN_DISPLAY_STATES)[number];
+
+/**
+ * Derives the state a return shows from its credit note's approval state.
+ *
+ * `creditApprovalState` is `null` both when the return raised no note and when the
+ * note is hidden from the reader; `creditNoteId` tells the two apart. An approval
+ * state outside the note vocabulary is treated as not visible rather than guessed.
+ */
+export function salesReturnDisplayState(
+  creditNoteId: string | null,
+  creditApprovalState: string | null
+): SalesReturnDisplayState {
+  if (creditNoteId === null) return 'received';
+  switch (creditApprovalState) {
+    case 'pending':
+      return 'credit_requested';
+    case 'approved':
+      return 'credited';
+    case 'rejected':
+      return 'credit_rejected';
+    default:
+      return 'credit_raised';
+  }
+}
 
 /** `ck_stock_movements_direction`. */
 export const DIRECTIONS = Object.freeze(['in', 'out'] as const);

@@ -479,16 +479,11 @@ describe('sal.credit-note-create', () => {
 
     // ---- The case that matters most in this file --------------------------------
     //
-    // `assertCurrencyMatches` is the ONLY defence in the entire system. Measured, not
-    // assumed: `tests/db/p1-22-protected-residuals.test.ts` inserts a JOD credit note
-    // against a USD invoice as admin, approves it, and shows 40 JOD subtracted from a
-    // USD gross — 100.0000 becomes 60.0000 — because five triggers fire on
-    // `sal.credit_notes` and not one reads `sal.invoices.currency_code`,
-    // `sal.approve_credit_note` compares the amount and never the currency, and
-    // `sal.invoice_open_receivable` has no currency predicate either. So the DATABASE
-    // still accepts the mismatch this test refuses: the application refusal is the
-    // whole guard (P1-22-L-02, change-control candidate CC-1), and if it is deleted
-    // nothing else objects.
+    // `assertCurrencyMatches` refuses FIRST, on the field that carried the wrong code.
+    // P1-22 measured that the database accepted this mismatch (P1-22-L-02, CC-1);
+    // since GAP-13 it refuses it too (`sal.guard_credit_note_currency`, proved in
+    // `tests/db/p1-22-protected-residuals.test.ts`). This case holds the application
+    // half: a 422 naming `body.currency`, and no row written.
     const before = await creditNotesFor(invoice.invoiceId);
     authAs(SAL_FULL);
     const mismatch = await requestCreditNote(invoice.invoiceId, {

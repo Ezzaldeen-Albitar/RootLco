@@ -51,7 +51,12 @@ import {
   type SalesReturnListRow,
   type SalesReturnRow,
 } from '../data/inventory-repository';
-import { Quantity, assertLegalMovementReference } from '../domain/inventory';
+import {
+  Quantity,
+  assertLegalMovementReference,
+  salesReturnDisplayState,
+  type SalesReturnDisplayState,
+} from '../domain/inventory';
 import { parseQuantity, toDomainFailure } from './inventory-failures';
 import type { InventoryStockService } from './inventory-stock-service';
 
@@ -68,9 +73,14 @@ export interface SalesReturnView {
   readonly receivedLocationId: string;
   readonly quarantineLocationId: string | null;
   readonly reason: string | null;
-  /** The pending credit note this return raised, or null when it raised none. */
+  /** The credit note this return raised, or null when it raised none. */
   readonly creditNoteId: string | null;
-  readonly status: string;
+  /**
+   * What the return shows — `SalesReturnDisplayState`, derived from its credit
+   * note's approval state (GAP-04). Never the stored `credited`, which is written
+   * while the note is still pending.
+   */
+  readonly status: SalesReturnDisplayState;
   readonly recordVersion: number;
   readonly createdAt: string;
   /** True when an idempotent replay returned the return that already existed. */
@@ -107,7 +117,7 @@ function toSalesReturnView(row: SalesReturnRow, replayed: boolean): SalesReturnV
     quarantineLocationId: row.quarantineLocationId,
     reason: row.reason,
     creditNoteId: row.creditNoteId,
-    status: row.status,
+    status: salesReturnDisplayState(row.creditNoteId, row.creditApprovalState),
     recordVersion: row.recordVersion,
     createdAt: row.createdAt.toISOString(),
     replayed,

@@ -28,10 +28,21 @@
  * is allocating USD against a JOD receipt succeeds — in a currency it did not intend,
  * for an amount that means something different from what it meant to send. Requiring
  * it turns a silent success into an explicit refusal.
+ *
+ * ## The Idempotency-Key is also the allocation's business key
+ *
+ * The transport store answers a repeated key with the stored response. The same
+ * key is ALSO stored on the allocation row itself (`sal.payment_allocations.
+ * idempotency_key`, unique per tenant, P1-32-PRE-OD-FIN M-09), and
+ * `sal.allocate_receipt` returns the allocation a key already made instead of
+ * booking a second one. So a retry after an uncertain outcome cannot book money
+ * twice even where the transport record is gone, and a key reused for a
+ * different receipt, invoice or amount is refused rather than replayed.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
+import { IDEMPOTENCY_HEADER } from '@/server/http/idempotency';
 import { parseOrFail, schemas } from '@/server/http/validation';
 import { paymentsModule } from '@/modules/payments';
 
@@ -86,9 +97,10 @@ export async function POST(
   return handleOperation(
     PAYMENT_ALLOCATE_OPERATION,
     request,
-    async ({ db, authorizeScope }) => {
+    async ({ db, authorizeScope, request: inbound }) => {
       const params = parseOrFail(Params, raw, 'path');
       const parsed = parseOrFail(AllocateBody, body, 'body');
+      const key = inbound.headers.get(IDEMPOTENCY_HEADER);
       const allocation = await paymentsModule().payments.allocatePayment(
         db,
         {
@@ -96,6 +108,7 @@ export async function POST(
           invoiceId: parsed.invoiceId,
           amount: parsed.amount,
           currencyCode: parsed.currency,
+          ...(key === null ? {} : { idempotencyKey: key }),
         },
         authorizeScope
       );

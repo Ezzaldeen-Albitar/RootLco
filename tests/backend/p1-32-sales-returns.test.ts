@@ -256,7 +256,9 @@ describe('inv.sales-return-create', () => {
     const received = await bodyOf<ReturnBody>(response);
     expect(received.condition).toBe('restockable');
     expect(received.itemId).toBe(ITEM_A);
-    expect(received.status).toBe('credited');
+    // What the return SHOWS is its note's decision: the note is only pending, so
+    // the return is waiting for credit, not "credited" (GAP-04).
+    expect(received.status).toBe('credit_requested');
     expect(received.creditNoteId).not.toBeNull();
     expect(received.replayed).toBe(false);
 

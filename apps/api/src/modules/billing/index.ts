@@ -108,6 +108,7 @@ export type {
 export type {
   CreditNoteView,
   InvoiceDetailView,
+  InvoiceLineItemView,
   InvoiceLineMoneyView,
   InvoiceLineView,
   InvoiceListEntryView,

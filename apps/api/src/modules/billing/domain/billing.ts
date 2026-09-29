@@ -167,16 +167,13 @@ export function parseInstrumentAmount(input: string, field = 'amount'): Decimal 
 /**
  * Refuses a credit note whose currency differs from its invoice's.
  *
- * **This is a P1-22 invariant, not a re-check of a database rule.** SB1 of the
- * archaeology reproduced the gap: five triggers fire on `sal.credit_notes` and not
- * one of them reads `sal.invoices.currency_code`, and `sal.approve_credit_note`
- * compares the amount but never the currency. A JOD credit note against a USD
- * invoice is accepted, approved, and then subtracted from the USD gross by
- * `sal.invoice_open_receivable`, which has no currency predicate either.
- *
- * So if this function is deleted, nothing else refuses the mismatch. That is
- * recorded as `P1-22-L-02` and an abuse-case test proves the database still
- * accepts it, so the residual stays visible instead of being assumed closed.
+ * SB1 of the P1-22 archaeology reproduced the gap this closes at the application
+ * edge: no trigger on `sal.credit_notes` read `sal.invoices.currency_code` and
+ * `sal.approve_credit_note` compared only the amount (`P1-22-L-02`). Since
+ * `20260930090000_sal_finance_controls.sql` the database refuses the mismatch too
+ * (`sal.guard_credit_note_currency` on insert and `sal.approve_credit_note` under
+ * the invoice lock, GAP-13), and `tests/db/p1-22-protected-residuals.test.ts`
+ * proves it. This function still answers first, naming the field at fault.
  */
 export function assertCurrencyMatches(
   parentCurrency: string,
@@ -186,7 +183,7 @@ export function assertCurrencyMatches(
   if (parentCurrency !== childCurrency) {
     throw new BillingRuleError(
       `${context}: currency ${childCurrency} does not match ${parentCurrency}; ` +
-        'no protected constraint enforces this equality (P1-22-L-02)'
+        'a credit note is always in its invoice currency'
     );
   }
 }

@@ -87,7 +87,7 @@ export const PAYMENT_SQLSTATE = {
  * The exact SQL that creates an allocation — a module-level constant so the
  * structural guard below can be applied to it at import time.
  */
-const ALLOCATE_RECEIPT_SQL = `SELECT sal.allocate_receipt($1, $2, $3::numeric, $4) AS id`;
+const ALLOCATE_RECEIPT_SQL = `SELECT sal.allocate_receipt($1, $2, $3::numeric, $4, $5) AS id`;
 
 /**
  * Refuses to load this module if the allocation statement ever stops being the
@@ -559,6 +559,19 @@ export class PaymentsRepository extends Repository {
    * the platform does not support the code, which the caller reports rather than
    * silently falling back to the column's four decimal places.
    */
+  /** One row of the platform currency register, or null for an unknown code. */
+  public async findCurrency(
+    db: DbHandle,
+    code: string
+  ): Promise<{ readonly minorUnit: number; readonly status: string } | null> {
+    const row = await this.runOne<{ minor_unit: number; status: string }>(
+      db,
+      `SELECT minor_unit, status FROM shared.currencies WHERE code = $1`,
+      [code]
+    );
+    return row ? { minorUnit: row.minor_unit, status: row.status } : null;
+  }
+
   public async minorUnitForCurrency(db: DbHandle, code: string): Promise<number | null> {
     const row = await this.runOne<{ minor_unit: number }>(
       db,
@@ -1054,19 +1067,24 @@ export class PaymentsRepository extends Repository {
    *
    * The amount is a STRING bound parameter cast with `$3::numeric` — see
    * `recordReceipt`.
+   *
+   * `idempotencyKey` is stored on the allocation (M-09). The primitive resolves a
+   * repeated key under the receipt lock and returns the allocation it already made.
    */
   public async allocateReceipt(
     db: DbHandle,
     receiptId: string,
     invoiceId: string,
     amount: string,
-    correlationId: string | null
+    correlationId: string | null,
+    idempotencyKey: string | null
   ): Promise<{ readonly id: string }> {
     const row = await this.runOne<{ id: string }>(db, ALLOCATE_RECEIPT_SQL, [
       receiptId,
       invoiceId,
       amount,
       correlationId,
+      idempotencyKey,
     ]);
     if (!row?.id) throw new Error('payments: sal.allocate_receipt returned no id');
     return { id: row.id };
@@ -1087,6 +1105,25 @@ export class PaymentsRepository extends Repository {
    * reason for this read to be the one query in the file that could return a row from
    * outside it.
    */
+  public async findAllocationByIdempotencyKey(
+    db: DbHandle,
+    idempotencyKey: string
+  ): Promise<PaymentAllocationRow | null> {
+    // Tenant-wide, like `uq_payment_allocations_idempotency`: the caller compares the
+    // found row's receipt, invoice and amount with its own request and refuses a
+    // reused key, so a key never hands back an allocation it did not make.
+    const context = this.assertContext(db);
+    const row = await this.runOne<PaymentAllocationSql>(
+      db,
+      `SELECT id, seq::text AS seq, company_id, branch_id, receipt_id, invoice_id,
+              currency_code, amount, allocated_at, correlation_id
+         FROM sal.payment_allocations
+        WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [context.principal.tenantId, idempotencyKey]
+    );
+    return row ? toAllocation(row) : null;
+  }
+
   public async findAllocation(
     db: DbHandle,
     allocationId: string,
