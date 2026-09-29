@@ -1185,12 +1185,14 @@ describe('Owner directive 2026-09-17 — the codes the QA campaign found closed'
     expect(before).toBe(85);
     expect(before + ADDED_BY_OD_QA_CAMPAIGN.length).toBe(88);
     // 89 since the Owner's credit-note decision; B16 owns that arithmetic. 90 since
-    // the settings decision; B23 owns that one.
+    // the settings decision; B23 owns that one. 94 since the appointment decision;
+    // B29 owns that one.
     expect(bundle).toHaveLength(
       before +
         ADDED_BY_OD_QA_CAMPAIGN.length +
         ADDED_BY_CREDIT_DECISION.length +
-        ADDED_BY_SETTINGS_DECISION.length
+        ADDED_BY_SETTINGS_DECISION.length +
+        ADDED_BY_APPOINTMENT_DECISION.length
     );
     expect(ADDED_BY_OD_QA_CAMPAIGN).toHaveLength(3);
 
@@ -1737,8 +1739,11 @@ interface CreditNoteReply {
 describe('Owner decision — sal.credit.manage: credit notes in a provisioned organisation', () => {
   it('P31-B16 the bundle carries sal.credit.manage and nothing else moved; the four credit-note operations declare it with sal.finance.view; it was already a catalogue row; first_owner is untouched', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
-    // 89 with this code; 90 since the settings decision, which B23 owns.
-    expect(bundle).toHaveLength(89 + ADDED_BY_SETTINGS_DECISION.length);
+    // 89 with this code; 90 since the settings decision, which B23 owns; 94 since
+    // the appointment decision, which B29 owns.
+    expect(bundle).toHaveLength(
+      89 + ADDED_BY_SETTINGS_DECISION.length + ADDED_BY_APPOINTMENT_DECISION.length
+    );
     for (const code of ADDED_BY_CREDIT_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -2676,7 +2681,7 @@ describe('Owner decision — the four appointment codes: the organisation runs i
       'utf8'
     );
     for (const code of ADDED_BY_APPOINTMENT_DECISION) {
-      expect(seed).toMatch(new RegExp(`\\('${code.replace(/\./g, '\\.')}',`));
+      expect(seed).toContain(`('${code}',`);
     }
 
     // THE SCOPE AUDIT, kept falsifiable: the declarers are exactly the twenty-one it read.

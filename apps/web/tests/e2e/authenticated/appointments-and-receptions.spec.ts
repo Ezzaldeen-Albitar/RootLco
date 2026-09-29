@@ -10,7 +10,7 @@ import {
   type Page,
 } from '@playwright/test';
 import { E2E_API_ORIGIN, REPO_ROOT } from '../origin';
-import { readSignedInAccount } from './account-manifest';
+import { holds, readSignedInAccount } from './account-manifest';
 
 /**
  * This file assumes the ACCEPTANCE OWNER, so it runs only when that is who signed in.
@@ -914,13 +914,34 @@ test.describe('the booking screen states the blocked truth rather than offering 
        *      reported as a fault (the two are different renderable facts);
        *   3. submit is DISABLED, so the screen does not invite a submission the
        *      operation would refuse.
+       *
+       * Since the Owner decision of 2026-09-29 the organisation enters its own
+       * types on the appointment setup screen, and a credential that may do so
+       * (`apt.catalogue.manage`, read from the account manifest) is told to set
+       * types up first and given the link; any other credential is told an
+       * administrator adds them. The credential decides which ONE sentence is
+       * owed, so the case cannot pass on the wrong one.
        */
       const route = `/${locale}/appointments/new`;
       await page.goto(route);
       await segmentRendered(page, route);
 
       const main = page.getByRole('main');
-      await expect(main).toContainText(say(locale, 'appointments.book.noTypes'));
+      const maySetUp = holds(readSignedInAccount().kind, 'apt.catalogue.manage');
+      await expect(main).toContainText(
+        say(locale, maySetUp ? 'appointments.book.noTypesSetUp' : 'appointments.book.noTypes')
+      );
+      const setupLink = page.getByRole('link', {
+        name: say(locale, 'appointments.book.openSetup'),
+      });
+      if (maySetUp) {
+        await expect(setupLink).toHaveAttribute(
+          'href',
+          `/${locale}/administration/appointment-setup`
+        );
+      } else {
+        await expect(setupLink).toHaveCount(0);
+      }
       await expect(
         main,
         'an EMPTY catalogue was reported as a failed read; they are different facts'
