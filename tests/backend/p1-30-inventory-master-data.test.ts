@@ -432,8 +432,10 @@ describe('declarations', () => {
     // 89 since the Owner decided the administrator carries sal.credit.manage, so
     // that somebody in a provisioned organisation can read, request and — as a
     // second person it delegates to — approve a credit note. 90 since the Owner
-    // decided (2026-09-27) the administrator edits its own organisation settings.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(90);
+    // decided (2026-09-27) the administrator edits its own organisation settings,
+    // and 94 since it decided (2026-09-29) the administrator holds the four
+    // appointment codes.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(94);
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).not.toContain('inv.cost.view');
   });
 });

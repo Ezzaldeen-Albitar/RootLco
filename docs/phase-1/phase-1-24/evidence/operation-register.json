@@ -62,6 +62,7 @@
       "tests": [
         "tests/backend/p1-18-appointment-lifecycle.test.ts",
         "tests/backend/p1-18-scope-containment.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -112,7 +113,8 @@
       "tests": [
         "tests/backend/p1-18-appointment-lifecycle.test.ts",
         "tests/backend/p1-18-intake-catalogue-management.test.ts",
-        "tests/backend/p1-18-scope-containment.test.ts"
+        "tests/backend/p1-18-scope-containment.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointments/route.ts"
@@ -153,6 +155,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-18-appointment-reads.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -178,7 +181,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-18-appointment-reads.test.ts",
-        "tests/backend/p1-22-isolation.test.ts"
+        "tests/backend/p1-22-isolation.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointments/route.ts"
@@ -228,6 +232,7 @@
       "tests": [
         "tests/backend/p1-18-appointment-lifecycle.test.ts",
         "tests/backend/p1-18-scope-containment.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -282,6 +287,7 @@
         "tests/backend/p1-18-appointment-reads.test.ts",
         "tests/backend/p1-18-reception-create.test.ts",
         "tests/backend/p1-18-scope-containment.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -321,7 +327,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "tests": [
+        "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointment-catalogue/appointment-types/route.ts"
     },
@@ -343,7 +352,10 @@
       "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
       "providedEvidence": ["authorization", "denial", "route", "service", "success"],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-intake-catalogues.test.ts"],
+      "tests": [
+        "tests/backend/p1-18-intake-catalogues.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointment-catalogue/appointment-types/route.ts"
     },
@@ -379,7 +391,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "tests": [
+        "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointment-catalogue/management/appointment-types/route.ts"
     },
@@ -423,6 +438,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -466,6 +482,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -505,7 +522,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "tests": [
+        "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointment-catalogue/cancellation-reasons/route.ts"
     },
@@ -527,7 +547,11 @@
       "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
       "providedEvidence": ["authorization", "denial", "route", "service", "success"],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-intake-catalogues.test.ts", "tests/ci/p1-28-matrix.test.ts"],
+      "tests": [
+        "tests/backend/p1-18-intake-catalogues.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
+        "tests/ci/p1-28-matrix.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointment-catalogue/cancellation-reasons/route.ts"
     },
@@ -563,7 +587,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "tests": [
+        "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointment-catalogue/management/cancellation-reasons/route.ts"
     },
@@ -607,6 +634,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -650,6 +678,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -689,7 +718,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "tests": [
+        "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointment-catalogue/source-channels/route.ts"
     },
@@ -711,7 +743,10 @@
       "requiredEvidence": ["route", "service", "success", "authorization", "denial"],
       "providedEvidence": ["authorization", "denial", "route", "service", "success"],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-intake-catalogues.test.ts"],
+      "tests": [
+        "tests/backend/p1-18-intake-catalogues.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointment-catalogue/source-channels/route.ts"
     },
@@ -747,7 +782,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-18-intake-catalogue-management.test.ts"],
+      "tests": [
+        "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/appointment-catalogue/management/source-channels/route.ts"
     },
@@ -791,6 +829,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",
@@ -834,6 +873,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/p1-18-intake-catalogue-management.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/foundation/p1-18-scoped-authorization.test.ts"
       ],
       "classification": "Covered",

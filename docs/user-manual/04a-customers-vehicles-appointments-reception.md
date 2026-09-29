@@ -930,9 +930,13 @@ afterwards." <!-- appointments.book.requestedNote -->
 - The vehicle must already be linked to the customer. If it is not: "No vehicles are linked to this
   customer yet. Link the vehicle on its own page first, then book the appointment." <!-- appointments.book.noVehicles -->
   Do that on the vehicle profile (4A.3.6).
-- If nobody has set up appointment types: "No appointment types have been set up for this workspace
-  yet, so an appointment cannot be booked. An administrator adds them." <!-- appointments.book.noTypes -->
-  **This catalogue has no screen — Label: OPERATOR PROCEDURE.**
+- If nobody has set up appointment types, booking waits for them. Someone who may set them up
+  reads "No appointment types have been set up yet, so an appointment cannot be booked. Set up
+  appointment types first." <!-- appointments.book.noTypesSetUp --> with the link **"Open
+  appointment setup"** <!-- appointments.book.openSetup --> ; anyone else reads "No appointment
+  types have been set up for this workspace yet, so an appointment cannot be booked. An
+  administrator adds them." <!-- appointments.book.noTypes --> The types are entered on
+  **Appointment setup** (Part 2, §2.10.11); nothing is preset.
 - If no booking channels exist the booking still goes through: "No booking channels have been set up
   yet, so this booking is recorded without one." <!-- appointments.book.noChannels -->
 - Under **all your branches**, or for a branch whose time zone is not known yet, no time can be
@@ -1026,7 +1030,7 @@ be undone.
 
 ### 4A.4.5 Cancel an appointment
 
-**Label: IMPLEMENTED (UI), but it depends on a catalogue that has no screen**
+**Label: IMPLEMENTED (UI). It needs at least one cancellation reason, entered on Appointment setup**
 
 **Who** — `apt.appointment.lifecycle.manage`.
 
@@ -1046,14 +1050,15 @@ be undone.
 **Result** — the state becomes **"Cancelled"** <!-- appointments.status.cancelled --> . It cannot be
 reopened; book a new appointment instead.
 
-**Restrictions — the reason list is administrator data with no screen. Label: OPERATOR PROCEDURE.**
-If no reasons have been loaded, cancelling is impossible from the interface:
+**Restrictions — the reason list is the organisation's own.** If no reasons have been entered yet,
+cancelling waits for them:
 
 > "The list of cancellation reasons has not been set up for this workspace yet, so an appointment
 > cannot be cancelled here. An administrator adds the reasons." <!-- appointments.cancel.noReasons -->
 
-There is no screen anywhere in the product for adding cancellation reasons. It is a seed-data act
-performed outside the application.
+The reasons are entered on **Appointment setup** (Part 2, §2.10.11) by someone holding the
+appointment setup permission — the first administrator holds it since the Owner decision of
+2026-09-29. Nothing is preset.
 
 **If it goes wrong** — "The list of cancellation reasons could not be loaded right now, and a
 cancellation must name one — try again shortly." <!-- appointments.cancel.catalogueUnavailable -->

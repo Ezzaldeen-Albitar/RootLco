@@ -332,7 +332,7 @@ new vehicle** <!-- vehicles.create.openCreated --> . **Restrictions:**
 
 ## 8. Book the first appointment
 
-**Label:** IMPLEMENTED (UI) — but usually closed to a new administrator on day one. Read the
+**Label:** IMPLEMENTED (UI). Set up at least one appointment type first (below). Read the
 restrictions before you try. **Who:** an account holding `apt.appointment.read` and
 `apt.appointment.manage`. **Where:** **Appointments** <!-- nav.appointments --> → **Book an
 appointment** <!-- appointments.book.title --> . **Steps:**
@@ -351,22 +351,23 @@ appointment** <!-- appointments.book.title --> . **Steps:**
 customer asked for. The appointment starts as Requested; giving it a firm, confirmed time happens on
 the appointment page afterwards."_ <!-- appointments.book.requestedNote --> **Restrictions:**
 
-- **A freshly provisioned administrator holds no appointment permission at all**, so the
-  **Appointments** entry is not in their menu. Someone must grant those codes first, and the
-  application only lets an operator grant what they already hold — _"You can only grant roles you
-  already hold the authority to grant."_ <!-- users.invite.rolesHint --> Whether a workspace can
-  widen its own appointment access from the screens alone is **NOT ESTABLISHED** in this guide;
-  treat it as an administration question and see `03-users-and-permissions.md`.
-- Appointment types are configuration with no screen: _"No appointment types have been set up for
-  this workspace yet, so an appointment cannot be booked. An administrator adds them."_ <!-- appointments.book.noTypes -->
-  Until they exist, booking is not possible.
+- **Since the Owner decision of 2026-09-29 the first administrator of a new organisation holds the
+  four appointment permissions**, so **Appointments** and **Appointment setup** <!-- nav.appointmentSetup -->
+  are in their menu. An organisation provisioned earlier gains them only if the platform operator
+  runs the administrator backfill for it. No front-desk or reception role receives them
+  automatically; the administrator may give them to a role it builds.
+- Appointment types are the organisation's own, and none is preset. Enter them first on
+  **Administration** → **Appointment setup** (Part 2, §2.10.11). Until one exists the booking form
+  says _"No appointment types have been set up yet, so an appointment cannot be booked. Set up
+  appointment types first."_ <!-- appointments.book.noTypesSetUp --> with the link **"Open
+  appointment setup"** <!-- appointments.book.openSetup --> .
 - There is **no separate confirm button**: _"This appointment is awaiting confirmation. Confirming
   happens by giving it a firm time in the confirm-or-reschedule step below — there is no separate
   confirm button."_ <!-- appointments.status.pendingNote --> Use **Confirm by rescheduling** <!-- appointments.reschedule.submit -->
   .
-- Cancelling needs a reason from a list that is also configuration: _"The list of cancellation
-  reasons has not been set up for this workspace yet, so an appointment cannot be cancelled here. An
-  administrator adds the reasons."_ <!-- appointments.cancel.noReasons -->
+- Cancelling needs a reason from the organisation's own list, entered on the same **Appointment
+  setup** screen: _"The list of cancellation reasons has not been set up for this workspace yet, so
+  an appointment cannot be cancelled here. An administrator adds the reasons."_ <!-- appointments.cancel.noReasons -->
 - If the vehicle is not linked to the customer: _"No vehicles are linked to this customer yet. Link
   the vehicle on its own page first, then book the appointment."_ <!-- appointments.book.noVehicles -->
 

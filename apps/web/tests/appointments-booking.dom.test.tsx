@@ -147,13 +147,19 @@ function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
   );
 }
 
-function renderScreen({ types = TYPES, channels = CHANNELS } = {}) {
+function renderScreen({ types = TYPES, channels = CHANNELS, canSetUpCatalogue = false } = {}) {
   // The branch is the working context's named selection, chosen in the header,
   // not a pair of controls on the booking form.
   return renderLtr(
     withMui(
       inBranch(
-        <AppointmentBookingScreen locale="en" messages={en} types={types} channels={channels} />
+        <AppointmentBookingScreen
+          locale="en"
+          messages={en}
+          types={types}
+          channels={channels}
+          canSetUpCatalogue={canSetUpCatalogue}
+        />
       )
     )
   );
@@ -208,6 +214,53 @@ describe('the empty catalogue is a fact, not a failure', () => {
     expect(submit()).toBeDisabled();
     // Nothing failed, so nothing claims to have failed.
     expect(screen.queryByText(en['state.error.title'])).toBeNull();
+  });
+
+  it('offers no way to the setup screen to an operator who may not set it up', () => {
+    renderScreen({ types: EMPTY_CATALOGUE });
+    expect(screen.queryByTestId('booking-type-setup-link')).toBeNull();
+    expect(screen.queryByText(en['appointments.book.noTypesSetUp'])).toBeNull();
+  });
+
+  it('tells a holder of appointment setup to set types up first, and links the setup screen (Owner decision 2026-09-29)', () => {
+    renderScreen({ types: EMPTY_CATALOGUE, canSetUpCatalogue: true });
+    expect(screen.getByText(en['appointments.book.noTypesSetUp'])).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: en['appointments.book.openSetup'] });
+    expect(link).toHaveAttribute('href', '/en/administration/appointment-setup');
+    // Still blocked, still not a failure: the catalogue is empty, not broken.
+    expect(submit()).toBeDisabled();
+    expect(screen.queryByText(en['state.error.title'])).toBeNull();
+  });
+
+  it("shows the organisation's own active types, and no setup link, once a type exists", () => {
+    renderScreen({ canSetUpCatalogue: true });
+    expect(screen.queryByTestId('booking-type-setup-link')).toBeNull();
+    const select = screen.getByLabelText(new RegExp(en['appointments.book.type']));
+    for (const option of TYPES.options) {
+      expect(within(select).getByRole('option', { name: option.name })).toBeInTheDocument();
+    }
+  });
+
+  it('says it in Arabic, right to left, with the link', () => {
+    renderRtl(
+      withMui(
+        inBranch(
+          <AppointmentBookingScreen
+            locale="ar"
+            messages={ar}
+            types={EMPTY_CATALOGUE}
+            channels={CHANNELS}
+            canSetUpCatalogue
+          />
+        ),
+        'ar'
+      )
+    );
+    expect(screen.getByText(ar['appointments.book.noTypesSetUp'])).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: ar['appointments.book.openSetup'] })).toHaveAttribute(
+      'href',
+      '/ar/administration/appointment-setup'
+    );
   });
 
   it('says a FAILED type read is unavailable, with the reference', () => {

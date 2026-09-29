@@ -485,9 +485,21 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // that closes residual W9-R2: the administrator edits its own organisation's
     // settings. Declared by the tenant, company and branch settings writes, branch
     // status and the template operations; already a catalogue row.
-    expect(expected).toHaveLength(90);
+    // 94 with the four appointment codes, carried by the Owner decision of
+    // 2026-09-29: the administrator reads, books, reschedules, cancels and sets up
+    // appointments for its own organisation. Declared by the twenty-one reception
+    // operations of the appointment surface; all four were already catalogue rows.
+    expect(expected).toHaveLength(94);
     expect(expected).toContain('sal.credit.manage');
     expect(expected).toContain('org.settings.manage');
+    for (const code of [
+      'apt.appointment.read',
+      'apt.appointment.manage',
+      'apt.appointment.lifecycle.manage',
+      'apt.catalogue.manage',
+    ]) {
+      expect(expected).toContain(code);
+    }
     expect(expected).not.toContain('inv.cost.view');
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);

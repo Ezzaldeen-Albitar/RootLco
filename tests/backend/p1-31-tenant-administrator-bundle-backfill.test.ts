@@ -47,8 +47,8 @@
  *   BF-10 the claim that a widening needs no edit to the script, measured for the
  *         Owner directive of 2026-09-17: an organisation on the 85-code bundle is
  *         offered EXACTLY the codes widened since — that directive's three,
- *         `sal.credit.manage` and `org.settings.manage` — by a dry run that writes
- *         nothing, and then by the applied run
+ *         `sal.credit.manage`, `org.settings.manage` and the four appointment codes
+ *         — by a dry run that writes nothing, and then by the applied run
  *   BF-11 the `sal.credit.manage` widening: a standard role lacking only that code
  *         is offered exactly that ONE code; the dry run writes nothing; the applied
  *         run adds it to the standard administrator role and to no other role — a
@@ -77,12 +77,20 @@
  *         while the next organisation in the same run is widened and committed
  *   BF-18 the `org.settings.manage` widening (Owner decision 2026-09-27), run the
  *         way the Owner authorised it — selectively, for named organisations only:
- *         two organisations on the 89-code bundle are named; the standard one is
- *         offered exactly that ONE code by a dry run that writes nothing and then
- *         gains it, and a company manager role it built gains nothing; the
- *         customised one is skipped whole and reported with the code withheld; an
- *         organisation that is NOT named is untouched row for row; a second run is
- *         a no-op
+ *         two organisations whose standard role lacks only that code are named; the
+ *         standard one is offered exactly that ONE code by a dry run that writes
+ *         nothing and then gains it, and a company manager role it built gains
+ *         nothing; the customised one is skipped whole and reported with the code
+ *         withheld; an organisation that is NOT named is untouched row for row; a
+ *         second run is a no-op
+ *   BF-19 the appointment widening (Owner decision 2026-09-29), run the same
+ *         selective way for the two organisations the operator names — in
+ *         production `--tenant odqa_alpha --tenant odqa_beta`: two organisations on
+ *         the 90-code bundle are named; the standard one is offered EXACTLY the four
+ *         appointment codes by a dry run that writes nothing and then gains them,
+ *         and a front-desk role it built gains nothing; the customised one is
+ *         skipped whole with the four withheld; an organisation that is NOT named is
+ *         untouched row for row; a second run is a no-op
  *
  * ## Where it runs
  *
@@ -90,7 +98,7 @@
  * tenants THIS SUITE provisions through the shipped provisioning route and drops
  * afterwards. Nothing here reads or writes an organisation it did not create.
  * The stale state is constructed by removing, from the suite's own fresh
- * tenants, exactly the twenty-two codes widened onto the bundle since — which
+ * tenants, exactly the twenty-seven codes widened onto the bundle since — which
  * reproduces the 67-code bundle those organisations really hold.
  *
  * Operations exercised: platform.organization-provision, iam.role-create,
@@ -250,6 +258,23 @@ const CREDIT_ADDED = Object.freeze(['sal.credit.manage']);
  */
 const SETTINGS_ADDED = Object.freeze(['org.settings.manage']);
 
+/**
+ * The Owner decision of 2026-09-29: the four appointment codes for the standard
+ * tenant administrator, so it reads, books, reschedules, cancels and sets up
+ * appointments for its own organisation. The backfill owes it a NINTH operator run,
+ * and by the same decision a SELECTIVE one — only the previously authorised QA
+ * organisations (`--tenant odqa_alpha --tenant odqa_beta`), customised roles
+ * preserved, every other existing organisation left unchanged. BF-19 measures that
+ * shape. Written out rather than derived: a list computed from the constant under
+ * test would prove nothing.
+ */
+const APPOINTMENT_ADDED = Object.freeze([
+  'apt.appointment.read',
+  'apt.appointment.manage',
+  'apt.appointment.lifecycle.manage',
+  'apt.catalogue.manage',
+]);
+
 /** Every code widened onto the 67-code bundle since: what a stale organisation lacks. */
 const WIDENED = Object.freeze([
   ...BACKFILLED,
@@ -257,6 +282,7 @@ const WIDENED = Object.freeze([
   ...OD_QA_ADDED,
   ...CREDIT_ADDED,
   ...SETTINGS_ADDED,
+  ...APPOINTMENT_ADDED,
 ]);
 
 /** A real catalogue code the bundle deliberately does NOT carry (P1-31 CC-04). */
@@ -436,7 +462,7 @@ async function backfillAuditCount(tenantId: string): Promise<number> {
   return rows[0]?.n ?? 0;
 }
 
-/** Removes the twenty-three widened codes, reproducing the 67-code bundle on a fresh role. */
+/** Removes the twenty-seven widened codes, reproducing the 67-code bundle on a fresh role. */
 async function makeStale(tenant: Provisioned): Promise<void> {
   await admin.query(
     `DELETE FROM iam.role_permissions
@@ -1042,15 +1068,15 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(rows[0]?.n).toBe(0);
   });
 
-  it('BF-10 an organisation on the 85-code bundle is offered exactly the codes widened since (the three of the 2026-09-17 directive, sal.credit.manage and org.settings.manage), and a dry run offers them without writing', async () => {
+  it('BF-10 an organisation on the 85-code bundle is offered exactly the codes widened since (the three of the 2026-09-17 directive, sal.credit.manage, org.settings.manage and the four appointment codes), and a dry run offers them without writing', async () => {
     // The script parses `bootstrap-roles.ts` at run time rather than carrying a
     // copy of the list, so a widening needs no edit to it — which is a claim, and
     // this is the measurement of it for THIS widening. The organisation is put on
     // the 85-code bundle the shipped operation wrote the day before, not on the
     // 67-code one BF-1 uses, so the difference the script computes can only be
-    // the three codes the directive added, the one the credit-note decision added
-    // and the one the settings decision added.
-    const since85 = [...OD_QA_ADDED, ...CREDIT_ADDED, ...SETTINGS_ADDED];
+    // the three codes the directive added, the one the credit-note decision added,
+    // the one the settings decision added and the four the appointment decision added.
+    const since85 = [...OD_QA_ADDED, ...CREDIT_ADDED, ...SETTINGS_ADDED, ...APPOINTMENT_ADDED];
     const organisation = await provision('odqa');
     await admin.query(
       `DELETE FROM iam.role_permissions
@@ -1075,7 +1101,7 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
       heldAfter: parsedBundle.length,
       blockedByDeny: [],
     });
-    // EXACTLY those five, and no other code: the whole point of the case. In
+    // EXACTLY those nine, and no other code: the whole point of the case. In
     // particular `inv.cost.view` is not offered, because CC-12 keeps it out of the
     // bundle the script reads.
     expect(only(dryRun).added).toEqual([...since85].sort());
@@ -1470,8 +1496,9 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
   });
 
   it('BF-18 the settings widening runs selectively: a named standard organisation gains exactly org.settings.manage, a named customised one and an unnamed one are untouched, and a second run is a no-op', async () => {
-    // The 89-code bundle: every organisation provisioned after the credit-note
-    // decision and before the settings decision holds exactly this.
+    // A standard role lacking only the settings code. (Before the appointment
+    // decision that was the 89-code bundle; BF-19 measures the appointment widening
+    // on its own, so here the role keeps the four appointment codes.)
     const onThe89CodeBundle = async (label: string): Promise<Provisioned> => {
       const organisation = await provision(label);
       await admin.query(
@@ -1480,7 +1507,9 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
             AND permission_id IN (SELECT id FROM iam.permissions WHERE permission_code = ANY($2::text[]))`,
         [organisation.tenantAdministratorRoleId, [...SETTINGS_ADDED]]
       );
-      expect(await codesOfRole(organisation.tenantAdministratorRoleId)).toHaveLength(89);
+      expect(await codesOfRole(organisation.tenantAdministratorRoleId)).toHaveLength(
+        parsedBundle.length - SETTINGS_ADDED.length
+      );
       return organisation;
     };
     const standard = await onThe89CodeBundle('setstd');
@@ -1534,7 +1563,7 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(offered).toMatchObject({
       tenantId: standard.tenantId,
       outcome: 'widened',
-      heldBefore: 89,
+      heldBefore: parsedBundle.length - SETTINGS_ADDED.length,
       heldAfter: parsedBundle.length,
       customisations: [],
     });
@@ -1580,6 +1609,129 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(await codesOfRole(unnamed.tenantAdministratorRoleId)).not.toContain(
       'org.settings.manage'
     );
+    expect(await backfillAuditCount(unnamed.tenantId)).toBe(0);
+
+    // Idempotent: a second run writes nothing and records nothing.
+    const again = await backfill({ tenants: named });
+    expect(again.organisations.map((o) => o.outcome)).toEqual(['unchanged', 'customised']);
+    expect(await mappingRows(standard.tenantAdministratorRoleId)).toEqual(standardAfter);
+    expect(await backfillAuditCount(standard.tenantId)).toBe(1);
+  });
+
+  it('BF-19 the appointment widening runs selectively: a named standard organisation gains exactly the four appointment codes, a front-desk role it built gains nothing, a named customised one and an unnamed one are untouched, and a second run is a no-op', async () => {
+    // The 90-code bundle: every organisation provisioned after the settings decision
+    // and before the appointment decision holds exactly this — which is what the two
+    // QA organisations hold once the settings run has been made for them.
+    const onThe90CodeBundle = async (label: string): Promise<Provisioned> => {
+      const organisation = await provision(label);
+      await admin.query(
+        `DELETE FROM iam.role_permissions
+          WHERE role_id = $1
+            AND permission_id IN (SELECT id FROM iam.permissions WHERE permission_code = ANY($2::text[]))`,
+        [organisation.tenantAdministratorRoleId, [...APPOINTMENT_ADDED]]
+      );
+      expect(await codesOfRole(organisation.tenantAdministratorRoleId)).toHaveLength(90);
+      return organisation;
+    };
+    const standard = await onThe90CodeBundle('aptstd');
+    const tailored = await onThe90CodeBundle('aptcus');
+    const unnamed = await onThe90CodeBundle('aptoth');
+
+    // The standard organisation builds a front-desk role of its own. It must gain
+    // nothing: whether reception staff hold appointment codes is a later decision.
+    asOwnerOf(standard);
+    const desk = await call<{ id: string }>(roleCreateRoute, {
+      path: '/iam/roles',
+      body: {
+        roleCode: `front_desk_${RUN}`,
+        name: 'Front desk',
+        description: 'Receives customers',
+      },
+      idempotencyKey: randomUUID(),
+    });
+    expect(desk.status).toBe(201);
+    const deskRoleId = desk.body.id;
+    for (const permissionCode of ['rec.reception.read', 'crm.customer.read']) {
+      asOwnerOf(standard);
+      const mapped = await call(rolePermissionAddRoute, {
+        path: `/iam/roles/${deskRoleId}/permissions`,
+        params: { roleId: deskRoleId },
+        body: { permissionCode, effect: 'allow' },
+        idempotencyKey: randomUUID(),
+      });
+      expect(mapped.status).toBe(201);
+    }
+    const deskBefore = await mappingRows(deskRoleId);
+
+    // The customised organisation's own decision about its administrator role: one
+    // allow beyond the bundle.
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1, $2, p.id, 'allow', $4 FROM iam.permissions p WHERE p.permission_code = $3`,
+      [tailored.tenantId, tailored.tenantAdministratorRoleId, CUSTOMISATION_CODE, SYSTEM_ACTOR]
+    );
+
+    const standardBefore = await mappingRows(standard.tenantAdministratorRoleId);
+    const tailoredBefore = await mappingRows(tailored.tenantAdministratorRoleId);
+    const unnamedBefore = await mappingRows(unnamed.tenantAdministratorRoleId);
+
+    // Named by tenant CODE, the form the operator types — and ONLY these two.
+    const named = [standard.tenantCode, tailored.tenantCode];
+    const dryRun = await backfill({ tenants: named, dryRun: true });
+    expect(dryRun.outcome).toBe('dry-run');
+    expect(dryRun.organisations.map((o) => o.tenantCode)).toEqual(named);
+    const [offered, skipped] = dryRun.organisations;
+    expect(offered).toMatchObject({
+      tenantId: standard.tenantId,
+      outcome: 'widened',
+      heldBefore: 90,
+      heldAfter: parsedBundle.length,
+      customisations: [],
+    });
+    // EXACTLY the four: the dry run lists what it would add and nothing else — no
+    // withheld code (inv.cost.view, rpt.export) and no code of any other widening.
+    expect(offered?.added).toEqual([...APPOINTMENT_ADDED].sort());
+    expect(skipped).toMatchObject({
+      tenantId: tailored.tenantId,
+      outcome: 'customised',
+      added: [],
+      customisations: [`beyond-bundle:${CUSTOMISATION_CODE}`],
+    });
+    expect([...(skipped?.withheld ?? [])].sort()).toEqual([...APPOINTMENT_ADDED].sort());
+    // A dry run writes nothing anywhere.
+    expect(await mappingRows(standard.tenantAdministratorRoleId)).toEqual(standardBefore);
+    expect(await mappingRows(tailored.tenantAdministratorRoleId)).toEqual(tailoredBefore);
+    expect(await backfillAuditCount(standard.tenantId)).toBe(0);
+
+    const applied = await backfill({ tenants: named });
+    expect(applied.widened).toBe(1);
+    expect(applied.customised).toBe(1);
+    expect(only(applied)).toMatchObject({ outcome: 'widened' });
+    expect([...only(applied).added].sort()).toEqual([...APPOINTMENT_ADDED].sort());
+    expect(await codesOfRole(standard.tenantAdministratorRoleId)).toEqual(
+      [...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort()
+    );
+    const standardAfter = await mappingRows(standard.tenantAdministratorRoleId);
+    for (const row of standardBefore) expect(standardAfter).toContain(row);
+    expect(standardAfter).toHaveLength(standardBefore.length + APPOINTMENT_ADDED.length);
+    expect(await backfillAuditCount(standard.tenantId)).toBe(1);
+
+    // The front-desk role gained nothing.
+    expect(await mappingRows(deskRoleId)).toEqual(deskBefore);
+    for (const code of APPOINTMENT_ADDED) expect(await codesOfRole(deskRoleId)).not.toContain(code);
+
+    // The customised role kept every row and gained nothing, with no audit record.
+    expect(await mappingRows(tailored.tenantAdministratorRoleId)).toEqual(tailoredBefore);
+    for (const code of APPOINTMENT_ADDED) {
+      expect(await codesOfRole(tailored.tenantAdministratorRoleId)).not.toContain(code);
+    }
+    expect(await backfillAuditCount(tailored.tenantId)).toBe(0);
+
+    // The organisation nobody named is untouched, row for row.
+    expect(await mappingRows(unnamed.tenantAdministratorRoleId)).toEqual(unnamedBefore);
+    for (const code of APPOINTMENT_ADDED) {
+      expect(await codesOfRole(unnamed.tenantAdministratorRoleId)).not.toContain(code);
+    }
     expect(await backfillAuditCount(unnamed.tenantId)).toBe(0);
 
     // Idempotent: a second run writes nothing and records nothing.

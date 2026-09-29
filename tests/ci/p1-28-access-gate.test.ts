@@ -132,6 +132,15 @@ describe('the gate is clean on the tree it ships with — and really looked', ()
     // Restated here so a silent collapse fails by name rather than by a clean
     // report over nothing.
     /*
+     * FOURTEEN since the Owner decision of 2026-09-29. The appointment setup
+     * screen at `administration/appointment-setup` loads
+     * `features/appointments` — its adapters and its screen live there, beside
+     * the booking form that links an empty type catalogue to it — so the
+     * derivation adopts it, and the `administration` segment joins the list
+     * with it. It is held to every rule here: it gates on `apt.catalogue.manage`
+     * before anything is read, and every operation it reaches requires exactly
+     * that code.
+     *
      * THIRTEEN since `P1-32-PRE-077`, and the two new ones are both under
      * `crm`. The Owner's entry point mounts a vehicle step at
      * `crm/customers/[customerId]/work-order/new` which loads
@@ -164,11 +173,12 @@ describe('the gate is clean on the tree it ships with — and really looked', ()
      * it gates before it reads, consults only published codes, requires no
      * more than its operations require, and asserts no scope in a URL.
      */
-    expect(REAL.routes.length).toBe(13);
+    expect(REAL.routes.length).toBe(14);
     expect(REAL.treeFiles).toBeGreaterThanOrEqual(40);
     expect(REAL.constants).toBeGreaterThanOrEqual(40);
     expect(REAL.scanned).toBeGreaterThanOrEqual(200);
     expect(REAL.segments).toEqual([
+      'administration',
       'appointments',
       'crm',
       'delivery',
@@ -755,13 +765,17 @@ describe('the route set is DERIVED, not a hand-written list of segments', () => 
     expect(PLAN).not.toContain('(dashboard)/receptions');
   });
 
-  it('finds the thirteen pages by what they LOAD, including the singular walk-in', () => {
+  it('finds the fourteen pages by what they LOAD, including the singular walk-in', () => {
     const routes = webRoutes().map((file: string) => posix(file));
     // Eight P1-28 screens, plus the P1-29 technician workspace and diagnostics
     // workbench, the P1-31 handover screen and the P1-32 customer work-order
-    // step, each of which loads a `features/receptions` module — see the census
-    // above.
-    expect(routes).toHaveLength(13);
+    // step, each of which loads a `features/receptions` module, and the
+    // appointment setup screen, which loads `features/appointments` — see the
+    // census above.
+    expect(routes).toHaveLength(14);
+    expect(
+      routes.some((route: string) => route.endsWith('/administration/appointment-setup/page.tsx'))
+    ).toBe(true);
     expect(routes.some((route: string) => route.includes('/reception/walk-in/'))).toBe(true);
     expect(routes.some((route: string) => route.endsWith('/appointments/new/page.tsx'))).toBe(true);
     expect(routes.some((route: string) => route.includes('/acknowledgement/'))).toBe(true);
@@ -769,6 +783,7 @@ describe('the route set is DERIVED, not a hand-written list of segments', () => 
     expect(routes.some((route: string) => route.includes('/delivery/'))).toBe(true);
     expect(routes.some((route: string) => route.endsWith('/work-order/new/page.tsx'))).toBe(true);
     expect(segmentsOnce()).toEqual([
+      'administration',
       'appointments',
       'crm',
       'delivery',
@@ -878,15 +893,18 @@ describe('the derivations the rules stand on', () => {
     const targets = linkedRoutes(
       'const a = `/${locale}/receptions/check-in`;\n' +
         'const b = `/${locale}/appointments/${row.id}`;\n' +
-        'const c = `/${locale}/administration/users`;'
+        'const c = `/${locale}/pricing`;'
     ).map((path: string) => posix(path));
     expect(targets.some((path: string) => path.endsWith('receptions/check-in/page.tsx'))).toBe(
       true
     );
     expect(targets.some((path: string) => path.includes('[appointmentId]'))).toBe(true);
     // Outside the phase's segments, so it is not a P1-28 route and contributes
-    // nothing to any requirement set.
-    expect(targets.some((path: string) => path.includes('administration'))).toBe(false);
+    // nothing to any requirement set. (`administration` was the example until
+    // the appointment setup screen made it a phase segment; `pricing` loads no
+    // P1-28 tree.)
+    expect(targets.some((path: string) => path.includes('pricing'))).toBe(false);
+    expect(targets).toHaveLength(2);
   });
 
   it('follows a link that carries a query string, and one whose path is a named constant', () => {
@@ -934,7 +952,7 @@ describe('the derivations the rules stand on', () => {
     // The narrowing is to the TAIL, not to the rule: a query-carrying link to a
     // segment this phase does not own is still nothing, and a constant that
     // does not resolve to a literal still collapses rather than being guessed.
-    expect(linkedRoutes('const href = `/${locale}/administration/users?tab=roles`;')).toEqual([]);
+    expect(linkedRoutes('const href = `/${locale}/pricing?tab=lists`;')).toEqual([]);
     expect(
       linkedRoutes('const href = `/${locale}${somewhere(config)}?${params.toString()}`;')
     ).toEqual([]);

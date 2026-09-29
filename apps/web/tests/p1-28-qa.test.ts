@@ -307,35 +307,82 @@ const OPENAPI = repoJson<{
 }>('docs', 'api', 'openapi.v1.json');
 
 /**
- * The intake-catalogue ADMINISTRATION surface, derived from the permission the
- * BACKEND registers — never a list kept here.
+ * The administration codes the Owner has decided a surface for, each with the
+ * decision. `P1-28-OD-001` asked who administers the intake catalogues and
+ * through which surface; on 2026-09-29 the Owner answered it for the APPOINTMENT
+ * catalogues — the standard tenant administrator, on the appointment setup
+ * screen — and for those alone. The reception catalogues are still withheld.
  *
- * PR #227 published 28 operations that administer the seven intake catalogues,
- * and this application reaches none of them ON PURPOSE. There is no
- * catalogue-administration screen: no canonical P1-28 task binds one, and who
- * administers the catalogues and through which surface is `P1-28-OD-001`
- * (`docs/phase-1/phase-1-28/canonical-plan.md` §7). Writing an adapter for
- * them would be exactly what Wave A learned not to do — an adapter nobody
- * consumes is not reach, it is INT-113 with a call site.
- *
- * The boundary is the `*.catalogue.manage` permission, which is how the backend
- * itself draws it: the seed records the seven catalogues as ONE administrative
- * surface behind one code per schema. So the partition cannot be widened by
- * editing this file — only by a backend that puts an operator operation behind
- * an administration code, which would fail the access gate first.
+ * One entry per CODE, never per operation: the operations behind a code are
+ * derived below from what the backend registers, so a thirteenth appointment
+ * catalogue operation joins the enabled surface — and must then be reached —
+ * without an edit here.
  */
-function administrativeAptRec(): readonly string[] {
-  const ids: string[] = [];
+const OWNER_ENABLED_ADMINISTRATION: ReadonlyMap<string, string> = new Map([
+  [
+    'apt.catalogue.manage',
+    'Owner decision 2026-09-29: the tenant administrator holds the four appointment codes ' +
+      'and sets up appointment types, booking channels and cancellation reasons on ' +
+      '/administration/appointment-setup.',
+  ],
+]);
+
+/** The permissions the published contract says one apt/rec operation requires. */
+function requiredPermissionsOf(operation: {
+  readonly template: string;
+  readonly method: string;
+}): readonly string[] {
+  const document = OPENAPI.paths[`/api/v1${operation.template}`]?.[operation.method.toLowerCase()];
+  return document?.['x-required-permissions'] ?? [];
+}
+
+/** Every apt/rec operation behind an administration code, enabled or not. */
+function catalogueAdministrationAptRec(): readonly {
+  readonly id: string;
+  readonly codes: readonly string[];
+}[] {
+  const found: { id: string; codes: readonly string[] }[] = [];
   for (const operation of PUBLISHED_OPERATIONS) {
     if (!/^(apt|rec)\./.test(operation.operationId)) continue;
-    const document =
-      OPENAPI.paths[`/api/v1${operation.template}`]?.[operation.method.toLowerCase()];
-    const permissions = document?.['x-required-permissions'] ?? [];
-    if (permissions.some((code) => /\.catalogue\.manage$/.test(code))) {
-      ids.push(operation.operationId);
-    }
+    const codes = requiredPermissionsOf(operation).filter((code) =>
+      /\.catalogue\.manage$/.test(code)
+    );
+    if (codes.length > 0) found.push({ id: operation.operationId, codes });
   }
-  return ids.sort();
+  return found.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+/**
+ * The intake-catalogue ADMINISTRATION surface this product still WITHHOLDS,
+ * derived from the permission the BACKEND registers — never a list kept here.
+ *
+ * PR #227 published 28 operations that administer the seven intake catalogues
+ * (and P1-18 added more). Those behind a code the Owner has not decided a
+ * surface for are reached by no adapter ON PURPOSE: no canonical P1-28 task
+ * binds a catalogue-administration screen, and who administers them and through
+ * which surface is `P1-28-OD-001` (`docs/phase-1/phase-1-28/canonical-plan.md`
+ * §7). Writing an adapter for them would be exactly what Wave A learned not to
+ * do — an adapter nobody consumes is not reach, it is INT-113 with a call site.
+ *
+ * The boundary is the `*.catalogue.manage` permission, which is how the backend
+ * itself draws it: the seed records the catalogues as ONE administrative surface
+ * behind one code per schema. So the partition cannot be widened by editing this
+ * file — only by a backend that puts an operator operation behind an
+ * administration code, which would fail the access gate first, or by an Owner
+ * decision recorded in `OWNER_ENABLED_ADMINISTRATION` above, whose operations
+ * then become operator surface that MUST be reached.
+ */
+function administrativeAptRec(): readonly string[] {
+  return catalogueAdministrationAptRec()
+    .filter((entry) => !entry.codes.every((code) => OWNER_ENABLED_ADMINISTRATION.has(code)))
+    .map((entry) => entry.id);
+}
+
+/** The administration surface the Owner enabled: operator surface from that decision on. */
+function ownerEnabledAptRec(): readonly string[] {
+  return catalogueAdministrationAptRec()
+    .filter((entry) => entry.codes.every((code) => OWNER_ENABLED_ADMINISTRATION.has(code)))
+    .map((entry) => entry.id);
 }
 
 /**
@@ -605,7 +652,17 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
     // the operator surface would do the same, one layer down; and a pending list
     // that grew to cover the surface would hide an unwired product behind debt.
     expect(published.length).toBeGreaterThan(25);
-    expect(administrative.size).toBe(35);
+    // 23 withheld: the reception catalogue administration. The twelve appointment
+    // catalogue operations left this set by the Owner decision of 2026-09-29, and
+    // are operator surface — reached, and asserted so just below.
+    expect(administrative.size).toBe(23);
+    const enabled = ownerEnabledAptRec();
+    expect(enabled).toHaveLength(12);
+    const unreachedEnabled = enabled.filter((id) => !reached.has(id));
+    expect(
+      unreachedEnabled,
+      'the Owner enabled this administration surface and no adapter reaches it'
+    ).toEqual([]);
     expect(operator.length).toBeGreaterThan(25);
     // Seven: the FE-007 picker plus the six P1-18 contracts FE-017 and FE-018 own.
     // The bound exists so the pending list cannot quietly grow to cover the surface
@@ -677,8 +734,10 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
     // 25 since P1-18 published four more catalogue writes: the capture policy, and
     // the damage-map template with its versions. Each is administration by the same
     // reading as the twenty-one before it — gated by `rec.catalogue.manage`, which
-    // no role holds — so each is DELIBERATELY_ABSENT against P1-28-OD-001.
-    expect(writes.length, 'the administration surface publishes no write').toBe(25);
+    // no role holds — so each is DELIBERATELY_ABSENT against P1-28-OD-001. 16 since
+    // the Owner decision of 2026-09-29 enabled the nine appointment catalogue
+    // writes; the next case holds them REACHABLE.
+    expect(writes.length, 'the administration surface publishes no write').toBe(16);
 
     for (const id of writes) {
       const entry = manifest.operations[id];
@@ -690,6 +749,34 @@ describe('P1-28-QA-001 — every adapter is executed, and this file proves it', 
         new RegExp(`^###\\s+\`${reference}\``, 'm').test(section),
         `${id} names "${reference}", which the canonical plan §7 does not record as a decision`
       ).toBe(true);
+    }
+  });
+
+  it('records the administration surface the Owner enabled as REACHABLE, citing the decision', () => {
+    /*
+     * The other half of the partition above. An enabled code's writes are not
+     * parked anywhere: each is REACHABLE in the SEC-004 manifest, and its reason
+     * names the Owner decision that enabled it — so the day the setup screen stops
+     * calling one, `check-p1-28-write-reachability.mjs` fails on the missing call
+     * site, and this case fails if the entry is moved back to a withheld state
+     * without the decision being withdrawn here.
+     */
+    const manifest = repoJson<{
+      operations: Record<string, { classification: string; reason?: string }>;
+    }>('docs', 'phase-1', 'phase-1-28', 'write-reachability.json');
+    const writes = ownerEnabledAptRec().filter((id) => {
+      const operation = PUBLISHED_OPERATIONS.find((op) => op.operationId === id);
+      return operation !== undefined && operation.method !== 'GET';
+    });
+    expect(writes, 'the enabled surface publishes no write').toHaveLength(9);
+    for (const id of writes) {
+      const entry = manifest.operations[id];
+      expect(entry?.classification, id).toBe('REACHABLE');
+      expect(entry?.reason ?? '', id).toContain('Owner decision 2026-09-29');
+    }
+    for (const [code, decision] of OWNER_ENABLED_ADMINISTRATION) {
+      expect(code).toMatch(/\.catalogue\.manage$/);
+      expect(decision.trim().length, `${code} is enabled with no decision`).toBeGreaterThan(40);
     }
   });
 
@@ -1214,6 +1301,36 @@ describe('P1-28-QA-002 — the four refusal branches the contract names', () => 
     }
   });
 
+  it('a taken short reference on the setup screen stays a BLOCKED conflict, and names its field', async () => {
+    // Owner decision 2026-09-29. The appointment catalogue creates add one thing to
+    // the shared mapping above and change nothing in it: the field the refusal is
+    // about, so the form marks the short reference instead of the whole form.
+    for (const name of [
+      'createAppointmentType',
+      'createSourceChannel',
+      'createCancellationReason',
+    ]) {
+      const drive = WRITE_DRIVES.find((candidate) => candidate.name === name);
+      expect(drive, name).toBeDefined();
+      send.mockReset();
+      send.mockResolvedValue(problem(409, 'ERR-RES-002'));
+      const taken = (await drive?.call()) as {
+        status: string;
+        messageKey?: string;
+        fieldErrors?: Record<string, string>;
+      };
+      expect(taken.status, name).toBe('conflict');
+      expect(conflictKindOf(taken.messageKey)).toBe('blocked');
+      expect(taken.fieldErrors, name).toEqual({ code: 'appointmentSetup.codeTaken' });
+
+      // Any other refusal names no field it is not about.
+      send.mockReset();
+      send.mockResolvedValue(problem(409, 'ERR-TRN-001'));
+      const other = (await drive?.call()) as { fieldErrors?: Record<string, string> };
+      expect(other.fieldErrors?.['code'], name).toBeUndefined();
+    }
+  });
+
   it('422 marks the control the violation names, as a KEY and never as server prose', async () => {
     for (const drive of WRITE_DRIVES) {
       send.mockReset();
@@ -1248,8 +1365,11 @@ describe('P1-28-QA-002 — the four refusal branches the contract names', () => 
      * Asserted against the request the adapter really issued, because the type
      * signature alone is a compile-time claim and this file is about what runs.
      */
+    // 13 since the appointment setup screen (Owner decision 2026-09-29): the rename
+    // and the status change of each of the three appointment catalogues are
+    // version-guarded, and each adapter takes the version as a required argument.
     const guarded = WRITE_DRIVES.filter((drive) => drive.versionGuarded);
-    expect(guarded.length, 'no guarded writes were discovered').toBe(7);
+    expect(guarded.length, 'no guarded writes were discovered').toBe(13);
 
     for (const drive of guarded) {
       send.mockReset();
@@ -1736,16 +1856,41 @@ describe('P1-28-QA-004 — idempotency is read off the contract, never off the v
      * write whose operation was registered `idempotent: false` would fail here
      * whatever this number said.
      */
+    /*
+     * Thirty-two since the appointment setup screen (Owner decision 2026-09-29):
+     * nine catalogue writes. Six of them — the three creates and the three status
+     * changes — are registered `idempotent: true` and are held to the key like the
+     * twenty-three before them. The three RENAMES are the first writes of this
+     * phase the contract registers `idempotent: false`: a PATCH of a name under
+     * `If-Match`, which a replay cannot apply twice because the first one moves
+     * the version. So the rule is read off the contract, never assumed: a write
+     * the registry makes idempotent must be asked for a key, and a write it does
+     * not must be version-guarded — no write here is protected by neither.
+     */
     const seen: string[] = [];
+    const unkeyed: string[] = [];
     for (const drive of WRITE_DRIVES) {
       send.mockClear();
       await drive.call();
       const method = String(send.mock.calls[0]?.[0] ?? '');
       const path = String(send.mock.calls[0]?.[1] ?? '');
-      expect(requiresIdempotencyKey(method, path), `${drive.name} → ${method} ${path}`).toBe(true);
+      const operation = resolveOperation(method, path);
+      expect(operation, `${drive.name} → ${method} ${path}`).not.toBeNull();
+      expect(requiresIdempotencyKey(method, path), `${drive.name} → ${method} ${path}`).toBe(
+        operation?.idempotent ?? true
+      );
+      if (!requiresIdempotencyKey(method, path)) {
+        expect(drive.versionGuarded, `${drive.name} is neither keyed nor guarded`).toBe(true);
+        unkeyed.push(drive.name);
+      }
       seen.push(drive.name);
     }
-    expect(seen.length, 'no writes were driven').toBe(23);
+    expect(seen.length, 'no writes were driven').toBe(32);
+    expect(unkeyed.sort()).toEqual([
+      'renameAppointmentType',
+      'renameCancellationReason',
+      'renameSourceChannel',
+    ]);
   });
 
   it('is not vacuous: the same check refuses a path the registry does not make idempotent', () => {

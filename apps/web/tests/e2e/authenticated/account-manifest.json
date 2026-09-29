@@ -62,6 +62,10 @@
     "wty.warranty.read"
   ],
   "org-administrator": [
+    "apt.appointment.lifecycle.manage",
+    "apt.appointment.manage",
+    "apt.appointment.read",
+    "apt.catalogue.manage",
     "crm.customer.create",
     "crm.customer.profile.write",
     "crm.customer.read",

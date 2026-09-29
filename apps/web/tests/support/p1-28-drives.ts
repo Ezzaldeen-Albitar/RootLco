@@ -192,6 +192,23 @@ export const READ_DRIVES: readonly AdapterDrive[] = Object.freeze([
     channel: 'get',
     call: () => aptCatalogue.listCancellationReasons(),
   },
+  // The appointment setup screen's lists (Owner decision 2026-09-29): one page
+  // per call, so the grid pages on the server's cursor.
+  {
+    name: 'listManagedAppointmentTypes',
+    channel: 'get',
+    call: () => aptCatalogue.listManagedAppointmentTypes(25, null),
+  },
+  {
+    name: 'listManagedSourceChannels',
+    channel: 'get',
+    call: () => aptCatalogue.listManagedSourceChannels(25, null),
+  },
+  {
+    name: 'listManagedCancellationReasons',
+    channel: 'get',
+    call: () => aptCatalogue.listManagedCancellationReasons(25, null),
+  },
   {
     name: 'readReceptionList',
     channel: 'get',
@@ -393,6 +410,59 @@ async function withUnreachableStore<T>(run: () => Promise<T>): Promise<T> {
  * no record version for `If-Match` to protect.
  */
 export const WRITE_DRIVES: readonly AdapterDrive[] = Object.freeze([
+  // The appointment setup screen's writes (Owner decision 2026-09-29).
+  {
+    name: 'createAppointmentType',
+    channel: 'send',
+    call: () => aptCatalogue.createAppointmentType({ code: 'routine', name: 'Routine' }),
+  },
+  {
+    name: 'renameAppointmentType',
+    channel: 'send',
+    versionGuarded: true,
+    call: () => aptCatalogue.renameAppointmentType(TYPE, VERSION, 'Routine check'),
+  },
+  {
+    name: 'setAppointmentTypeStatus',
+    channel: 'send',
+    versionGuarded: true,
+    call: () => aptCatalogue.setAppointmentTypeStatus(TYPE, VERSION, 'inactive'),
+  },
+  {
+    name: 'createSourceChannel',
+    channel: 'send',
+    call: () => aptCatalogue.createSourceChannel({ code: 'phone', name: 'Phone' }),
+  },
+  {
+    name: 'renameSourceChannel',
+    channel: 'send',
+    versionGuarded: true,
+    call: () => aptCatalogue.renameSourceChannel(TYPE, VERSION, 'Telephone'),
+  },
+  {
+    name: 'setSourceChannelStatus',
+    channel: 'send',
+    versionGuarded: true,
+    call: () => aptCatalogue.setSourceChannelStatus(TYPE, VERSION, 'inactive'),
+  },
+  {
+    name: 'createCancellationReason',
+    channel: 'send',
+    call: () =>
+      aptCatalogue.createCancellationReason({ code: 'customer_request', name: 'Customer asked' }),
+  },
+  {
+    name: 'renameCancellationReason',
+    channel: 'send',
+    versionGuarded: true,
+    call: () => aptCatalogue.renameCancellationReason(REASON, VERSION, 'Customer request'),
+  },
+  {
+    name: 'setCancellationReasonStatus',
+    channel: 'send',
+    versionGuarded: true,
+    call: () => aptCatalogue.setCancellationReasonStatus(REASON, VERSION, 'inactive'),
+  },
   {
     name: 'createAppointment',
     channel: 'send',

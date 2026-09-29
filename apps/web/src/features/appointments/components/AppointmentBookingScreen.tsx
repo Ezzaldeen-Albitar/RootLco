@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useId, useMemo, useState } from 'react';
+import { useCallback, useId, useMemo, useState, type ReactNode } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import Button from '@mui/material/Button';
 import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
@@ -51,6 +52,11 @@ import { BranchTargetFields } from './BranchTargetFields';
  * with a retry that cannot help. A FAILED catalogue read is different and says
  * so, with the reference support needs.
  *
+ * Since the Owner decision of 2026-09-29 the organisation enters its own types on
+ * the appointment setup screen. An operator who may do that
+ * (`apt.catalogue.manage`, decided by the route) is told to set types up first
+ * and given the way there; anyone else is told an administrator adds them.
+ *
  * ## Who is booked, by name
  *
  * The contract wants identifiers; nobody in a workshop knows one. The
@@ -94,6 +100,12 @@ interface BookingProps {
   readonly types: IntakeCatalogueResult;
   /** `apt.catalogue-source-channel-list`, read once on the server. */
   readonly channels: IntakeCatalogueResult;
+  /**
+   * Whether this operator may set the catalogues up (`apt.catalogue.manage`,
+   * decided by the route — no feature module consults a permission). When true,
+   * an empty type catalogue links to the appointment setup screen.
+   */
+  readonly canSetUpCatalogue?: boolean | undefined;
 }
 
 /**
@@ -113,6 +125,7 @@ function BookingForm({
   messages,
   types,
   channels,
+  canSetUpCatalogue = false,
   onDiscard,
 }: BookingProps & {
   /** Called when the operator confirms a switch or a departure that discards this form. */
@@ -330,7 +343,20 @@ function BookingForm({
         value={typeId}
         onChange={setTypeId}
         onEdit={() => corrections.noteEdited('appointmentTypeId')}
-        emptyKey="appointments.book.noTypes"
+        emptyKey={
+          canSetUpCatalogue ? 'appointments.book.noTypesSetUp' : 'appointments.book.noTypes'
+        }
+        emptyAction={
+          canSetUpCatalogue ? (
+            <Link
+              href={`/${locale}/administration/appointment-setup`}
+              className="text-supporting text-primary underline-offset-2 hover:underline"
+              data-testid="booking-type-setup-link"
+            >
+              {translate(messages, 'appointments.book.openSetup')}
+            </Link>
+          ) : null
+        }
         error={fieldError('appointmentTypeId')}
         testId="booking-type"
       />
@@ -423,6 +449,7 @@ function CataloguePicker({
   onChange,
   onEdit,
   emptyKey,
+  emptyAction = null,
   error,
   testId,
 }: {
@@ -436,6 +463,8 @@ function CataloguePicker({
   readonly onEdit: () => void;
   /** What an EMPTY catalogue means for this field, stated in domain words. */
   readonly emptyKey: string;
+  /** The way to fill an empty catalogue, when this operator may take it. */
+  readonly emptyAction?: ReactNode;
   readonly error?: string | undefined;
   readonly testId: string;
 }) {
@@ -468,6 +497,7 @@ function CataloguePicker({
         <p role="status" className="text-supporting text-text-secondary" lang={locale}>
           {translateDynamic(messages, emptyKey)}
         </p>
+        {emptyAction}
       </div>
     );
   }
