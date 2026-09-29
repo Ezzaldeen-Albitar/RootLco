@@ -85,6 +85,7 @@ function Harness({
   rowActions,
   suppressEmptyState,
   columns = COLUMNS,
+  unpaged,
 }: {
   readonly load: Loader;
   readonly locale?: Locale;
@@ -93,6 +94,7 @@ function Harness({
   readonly rowActions?: (row: Doc) => readonly RowAction[];
   readonly suppressEmptyState?: boolean;
   readonly columns?: readonly OperationalColumn<Doc>[];
+  readonly unpaged?: boolean;
 }) {
   const table = useServerTable(load, {
     initial: initial ?? { ...INITIAL_REQUEST, pageSize: 10 },
@@ -115,6 +117,7 @@ function Harness({
       ]}
       rowActions={rowActions}
       suppressEmptyState={suppressEmptyState}
+      unpaged={unpaged}
     />
   );
 }
@@ -454,6 +457,29 @@ describe('every state reads as itself', () => {
     await waitFor(() => expect(screen.getByRole('grid').closest('[aria-busy]')).toBeNull());
     expect(screen.queryByTestId('state-empty')).toBeNull();
     expect(screen.queryByTestId('state-no-results')).toBeNull();
+  });
+
+  /*
+   * Owner directive slice 4: the technician's own queue is one unpaged answer.
+   * A pager over it — a page label, Previous, Next, a page size — would be four
+   * controls that do nothing, so an `unpaged` grid draws none of them, and a
+   * paged grid keeps all of them.
+   */
+  it('draws no pager for an unpaged read, and keeps it for a paged one', async () => {
+    const load = vi.fn<Loader>().mockResolvedValue(ok([doc(1), doc(2)], null));
+    const { unmount } = mount(<Harness load={load} unpaged />);
+    await screen.findByRole('gridcell', { name: 'DOC-0002' });
+    expect(screen.queryByRole('navigation', { name: en['table.pagination'] })).toBeNull();
+    expect(screen.queryByRole('button', { name: en['table.previousPage'] })).toBeNull();
+    expect(screen.queryByRole('button', { name: en['table.nextPage'] })).toBeNull();
+    expect(screen.queryByLabelText(en['table.rowsPerPage'])).toBeNull();
+    unmount();
+
+    // FALSIFICATION: the same read without the flag draws the whole pager.
+    mount(<Harness load={load} />);
+    await screen.findByRole('gridcell', { name: 'DOC-0002' });
+    expect(screen.getByRole('navigation', { name: en['table.pagination'] })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: en['table.nextPage'] })).toBeInTheDocument();
   });
 
   it('removes one filter from its chip', async () => {

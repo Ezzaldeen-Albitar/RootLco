@@ -668,6 +668,45 @@ describe('the work-order board reads on arrival and narrows honestly', () => {
     expect(screen.getByText('Foreman on duty')).toBeInTheDocument();
   });
 
+  /*
+   * The residual #471 recorded: the row action appended the work-order number
+   * only when the order had one, so two drafts carried the same link name. A
+   * row without a number is now named by its plate, its vehicle, its customer
+   * and the moment it was opened — never by its internal reference.
+   */
+  it('names two rows without a number apart, by what each shows, never by a reference', async () => {
+    listWorkOrders.mockResolvedValue({
+      ...EMPTY_PAGE,
+      rows: [
+        { ...ROW, id: 'draft-a', displayNumber: null },
+        {
+          ...ROW,
+          id: 'draft-b',
+          displayNumber: null,
+          vehicle: { ...ROW.vehicle, registrationPlate: 'XYZ-9876', makeModel: 'Van' },
+          customer: {
+            partnerId: 'p1',
+            displayName: 'Walk-in customer',
+            relationshipRole: 'service_requester',
+            hasAdditionalParties: false,
+          },
+        },
+      ],
+    });
+    render();
+    const links = await rowLink('workOrders.queue.open');
+    expect(links).toHaveLength(2);
+    const names = links.map((link) => link.textContent ?? '');
+    expect(new Set(names).size).toBe(2);
+    expect(names[0]).toContain('ABC-1234');
+    expect(names[1]).toContain('XYZ-9876');
+    expect(names[1]).toContain('Walk-in customer');
+    for (const name of names) {
+      expect(name).not.toContain('draft-');
+      expect(name).not.toContain(ROW.vehicleId);
+    }
+  });
+
   const summaryWith = (sections: Record<string, unknown>) => ({
     status: 'ok',
     correlationId: null,

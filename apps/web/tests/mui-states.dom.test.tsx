@@ -9,6 +9,7 @@ import {
   MuiLoadingState,
   MuiNoResultsState,
   MuiNotFoundState,
+  MuiReadFailureState,
   MuiRefusedState,
   MuiSearchStates,
   MuiStaleState,
@@ -369,5 +370,64 @@ describe('MuiSearchStates keeps SearchStates’ decisions', () => {
     mount(<MuiSearchStates messages={messages} phase="idle" idle={<p>Type a name.</p>} />);
     expect(screen.getByText('Type a name.')).toBeInTheDocument();
     expect(screen.queryByTestId('state-no-results')).toBeNull();
+  });
+});
+
+/*
+ * `MuiReadFailureState` (Owner directive slice 4): a failed `ReadState` drawn as
+ * the state it is. The panels it replaced printed every failure as one red line
+ * with no retry, a refusal and an outage alike. Each status maps to its own
+ * state, and a retry is offered only where trying again can change the answer.
+ */
+describe('a failed read is drawn as the state it is (MuiReadFailureState)', () => {
+  const MAP = [
+    ['unavailable', 'state-unavailable', 'state.unavailable.title', true],
+    ['error', 'state-error', 'state.error.title', true],
+    ['denied', 'state-refused', 'state.denied.title', false],
+    ['expired', 'state-expired', 'state.expired.title', false],
+    ['not-found', 'state-not-found', 'state.notFound.title', false],
+  ] as const;
+
+  it.each(MAP)('%s', async (status, testId, title, retry) => {
+    const messages = getMessages('en');
+    const onRetry = vi.fn();
+    const user = userEvent.setup();
+    mount(
+      <MuiReadFailureState
+        messages={messages}
+        locale="en"
+        status={status}
+        correlationId="corr-read"
+        onRetry={onRetry}
+      />
+    );
+    const state = screen.getByTestId(testId);
+    expect(within(state).getByRole('heading', { level: 2 })).toHaveTextContent(messages[title]);
+    const button = within(state).queryByRole('button', { name: messages['state.retry'] });
+    if (retry) {
+      await user.click(button as HTMLElement);
+      expect(onRetry).toHaveBeenCalledTimes(1);
+    } else {
+      // A refusal, an ended session and an absent record are not retried: the
+      // same request gets the same answer.
+      expect(button).toBeNull();
+    }
+  });
+
+  it('says a panel’s own sentence under the shared heading, in Arabic too', () => {
+    const messages = getMessages('ar');
+    mount(
+      <MuiReadFailureState
+        messages={messages}
+        locale="ar"
+        status="unavailable"
+        descriptionKey="workOrders.history.unavailable"
+        testId="history-failure"
+      />,
+      'ar'
+    );
+    const state = screen.getByTestId('history-failure');
+    expect(state).toHaveTextContent(messages['state.unavailable.title']);
+    expect(state).toHaveTextContent(messages['workOrders.history.unavailable']);
   });
 });

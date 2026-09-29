@@ -186,6 +186,14 @@ export interface OperationalGridProps<Row> {
   readonly rowActions?: ((row: Row) => readonly RowAction[]) | undefined;
   /** The caller renders its own zero-row state — see `DataTable`'s `suppressEmptyState`. */
   readonly suppressEmptyState?: boolean | undefined;
+  /**
+   * The read is NOT paged: it answers the whole set at once (a technician's own
+   * queue — the operation discards `limit` and returns no cursor). Then no
+   * pager is drawn at all — no page label, no Previous, no Next, no page size —
+   * because each would be a control that does nothing. Off unless stated; a
+   * paged read must never pass it, or its second page would be unreachable.
+   */
+  readonly unpaged?: boolean | undefined;
   readonly testId?: string | undefined;
 }
 
@@ -323,6 +331,7 @@ export function OperationalGrid<Row>({
   density = 'comfortable',
   rowActions,
   suppressEmptyState = false,
+  unpaged = false,
   testId = 'operational-grid',
 }: OperationalGridProps<Row>) {
   const theme = useTheme();
@@ -546,60 +555,62 @@ export function OperationalGrid<Row>({
         )
       ) : null}
 
-      <nav
-        aria-label={translate(messages, 'table.pagination')}
-        className="flex flex-wrap items-center justify-between gap-3"
-      >
-        {/* `aria-live` so the page is announced after a move: focus stays on
+      {unpaged ? null : (
+        <nav
+          aria-label={translate(messages, 'table.pagination')}
+          className="flex flex-wrap items-center justify-between gap-3"
+        >
+          {/* `aria-live` so the page is announced after a move: focus stays on
             the button, and the only thing that changed is here. Never a
             count and never "of N" — nothing publishes one. */}
-        <p
-          aria-live="polite"
-          className="text-supporting text-text-secondary"
-          data-testid={`${testId}-page`}
-        >
-          {pageLabel(translate(messages, 'mui.pagination.page'), request.page - 1)}
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          {honoursPageSize ? (
-            <TextField
-              select
+          <p
+            aria-live="polite"
+            className="text-supporting text-text-secondary"
+            data-testid={`${testId}-page`}
+          >
+            {pageLabel(translate(messages, 'mui.pagination.page'), request.page - 1)}
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {honoursPageSize ? (
+              <TextField
+                select
+                size="small"
+                fullWidth={false}
+                label={translate(messages, 'table.rowsPerPage')}
+                value={String(request.pageSize)}
+                onChange={(event) =>
+                  table.setRequest(withPageSize(request, Number.parseInt(event.target.value, 10)))
+                }
+                slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
+              >
+                {PAGE_SIZES.map((size) => (
+                  <option key={size} value={size}>
+                    {size}
+                  </option>
+                ))}
+              </TextField>
+            ) : null}
+            <Button
+              type="button"
+              variant="outlined"
               size="small"
-              fullWidth={false}
-              label={translate(messages, 'table.rowsPerPage')}
-              value={String(request.pageSize)}
-              onChange={(event) =>
-                table.setRequest(withPageSize(request, Number.parseInt(event.target.value, 10)))
-              }
-              slotProps={{ select: { native: true }, inputLabel: { shrink: true } }}
+              disabled={request.page <= 1}
+              onClick={() => table.setRequest(withPage(request, request.page - 1))}
             >
-              {PAGE_SIZES.map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </TextField>
-          ) : null}
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={request.page <= 1}
-            onClick={() => table.setRequest(withPage(request, request.page - 1))}
-          >
-            {translate(messages, 'table.previousPage')}
-          </Button>
-          <Button
-            type="button"
-            variant="outlined"
-            size="small"
-            disabled={!hasFurtherPage(status, hasMore)}
-            onClick={() => table.setRequest(withPage(request, request.page + 1))}
-          >
-            {translate(messages, 'table.nextPage')}
-          </Button>
-        </div>
-      </nav>
+              {translate(messages, 'table.previousPage')}
+            </Button>
+            <Button
+              type="button"
+              variant="outlined"
+              size="small"
+              disabled={!hasFurtherPage(status, hasMore)}
+              onClick={() => table.setRequest(withPage(request, request.page + 1))}
+            >
+              {translate(messages, 'table.nextPage')}
+            </Button>
+          </div>
+        </nav>
+      )}
     </div>
   );
 }

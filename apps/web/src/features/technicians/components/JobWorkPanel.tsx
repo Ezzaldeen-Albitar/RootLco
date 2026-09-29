@@ -1,18 +1,28 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Button from '@mui/material/Button';
 import { listDocumentCategories } from '@/features/attachments/api';
-import type { DocumentCategory } from '@/features/attachments/attachments-contract';
+import { documentCategoryLabel } from '@/features/attachments/attachments-contract';
 import { CaptureFileField } from '@/features/receptions/components/CaptureFileField';
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { DateTimeField } from '@/components/forms/mui/DateField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import type { BranchTarget, CursorPage, ItemsOnly, ReadState } from '@/lib/api/read-operation';
+import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
+import { useReread } from '@/lib/api/use-reread';
+import type { BranchTarget, CursorPage, ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
+import {
+  assignmentRoleLabel,
+  jobStateLabel,
+  workOrderStateLabel,
+} from '@/features/work-orders/work-orders-contract';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import {
   captureJobEvidence,
   correctLaborSession,
@@ -26,12 +36,12 @@ import {
 } from '../api';
 import {
   unattachedRefusalKey,
-  type JobEvidenceEntry,
   type LaborSession,
   type OwnAssignment,
   type TechnicianQueueEntry,
   type WorkLogEntry,
 } from '../technicians-contract';
+import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 
 /**
  * One job of the technician's queue, opened for execution (P1-29, `W4`).
@@ -62,6 +72,17 @@ import {
  * vocabulary on a note (no column holds one), and no timer kept as though it
  * were the record — elapsed time is derived from the server's `startedAt` and
  * nothing else.
+ *
+ * ## On the shared Material wrappers (ADR-022, Owner directive slice 4)
+ *
+ * The moments — a correction's start and end, a note's "when the work
+ * happened" — are `DateTimeField`s on the working branch's clock (this route
+ * serves one concrete branch), emitted with that branch's offset for that
+ * moment. The native `datetime-local` boxes they replace were read on the
+ * laptop's clock and converted with `new Date(…)`, so a technician on a laptop
+ * set to another zone recorded the wrong hour. Every write stays busy until the
+ * list it changed has been read again (`useReread`); a missing field is refused
+ * on itself with the cursor moved there; and typed work is unsaved work.
  */
 export interface WorkspaceCapabilities {
   readonly canRecordLabor: boolean;
@@ -69,11 +90,6 @@ export interface WorkspaceCapabilities {
   readonly canReadWork: boolean;
   readonly canCaptureDocuments: boolean;
 }
-
-const SECONDARY_BUTTON =
-  'rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle disabled:opacity-60';
-const PRIMARY_BUTTON =
-  'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:opacity-60';
 
 export function JobWorkPanel({
   locale,
@@ -90,41 +106,37 @@ export function JobWorkPanel({
   readonly capabilities: WorkspaceCapabilities;
   readonly onBack: () => void;
 }) {
-  const [own, setOwn] = useState<ReadState<OwnAssignment> | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void resolveOwnAssignment(target, entry.jobId, entry.assignmentId).then((next) => {
-      if (!cancelled) setOwn(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [target, entry.jobId, entry.assignmentId]);
-
+  const resolve = useCallback(
+    () => resolveOwnAssignment(target, entry.jobId, entry.assignmentId),
+    [target, entry.jobId, entry.assignmentId]
+  );
+  const own = useReread(resolve).value;
   const identity = own !== null && own.status === 'ok' ? own.data : null;
+  const t = (key: string) => translateDynamic(messages, key);
 
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-section-title font-medium text-text-primary">{entry.jobTitle}</h2>
-        <button type="button" onClick={onBack} className={SECONDARY_BUTTON}>
+        <h2 className="text-section-title font-medium text-text-primary">
+          <bdi>{entry.jobTitle}</bdi>
+        </h2>
+        <Button type="button" variant="outlined" onClick={onBack}>
           {translate(messages, 'technicians.workspace.close')}
-        </button>
+        </Button>
       </div>
 
       <dl className="grid grid-cols-1 gap-x-6 gap-y-2 text-body sm:grid-cols-2">
         <Fact
           label={translate(messages, 'technicians.workspace.workOrder')}
-          value={`${entry.displayNumber ?? entry.workOrderId} · ${entry.workOrderState}`}
+          value={`${entry.displayNumber ?? translate(messages, 'workOrders.queue.column.noReference')} · ${workOrderStateLabel(entry.workOrderState, [], t)}`}
         />
         <Fact
           label={translate(messages, 'technicians.workspace.jobState')}
-          value={entry.jobState}
+          value={jobStateLabel(entry.jobState, t)}
         />
         <Fact
           label={translate(messages, 'technicians.workspace.role')}
-          value={entry.assignmentRole}
+          value={assignmentRoleLabel(entry.assignmentRole, t)}
         />
         <Fact
           label={translate(messages, 'technicians.workspace.since')}
@@ -187,27 +199,70 @@ function Fact({ label, value }: { readonly label: string; readonly value: string
   return (
     <div className="flex flex-col">
       <dt className="text-caption text-text-muted">{label}</dt>
-      <dd className="text-text-primary">{value}</dd>
+      <dd className="text-text-primary">
+        <bdi>{value}</bdi>
+      </dd>
     </div>
   );
-}
-
-/**
- * A read that can be re-issued, with the cancelled guard the lint rule wants.
- *
- * The function is named `reload` because that is what it is, and because
- * `check-p1-28-version-sourcing` recognises the name as a renewal: a panel that
- * sends a guarded command must be seen to re-read afterwards.
- */
-function useReload(): readonly [number, () => void] {
-  const [reloadCount, setReloadCount] = useState(0);
-  const reload = useCallback(() => setReloadCount((n) => n + 1), []);
-  return [reloadCount, reload];
 }
 
 function problemKeyOf(result: ActionState, conflictKey: string): string {
   if (result.status === 'conflict') return conflictKey;
   return result.messageKey ?? 'action.failed';
+}
+
+/**
+ * The first page of a cursor-paged list, awaited on re-read, and the older
+ * pages the operator asked for after it. The older pages belong to the first
+ * page they were read after: a re-read drops them, so a page read before a
+ * write is never shown beside the list the write produced.
+ */
+function usePagedList<Row>(
+  read: () => Promise<ReadState<CursorPage<Row>>>,
+  readMore: (cursor: string) => Promise<ReadState<CursorPage<Row>>>
+) {
+  const first = useReread(read);
+  const firstRead = first.value;
+  const [older, setOlder] = useState<{
+    readonly after: unknown;
+    readonly rows: readonly Row[];
+    readonly cursor: string | null;
+  } | null>(null);
+  const [loading, setLoading] = useState(false);
+  const current = older !== null && older.after === firstRead ? older : null;
+  const rows =
+    firstRead?.status === 'ok' ? [...firstRead.data.items, ...(current?.rows ?? [])] : [];
+  const nextCursor =
+    firstRead?.status !== 'ok'
+      ? null
+      : current === null
+        ? firstRead.data.hasMore
+          ? firstRead.data.nextCursor
+          : null
+        : current.cursor;
+  const loadOlder = async () => {
+    if (nextCursor === null || loading) return;
+    setLoading(true);
+    try {
+      const next = await readMore(nextCursor);
+      if (next.status !== 'ok') return;
+      setOlder({
+        after: firstRead,
+        rows: [...(current?.rows ?? []), ...next.data.items],
+        cursor: next.data.hasMore ? next.data.nextCursor : null,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+  return {
+    first: firstRead,
+    rows,
+    moreExists: nextCursor !== null,
+    loadOlder,
+    loading,
+    reload: first.reload,
+  };
 }
 
 /* ------------------------------------------------------------------ *
@@ -231,9 +286,13 @@ function LaborPanel({
   readonly canRecordLabor: boolean;
   readonly canCorrectLabor: boolean;
 }) {
-  const [page, setPage] = useState<ReadState<CursorPage<LaborSession>> | null>(null);
-  const [older, setOlder] = useState<readonly LaborSession[]>([]);
-  const [reloadCount, reload] = useReload();
+  const read = useCallback(() => listLaborSessions(entry.jobId), [entry.jobId]);
+  const readMore = useCallback(
+    (cursor: string) => listLaborSessions(entry.jobId, cursor),
+    [entry.jobId]
+  );
+  const list = usePagedList<LaborSession>(read, readMore);
+  const reload = list.reload;
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   /**
@@ -249,19 +308,7 @@ function LaborPanel({
     Readonly<Record<string, Readonly<Record<string, string>>>>
   >({});
 
-  useEffect(() => {
-    let cancelled = false;
-    void listLaborSessions(entry.jobId).then((next) => {
-      if (cancelled) return;
-      setPage(next);
-      setOlder([]);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [entry.jobId, reloadCount]);
-
-  const sessions = page !== null && page.status === 'ok' ? [...page.data.items, ...older] : [];
+  const sessions = list.rows;
   const active =
     identity === null
       ? null
@@ -271,87 +318,92 @@ function LaborPanel({
         ) ?? null);
 
   /**
-   * Sends one command and reports it. The outcome is handed back so a caller
-   * can place the refusal where the reader can act on it.
+   * Sends one command and reports it, then waits for the sessions to be read
+   * again before the clock is offered again. The outcome is handed back so a
+   * caller can place the refusal where the reader can act on it.
    *
    * The clock refusals — a colleague's profile, an inactive profile, a session
    * already running — are all published against the profile the adapter
    * resolved, which is no control here, so `unattachedRefusalKey` lifts their
    * sentence into this panel's alert instead of leaving it unread.
    */
-  const run = async (action: () => Promise<ActionState>): Promise<ActionState> => {
+  const run = async (
+    action: () => Promise<ActionState>,
+    renew: () => Promise<void>
+  ): Promise<ActionState> => {
     setProblem(null);
     setBusy(true);
-    const result = await action();
-    setBusy(false);
-    notifyActionResult(result, messages);
-    if (result.status !== 'success') {
-      setProblem(
-        unattachedRefusalKey(result.fieldErrors) ??
-          problemKeyOf(result, 'technicians.workspace.conflict')
-      );
+    try {
+      let result: ActionState;
+      try {
+        result = await action();
+      } catch {
+        setProblem('state.unavailable.message');
+        return { status: 'unavailable', messageKey: 'state.unavailable.message' };
+      }
+      notifyActionResult(result, messages);
+      if (result.status === 'success') {
+        // The truth is re-read; nothing is patched locally.
+        await renew();
+      } else {
+        setProblem(
+          unattachedRefusalKey(result.fieldErrors) ??
+            problemKeyOf(result, 'technicians.workspace.conflict')
+        );
+      }
+      return result;
+    } finally {
+      setBusy(false);
     }
-    return result;
   };
 
   const start = async () => {
-    const result = await run(() => startLaborSession(target, entry.jobId, entry.assignmentId));
-    if (result.status === 'success') reload();
+    await run(
+      () => startLaborSession(target, entry.jobId, entry.assignmentId),
+      () => reload()
+    );
   };
 
   const stop = async (session: LaborSession) => {
-    const result = await run(() =>
-      stopLaborSession(
-        target,
-        entry.jobId,
-        entry.assignmentId,
-        session.id,
-        // The version on screen, never one fetched for the purpose.
-        session.recordVersion
-      )
+    await run(
+      () =>
+        stopLaborSession(
+          target,
+          entry.jobId,
+          entry.assignmentId,
+          session.id,
+          // The version on screen, never one fetched for the purpose.
+          session.recordVersion
+        ),
+      () => reload()
     );
-    // The truth is re-read; nothing is patched locally.
-    if (result.status === 'success') reload();
   };
 
   const correct = async (
     session: LaborSession,
     body: { startedAt: string; endedAt: string; reason: string }
   ): Promise<boolean> => {
-    const result = await run(() =>
-      correctLaborSession(
-        target,
-        entry.jobId,
-        entry.assignmentId,
-        session.id,
-        body,
-        session.recordVersion
-      )
+    const result = await run(
+      () =>
+        correctLaborSession(
+          target,
+          entry.jobId,
+          entry.assignmentId,
+          session.id,
+          body,
+          session.recordVersion
+        ),
+      () => reload()
     );
     const moved = result.status === 'success';
     setCorrectionErrors((current) => ({
       ...current,
       [session.id]: moved ? {} : (result.fieldErrors ?? {}),
     }));
-    if (moved) reload();
     return moved;
   };
 
-  const loadOlder = async () => {
-    if (page === null || page.status !== 'ok' || !page.data.hasMore) return;
-    const cursor = older.length === 0 ? page.data.nextCursor : lastCursor;
-    if (cursor === null) return;
-    const next = await listLaborSessions(entry.jobId, cursor);
-    if (next.status !== 'ok') return;
-    setLastCursor(next.data.hasMore ? next.data.nextCursor : null);
-    setOlder((current) => [...current, ...next.data.items]);
-  };
-  const [lastCursor, setLastCursor] = useState<string | null>(null);
-  const moreExists =
-    page !== null &&
-    page.status === 'ok' &&
-    page.data.hasMore &&
-    (older.length === 0 || lastCursor !== null);
+  const first = list.first;
 
   return (
     <section aria-labelledby="labor-heading" className="flex flex-col gap-3">
@@ -371,36 +423,38 @@ function LaborPanel({
           <span className="text-body text-text-secondary">
             {translate(messages, 'technicians.workspace.noActiveSession')}
           </span>
-          <button
+          <Button
             type="button"
+            variant="contained"
             disabled={busy}
+            aria-busy={busy || undefined}
             onClick={() => void start()}
-            className={PRIMARY_BUTTON}
           >
             {translate(
               messages,
               busy ? 'technicians.workspace.starting' : 'technicians.workspace.start'
             )}
-          </button>
+          </Button>
         </div>
       ) : (
         <div className="flex flex-wrap items-center gap-3">
           <span className="text-body text-text-primary">
             {translate(messages, 'technicians.workspace.activeSession')}{' '}
-            {formatDateTime(active.startedAt, locale)} ·{' '}
+            <bdi>{formatDateTime(active.startedAt, locale)}</bdi> ·{' '}
             <Elapsed since={active.startedAt} messages={messages} />
           </span>
-          <button
+          <Button
             type="button"
+            variant="contained"
             disabled={busy}
+            aria-busy={busy || undefined}
             onClick={() => void stop(active)}
-            className={PRIMARY_BUTTON}
           >
             {translate(
               messages,
               busy ? 'technicians.workspace.stopping' : 'technicians.workspace.stop'
             )}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -413,15 +467,16 @@ function LaborPanel({
       <h4 className="text-body font-medium text-text-primary">
         {translate(messages, 'technicians.workspace.sessionsHeading')}
       </h4>
-      {page === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-      ) : page.status !== 'ok' ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, `state.${page.status}.title`)}
-          {page.correlationId
-            ? ` ${translate(messages, 'action.reference')} ${page.correlationId}`
-            : ''}
-        </p>
+      {first === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : first.status !== 'ok' ? (
+        <MuiReadFailureState
+          messages={messages}
+          locale={locale}
+          status={first.status}
+          correlationId={first.correlationId}
+          onRetry={() => void reload()}
+        />
       ) : sessions.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'technicians.workspace.noSessions')}
@@ -438,6 +493,7 @@ function LaborPanel({
                   identity !== null && session.technicianProfileId === identity.technicianProfileId
                 }
                 canCorrect={canCorrectLabor && identity !== null}
+                busy={busy}
                 fieldErrors={correctionErrors[session.id] ?? {}}
                 onCorrect={(body) => correct(session, body)}
               />
@@ -445,10 +501,18 @@ function LaborPanel({
           ))}
         </ul>
       )}
-      {moreExists ? (
-        <button type="button" onClick={() => void loadOlder()} className={SECONDARY_BUTTON}>
-          {translate(messages, 'technicians.workspace.olderSessions')}
-        </button>
+      {list.moreExists ? (
+        <div>
+          <Button
+            type="button"
+            variant="outlined"
+            size="small"
+            onClick={() => void list.loadOlder()}
+            disabled={list.loading}
+          >
+            {translate(messages, 'technicians.workspace.olderSessions')}
+          </Button>
+        </div>
       ) : null}
     </section>
   );
@@ -466,7 +530,13 @@ function Elapsed({ since, messages }: { readonly since: string; readonly message
   const rest = minutes % 60;
   return (
     <span>
-      {translate(messages, 'technicians.workspace.elapsed')} {hours}h {rest}m
+      {translate(messages, 'technicians.workspace.elapsed')}{' '}
+      <bdi>
+        {formatMessage(translate(messages, 'technicians.workspace.elapsedValue'), {
+          hours: String(hours),
+          minutes: String(rest),
+        })}
+      </bdi>
     </span>
   );
 }
@@ -477,6 +547,7 @@ function SessionRow({
   session,
   mine,
   canCorrect,
+  busy,
   fieldErrors,
   onCorrect,
 }: {
@@ -485,6 +556,7 @@ function SessionRow({
   readonly session: LaborSession;
   readonly mine: boolean;
   readonly canCorrect: boolean;
+  readonly busy: boolean;
   /** Catalogue keys by control name, for a correction the platform refused. */
   readonly fieldErrors: Readonly<Record<string, string>>;
   readonly onCorrect: (body: {
@@ -494,20 +566,36 @@ function SessionRow({
   }) => Promise<boolean>;
 }) {
   const [correcting, setCorrecting] = useState(false);
-  const [startedAt, setStartedAt] = useState(toLocalInput(session.startedAt));
-  const [endedAt, setEndedAt] = useState(
-    session.endedAt === null ? '' : toLocalInput(session.endedAt)
-  );
+  const [startedAt, setStartedAt] = useState(session.startedAt);
+  const [endedAt, setEndedAt] = useState(session.endedAt ?? '');
   const [reason, setReason] = useState('');
+  const [localErrors, setLocalErrors] = useState<Readonly<Record<string, string>>>({});
+  const { errors, formRef } = useHeldRefusal(
+    Object.keys(localErrors).length > 0 ? localErrors : fieldErrors,
+    { startedAt, endedAt, reason }
+  );
 
+  const discard = () => {
+    setStartedAt(session.startedAt);
+    setEndedAt(session.endedAt ?? '');
+    setReason('');
+    setLocalErrors({});
+  };
   /*
    * Unsaved work, declared to the shell, so a branch changed in the header asks
-   * before it discards what is typed here.
+   * before it discards what is typed here: a typed reason, or a time moved from
+   * what the session holds.
    */
-  useUnsavedGuard(reason.trim().length > 0);
+  useUnsavedGuard(
+    correcting &&
+      (reason.trim().length > 0 ||
+        startedAt !== session.startedAt ||
+        endedAt !== (session.endedAt ?? '')),
+    discard
+  );
 
   const errorFor = (name: string): string | undefined => {
-    const key = fieldErrors[name];
+    const key = errors[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -520,97 +608,113 @@ function SessionRow({
       ? translate(messages, 'technicians.workspace.session.open')
       : formatDateTime(session.endedAt, locale);
 
+  const submit = () => {
+    const missing: Record<string, string> = {};
+    if (startedAt === '') missing['startedAt'] = 'field.required';
+    if (endedAt === '') missing['endedAt'] = 'field.required';
+    if (startedAt !== '' && endedAt !== '' && Date.parse(endedAt) <= Date.parse(startedAt)) {
+      missing['endedAt'] = 'technicians.workspace.correctInverted';
+    }
+    if (reason.trim().length === 0) missing['reason'] = 'field.required';
+    setLocalErrors(missing);
+    if (Object.keys(missing).length > 0) return;
+    // The form closes only when the correction was accepted. A refused one
+    // keeps both times exactly as they were typed, beside the sentence saying
+    // what is wrong with them.
+    void onCorrect({ startedAt, endedAt, reason: reason.trim() }).then((moved) => {
+      if (!moved) return;
+      setCorrecting(false);
+      /*
+       * The reason is CLEARED, because it has been recorded.
+       *
+       * Leaving it would strand the unsaved-work guard: the draft still held
+       * text, so the shell went on asking "discard your unsaved work?" on every
+       * branch switch for the rest of the session, for a correction that was
+       * accepted minutes ago. A guard that is always dirty teaches an operator
+       * to dismiss the question without reading it, which is worse than not
+       * asking.
+       */
+      setReason('');
+    });
+  };
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center justify-between gap-2 text-body">
         <span className="text-text-primary">
-          {who} · {formatDateTime(session.startedAt, locale)} → {end}
+          {who} · <bdi>{formatDateTime(session.startedAt, locale)}</bdi> → <bdi>{end}</bdi>
           {session.correctionOfId === null
             ? ''
             : ` · ${translate(messages, 'technicians.workspace.session.correction')}`}
         </span>
         {/* A correction is offered only on the technician's OWN stopped sessions. */}
         {canCorrect && mine && session.endedAt !== null ? (
-          <button
+          <Button
             type="button"
-            onClick={() => setCorrecting((value) => !value)}
-            className={SECONDARY_BUTTON}
+            variant="outlined"
+            size="small"
+            aria-expanded={correcting}
+            onClick={() => {
+              if (correcting) discard();
+              setCorrecting((value) => !value);
+            }}
           >
             {translate(messages, 'technicians.workspace.correctHeading')}
-          </button>
+          </Button>
         ) : null}
       </div>
       {correcting ? (
         <form
+          ref={formRef}
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            if (startedAt.length === 0 || endedAt.length === 0 || reason.trim().length === 0)
-              return;
-            // The form closes only when the correction was accepted. A refused
-            // one keeps both times exactly as they were typed, beside the
-            // sentence saying what is wrong with them.
-            void onCorrect({
-              startedAt: new Date(startedAt).toISOString(),
-              endedAt: new Date(endedAt).toISOString(),
-              reason: reason.trim(),
-            }).then((moved) => {
-              if (!moved) return;
-              setCorrecting(false);
-              /*
-               * The reason is CLEARED, because it has been recorded.
-               *
-               * Leaving it would strand the unsaved-work guard: the draft still
-               * held text, so the shell went on asking "discard your unsaved
-               * work?" on every branch switch for the rest of the session, for
-               * a correction that was accepted minutes ago. A guard that is
-               * always dirty teaches an operator to dismiss the question
-               * without reading it, which is worse than not asking.
-               */
-              setReason('');
-            });
+            if (busy) return;
+            submit();
           }}
-          className="flex flex-wrap items-end gap-3"
+          className="grid gap-3 sm:grid-cols-2"
         >
-          <TextField
-            type="datetime-local"
+          <DateTimeField
+            messages={messages}
             label={translate(messages, 'technicians.workspace.correctStartedAt')}
+            name={`startedAt-${session.id}`}
             value={startedAt}
-            onChange={(event) => setStartedAt(event.target.value)}
+            onChange={setStartedAt}
             error={errorFor('startedAt')}
             required
           />
-          <TextField
-            type="datetime-local"
+          <DateTimeField
+            messages={messages}
             label={translate(messages, 'technicians.workspace.correctEndedAt')}
+            name={`endedAt-${session.id}`}
             value={endedAt}
-            onChange={(event) => setEndedAt(event.target.value)}
+            onChange={setEndedAt}
+            min={startedAt === '' ? undefined : startedAt}
             error={errorFor('endedAt')}
             required
           />
-          <TextField
+          <FormTextField
             label={translate(messages, 'technicians.workspace.correctReason')}
+            name={`reason-${session.id}`}
             value={reason}
-            onChange={(event) => setReason(event.target.value)}
+            onChange={setReason}
+            error={errorFor('reason')}
             required
           />
-          <button type="submit" className={PRIMARY_BUTTON}>
-            {translate(messages, 'technicians.workspace.correctSubmit')}
-          </button>
-          <p className="basis-full text-caption text-text-muted">
-            {translate(messages, 'technicians.workspace.correctNote')}
-          </p>
+          <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+            <Button type="submit" variant="contained" disabled={busy} aria-busy={busy || undefined}>
+              {busy
+                ? translate(messages, 'form.pending')
+                : translate(messages, 'technicians.workspace.correctSubmit')}
+            </Button>
+            <p className="text-caption text-text-muted">
+              {translate(messages, 'technicians.workspace.correctNote')}
+            </p>
+          </div>
         </form>
       ) : null}
     </div>
   );
-}
-
-/** An ISO instant as a `datetime-local` value, in the browser's own zone. */
-function toLocalInput(iso: string): string {
-  const date = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 /* ------------------------------------------------------------------ *
@@ -632,81 +736,67 @@ function WorkLogPanel({
   readonly identity: OwnAssignment | null;
   readonly canRecordLabor: boolean;
 }) {
-  const [page, setPage] = useState<ReadState<CursorPage<WorkLogEntry>> | null>(null);
-  const [older, setOlder] = useState<readonly WorkLogEntry[]>([]);
-  const [lastCursor, setLastCursor] = useState<string | null>(null);
-  const [reloadCount, reload] = useReload();
+  const read = useCallback(() => listWorkLog(entry.jobId), [entry.jobId]);
+  const readMore = useCallback((cursor: string) => listWorkLog(entry.jobId, cursor), [entry.jobId]);
+  const list = usePagedList<WorkLogEntry>(read, readMore);
   const [text, setText] = useState('');
   const [loggedAt, setLoggedAt] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  const { errors, formRef } = useHeldRefusal(fieldErrors, { entry: text, loggedAt });
 
   /*
    * Unsaved work, declared to the shell, so a branch changed in the header asks
    * before it discards what is typed here.
    */
-  useUnsavedGuard(text.trim().length > 0 || loggedAt.length > 0);
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
-
-  useEffect(() => {
-    let cancelled = false;
-    void listWorkLog(entry.jobId).then((next) => {
-      if (cancelled) return;
-      setPage(next);
-      setOlder([]);
-      setLastCursor(null);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [entry.jobId, reloadCount]);
-
-  const entries = page !== null && page.status === 'ok' ? [...page.data.items, ...older] : [];
-  const moreExists =
-    page !== null &&
-    page.status === 'ok' &&
-    page.data.hasMore &&
-    (older.length === 0 || lastCursor !== null);
-
-  const loadOlder = async () => {
-    if (page === null || page.status !== 'ok') return;
-    const cursor = older.length === 0 ? page.data.nextCursor : lastCursor;
-    if (cursor === null) return;
-    const next = await listWorkLog(entry.jobId, cursor);
-    if (next.status !== 'ok') return;
-    setLastCursor(next.data.hasMore ? next.data.nextCursor : null);
-    setOlder((current) => [...current, ...next.data.items]);
-  };
+  useUnsavedGuard(text.trim().length > 0 || loggedAt.length > 0, () => {
+    setText('');
+    setLoggedAt('');
+    setFieldErrors({});
+  });
 
   const add = async () => {
     setProblem(null);
-    setFieldErrors({});
     if (text.trim().length === 0) {
       setFieldErrors({ entry: 'field.required' });
       return;
     }
+    setFieldErrors({});
     setBusy(true);
-    const result = await recordWorkLog(target, entry.jobId, entry.assignmentId, {
-      entry: text.trim(),
-      // Omitted unless the technician said when: the backend then stamps now.
-      ...(loggedAt.length > 0 ? { loggedAt: new Date(loggedAt).toISOString() } : {}),
-    });
-    setBusy(false);
-    notifyActionResult(result, messages);
-    if (result.status === 'success') {
-      setText('');
-      setLoggedAt('');
-      reload();
-      return;
+    try {
+      let result: ActionState;
+      try {
+        result = await recordWorkLog(target, entry.jobId, entry.assignmentId, {
+          entry: text.trim(),
+          // Omitted unless the technician said when: the backend then stamps now.
+          // Otherwise the moment as the field holds it, with the branch's offset.
+          ...(loggedAt.length > 0 ? { loggedAt } : {}),
+        });
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(result, messages);
+      if (result.status === 'success') {
+        setText('');
+        setLoggedAt('');
+        await list.reload();
+        return;
+      }
+      if (result.fieldErrors) setFieldErrors(result.fieldErrors);
+      setProblem(problemKeyOf(result, 'technicians.workspace.conflict'));
+    } finally {
+      setBusy(false);
     }
-    if (result.fieldErrors) setFieldErrors(result.fieldErrors);
-    setProblem(problemKeyOf(result, 'technicians.workspace.conflict'));
   };
 
   const errorFor = (name: string): string | undefined => {
-    const key = fieldErrors[name];
+    const key = errors[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
+
+  const first = list.first;
 
   return (
     <section aria-labelledby="work-log-heading" className="flex flex-col gap-3">
@@ -719,35 +809,41 @@ function WorkLogPanel({
 
       {canRecordLabor && identity !== null ? (
         <form
+          ref={formRef}
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
+            if (busy) return;
             void add();
           }}
           className="flex flex-col gap-3"
         >
-          <TextAreaField
+          <FormTextField
             label={translate(messages, 'technicians.workspace.entry')}
+            name="entry"
             value={text}
-            onChange={(event) => setText(event.target.value)}
+            onChange={setText}
             error={errorFor('entry')}
+            multiline
+            rows={3}
             required
           />
-          <div className="flex flex-wrap items-end gap-3">
-            <TextField
-              type="datetime-local"
+          <div className="flex flex-wrap items-start gap-3">
+            <DateTimeField
+              messages={messages}
               label={translate(messages, 'technicians.workspace.loggedAt')}
+              name="loggedAt"
               description={translate(messages, 'technicians.workspace.loggedAtHint')}
               value={loggedAt}
-              onChange={(event) => setLoggedAt(event.target.value)}
+              onChange={setLoggedAt}
               error={errorFor('loggedAt')}
             />
-            <button type="submit" disabled={busy} className={PRIMARY_BUTTON}>
+            <Button type="submit" variant="contained" disabled={busy} aria-busy={busy || undefined}>
               {translate(
                 messages,
                 busy ? 'technicians.workspace.adding' : 'technicians.workspace.addEntry'
               )}
-            </button>
+            </Button>
           </div>
         </form>
       ) : null}
@@ -758,39 +854,50 @@ function WorkLogPanel({
         </p>
       )}
 
-      {page === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-      ) : page.status !== 'ok' ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, `state.${page.status}.title`)}
-          {page.correlationId
-            ? ` ${translate(messages, 'action.reference')} ${page.correlationId}`
-            : ''}
-        </p>
-      ) : entries.length === 0 ? (
+      {first === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : first.status !== 'ok' ? (
+        <MuiReadFailureState
+          messages={messages}
+          locale={locale}
+          status={first.status}
+          correlationId={first.correlationId}
+          onRetry={() => void list.reload()}
+        />
+      ) : list.rows.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'technicians.workspace.noWorkLog')}
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {entries.map((item) => (
+          {list.rows.map((item) => (
             <li key={item.id} className="rounded-md border border-border bg-surface p-3">
               {/* Rendered as written. No edit and no delete exist to be offered. */}
-              <p className="whitespace-pre-wrap text-body text-text-primary">{item.entry}</p>
+              <p className="whitespace-pre-wrap text-body text-text-primary">
+                <bdi>{item.entry}</bdi>
+              </p>
               <p className="text-caption text-text-muted">
                 {translate(messages, 'technicians.workspace.loggedAt')}{' '}
-                {formatDateTime(item.loggedAt, locale)} ·{' '}
+                <bdi>{formatDateTime(item.loggedAt, locale)}</bdi> ·{' '}
                 {translate(messages, 'technicians.workspace.recordedAt')}{' '}
-                {formatDateTime(item.createdAt, locale)}
+                <bdi>{formatDateTime(item.createdAt, locale)}</bdi>
               </p>
             </li>
           ))}
         </ul>
       )}
-      {moreExists ? (
-        <button type="button" onClick={() => void loadOlder()} className={SECONDARY_BUTTON}>
-          {translate(messages, 'technicians.workspace.olderEntries')}
-        </button>
+      {list.moreExists ? (
+        <div>
+          <Button
+            type="button"
+            variant="outlined"
+            size="small"
+            onClick={() => void list.loadOlder()}
+            disabled={list.loading}
+          >
+            {translate(messages, 'technicians.workspace.olderEntries')}
+          </Button>
+        </div>
       ) : null}
     </section>
   );
@@ -815,59 +922,93 @@ function EvidencePanel({
   readonly identity: OwnAssignment | null;
   readonly canCapture: boolean;
 }) {
-  const [list, setList] = useState<ReadState<ItemsOnly<JobEvidenceEntry>> | null>(null);
-  const [categories, setCategories] = useState<readonly DocumentCategory[] | null>(null);
-  const [reloadCount, reload] = useReload();
+  const readEvidence = useCallback(() => listJobEvidence(entry.jobId), [entry.jobId]);
+  const list = useReread(readEvidence);
+  const categories = useReread(canCapture ? listDocumentCategories : null);
   const [categoryCode, setCategoryCode] = useState('');
   const [evidenceType, setEvidenceType] = useState('');
   const [note, setNote] = useState('');
+  /*
+   * The form's EPOCH. React resets a `<form action={…}>` after its Server
+   * Action settles (`form-reset-class.test.ts`), so every control is keyed on a
+   * counter that moves when the action settles and is controlled — the remount
+   * shows exactly what the state holds: the entries after a refusal, nothing
+   * after a success.
+   */
+  const [attempt, setAttempt] = useState(0);
+  const [pending, setPending] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  const { errors, formRef } = useHeldRefusal(fieldErrors, { categoryCode, evidenceType, note });
 
   /*
    * Unsaved work, declared to the shell, so a branch changed in the header asks
    * before it discards what is typed here.
    */
-  useUnsavedGuard(note.trim().length > 0 || categoryCode.length > 0 || evidenceType.length > 0);
-  const [pending, setPending] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
-  /*
-   * The form's EPOCH. React resets a `<form action={…}>` after its Server
-   * Action settles, and a controlled `<select>` does not survive that reset —
-   * its default is frozen at mount (`form-reset-class.test.ts`). So the select
-   * is keyed on a counter that moves when the action settles, and carries a
-   * `defaultValue` React re-applies on the remount. The text boxes are
-   * controlled, which for text IS the safe shape.
-   */
-  const [attempt, setAttempt] = useState(0);
+  useUnsavedGuard(
+    note.trim().length > 0 || categoryCode.length > 0 || evidenceType.length > 0,
+    () => {
+      setCategoryCode('');
+      setEvidenceType('');
+      setNote('');
+      setFieldErrors({});
+      setAttempt((n) => n + 1);
+    }
+  );
 
-  useEffect(() => {
-    let cancelled = false;
-    void listJobEvidence(entry.jobId).then((next) => {
-      if (!cancelled) setList(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [entry.jobId, reloadCount]);
-
-  useEffect(() => {
-    if (!canCapture) return;
-    let cancelled = false;
-    void listDocumentCategories().then((next) => {
-      if (cancelled) return;
-      setCategories(next.status === 'ok' ? next.data.items : []);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [canCapture]);
-
-  const category = categories?.find((each) => each.categoryCode === categoryCode);
+  const categoryRead = categories.value;
+  const categoryList = categoryRead?.status === 'ok' ? categoryRead.data.items : null;
+  const category = categoryList?.find((each) => each.categoryCode === categoryCode);
 
   const errorFor = (name: string): string | undefined => {
-    const key = fieldErrors[name];
+    const key = errors[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
+
+  const capture = async (formData: FormData) => {
+    const missing: Record<string, string> = {};
+    if (categoryCode === '') missing['categoryCode'] = 'field.required';
+    if (evidenceType.trim().length === 0) missing['evidenceType'] = 'field.required';
+    if (Object.keys(missing).length > 0) {
+      setFieldErrors(missing);
+      setAttempt((n) => n + 1);
+      return;
+    }
+    setPending(true);
+    setProblem(null);
+    setFieldErrors({});
+    try {
+      let outcome: Awaited<ReturnType<typeof captureJobEvidence>>;
+      try {
+        outcome = await captureJobEvidence(target, entry.jobId, entry.assignmentId, formData);
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        // The CATEGORY is cleared with the rest of the draft, so the
+        // unsaved-work guard does not stay dirty after a capture that
+        // succeeded.
+        setCategoryCode('');
+        setEvidenceType('');
+        setNote('');
+        await list.reload();
+        return;
+      }
+      if (outcome.fieldErrors) setFieldErrors(outcome.fieldErrors);
+      setProblem(
+        outcome.stage === undefined
+          ? (outcome.messageKey ?? 'action.failed')
+          : 'technicians.workspace.capturedPartial'
+      );
+    } finally {
+      setPending(false);
+      setAttempt((n) => n + 1);
+    }
+  };
+
+  const shown = list.value;
 
   return (
     <section aria-labelledby="evidence-heading" className="flex flex-col gap-3">
@@ -879,77 +1020,51 @@ function EvidencePanel({
       </p>
 
       {canCapture && identity !== null ? (
-        categories === null ? (
-          <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-        ) : categories.length === 0 ? (
+        categoryRead === null ? (
+          <MuiLoadingState messages={messages} variant="inline" />
+        ) : categoryList === null || categoryList.length === 0 ? (
           <p className="text-body text-text-secondary">
             {translate(messages, 'technicians.workspace.noCategories')}
           </p>
         ) : (
           <form
-            action={async (formData: FormData) => {
-              setPending(true);
-              setProblem(null);
-              setFieldErrors({});
-              const outcome = await captureJobEvidence(
-                target,
-                entry.jobId,
-                entry.assignmentId,
-                formData
-              );
-              setPending(false);
-              setAttempt((n) => n + 1);
-              notifyActionResult(outcome, messages);
-              if (outcome.status === 'success') {
-                // The CATEGORY is cleared with the rest of the draft. It was
-                // left behind, so the unsaved-work guard stayed dirty after a
-                // capture that succeeded and the shell asked about every later
-                // branch switch. The select is keyed on `attempt`, so it
-                // remounts against the cleared value rather than keeping the
-                // old choice on screen.
-                setCategoryCode('');
-                setEvidenceType('');
-                setNote('');
-                reload();
-                return;
-              }
-              if (outcome.fieldErrors) setFieldErrors(outcome.fieldErrors);
-              setProblem(
-                outcome.stage === undefined
-                  ? (outcome.messageKey ?? 'action.failed')
-                  : 'technicians.workspace.capturedPartial'
-              );
-            }}
-            className="flex flex-wrap items-end gap-3"
+            ref={formRef}
+            noValidate
+            action={capture}
+            className="flex flex-wrap items-start gap-3"
           >
-            <SelectField
+            <FormSelectField
               key={`categoryCode-${attempt}`}
               name="categoryCode"
               label={translate(messages, 'technicians.workspace.evidenceCategory')}
-              defaultValue={categoryCode}
-              onChange={(event) => setCategoryCode(event.target.value)}
-              options={categories.map((each) => ({
+              value={categoryCode}
+              onChange={setCategoryCode}
+              options={categoryList.map((each) => ({
                 value: each.categoryCode,
-                label: each.categoryCode,
+                label: documentCategoryLabel(each.categoryCode, (key) =>
+                  translateDynamic(messages, key)
+                ),
               }))}
               placeholder={translate(messages, 'technicians.workspace.evidenceCategory')}
               error={errorFor('categoryCode')}
               required
             />
-            <TextField
+            <FormTextField
+              key={`evidenceType-${attempt}`}
               name="evidenceType"
               label={translate(messages, 'technicians.workspace.evidenceType')}
               description={translate(messages, 'technicians.workspace.evidenceTypeHint')}
               value={evidenceType}
-              onChange={(event) => setEvidenceType(event.target.value)}
+              onChange={setEvidenceType}
               error={errorFor('evidenceType')}
               required
             />
-            <TextField
+            <FormTextField
+              key={`note-${attempt}`}
               name="note"
               label={translate(messages, 'technicians.workspace.evidenceNoteField')}
               value={note}
-              onChange={(event) => setNote(event.target.value)}
+              onChange={setNote}
               error={errorFor('note')}
             />
             <CaptureFileField
@@ -958,12 +1073,17 @@ function EvidencePanel({
               // The SERVER's list for the chosen category, or nothing.
               accept={category?.allowedContentTypes}
             />
-            <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={pending}
+              aria-busy={pending || undefined}
+            >
               {translate(
                 messages,
                 pending ? 'technicians.workspace.attaching' : 'technicians.workspace.attach'
               )}
-            </button>
+            </Button>
             {errorFor('evidenceFile') ? (
               <p role="alert" className="basis-full text-body text-error">
                 {errorFor('evidenceFile')}
@@ -979,32 +1099,36 @@ function EvidencePanel({
         </p>
       )}
 
-      {list === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-      ) : list.status !== 'ok' ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, `state.${list.status}.title`)}
-          {list.correlationId
-            ? ` ${translate(messages, 'action.reference')} ${list.correlationId}`
-            : ''}
-        </p>
-      ) : list.data.items.length === 0 ? (
+      {shown === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : shown.status !== 'ok' ? (
+        <MuiReadFailureState
+          messages={messages}
+          locale={locale}
+          status={shown.status}
+          correlationId={shown.correlationId}
+          onRetry={() => void list.reload()}
+        />
+      ) : shown.data.items.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'technicians.workspace.noEvidence')}
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {list.data.items.map((item) => (
+          {shown.data.items.map((item) => (
             <li key={item.id} className="rounded-md border border-border bg-surface p-3">
               <p className="text-body text-text-primary">
-                {item.evidenceType}
-                {item.note === null ? '' : ` — ${item.note}`}
+                <bdi>{item.evidenceType}</bdi>
+                {item.note === null ? null : (
+                  <>
+                    {' — '}
+                    <bdi>{item.note}</bdi>
+                  </>
+                )}
               </p>
               <p className="text-caption text-text-muted">
                 {translate(messages, 'technicians.workspace.recordedAt')}{' '}
-                {formatDateTime(item.createdAt, locale)} ·{' '}
-                {translate(messages, 'technicians.workspace.documentReference')}{' '}
-                {item.documentVersionId}
+                <bdi>{formatDateTime(item.createdAt, locale)}</bdi>
               </p>
             </li>
           ))}

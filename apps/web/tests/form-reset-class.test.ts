@@ -331,6 +331,15 @@ const RENDERS_COMPONENT = /<([A-Z]\w*)/g;
  * whoever read it looking for an identifier that did not exist.
  */
 /*
+ * Two more left with the Material UI slice for the work-order screens (Owner
+ * directive slice 4): the template catalogue's status filter and the QC queue's
+ * result filter are `FormSelectField`s now, controlled and outside every form,
+ * and the screens' command forms submit through their own handlers
+ * (`onSubmit`), which no Server Action reset reaches. The evidence captures
+ * that still post a file through `<form action={…}>` key every control on the
+ * settlement and hold it controlled, the shape the reception signature capture
+ * uses.
+ *
  * Four entries left this list when the branch pair did.
  *
  * Two on the technician workspace and two on the QC queue each exempted a
@@ -376,16 +385,6 @@ const OUTSIDE_A_FORM: readonly { file: string; match: string; why: string }[] = 
     file: 'features/receptions/components/CaptureFileField.tsx',
     match: '<input type="file"',
     why: 'A file input CANNOT carry a default. Browsers refuse a programmatic write to `input[type=file].value` — that is the guard against a page selecting a file the operator never chose — so `defaultValue` is not a shape this control can take. What a reset costs here is the file selection, which the operator re-makes deliberately; there is no typed text to strand.',
-  },
-  {
-    file: 'features/diagnostics/components/TemplateCatalogueScreen.tsx',
-    match: `<SelectField name="status" label={translate(messages, 'diagnostics.catalogue.filterStatus')}`,
-    why: 'The catalogue status FILTER (P1-29 W7). It sits in the list section, outside every `<form action={…}>` on the screen, and re-reads the list on change; nothing submits it, so no Server Action ever resets it — read off the element nesting.',
-  },
-  {
-    file: 'features/quality/components/QualityQueueScreen.tsx',
-    match: `<SelectField name="overallResult" label={translate(messages, 'quality.queue.filterResult')}`,
-    why: 'The queue result FILTER (P1-29 W8). It sits in the list section outside every `<form action={…}>` and re-reads on change; nothing submits it.',
   },
   {
     file: 'features/vehicles/components/VehicleDuplicateReviewScreen.tsx',

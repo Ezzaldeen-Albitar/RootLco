@@ -40,6 +40,7 @@ import {
   WORK_ORDER_KINDS,
   finishedStates,
   openStates,
+  workOrderRowAbout,
   workOrderStateLabel,
   type WorkOrderBoardView,
   type WorkOrderKind,
@@ -761,7 +762,10 @@ export function WorkOrderQueueScreen({
    * fact lives: a row carries no approval state and no delivery readiness, but
    * every row of the "awaiting approval" view is awaiting one. The number is
    * appended for assistive technology, so a page of links is a page of different
-   * links.
+   * links — and a row without a number (a draft has none yet) is named by its
+   * plate, its vehicle, its customer and the moment it was opened instead
+   * (`workOrderRowAbout`), so two such rows are still two different links
+   * (the residual #471 recorded).
    */
   const rowActions = useCallback(
     (row: WorkOrderListEntry): readonly RowAction[] => [
@@ -774,10 +778,10 @@ export function WorkOrderQueueScreen({
               ? translate(messages, 'workOrders.queue.openForDelivery')
               : translate(messages, 'workOrders.queue.open'),
         href: `/${locale}/work-orders/${row.id}`,
-        about: row.displayNumber ?? undefined,
+        about: workOrderRowAbout(row, formatInZone(row.openedAt, intlLocale(locale), zone)),
       },
     ],
-    [locale, messages, view]
+    [locale, messages, view, zone]
   );
 
   const blocked =

@@ -333,6 +333,64 @@ export function workOrderStateLabel(
 }
 
 /**
+ * The job-state codes seeded at PLATFORM scope, transcribed from
+ * `supabase/seeds/06_wo_job_state_graph.sql` — the same dual-scope rule as
+ * `PLATFORM_WORK_ORDER_STATES`: these six are a fact about the platform and
+ * are said in the operator's language; a code a workshop added is not, and is
+ * drawn as the code it is rather than a guess (browser QA, row B.S3: the job
+ * list and the technician's queue printed `in_progress` as written).
+ */
+export const PLATFORM_JOB_STATES = [
+  'planned',
+  'assigned',
+  'in_progress',
+  'paused',
+  'completed',
+  'cancelled',
+] as const;
+
+/** A job state in words for the platform's six, the code itself for any other. */
+export function jobStateLabel(code: string, translateKey: (key: string) => string): string {
+  return (PLATFORM_JOB_STATES as readonly string[]).includes(code)
+    ? translateKey(`workOrders.jobState.${code}`)
+    : code;
+}
+
+/** The two assignment roles `wo.job_assignments` admits, in words; any other keeps its code. */
+export function assignmentRoleLabel(code: string, translateKey: (key: string) => string): string {
+  return code === 'primary' || code === 'assist'
+    ? translateKey(`workOrders.assignmentRole.${code}`)
+    : code;
+}
+
+/**
+ * What an action on one work-order row is ABOUT, for assistive technology — the
+ * words appended to the action's name so a page of "Open" links is a page of
+ * different links.
+ *
+ * The work-order number when the order has one. A draft has none yet, and
+ * before this every such row's link carried the same name (the residual #471
+ * recorded), so the row is then named by what the operator can see on it: the
+ * plate, the vehicle, the customer and the moment it was opened — never the
+ * internal identifier. `opened` is the moment as the row shows it, formatted by
+ * the caller on the branch's clock.
+ */
+export function workOrderRowAbout(
+  row: Pick<WorkOrderListEntry, 'displayNumber' | 'vehicle' | 'customer'>,
+  opened: string
+): string {
+  if (row.displayNumber) return row.displayNumber;
+  return [
+    row.vehicle.registrationPlate,
+    row.vehicle.makeModel,
+    row.customer?.displayName ?? null,
+    opened,
+  ]
+    .filter((part): part is string => typeof part === 'string' && part.trim() !== '')
+    .join(' · ');
+}
+
+/**
  * What the board's own QUERY can be refused for (Owner directive,
  * `P1-32-PRE-OD-UX`).
  *
