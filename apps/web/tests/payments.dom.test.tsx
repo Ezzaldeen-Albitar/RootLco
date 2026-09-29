@@ -27,6 +27,7 @@ import {
   switchExpectingQuestion,
   switchWithoutQuestion,
 } from './support/branch-switch';
+import { findSearchedOption } from './support/picker-option';
 
 /*
  * The branch the receipts belong to is the working context's own named
@@ -347,7 +348,7 @@ async function choosePayer(
   label: RegExp = labelled('payments.record.payer')
 ) {
   await user.type(within(form).getByLabelText(label), 'Layla');
-  await user.click(await screen.findByRole('option', { name: /Layla Haddad/ }));
+  await user.click(await findSearchedOption(searchCustomerDirectory, 'Layla', /Layla Haddad/));
 }
 
 /** The invoice, found by its number among the receipt branch's invoices and chosen. */
@@ -357,7 +358,7 @@ async function chooseInvoice(
   label: RegExp = labelled('payments.allocate.invoice')
 ) {
   await user.type(within(form).getByLabelText(label), 'INV-0001');
-  await user.click(await screen.findByRole('option', { name: /INV-000123/ }));
+  await user.click(await findSearchedOption(listInvoices, 'INV-0001', /INV-000123/));
 }
 
 /** A combobox's text: the chosen record's name once one is chosen. */
@@ -1017,6 +1018,33 @@ describe('the payer is found by name, and the form says when it cannot be', () =
     );
   });
 
+  it('still names the payer when the directory answers well after the search pause', async () => {
+    // A loaded runner once spent the default one-second wait on the pause, the
+    // read and the render, and a correct screen failed (PR #485). The answer is
+    // held back past that second here, so the picker helper must wait for the
+    // search to be asked and answered rather than for a fixed interval.
+    const answer = {
+      status: 'ok',
+      rows: [customerHit],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-slow',
+    };
+    searchCustomerDirectory.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(answer), 1_500))
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch();
+    const form = await screen.findByRole('form', {
+      name: EN['payments.record.formLabel'] as string,
+    });
+    await choosePayer(user, form);
+    expect(within(form).getByLabelText(labelled('payments.record.payer'))).toHaveValue(
+      'Layla Haddad — C-000482'
+    );
+  });
+
   it('marks the payer, moves the cursor there, and stops complaining once one is chosen', async () => {
     const user = userEvent.setup();
     renderScreen();
@@ -1419,7 +1447,7 @@ describe('applying a receipt to an invoice', () => {
       name: EN['payments.allocate.formLabel'] as string,
     });
     await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), 'INV-0001');
-    const option = await screen.findByRole('option', { name: /INV-000123/ });
+    const option = await findSearchedOption(listInvoices, 'INV-0001', /INV-000123/);
     expect(listInvoices.mock.calls.at(-1)?.[0]).toEqual({
       companyId: COMPANY_ID,
       branchId: BRANCH_ID,
@@ -1457,7 +1485,7 @@ describe('applying a receipt to an invoice', () => {
       name: EN['payments.allocate.formLabel'] as string,
     });
     await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), 'INV-0001');
-    const option = await screen.findByRole('option', { name: /INV-000123/ });
+    const option = await findSearchedOption(listInvoices, 'INV-0001', /INV-000123/);
     expect(option).toHaveTextContent(EN['invoices.status.credited'] as string);
     expect(option).toHaveTextContent(money('15.5000'));
     expect(within(form).getByText(EN['payments.allocate.invoiceHelp'] as string)).toBeVisible();
@@ -1485,9 +1513,11 @@ describe('applying a receipt to an invoice', () => {
       within(pickerFilters()).getByLabelText(labelled('payments.list.invoiceFilter')),
       'Layla'
     );
-    const option = await screen.findByRole('option', {
-      name: new RegExp(escape(EN['invoices.picker.unnumbered'] as string)),
-    });
+    const option = await findSearchedOption(
+      listInvoices,
+      'Layla',
+      new RegExp(escape(EN['invoices.picker.unnumbered'] as string))
+    );
     expect(option).toHaveTextContent(EN['invoices.status.draft'] as string);
     expect(option).not.toHaveTextContent(EN['invoices.picker.open'] as string);
     expect(option).not.toHaveTextContent(money('0.0000'));
@@ -1503,7 +1533,7 @@ describe('applying a receipt to an invoice', () => {
       name: EN['payments.allocate.formLabel'] as string,
     });
     await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), 'INV-0001');
-    const option = await screen.findByRole('option', { name: /INV-000123/ });
+    const option = await findSearchedOption(listInvoices, 'INV-0001', /INV-000123/);
     expect(option).not.toHaveTextContent(EN['invoices.picker.open'] as string);
     expect(option).not.toHaveTextContent('0.0000');
   });

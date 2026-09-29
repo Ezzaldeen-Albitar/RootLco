@@ -23,6 +23,7 @@ import {
   switchExpectingQuestion,
   switchWithoutQuestion,
 } from './support/branch-switch';
+import { findSearchedOption } from './support/picker-option';
 import { fromFailure } from '@/lib/forms/action-result';
 import type { ApiFailure } from '@/lib/api/client';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
@@ -303,7 +304,7 @@ describe('reached from a work order', () => {
     expect(screen.getByText(EN['workOrders.picker.required'] as string)).toBeVisible();
     expect(push).not.toHaveBeenCalled();
     await user.type(box, '12-34{Enter}');
-    await user.click(await screen.findByRole('option', { name: /WO-000042/ }));
+    await user.click(await findSearchedOption(listWorkOrders, '12-34', /WO-000042/));
     expect(listWorkOrders).toHaveBeenCalledWith(
       { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
       { q: '12-34' },
@@ -460,7 +461,7 @@ describe('the job picker and the working context', () => {
     await user.selectOptions(chooser, OTHER_BRANCH.id);
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
     await user.type(box(), 'Layla{Enter}');
-    expect(await screen.findByRole('option', { name: /WO-000042/ })).toBeVisible();
+    expect(await findSearchedOption(listWorkOrders, 'Layla', /WO-000042/)).toBeVisible();
     expect(listWorkOrders).toHaveBeenCalledWith(
       { companyId: TEST_COMPANY.id, branchId: OTHER_BRANCH.id },
       { q: 'Layla' },
@@ -524,7 +525,7 @@ describe('the job picker and the working context', () => {
     renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
     await user.click(screen.getByRole('button', { name: 'first' }));
     await user.type(box(), 'Layla{Enter}');
-    await user.click(await screen.findByRole('option', { name: /WO-000042/ }));
+    await user.click(await findSearchedOption(listWorkOrders, 'Layla', /WO-000042/));
     // The combobox now reads the chosen job's name.
     expect((box() as HTMLInputElement).value).toContain('WO-000042');
 

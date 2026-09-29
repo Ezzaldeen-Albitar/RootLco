@@ -28,6 +28,7 @@ import {
   switchExpectingQuestion,
   switchWithoutQuestion,
 } from './support/branch-switch';
+import { findSearchedOption } from './support/picker-option';
 
 /*
  * On the shared Material UI wrappers since the sales and finance slice
@@ -376,7 +377,7 @@ describe('reached from a work order', () => {
       screen.getByLabelText(EN['invoices.choose.workOrderId'] as string),
       'Layla{Enter}'
     );
-    const match = await screen.findByRole('option', { name: /WO-000042/ });
+    const match = await findSearchedOption(listWorkOrders, 'Layla', /WO-000042/);
     // Server-side, addressed to the branch the header holds, with the term as `q`.
     expect(listWorkOrders).toHaveBeenCalledWith(
       { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
@@ -443,7 +444,7 @@ describe('finding the job when none is named (WorkOrderPicker)', () => {
     expect(box).toHaveAttribute('aria-invalid', 'true');
     // The matches reopen under the box once the operator is back in it.
     await user.click(box);
-    await user.click(await screen.findByRole('option', { name: /WO-000042/ }));
+    await user.click(await findSearchedOption(listWorkOrders, 'WO-42', /WO-000042/));
     expect(screen.queryByText(EN['workOrders.picker.required'] as string)).toBeNull();
   });
 
@@ -614,7 +615,7 @@ describe('the job picker and the working context', () => {
     await user.selectOptions(chooser, OTHER_BRANCH.id);
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
     await user.type(box(), 'Layla{Enter}');
-    expect(await screen.findByRole('option', { name: /WO-000042/ })).toBeVisible();
+    expect(await findSearchedOption(listWorkOrders, 'Layla', /WO-000042/)).toBeVisible();
     expect(listWorkOrders).toHaveBeenCalledWith(
       { companyId: TEST_COMPANY.id, branchId: OTHER_BRANCH.id },
       { q: 'Layla' },
@@ -678,7 +679,7 @@ describe('the job picker and the working context', () => {
     renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
     await user.click(screen.getByRole('button', { name: 'first' }));
     await user.type(box(), 'Layla{Enter}');
-    await user.click(await screen.findByRole('option', { name: /WO-000042/ }));
+    await user.click(await findSearchedOption(listWorkOrders, 'Layla', /WO-000042/));
     expect((box() as HTMLInputElement).value).toContain('WO-000042');
 
     await switchWithoutQuestion(user, 'second');
@@ -821,7 +822,7 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     // No box on this form asks for a partner reference.
     expect(within(form).queryByDisplayValue(UUID_SHAPE)).toBeNull();
     await user.type(within(form).getByLabelText(labelled('invoices.create.payer')), 'Fleet');
-    await user.click(await screen.findByRole('option', { name: /Fleet Partner/ }));
+    await user.click(await findSearchedOption(searchCustomerDirectory, 'Fleet', /Fleet Partner/));
     expect(searchCustomerDirectory.mock.calls.at(-1)?.[2]).toEqual({ q: 'Fleet' });
     await user.click(
       within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
@@ -1791,7 +1792,7 @@ describe('raising and approving a credit note', () => {
 
   async function chooseInvoice(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
     await user.type(invoiceSearch(form), 'INV-0001');
-    await user.click(await screen.findByRole('option', { name: /INV-000123/ }));
+    await user.click(await findSearchedOption(listInvoices, 'INV-0001', /INV-000123/));
   }
 
   it('raises a note against an invoice FOUND in the working branch, and opens it as pending', async () => {

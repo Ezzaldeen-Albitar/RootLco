@@ -3078,3 +3078,32 @@ Known limitations of this slice, one line each:
 - The review checked the discount separation, the credit-note second person, `If-Match` and the
   allocation wording by reading the code against the base; it did not re-run the implementer's
   falsification mutations.
+- Review round 2 confirmed the unfinished-expiry refusal (`QuotationDetailScreen.tsx`, guard
+  `zone !== null && problem !== null`; `ZonedDateTimeField` reports `incomplete` through
+  `onPartsBlank`) with three probes of its own: a whole expiry with the year deleted is refused and
+  nothing is sent; a partial entry then fully cleared issues with no expiry; an Arabic partial entry
+  is refused, marked invalid and not sent.
+- Review round 2 falsified it: restoring the guard `expiresAt !== '' && problem !== null` fails both
+  new quotation-detail cases, and removing `onPartsBlank` fails the partial-expiry case.
+- Review round 2 confirmed the four receipt-payer cases in `tests/backend/p1-30-w7-payments.test.ts`
+  (the cross-tenant case rests on the `(tenant_id, payer_partner_id)` key plus negative checks) and
+  observed hosted integration-tests job 109551243486 run that file with 20 cases (the base had 16).
+- Review round 2 re-read the discount and credit-note rules against the base: Approve and Turn down
+  still follow `canApprove` / `canReject`, the requester is still never offered approve, issue and
+  cancel still send the invoice `recordVersion`; the one change is that Approve now asks to confirm.
+- A partly typed expiry holds the value `''`, so the unsaved-work guard does not see it; the native
+  input before this slice behaved the same way.
+- The expiry complaint is keyed by the value and the finding, so a finding that changes kind (for
+  example incomplete to impossible) withdraws the complaint before the entry is corrected; the next
+  press refuses again and nothing is sent.
+- The credit-note request form shows a dash as the amount's currency while no invoice is chosen
+  (cosmetic).
+- The printed invoice leaves out the work-order line when no work-order number is known; the base
+  printed the work-order reference there.
+- The picker helpers in `tests/payments.dom.test.tsx`, `tests/invoices.dom.test.tsx` and
+  `tests/quotations.dom.test.tsx` wait for the search to be asked and answered, then for the option,
+  each under a 10 s ceiling (`tests/support/picker-option.ts`); the one-second default had failed
+  web-quality job 109551243343 on a loaded runner, and a case with a directory that answers after
+  1.5 s keeps that from returning.
+- No authenticated browser spec targets these screens by test id; review round 2 observed hosted
+  authenticated-browser job 109551243742 pass on `0a1f7925`.
