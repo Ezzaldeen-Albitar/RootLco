@@ -613,28 +613,30 @@ not shown: it has no name.
 
 **Label** — **Which work order?** <!-- quotations.choose.heading -->
 
-**Who** — `quo.quotation.read` opens the page. `wo.work_order.read` is what lets the screen show the
-work order's own details rather than just its identifier. `quo.quotation.manage` is needed to build
-a quotation; `quo.decision.record` to record a decision.
+**Who** — `quo.quotation.read` opens the page. `wo.work_order.read` is what lets you find the job
+by its number, a name or a plate, and lets the screen name the job by its number and say its state.
+`quo.quotation.manage` is needed to build a quotation; `quo.decision.record` to record a decision.
 
 **Where** — **Commerce** → **Quotations** <!-- nav.quotations --> (Arabic: عروض الأسعار), at
 `/{locale}/quotations`.
 
 **Steps**
 
-1. The page opens on the question: "Quotations belong to a work order. Open one from the work-order
-   board, or enter its identifier here." <!-- quotations.choose.explain -->
-2. Either press **Go to the work-order board** <!-- quotations.choose.boardLink --> , or paste the
-   **Work-order identifier** <!-- quotations.choose.workOrderId --> and press **Show quotations** <!-- quotations.choose.submit -->
-   .
+1. The page opens on the question: "Quotations belong to a work order. Find the job below by its
+   number, a name, a plate or a chassis number, or open it from the work-order board." <!-- quotations.choose.explain -->
+2. Either press **Go to the work-order board** <!-- quotations.choose.boardLink --> , or type in
+   **Find the job** <!-- quotations.choose.workOrderId --> — the matches of the branch you are
+   working in open as a list under the box — choose the job, and press **Show quotations** <!-- quotations.choose.submit -->
+   . Under "All my branches" the box is not offered: the screen asks for one branch first.
 
 The usual route is the other way round: open the work order and follow **Quotations for this work
 order** <!-- workOrders.detail.quotationsLink --> from the work-order detail screen.
 
-**Result** — the **Work order** panel <!-- quotations.list.workOrderHeading --> (Reference, State,
-Customer) and the table "Quotations of this work order, newest first" <!-- quotations.list.caption -->
-with **Number**, **Status**, **Currency** and **Current revision** (**Yes** <!-- quotations.list.hasCurrent -->
-or **None yet** <!-- quotations.list.noCurrent --> ).
+**Result** — the **Work order** panel <!-- quotations.list.workOrderHeading --> (the job by its
+number, its state in words, and the customer by name) and the list "Quotations of this work order,
+newest first" <!-- quotations.list.caption --> with **Number**, **Status**, **Currency** and
+**Current revision** (**Yes** <!-- quotations.list.hasCurrent --> or **None yet** <!-- quotations.list.noCurrent -->
+). The list pages with **Previous** and **Next**; it shows no total.
 
 **Restrictions**
 
@@ -647,8 +649,9 @@ or **None yet** <!-- quotations.list.noCurrent --> ).
 **If it goes wrong**
 
 - "This work order has no quotation yet." <!-- quotations.list.none -->
-- "Your access does not include work orders, so only the identifier is shown." <!-- quotations.list.workOrderNotReadable -->
-  — the quotations are still readable; only the work order's own details are withheld.
+- "Your access does not include work orders, so the job is not described here." <!-- quotations.list.workOrderNotReadable -->
+  — the quotations are still readable; the job is linked as **Open the job** <!-- quotations.list.openWorkOrder -->
+  , never by its reference.
 
 **Screenshot** — no screenshot available at this version.
 
@@ -669,9 +672,12 @@ In the example, Mr. Faris Al-Hamdan (example) prepares the quotation.
    the totals; nothing is calculated on this screen. A discount that reaches the company's discount
    threshold is sent for approval: another person has to approve it before the quotation can be
    issued." <!-- quotations.build.explain -->
-2. **Paying customer identifier** (optional, but see below) <!-- quotations.build.payer --> —
-   "Optional. Filled from the work order when it could be read. Needed before a decision can be
-   attributed to the customer." <!-- quotations.build.payerHelp -->
+2. **Paying customer** (optional, but see below) <!-- quotations.build.payer --> — opens on the
+   work order's own customer, by name. To bill somebody else, press **Choose a different customer** <!-- customerSelector.change -->
+   and find them by name, number or phone in the same box. "Optional. Filled from the work order
+   when it could be read. Needed before a decision can be attributed to the customer." <!-- quotations.build.payerHelp -->
+   Without `crm.customer.read` the form keeps a **Paying customer's reference** <!-- quotations.build.payerReference -->
+   box instead, opened on the work order's customer.
 3. **Customer class** (optional) <!-- quotations.build.customerClass --> . Below it the form says
    who a discount is recorded against: "You do not name anyone for a discount. If it needs approval,
    it is recorded as asked for by you, and a different person approves it before the quotation can
@@ -680,8 +686,10 @@ In the example, Mr. Faris Al-Hamdan (example) prepares the quotation.
 4. Under **Lines** <!-- quotations.lines.heading --> : "One line per service. The quantity may have
    up to three decimal places; a discount is an amount in the quotation currency with up to four." <!-- quotations.lines.explain -->
    For each line press **Add a line** <!-- quotations.lines.add --> and give:
-   - **Service** (required) — through **Find a service** <!-- quotations.picker.serviceSearch --> →
-     **Search** → **Choose a service** <!-- quotations.picker.chooseService --> ;
+   - **Service** (required) <!-- quotations.picker.service --> — type the beginning of a service
+     code or name and choose it from the list that opens under the box; **Choose another service** <!-- pricing.picker.changeService -->
+     puts it back. Without `svc.service.read` the line takes the service's reference instead
+     (**Service's reference** <!-- pricing.picker.serviceReference --> );
    - **Quantity** (required) <!-- quotations.lines.quantity --> — "More than zero, up to three
      decimal places." <!-- quotations.lines.quantityHelp --> ;
    - **Discount** (optional) <!-- quotations.lines.discount --> — "Optional. An amount, not a
@@ -689,7 +697,11 @@ In the example, Mr. Faris Al-Hamdan (example) prepares the quotation.
    - **Description** (optional) <!-- quotations.lines.description --> . **Remove this line** <!-- quotations.lines.remove -->
      takes a line back out.
 5. Press **Create quotation** <!-- quotations.build.submit --> , or **Cancel** <!-- quotations.build.cancel -->
-   .
+   . The button stays busy until the answer arrives, so a second press cannot send the quotation
+   twice.
+
+Anything typed or chosen in the builder is unsaved work: leaving the page or changing branch in the
+header asks first, and discarding opens the builder again as it first opened.
 
 **Result** — "The quotation was created." <!-- quotations.create.success --> A quotation is created
 with a **Draft** <!-- quotations.status.draft --> revision. If its discount reached the company's
@@ -723,7 +735,11 @@ for another approver. The draft cannot be issued until they approve it." <!-- qu
 - "Enter a quantity above zero with up to three decimal places." <!-- quotations.lines.quantityFormat -->
   / "Enter a discount of zero or more with up to four decimal places." <!-- quotations.lines.discountFormat -->
 - "The description is limited to 2000 characters." <!-- quotations.lines.descriptionTooLong -->
-- "Your access does not include the service catalogue, so enter the service identifier." <!-- quotations.picker.servicesNotReadable -->
+- "Find the service and choose it first." <!-- pricing.picker.serviceRequired --> — a line with no
+  service. Every refused field is marked red with the reason under it, the cursor goes to the first
+  one, what you typed stays, and the complaint goes as soon as you correct it.
+- "Your access does not include the service catalogue, so paste the service's reference exactly as
+  it was given to you. With access to services you would choose it by name instead." <!-- pricing.picker.servicesNotReadable -->
 
 **Screenshot** — no screenshot available at this version.
 
@@ -748,8 +764,14 @@ heading **Quotation** <!-- quotations.detail.title --> .
    replaced by a newer draft, so this draft cannot be issued. Issue the newer draft instead." <!-- quotations.issue.discountSuperseded -->
 2. Check **Draft revision** <!-- quotations.issue.draftLabel --> is the one you mean.
 3. **Expires** (optional) <!-- quotations.issue.expiresAt --> — "Optional. Leave empty for no
-   expiry." <!-- quotations.issue.expiresAtHelp -->
-4. Press **Issue** <!-- quotations.issue.submit --> .
+   expiry." <!-- quotations.issue.expiresAtHelp --> Type the day, month, year, hour and minute part
+   by part (or use the calendar); the time is on the quotation's own branch clock, and the offset is
+   sent with it. Where that clock is not known the section says so and offers issuing without an
+   expiry.
+4. Press **Issue** <!-- quotations.issue.submit --> . The screen asks first — **Issue revision {number}
+   to the customer?** <!-- quotations.issue.confirmTitle --> — and says that issuing freezes the
+   draft. Press **Issue** again to go ahead, or **Cancel** <!-- overlay.cancel --> . The question
+   stays up, reading **Working…** <!-- overlay.working --> , until the quotation has been read again.
 
 **Result** — "The quotation was issued." <!-- quotations.issue.success --> The revision's status
 becomes **Issued** <!-- quotations.revisionStatus.issued --> , the quotation's status becomes
@@ -768,7 +790,7 @@ above was captured by the server when the revision was created; this screen show
 
 - "Enter a valid date and time." <!-- quotations.issue.dateFormat -->
 - "Someone else changed this quotation first. Reload the page to see the latest, then try again." <!-- quotations.detail.conflict -->
-  — see 4C.3.7.
+  — press **Load the latest** <!-- quotations.detail.reload --> beside it; see 4C.3.7.
 - **The discount needs approval and nobody asked.** "This draft carries a discount that needs
   approval, and nobody has asked for it yet. Make a new draft with the same discount, so another
   person can approve it." <!-- form.violation.discount_approval_required --> This happens to a
@@ -801,15 +823,17 @@ above was captured by the server when the revision was created; this screen show
    : **In person** <!-- quotations.channel.in_person --> , **By phone** <!-- quotations.channel.phone -->
    , **Through the portal** <!-- quotations.channel.portal --> , **By email** <!-- quotations.channel.email -->
    or **By the system** <!-- quotations.channel.system --> .
-5. **Deciding customer identifier** (optional) <!-- quotations.decide.party --> — "Optional. Must be
-   the paying customer of this quotation." <!-- quotations.decide.partyHelp -->
+5. **The paying customer made this decision** <!-- quotations.decide.party --> — a tick box, ticked
+   when the quotation has a paying customer: "Clear this when someone else decided on the customer's
+   behalf." <!-- quotations.decide.partyHelp --> With no paying customer there is nothing to ask.
 6. **Evidence** (optional) <!-- quotations.decide.evidenceKind --> — **No evidence** <!-- quotations.decide.noEvidence -->
    , **Document** <!-- quotations.evidenceKind.document --> , **Verbal** <!-- quotations.evidenceKind.verbal -->
    , **Portal record** <!-- quotations.evidenceKind.portal --> or **Email** <!-- quotations.evidenceKind.email -->
    . Document evidence also needs a **Document version identifier** <!-- quotations.decide.documentVersionId -->
    : "Required for document evidence, and only then." <!-- quotations.decide.documentHelp -->
 7. **Reference note** (optional) <!-- quotations.decide.note --> .
-8. Press **Record decision** <!-- quotations.decide.submit --> .
+8. Press **Record decision** <!-- quotations.decide.submit --> . It stays busy until the decisions
+   and the quotation have been read again. A decision half filled in is unsaved work.
 
 **Result** — "The decision was recorded." <!-- quotations.decision.success --> Under **Customer
 decisions** <!-- quotations.decisions.heading --> you see **Outcome** <!-- quotations.decisions.outcome -->
@@ -871,8 +895,10 @@ latest, then try again." <!-- quotations.detail.conflict --> Nothing was written
 **Where** — quotation detail → **Revision history** <!-- quotations.revisions.heading --> , table
 "Revisions of this quotation" <!-- quotations.revisions.caption --> with **Revision**, **Status**,
 **Current** (**Current** <!-- quotations.revisions.current --> / **Not current** <!-- quotations.revisions.notCurrent -->
-), **Total** and **Actions**. Press **Show revision** <!-- quotations.revisions.show --> to open it
-under **Chosen revision** <!-- quotations.revisions.chosenHeading --> .
+), **Total** and **Actions**. Press **Show revision** <!-- quotations.revisions.show --> on a row
+(a screen reader hears the revision's number with it, and which one is shown) to open it under
+**Chosen revision** <!-- quotations.revisions.chosenHeading --> . A line names its item and its
+description; the service's reference is not printed.
 
 The lines table is captioned "The lines of this revision, with the figures the server captured" <!-- quotations.lines.caption -->
 and carries **Line**, **Item**, **Unit price**, **Quantity**, **Discount**, **Tax rate**, **Tax**
@@ -885,11 +911,12 @@ screen is recalculated, and no arithmetic is performed in your browser.
 
 ### 4C.3.7 Why a save is refused: the record version, in plain terms — IMPLEMENTED (UI)
 
-The quotation detail screen shows **Record version** <!-- quotations.detail.version --> among the
-quotation's facts. That number is how the application stops two people overwriting each other.
+Every quotation carries a record version. The screen no longer prints it, but it is still how the
+application stops two people overwriting each other.
 
-**What happens.** When you open the quotation, the screen notes the version it read. When you
-**Issue** or **Add revision**, it sends that number back. If anyone — or you, in another tab — has
+**What happens.** When you open the quotation, the screen notes the version it read, and each form
+keeps the version its work was based on — a refresh that arrives while you are typing lines or an
+expiry does not change it. When you **Issue** or **Add revision**, it sends that number back. If anyone — or you, in another tab — has
 changed the quotation in between, the number no longer matches and the service refuses the write.
 
 **What you see.** "Someone else changed this quotation first. Reload the page to see the latest,
@@ -1109,9 +1136,13 @@ branch chosen at the top of the page; under "All my branches" it asks you to cho
    for by** <!-- quotations.approvals.column.requestedBy --> and when, and the **Decision** <!-- quotations.approvals.column.decision -->
    column.
 3. On a request somebody else made, press **Approve** <!-- quotations.approvals.approve --> , or
-   **Turn down** <!-- quotations.approvals.reject --> . Turning down asks for a **Reason** <!-- quotations.approvals.reason -->
-   — "Say why, so the person who asked can change the quotation." <!-- quotations.approvals.reasonHelp -->
-   — then **Turn down the discount** <!-- quotations.approvals.confirmReject --> .
+   **Turn down** <!-- quotations.approvals.reject --> (a screen reader hears the quotation's number
+   with each). Approving asks first — **Approve the discount on {number}?** <!-- quotations.approvals.approveHeading -->
+   , naming the discount — and **Approve the discount** <!-- quotations.approvals.confirmApprove -->
+   decides it; **Cancel** <!-- overlay.cancel --> sends nothing. Turning down opens a question with a
+   **Reason** <!-- quotations.approvals.reason --> box — "Say why, so the person who asked can change
+   the quotation." <!-- quotations.approvals.reasonHelp --> — and **Turn down the discount** <!-- quotations.approvals.confirmReject -->
+   is held until a reason is written.
 4. On a request you made yourself, the row says "Waiting for another approver: you asked for this
    discount." <!-- quotations.approvals.waitingForAnother --> and offers no decision.
 5. On a request you cannot approve for another reason, the row offers no **Approve** and says why,
@@ -1173,7 +1204,9 @@ it, or with a smaller one." <!-- quotations.discountApproval.rejectedNext -->
   you do not hold. Leave it for an approver who holds it." <!-- form.violation.discount_approval_permission_missing -->
 - **Your limit is in another currency.** "Your discount approval limit is in another currency, so it
   does not cover this discount. Leave it for an approver whose limit is in the same currency." <!-- form.violation.discount_limit_currency_mismatch -->
-- **No reason given when turning down.** "Say why the discount is turned down." <!-- quotations.approvals.reasonRequired -->
+- **No reason given when turning down.** "A reason is required." <!-- overlay.reasonRequired -->
+  — said on the reason box, which is marked red; the decision is not sent.
+- A refusal from the server closes the question and is said above the list, with its reference.
 
 **Screenshot** — no screenshot available at this version.
 
