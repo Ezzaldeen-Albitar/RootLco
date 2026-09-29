@@ -260,18 +260,18 @@ hand-built form moves the cursor to the refused field and withdraws a corrected 
 
 ### Customers, vehicles and work orders
 
-| Route                                                  | Screen file                                                                  | a                                    | b                                             | c                                                                                                                                         | d                                      | e                        | f                                                                                                                | g    | h    | i    |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------- | ------------------------------------ | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | ------------------------ | ---------------------------------------------------------------------------------------------------------------- | ---- | ---- | ---- |
-| `/crm/customer-duplicates`                             | `apps/web/src/features/crm/customers/components/DuplicateReviewScreen.tsx`   | n/a — the queue is the tenant's      | pass — the open pairs, on arrival             | pass — both customers by name; an absent name is said in words                                                                            | n/a — the read publishes a status only | pass — the status filter | fixed (B3-04) — the dismissal reason                                                                             | pass | pass | pass |
-| `/vehicles/duplicates`                                 | `apps/web/src/features/vehicles/components/VehicleDuplicateReviewScreen.tsx` | n/a — as customers                   | pass                                          | pass                                                                                                                                      | n/a                                    | pass                     | fixed (B3-04) — the dismissal reason                                                                             | pass | pass | pass |
-| `/work-orders/diagnostics`                             | `apps/web/src/features/diagnostics/components/TemplateCatalogueScreen.tsx`   | n/a — checklists are the tenant's    | pass                                          | pass                                                                                                                                      | n/a — the read publishes a status only | pass — the status filter | fixed (B3-04) — the new-checklist form                                                                           | pass | pass | pass |
-| `/work-orders/diagnostics/[templateId]`                | `apps/web/src/features/diagnostics/components/TemplateDetailScreen.tsx`      | n/a — one record, reached by address | pass                                          | pass                                                                                                                                      | n/a                                    | n/a                      | fixed (B3-03) — the version and item forms                                                                       | pass | pass | pass |
-| `/work-orders/quality`                                 | `apps/web/src/features/quality/components/QualityQueueScreen.tsx`            | pass — the working branch            | pass                                          | blocked — each row reaches its job by a link in words and prints the job's reference; the quality read publishes no job number, see below | n/a                                    | pass — the result filter | n/a — nothing is typed                                                                                           | pass | pass | pass |
-| `/technicians/me`                                      | `apps/web/src/features/technicians/components/TechnicianWorkspaceScreen.tsx` | pass — the working branch            | pass — the technician's own queue, on arrival | pass                                                                                                                                      | n/a                                    | n/a                      | n/a — the writes are per job, on the job                                                                         | pass | pass | pass |
-| `/work-orders/[workOrderId]`                           | `apps/web/src/features/work-orders/components/WorkOrderDetailScreen.tsx`     | n/a — one record, reached by address | pass                                          | blocked — a technician is assigned by roster reference: the roster read publishes no name, see below                                      | n/a                                    | n/a                      | fixed (B3-03) — the state change and the assignment are forms; a missing assignment field is marked on the field | pass | pass | pass |
-| `/work-orders/[workOrderId]/closure`                   | `apps/web/src/features/quality/components/WorkOrderClosureScreen.tsx`        | n/a — one record, reached by address | pass                                          | fixed (B3-04) — the rework order is a link in words; blocked — the sign-off technician and the deciding party are references, see below   | n/a                                    | n/a                      | fixed (B3-03) — close, sign-off and the additional-work decision                                                 | pass | pass | pass |
-| `/work-orders/[workOrderId]/jobs/[jobId]/diagnostics`  | `apps/web/src/features/diagnostics/components/JobDiagnosticsScreen.tsx`      | n/a — one job, reached by address    | pass                                          | pass                                                                                                                                      | n/a                                    | n/a                      | fixed (B3-03) — the start and evidence forms                                                                     | pass | pass | pass |
-| `/vehicles/[vehicleId]` (the merged-vehicle note only) | `apps/web/src/features/vehicles/components/VehicleProfileScreen.tsx`         | —                                    | —                                             | fixed (B3-04) — the vehicle it was merged into is a link in words                                                                         | —                                      | —                        | —                                                                                                                | —    | —    | —    |
+| Route                                                  | Screen file                                                                  | a                               | b                                 | c                                                                 | d                                      | e                        | f                                    | g    | h    | i    |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------- | ------------------------------- | --------------------------------- | ----------------------------------------------------------------- | -------------------------------------- | ------------------------ | ------------------------------------ | ---- | ---- | ---- |
+| `/crm/customer-duplicates`                             | `apps/web/src/features/crm/customers/components/DuplicateReviewScreen.tsx`   | n/a — the queue is the tenant's | pass — the open pairs, on arrival | pass — both customers by name; an absent name is said in words    | n/a — the read publishes a status only | pass — the status filter | fixed (B3-04) — the dismissal reason | pass | pass | pass |
+| `/vehicles/duplicates`                                 | `apps/web/src/features/vehicles/components/VehicleDuplicateReviewScreen.tsx` | n/a — as customers              | pass                              | pass                                                              | n/a                                    | pass                     | fixed (B3-04) — the dismissal reason | pass | pass | pass |
+| `/work-orders/diagnostics`                             | form fields, `OperationalGrid`, states                                       | F1–F6; G1–G9; S1–S4             | migrated — see below the table    | focused suites, en and ar — see below                             |
+| `/work-orders/diagnostics/[templateId]`                | form fields, `ConfirmDialog`, states                                         | F1–F7; D1–D4; S1–S4             | migrated — see below the table    | focused suites, en and ar — see below                             |
+| `/work-orders/quality`                                 | form fields, `OperationalGrid`, states                                       | F1–F6; G1–G9, G11; S1–S4        | migrated — see below the table    | focused suites, en and ar — see below                             |
+| `/technicians/me`                                      | form fields, `OperationalGrid`, `DateTimeField`, states                      | F1–F6; G1–G9; E1–E4; S1–S4      | migrated — see below the table    | focused suites, en and ar — see below                             |
+| `/work-orders/[workOrderId]`                           | form fields, `ZonedDateTimeField`, `ConfirmDialog`, states                   | F1–F6; E1–E4; D1–D4; S1–S4      | migrated — see below the table    | focused suites, en and ar — see below                             |
+| `/work-orders/[workOrderId]/closure`                   | form fields, `ConfirmDialog`, `ReasonDialog`, states                         | F1–F7; D1–D5; S1–S4             | migrated — see below the table    | focused suites, en and ar — see below                             |
+| `/work-orders/[workOrderId]/jobs/[jobId]/diagnostics`  | form fields, `ConfirmDialog`, states                                         | F1–F6; D1–D4; S1–S4             | migrated — see below the table    | focused suites, en and ar — see below                             |
+| `/vehicles/[vehicleId]` (the merged-vehicle note only) | `apps/web/src/features/vehicles/components/VehicleProfileScreen.tsx`         | —                               | —                                 | fixed (B3-04) — the vehicle it was merged into is a link in words | —                                      | —                        | —                                    | —    | —    | —    |
 
 ### Platform Owner Console
 
@@ -2529,3 +2529,163 @@ Known limitations of this slice, one line each:
   hosted CI.
 - The round-4 review probes and mutation configs lived in a scratch directory and wrote nothing into
   the repository.
+
+### Work-order detail, closure, diagnostics, quality and technicians on Material UI
+
+The work-order detail, its closure view, a job's diagnostics, the inspection-template catalogue and
+its detail, the quality queue and the technician's own workspace moved onto the shared wrappers in
+one slice (`P1-32-PRE-OD-MUIWD`), with the reception acknowledgement's print fix. Nothing about how
+any of them authorizes or scopes changed: the same writes, the same permission gates (every page's
+refusal before any read; each panel's affordances by its own code), the same reads (two web adapters
+now pass the grid's page size, below), and the same route branch scope, unchanged in
+`route-branch-scope.ts` and held by `route-branch-scope.test.ts` — `/work-orders/[workOrderId]`,
+its closure and a job's diagnostics `none` (the record's own branch), the two template routes
+`none`, and `/work-orders/quality` and `/technicians/me` `concrete` ("All my branches" is refused
+in words and reads nothing).
+
+What moved to which wrapper:
+
+- `/work-orders/[workOrderId]` — the lifecycle move is `FormSelectField` + `FormTextField`; a move
+  to a terminal or cancelling state is asked in `ConfirmDialog` (destructive for a cancellation); the
+  job routing is `FormSelectField` on `useEditBaseline` (the job's baseline version is the
+  If-Match, a conflict offers "Load the latest version", a discard re-bases, a save leaves the form
+  clean); the assignment is `FormTextField` (the roster reference — recorded gap 13),
+  `FormRadioGroupField` for the role and two `ZonedDateTimeField`s on the WORK ORDER's branch clock
+  (the native `datetime-local` boxes read the laptop's clock and converted with `new Date`); the
+  blockers are `FormTextField` forms; a failed re-read is `MuiReadFailureState`; the job state is
+  said in words; the History is said in words (DEF-R1).
+- `/work-orders/[workOrderId]/closure` — every form is `forms/mui/*` (radios for a check's
+  result, the overall result, the customer's decision and the fulfilment; checkboxes for "required"
+  and "safety-critical"); finalizing a check and closing the order are `ConfirmDialog`s; a reopen
+  attempt and a withdrawal take their reason through `ReasonDialog`; every read is `useReread` and
+  every failure `MuiReadFailureState`; the order is named by its number and its state in words, the
+  closing states and an extra-work request's state and fulfilment in words (B.S3).
+- `/work-orders/[workOrderId]/jobs/[jobId]/diagnostics` — every entry form is `forms/mui/*` (a
+  yes-or-no answer is a radio, a numeric one `FormNumberField` with its unit); completing and
+  cancelling a report are `ConfirmDialog`s; the report status, every move and every history line
+  are said in words; the outstanding items by their prompt; the evidence category by its platform
+  name; no document or reviewer reference is printed.
+- `/work-orders/diagnostics` — the catalogue is `OperationalGrid` (server mode, the status filter
+  as the read's key, "Open" named with the template, the type by its name); the create form is
+  `forms/mui/*`.
+- `/work-orders/diagnostics/[templateId]` — the name and status are `useEditBaseline` (the
+  template's baseline version is the If-Match, "Load the latest version" on a conflict); publishing
+  and retiring a version are `ConfirmDialog`s; the version and item forms are `forms/mui/*`.
+- `/work-orders/quality` — `OperationalGrid` over `useServerTable` (server mode, `rowCount` -1,
+  the cursor footer), the result filter as the read's key; each row's action named with the result,
+  the finalization time and the order's reference (recorded gap 11), so two rows are two links.
+- `/technicians/me` — the queue is `OperationalGrid` with no pager (`unpaged`, the read returns
+  the whole set); "Open" named with the job and its work order; the correction's times and the
+  note's moment are `DateTimeField`s on the working branch's clock; the states and the role in
+  words.
+- The acknowledgement (`/receptions/check-in/[receptionId]/acknowledgement`) prints its sheet
+  (below), and the invoice and receipt screens opt into the print scope.
+
+Wrapper extensions, each tested:
+
+- `MuiReadFailureState` (`components/states/MuiStates.tsx`) — a failed `ReadState` drawn as its
+  own state, a retry only for an outage or a fault — `mui-states.dom.test.tsx`.
+- `OperationalGrid` `unpaged` — no pager for a read that answers the whole set; a paged grid keeps
+  it (falsified in the same case) — `operational-grid.dom.test.tsx`.
+- `useReread` (`lib/api/use-reread.ts`) — a panel's read, re-read and AWAITED: the command stays
+  busy until the new answer is on screen; only the newest answer is written; a rejected or
+  over-long read settles as unavailable — `cancellable-reads.dom.test.tsx`.
+- `documentCategoryLabel` (`features/attachments/attachments-contract.ts`), `jobStateLabel`,
+  `assignmentRoleLabel` and `workOrderRowAbout` (`features/work-orders/work-orders-contract.ts`)
+  — the platform's vocabularies in words, a workshop's own codes kept.
+- No new component folder, so `MODULE_DISPOSITION` is unchanged.
+
+The print fix (checkpoint browser QA at 78602752, RI3, DEF-01). The acknowledgement printed blank:
+its sheet is a DIRECT child of the print scope, and the scope rule
+`[data-print-scope]:has([data-print='document']) > :not(:has([data-print='document']))` also
+matched the sheet itself, because `:has()` only sees descendants. The rule now reads
+`> :not([data-print='document'], :has([data-print='document']))` — the document itself is named in the list. The delivery sheet, nested in
+its panel, is kept through that panel as before. `gallery-and-print.dom.test.tsx` evaluates the
+compiled rule against both shapes of page (jsdom refuses `:not(:has())`, so the one grammar the rule
+uses is evaluated part by part through the DOM's own `matches` and `querySelector`) and falsifies
+the old rule, which hides the sheet. The browser tier prints both sheets with print media emulated
+and measures them (`appointments-and-receptions.spec.ts`, en and ar — skipped only when no reception
+visit is readable, with the reason; `delivery-p1-31.spec.ts` — runs only with the acceptance
+handoff, as the rest of that file). The invoice and receipt screens now opt into the scope, so their
+printable copies print alone (the residual #478 recorded) — `invoices.dom` and `payments.dom`
+cases.
+
+Preserved, each held by a case in `work-order-delivery-mount.dom`, `quality.dom`,
+`diagnostics.dom`, `technician-workspace.dom` unless named:
+
+- Permission gates: the page refusals before any read; every panel's affordances by its own code;
+  the restricted narratives read only with `iam.sensitive.view`.
+- Tenant and branch isolation: the record routes read the record's own branch; the queue and the
+  workspace read the working branch only, re-keyed on a switch (the previous branch's rows, cursors,
+  open job and late answers dropped); nothing identifies a company or branch by a typed reference.
+- Server pagination: the quality queue and the template catalogue page with the grid's cursor
+  (`rowCount` -1, no total); the histories and logs keep their cursor "Show earlier".
+- Stale answers ignored: every panel read is `useReread` (only the newest answer is written); the
+  queues key on the working-context version.
+- Field errors: every missing answer is refused on its own field (red, the reason under it,
+  `aria-invalid`, the cursor on the first), where many forms here used to return silently from a
+  press; a refusal from the service lands on the field it names; entries are kept; a correction
+  withdraws the complaint.
+- Unsaved work: every editing form declares `useUnsavedGuard` with its discard; nothing is asked
+  once stored (the check answer compares with what was recorded, the correction reason is cleared).
+- Version sourcing (QA-004): the lifecycle move, the closure, the finalization, the sign-off, the
+  approval, the report moves and completion send the version from the read; the routing and the
+  template settings send `useEditBaseline`'s version; each hands the outcome onward
+  (`validate:p1-28-version-sourcing`).
+- Busy until the re-read: every command keeps its submit busy (`try`/`finally`) until the re-read it
+  caused has landed — a held re-read keeps the closure dialog on "Working…" in `quality.dom`.
+- Names instead of identifiers: no department, document, reviewer, actor or work-order reference is
+  printed where a name exists; the three references that remain are recorded gaps (the roster
+  reference on an assignment and a sign-off, gap 13; the deciding party, gap 14; the quality row's
+  work order, gap 11).
+- Arabic and English, right to left, in the suites above; the Arabic completion case answers its
+  question in Material's dialog, which renders in a portal under the foundation provider.
+- Discount-approval and credit-note rules are not touched: no file of either is in the diff.
+
+QA rows:
+
+- DEF-R1 (the History printed "work_order_status" and "ready_to_close → closed", en and ar) — fixed:
+  the kinds, the states of each kind, the job by its title, and the withheld kinds without their
+  permission codes (`work-order-delivery-mount.dom`, en and ar).
+- B.S3 (raw state codes on these screens) — fixed: the job state, the report status and its moves,
+  the closure targets and gate, an extra-work request's state and fulfilment, the technician queue's
+  states and role are said in words; a workshop's own code keeps its code.
+- 2.10 (the closure screen's developer note) — fixed in #473, kept: `quality.dom` still holds that
+  no enforcing object, deferred condition or owning phase is printed.
+- The #471 residual (identical row-action names without a work-order number) — fixed:
+  `workOrderRowAbout` names such a row by its plate, vehicle, customer and opening time
+  (`search-empty-states.dom`).
+- RI3 / DEF-01 (the acknowledgement prints blank) — fixed, above.
+
+Deliberate behaviour changes:
+
+- A lifecycle move to a terminal or cancelling state, finalizing a quality check, closing the order,
+  completing or cancelling a report, and publishing or retiring a template version are asked first.
+- A reopen attempt and a withdrawal take their reason in a dialog; a withdrawal is a separate button,
+  no longer the empty choice of the fulfilment select.
+- The QC answers, the review outcome and the customer's decision are radios; "required" and
+  "safety-critical" are checkboxes.
+- Forms that used to do nothing on an empty press now refuse on the field.
+- The quality queue and the template catalogue are grids with Previous and Next, not "Show more".
+- The history, evidence and review lines print no reference (actor, document, reviewer).
+- A check's code and the department reference are no longer drawn.
+
+Known limitations of this slice, one line each:
+
+- The technician roster, the deciding party and the quality row's work order are still references
+  (recorded gaps 13, 14 and 11); no backend read was added.
+- The assignment window needs the work order's branch zone from the working context; a branch that
+  publishes none says so and takes no window.
+- The panel reads are still Server Actions: a superseded read is ignored, not cancelled.
+- The evidence captures still post their file through `<form action={…}>`; their controls are
+  keyed on the settlement and controlled. `form-reset-class.test.ts` does not see the Material
+  wrappers (its scan names the older field components), so those controls are held by the DOM
+  suites, not by that scan; the two filter exemptions left with their controls.
+- The template catalogue refreshes its grid after a create without awaiting it (`useServerTable`'s
+  refresh has no promise); the create form is busy through the write only.
+- The delivery print assertion runs only with the P1-31 acceptance handoff; the acknowledgement one
+  skips, with its reason, when no reception visit is readable.
+- Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
+  they run in hosted CI.
+- The web tier's test count changes (new cases in existing files; no web test file added or
+  removed); the recorded tiers are retaken at the final head.

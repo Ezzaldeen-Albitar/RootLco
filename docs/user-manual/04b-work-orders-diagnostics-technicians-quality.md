@@ -279,21 +279,26 @@ refused rather than overwritten.
    field's own note is "This move requires a reason." <!-- workOrders.detail.reasonRequiredHint -->
    ).
 4. Press **Move work order** <!-- workOrders.detail.moveWorkOrder --> (it reads **Moving…** <!-- workOrders.detail.moving -->
-   while it works).
+   while it works, and stays that way until the work order has been read again). A move that ends
+   the work order, or cancels it, is asked first: **Move this work order?** <!-- workOrders.detail.confirmMoveTitle -->
+   names the state and says that nothing follows it; **Cancel** keeps the work order where it is.
 
-**Result** · The facts panel shows the new **State** and a new **Version**.
+**Result** · The facts panel shows the new **State**, in words.
 
-**Restrictions** · The states offered are your workshop's own; the application invents none and
-shows each as the raw code. A finished work order offers nothing: "This work order has no next
-state. Its lifecycle has ended and it is frozen." <!-- workOrders.detail.noNextStates --> Closing is
-not done here — see §4B.11.
+**Restrictions** · The states offered are your workshop's own; the application invents none. The
+platform's states are shown in words; a state your workshop added is shown as its code. A finished
+work order offers nothing: "This work order has no next state. Its lifecycle has ended and it is
+frozen." <!-- workOrders.detail.noNextStates --> Closing is not done here — see §4B.11. Pressing
+**Move work order** with no state chosen marks **Move to** red and says so under it; a chosen state
+or a typed reason is unsaved work, so leaving the page or changing branch asks first.
 
 **If it goes wrong**
 
 - "Your access does not include moving this work order." <!-- workOrders.detail.noTransitionPermission -->
 - "This move requires a reason." <!-- workOrders.detail.reasonRequired -->
 - "Someone changed this record after you opened it, so nothing was written. Reload and look again
-  before repeating the action." <!-- workOrders.detail.conflict --> — see §4B.12.
+  before repeating the action." <!-- workOrders.detail.conflict --> — press **Load the latest
+  version** <!-- form.loadLatest --> beside it; see §4B.12.
 
 **Screenshot** · no screenshot available at this version.
 
@@ -302,14 +307,17 @@ not done here — see §4B.11.
 **IMPLEMENTED (UI)**
 
 The panel **Jobs** <!-- workOrders.detail.jobsHeading --> lists the work this order holds. Each row
-shows the job's title, its state as a raw code, its type where one is recorded, the mark "needs a
+shows the job's title, its state in words (**Planned**, **Assigned**, **In progress**, **Paused**,
+**Completed** or **Cancelled** <!-- workOrders.jobState.planned --> ; a state your workshop added
+keeps its code), its type where one is recorded, the mark "needs a
 diagnostic" <!-- workOrders.detail.requiresDiagnostic --> where the job requires one, a
 **Diagnostics** <!-- workOrders.detail.diagnosticsLink --> link (only if you hold
 `dia.diagnostic.read`), and **Department** <!-- workOrders.detail.department --> with either the
 department name or **Not routed** <!-- workOrders.detail.unrouted --> .
 
 Press **Open** <!-- workOrders.detail.openJob --> on a row to expand its routing, technicians and
-blockers; **Close** <!-- workOrders.detail.closeJob --> collapses it again.
+blockers; **Close** <!-- workOrders.detail.closeJob --> collapses it again. A screen reader hears
+each as "Open job" with the job's title, so the buttons of two jobs are not alike.
 
 A brand-new work order shows **No jobs yet** <!-- workOrders.detail.noJobsTitle --> / "This work
 order holds no job." <!-- workOrders.detail.noJobsBody -->
@@ -328,8 +336,9 @@ are read back and offered by name on the parts screen, when material is asked fo
 5, §5.26.2).
 
 If your department name is missing, the row still shows the routing: an operator without
-`org.department.read` sees the department reference instead of the name, because showing nothing
-would read as "Not routed", which is a different and false statement.
+`org.department.read` reads "Routed to a department you cannot see" <!-- workOrders.detail.routedUnnamed -->
+instead of the name — never the department's reference — because showing nothing would read as "Not
+routed", which is a different and false statement.
 
 ### 4B.6.4 Workflow — route a job to a department
 
@@ -350,7 +359,11 @@ would read as "Not routed", which is a different and false statement.
 **Result** · The job row shows the new department.
 
 **Restrictions** · The list is an offer, not a decision: the service re-checks the department
-against the job's own company and branch and refuses one that does not belong.
+against the job's own company and branch and refuses one that does not belong. A department chosen
+but not applied is unsaved work: leaving the page or changing branch asks first, and discarding puts
+back the routing that is stored. If someone changed the job meanwhile, the routing is refused with
+the conflict sentence and **Load the latest version** <!-- form.loadLatest --> , which shows the job
+as it is stored now; choose again from there.
 
 **If it goes wrong**
 
@@ -377,9 +390,12 @@ are separate questions and are refused separately.
    reference, not a name: "The technician's profile identifier. The platform decides whether they
    qualify for this job." <!-- workOrders.detail.technicianProfileIdHint -->
 2. Choose **Role** <!-- workOrders.detail.assignmentRole --> — **Primary** <!-- workOrders.assignmentRole.primary -->
-   or **Assisting** <!-- workOrders.assignmentRole.assist --> .
+   or **Assisting** <!-- workOrders.assignmentRole.assist --> (one of two choices).
 3. Fill **From** <!-- workOrders.detail.windowFrom --> and **To** <!-- workOrders.detail.windowTo -->
-   (both required — date and time).
+   (both required). Type each part in turn — day, month, year, hour, minute — or open the calendar.
+   The times are the work order's own branch clock, whatever the clock on your computer says, and
+   **To** must be after **From** ("The end must be after the start." <!-- workOrders.detail.windowInverted -->
+   ). If that branch's time zone is not known yet, the form says so and takes no time.
 4. Press **Assign technician** <!-- workOrders.detail.assignTechnician --> (**Assigning…** <!-- workOrders.detail.assigning -->
    while it works).
 
@@ -432,7 +448,8 @@ refused while a blocker above stands." <!-- quality.closure.closeBlocked --> Res
 try to close.
 
 **If it goes wrong** · "No blocker has been raised on this job." <!-- workOrders.detail.noBlockers -->
-is the empty state, not an error.
+is the empty state, not an error. An empty note is refused on the box itself, which turns red with
+the reason under it; a refusal from the service lands on the same box, and what you wrote stays.
 
 **Screenshot** · no screenshot available at this version.
 
@@ -444,9 +461,15 @@ The panel **History** <!-- workOrders.detail.historyHeading --> lists what has h
 entries behind **Show earlier history** <!-- workOrders.detail.moreHistory --> . On a new order it
 reads "Nothing has happened on this work order yet." <!-- workOrders.detail.noHistory -->
 
-The history is honest about its own gaps: entries you may not read are summarised as **Not shown to
-you:** <!-- workOrders.detail.historyOmitted --> followed by what the entry **needs** <!-- workOrders.detail.historyRequires -->
-. A short history is not proof that little happened.
+Each entry says what happened in words — for example **Work order moved** <!-- workOrders.history.kind.work_order_status -->
+"from Ready to close to Closed", or **Job moved** <!-- workOrders.history.kind.job_status --> with
+the job's title — followed by its note and its time. States are the platform's words; who made the
+change is not shown, because the history names no person.
+
+The history is honest about its own gaps: "Some entries are not shown to you, because your role does
+not include them: …" <!-- workOrders.history.omitted --> names the kinds of entry left out. A short
+history is not proof that little happened. If the history cannot be read, it says so and offers
+**Try again**.
 
 ### 4B.6.8 The links out of the work order
 
@@ -494,7 +517,9 @@ inspection (example)`.
 
 **Result** · The template appears under **Templates** <!-- diagnostics.catalogue.listHeading -->
 with status **Active** <!-- diagnostics.templateStatus.active --> or **Inactive** <!-- diagnostics.templateStatus.inactive -->
-. Long lists page behind **Show more templates** <!-- diagnostics.catalogue.loadMore --> .
+. The templates are a table — name, code, status, diagnostic type and created date — with **Open** <!-- diagnostics.catalogue.open -->
+on each row and **Previous** / **Next** under it for a long list. Narrowing by status goes back to
+the first page; a status with no template says so.
 
 **Restrictions** · The code is permanent. A template must belong to a diagnostic type, and the types
 are not yours to create.
@@ -541,9 +566,12 @@ are not yours to create.
    - **Mandatory** <!-- diagnostics.template.mandatory --> if the item must be answered before a
      report can be completed Press **Add item** <!-- diagnostics.template.addItem --> (**Adding…** <!-- diagnostics.template.addingItem -->
      ).
-4. When the draft is right, press **Publish this version** <!-- diagnostics.template.publish --> .
+4. When the draft is right, press **Publish this version** <!-- diagnostics.template.publish --> and
+   confirm: **Publish this version?** <!-- diagnostics.template.confirmPublishTitle --> reminds you
+   that a published version is frozen.
 5. A published version can later be taken out of use with **Retire this version** <!-- diagnostics.template.retire -->
-   .
+   , confirmed the same way (**Retire this version?** <!-- diagnostics.template.confirmRetireTitle -->
+   ).
 
 **Result** · The version list shows each version with its number, **Items** <!-- diagnostics.template.itemCount -->
 , **Published** date <!-- diagnostics.template.publishedAt --> and status **Draft** <!-- diagnostics.versionStatus.draft -->
@@ -558,6 +586,8 @@ published checklist by opening a new version, copying its items, and publishing 
 - "A numeric item needs a unit." <!-- diagnostics.template.unitRequired -->
 - "Nothing to save: the name and status are unchanged." <!-- diagnostics.template.nothingChanged -->
 - "This template changed since you opened it. Reload and try again." <!-- diagnostics.template.conflict -->
+  — press **Load the latest version** <!-- form.loadLatest --> to see the name and status as stored
+  now, then change them again. A typed name or status is unsaved work until it is saved.
 - "This template has no version yet. Open one to start authoring items." <!-- diagnostics.template.noVersions -->
   / "No items on this version." <!-- diagnostics.template.noItems -->
 
@@ -619,14 +649,15 @@ above to record a checklist, measurements, fault codes, findings and recommendat
 .
 
 **Steps** · For each item, either give **Answer** <!-- diagnostics.report.answer --> (for a yes/no
-item, choose **Yes** <!-- diagnostics.report.yes --> or **No** <!-- diagnostics.report.no --> ;
-placeholder **Choose** <!-- diagnostics.report.chooseAnswer --> ), or explain **Why it does not
-apply** <!-- diagnostics.report.notApplicableReason --> . Press **Record** <!-- diagnostics.report.record -->
-(**Recording…** <!-- diagnostics.report.recording --> ).
+item, choose **Yes** <!-- diagnostics.report.yes --> or **No** <!-- diagnostics.report.no --> ; a
+number is typed with its unit shown beside the box), or explain **Why it does not apply** <!-- diagnostics.report.notApplicableReason -->
+. Press **Record** <!-- diagnostics.report.record --> (**Working…** while it records and the report is
+read again). Pressing **Record** with neither marks the answer red: "Give an answer, or say why it
+does not apply." <!-- diagnostics.report.answerOrReason -->
 
 **Result** · The item stops reading **Not answered** <!-- diagnostics.report.unanswered --> and
 shows its answer, or **Not applicable** <!-- diagnostics.report.notApplicable --> with your reason.
-Items marked **Mandatory** are listed after "Still needed before completion:" <!-- diagnostics.report.outstanding -->
+Items marked **Mandatory** are listed, by what they ask, after "Still needed before completion:" <!-- diagnostics.report.outstanding -->
 until they are answered.
 
 **Restrictions** · Mandatory items must be answered (or marked not applicable with a reason) before
@@ -672,8 +703,9 @@ must act on it on the commercial screens (Part 4C).
 4. **Choose a file** <!-- diagnostics.report.chooseFile --> and press **Attach** <!-- diagnostics.report.attach -->
    (**Attaching…** <!-- diagnostics.report.attaching --> ).
 
-**Result** · The file is listed with its **Document** reference <!-- diagnostics.report.documentReference -->
-.
+**Result** · The file is listed with what it shows, its note and the time it was attached. Where
+the platform names the category, the category is chosen by its name; a category your workshop added
+is shown as its code.
 
 **Restrictions** · "No document category is available for evidence, so nothing can be attached." <!-- diagnostics.report.noCategories -->
 — categories are set up by an operator procedure, not here.
@@ -697,11 +729,15 @@ is for.
 
 **Steps**
 
-1. The heading shows the report's status as a raw code. Where a move is offered, press **Move to** <!-- diagnostics.report.moveTo -->
-   with the target code, giving a **Reason** <!-- diagnostics.report.reason --> if the move warrants
-   one.
-2. To finish it: write a **Summary** <!-- diagnostics.report.summary --> (optional) and press
-   **Complete the report** <!-- diagnostics.report.complete --> .
+1. The heading shows the report's status in words — **Draft**, **In progress**, **Completed** or
+   **Cancelled** <!-- diagnostics.reportStatus.draft --> . Where a move is offered, press **Move to** <!-- diagnostics.report.moveTo -->
+   with the target status, giving a **Reason** <!-- diagnostics.report.reason --> if the move
+   warrants one. Cancelling is asked first (**Cancel this report?** <!-- diagnostics.report.confirmCancelTitle -->
+   ).
+2. To finish it: write a **Summary** <!-- diagnostics.report.summary --> (optional), press
+   **Complete the report** <!-- diagnostics.report.complete --> and confirm (**Complete this
+   report?** <!-- diagnostics.report.confirmCompleteTitle --> — nothing more can be recorded on it
+   afterwards).
 3. To review it: under **Review this report** <!-- diagnostics.report.reviewHeading --> choose
    **Outcome** <!-- diagnostics.report.reviewResult --> (required; placeholder **Choose an outcome** <!-- diagnostics.report.chooseReviewResult -->
    ) — **Approved** <!-- diagnostics.reviewResult.approved --> , **Rejected** <!-- diagnostics.reviewResult.rejected -->
@@ -709,8 +745,8 @@ is for.
    (optional) and press **Record review** <!-- diagnostics.report.review --> (**Recording…** <!-- diagnostics.report.reviewing -->
    ).
 
-**Result** · The review is listed with its outcome, its notes and **Reviewed by** <!-- diagnostics.report.reviewer -->
-and its reviewer reference. **History** <!-- diagnostics.report.historyHeading --> records the
+**Result** · The review is listed with its outcome and its notes; the reviewer is not printed as a
+reference. **History** <!-- diagnostics.report.historyHeading --> records the
 report from **Opened** <!-- diagnostics.report.opened --> onwards, with **Show earlier history** <!-- diagnostics.report.moreHistory -->
 .
 
@@ -744,15 +780,16 @@ shows another technician's clock.
 
 **Steps**
 
-1. Choose **Company** <!-- technicians.workspace.company --> (required) and **Branch** <!-- technicians.workspace.branch -->
-   (required). If your account is scoped to exactly one, the chooser does not appear.
-2. Press **Show my queue** <!-- technicians.workspace.showQueue --> .
-3. In **Assigned to me** <!-- technicians.workspace.queueHeading --> press **Open** <!-- technicians.workspace.open -->
-   on a job; **Back to queue** <!-- technicians.workspace.close --> returns.
+1. The branch is the one chosen in the header; **Branch** <!-- technicians.workspace.branch -->
+   names it. Under **All my branches** the queue is not read: choose one branch in the header.
+2. In **Assigned to me** <!-- technicians.workspace.queueHeading --> — a table, one job per row —
+   press **Open** <!-- technicians.workspace.open --> on a job; **Back to queue** <!-- technicians.workspace.close -->
+   returns.
 
-**Result** · Each row shows **Work order** <!-- technicians.workspace.workOrder --> , **Job state** <!-- technicians.workspace.jobState -->
-, **Your role** <!-- technicians.workspace.role --> and **Assigned since** <!-- technicians.workspace.since -->
-. The note under the heading is worth reading: "Every job currently assigned to you is listed. This
+**Result** · Each row shows the job, **Job state** <!-- technicians.workspace.jobState --> , **Work
+order** <!-- technicians.workspace.workOrder --> with its number and its state, **Your role** <!-- technicians.workspace.role -->
+and **Assigned since** <!-- technicians.workspace.since --> — the states and the role in words. There
+is no Previous or Next: every job is on the one page. The note under the heading is worth reading: "Every job currently assigned to you is listed. This
 list is not paged." <!-- technicians.workspace.queueNote -->
 
 **Restrictions** · One branch at a time. Nothing appears until someone assigns you a job (§4B.6.5).
@@ -807,9 +844,11 @@ session by clocking on late; use a correction instead (§4B.9.3).
 **Where** · **My work** → open a job → **Sessions on this job** → **Correct this session** <!-- technicians.workspace.correctHeading -->
 .
 
-**Steps** · Fill **Started at** <!-- technicians.workspace.correctStartedAt --> (required), **Ended
-at** <!-- technicians.workspace.correctEndedAt --> (required) and **Reason** <!-- technicians.workspace.correctReason -->
-(required), then press **Record correction** <!-- technicians.workspace.correctSubmit --> .
+**Steps** · **Started at** <!-- technicians.workspace.correctStartedAt --> and **Ended at** <!-- technicians.workspace.correctEndedAt -->
+open with the session's own times; change them part by part (day, month, year, hour, minute) on the
+branch's clock. Fill **Reason** <!-- technicians.workspace.correctReason --> (required), then press
+**Record correction** <!-- technicians.workspace.correctSubmit --> . An end at or before the start is
+refused on **Ended at**: "The end must be after the start." <!-- technicians.workspace.correctInverted -->
 
 **Result** · A corrected copy appears beside the original, marked "correction" <!-- technicians.workspace.session.correction -->
 .
@@ -833,8 +872,9 @@ and **Work evidence** <!-- technicians.workspace.evidenceHeading --> .
 **Steps**
 
 1. A note: write **Note** <!-- technicians.workspace.entry --> (required), optionally set **When the
-   work happened** <!-- technicians.workspace.loggedAt --> ("Leave empty to record it as now." <!-- technicians.workspace.loggedAtHint -->
-   ), then press **Add note** <!-- technicians.workspace.addEntry --> (**Adding…** <!-- technicians.workspace.adding -->
+   work happened** <!-- technicians.workspace.loggedAt --> — typed part by part on the branch's clock
+   ("Leave empty to record it as now." <!-- technicians.workspace.loggedAtHint --> ) — then press
+   **Add note** <!-- technicians.workspace.addEntry --> (**Adding…** <!-- technicians.workspace.adding -->
    ).
 2. Evidence: choose **Document category** <!-- technicians.workspace.evidenceCategory -->
    (required), fill **What it shows** <!-- technicians.workspace.evidenceType --> (required — "A
@@ -846,7 +886,7 @@ and **Work evidence** <!-- technicians.workspace.evidenceHeading --> .
 
 **Result** · Notes are listed with **When the work happened** and **Recorded** <!-- technicians.workspace.recordedAt -->
 , older ones behind **Show older notes** <!-- technicians.workspace.olderEntries --> . Evidence is
-listed with its **Document version** <!-- technicians.workspace.documentReference --> .
+listed with what it shows, its note and when it was recorded.
 
 **Restrictions** · Both are permanent. "Notes are free text and permanent. To amend one, add
 another." <!-- technicians.workspace.workLogNote --> "A file bound here stays bound; it cannot be
@@ -872,15 +912,17 @@ read back later.
 checks, finalize it, and close the order." <!-- quality.queue.description --> Page permission:
 `qms.quality_control.read`.
 
-**Steps** · Choose **Company** <!-- quality.queue.company --> and **Branch** <!-- quality.queue.branch -->
-, press **Show the queue** <!-- quality.queue.showQueue --> , then narrow by **Result** <!-- quality.queue.filterResult -->
+**Steps** · The branch is the one chosen in the header; **Branch** <!-- quality.queue.branch -->
+names it, and under **All my branches** nothing is read. Narrow by **Result** <!-- quality.queue.filterResult -->
 if you want — **Any result** <!-- quality.queue.anyResult --> , **Open** <!-- quality.result.open -->
-, **Passed** <!-- quality.result.passed --> or **Failed** <!-- quality.result.failed --> .
+, **Passed** <!-- quality.result.passed --> or **Failed** <!-- quality.result.failed --> ; a new
+result goes back to the first page.
 
-**Result** · Section **Records** <!-- quality.queue.heading --> , each row showing its overall
-result and, where it has one, **Finalized** <!-- quality.queue.finalizedAt --> with the date. **Open
-the work order's quality and closure view** <!-- quality.queue.openOrder --> takes you to the screen
-in §4B.11. More rows load behind **Show more records** <!-- quality.queue.loadMore --> .
+**Result** · Section **Records** <!-- quality.queue.heading --> , a table: each row's overall result,
+**Finalized** <!-- quality.queue.finalizedAt --> with the date (or "Not finalized yet" <!-- quality.queue.notFinalized -->
+) and the work order's reference — the quality read carries no work-order number yet. **Open the
+work order's quality and closure view** <!-- quality.queue.openOrder --> on the row takes you to the
+screen in §4B.11. Long lists page with **Previous** and **Next** under the table.
 
 **Restrictions** · One branch at a time; there is no tenant-wide quality view.
 
@@ -911,16 +953,13 @@ order be closed now? It says **This work order can be closed.** <!-- quality.clo
 **This work order cannot be closed yet.** <!-- quality.closure.notEligible --> or **This work order
 is already in a final state.** <!-- quality.closure.alreadyTerminal -->
 
-Each obstacle is listed with its code, its message and what it is "enforced by" <!-- quality.closure.enforcedBy -->
-. Stock still held by the order is called out separately: "Stock this work order still holds blocks
+Each obstacle is one sentence saying what stands in the way, in your language. Stock still held by
+the order is called out separately: "Stock this work order still holds blocks
 closure." <!-- quality.closure.inventoryBlocking --> with the counts of **active reservations** <!-- quality.closure.activeReservations -->
 and **open issues** <!-- quality.closure.openIssues --> (release them on the inventory screens —
 Part 5).
 
-The gate is also honest about what it does **not** yet enforce, listing those conditions after "Not
-yet enforced by the platform:" <!-- quality.closure.deferred --> with the reason and the owner.
-Treat that line as a workshop-discipline list: the application will not stop you, so your supervisor
-must.
+The work order is named by its number and its state in words above the sentences.
 
 ### 4B.11.2 Workflow — open a quality-control record
 
@@ -954,22 +993,21 @@ one to answer the checks this workshop requires before closure." <!-- quality.cl
 1. Each check shows its name and, where it applies, **Mandatory** <!-- quality.closure.mandatory -->
    and **Safety-critical** <!-- quality.closure.safetyCritical --> , and reads **Not answered** <!-- quality.closure.unanswered -->
    until you answer it.
-2. Choose **Result** <!-- quality.closure.checkResult --> (required; placeholder **Choose** <!-- quality.closure.chooseResult -->
-   ) — **Pass** <!-- quality.checkResult.pass --> , **Fail** <!-- quality.checkResult.fail --> or
-   **Not applicable** <!-- quality.checkResult.na --> — add a **Note** <!-- quality.closure.note -->
-   and press **Record** <!-- quality.closure.record --> (**Recording…** <!-- quality.closure.recording -->
-   ).
+2. Choose **Result** <!-- quality.closure.checkResult --> (required) — **Pass** <!-- quality.checkResult.pass -->
+   , **Fail** <!-- quality.checkResult.fail --> or **Not applicable** <!-- quality.checkResult.na -->
+   — add a **Note** <!-- quality.closure.note --> and press **Record** <!-- quality.closure.record -->
+   . Pressing **Record** with no result chosen marks **Result** red with the reason under it.
 3. When the checks are answered, under **Finalize this record** <!-- quality.closure.finalizeHeading -->
-   choose **Overall result** <!-- quality.closure.overallResult --> (required; placeholder **Choose
-   the overall result** <!-- quality.closure.chooseOverall --> ) — **Passed** or **Failed** — add a
-   **Note** and press **Finalize** <!-- quality.closure.finalize --> (**Finalizing…** <!-- quality.closure.finalizing -->
-   ).
+   choose **Overall result** <!-- quality.closure.overallResult --> (required) — **Passed** or
+   **Failed** — add a **Note**, press **Finalize** <!-- quality.closure.finalize --> and confirm:
+   **Finalize this quality check?** <!-- quality.closure.confirmFinalizeTitle --> says the result it
+   will record and that a finalized check cannot be changed.
 
 **Result** · The record shows its overall result and its **Finalized** time. It is the finalized
 record, not the individual answers, that the closure gate reads.
 
-**Restrictions** · Outstanding mandatory checks are listed after "Mandatory checks still open:" <!-- quality.closure.unresolvedMandatory -->
-. The list of checks is the workshop's own configured vocabulary; you cannot add a check here
+**Restrictions** · Outstanding mandatory checks are listed, by name, after "Mandatory checks still
+open:" <!-- quality.closure.unresolvedMandatory --> . The list of checks is the workshop's own configured vocabulary; you cannot add a check here
 (§4B.13). A record with no unanswered mandatory check can be finalized with no per-check result
 recorded at all — in that case the finalization is the only quality evidence the gate has, so record
 your notes deliberately.
@@ -992,8 +1030,8 @@ your notes deliberately.
    **Found while working on** <!-- quality.closure.originatingJob --> (required — one of this work
    order's own jobs, "Choose a job" <!-- quality.closure.originatingJobPlaceholder --> ; extra work
    is always recorded against the job it came out of
-   <!-- quality.closure.originatingJobHint --> ), set **Required** <!-- quality.closure.required -->
-   to **Yes** <!-- quality.closure.yes --> or **No** <!-- quality.closure.no --> , and press
+   <!-- quality.closure.originatingJobHint --> ), tick **Required** <!-- quality.closure.required -->
+   if the work must be done before the work order can close, and press
    **Request additional work** <!-- quality.closure.requestWork --> . Leave the job unchosen and the
    request is not sent: the panel answers "Extra work has to say which job or inspection finding it
    came from, and this request names neither. Choose the job the work was found on."
@@ -1004,7 +1042,7 @@ your notes deliberately.
 2. Add the detail: **Description** <!-- quality.closure.description --> then **Record the
    description** <!-- quality.closure.recordDescription --> .
 3. Record the customer's answer under **Customer approval** <!-- quality.closure.approval --> :
-   **Decision** <!-- quality.closure.decision --> (required; **Approved** <!-- quality.decision.approved -->
+   **Decision** <!-- quality.closure.decision --> (required; choose **Approved** <!-- quality.decision.approved -->
    or **Rejected** <!-- quality.decision.rejected --> ), **How it was decided** <!-- quality.closure.channel -->
    (required — **In person** / **Phone** / **Email** / **Text message** / **Customer portal** /
    **Other** <!-- quality.channel.in_person --> <!-- quality.channel.phone --> <!-- quality.channel.email --> <!-- quality.channel.sms --> <!-- quality.channel.portal --> <!-- quality.channel.other -->
@@ -1014,11 +1052,15 @@ your notes deliberately.
    approval** <!-- quality.closure.recordApproval --> .
 4. Close the loop: choose **Fulfillment** <!-- quality.closure.fulfillment --> — **Fulfilled** <!-- quality.fulfillment.fulfilled -->
    or **Waived** <!-- quality.fulfillment.waived --> — give a **Reason** <!-- quality.closure.reason -->
-   and press **Record fulfillment** <!-- quality.closure.recordFulfillment --> . Instead of
-   fulfilling it you may **Withdraw the request** <!-- quality.closure.withdrawInstead --> with
-   **Withdraw** <!-- quality.closure.withdraw --> .
+   if you have one and press **Record fulfillment** <!-- quality.closure.recordFulfillment --> .
+   Instead of fulfilling it you may press **Withdraw** <!-- quality.closure.withdraw --> : **Withdraw
+   this request?** <!-- quality.closure.withdrawDialogTitle --> asks for the reason, which is
+   required, and keeps the request on record as withdrawn.
 
-**Result** · The request is listed with its description, its approval and its outcome. Until each is
+**Result** · The request is listed with its state — **Waiting for a decision**, **Approved**,
+**Rejected** or **Withdrawn** <!-- quality.requestState.pending --> — whether it is done (**Not done
+yet** <!-- quality.fulfillment.unfulfilled --> , **Fulfilled**, **Waived**), its description, its
+approval and its outcome. Until each is
 recorded the panel reads "No additional work has been requested." <!-- quality.closure.noAdditionalWork -->
 , "No description recorded." <!-- quality.closure.noDescription --> and "No customer approval has
 been recorded." <!-- quality.closure.noApproval -->
@@ -1042,7 +1084,9 @@ the lifecycle moves that lead up to it).
 **Steps** · Choose **Close to** <!-- quality.closure.closeTo --> (required; placeholder **Choose a
 state** <!-- quality.closure.chooseState --> ), fill **Reason** <!-- quality.closure.reason -->
 where the chosen state requires one, and press **Close the work order** <!-- quality.closure.close -->
-(**Closing…** <!-- quality.closure.closing --> ).
+. Confirm in **Close this work order?** <!-- quality.closure.confirmCloseTitle --> , which names the
+closing state and reminds you that a closed work order is not reopened. The closing states are
+offered in words.
 
 **Result** · The work order reaches its closing state; the closure gate then reads **This work order
 is already in a final state.**
@@ -1071,8 +1115,8 @@ cost; `qms.rework.sign_off` to sign it off; `iam.sensitive.view` to see or recor
 1. Close the original work order first. Until you do, the panel reads "Rework can be opened once the
    work order is closed." <!-- quality.closure.reworkNeedsClosed -->
 2. Fill **Root cause** <!-- quality.closure.rootCause --> (required) and **Corrective action** <!-- quality.closure.correctiveAction -->
-   (required), optionally **Responsibility** <!-- quality.closure.responsibility --> , set
-   **Safety-critical** <!-- quality.closure.safetyCritical --> to **Yes** or **No**, and where it is
+   (required), optionally **Responsibility** <!-- quality.closure.responsibility --> , tick
+   **Safety-critical** <!-- quality.closure.safetyCritical --> if it is, and where it is
    safety-critical name the **Lead technician** <!-- quality.closure.leadTechnician --> — "Required
    when the rework is safety-critical. The technician profile reference." <!-- quality.closure.leadTechnicianHint -->
 3. Press **Create the rework order** <!-- quality.closure.createRework --> .
@@ -1104,8 +1148,9 @@ is the empty state. A stale-version refusal is the message in §4B.12.
 The rule is printed on the screen: "A closed work order is not reopened: every attempt is refused
 and kept on record with its reason. Continue the work with a rework order instead." <!-- quality.closure.reopenNote -->
 
-If the customer returns and someone asks for the order to be reopened, write the **Reason** <!-- quality.closure.reopenReason -->
-(required) and press **Record a reopen attempt** <!-- quality.closure.attemptReopen --> . The
+If the customer returns and someone asks for the order to be reopened, press **Record a reopen
+attempt** <!-- quality.closure.attemptReopen --> ; the dialog that opens asks for the **Reason** <!-- quality.closure.reopenReason -->
+(required, and the button waits for it). The
 attempt is kept with the outcome **Refused** <!-- quality.reopenOutcome.rejected --> ; before any is
 recorded the panel reads "No reopen attempt has been recorded." <!-- quality.closure.noReopen -->
 Then open a rework order (§4B.11.6). Recording the attempt is how the refusal becomes part of the
@@ -1137,8 +1182,11 @@ these values. Open the record again to see its current details." <!-- state.conf
 Reloading will not help here — the record's own state forbids what you asked. Read the record again
 and take a different action.
 
-**What to do, in order:** reload the page · read what is now on it · decide again · only then repeat
-the action. Do not press the button a second time on a page you have not reloaded.
+**What to do, in order:** press **Load the latest version** <!-- form.loadLatest --> where the
+screen offers it (or reload the page) · read what is now on it · decide again · only then repeat the
+action. Do not press the button a second time on a page you have not reloaded. On these screens a
+button that has just saved something says **Working…** until the page has been read again, so it
+cannot be pressed twice by accident.
 
 If you leave a form with unsaved text the application asks **Discard your changes?** <!-- form.unsavedTitle -->
 / "This form has changes that have not been saved." <!-- form.unsavedBody --> with **Keep editing** <!-- form.keepEditing -->
