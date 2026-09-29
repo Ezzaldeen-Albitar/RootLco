@@ -326,6 +326,37 @@ describe('renaming under the version it was read at', () => {
     expect(adapters.listManagedAppointmentTypes.mock.calls.length).toBeGreaterThan(reads);
   });
 
+  it('treats a changed name as unsaved work, and the stored name restored as not', async () => {
+    const user = userEvent.setup();
+    adapters.listManagedAppointmentTypes.mockResolvedValue(page([ROUTINE]));
+    mount();
+    await user.click(
+      await within(section('types')).findByRole('button', {
+        name: `${en['appointmentSetup.rename']} ${ROUTINE.name}`,
+      })
+    );
+    const dialog = await screen.findByTestId('appointment-setup-types-rename');
+    const name = within(dialog).getByLabelText(new RegExp(`^${en['appointmentSetup.field.name']}`));
+    // The modal hides the page behind it from the accessibility tree; the probe
+    // sits there, so it is found with `hidden`.
+    const probe = () => screen.getByRole('button', { name: 'probe unsaved', hidden: true });
+
+    // Opening the dialog is not work.
+    await user.click(probe());
+    expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('false');
+
+    await user.clear(name);
+    await user.type(name, 'Routine check');
+    await user.click(probe());
+    expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('true');
+
+    // Back to what is stored: nothing left to lose.
+    await user.clear(name);
+    await user.type(name, ROUTINE.name);
+    await user.click(probe());
+    expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('false');
+  });
+
   it('refuses an empty name on the field, before anything is sent', async () => {
     const user = userEvent.setup();
     adapters.listManagedSourceChannels.mockResolvedValue(page([{ ...ROUTINE, name: 'Phone' }]));

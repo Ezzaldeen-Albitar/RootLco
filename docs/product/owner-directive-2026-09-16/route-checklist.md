@@ -1006,7 +1006,29 @@ Known limitations of this slice, one line each:
 - A rename dialog opened on a row that a re-read no longer lists keeps the row it was opened on;
   saving then answers the server's refusal.
 - The selective backfill for `odqa_alpha` and `odqa_beta` is an operator act that has not been
-  performed; BF-19 proves the mechanism on organisations the suite provisions.
+  performed. BF-19 proves the four-code dry run on organisations the suite provisions itself on the
+  90-code bundle, not on the live `odqa_alpha`/`odqa_beta`; the live dry run offers exactly four
+  codes only if the `org.settings.manage` run was already made for them. Runbook section 10 states
+  this condition.
+- The setup screen has no search: the management-list operations accept only `cursor` and `limit`
+  (`apps/api/src/app/api/v1/appointment-catalogue/management/appointment-types/route.ts:52-54`), so
+  there is nothing for it to call. This is not a regression.
+- The appointment cancel dialog does not link an empty cancellation-reason catalogue to the setup
+  screen; only the booking form links an empty type catalogue there, which is what the slice asked.
+- The short reference accepts only `[a-z0-9_]`; Arabic-Indic digits are refused with
+  `appointmentSetup.codeInvalid` rather than converted; the field hint names the characters it accepts.
+- `check-p1-28-access` rule 1 (gate before read) cannot see a page that reads only through
+  client-side Server Actions, a gate limitation older than this slice. The setup page's gate and the
+  booking page's `canSetUpCatalogue` are therefore pinned by route invocation in
+  `apps/web/tests/appointment-enablement-route-binding.test.ts`, and the rename draft's unsaved
+  guard by `apps/web/tests/appointment-setup.dom.test.tsx`.
+- Scope audit: exactly 21 operation declarations under
+  `apps/api/src/app/api/v1/{appointments,appointment-catalogue}/**` carry the four codes, and the
+  table above lists the same 21 ids. No permission check on these codes exists in
+  `supabase/migrations` or the composed-permissions record. The only cross-module reads are the
+  read-only same-tenant LEFT JOINs to `veh.vehicles` and `crm.business_partners`
+  (`appointment-read-repository.ts:176-177`). Only `TENANT_ADMINISTRATOR_ROLE` changed
+  (`bootstrap-roles.ts:625-628`); `FIRST_OWNER_ROLE` is untouched.
 - The backend DB-bound cases (P31-B29 … B33, BF-19) run only in the hosted database jobs.
 
 ## Remaining — backend prerequisites and Owner decisions only
