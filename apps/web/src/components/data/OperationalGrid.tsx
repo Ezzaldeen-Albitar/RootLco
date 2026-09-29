@@ -122,7 +122,11 @@ import { LAYOUT_PX, SPACE_PX } from '@/styles/tokens/generated/tokens';
  * everything" and "this search matched nothing" are different sentences — the
  * last whenever the source reports criteria outside the request
  * (`ServerTable.narrowed`), as a search does (P1-27-FE-002). Loading keeps the header and draws
- * skeleton rows the height of a real row.
+ * skeleton rows the height of a real row. A caller whose list has more to say
+ * about a refusal, an outage or a fault than the shared sentence passes its own
+ * (`stateDescriptions`, since the sales and finance slice): the heading, the
+ * retry rule and the reference stay the shared ones, so one state is still
+ * never drawn as another.
  *
  * ## Keyboard
  *
@@ -186,6 +190,19 @@ export interface OperationalGridProps<Row> {
   readonly rowActions?: ((row: Row) => readonly RowAction[]) | undefined;
   /** The caller renders its own zero-row state — see `DataTable`'s `suppressEmptyState`. */
   readonly suppressEmptyState?: boolean | undefined;
+  /**
+   * The screen's own sentence under a failure's shared heading — "you may not
+   * see the credit notes of this branch; that also needs permission to see
+   * amounts" rather than the general refusal. Only the refused, unavailable and
+   * error states take one, as `MuiStates` does; unset, the shared sentence.
+   */
+  readonly stateDescriptions?:
+    | {
+        readonly denied?: keyof Messages | undefined;
+        readonly unavailable?: keyof Messages | undefined;
+        readonly error?: keyof Messages | undefined;
+      }
+    | undefined;
   /**
    * The read is NOT paged: it answers the whole set at once (a technician's own
    * queue — the operation discards `limit` and returns no cursor). Then no
@@ -332,6 +349,7 @@ export function OperationalGrid<Row>({
   rowActions,
   suppressEmptyState = false,
   unpaged = false,
+  stateDescriptions,
   testId = 'operational-grid',
 }: OperationalGridProps<Row>) {
   const theme = useTheme();
@@ -430,7 +448,13 @@ export function OperationalGrid<Row>({
   );
 
   if (status === 'denied') {
-    return <MuiRefusedState messages={messages} correlationId={correlationId} />;
+    return (
+      <MuiRefusedState
+        messages={messages}
+        correlationId={correlationId}
+        descriptionKey={stateDescriptions?.denied}
+      />
+    );
   }
   if (status === 'unavailable') {
     return (
@@ -438,6 +462,7 @@ export function OperationalGrid<Row>({
         messages={messages}
         onRetry={table.refresh}
         correlationId={correlationId}
+        descriptionKey={stateDescriptions?.unavailable}
       />
     );
   }
@@ -449,7 +474,12 @@ export function OperationalGrid<Row>({
   }
   if (status === 'error') {
     return (
-      <MuiErrorState messages={messages} onRetry={table.refresh} correlationId={correlationId} />
+      <MuiErrorState
+        messages={messages}
+        onRetry={table.refresh}
+        correlationId={correlationId}
+        descriptionKey={stateDescriptions?.error}
+      />
     );
   }
 

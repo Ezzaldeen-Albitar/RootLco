@@ -3,6 +3,7 @@
 import { useCallback, useId, useState } from 'react';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
+import { EntityPicker } from '@/components/pickers/EntityPicker';
 import { SearchBox } from '@/components/search/SearchBox';
 import { SearchStates } from '@/components/search/SearchStates';
 import { SessionExpiredState } from '@/components/states/States';
@@ -92,6 +93,15 @@ import {
  * Both callers render it inside their own form. Every button here is
  * `type="button"`, and Enter in the box searches rather than submitting the
  * caller's form with nothing chosen.
+ *
+ * ## On Material UI when asked
+ *
+ * `material` draws the search and the choice on `EntityPicker` (one combobox and
+ * a listbox, ADR-022) instead of the box and match buttons, the way
+ * `CustomerPicker` does — the same read, the same scope, the same sentences when
+ * there is nothing to search or no permission, and the same unsaved-work and
+ * branch-switch rules, which stay here so they are decided once. Off unless
+ * stated, so each screen and its suite move one at a time.
  */
 /** What the picker searches: one branch, every branch of one company, or nothing. */
 export type WorkOrderSearchScope = {
@@ -126,6 +136,7 @@ export function WorkOrderPicker({
   pristineId = null,
   offersBranchChooser = false,
   testId = 'work-order-picker',
+  material = false,
 }: {
   readonly messages: Messages;
   /** The question this picker asks. Supplied by the caller — see `SearchBox`. */
@@ -162,6 +173,8 @@ export function WorkOrderPicker({
    */
   readonly offersBranchChooser?: boolean;
   readonly testId?: string;
+  /** Draw the search and the choice on Material UI (`EntityPicker`). See the docblock. */
+  readonly material?: boolean;
 }) {
   const base = useId();
   const context = useWorkingContext();
@@ -191,8 +204,13 @@ export function WorkOrderPicker({
 
   const trimmed = term.trim();
   const tooShort = trimmed.length > 0 && trimmed.length < MIN_WORK_ORDER_SEARCH;
+  // On Material the combobox reads for itself; this search then asks nothing.
   const criteria =
-    canSearch && value === null && scope !== null && trimmed.length >= MIN_WORK_ORDER_SEARCH
+    !material &&
+    canSearch &&
+    value === null &&
+    scope !== null &&
+    trimmed.length >= MIN_WORK_ORDER_SEARCH
       ? { companyId: scope.companyId, branchId: scope.branchId, q: trimmed }
       : null;
 
@@ -223,6 +241,26 @@ export function WorkOrderPicker({
 
   const search = useSearchRequest({ criteria, load, version: context.version });
 
+  /*
+   * The Material combobox's read: the same operation over the same ONE-branch
+   * scope, cancellable the same way. Bound to the scope, so a new branch is a new
+   * read — and the working-context version the combobox keys on moves with it.
+   */
+  const scopeCompany = scope?.companyId ?? null;
+  const scopeBranch = scope?.branchId ?? null;
+  const loadMaterial = useCallback(
+    (term: string, cursor: string | null, signal: AbortSignal) => {
+      if (scopeCompany === null) {
+        return Promise.resolve<ReadState<CursorPage<WorkOrderListEntry>>>({
+          status: 'unavailable',
+          correlationId: null,
+        });
+      }
+      return load({ companyId: scopeCompany, branchId: scopeBranch, q: term }, cursor, signal);
+    },
+    [load, scopeCompany, scopeBranch]
+  );
+
   /** What an operator recognises a job by: its number, then the vehicle, then the party. */
   const labelOf = (entry: WorkOrderListEntry): string => {
     const parts = [
@@ -250,7 +288,33 @@ export function WorkOrderPicker({
     );
   }
 
-  if (value !== null) {
+  if (material && scope !== null) {
+    return (
+      <EntityPicker<WorkOrderListEntry>
+        messages={messages}
+        label={label}
+        value={value}
+        onChange={onChange}
+        labelOf={labelOf}
+        load={loadMaterial}
+        canSearch
+        notPermitted={translate(messages, 'workOrders.picker.notPermitted')}
+        error={error}
+        minLength={MIN_WORK_ORDER_SEARCH}
+        maxLength={MAX_WORK_ORDER_SEARCH}
+        placeholder={translate(messages, 'workOrders.picker.searchPlaceholder')}
+        example={translate(messages, 'workOrders.picker.searchExample')}
+        tooShort={translate(messages, 'workOrders.picker.tooShort')}
+        resultsLabel={translate(messages, 'workOrders.picker.results')}
+        change={translate(messages, 'workOrders.picker.change')}
+        // The unsaved-work rule is this picker's own, declared above once.
+        countsAsUnsaved={false}
+        testId={testId}
+      />
+    );
+  }
+
+  if (value !== null && !(material && scope === null)) {
     return (
       <div className="flex flex-col gap-1.5" data-testid={testId}>
         {heading}

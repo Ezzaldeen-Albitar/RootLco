@@ -66,9 +66,9 @@ The screen is titled "Invoice" <!-- invoices.page.title --> ("الفاتورة")
 "What a work order would bill, its invoice once made, the open balance, and a printable copy." <!-- invoices.page.description -->
 
 **There is no invoice list on this screen.** It opens on the question "Which work order?" <!-- invoices.choose.heading -->
-, and it explains why: "An invoice belongs to a work order. Open one from the work-order board, or
-enter its identifier here." <!-- invoices.choose.explain --> A work order named in the address is
-the only way in. There is no tenant-wide register of invoices anywhere in this release.
+, and it explains why: "An invoice belongs to a work order. Find the job below by its number, a
+name, a plate or a chassis number, or open it from the work-order board." <!-- invoices.choose.explain -->
+A work order named in the address is the only way in. There is no tenant-wide register of invoices anywhere in this release.
 
 One invoice on this screen belongs to one work order. Everything on it — the preview, the draft, the
 issue, the cancellation, the balance and the printable copy — is about that one work order.
@@ -92,23 +92,24 @@ newest first, which is the one branch-wide list of invoices that does exist.
 - **Where:** "Commerce" › "Billing", or the address `/en/invoices?workOrderId=<identifier>`.
 - **Steps:**
   1. Open "Billing".
-  2. **Required** — "Work-order identifier" <!-- invoices.choose.workOrderId --> : paste the
-     complete identifier of the work order. If it is not complete the screen answers "Enter a
-     complete identifier." <!-- invoices.common.idFormat --> You can instead use the link "Go to the
-     work-order board" <!-- invoices.choose.boardLink --> and open the work order there first.
+  2. **Required** — "Find the job" <!-- invoices.choose.workOrderId --> : type part of its number, a
+     name, a plate or a chassis number, and choose the job from the list that opens under the box.
+     You can instead use the link "Go to the work-order board" <!-- invoices.choose.boardLink --> and
+     open the work order there first. Without `wo.work_order.read` the box is a **Job's reference** <!-- invoices.choose.referenceLabel -->
+     instead, checked before the page is opened on it.
   3. Press "Show the invoice".
 - **Result:** a "Work order" <!-- invoices.workOrder.heading --> panel showing "Reference" <!-- invoices.workOrder.ref -->
-  , "State" <!-- invoices.workOrder.state --> and "Customer" <!-- invoices.workOrder.customer --> ,
+  (the job's number, as a link), "State" <!-- invoices.workOrder.state --> in words and "Customer" <!-- invoices.workOrder.customer --> ,
   then either the preview "What would be billed" (no invoice yet) or the "Invoice" <!-- invoices.detail.heading -->
   itself.
 - **Restrictions:** the screen is gated on `sal.invoice.manage` and the check happens before
   anything is read. Without it you see "You do not have access" <!-- state.denied.title --> and
   "Your account does not have permission for this. An administrator can grant it." <!-- state.denied.description -->
 - **If it goes wrong:**
-  - "Your access does not include work orders, so only the identifier is shown." <!-- invoices.workOrder.notReadable -->
-    — you hold `sal.invoice.manage` but not `wo.work_order.read`. The invoice still works; only the
-    header is blank.
-  - "The work order could not be read, so only the identifier is shown." <!-- invoices.workOrder.refused -->
+  - "Your access does not include work orders, so the job is not described here." <!-- invoices.workOrder.notReadable -->
+    — you hold `sal.invoice.manage` but not `wo.work_order.read`. The invoice still works; the job
+    is linked as **Open the job** <!-- quotations.list.openWorkOrder --> , never by its reference.
+  - "The work order could not be read, so the job is not described here." <!-- invoices.workOrder.refused -->
     — you do hold the code and the read was still refused or failed. A "Reference:" <!-- state.correlationId -->
     value is shown with it. Quote that reference to support.
   - "This work order was not found." <!-- invoices.invoice.missing -->
@@ -151,22 +152,25 @@ does not include." <!-- invoices.preview.needsFinance --> and no figures appear.
   revision and no invoice yet.
 - **Steps:**
   1. Read the preview and satisfy yourself the lines are right.
-  2. "Payer identifier" <!-- invoices.create.payer --> — **optional**. The help text reads
-     "Optional." <!-- invoices.create.payerHelp --> and the panel explains the rule: "The draft is
+  2. "A different paying customer" <!-- invoices.create.payer --> — **optional**, found by name,
+     number or phone and chosen from the list under the box. The help text reads "Optional. Leave it
+     empty to bill the customer on the work order." <!-- invoices.create.payerHelp --> and the panel
+     explains the rule: "The draft is
      written from the accepted quotation revision exactly as previewed. The quotation's payer is
      used; a payer named here counts only when the quotation names none." <!-- invoices.create.explain -->
-  3. Press "Create invoice".
-- **Result:** "The invoice was created." <!-- invoices.create.success --> and "Invoice created:" <!-- invoices.create.recorded -->
-  with the new invoice's identifier. The screen then shows the "Invoice" panel with "Number" <!-- invoices.detail.number -->
+  3. Press "Create invoice". It stays busy until the screen has read the new invoice.
+- **Result:** "The invoice was created." <!-- invoices.create.success --> and "The draft invoice was
+  created." <!-- invoices.create.recorded --> — a draft has no number yet, and no reference is
+  printed in its place. The screen then shows the "Invoice" panel with "Number" <!-- invoices.detail.number -->
   reading "Not issued" <!-- invoices.detail.notIssued --> , "Status" <!-- invoices.detail.status -->
   reading "Draft" <!-- invoices.status.draft --> , and "Issued at" <!-- invoices.detail.issuedAt -->
   reading "Not issued yet" <!-- invoices.detail.notIssuedYet --> .
 - **Restrictions:** one invoice per work order. A draft carries no number: the number is allocated
   only at issue (6.2.5).
 - **If it goes wrong:**
-  - "An invoice already existed for this work order; nothing further was created:" <!-- invoices.create.replayed -->
-    — your request reached the service twice. Nothing was duplicated; the identifier shown is the
-    existing invoice.
+  - "An invoice already existed for this work order; nothing further was created." <!-- invoices.create.replayed -->
+    — your request reached the service twice. Nothing was duplicated; the invoice shown is the
+    existing one.
   - "The invoice could not be created; the work order may already have one. The screen was re-read." <!-- invoices.create.conflict -->
     — read what the screen now shows before trying again.
 - **Screenshot:** no screenshot available at this version.
@@ -181,7 +185,10 @@ does not include." <!-- invoices.preview.needsFinance --> and no figures appear.
 - **Steps:**
   1. Check the "Lines" <!-- invoices.detail.lines.heading --> and the "Totals" <!-- invoices.detail.totals -->
      .
-  2. Press "Issue invoice".
+  2. Press "Issue invoice". The screen asks first — **Issue this invoice?** <!-- invoices.issue.confirmTitle -->
+     — repeating what issuing does; press **Issue invoice** again to go ahead, or **Cancel** <!-- overlay.cancel -->
+     . The question stays up, reading **Working…** <!-- overlay.working --> , until the invoice has
+     been read again.
 - **Result:** "The invoice was issued." <!-- invoices.issue.success --> and "Invoice issued with
   number" <!-- invoices.issue.recorded --> followed by the allocated number. "Status" changes to
   "Issued" <!-- invoices.status.issued --> and "Issued at" carries the moment.
@@ -211,9 +218,11 @@ does not include." <!-- invoices.preview.needsFinance --> and no figures appear.
 - **Who:** an account holding `sal.invoice.manage` and `sal.finance.view`.
 - **Where:** "Commerce" › "Billing", on a draft invoice, under "Actions".
 - **Steps:**
-  1. Press "Cancel this draft".
-  2. **Required** — "Reason" <!-- invoices.cancel.reason --> : write why.
-  3. Press "Cancel the draft" <!-- invoices.cancel.submit --> .
+  1. Press "Cancel this draft". A question opens, headed "Cancel before issue".
+  2. **Required** — "Reason" <!-- invoices.cancel.reason --> : write why. **Cancel the draft** stays
+     held while the box is empty, and leaving it empty marks it red with "A reason is required." <!-- overlay.reasonRequired -->
+  3. Press "Cancel the draft" <!-- invoices.cancel.submit --> , or **Cancel** <!-- overlay.cancel -->
+     to keep the draft.
 - **Result:** "The draft was cancelled." <!-- invoices.cancel.success --> and "The draft was
   cancelled; the work order can be invoiced again." <!-- invoices.cancel.recorded --> The status
   becomes "Cancelled before issue" <!-- invoices.status.void_before_issue --> .
@@ -260,7 +269,8 @@ receipt (6.3.5).
 - **Steps:**
   1. Press "Show printable copy".
   2. Check the document. It shows "Number", "Status", "Issued" <!-- invoices.print.issuedAt --> ,
-     "Work order" <!-- invoices.print.workOrder --> and "Payer identifier", then the table captioned
+     "Work order" <!-- invoices.print.workOrder --> (its number) and "Paying customer" <!-- invoices.print.payer -->
+     by name, then the table captioned
      "Invoice lines" <!-- invoices.print.linesCaption --> with columns "Line", "Description",
      "Type", "Quantity", "Unit price", "Net", "Tax" and "Gross".
   3. Press "Print" <!-- invoices.print.print --> to open your browser's own print dialog.
@@ -268,6 +278,12 @@ receipt (6.3.5).
 - **Result:** the browser's print preview. **This is always the browser's own print. No PDF is
   generated and there is no server-side document route** — the copy is composed in the browser from
   what was read.
+- **Names, and dates in order.** The paying customer is named — the work order's customer when that
+  customer pays, otherwise the name the branch's invoice list gives this invoice, which it gives only
+  to somebody who may read customers. Where no name can be given the copy reads "Not shown here" <!-- invoices.detail.payerNotShown -->
+  ; it never prints the customer's reference. The same holds on the "Invoice" panel on screen. The
+  issue date is written in your language's reading order, so an Arabic copy prints the day, month
+  and year in order on paper.
 - **Restrictions:** the descriptions on the copy do not come from the invoice. The document says so:
   "Line descriptions are taken from the accepted quotation revision this invoice was made from." <!-- invoices.print.descriptionsFromQuotation -->
   On the invoice panel itself the same fact reads "Invoice lines carry no description; the
@@ -388,10 +404,11 @@ it."**, and a counter-sale return moves the stock but not the money.
    shown" <!-- creditNotes.targetLabel --> , because "A credit note belongs to the branch that raised
    it. The notes shown are those of the branch you are working in." <!-- creditNotes.targetExplain -->
 2. Read **Credit notes at this branch** <!-- creditNotes.list.heading --> . It opens on the notes
-   **Waiting for a second person** <!-- creditNotes.state.pending --> ; **Show**
-   <!-- creditNotes.list.status --> changes it to **Approved**, **Refused** or **All credit notes**
-   <!-- creditNotes.state.approved / .rejected / creditNotes.list.all --> . The columns are **Why it
-   was raised**, **Amount**, **Approval** and **Action** <!-- creditNotes.column.* --> ; an unsettled
+   **Waiting for a second person** <!-- creditNotes.state.pending --> ; the buttons under **Show**
+   <!-- creditNotes.list.status --> change it to **Approved**, **Refused** or **All**
+   <!-- creditNotes.state.approved / .rejected / filters.chips.all --> , the one in force shown
+   pressed. The list pages with **Previous** and **Next**. The columns are **Why it
+   was raised**, **Amount** and **Approval** <!-- creditNotes.column.* --> ; an unsettled
    note shows **Nothing credited yet** <!-- creditNotes.notIssued --> under its reason. A note you
    raised yourself is marked **Raised by you** <!-- creditNotes.byYou --> and, while it waits,
    **Waiting for another approver** <!-- creditNotes.ownRequest --> .
@@ -425,7 +442,9 @@ half-written credit asks first.
 1. Open the note from the list (step 3 above).
 2. Check the amount and the reason, and press **Approve this credit note**
    <!-- creditNotes.approve.action --> . "Approving credits this amount against its invoice, so what
-   the customer owes goes down by it." <!-- creditNotes.approve.explain -->
+   the customer owes goes down by it." <!-- creditNotes.approve.explain --> The screen asks once more,
+   **Approve this credit note?** <!-- creditNotes.approve.confirmTitle --> , naming the amount and the
+   reason; press **Approve this credit note** again, or **Cancel** <!-- overlay.cancel --> .
 3. The screen says "The credit note was approved. What the customer owes on the invoice has gone
    down by its amount." <!-- creditNotes.approve.done --> , the note reads **Approved**, and the list
    is read again.
@@ -443,7 +462,6 @@ whoever raised a credit note cannot approve it." <!-- creditNotes.detail.approva
 
 - **No rejection.** A note that should not be approved is simply left waiting; it credits nothing.
 - One branch at a time. There is no view across a company.
-- Only the most recent are listed: **"Only the most recent are shown."** <!-- creditNotes.list.truncated -->
 - Where none exists: **"Nothing has been credited at this branch."** <!-- creditNotes.list.none -->
 
 **If it goes wrong**
@@ -553,13 +571,15 @@ anything is read.
 - **Steps:**
   1. **Required** — "Method" <!-- payments.record.method --> : choose one of the organisation's own
      payment methods. See the restriction below.
-  2. **Required** — "Payer identifier" <!-- payments.record.payer --> . Help text: "The business
-     partner paying. No receipt read publishes a name, so this is an identifier." <!-- payments.record.payerHelp -->
+  2. **Required** — "Paying customer" <!-- payments.record.payer --> : find them by name, number or
+     phone and choose them from the list under the box. Without `crm.customer.read` the box is a
+     **Paying customer's reference** <!-- payments.record.payerReference --> instead.
   3. **Required** — "Currency" <!-- payments.record.currency --> . "Three letters, such as USD." <!-- payments.common.currencyFormat -->
   4. **Required** — "Amount received" <!-- payments.record.amount --> . Help text: "As received.
      Applying it to an invoice is a separate step." <!-- payments.record.amountHelp --> The rule is
      "A positive amount with at most four decimal places." <!-- payments.common.amountFormat -->
-  5. Press "Record the payment".
+  5. Press "Record the payment". It stays busy until the answer arrives, and a lost answer is
+     replayed, never recorded twice.
 - **Result:** "The payment was recorded." <!-- payments.record.success --> and "Payment recorded.
   Receipt" <!-- payments.record.recorded --> followed by the receipt reference. The receipt appears
   at the top of "Receipts of this branch", whose caption is "Receipts, newest received first" <!-- payments.list.caption -->
@@ -586,26 +606,30 @@ anything is read.
 
 **IMPLEMENTED (UI)**
 
-The list "Receipts of this branch" has the columns "Receipt" <!-- payments.list.reference --> ,
-"Received" <!-- payments.list.receivedAt --> , "Payer" <!-- payments.list.payer --> , "Method" <!-- payments.list.method -->
+The list "Receipts of this branch" pages with **Previous** and **Next** and has the columns
+"Receipt" <!-- payments.list.reference --> , "Received" <!-- payments.list.receivedAt --> , "Payer" <!-- payments.list.payer -->
+(by name; "Not shown here" <!-- payments.list.payerNotShown --> for somebody who may not read
+customers, never the customer's reference), "Method" <!-- payments.list.method -->
 , "Received" <!-- payments.list.money --> , "Not yet applied" and "State" <!-- payments.list.status -->
 . A state is one of "Recorded", "Partly applied" <!-- payments.status.partially_allocated --> ,
 "Fully applied" <!-- payments.status.allocated --> or "Reversed".
 
-Filters, under "Filter the receipts" <!-- payments.list.filtersLabel --> : "Payer identifier" <!-- payments.list.payerFilter -->
-, "State" <!-- payments.list.statusFilter --> (default "Any state" <!-- payments.list.anyStatus -->
-) and "Invoice identifier" <!-- payments.list.invoiceFilter --> , which "Shows only receipts already
-applied to that invoice." <!-- payments.list.invoiceFilterHelp --> Press "Apply filters" <!-- payments.list.apply -->
-.
+Filters, under "Filter the receipts" <!-- payments.list.filtersLabel --> : the "State" <!-- payments.list.statusFilter -->
+buttons ("All" or one state), and, under "Payer and invoice" <!-- payments.list.moreFilters --> ,
+"Paying customer" <!-- payments.list.payerFilter --> and "Invoice" <!-- payments.list.invoiceFilter -->
+, each found by name or number. Each applies as soon as it is chosen. Without `crm.customer.read`
+the payer is a typed reference applied with "Apply filters" <!-- payments.list.apply --> .
 
 **There is no date filter, and that is deliberate:** "The receipt list takes no date range: it is
 ordered by when the money was received, newest first." <!-- payments.list.noDateFilter -->
 
 When nothing matches: "No receipt in this branch matches." <!-- payments.list.empty -->
 
-Opening a row shows "Receipt" <!-- payments.receipt.heading --> with its "State", "Received",
-"Payer", "Method", "Received" and "Not yet applied". The panel states its own honesty limit: **"The
-receipt reads carry identifiers only: no payer name, and no record of who took the payment."** <!-- payments.receipt.noNames -->
+Press **Open** <!-- payments.list.open --> on a row (shown pressed on the receipt that is open) to
+see "Receipt" <!-- payments.receipt.heading --> with its "State", "Received", "Payer" (by name),
+"Method", "Received" and "Not yet applied". The panel states its own honesty limit: **"Applied
+invoices are named by reference: the receipt read publishes no invoice number, and no record of who
+took the payment."** <!-- payments.receipt.noNames -->
 
 Failures on the detail: "That receipt was not found in this scope." <!-- payments.receipt.notFound -->
 ; "This account may not read that receipt." <!-- payments.receipt.denied --> ; "The receipt could
@@ -622,11 +646,16 @@ filtered to one invoice, `/en/payments?invoiceId=<identifier>`.
 - **Who:** an account holding `sal.finance.view` and `sal.payment.allocate`.
 - **Where:** "Commerce" › "Payments", with a branch chosen and a receipt open.
 - **Steps:**
-  1. **Required** — "Invoice identifier" <!-- payments.allocate.invoice --> . Help text: "The
-     invoice must be issued and in the same branch and currency as this receipt." <!-- payments.allocate.invoiceHelp -->
-  2. **Required** — "Amount to apply" <!-- payments.allocate.amount --> . Help text: "At most what
-     is left on this receipt, and at most what is still open on the invoice." <!-- payments.allocate.amountHelp -->
-  3. Press "Apply".
+  1. **Required** — "Invoice" <!-- payments.allocate.invoice --> : find it by its number, its payer
+     or a plate and choose it from the list under the box. Help text: "Only invoices that still have
+     money owing are offered: issued ones, and credited ones with a balance left. The invoice must be
+     in the same branch and currency as this receipt." <!-- payments.allocate.invoiceHelp -->
+  2. **Required** — "Amount to apply" <!-- payments.allocate.amount --> , in the receipt's currency,
+     which stands beside the box. Help text: "At most what is left on this receipt, and at most what
+     is still open on the invoice." <!-- payments.allocate.amountHelp -->
+  3. Press "Apply". The screen asks first — **Apply this amount?** <!-- payments.allocate.confirmTitle -->
+     — naming the amount and the invoice and repeating that an entry cannot be undone. Press
+     **Apply** again to go ahead, or **Cancel** <!-- overlay.cancel --> .
 - **Result:** "The receipt was applied." <!-- payments.allocate.success --> , an entry under
   "Applied to" <!-- payments.allocations.heading --> reading "Applied to invoice" <!-- payments.allocate.applied -->
   , and the invoice's remaining balance shown as "Still open on that invoice:" <!-- payments.allocate.invoiceOpen -->
@@ -661,15 +690,17 @@ shown are the oldest." <!-- payments.allocations.truncated -->
 - **Steps:** press "Show the printable receipt", check it, print with your browser, then press "Hide
   the printable receipt" <!-- payments.print.close --> .
 - **Result:** a copy headed "Receipt" <!-- payments.print.title --> with "Receipt", "State",
-  "Received", "Payer", "Method", "Received" and "Not yet applied", then the table captioned "What
+  "Received", "Payer" (by name, as on screen), "Method", "Received" and "Not yet applied", then the
+  table captioned "What
   this receipt has been applied to" <!-- payments.print.allocationsCaption --> with the columns
   "Invoice" <!-- payments.print.column.invoice --> , "Applied" <!-- payments.print.column.applied -->
   and "When" <!-- payments.print.column.when --> .
 - **Restrictions — say these to a customer before you hand the copy over:**
   - "There is no document route: this copy is composed from the receipt as it was read." <!-- payments.print.explain -->
-  - **"Invoices and the payer are named by identifier: the receipt reads publish no name or invoice
-    number, and no record of who took the payment."** <!-- payments.print.identifiersOnly --> The
-    printed copy carries no customer name, no invoice number and no cashier name.
+  - **"Invoices are named by reference: the receipt read publishes no invoice number, and no record
+    of who took the payment."** <!-- payments.print.identifiersOnly --> The printed copy carries the
+    customer's name, but no invoice number and no cashier name. Dates are written in your
+    language's reading order, so an Arabic copy prints them in order on paper.
 - **If it goes wrong:** "More entries exist than this copy shows." <!-- payments.print.truncated -->
   — the copy is not the whole allocation history. Read the receipt on screen for the rest. Where
   nothing has been applied: "This receipt has not been applied to anything." <!-- payments.print.noAllocations -->

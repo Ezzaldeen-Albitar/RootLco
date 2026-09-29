@@ -10,6 +10,7 @@ import {
   DateTimeField,
   ZonedDateTimeField,
   type DayProblem,
+  type MomentProblem,
   dayToPicker,
   instantToPicker,
   pickerToDay,
@@ -963,6 +964,79 @@ describe('DateField and DateTimeField: the FieldFrame contract on a picker', () 
     mount(<ZonedHost zone="America/New_York" />);
     const group = screen.getByRole('group', { name: /^Visit time/ });
     expect(pickerInput(group)).toHaveValue('15/01/2026 07:00');
+  });
+
+  /*
+   * A moment only partly typed is reported as `'incomplete'`, as a day is: the
+   * picker publishes neither a value nor an error while parts are blank, so
+   * without the wrapper's own report an unfinished moment reads as "none" and a
+   * form sends without it (the quotation expiry). Falsified by removing
+   * `onPartsBlank` from `ZonedDateTimeField`: the first report never comes.
+   */
+  function EmptyZonedHost({
+    onMoment,
+    onProblem,
+  }: {
+    readonly onMoment: (moment: string) => void;
+    readonly onProblem: (problem: MomentProblem) => void;
+  }) {
+    const [value, setValue] = useState('');
+    return (
+      <ZonedDateTimeField
+        messages={en}
+        label="Visit time"
+        value={value}
+        onChange={(next) => {
+          onMoment(next);
+          setValue(next);
+        }}
+        onProblem={onProblem}
+        timezone="Asia/Riyadh"
+      />
+    );
+  }
+
+  it('ZonedDateTimeField: reports a moment only partly typed as incomplete, and withdraws it once whole', async () => {
+    const user = userEvent.setup();
+    const onMoment = vi.fn();
+    const onProblem = vi.fn();
+    mount(<EmptyZonedHost onMoment={onMoment} onProblem={onProblem} />);
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    expect(onProblem).not.toHaveBeenCalled();
+    await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('0112');
+    expect(onProblem).toHaveBeenLastCalledWith('incomplete');
+    expect(onMoment.mock.calls.every(([moment]) => moment === '')).toBe(true);
+    await user.keyboard('20261000');
+    expect(onMoment).toHaveBeenLastCalledWith('2026-12-01T10:00:00+03:00');
+    expect(onProblem).toHaveBeenLastCalledWith(null);
+  });
+
+  it('ZonedDateTimeField: withdraws the incomplete report when the typed parts are cleared again', async () => {
+    const user = userEvent.setup();
+    const onProblem = vi.fn();
+    mount(<EmptyZonedHost onMoment={() => undefined} onProblem={onProblem} />);
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    const day = within(group).getAllByRole('spinbutton')[0] as HTMLElement;
+    await user.click(day);
+    await user.keyboard('01');
+    expect(onProblem).toHaveBeenLastCalledWith('incomplete');
+    await user.click(day);
+    await user.keyboard('{Backspace}');
+    expect(onProblem).toHaveBeenLastCalledWith(null);
+  });
+
+  it('ZonedDateTimeField: reports a moment typed whole but impossible, and emits no instant', async () => {
+    const user = userEvent.setup();
+    const onMoment = vi.fn();
+    const onProblem = vi.fn();
+    mount(<EmptyZonedHost onMoment={onMoment} onProblem={onProblem} />);
+    const group = screen.getByRole('group', { name: /^Visit time/ });
+    await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('310220261000');
+    expect(onProblem.mock.lastCall?.[0]).not.toBeNull();
+    expect(onProblem.mock.lastCall?.[0]).not.toBe('incomplete');
+    expect(onMoment.mock.calls.every(([moment]) => moment === '')).toBe(true);
   });
 
   /*

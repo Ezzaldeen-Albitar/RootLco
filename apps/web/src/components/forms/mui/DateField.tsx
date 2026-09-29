@@ -120,6 +120,11 @@ import {
  * `type="date"` box this replaced refused such a submission through the
  * browser's own check; this is that refusal, handed to the caller to word.
  *
+ * A moment is no different: `DateTimeField` and `ZonedDateTimeField` report
+ * `'incomplete'` the same way while some of the date and time is typed and
+ * there is still no moment, so a caller cannot mistake an unfinished expiry
+ * for none and send the form without it.
+ *
  * ## After a refusal the cursor lands on the part to finish
  *
  * A refused form moves the cursor to its first invalid field
@@ -168,9 +173,18 @@ export interface DateFieldProps extends PickerFieldProps {
   readonly max?: CalendarDay | undefined;
 }
 
+/**
+ * What a `DateTimeField` finds wrong: the picker's own findings, or
+ * `'incomplete'` — some parts of the moment typed and the moment not yet whole.
+ */
+export type MomentProblem = DateTimeValidationError | 'incomplete';
+
 export interface DateTimeFieldProps extends PickerFieldProps {
-  /** Reports what the picker itself finds wrong, so the caller can say it. */
-  readonly onProblem?: ((problem: DateProblem) => void) | undefined;
+  /**
+   * Reports what is wrong with the entry, `null` once nothing is, including a
+   * moment only partly typed (`'incomplete'`). Called when the finding changes.
+   */
+  readonly onProblem?: ((problem: MomentProblem) => void) | undefined;
   /** For the refusal under "All my branches" and the repeated-hour note. */
   readonly messages: Messages;
   /** An instant with an explicit offset (or `Z`), or `''` for none. */
@@ -518,12 +532,24 @@ export function ZonedDateTimeField(props: ZonedDateTimeFieldProps) {
   const minMoment = min === undefined ? null : instantToPicker(min, zone);
   const maxMoment = max === undefined ? null : instantToPicker(max, zone);
   const [picker, keep] = useHeldPickerValue(value, zone, instantToPicker);
+  const [partsBlank, setPartsBlank] = useState(true);
+  const [pickerProblem, setPickerProblem] = useState<DateTimeValidationError>(null);
+  // Parts typed and still no moment at all: the picker is silent about this
+  // case, exactly as for a day (see "A day half typed is reported").
+  const problem: MomentProblem = !partsBlank && picker === null ? 'incomplete' : pickerProblem;
+  const reported = useRef<MomentProblem>(null);
   const fieldRef = useRef<FieldRef<Dayjs | null> | null>(null);
   const enterField = useEnterFirstUnfinishedPart(fieldRef);
   const textField: Record<string, unknown> = {
     ...textFieldSlot(wiring, { ...props, description }),
+    onPartsBlank: setPartsBlank,
     onFocusRequest: enterField,
   };
+  useEffect(() => {
+    if (reported.current === problem) return;
+    reported.current = problem;
+    onProblem?.(problem);
+  }, [problem, onProblem]);
 
   return (
     <DateTimePicker
@@ -536,7 +562,7 @@ export function ZonedDateTimeField(props: ZonedDateTimeFieldProps) {
         onEdit?.();
         onChange(emitted);
       }}
-      onError={(problem) => onProblem?.(problem)}
+      onError={setPickerProblem}
       disabled={disabled ?? false}
       readOnly={readOnly ?? false}
       {...(minMoment === null ? {} : { minDateTime: minMoment })}

@@ -1,7 +1,11 @@
 'use client';
 
 /**
- * Credit notes (DEF-T-07): raise one, see what is waiting, and approve.
+ * Credit notes (DEF-T-07): raise one, see what is waiting, and approve. On the
+ * shared Material UI wrappers since the sales and finance slice (ADR-022): the
+ * branch's notes are `OperationalGrid` rows walked with the route's cursor, the
+ * state filter is `FilterToolbar`'s chips, and approving asks first
+ * (`ConfirmDialog`).
  *
  * The acceptance campaign took a counter-sale part back, was told "a credit note
  * is waiting for a second person to approve it", and then found nothing anywhere
@@ -44,38 +48,36 @@
  * outcome.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
 
-import { SelectField } from '@/components/forms/Field';
+import {
+  OperationalGrid,
+  type OperationalColumn,
+  type RowAction,
+} from '@/components/data/OperationalGrid';
+import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
+import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
-import {
-  BranchListView,
-  BranchTargetForm,
-  PANEL,
-  useBranchList,
-} from '@/features/inventory/components/stock-operations';
-import { SECONDARY_BUTTON } from '@/features/inventory/components/shared';
+import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
+import { BranchTargetForm, PANEL } from '@/features/inventory/components/stock-operations';
 import type { StockTarget } from '@/features/inventory/inventory-contract';
-import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
+import { useReread } from '@/lib/api/use-reread';
+import { unreachable, type ActionState } from '@/lib/forms/action-result';
 import { formatMoney } from '@/lib/money';
 
 import { approveCreditNote, listCreditNotes, readCreditNote } from '../api';
 import { CREDIT_NOTE_STATES, type CreditNote, type CreditNoteState } from '../billing-contract';
 import { CreditNoteRequestForm } from './CreditNoteRequestForm';
-import { OutcomeNote, PRIMARY_BUTTON } from './shared';
+import { OutcomeNote, When } from './shared';
 
-type ListFilter = CreditNoteState | 'all';
-
-const READERS: Record<ListFilter, (target: StockTarget) => ReturnType<typeof listCreditNotes>> = {
-  all: (target) => listCreditNotes(target),
-  pending: (target) => listCreditNotes(target, { approvalState: 'pending' }),
-  approved: (target) => listCreditNotes(target, { approvalState: 'approved' }),
-  rejected: (target) => listCreditNotes(target, { approvalState: 'rejected' }),
-};
+/** `''` is every state — the toolbar's own "All" choice. */
+type ListFilter = CreditNoteState | '';
 
 export function CreditNotesScreen({
   locale,
@@ -146,6 +148,7 @@ export function CreditNotesScreen({
           epoch={epoch}
           currentUserId={currentUserId}
           canSearchInvoices={canSearchInvoices}
+          chosen={chosen}
           onOpen={setChosen}
           onRequested={(key, creditNoteId) => {
             setNotice(key);
@@ -164,6 +167,7 @@ function BranchCreditNotes({
   epoch,
   currentUserId,
   canSearchInvoices,
+  chosen,
   onOpen,
   onRequested,
 }: {
@@ -174,17 +178,112 @@ function BranchCreditNotes({
   readonly epoch: number;
   readonly currentUserId: string;
   readonly canSearchInvoices: boolean;
+  readonly chosen: string | null;
   readonly onOpen: (creditNoteId: string) => void;
   readonly onRequested: (noticeKey: string, creditNoteId: string) => void;
 }) {
   const [filter, setFilter] = useState<ListFilter>('pending');
-  const read = useCallback((where: StockTarget) => READERS[filter](where), [filter]);
-  const { list, reload } = useBranchList<CreditNote>(
-    target,
-    read,
-    'creditNotes.list.refused',
-    'creditNotes.list.unavailable',
-    `${filter}#${epoch}`
+  const [raised, setRaised] = useState(0);
+  const load = useCallback(
+    async (request: TableRequest, cursor: string | null): Promise<ServerPage<CreditNote>> => {
+      const page = await listCreditNotes(target, filter === '' ? {} : { approvalState: filter }, {
+        cursor,
+        limit: request.pageSize,
+      });
+      if (page.status !== 'ok') {
+        return {
+          status: page.status,
+          rows: [],
+          nextCursor: null,
+          hasMore: false,
+          correlationId: page.correlationId,
+        };
+      }
+      return {
+        status: 'ok',
+        rows: page.data.items,
+        nextCursor: page.data.nextCursor,
+        hasMore: page.data.hasMore,
+        correlationId: page.correlationId,
+      };
+    },
+    [target, filter]
+  );
+  const table = useServerTable<CreditNote>(load, {
+    initial: INITIAL_REQUEST,
+    // The filter lives outside the table request, and a note raised or
+    // approved here is a new read: both are named so a change re-reads.
+    loadKey: `${filter}#${epoch}#${raised}`,
+  });
+
+  const columns = useMemo<readonly OperationalColumn<CreditNote>[]>(
+    () => [
+      {
+        id: 'reason',
+        headerKey: 'creditNotes.column.reason',
+        flex: 2,
+        cell: (note) => (
+          <span className="flex flex-col">
+            <bdi>{note.reason}</bdi>
+            <span className="text-caption text-text-muted">
+              {note.issuedAt === null ? (
+                translate(messages, 'creditNotes.notIssued')
+              ) : (
+                <When value={note.issuedAt} locale={locale} />
+              )}
+            </span>
+          </span>
+        ),
+      },
+      {
+        id: 'amount',
+        headerKey: 'creditNotes.column.amount',
+        numeric: true,
+        cell: (note) => (
+          <span className="font-mono" dir="ltr">
+            {formatMoney(note.amount, locale)}
+          </span>
+        ),
+      },
+      {
+        id: 'state',
+        headerKey: 'creditNotes.column.state',
+        flex: 1.4,
+        cell: (note) => {
+          const own = note.requestedBy === currentUserId;
+          return (
+            <span className="flex flex-col">
+              <span>{translateDynamic(messages, `creditNotes.state.${note.approvalState}`)}</span>
+              {own ? (
+                <span className="text-caption text-text-muted">
+                  {translate(messages, 'creditNotes.byYou')}
+                </span>
+              ) : null}
+              {own && note.approvalState === 'pending' ? (
+                <span className="text-caption text-text-muted">
+                  {translate(messages, 'creditNotes.ownRequest')}
+                </span>
+              ) : null}
+            </span>
+          );
+        },
+      },
+    ],
+    [currentUserId, locale, messages]
+  );
+
+  const rowActions = useCallback(
+    (note: CreditNote): readonly RowAction[] => [
+      {
+        kind: 'button',
+        label: translate(messages, 'creditNotes.open'),
+        about: `${formatMoney(note.amount, locale)} ${note.reason}`,
+        // A choice among the rows: which note is open is announced with it.
+        pressed: note.id === chosen,
+        onClick: () => onOpen(note.id),
+      },
+    ],
+    [chosen, locale, messages, onOpen]
   );
 
   return (
@@ -193,93 +292,46 @@ function BranchCreditNotes({
         <h2 id="credit-notes-heading" className="text-body font-medium text-text-primary">
           {translate(messages, 'creditNotes.list.heading')}
         </h2>
-        <div className="sm:max-w-xs">
-          <SelectField
-            label={translate(messages, 'creditNotes.list.status')}
-            value={filter}
-            onChange={(event) => setFilter(event.target.value as ListFilter)}
-            options={[
-              ...CREDIT_NOTE_STATES.map((value) => ({
+        <FilterToolbar
+          messages={messages}
+          label={translate(messages, 'creditNotes.list.filtersLabel')}
+          testId="credit-notes-toolbar"
+          filters={[
+            {
+              kind: 'chips',
+              key: 'approvalState',
+              label: translate(messages, 'creditNotes.list.status'),
+              options: CREDIT_NOTE_STATES.map((value) => ({
                 value,
                 label: translateDynamic(messages, `creditNotes.state.${value}`),
               })),
-              { value: 'all', label: translate(messages, 'creditNotes.list.all') },
-            ]}
-          />
-        </div>
-        <BranchListView
+              value: filter,
+              onChange: (next) => setFilter(next as ListFilter),
+            },
+          ]}
+        />
+        <OperationalGrid<CreditNote>
           messages={messages}
-          list={list}
-          loadingKey="creditNotes.list.loading"
-          noneKey="creditNotes.list.none"
-          truncatedKey="creditNotes.list.truncated"
-        >
-          {(items) => (
-            <table className="w-full text-body">
-              <caption className="sr-only">
-                {translate(messages, 'creditNotes.list.caption')}
-              </caption>
-              <thead>
-                <tr className="text-caption text-text-muted">
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'creditNotes.column.reason')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'creditNotes.column.amount')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'creditNotes.column.state')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'creditNotes.column.action')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((note) => {
-                  const own = note.requestedBy === currentUserId;
-                  return (
-                    <tr key={note.id} className="border-t border-border align-top">
-                      <td>
-                        {note.reason}
-                        <span className="block text-caption text-text-muted" dir="ltr">
-                          {note.issuedAt === null
-                            ? translate(messages, 'creditNotes.notIssued')
-                            : formatDateTime(note.issuedAt, locale)}
-                        </span>
-                      </td>
-                      <td className="text-end" dir="ltr">
-                        {formatMoney(note.amount, locale)}
-                      </td>
-                      <td>
-                        {translateDynamic(messages, `creditNotes.state.${note.approvalState}`)}
-                        {own ? (
-                          <span className="block text-caption text-text-muted">
-                            {translate(messages, 'creditNotes.byYou')}
-                          </span>
-                        ) : null}
-                        {own && note.approvalState === 'pending' ? (
-                          <span className="block text-caption text-text-muted">
-                            {translate(messages, 'creditNotes.ownRequest')}
-                          </span>
-                        ) : null}
-                      </td>
-                      <td className="text-end">
-                        <button
-                          type="button"
-                          className={SECONDARY_BUTTON}
-                          onClick={() => onOpen(note.id)}
-                        >
-                          {translate(messages, 'creditNotes.open')}
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </BranchListView>
+          locale={locale}
+          label={translate(messages, 'creditNotes.list.caption')}
+          columns={columns}
+          rowId={(note) => note.id}
+          table={table}
+          rowActions={rowActions}
+          suppressEmptyState
+          // A refusal names what it needs: the credit code AND the finance view.
+          stateDescriptions={{
+            denied: 'creditNotes.list.refused',
+            unavailable: 'creditNotes.list.unavailable',
+            error: 'creditNotes.list.unavailable',
+          }}
+          testId="credit-notes-grid"
+        />
+        {table.response && table.response.rows.length === 0 ? (
+          <p className="py-4 text-center text-body text-text-secondary" lang={locale}>
+            {translate(messages, 'creditNotes.list.none')}
+          </p>
+        ) : null}
       </section>
 
       <section aria-labelledby="credit-note-request-heading" className={PANEL}>
@@ -293,7 +345,7 @@ function BranchCreditNotes({
               echo.creditNote.id
             );
             setFilter('pending');
-            reload();
+            setRaised((n) => n + 1);
           }}
         />
       </section>
@@ -301,17 +353,14 @@ function BranchCreditNotes({
   );
 }
 
-type DetailState =
-  | { readonly phase: 'loading' }
-  | { readonly phase: 'read'; readonly note: CreditNote }
-  | { readonly phase: 'failed'; readonly messageKey: string };
-
 /**
  * One credit note, read by id — and, when it is waiting and the caller did not
  * raise it, the approval.
  *
  * The read takes no branch, so a note reached from a return's result is shown
- * without the operator having to work out which branch raised it.
+ * without the operator having to work out which branch raised it. Approving
+ * asks first, naming the amount and the reason, and stays busy until the note
+ * has been read again.
  */
 function CreditNoteDetail({
   locale,
@@ -328,54 +377,45 @@ function CreditNoteDetail({
   readonly onClose: () => void;
   readonly onApproved: (noticeKey: string) => void;
 }) {
-  const [state, setState] = useState<DetailState>({ phase: 'loading' });
-  const [reads, setReads] = useState(0);
+  const read = useCallback(() => readCreditNote(creditNoteId), [creditNoteId]);
+  const detail = useReread<CreditNote>(read);
+  const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
-  useEffect(() => {
-    let live = true;
-    void readCreditNote(creditNoteId).then((answer) => {
-      if (!live) return;
-      if (answer.status === 'ok') {
-        setState({ phase: 'read', note: answer.data });
-        return;
-      }
-      setState({
-        phase: 'failed',
-        messageKey:
-          answer.status === 'denied'
-            ? 'creditNotes.detail.refused'
-            : answer.status === 'not-found'
-              ? 'creditNotes.detail.missing'
-              : 'creditNotes.detail.unavailable',
-      });
-    });
-    return () => {
-      live = false;
-    };
-  }, [creditNoteId, reads]);
-
   const approve = async () => {
     setBusy(true);
-    const result = await approveCreditNote(creditNoteId);
-    setBusy(false);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success' && result.created) {
-      setOutcome(null);
-      setState({ phase: 'read', note: result.created.creditNote });
-      onApproved(
-        result.created.replayed ? 'creditNotes.approve.replayed' : 'creditNotes.approve.done'
-      );
-      return;
+    try {
+      let result: Awaited<ReturnType<typeof approveCreditNote>>;
+      try {
+        result = await approveCreditNote(creditNoteId);
+      } catch {
+        setAsking(false);
+        setOutcome(unreachable(1));
+        return;
+      }
+      notifyActionResult(result.state, messages);
+      setAsking(false);
+      if (result.state.status === 'success' && result.created) {
+        setOutcome(null);
+        onApproved(
+          result.created.replayed ? 'creditNotes.approve.replayed' : 'creditNotes.approve.done'
+        );
+        // Busy until the note, now approved, is read again.
+        await detail.reload();
+        return;
+      }
+      setOutcome(result.state);
+      // A conflict means the note or its invoice moved on: read it again so what
+      // is shown is what the server now holds.
+      if (result.state.status === 'conflict') await detail.reload();
+    } finally {
+      setBusy(false);
     }
-    setOutcome(result.state);
-    // A conflict means the note or its invoice moved on: read it again so what
-    // is shown is what the server now holds.
-    if (result.state.status === 'conflict') setReads((n) => n + 1);
   };
 
-  const note = state.phase === 'read' ? state.note : null;
+  const state = detail.value;
+  const note = state?.status === 'ok' ? state.data : null;
   const own = note !== null && note.requestedBy === currentUserId;
 
   return (
@@ -383,14 +423,27 @@ function CreditNoteDetail({
       <h2 id="credit-note-detail-heading" className="text-body font-medium text-text-primary">
         {translate(messages, 'creditNotes.detail.heading')}
       </h2>
-      {state.phase === 'loading' ? (
-        <p className="text-caption text-text-muted">
-          {translate(messages, 'creditNotes.detail.loading')}
-        </p>
-      ) : state.phase === 'failed' ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, state.messageKey)}
-        </p>
+      {state === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : state.status !== 'ok' ? (
+        state.status === 'not-found' ? (
+          <p role="alert" className="text-body text-error">
+            {translate(messages, 'creditNotes.detail.missing')}
+          </p>
+        ) : (
+          <MuiReadFailureState
+            messages={messages}
+            locale={locale}
+            status={state.status}
+            correlationId={state.correlationId}
+            descriptionKey={
+              state.status === 'denied'
+                ? 'creditNotes.detail.refused'
+                : 'creditNotes.detail.unavailable'
+            }
+            onRetry={() => void detail.reload()}
+          />
+        )
       ) : (
         <>
           <dl className="grid gap-3 sm:grid-cols-3">
@@ -398,8 +451,8 @@ function CreditNoteDetail({
               <dt className="text-caption text-text-muted">
                 {translate(messages, 'creditNotes.detail.amount')}
               </dt>
-              <dd className="text-body text-text-primary" dir="ltr">
-                {formatMoney(state.note.amount, locale)}
+              <dd className="font-mono text-body text-text-primary" dir="ltr">
+                {formatMoney(state.data.amount, locale)}
               </dd>
             </div>
             <div>
@@ -407,17 +460,19 @@ function CreditNoteDetail({
                 {translate(messages, 'creditNotes.detail.state')}
               </dt>
               <dd className="text-body text-text-primary">
-                {translateDynamic(messages, `creditNotes.state.${state.note.approvalState}`)}
+                {translateDynamic(messages, `creditNotes.state.${state.data.approvalState}`)}
               </dd>
             </div>
             <div>
               <dt className="text-caption text-text-muted">
                 {translate(messages, 'creditNotes.detail.approvedAt')}
               </dt>
-              <dd className="text-body text-text-primary" dir="ltr">
-                {state.note.approvedAt === null
-                  ? translate(messages, 'creditNotes.detail.notApproved')
-                  : formatDateTime(state.note.approvedAt, locale)}
+              <dd className="text-body text-text-primary">
+                {state.data.approvedAt === null ? (
+                  translate(messages, 'creditNotes.detail.notApproved')
+                ) : (
+                  <When value={state.data.approvedAt} locale={locale} />
+                )}
               </dd>
             </div>
           </dl>
@@ -425,12 +480,14 @@ function CreditNoteDetail({
             <p className="text-caption text-text-muted">
               {translate(messages, 'creditNotes.detail.reason')}
             </p>
-            <p className="text-body text-text-primary">{state.note.reason}</p>
+            <p className="text-body text-text-primary">
+              <bdi>{state.data.reason}</bdi>
+            </p>
           </div>
           <p className="text-caption text-text-muted">
             {translate(messages, 'creditNotes.detail.approvalNote')}
           </p>
-          {state.note.approvalState !== 'pending' ? null : own ? (
+          {state.data.approvalState !== 'pending' ? null : own ? (
             <p className="text-body text-text-secondary">
               {translate(messages, 'creditNotes.detail.ownRequest')}
             </p>
@@ -440,26 +497,42 @@ function CreditNoteDetail({
                 {translate(messages, 'creditNotes.approve.explain')}
               </p>
               <div>
-                <button
+                <Button
                   type="button"
-                  className={PRIMARY_BUTTON}
+                  variant="contained"
                   disabled={busy}
+                  aria-busy={busy || undefined}
                   onClick={() => {
-                    void approve();
+                    setOutcome(null);
+                    setAsking(true);
                   }}
                 >
                   {translate(messages, 'creditNotes.approve.action')}
-                </button>
+                </Button>
               </div>
             </div>
           )}
+          <ConfirmDialog
+            open={asking && note !== null && !own}
+            messages={messages}
+            title={translate(messages, 'creditNotes.approve.confirmTitle')}
+            description={formatMessage(translate(messages, 'creditNotes.approve.confirmExplain'), {
+              amount: formatMoney(state.data.amount, locale),
+              reason: state.data.reason,
+            })}
+            confirmLabel={translate(messages, 'creditNotes.approve.action')}
+            pending={busy}
+            onCancel={() => setAsking(false)}
+            onConfirm={() => void approve()}
+            testId="credit-note-approve-dialog"
+          />
         </>
       )}
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+        <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'creditNotes.detail.close')}
-        </button>
+        </Button>
       </div>
     </section>
   );

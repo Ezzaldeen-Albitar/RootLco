@@ -11,11 +11,14 @@ import {
   TEST_BRANCH,
   branchSnapshot,
   inBranch,
-  renderLtr,
-  renderRtl as renderInRtl,
+  renderLtr as renderLtrBare,
+  renderRtl as renderRtlBare,
   RETIRED_BOX,
   WorkingBranchProbe,
 } from './render';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 import {
   discardAndSwitch,
   forgetRememberedBranch,
@@ -24,6 +27,7 @@ import {
   switchExpectingQuestion,
   switchWithoutQuestion,
 } from './support/branch-switch';
+import { findSearchedOption } from './support/picker-option';
 
 /*
  * The branch the receipts belong to is the working context's own named
@@ -31,7 +35,18 @@ import {
  * directive, `P1-32-PRE-OD-UX`). So a screen render goes inside a provider,
  * holding one branch unless a case says otherwise.
  */
-const renderRtl = (ui: ReactElement) => renderInRtl(inBranch(ui, { locale: 'ar' }));
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+// On the shared Material UI wrappers since the sales and finance slice
+// (ADR-022): every render goes inside the Material foundation.
+const renderLtr = (ui: ReactElement) => renderLtrBare(withMui(ui, 'en'));
+const renderRtl = (ui: ReactElement) =>
+  renderRtlBare(withMui(inBranch(ui, { locale: 'ar' }), 'ar'));
 
 /**
  * Payments and receipts, rendered (P1-30, `W7`, FE-016, FE-017, FE-018,
@@ -46,8 +61,15 @@ const renderRtl = (ui: ReactElement) => renderInRtl(inBranch(ui, { locale: 'ar' 
  * the server's flag and never inferred from the key; the allocate form says an
  * entry cannot be undone BEFORE it is used, sends the receipt's own currency,
  * and reads the invoice balance afterwards because the echo does not carry it;
- * the receipt says it holds no names; the printable copy names identifiers and
- * takes no figure of its own; and the route page decides before it reads.
+ * the receipt names its payer (browser QA row 5.6b) and says it holds no invoice
+ * number or cashier; the printable copy names the payer, prints invoices by
+ * reference and takes no figure of its own; and the route page decides before
+ * it reads.
+ *
+ * On the shared Material UI wrappers since the sales and finance slice: the
+ * receipts are a grid whose rows are opened with a pressed "Open" action, the
+ * state filter is chips, the payer and the invoice are comboboxes whose matches
+ * are options, amounts are money fields, and applying money asks first.
  */
 
 const EN = en as Record<string, string>;
@@ -64,7 +86,9 @@ const listBranches = vi.fn();
 const readOutstanding = vi.fn();
 const recordPayment = vi.fn();
 const allocatePayment = vi.fn();
+const readReceiptPayer = vi.fn();
 vi.mock('@/features/payments/api', () => ({
+  readReceiptPayer: (...args: unknown[]) => readReceiptPayer(...args),
   listReceipts: (...args: unknown[]) => listReceipts(...args),
   readReceipt: (...args: unknown[]) => readReceipt(...args),
   listPaymentMethods: (...args: unknown[]) => listPaymentMethods(...args),
@@ -156,6 +180,8 @@ const receipt = {
   receivedAt: '2026-09-05T09:00:00.000Z',
   evidenceDocumentVersionId: null,
   recordVersion: 1,
+  // The list names the payer beside the id, for a caller who may read customers.
+  payer: { displayName: 'Layla Haddad', displayNumber: 'C-000482', partyType: 'individual' },
 };
 
 const detail = (over: Record<string, unknown> = {}) => ({
@@ -217,6 +243,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   PERMISSIONS = [];
   listReceipts.mockResolvedValue(okPage([receipt]));
+  readReceiptPayer.mockResolvedValue({
+    displayName: 'Layla Haddad',
+    displayNumber: 'C-000482',
+    partyType: 'individual',
+  });
   readReceipt.mockResolvedValue(okRead(detail()));
   listPaymentMethods.mockResolvedValue(okRead({ items: [tenantMethod, platformMethod] }));
   listBranches.mockResolvedValue(okRead({ items: [] }));
@@ -317,7 +348,7 @@ async function choosePayer(
   label: RegExp = labelled('payments.record.payer')
 ) {
   await user.type(within(form).getByLabelText(label), 'Layla');
-  await user.click(await within(form).findByRole('button', { name: /Layla Haddad/ }));
+  await user.click(await findSearchedOption(searchCustomerDirectory, 'Layla', /Layla Haddad/));
 }
 
 /** The invoice, found by its number among the receipt branch's invoices and chosen. */
@@ -327,7 +358,28 @@ async function chooseInvoice(
   label: RegExp = labelled('payments.allocate.invoice')
 ) {
   await user.type(within(form).getByLabelText(label), 'INV-0001');
-  await user.click(await within(form).findByRole('button', { name: /INV-000123/ }));
+  await user.click(await findSearchedOption(listInvoices, 'INV-0001', /INV-000123/));
+}
+
+/** A combobox's text: the chosen record's name once one is chosen. */
+const valueOf = (element: HTMLElement) => (element as HTMLInputElement).value;
+
+/** The payer and invoice filters, beside the state chips. */
+const pickerFilters = () =>
+  screen.getByRole('group', { name: EN['payments.list.moreFilters'] as string });
+
+/** A receipt row's own action: "Open", named by the receipt it opens. */
+const OPEN_RECEIPT = `${EN['payments.list.open']} RCT-000007`;
+
+/** The allocation question, answered: nothing is applied before it. */
+async function confirmApply(user: ReturnType<typeof userEvent.setup>) {
+  const dialog = await screen.findByRole('alertdialog', {
+    name: EN['payments.allocate.confirmTitle'] as string,
+  });
+  expect(allocatePayment).not.toHaveBeenCalled();
+  await user.click(
+    within(dialog).getByRole('button', { name: EN['payments.allocate.submit'] as string })
+  );
 }
 
 async function renderPage(params: Record<string, string>, search: Record<string, string> = {}) {
@@ -390,7 +442,7 @@ describe('nothing is read until the working context names one branch', () => {
     const list = await screen.findByRole('region', {
       name: EN['payments.list.heading'] as string,
     });
-    await user.click(await within(list).findByRole('button', { name: 'RCT-000007' }));
+    await user.click(await within(list).findByRole('button', { name: OPEN_RECEIPT }));
     await waitFor(() => expect(readReceipt).toHaveBeenCalledWith(RECEIPT_ID));
     await user.click(screen.getByRole('button', { name: 'second' }));
     await waitFor(() =>
@@ -475,16 +527,16 @@ describe('a half-filled form and a branch switch', () => {
     const user = userEvent.setup();
     await openTwoBranches(user);
     const list = await screen.findByRole('region', { name: EN['payments.list.heading'] as string });
-    await user.click(await within(list).findByRole('button', { name: 'RCT-000007' }));
+    await user.click(await within(list).findByRole('button', { name: OPEN_RECEIPT }));
     const allocate = await screen.findByRole('form', {
       name: EN['payments.allocate.formLabel'] as string,
     });
     await chooseInvoice(user, allocate);
     await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
     expect(heldBranch()).toBe(TEST_BRANCH.id);
-    expect(within(allocate).getByTestId('payments-invoice-picker-chosen')).toHaveTextContent(
-      'INV-000123'
-    );
+    expect(
+      valueOf(within(allocate).getByLabelText(labelled('payments.allocate.invoice')))
+    ).toContain('INV-000123');
   });
 
   it('a chosen payer asks too, and staying keeps the choice', async () => {
@@ -493,7 +545,7 @@ describe('a half-filled form and a branch switch', () => {
     await choosePayer(user, form);
     await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
     expect(heldBranch()).toBe(TEST_BRANCH.id);
-    expect(within(form).getByTestId('payments-payer-picker-chosen')).toHaveTextContent(
+    expect(valueOf(within(form).getByLabelText(labelled('payments.record.payer')))).toContain(
       'Layla Haddad'
     );
   });
@@ -507,7 +559,6 @@ describe('a half-filled form and a branch switch', () => {
     const reopened = await screen.findByRole('form', {
       name: EN['payments.record.formLabel'] as string,
     });
-    expect(within(reopened).queryByTestId('payments-payer-picker-chosen')).toBeNull();
     expect(within(reopened).getByLabelText(labelled('payments.record.payer'))).toHaveValue('');
     // Nothing is left to lose, so the next switch does not ask.
     await switchWithoutQuestion(user, 'first');
@@ -517,14 +568,12 @@ describe('a half-filled form and a branch switch', () => {
   it('a list filter chosen by name is not unsaved work: the switch does not ask', async () => {
     const user = userEvent.setup();
     await openTwoBranches(user);
-    const filters = screen.getByRole('form', {
-      name: EN['payments.list.filtersLabel'] as string,
-    });
+    const filters = pickerFilters();
     await choosePayer(user, filters, labelled('payments.list.payerFilter'));
     await chooseInvoice(user, filters, labelled('payments.list.invoiceFilter'));
-    expect(within(filters).getByTestId('payments-invoice-filter-chosen')).toHaveTextContent(
-      'INV-000123'
-    );
+    expect(
+      valueOf(within(filters).getByLabelText(labelled('payments.list.invoiceFilter')))
+    ).toContain('INV-000123');
     await switchWithoutQuestion(user, 'second');
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
   });
@@ -537,17 +586,55 @@ describe('the receipts of the branch', () => {
     const region = await screen.findByRole('region', {
       name: EN['payments.list.heading'] as string,
     });
-    expect(within(region).getByText('RCT-000007')).toBeVisible();
-    expect(within(region).getByText(money('100.0000'))).toBeVisible();
-    expect(within(region).getByText(money('40.0000'))).toBeVisible();
-    // The same word is an OPTION in the status filter, so the row is asserted
-    // inside the table rather than anywhere in the panel.
+    const grid = within(region).getByRole('grid', { name: EN['payments.list.caption'] as string });
     expect(
-      within(within(region).getByRole('table')).getByText(
-        EN['payments.status.partially_allocated'] as string
-      )
+      await within(grid).findByText('RCT-000007', { selector: 'span.font-mono' })
     ).toBeVisible();
-    expect(within(region).getByText(PARTNER_ID)).toBeVisible();
+    expect(within(grid).getByText(money('100.0000'))).toBeVisible();
+    expect(within(grid).getByText(money('40.0000'))).toBeVisible();
+    // The same word is a CHIP in the state filter, so the row is asserted
+    // inside the grid rather than anywhere in the panel.
+    expect(
+      within(grid).getByText(EN['payments.status.partially_allocated'] as string)
+    ).toBeVisible();
+    // The payer by name (browser QA row 5.6b), never by the reference.
+    expect(within(grid).getByText('Layla Haddad')).toBeVisible();
+    expect(region.textContent).not.toContain(PARTNER_ID);
+  });
+
+  it('a payer the server does not name for this reader is said not to be shown, never printed as a reference', async () => {
+    listReceipts.mockResolvedValue(
+      okPage([{ ...receipt, payer: { displayName: null, displayNumber: null, partyType: null } }])
+    );
+    renderScreen({ canReadCustomers: false });
+    await chooseBranch();
+    const region = await screen.findByRole('region', {
+      name: EN['payments.list.heading'] as string,
+    });
+    const grid = within(region).getByRole('grid');
+    expect(
+      await within(grid).findByText(EN['payments.list.payerNotShown'] as string)
+    ).toBeVisible();
+    expect(region.textContent).not.toContain(PARTNER_ID);
+  });
+
+  it('opens a receipt with its row’s own action, pressed on the receipt that is open', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch();
+    const list = await screen.findByRole('region', {
+      name: EN['payments.list.heading'] as string,
+    });
+    const open = await within(list).findByRole('button', { name: OPEN_RECEIPT });
+    expect(open).toHaveAttribute('aria-pressed', 'false');
+    await user.click(open);
+    await waitFor(() => expect(readReceipt).toHaveBeenCalledWith(RECEIPT_ID));
+    await waitFor(() =>
+      expect(within(list).getByRole('button', { name: OPEN_RECEIPT })).toHaveAttribute(
+        'aria-pressed',
+        'true'
+      )
+    );
   });
 
   it('states that the list takes no date range', async () => {
@@ -561,17 +648,24 @@ describe('the receipts of the branch', () => {
     renderScreen();
     await chooseBranch();
     await waitFor(() => expect(listReceipts).toHaveBeenCalled());
-    const filters = screen.getByRole('form', {
-      name: EN['payments.list.filtersLabel'] as string,
-    });
-    await choosePayer(user, filters, labelled('payments.list.payerFilter'));
-    await user.click(
-      within(filters).getByRole('button', { name: EN['payments.list.apply'] as string })
-    );
+    // A payer chosen by name applies as it is chosen: a new read, nothing more.
+    await choosePayer(user, pickerFilters(), labelled('payments.list.payerFilter'));
     await waitFor(() =>
       expect(listReceipts.mock.calls.at(-1)?.[1]).toEqual({
         payerPartnerId: PARTNER_ID,
         status: null,
+        invoiceId: null,
+      })
+    );
+    // A state is a chip, and applies as it is pressed, beside the payer.
+    const chips = screen.getByRole('group', { name: EN['payments.list.statusFilter'] as string });
+    await user.click(
+      within(chips).getByRole('button', { name: EN['payments.status.allocated'] as string })
+    );
+    await waitFor(() =>
+      expect(listReceipts.mock.calls.at(-1)?.[1]).toEqual({
+        payerPartnerId: PARTNER_ID,
+        status: 'allocated',
         invoiceId: null,
       })
     );
@@ -582,10 +676,7 @@ describe('the receipts of the branch', () => {
     renderScreen();
     await chooseBranch();
     await waitFor(() => expect(listReceipts).toHaveBeenCalled());
-    const filters = screen.getByRole('form', {
-      name: EN['payments.list.filtersLabel'] as string,
-    });
-    await chooseInvoice(user, filters, labelled('payments.list.invoiceFilter'));
+    await chooseInvoice(user, pickerFilters(), labelled('payments.list.invoiceFilter'));
     // The filter searches the list's own branch, in any state.
     expect(listInvoices.mock.calls.at(-1)?.[0]).toEqual({
       companyId: COMPANY_ID,
@@ -596,9 +687,6 @@ describe('the receipts of the branch', () => {
       status: undefined,
       allocatable: false,
     });
-    await user.click(
-      within(filters).getByRole('button', { name: EN['payments.list.apply'] as string })
-    );
     await waitFor(() => expect(listReceipts.mock.calls.at(-1)?.[1]?.invoiceId).toBe(INVOICE_ID));
   });
 
@@ -607,13 +695,7 @@ describe('the receipts of the branch', () => {
     renderScreen();
     await chooseBranch();
     await waitFor(() => expect(listReceipts).toHaveBeenCalled());
-    const filters = screen.getByRole('form', {
-      name: EN['payments.list.filtersLabel'] as string,
-    });
-    await choosePayer(user, filters, labelled('payments.list.payerFilter'));
-    await user.click(
-      within(filters).getByRole('button', { name: EN['payments.list.apply'] as string })
-    );
+    await choosePayer(user, pickerFilters(), labelled('payments.list.payerFilter'));
     await waitFor(() =>
       expect(listReceipts.mock.calls.at(-1)?.[1]?.payerPartnerId).toBe(PARTNER_ID)
     );
@@ -634,10 +716,8 @@ describe('the receipts of the branch', () => {
       expect(listReceipts.mock.calls.at(-1)?.[1]?.payerPartnerId).toBe(PARTNER_ID)
     );
     expect(
-      within(
-        screen.getByRole('form', { name: EN['payments.list.filtersLabel'] as string })
-      ).getByTestId('payments-payer-filter-chosen')
-    ).toHaveTextContent('Layla Haddad');
+      valueOf(within(pickerFilters()).getByLabelText(labelled('payments.list.payerFilter')))
+    ).toContain('Layla Haddad');
   });
 
   it('says a withdrawn method is withdrawn rather than leaving a blank', async () => {
@@ -839,8 +919,9 @@ describe('recording a payment', () => {
     await user.click(
       within(form).getByRole('button', { name: EN['payments.record.submit'] as string })
     );
-    const notice = await screen.findByRole('status');
-    expect(notice).toHaveTextContent(EN['payments.record.recorded'] as string);
+    const notice = await screen.findByText(EN['payments.record.recorded'] as string, {
+      exact: false,
+    });
     expect(within(notice).getByText('RCT-000007')).toBeVisible();
   });
 
@@ -932,7 +1013,34 @@ describe('the payer is found by name, and the form says when it cannot be', () =
     expect(within(form).queryByDisplayValue(UUID_SHAPE)).toBeNull();
     await choosePayer(user, form);
     expect(searchCustomerDirectory.mock.calls.at(-1)?.[2]).toEqual({ q: 'Layla' });
-    expect(within(form).getByTestId('payments-payer-picker-chosen')).toHaveTextContent(
+    expect(within(form).getByLabelText(labelled('payments.record.payer'))).toHaveValue(
+      'Layla Haddad — C-000482'
+    );
+  });
+
+  it('still names the payer when the directory answers well after the search pause', async () => {
+    // A loaded runner once spent the default one-second wait on the pause, the
+    // read and the render, and a correct screen failed (PR #485). The answer is
+    // held back past that second here, so the picker helper must wait for the
+    // search to be asked and answered rather than for a fixed interval.
+    const answer = {
+      status: 'ok',
+      rows: [customerHit],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-slow',
+    };
+    searchCustomerDirectory.mockImplementation(
+      () => new Promise((resolve) => setTimeout(() => resolve(answer), 1_500))
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch();
+    const form = await screen.findByRole('form', {
+      name: EN['payments.record.formLabel'] as string,
+    });
+    await choosePayer(user, form);
+    expect(within(form).getByLabelText(labelled('payments.record.payer'))).toHaveValue(
       'Layla Haddad — C-000482'
     );
   });
@@ -1060,9 +1168,7 @@ describe('without the customer read: the typed payer boxes', () => {
     renderScreen({ canReadCustomers: false });
     await chooseBranch();
     await waitFor(() => expect(listReceipts).toHaveBeenCalled());
-    const filters = screen.getByRole('form', {
-      name: EN['payments.list.filtersLabel'] as string,
-    });
+    const filters = pickerFilters();
     expect(within(filters).queryByTestId('payments-payer-filter')).toBeNull();
     expect(
       within(filters).getByText(EN['payments.list.payerReferenceHelp'] as string)
@@ -1112,11 +1218,9 @@ describe('without the customer read: the typed payer boxes', () => {
       )
     );
     await user.click(screen.getByRole('button', { name: 'first' }));
-    const filters = await screen.findByRole('form', {
-      name: EN['payments.list.filtersLabel'] as string,
-    });
+    await screen.findByRole('region', { name: EN['payments.list.heading'] as string });
     await user.type(
-      within(filters).getByLabelText(labelled('payments.list.payerReference')),
+      within(pickerFilters()).getByLabelText(labelled('payments.list.payerReference')),
       PARTNER_ID
     );
     await switchWithoutQuestion(user, 'second');
@@ -1164,14 +1268,12 @@ describe('an invoice whose payer is withheld', () => {
     const user = userEvent.setup();
     renderScreen({ canReadCustomers: false });
     await chooseBranch();
-    const filters = screen.getByRole('form', {
-      name: EN['payments.list.filtersLabel'] as string,
-    });
+    const filters = pickerFilters();
     await chooseInvoice(user, filters, labelled('payments.list.invoiceFilter'));
-    const chosen = within(filters).getByTestId('payments-invoice-filter-chosen');
-    expect(chosen).toHaveTextContent('INV-000123');
-    expect(chosen).toHaveTextContent(EN['invoices.picker.payerHidden'] as string);
-    expect(chosen).not.toHaveTextContent('Layla');
+    const chosen = valueOf(within(filters).getByLabelText(labelled('payments.list.invoiceFilter')));
+    expect(chosen).toContain('INV-000123');
+    expect(chosen).toContain(EN['invoices.picker.payerHidden'] as string);
+    expect(chosen).not.toContain('Layla');
   });
 });
 
@@ -1182,7 +1284,7 @@ describe('the receipt and its allocations', () => {
     const list = await screen.findByRole('region', {
       name: EN['payments.list.heading'] as string,
     });
-    await user.click(within(list).getByRole('button', { name: 'RCT-000007' }));
+    await user.click(within(list).getByRole('button', { name: OPEN_RECEIPT }));
     return screen.findByRole('region', { name: EN['payments.receipt.heading'] as string });
   }
 
@@ -1244,10 +1346,34 @@ describe('the receipt and its allocations', () => {
     expect(within(region).getAllByText(INVOICE_ID).length).toBeGreaterThan(0);
   });
 
-  it('says the reads carry no payer name and no cashier', async () => {
+  it('names the payer, asked of the receipt list in the receipt’s own branch, and says there is no invoice number or cashier', async () => {
     const user = userEvent.setup();
     const region = await openReceipt(user);
+    expect(await within(region).findByText('Layla Haddad')).toBeVisible();
+    expect(readReceiptPayer).toHaveBeenCalledWith(
+      { companyId: COMPANY_ID, branchId: BRANCH_ID },
+      PARTNER_ID
+    );
+    expect(region.textContent).not.toContain(PARTNER_ID);
     expect(within(region).getByText(EN['payments.receipt.noNames'] as string)).toBeVisible();
+  });
+
+  it('without the customer read asks for no name, and says the payer is not shown', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canReadCustomers: false });
+    await chooseBranch();
+    const list = await screen.findByRole('region', {
+      name: EN['payments.list.heading'] as string,
+    });
+    await user.click(await within(list).findByRole('button', { name: OPEN_RECEIPT }));
+    const region = await screen.findByRole('region', {
+      name: EN['payments.receipt.heading'] as string,
+    });
+    expect(
+      await within(region).findByText(EN['payments.list.payerNotShown'] as string)
+    ).toBeVisible();
+    expect(readReceiptPayer).not.toHaveBeenCalled();
+    expect(region.textContent).not.toContain(PARTNER_ID);
   });
 
   it('says a truncated history is truncated', async () => {
@@ -1280,7 +1406,7 @@ describe('applying a receipt to an invoice', () => {
     const list = await screen.findByRole('region', {
       name: EN['payments.list.heading'] as string,
     });
-    await user.click(within(list).getByRole('button', { name: 'RCT-000007' }));
+    await user.click(within(list).getByRole('button', { name: OPEN_RECEIPT }));
     return screen.findByRole('region', { name: EN['payments.receipt.heading'] as string });
   }
 
@@ -1296,6 +1422,7 @@ describe('applying a receipt to an invoice', () => {
     await user.click(
       within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
     );
+    await confirmApply(user);
   }
 
   it('warns that an entry cannot be undone BEFORE it is used', async () => {
@@ -1320,7 +1447,7 @@ describe('applying a receipt to an invoice', () => {
       name: EN['payments.allocate.formLabel'] as string,
     });
     await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), 'INV-0001');
-    const option = await within(form).findByRole('button', { name: /INV-000123/ });
+    const option = await findSearchedOption(listInvoices, 'INV-0001', /INV-000123/);
     expect(listInvoices.mock.calls.at(-1)?.[0]).toEqual({
       companyId: COMPANY_ID,
       branchId: BRANCH_ID,
@@ -1358,7 +1485,7 @@ describe('applying a receipt to an invoice', () => {
       name: EN['payments.allocate.formLabel'] as string,
     });
     await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), 'INV-0001');
-    const option = await within(form).findByRole('button', { name: /INV-000123/ });
+    const option = await findSearchedOption(listInvoices, 'INV-0001', /INV-000123/);
     expect(option).toHaveTextContent(EN['invoices.status.credited'] as string);
     expect(option).toHaveTextContent(money('15.5000'));
     expect(within(form).getByText(EN['payments.allocate.invoiceHelp'] as string)).toBeVisible();
@@ -1382,16 +1509,15 @@ describe('applying a receipt to an invoice', () => {
     const user = userEvent.setup();
     renderScreen();
     await chooseBranch();
-    const filters = screen.getByRole('form', {
-      name: EN['payments.list.filtersLabel'] as string,
-    });
     await user.type(
-      within(filters).getByLabelText(labelled('payments.list.invoiceFilter')),
+      within(pickerFilters()).getByLabelText(labelled('payments.list.invoiceFilter')),
       'Layla'
     );
-    const option = await within(filters).findByRole('button', {
-      name: new RegExp(escape(EN['invoices.picker.unnumbered'] as string)),
-    });
+    const option = await findSearchedOption(
+      listInvoices,
+      'Layla',
+      new RegExp(escape(EN['invoices.picker.unnumbered'] as string))
+    );
     expect(option).toHaveTextContent(EN['invoices.status.draft'] as string);
     expect(option).not.toHaveTextContent(EN['invoices.picker.open'] as string);
     expect(option).not.toHaveTextContent(money('0.0000'));
@@ -1407,7 +1533,7 @@ describe('applying a receipt to an invoice', () => {
       name: EN['payments.allocate.formLabel'] as string,
     });
     await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), 'INV-0001');
-    const option = await within(form).findByRole('button', { name: /INV-000123/ });
+    const option = await findSearchedOption(listInvoices, 'INV-0001', /INV-000123/);
     expect(option).not.toHaveTextContent(EN['invoices.picker.open'] as string);
     expect(option).not.toHaveTextContent('0.0000');
   });
@@ -1445,8 +1571,37 @@ describe('applying a receipt to an invoice', () => {
     await user.click(
       within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
     );
+    // Reached from an invoice, the question names no number it was never given.
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent(money('5.0000'));
+    await confirmApply(user);
     await waitFor(() => expect(allocatePayment).toHaveBeenCalled());
     expect(allocatePayment.mock.calls[0]?.[1]).toMatchObject({ invoiceId: INVOICE_ID });
+  });
+
+  it('asks before applying, naming the amount and the invoice; cancelling applies nothing', async () => {
+    const user = userEvent.setup();
+    await openReceipt(user);
+    const form = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    await chooseInvoice(user, form);
+    await user.type(within(form).getByLabelText(labelled('payments.allocate.amount')), '40.0000');
+    await user.click(
+      within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog', {
+      name: EN['payments.allocate.confirmTitle'] as string,
+    });
+    expect(dialog).toHaveTextContent('INV-000123');
+    expect(dialog).toHaveTextContent(money('40.0000'));
+    await user.click(within(dialog).getByRole('button', { name: EN['overlay.cancel'] as string }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(allocatePayment).not.toHaveBeenCalled();
+    // What was typed is still there to send.
+    expect(within(form).getByLabelText(labelled('payments.allocate.amount'))).toHaveValue(
+      '40.0000'
+    );
   });
 
   it('sends the RECEIPT’s own currency, its own key, and no version', async () => {
@@ -1460,6 +1615,7 @@ describe('applying a receipt to an invoice', () => {
     await user.click(
       within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
     );
+    await confirmApply(user);
     await waitFor(() => expect(allocatePayment).toHaveBeenCalled());
     expect(allocatePayment.mock.calls[0]?.[0]).toBe(RECEIPT_ID);
     expect(allocatePayment.mock.calls[0]?.[1]).toEqual({
@@ -1517,9 +1673,9 @@ describe('applying a receipt to an invoice', () => {
     const form = await screen.findByRole('form', {
       name: EN['payments.allocate.formLabel'] as string,
     });
-    expect(
-      within(form).getByLabelText(new RegExp(`\\(${receipt.money.currency}\\)`))
-    ).toBeVisible();
+    // The receipt's currency stands beside the amount and is part of its description.
+    const amount = within(form).getByLabelText(labelled('payments.allocate.amount'));
+    expect(amount).toHaveAccessibleDescription(expect.stringContaining(receipt.money.currency));
   });
 
   it('puts a server violation on the field it names', async () => {
@@ -1582,8 +1738,11 @@ describe('applying a receipt to an invoice', () => {
     await user.click(
       within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
     );
-    // Rendered, not merely present on the outcome object.
+    await confirmApply(user);
+    // Rendered, not merely present on the outcome object — and a bound the
+    // server refused is never told as "someone changed this" (#473).
     expect(await screen.findByText('corr-409')).toBeVisible();
+    expect(screen.queryByText(EN['state.conflict.transition.title'] as string)).toBeNull();
     expect(
       screen.queryByText(EN['payments.allocate.invoiceOpen'] as string, { exact: false })
     ).toBeNull();
@@ -1598,16 +1757,17 @@ describe('the printable receipt (FE-021)', () => {
     const list = await screen.findByRole('region', {
       name: EN['payments.list.heading'] as string,
     });
-    await user.click(within(list).getByRole('button', { name: 'RCT-000007' }));
+    await user.click(within(list).getByRole('button', { name: OPEN_RECEIPT }));
     await screen.findByRole('region', { name: EN['payments.receipt.heading'] as string });
     await user.click(screen.getByRole('button', { name: EN['payments.print.open'] as string }));
     return screen.findByRole('article');
   }
 
-  it('names the payer and each invoice by identifier, and says why', async () => {
+  it('names the payer by name, each invoice by reference, and says why', async () => {
     const user = userEvent.setup();
     const document = await openPrint(user);
-    expect(within(document).getByText(PARTNER_ID)).toBeVisible();
+    expect(within(document).getByTestId('receipt-print-payer')).toHaveTextContent('Layla Haddad');
+    expect(document.textContent).not.toContain(PARTNER_ID);
     expect(within(document).getByText(INVOICE_ID)).toBeVisible();
     expect(
       within(document).getByText(EN['payments.print.identifiersOnly'] as string, { exact: false })
@@ -1642,7 +1802,7 @@ describe('the printable receipt (FE-021)', () => {
     const list = await screen.findByRole('region', {
       name: EN['payments.list.heading'] as string,
     });
-    await user.click(within(list).getByRole('button', { name: 'RCT-000007' }));
+    await user.click(within(list).getByRole('button', { name: OPEN_RECEIPT }));
     await screen.findByRole('region', { name: EN['payments.receipt.heading'] as string });
     const toggle = screen.getByRole('button', { name: EN['payments.print.open'] as string });
     expect(toggle.getAttribute('aria-expanded')).toBe('false');
@@ -1713,12 +1873,35 @@ describe('the route page decides before it reads', () => {
     });
     expect(submit).toBeEnabled();
     await user.click(submit);
+    await confirmApply(user);
     await waitFor(() => expect(allocatePayment).toHaveBeenCalled());
     expect(allocatePayment.mock.calls[0]?.[1]).toMatchObject({ invoiceId: INVOICE_ID });
   });
 });
 
 describe('Arabic', () => {
+  it('prints the receipt’s moments isolated right to left, so they read in order', async () => {
+    const user = userEvent.setup();
+    renderRtl(
+      <PaymentsScreen
+        locale="ar"
+        messages={ar}
+        initialReceiptId={RECEIPT_ID}
+        initialInvoiceId={null}
+        canRecord={false}
+        canAllocate={false}
+        canReadCustomers={true}
+      />
+    );
+    await screen.findByRole('region', { name: AR['payments.receipt.heading'] as string });
+    await user.click(screen.getByRole('button', { name: AR['payments.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    const received = within(document).getByTestId('receipt-print-received-at');
+    expect(received.querySelector('bdi')).toHaveAttribute('dir', 'rtl');
+    expect(received).not.toHaveAttribute('dir', 'ltr');
+    expect(within(document).getByTestId('receipt-print-payer')).toHaveTextContent('Layla Haddad');
+  });
+
   it('renders the branch panel in Arabic', () => {
     renderRtl(
       <PaymentsScreen

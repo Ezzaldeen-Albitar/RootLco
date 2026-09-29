@@ -3,10 +3,15 @@
 import Link from 'next/link';
 import { useCallback, useMemo, useState } from 'react';
 
-import { DataTable, type Column } from '@/components/data-table/DataTable';
+import {
+  OperationalGrid,
+  type OperationalColumn,
+  type RowAction,
+} from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import { TextAreaField } from '@/components/forms/Field';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import {
@@ -17,9 +22,8 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import type { BranchTarget } from '@/lib/api/read-operation';
-import type { ActionState } from '@/lib/forms/action-result';
-import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
-import { formatDateTime } from '@/lib/format';
+import { unreachable, type ActionState } from '@/lib/forms/action-result';
+import { formatMoney } from '@/lib/money';
 
 import { decideDiscountApproval, listDiscountApprovals } from '../api';
 import {
@@ -27,10 +31,13 @@ import {
   type DiscountApproval,
   type DiscountDecisionBlock,
 } from '../quotations-contract';
-import { Money, OutcomeNote, PRIMARY_BUTTON, SECONDARY_BUTTON } from './shared';
+import { Money, OutcomeNote, When } from './shared';
 
 /**
  * Discounts waiting for approval, on the working branch (P1-32-PRE-OD-DISC-01).
+ * On the shared Material UI wrappers since the sales and finance slice
+ * (ADR-022): the requests are `OperationalGrid` rows, approving asks first
+ * (`ConfirmDialog`) and turning down takes its reason in `ReasonDialog`.
  *
  * A discount that reaches the company's threshold is recorded as a request by the
  * person who added it, and the quotation cannot be issued until SOMEBODY ELSE
@@ -45,10 +52,11 @@ import { Money, OutcomeNote, PRIMARY_BUTTON, SECONDARY_BUTTON } from './shared';
  * below the discount — and `canReject`, which needs no limit. The panel offers
  * Approve only on `canApprove` and Turn down only on `canReject`, and says why
  * approving is not offered in the operator's language — never with an amount,
- * because no approver limit is ever sent. The server refuses the same cases anyway, by
- * name; a refusal that still arrives (a limit changed in between) renders as a
- * sentence above the list. Turning a request down needs a reason, asked for at the
- * reason box.
+ * because no approver limit is ever sent. There is no exception for a sole
+ * administrator: the requester can never approve their own discount. The server
+ * refuses the same cases anyway, by name; a refusal that still arrives (a limit
+ * changed in between) is said in the dialog and above the list. Turning a
+ * request down needs a reason, asked for at the reason box.
  *
  * ## One branch at a time
  *
@@ -104,6 +112,11 @@ export function DiscountApprovalsPanel({
   );
 }
 
+/** What a dialog is asking about, and whether its answer is on its way. */
+type Deciding =
+  | { readonly kind: 'approve'; readonly approval: DiscountApproval }
+  | { readonly kind: 'reject'; readonly approval: DiscountApproval };
+
 function ApprovalsTable({
   locale,
   messages,
@@ -119,27 +132,49 @@ function ApprovalsTable({
     [target]
   );
   const table = useServerTable<DiscountApproval>(load, { initial: INITIAL_REQUEST });
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [deciding, setDeciding] = useState<Deciding | null>(null);
+  const [pending, setPending] = useState(false);
+  // What the last refused decision said: in the dialog while it is open, and
+  // above the list once it is closed, so a refusal is never lost with it.
   const [outcome, setOutcome] = useState<ActionState | null>(null);
-  const [rejecting, setRejecting] = useState<DiscountApproval | null>(null);
 
-  const approve = useCallback(
-    async (row: DiscountApproval) => {
-      setBusyId(row.id);
-      const result = await decideDiscountApproval(row.id, { decision: 'approved' });
-      setBusyId(null);
-      notifyActionResult(result.state, messages);
-      if (result.state.status === 'success') {
-        setOutcome(null);
-        table.refresh();
-        return;
+  const decide = useCallback(
+    async (approval: DiscountApproval, reason: string | null) => {
+      setPending(true);
+      try {
+        let result: Awaited<ReturnType<typeof decideDiscountApproval>>;
+        try {
+          result = await decideDiscountApproval(
+            approval.id,
+            reason === null ? { decision: 'approved' } : { decision: 'rejected', reason }
+          );
+        } catch {
+          setDeciding(null);
+          setOutcome(unreachable(1));
+          return;
+        }
+        notifyActionResult(result.state, messages);
+        if (result.state.status === 'success') {
+          setOutcome(null);
+          setDeciding(null);
+          table.refresh();
+          return;
+        }
+        setOutcome(result.state);
+        // A refusal of the reason itself stays on the reason box; any other
+        // refusal closes the question and is said above the list, with its
+        // reference, where it stays in view after the dialog is gone.
+        if (reason === null || result.state.fieldErrors?.['reason'] === undefined) {
+          setDeciding(null);
+        }
+      } finally {
+        setPending(false);
       }
-      setOutcome(result.state);
     },
     [messages, table]
   );
 
-  const columns = useMemo<readonly Column<DiscountApproval>[]>(
+  const columns = useMemo<readonly OperationalColumn<DiscountApproval>[]>(
     () => [
       {
         id: 'quotation',
@@ -157,19 +192,21 @@ function ApprovalsTable({
       {
         id: 'discount',
         headerKey: 'quotations.approvals.column.discount',
+        numeric: true,
         cell: (row) => <Money amount={row.discountTotal} currency={row.currency} locale={locale} />,
       },
       {
         id: 'requestedBy',
         headerKey: 'quotations.approvals.column.requestedBy',
+        flex: 1.4,
         cell: (row) => (
-          <span>
+          <span className="flex flex-col">
             <bdi>
               {row.requestedBy.displayName ??
                 translate(messages, 'quotations.approvals.someoneElse')}
             </bdi>
-            <span className="block text-caption text-text-muted" dir="ltr">
-              {formatDateTime(row.requestedAt, locale)}
+            <span className="text-caption text-text-muted">
+              <When value={row.requestedAt} locale={locale} />
             </span>
           </span>
         ),
@@ -177,171 +214,140 @@ function ApprovalsTable({
       {
         id: 'decision',
         headerKey: 'quotations.approvals.column.decision',
-        cell: (row) => (
-          <span className="flex flex-wrap items-center gap-2">
-            {row.canApprove ? (
-              <button
-                type="button"
-                className={PRIMARY_BUTTON}
-                disabled={busyId !== null}
-                aria-label={formatMessage(translate(messages, 'quotations.approvals.approveFor'), {
-                  number: row.quotationNumber,
-                })}
-                onClick={() => void approve(row)}
-              >
-                {translate(messages, 'quotations.approvals.approve')}
-              </button>
-            ) : (
-              <span
-                className="text-caption text-text-secondary"
-                data-testid="discount-cannot-decide"
-              >
-                {translateDynamic(
-                  messages,
-                  CANNOT_DECIDE_KEY[
-                    row.cannotApproveReason ??
-                      (row.requestedByCaller ? 'own_request' : 'not_pending')
-                  ]
-                )}
-              </span>
-            )}
-            {row.canReject ? (
-              <button
-                type="button"
-                className={SECONDARY_BUTTON}
-                disabled={busyId !== null}
-                aria-label={formatMessage(translate(messages, 'quotations.approvals.rejectFor'), {
-                  number: row.quotationNumber,
-                })}
-                onClick={() => {
-                  setOutcome(null);
-                  setRejecting(row);
-                }}
-              >
-                {translate(messages, 'quotations.approvals.reject')}
-              </button>
-            ) : null}
-          </span>
-        ),
+        flex: 1.4,
+        cell: (row) =>
+          row.canApprove ? (
+            <span className="text-caption text-text-secondary">
+              {translate(messages, 'quotations.approvals.canDecide')}
+            </span>
+          ) : (
+            <span className="text-caption text-text-secondary" data-testid="discount-cannot-decide">
+              {translateDynamic(
+                messages,
+                CANNOT_DECIDE_KEY[
+                  row.cannotApproveReason ?? (row.requestedByCaller ? 'own_request' : 'not_pending')
+                ]
+              )}
+            </span>
+          ),
       },
     ],
-    [approve, busyId, locale, messages]
+    [locale, messages]
   );
+
+  const rowActions = useCallback(
+    (row: DiscountApproval): readonly RowAction[] => [
+      ...(row.canApprove
+        ? [
+            {
+              kind: 'button' as const,
+              label: translate(messages, 'quotations.approvals.approve'),
+              about: row.quotationNumber,
+              disabled: pending,
+              onClick: () => {
+                setOutcome(null);
+                setDeciding({ kind: 'approve', approval: row });
+              },
+            },
+          ]
+        : []),
+      ...(row.canReject
+        ? [
+            {
+              kind: 'button' as const,
+              label: translate(messages, 'quotations.approvals.reject'),
+              about: row.quotationNumber,
+              disabled: pending,
+              onClick: () => {
+                setOutcome(null);
+                setDeciding({ kind: 'reject', approval: row });
+              },
+            },
+          ]
+        : []),
+    ],
+    [messages, pending]
+  );
+
+  const refusal =
+    outcome && outcome.status !== 'success' && outcome.status !== 'idle'
+      ? translateDynamic(messages, outcome.messageKey ?? 'action.failed')
+      : undefined;
+  const reasonRefusal = outcome?.fieldErrors?.['reason']
+    ? translateDynamic(messages, outcome.fieldErrors['reason'])
+    : undefined;
 
   return (
     <div className="flex flex-col gap-3">
-      <OutcomeNote messages={messages} outcome={outcome} />
-      <DataTable<DiscountApproval>
+      {deciding === null ? <OutcomeNote messages={messages} outcome={outcome} /> : null}
+      <OperationalGrid<DiscountApproval>
         messages={messages}
+        locale={locale}
+        label={translate(messages, 'quotations.approvals.caption')}
         columns={columns}
         rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'quotations.approvals.caption')}
+        table={table}
+        rowActions={rowActions}
         suppressEmptyState
+        testId="discount-approvals-grid"
       />
       {table.response && table.response.rows.length === 0 ? (
         <p className="py-4 text-center text-body text-text-secondary" lang={locale}>
           {translate(messages, 'quotations.approvals.none')}
         </p>
       ) : null}
-      {rejecting ? (
-        <RejectForm
-          key={rejecting.id}
-          locale={locale}
-          messages={messages}
-          approval={rejecting}
-          onDone={(decided) => {
-            setRejecting(null);
-            if (decided) table.refresh();
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-function RejectForm({
-  locale,
-  messages,
-  approval,
-  onDone,
-}: {
-  readonly locale: Locale;
-  readonly messages: Messages;
-  readonly approval: DiscountApproval;
-  readonly onDone: (decided: boolean) => void;
-}) {
-  const [reason, setReason] = useState('');
-  const { errorKey: localErrorKey, formRef, refuse } = useLocalRefusal({ reason });
-  const [busy, setBusy] = useState(false);
-  const [outcome, setOutcome] = useState<ActionState | null>(null);
-
-  const errorFor = (name: string): string | undefined => {
-    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
-    return key ? translateDynamic(messages, key) : undefined;
-  };
-
-  const submit = async () => {
-    const trimmed = reason.trim();
-    if (trimmed.length === 0) {
-      refuse({ reason: 'quotations.approvals.reasonRequired' });
-      return;
-    }
-    refuse({});
-    setBusy(true);
-    const result = await decideDiscountApproval(approval.id, {
-      decision: 'rejected',
-      reason: trimmed,
-    });
-    setBusy(false);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success') {
-      onDone(true);
-      return;
-    }
-    setOutcome(result.state);
-  };
-
-  return (
-    <form
-      ref={formRef}
-      onSubmit={(event) => {
-        event.preventDefault();
-        void submit();
-      }}
-      noValidate
-      aria-labelledby="discount-reject-heading"
-      className="flex flex-col gap-3 rounded-md border border-border p-3"
-      lang={locale}
-    >
-      <h3 id="discount-reject-heading" className="text-body font-medium text-text-primary">
-        {formatMessage(translate(messages, 'quotations.approvals.rejectHeading'), {
-          number: approval.quotationNumber,
+      <ConfirmDialog
+        open={deciding?.kind === 'approve'}
+        messages={messages}
+        title={formatMessage(translate(messages, 'quotations.approvals.approveHeading'), {
+          number: deciding?.approval.quotationNumber ?? '',
         })}
-      </h3>
-      <TextAreaField
-        label={translate(messages, 'quotations.approvals.reason')}
-        description={translate(messages, 'quotations.approvals.reasonHelp')}
-        required
-        maxLength={MAX_DISCOUNT_DECISION_REASON}
-        value={reason}
-        onChange={(event) => setReason(event.target.value)}
-        error={errorFor('reason')}
+        description={
+          deciding
+            ? formatMessage(translate(messages, 'quotations.approvals.approveExplain'), {
+                amount: formatMoney(
+                  { amount: deciding.approval.discountTotal, currency: deciding.approval.currency },
+                  locale
+                ),
+              })
+            : undefined
+        }
+        confirmLabel={translate(messages, 'quotations.approvals.confirmApprove')}
+        pending={pending}
+        error={refusal}
+        onCancel={() => {
+          setDeciding(null);
+          setOutcome(null);
+        }}
+        onConfirm={() => {
+          if (deciding) void decide(deciding.approval, null);
+        }}
+        testId="discount-approve-dialog"
       />
-      <OutcomeNote messages={messages} outcome={outcome} />
-      <div className="flex flex-wrap gap-3">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
-          {translate(messages, 'quotations.approvals.confirmReject')}
-        </button>
-        <button type="button" className={SECONDARY_BUTTON} onClick={() => onDone(false)}>
-          {translate(messages, 'quotations.approvals.cancel')}
-        </button>
-      </div>
-    </form>
+      <ReasonDialog
+        key={deciding?.kind === 'reject' ? deciding.approval.id : 'closed'}
+        open={deciding?.kind === 'reject'}
+        messages={messages}
+        title={formatMessage(translate(messages, 'quotations.approvals.rejectHeading'), {
+          number: deciding?.approval.quotationNumber ?? '',
+        })}
+        description={translate(messages, 'quotations.approvals.reasonHelp')}
+        reasonLabel={translate(messages, 'quotations.approvals.reason')}
+        confirmLabel={translate(messages, 'quotations.approvals.confirmReject')}
+        maxLength={MAX_DISCOUNT_DECISION_REASON}
+        destructive
+        pending={pending}
+        error={reasonRefusal === undefined ? refusal : undefined}
+        reasonError={reasonRefusal}
+        onCancel={() => {
+          setDeciding(null);
+          setOutcome(null);
+        }}
+        onConfirm={(reason) => {
+          if (deciding) void decide(deciding.approval, reason);
+        }}
+        testId="discount-reject-dialog"
+      />
+    </div>
   );
 }

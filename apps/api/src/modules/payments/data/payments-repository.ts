@@ -186,6 +186,17 @@ export interface ReceiptRow {
 export interface ReceiptListRow extends ReceiptRow {
   /** `round(amount - sum(allocations), 4)` as a STRING. 0 for a reversed receipt. */
   readonly unallocated: string;
+  /**
+   * The payer's name, number and party type, read from the live partner row.
+   *
+   * `null` when the payer is no live partner visible to this caller - retired
+   * since the receipt was taken, or hidden by the partner table's own policy.
+   * Whether the name is PUBLISHED is the service's decision
+   * (`PaymentReadService.listReceipts`); this row only carries what was read.
+   */
+  readonly payerDisplayName: string | null;
+  readonly payerDisplayNumber: string | null;
+  readonly payerPartyType: string | null;
 }
 
 /** `sal.receipt_unallocated` plus the currency that labels it. */
@@ -681,16 +692,43 @@ export class PaymentsRepository extends Repository {
       RECEIPT_ORDER,
       values.length + 1
     );
-    const rows = await this.run<ReceiptSql & { unallocated: string; sort_value: string }>(
+    const rows = await this.run<
+      ReceiptSql & {
+        unallocated: string;
+        sort_value: string;
+        payer_display_name: string | null;
+        payer_display_number: string | null;
+        payer_party_type: string | null;
+      }
+    >(
       db,
       // `invoiceId` is an EXISTS over `sal.payment_allocations` rather than a JOIN:
       // a receipt may allocate to the same invoice more than once, and a join would
       // return that receipt twice on one page - a duplicate the keyset would then
       // page across.
+      //
+      // The payer is named through a LATERAL read of its live partner row (Owner
+      // directive, browser QA row 5.6b): one row or none per receipt, so the page
+      // is never widened or duplicated, and the lateral exposes only its three
+      // `payer_*` names, so the unqualified receipt columns stay unambiguous. The
+      // predicate is the invoice list's (`deleted_at IS NULL`): a payer retired
+      // since the receipt was taken is not named.
       `SELECT ${RECEIPT_COLUMNS},
               sal.receipt_unallocated(r.id)::text AS unallocated,
+              payer.payer_display_name,
+              payer.payer_display_number,
+              payer.payer_party_type,
               ${cursorTimestamp('r.received_at')} AS sort_value
          FROM sal.receipts r
+         LEFT JOIN LATERAL (
+               SELECT pp.display_name   AS payer_display_name,
+                      pp.display_number AS payer_display_number,
+                      pp.party_type     AS payer_party_type
+                 FROM crm.business_partners pp
+                WHERE pp.tenant_id = r.tenant_id
+                  AND pp.id = r.payer_partner_id
+                  AND pp.deleted_at IS NULL
+              ) payer ON true
         WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
           AND r.deleted_at IS NULL
           AND ($4::uuid IS NULL OR r.payer_partner_id = $4)
@@ -707,7 +745,13 @@ export class PaymentsRepository extends Repository {
     );
     return buildPageWithCursors(
       rows.rows.map((row) => ({
-        item: { ...toReceipt(row), unallocated: row.unallocated },
+        item: {
+          ...toReceipt(row),
+          unallocated: row.unallocated,
+          payerDisplayName: row.payer_display_name,
+          payerDisplayNumber: row.payer_display_number,
+          payerPartyType: row.payer_party_type,
+        },
         // Microsecond precision from SQL. A JS `Date` truncates to milliseconds
         // and silently skips rows sharing the boundary row's millisecond
         // (`P1-27-INT-006`); receipts recorded in one transaction share

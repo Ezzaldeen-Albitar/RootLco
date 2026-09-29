@@ -4,10 +4,19 @@ import { PrintDocument, PrintTable } from '@/components/print/PrintDocument';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
-import { formatDateTime } from '@/lib/format';
 
 import type { InvoiceDetail, InvoicePreview } from '../billing-contract';
-import { Money, Unavailable } from './shared';
+import { Money, Unavailable, When } from './shared';
+
+/**
+ * Who the invoice bills, as the screen could name them: by name, still being
+ * found, or not shown to this reader. Never the payer's reference (browser QA
+ * OBS-4: the printed copy used to carry it).
+ */
+export type PayerName =
+  | { readonly kind: 'named'; readonly name: string }
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'notShown' };
 
 /**
  * Where the line descriptions come from, as the screen established it:
@@ -33,6 +42,13 @@ export type DescriptionSource =
  * same quotation revision the invoice was made from, joined by the line's
  * source item; otherwise the document says descriptions are unavailable rather
  * than guess. No PDF is generated: this is HTML that prints well.
+ *
+ * ## Names, and a date that reads in order
+ *
+ * The payer is printed by name when the screen could name them, and otherwise
+ * the copy says the name is not shown — never the payer's reference. The work
+ * order is printed by its number, or not at all. The issue moment is isolated in
+ * the reader's direction (`When`), so an Arabic copy prints it in order.
  */
 export function InvoiceDocument({
   locale,
@@ -40,6 +56,7 @@ export function InvoiceDocument({
   detail,
   descriptions,
   workOrderNumber,
+  payer,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -47,6 +64,8 @@ export function InvoiceDocument({
   /** Where line descriptions come from, decided by the screen; the document states it. */
   readonly descriptions: DescriptionSource;
   readonly workOrderNumber: string | null;
+  /** Who the invoice bills, as the screen could name them. */
+  readonly payer: PayerName;
 }) {
   const invoice = detail.invoice;
   const describe = (sourceQuotationItemId: string | null): string | null => {
@@ -133,26 +152,34 @@ export function InvoiceDocument({
             <dt className="inline text-text-muted">
               {translate(messages, 'invoices.print.issuedAt')}{' '}
             </dt>
-            <dd className="inline" dir="ltr">
-              {invoice.issuedAt
-                ? formatDateTime(invoice.issuedAt, locale)
-                : translate(messages, 'invoices.detail.notIssuedYet')}
+            <dd className="inline" data-testid="invoice-print-issued-at">
+              {invoice.issuedAt ? (
+                <When value={invoice.issuedAt} locale={locale} />
+              ) : (
+                translate(messages, 'invoices.detail.notIssuedYet')
+              )}
             </dd>
           </div>
-          <div>
-            <dt className="inline text-text-muted">
-              {translate(messages, 'invoices.print.workOrder')}{' '}
-            </dt>
-            <dd className="inline font-mono" dir="ltr">
-              {workOrderNumber ?? invoice.workOrderId}
-            </dd>
-          </div>
+          {workOrderNumber !== null ? (
+            <div>
+              <dt className="inline text-text-muted">
+                {translate(messages, 'invoices.print.workOrder')}{' '}
+              </dt>
+              <dd className="inline font-mono" dir="ltr">
+                {workOrderNumber}
+              </dd>
+            </div>
+          ) : null}
           <div>
             <dt className="inline text-text-muted">
               {translate(messages, 'invoices.print.payer')}{' '}
             </dt>
-            <dd className="inline font-mono" dir="ltr">
-              {invoice.payerPartnerId}
+            <dd className="inline" data-testid="invoice-print-payer">
+              {payer.kind === 'named' ? (
+                <bdi>{payer.name}</bdi>
+              ) : (
+                translate(messages, 'invoices.detail.payerNotShown')
+              )}
             </dd>
           </div>
         </dl>

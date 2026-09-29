@@ -4,10 +4,18 @@ import { PrintDocument, PrintTable } from '@/components/print/PrintDocument';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
-import { formatDateTime } from '@/lib/format';
 
 import type { ReceiptDetail } from '../payments-contract';
-import { Money } from './shared';
+import { Money, When } from './shared';
+
+/**
+ * Who paid, as the screen could name them: by name, still being found, or not
+ * shown to this reader. Never the payer's reference (browser QA row 5.6b).
+ */
+export type ReceiptPayerName =
+  | { readonly kind: 'named'; readonly name: string }
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'notShown' };
 
 /**
  * The printable receipt (P1-30, `W7`, FE-021).
@@ -17,15 +25,22 @@ import { Money } from './shared';
  * which carries the reference, the method, the amount, the remainder and the
  * allocation history. No PDF is generated: this is HTML that prints well.
  *
- * ## It names identifiers, because names are not published
+ * ## The payer is named; the invoices are not, because no read numbers them
  *
- * No receipt read carries a payer NAME, and none carries the cashier who took
- * the money — `received_by` is stored and deliberately never selected. Each
- * allocation names its invoice by identifier and never by number: reading a
- * number would take one `sal.invoice-detail` call per allocation, and that
- * operation requires `sal.invoice.manage`, a code the cashier printing this
- * receipt does not hold. The document says so rather than leaving three blanks
- * that look like a fault.
+ * The payer is printed by name when the screen could name them — the receipt
+ * list names the payer for a caller who may read customers — and otherwise the
+ * copy says the name is not shown; the payer's reference is never printed. No
+ * receipt read carries the cashier who took the money — `received_by` is stored
+ * and deliberately never selected. Each allocation names its invoice by
+ * reference and never by number: reading a number would take one
+ * `sal.invoice-detail` call per allocation, and that operation requires
+ * `sal.invoice.manage`, a code the cashier printing this receipt does not hold.
+ * The document says so rather than leaving blanks that look like a fault.
+ *
+ * ## Dates read in order in both languages
+ *
+ * Every moment is isolated in the reader's direction (`When`), so an Arabic copy
+ * prints the day, month and year in order.
  *
  * ## The remainder is the database's figure
  *
@@ -37,10 +52,13 @@ export function ReceiptDocument({
   locale,
   messages,
   receipt,
+  payer,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly receipt: ReceiptDetail;
+  /** Who paid, as the screen could name them. */
+  readonly payer: ReceiptPayerName;
 }) {
   const headers = [
     translate(messages, 'payments.print.column.invoice'),
@@ -52,9 +70,7 @@ export function ReceiptDocument({
       {allocation.invoiceId}
     </span>,
     <Money key="a" money={allocation.money} locale={locale} />,
-    <span key="w" dir="ltr">
-      {formatDateTime(allocation.allocatedAt, locale)}
-    </span>,
+    <When key="w" value={allocation.allocatedAt} locale={locale} />,
   ]);
 
   return (
@@ -82,16 +98,20 @@ export function ReceiptDocument({
             <dt className="inline text-text-muted">
               {translate(messages, 'payments.print.receivedAt')}{' '}
             </dt>
-            <dd className="inline" dir="ltr">
-              {formatDateTime(receipt.receivedAt, locale)}
+            <dd className="inline" data-testid="receipt-print-received-at">
+              <When value={receipt.receivedAt} locale={locale} />
             </dd>
           </div>
           <div>
             <dt className="inline text-text-muted">
               {translate(messages, 'payments.print.payer')}{' '}
             </dt>
-            <dd className="inline font-mono" dir="ltr">
-              {receipt.payerPartnerId}
+            <dd className="inline" data-testid="receipt-print-payer">
+              {payer.kind === 'named' ? (
+                <bdi>{payer.name}</bdi>
+              ) : (
+                translate(messages, 'payments.list.payerNotShown')
+              )}
             </dd>
           </div>
           <div>

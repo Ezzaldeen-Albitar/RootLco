@@ -35,17 +35,28 @@
  *
  * A raised note credits nothing. A second person approves it on the
  * credit-notes screen, and the person who raised it never can.
+ *
+ * ## On the shared Material UI wrappers
+ *
+ * Since the sales and finance slice (ADR-022): the invoice is found with the
+ * Material combobox, the amount is a money field in the invoice's currency
+ * (a string throughout, canonicalised on leaving the box), and the reason a
+ * multi-line text field. A refusal marks its field, keeps what was typed and
+ * puts the cursor on the first field to fix; correcting a field withdraws its
+ * complaint.
  */
 
 import { useState } from 'react';
+import Button from '@mui/material/Button';
 
-import { TextAreaField, TextField } from '@/components/forms/Field';
+import { FormMoneyField } from '@/components/forms/mui/FormMoneyField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
-import type { ActionState } from '@/lib/forms/action-result';
+import { unreachable, type ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 
 import { compareMoney } from '@/lib/money';
@@ -59,7 +70,7 @@ import {
   type MoneyView,
 } from '../billing-contract';
 import { InvoicePicker } from './InvoicePicker';
-import { Money, OutcomeNote, PRIMARY_BUTTON } from './shared';
+import { Money, OutcomeNote } from './shared';
 
 /** The invoice a form is raised against when the screen already holds it. */
 export interface KnownInvoice {
@@ -140,6 +151,7 @@ export function CreditNoteRequestForm({
 
   const invoiceId = source.kind === 'known' ? source.invoice.id : (picked?.id ?? null);
   const open = source.kind === 'known' ? source.invoice.open : (picked?.outstanding ?? null);
+  const currency = open?.currency ?? picked?.currency ?? null;
 
   const submit = async () => {
     const found: Record<string, string> = {};
@@ -163,20 +175,31 @@ export function CreditNoteRequestForm({
       return;
     }
     setBusy(true);
-    const result = await requestCreditNote(invoiceId, { amount: typed, reason: why }, attemptKey);
-    setBusy(false);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success' && result.created) {
-      setOutcome(null);
-      setPicked(null);
-      setAmount('');
-      setReason('');
-      setAttemptKey(crypto.randomUUID());
-      onRequested(result.created);
-      return;
+    try {
+      let result: Awaited<ReturnType<typeof requestCreditNote>>;
+      try {
+        result = await requestCreditNote(invoiceId, { amount: typed, reason: why }, attemptKey);
+      } catch {
+        // No answer came back: what was typed stays, and so does the key, so
+        // pressing again replays rather than raising a second note.
+        setOutcome(unreachable(1));
+        return;
+      }
+      notifyActionResult(result.state, messages);
+      if (result.state.status === 'success' && result.created) {
+        setOutcome(null);
+        setPicked(null);
+        setAmount('');
+        setReason('');
+        setAttemptKey(crypto.randomUUID());
+        onRequested(result.created);
+        return;
+      }
+      setOutcome(result.state);
+      if (Object.keys(result.state.fieldErrors ?? {}).length > 0) setAttempt((n) => n + 1);
+    } finally {
+      setBusy(false);
     }
-    setOutcome(result.state);
-    if (Object.keys(result.state.fieldErrors ?? {}).length > 0) setAttempt((n) => n + 1);
   };
 
   return (
@@ -213,6 +236,7 @@ export function CreditNoteRequestForm({
             canSearch={source.canSearchInvoices}
             error={errorFor('invoiceId')}
             testId="credit-note-invoice-picker"
+            material
           />
           <p className="text-caption text-text-muted">
             {translate(messages, 'creditNotes.request.invoiceHelp')}
@@ -233,39 +257,35 @@ export function CreditNoteRequestForm({
         </div>
       ) : null}
       <div className="sm:max-w-xs">
-        <TextField
+        <FormMoneyField
+          messages={messages}
           label={translate(messages, 'creditNotes.request.amount')}
           description={translate(messages, 'creditNotes.request.amountHelp')}
           required
-          inputMode="decimal"
-          autoComplete="off"
-          dir="ltr"
           name="amount"
+          currency={currency ?? '—'}
           value={amount}
-          onChange={(event) => {
-            setAmount(event.target.value);
-            corrected('amount');
-          }}
+          onEdit={() => corrected('amount')}
+          onChange={(next) => setAmount(next)}
           error={errorFor('amount')}
         />
       </div>
-      <TextAreaField
+      <FormTextField
         label={translate(messages, 'creditNotes.request.reason')}
         required
+        multiline
         rows={2}
         name="reason"
         value={reason}
-        onChange={(event) => {
-          setReason(event.target.value);
-          corrected('reason');
-        }}
+        onEdit={() => corrected('reason')}
+        onChange={setReason}
         error={errorFor('reason')}
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy} aria-busy={busy || undefined}>
           {translate(messages, 'creditNotes.request.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );

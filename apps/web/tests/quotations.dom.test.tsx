@@ -1,13 +1,14 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import {
   TEST_BRANCH,
   inBranch,
-  renderLtr,
-  renderRtl,
+  renderLtr as renderLtrBare,
+  renderRtl as renderRtlBare,
   BranchSwitch,
   OTHER_BRANCH,
   TEST_COMPANY,
@@ -22,8 +23,12 @@ import {
   switchExpectingQuestion,
   switchWithoutQuestion,
 } from './support/branch-switch';
+import { findSearchedOption } from './support/picker-option';
 import { fromFailure } from '@/lib/forms/action-result';
 import type { ApiFailure } from '@/lib/api/client';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 
 /**
  * The quotations of a work order and the builder, rendered (P1-30, `W3`,
@@ -37,7 +42,23 @@ import type { ApiFailure } from '@/lib/api/client';
  * words (P1-32-PRE-OD-DISC-01); and the route page decides before it reads.
  *
  * Labels are matched ANCHORED (the field frame decorates them) and scoped.
+ *
+ * On the shared Material UI wrappers since the sales and finance slice
+ * (ADR-022): the list and the approvals are `OperationalGrid` grids, the job,
+ * the payer and a line's service are comboboxes whose matches are options,
+ * and deciding a discount asks in a dialog. The screens render inside the
+ * Material foundation, as the locale layout mounts them.
  */
+
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderLtr = (ui: ReactElement) => renderLtrBare(withMui(ui, 'en'));
+const renderRtl = (ui: ReactElement) => renderRtlBare(withMui(ui, 'ar'));
 
 const EN = en as Record<string, string>;
 const AR = ar as Record<string, string>;
@@ -174,7 +195,7 @@ async function renderPage(params: Record<string, string>, search: Record<string,
     params: Promise.resolve(params),
     searchParams: Promise.resolve(search),
   });
-  return renderLtr(tree as React.ReactElement);
+  return renderLtr(tree as ReactElement);
 }
 
 /** The route page inside a working context, as the shell renders it. */
@@ -186,7 +207,7 @@ async function renderPageInBranch(
     params: Promise.resolve(params),
     searchParams: Promise.resolve(search),
   });
-  return renderLtr(inBranch(tree as React.ReactElement));
+  return renderLtr(inBranch(tree as ReactElement));
 }
 
 const APPROVAL_ID = '66666666-6666-4666-8666-666666666666';
@@ -283,7 +304,7 @@ describe('reached from a work order', () => {
     expect(screen.getByText(EN['workOrders.picker.required'] as string)).toBeVisible();
     expect(push).not.toHaveBeenCalled();
     await user.type(box, '12-34{Enter}');
-    await user.click(await screen.findByRole('button', { name: /WO-000042/ }));
+    await user.click(await findSearchedOption(listWorkOrders, '12-34', /WO-000042/));
     expect(listWorkOrders).toHaveBeenCalledWith(
       { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
       { q: '12-34' },
@@ -325,15 +346,24 @@ describe('reached from a work order', () => {
     expect(listQuotations.mock.calls[0]?.[0]).toBe(WORK_ORDER_ID);
     expect(screen.getByText('WO-000042')).toBeVisible();
     expect(screen.getByText('Layla Haddad')).toBeVisible();
-    const table = await screen.findByRole('table');
-    expect(within(table).getByText('QUO-000001')).toBeVisible();
-    expect(within(table).getByText(EN['quotations.status.draft'] as string)).toBeVisible();
+    // The job's state in words, never its code.
+    expect(screen.getByText(EN['workOrders.state.open'] as string)).toBeVisible();
+    const grid = await screen.findByRole('grid', {
+      name: EN['quotations.list.caption'] as string,
+    });
+    expect(await within(grid).findByText('QUO-000001')).toBeVisible();
+    expect(within(grid).getByText(EN['quotations.status.draft'] as string)).toBeVisible();
   });
 
   it('says when the work order itself could not be read, and still lists', async () => {
     renderScreen({ workOrder: null });
     expect(screen.getByText(EN['quotations.list.workOrderNotReadable'] as string)).toBeVisible();
-    expect(await screen.findByRole('table')).toBeVisible();
+    // The job is linked in words, never by its reference.
+    expect(
+      screen.getByRole('link', { name: EN['quotations.list.openWorkOrder'] as string })
+    ).toHaveAttribute('href', `/en/work-orders/${WORK_ORDER_ID}`);
+    expect(screen.queryByText(WORK_ORDER_ID)).toBeNull();
+    expect(await screen.findByRole('grid')).toBeVisible();
   });
 
   it('renders the denied state instead of an empty list', async () => {
@@ -431,7 +461,7 @@ describe('the job picker and the working context', () => {
     await user.selectOptions(chooser, OTHER_BRANCH.id);
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
     await user.type(box(), 'Layla{Enter}');
-    expect(await screen.findByRole('button', { name: /WO-000042/ })).toBeVisible();
+    expect(await findSearchedOption(listWorkOrders, 'Layla', /WO-000042/)).toBeVisible();
     expect(listWorkOrders).toHaveBeenCalledWith(
       { companyId: TEST_COMPANY.id, branchId: OTHER_BRANCH.id },
       { q: 'Layla' },
@@ -484,7 +514,7 @@ describe('the job picker and the working context', () => {
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
     answer(found([workOrder]));
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(screen.queryByRole('button', { name: /WO-000042/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: /WO-000042/ })).toBeNull();
     expect(box()).toHaveValue('');
     expect(listWorkOrders).toHaveBeenCalledTimes(1);
   });
@@ -495,13 +525,13 @@ describe('the job picker and the working context', () => {
     renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
     await user.click(screen.getByRole('button', { name: 'first' }));
     await user.type(box(), 'Layla{Enter}');
-    await user.click(await screen.findByRole('button', { name: /WO-000042/ }));
-    expect(screen.getByTestId('work-order-picker-chosen')).toHaveTextContent('WO-000042');
+    await user.click(await findSearchedOption(listWorkOrders, 'Layla', /WO-000042/));
+    // The combobox now reads the chosen job's name.
+    expect((box() as HTMLInputElement).value).toContain('WO-000042');
 
     await switchWithoutQuestion(user, 'second');
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
-    await waitFor(() => expect(screen.queryByTestId('work-order-picker-chosen')).toBeNull());
-    expect(box()).toHaveValue('');
+    await waitFor(() => expect(box()).toHaveValue(''));
     // Nothing is opened for a job that belonged to the previous branch.
     await user.click(submit());
     expect(push).not.toHaveBeenCalled();
@@ -524,7 +554,7 @@ describe('the builder names its people rather than asking for references', () =>
     ).toBeVisible();
     expect(EN['quotations.build.discountApprovalHelp']).toMatch(/a different person approves/);
     await user.type(
-      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
       SERVICE_ID
     );
     await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '1');
@@ -558,9 +588,9 @@ describe('the builder names its people rather than asking for references', () =>
     renderScreen({ canManage: true, canReadCustomers: true });
     await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
     const form = await builderForm();
-    expect(within(form).getByTestId('quotation-payer-picker-chosen')).toHaveTextContent(
-      'Layla Haddad'
-    );
+    expect(
+      within(form).getByRole('combobox', { name: labelled('quotations.build.payer') })
+    ).toHaveValue('Layla Haddad');
     expect(within(form).queryByLabelText(labelled('quotations.build.payerReference'))).toBeNull();
   });
 
@@ -584,7 +614,7 @@ describe('the builder names its people rather than asking for references', () =>
     const box = within(form).getByLabelText(labelled('quotations.build.payerReference'));
     expect(box).toHaveValue(PARTNER_ID);
     await user.type(
-      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
       SERVICE_ID
     );
     await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '1');
@@ -726,17 +756,14 @@ describe('the payer the builder opened on', () => {
     await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
     const form = await builderForm();
     try {
-      const picker = within(form).getByTestId('quotation-payer-picker');
-      expect(within(picker).getByTestId('quotation-payer-picker-chosen')).toHaveTextContent(
-        'Layla Haddad'
-      );
+      const payer = () =>
+        within(form).getByRole('combobox', { name: labelled('quotations.build.payer') });
+      expect(payer()).toHaveValue('Layla Haddad');
       // Opened on the work order's customer: holding it is not unsaved work.
       await switchWithoutQuestion(user, 'second');
       await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
       // The switch forgot it; the form now holds none where it opened on one.
-      await waitFor(() =>
-        expect(within(form).queryByTestId('quotation-payer-picker-chosen')).toBeNull()
-      );
+      await waitFor(() => expect(payer()).toHaveValue(''));
       await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
       expect(heldBranch()).toBe(OTHER_BRANCH.id);
     } finally {
@@ -751,7 +778,7 @@ describe('the builder points at what to fix (route sweep B3)', () => {
     renderScreen({ canManage: true, canReadCustomers: true });
     await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
     const form = await builderForm();
-    const service = within(form).getByLabelText(labelled('quotations.picker.serviceIdField'));
+    const service = within(form).getByLabelText(labelled('pricing.picker.serviceReference'));
     const quantity = within(form).getByLabelText(labelled('quotations.lines.quantity'));
     await user.click(
       within(form).getByRole('button', { name: EN['quotations.build.submit'] as string })
@@ -786,11 +813,11 @@ describe('the builder sends lines as strings and prices nothing', () => {
     const form = await builderForm();
     // The payer opens on the work order's own customer, NAMED rather than shown
     // as a reference.
-    expect(within(form).getByTestId('quotation-payer-picker-chosen')).toHaveTextContent(
-      'Layla Haddad'
-    );
+    expect(
+      within(form).getByRole('combobox', { name: labelled('quotations.build.payer') })
+    ).toHaveValue('Layla Haddad');
     await user.type(
-      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
       SERVICE_ID
     );
     await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '2.5');
@@ -823,7 +850,7 @@ describe('the builder sends lines as strings and prices nothing', () => {
     renderScreen({ canManage: true });
     await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
     const form = await builderForm();
-    await user.type(within(form).getByLabelText(labelled('quotations.picker.serviceIdField')), 'x');
+    await user.type(within(form).getByLabelText(labelled('pricing.picker.serviceReference')), 'x');
     await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '0');
     await user.click(
       within(form).getByRole('button', { name: EN['quotations.build.submit'] as string })
@@ -832,7 +859,7 @@ describe('the builder sends lines as strings and prices nothing', () => {
       await within(form).findByText(EN['quotations.lines.quantityFormat'] as string)
     ).toBeVisible();
     expect(
-      within(form).getAllByText(EN['quotations.common.idFormat'] as string).length
+      within(form).getAllByText(EN['pricing.picker.serviceReferenceFormat'] as string).length
     ).toBeGreaterThan(0);
     expect(createQuotation).not.toHaveBeenCalled();
   });
@@ -855,7 +882,7 @@ describe('the builder sends lines as strings and prices nothing', () => {
     await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
     const form = await builderForm();
     await user.type(
-      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
       SERVICE_ID
     );
     await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '2.5');
@@ -864,7 +891,7 @@ describe('the builder sends lines as strings and prices nothing', () => {
     );
     expect(await within(form).findByText(EN['form.violation.quantity'] as string)).toBeVisible();
     expect(within(form).getByLabelText(labelled('quotations.lines.quantity'))).toHaveValue('2.5');
-    expect(within(form).getByLabelText(labelled('quotations.picker.serviceIdField'))).toHaveValue(
+    expect(within(form).getByLabelText(labelled('pricing.picker.serviceReference'))).toHaveValue(
       SERVICE_ID
     );
   });
@@ -901,7 +928,7 @@ describe('the builder sends lines as strings and prices nothing', () => {
     await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
     const form = await builderForm();
     await user.type(
-      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
       SERVICE_ID
     );
     await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '1');
@@ -979,23 +1006,19 @@ describe('the discounts waiting for approval, decided on the working branch', ()
       ])
     );
     renderPanel();
-    await screen.findByText('QUO-000077');
+    await screen.findByRole('link', { name: 'QUO-000077' });
     expect(listDiscountApprovals).toHaveBeenCalledWith(
       { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
       'pending',
       expect.objectContaining({ page: 1 }),
       null
     );
-    // Somebody else's request: decisions offered.
-    expect(
-      screen.getByRole('button', { name: /Approve the discount on QUO-000077/ })
-    ).toBeVisible();
+    // Somebody else's request: decisions offered, each named by the quotation.
+    expect(screen.getByRole('button', { name: /^Approve QUO-000077$/ })).toBeVisible();
     // The operator's own: listed, never offered to them to decide.
     expect(screen.getByText('QUO-000078')).toBeVisible();
-    expect(screen.queryByRole('button', { name: /Approve the discount on QUO-000078/ })).toBeNull();
-    expect(
-      screen.queryByRole('button', { name: /Turn down the discount on QUO-000078/ })
-    ).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Approve QUO-000078$/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Turn down QUO-000078$/ })).toBeNull();
     expect(screen.getByText(EN['quotations.approvals.waitingForAnother'] as string)).toBeVisible();
     // The money is the server's string, rendered, never recomputed.
     expect(screen.getByText('Omar Saleh')).toBeVisible();
@@ -1009,13 +1032,34 @@ describe('the discounts waiting for approval, decided on the working branch', ()
     });
     const user = userEvent.setup();
     renderPanel();
+    await user.click(await screen.findByRole('button', { name: /^Approve QUO-000077$/ }));
+    // Approving asks first, naming the quotation and the discount; nothing is sent yet.
+    const dialog = await screen.findByRole('alertdialog', {
+      name: (EN['quotations.approvals.approveHeading'] as string).replace('{number}', 'QUO-000077'),
+    });
+    expect(dialog).toHaveTextContent('40.00');
+    expect(decideDiscountApproval).not.toHaveBeenCalled();
     await user.click(
-      await screen.findByRole('button', { name: /Approve the discount on QUO-000077/ })
+      within(dialog).getByRole('button', {
+        name: EN['quotations.approvals.confirmApprove'] as string,
+      })
     );
     await waitFor(() =>
       expect(decideDiscountApproval).toHaveBeenCalledWith(APPROVAL_ID, { decision: 'approved' })
     );
     await waitFor(() => expect(listDiscountApprovals).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
+  it('cancelling the question sends nothing', async () => {
+    listDiscountApprovals.mockResolvedValue(page([approvalRow()]));
+    const user = userEvent.setup();
+    renderPanel();
+    await user.click(await screen.findByRole('button', { name: /^Approve QUO-000077$/ }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: EN['overlay.cancel'] as string }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(decideDiscountApproval).not.toHaveBeenCalled();
   });
 
   it('turns a request down only with a reason, pointing at the reason box, then sends it', async () => {
@@ -1026,27 +1070,26 @@ describe('the discounts waiting for approval, decided on the working branch', ()
     });
     const user = userEvent.setup();
     renderPanel();
-    await user.click(
-      await screen.findByRole('button', { name: /Turn down the discount on QUO-000077/ })
-    );
-    const form = await screen.findByRole('form', { name: /Turn down the discount on QUO-000077/ });
-    await user.click(
-      within(form).getByRole('button', {
+    await user.click(await screen.findByRole('button', { name: /^Turn down QUO-000077$/ }));
+    const dialog = await screen.findByRole('alertdialog', {
+      name: /Turn down the discount on QUO-000077/,
+    });
+    const confirm = () =>
+      within(dialog).getByRole('button', {
         name: EN['quotations.approvals.confirmReject'] as string,
-      })
-    );
-    const reason = within(form).getByLabelText(labelled('quotations.approvals.reason'));
+      });
+    // No reason, no decision: the confirmation is held, and the box says why
+    // once the operator has been in it.
+    expect(confirm()).toBeDisabled();
+    const reason = within(dialog).getByLabelText(labelled('quotations.approvals.reason'));
+    await user.click(reason);
+    await user.tab();
     expect(reason).toHaveAttribute('aria-invalid', 'true');
-    expect(
-      within(form).getByText(EN['quotations.approvals.reasonRequired'] as string)
-    ).toBeVisible();
+    expect(within(dialog).getByText(EN['overlay.reasonRequired'] as string)).toBeVisible();
     expect(decideDiscountApproval).not.toHaveBeenCalled();
     await user.type(reason, 'More than this job can carry');
-    await user.click(
-      within(form).getByRole('button', {
-        name: EN['quotations.approvals.confirmReject'] as string,
-      })
-    );
+    expect(reason).not.toHaveAttribute('aria-invalid', 'true');
+    await user.click(confirm());
     await waitFor(() =>
       expect(decideDiscountApproval).toHaveBeenCalledWith(APPROVAL_ID, {
         decision: 'rejected',
@@ -1079,7 +1122,7 @@ describe('the discounts waiting for approval, decided on the working branch', ()
         page([approvalRow({ canApprove: false, cannotApproveReason: reason, canReject: false })])
       );
       renderPanel(render, locale);
-      await screen.findByText('QUO-000077');
+      await screen.findByRole('link', { name: 'QUO-000077' });
       const why = screen.getByTestId('discount-cannot-decide');
       expect(why).toHaveTextContent(dictionary[key] as string);
       // The reason is words only: no limit, and no amount of any kind, is in it.
@@ -1089,7 +1132,9 @@ describe('the discounts waiting for approval, decided on the working branch', ()
         dictionary['quotations.approvals.reject'],
       ]) {
         expect(
-          screen.queryAllByRole('button').filter((button) => button.textContent === label)
+          screen
+            .queryAllByRole('button')
+            .filter((button) => (button.textContent ?? '').startsWith(label as string))
         ).toHaveLength(0);
       }
       expect(listDiscountApprovals).toHaveBeenCalled();
@@ -1103,7 +1148,7 @@ describe('the discounts waiting for approval, decided on the working branch', ()
         page([approvalRow({ canApprove: false, cannotApproveReason: reason, canReject: true })])
       );
       renderPanel();
-      await screen.findByText('QUO-000077');
+      await screen.findByRole('link', { name: 'QUO-000077' });
       expect(screen.getByTestId('discount-cannot-decide')).toHaveTextContent(
         EN[
           reason === 'no_approval_limit'
@@ -1111,12 +1156,8 @@ describe('the discounts waiting for approval, decided on the working branch', ()
             : 'quotations.approvals.blocked.overApprovalLimit'
         ] as string
       );
-      expect(
-        screen.queryByRole('button', { name: /Approve the discount on QUO-000077/ })
-      ).toBeNull();
-      expect(
-        screen.getByRole('button', { name: /Turn down the discount on QUO-000077/ })
-      ).toBeVisible();
+      expect(screen.queryByRole('button', { name: /^Approve QUO-000077$/ })).toBeNull();
+      expect(screen.getByRole('button', { name: /^Turn down QUO-000077$/ })).toBeVisible();
     }
   );
 
@@ -1175,14 +1216,17 @@ describe('the discounts waiting for approval, decided on the working branch', ()
       const user = userEvent.setup();
       renderPanel(render, locale);
       const name = new RegExp(
-        escape(
-          (dictionary['quotations.approvals.approveFor'] as string).replace(
-            '{number}',
-            'QUO-000077'
-          )
-        )
+        `^${escape(dictionary['quotations.approvals.approve'] as string)} QUO-000077$`
       );
       await user.click(await screen.findByRole('button', { name }));
+      const dialog = await screen.findByRole('alertdialog');
+      await user.click(
+        within(dialog).getByRole('button', {
+          name: dictionary['quotations.approvals.confirmApprove'] as string,
+        })
+      );
+      // The question closes and the refusal is said above the list, with its reference.
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
       const alert = await screen.findByRole('alert');
       expect(alert.textContent).toContain(dictionary[`form.violation.${rule}`] as string);
       expect(alert.textContent).toContain('corr-named');
@@ -1241,19 +1285,17 @@ describe('the /quotations route page decides before it reads', () => {
     expect(
       await screen.findByRole('heading', { name: EN['quotations.approvals.heading'] as string })
     ).toBeVisible();
-    await screen.findByText('QUO-000077');
+    await screen.findByRole('link', { name: 'QUO-000077' });
     expect(
       screen.getByText(EN['quotations.approvals.blocked.missingPermission'] as string)
     ).toBeVisible();
-    expect(screen.queryByRole('button', { name: /Approve the discount on QUO-000077/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Approve QUO-000077$/ })).toBeNull();
     cannot.unmount();
 
     listDiscountApprovals.mockResolvedValue(page([approvalRow()]));
     PERMISSIONS = ['quo.quotation.read'];
     await renderPageInBranch({ locale: 'en' });
-    expect(
-      await screen.findByRole('button', { name: /Approve the discount on QUO-000077/ })
-    ).toBeVisible();
+    expect(await screen.findByRole('button', { name: /^Approve QUO-000077$/ })).toBeVisible();
   });
 
   it('a locale it does not serve is not found', async () => {
@@ -1275,8 +1317,10 @@ describe('Arabic, right to left', () => {
       />
     );
     expect(document.documentElement.dir).toBe('rtl');
-    const table = await screen.findByRole('table');
-    expect(within(table).getByText('QUO-000001')).toBeVisible();
-    expect(within(table).getByText(AR['quotations.status.draft'] as string)).toBeVisible();
+    const grid = await screen.findByRole('grid', {
+      name: AR['quotations.list.caption'] as string,
+    });
+    expect(await within(grid).findByText('QUO-000001')).toBeVisible();
+    expect(within(grid).getByText(AR['quotations.status.draft'] as string)).toBeVisible();
   });
 });

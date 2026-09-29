@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 
+import { EntityPicker } from '@/components/pickers/EntityPicker';
 import { SearchPicker } from '@/components/search/SearchPicker';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -39,6 +40,11 @@ import {
  * the wire, and the label then says nothing about money rather than a zero.
  *
  * Offered only with `sal.finance.view`, the code the read declares.
+ *
+ * `material` draws the same chooser on Material UI (`EntityPicker`, one combobox
+ * and a listbox, ADR-022) instead of `SearchPicker`'s box and match buttons: the
+ * same props, the same read, the same rules. Off unless stated, so a screen and
+ * its suite move one at a time.
  */
 
 /** The states that can owe money; any other state's balance is not shown. */
@@ -58,6 +64,7 @@ export function InvoicePicker({
   pristineId,
   countsAsUnsaved = true,
   testId = 'invoice-picker',
+  material = false,
 }: {
   readonly messages: Messages;
   readonly locale: Locale;
@@ -80,6 +87,8 @@ export function InvoicePicker({
   /** False for a list filter — see `SearchPicker`. */
   readonly countsAsUnsaved?: boolean;
   readonly testId?: string;
+  /** Draw it on Material UI (`EntityPicker`). See the docblock. */
+  readonly material?: boolean;
 }) {
   const { companyId, branchId } = target;
   const load = useCallback(
@@ -101,28 +110,31 @@ export function InvoicePicker({
       .filter((part): part is string => typeof part === 'string' && part.length > 0)
       .join(' — ');
 
-  return (
-    <SearchPicker<InvoiceListEntry>
-      messages={messages}
-      locale={locale}
-      label={label}
-      value={value}
-      onChange={onChange}
-      labelOf={labelOf}
-      load={load}
-      canSearch={canSearch}
-      notPermitted={translate(messages, 'invoices.picker.notPermitted')}
-      error={error}
-      minLength={MIN_INVOICE_SEARCH}
-      maxLength={MAX_INVOICE_SEARCH}
-      placeholder={translate(messages, 'invoices.picker.searchPlaceholder')}
-      example={translate(messages, 'invoices.picker.searchExample')}
-      tooShort={translate(messages, 'invoices.picker.tooShort')}
-      resultsLabel={translate(messages, 'invoices.picker.results')}
-      change={translate(messages, 'invoices.picker.change')}
-      pristineId={pristineId ?? null}
-      countsAsUnsaved={countsAsUnsaved}
-      testId={testId}
-    />
+  const shared = {
+    messages,
+    locale,
+    label,
+    value,
+    onChange,
+    labelOf,
+    load,
+    canSearch,
+    notPermitted: translate(messages, 'invoices.picker.notPermitted'),
+    error,
+    minLength: MIN_INVOICE_SEARCH,
+    maxLength: MAX_INVOICE_SEARCH,
+    placeholder: translate(messages, 'invoices.picker.searchPlaceholder'),
+    example: translate(messages, 'invoices.picker.searchExample'),
+    tooShort: translate(messages, 'invoices.picker.tooShort'),
+    resultsLabel: translate(messages, 'invoices.picker.results'),
+    change: translate(messages, 'invoices.picker.change'),
+    pristineId: pristineId ?? null,
+    countsAsUnsaved,
+    testId,
+  };
+  return material ? (
+    <EntityPicker<InvoiceListEntry> {...shared} />
+  ) : (
+    <SearchPicker<InvoiceListEntry> {...shared} />
   );
 }

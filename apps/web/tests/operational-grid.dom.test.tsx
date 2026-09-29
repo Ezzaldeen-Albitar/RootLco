@@ -9,6 +9,7 @@ import {
   rowActionsMinWidth,
   sortRequestFrom,
   type OperationalColumn,
+  type OperationalGridProps,
   type RowAction,
 } from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
@@ -86,6 +87,7 @@ function Harness({
   suppressEmptyState,
   columns = COLUMNS,
   unpaged,
+  stateDescriptions,
 }: {
   readonly load: Loader;
   readonly locale?: Locale;
@@ -95,6 +97,7 @@ function Harness({
   readonly suppressEmptyState?: boolean;
   readonly columns?: readonly OperationalColumn<Doc>[];
   readonly unpaged?: boolean;
+  readonly stateDescriptions?: OperationalGridProps<Doc>['stateDescriptions'];
 }) {
   const table = useServerTable(load, {
     initial: initial ?? { ...INITIAL_REQUEST, pageSize: 10 },
@@ -118,6 +121,7 @@ function Harness({
       rowActions={rowActions}
       suppressEmptyState={suppressEmptyState}
       unpaged={unpaged}
+      stateDescriptions={stateDescriptions}
     />
   );
 }
@@ -406,6 +410,43 @@ describe('every state reads as itself', () => {
     expect(within(ended).getByRole('link', { name: en['auth.backToLogin'] })).toHaveAttribute(
       'href',
       '/en/login'
+    );
+  });
+
+  it('a screen may say more under a failure’s heading — the heading, the retry rule and the reference stay the shared ones (G13)', async () => {
+    const refused = vi.fn<Loader>().mockResolvedValue(failed('denied'));
+    const { unmount } = mount(
+      <Harness
+        load={refused}
+        stateDescriptions={{
+          denied: 'creditNotes.list.refused',
+          unavailable: 'creditNotes.list.unavailable',
+        }}
+      />
+    );
+    const refusal = await screen.findByTestId('state-refused');
+    expect(refusal).toHaveTextContent(en['state.denied.title']);
+    expect(refusal).toHaveTextContent(en['creditNotes.list.refused']);
+    expect(refusal).not.toHaveTextContent(en['state.denied.description']);
+    expect(refusal).toHaveTextContent('corr-9');
+    expect(within(refusal).queryByRole('button', { name: en['state.retry'] })).toBeNull();
+    unmount();
+
+    const outage = vi.fn<Loader>().mockResolvedValue(failed('unavailable'));
+    const second = mount(
+      <Harness load={outage} stateDescriptions={{ unavailable: 'creditNotes.list.unavailable' }} />
+    );
+    const state = await screen.findByTestId('state-unavailable');
+    expect(state).toHaveTextContent(en['state.unavailable.title']);
+    expect(state).toHaveTextContent(en['creditNotes.list.unavailable']);
+    expect(within(state).getByRole('button', { name: en['state.retry'] })).toBeInTheDocument();
+    second.unmount();
+
+    // Unset, the shared sentence is said, as before.
+    const plain = vi.fn<Loader>().mockResolvedValue(failed('denied'));
+    mount(<Harness load={plain} />);
+    expect(await screen.findByTestId('state-refused')).toHaveTextContent(
+      en['state.denied.description']
     );
   });
 

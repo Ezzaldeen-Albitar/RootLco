@@ -1240,6 +1240,12 @@ describe('a version held by the edit-baseline hook is traced, not trusted by nam
     const traced = live.sites.filter((site) => site.kind === 'baseline');
     expect(traced.map((site) => site.adapter).sort()).toEqual([
       'createPriceListVersion',
+      // The quotation's new-revision form and its issue form, since the sales and
+      // finance slice: each holds the QUOTATION's version its work was based on
+      // through the hook, fed the quotation read's version, so a refresh that
+      // lands while lines or an expiry are typed never moves the If-Match.
+      'createQuotationRevision',
+      'issueQuotation',
       'publishPriceListVersion',
       // The rename dialog of the appointment setup screen (Owner decision
       // 2026-09-29): the stored name and its version held through the hook, fed
