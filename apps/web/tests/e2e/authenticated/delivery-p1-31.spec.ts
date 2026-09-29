@@ -452,6 +452,23 @@ test.describe('P1-31 delivery screens, over the acceptance journey records', () 
     expect(await printCalls(page), 'nothing may print before the control is used').toBe(0);
     await print.click();
     expect(await printCalls(page), 'the Print control must call window.print exactly once').toBe(1);
+
+    /*
+     * Printed (print media emulated), the sheet is on the paper and the panels
+     * around it are not. The sheet sits inside its panel, so the print sheet's
+     * scope rule keeps it through that panel; the acknowledgement's sheet, a
+     * DIRECT child of its scope, printed blank until the rule stopped hiding the
+     * document itself (checkpoint browser QA at 78602752, RI3) — this holds the
+     * nested shape to the same measurement.
+     */
+    await page.emulateMedia({ media: 'print' });
+    await expect(sheet).toBeVisible();
+    const box = await sheet.boundingBox();
+    expect(box?.height ?? 0, 'the printed handover sheet has no height').toBeGreaterThan(0);
+    await expect(sheet).toContainText(say(locale, 'delivery.document.handoverHeading'));
+    const around = page.locator('[data-print-scope] > :not(:has([data-print="document"]))');
+    for (const panel of await around.all()) await expect(panel).toBeHidden();
+    await page.emulateMedia({ media: 'screen' });
   });
 
   /**

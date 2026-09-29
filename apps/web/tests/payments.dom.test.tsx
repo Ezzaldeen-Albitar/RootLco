@@ -1614,6 +1614,19 @@ describe('the printable receipt (FE-021)', () => {
     ).toBeVisible();
   });
 
+  it('prints the copy alone: the screen is a print scope and the copy one child of it', async () => {
+    // The residual #478 recorded: the receipt's printable copy printed the
+    // screen around it. The screen opts into the print scope, so the print
+    // sheet leaves off every child of it that holds no copy.
+    const user = userEvent.setup();
+    const document = await openPrint(user);
+    const scope = document.closest('[data-print-scope]') as HTMLElement;
+    expect(scope).not.toBeNull();
+    const holders = [...scope.children].filter((child) => child.contains(document));
+    expect(holders).toHaveLength(1);
+    expect(scope.children.length).toBeGreaterThan(1);
+  });
+
   it('prints the server’s figures and nothing computed', async () => {
     const user = userEvent.setup();
     const document = await openPrint(user);

@@ -407,6 +407,143 @@ describe('the print sheet releases the application shell on paper', () => {
     expect(scoped?.layered).toBe(false);
   });
 
+  /*
+   * What the scoped rule HIDES, on the two shapes of page that opt in — worked
+   * out by evaluating the compiled selector against a real DOM rather than by
+   * reading its text. jsdom's selector engine refuses `:not(:has(…))`, so the
+   * one grammar this rule uses — `scope > child`, each a compound of attribute
+   * selectors, `:has(…)` and `:not(…)` — is evaluated here part by part, each
+   * part through the DOM's own `matches` and `querySelector`.
+   *
+   * Checkpoint browser QA at 78602752 (RI3): the reception acknowledgement
+   * printed BLANK. Its sheet is a DIRECT child of the scope, beside the
+   * toolbar, and `:has()` only sees descendants, so the sheet matched
+   * `:not(:has(document))` and hid itself.
+   */
+  const scopedSelector = (css: string): string => {
+    const found = rulesOf(css).find(
+      (rule) =>
+        rule.print &&
+        rule.selector.startsWith('[data-print-scope]:has(') &&
+        rule.declarations['display'] === 'none'
+    );
+    if (found === undefined) throw new Error('the scoped print rule was not found');
+    return found.selector;
+  };
+
+  /** Splits `a:has(b):not(c)` into its simple parts, keeping brackets whole. */
+  function simpleParts(compound: string): string[] {
+    const parts: string[] = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < compound.length; i += 1) {
+      const ch = compound[i];
+      if (ch === '(' || ch === '[') depth += 1;
+      else if (ch === ')' || ch === ']') depth -= 1;
+      if (
+        depth === 0 &&
+        i + 1 < compound.length &&
+        (compound[i + 1] === ':' || compound[i + 1] === '[')
+      ) {
+        parts.push(compound.slice(start, i + 1));
+        start = i + 1;
+      }
+    }
+    parts.push(compound.slice(start));
+    return parts.filter((part) => part.length > 0);
+  }
+
+  /** Splits `a, :has(b)` at its top-level commas. */
+  function topLevelList(list: string): string[] {
+    const members: string[] = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < list.length; i += 1) {
+      const ch = list[i];
+      if (ch === '(' || ch === '[') depth += 1;
+      else if (ch === ')' || ch === ']') depth -= 1;
+      else if (ch === ',' && depth === 0) {
+        members.push(list.slice(start, i).trim());
+        start = i + 1;
+      }
+    }
+    members.push(list.slice(start).trim());
+    return members.filter((member) => member.length > 0);
+  }
+
+  function matchesCompound(element: Element, compound: string): boolean {
+    return simpleParts(compound.trim()).every((part) => {
+      const has = /^:has\((.*)\)$/.exec(part);
+      if (has) return element.querySelector(has[1] as string) !== null;
+      // `:not(a, b)` — a selector list: matching any member excludes.
+      const not = /^:not\((.*)\)$/.exec(part);
+      if (not)
+        return !topLevelList(not[1] as string).some((each) => matchesCompound(element, each));
+      return element.matches(part);
+    });
+  }
+
+  /** The elements under `root` the rule would hide. */
+  function hiddenBy(selector: string, root: Element): Element[] {
+    const [scopePart, childPart] = selector.split(/\s*>\s*/) as [string, string];
+    const hidden: Element[] = [];
+    for (const scope of [root, ...root.querySelectorAll('*')]) {
+      if (!matchesCompound(scope, scopePart)) continue;
+      for (const child of scope.children) {
+        if (matchesCompound(child, childPart)) hidden.push(child);
+      }
+    }
+    return hidden;
+  }
+
+  /** The acknowledgement: the toolbar and the sheet, siblings in the scope. */
+  function acknowledgementPage(): HTMLElement {
+    const page = document.createElement('div');
+    page.innerHTML =
+      '<div data-print-scope="document">' +
+      '<div data-testid="toolbar"></div>' +
+      '<article data-print="document" data-testid="sheet"></article>' +
+      '</div>';
+    return page;
+  }
+
+  /** The delivery screen: the sheet nested inside its panel, among other panels. */
+  function deliveryPage(sheetOpen: boolean): HTMLElement {
+    const page = document.createElement('div');
+    page.innerHTML =
+      '<div data-print-scope="document">' +
+      '<section data-testid="release"></section>' +
+      '<section data-testid="document-panel">' +
+      (sheetOpen ? '<article data-print="document" data-testid="sheet"></article>' : '') +
+      '</section>' +
+      '</div>';
+    return page;
+  }
+
+  const ids = (elements: readonly Element[]) =>
+    elements.map((element) => element.getAttribute('data-testid'));
+
+  it('prints the acknowledgement sheet that sits beside its toolbar, and leaves the toolbar off', () => {
+    const hidden = hiddenBy(scopedSelector(compiled), acknowledgementPage());
+    expect(ids(hidden)).toEqual(['toolbar']);
+  });
+
+  it('keeps the delivery sheet through its panel and leaves the other panels off', () => {
+    expect(ids(hiddenBy(scopedSelector(compiled), deliveryPage(true)))).toEqual(['release']);
+    // No document open: printing the screen prints the screen.
+    expect(hiddenBy(scopedSelector(compiled), deliveryPage(false))).toEqual([]);
+  });
+
+  it('FALSIFICATION: the rule without its document guard hides the acknowledgement sheet', () => {
+    const regressed = compiled.replace(
+      />\s*:not\(\[data-print=['"]?document['"]?\],\s*:has\(/g,
+      '> :not(:has('
+    );
+    expect(regressed).not.toBe(compiled);
+    const hidden = ids(hiddenBy(scopedSelector(regressed), acknowledgementPage()));
+    expect(hidden).toContain('sheet');
+  });
+
   it('FALSIFICATION: the selectors that lost are refused', () => {
     // The sheet as it was when every printout came out as one page.
     const regressed = compiled
