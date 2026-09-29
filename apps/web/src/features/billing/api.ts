@@ -246,14 +246,17 @@ export async function listCreditNotes(
   filter: {
     readonly approvalState?: CreditNoteState | undefined;
     readonly invoiceId?: string | undefined;
-  } = {}
+  } = {},
+  page: { readonly cursor?: string | null; readonly limit?: number } = {}
 ): Promise<ReadState<CursorPage<CreditNote>>> {
   return readOperation<CursorPage<CreditNote>>(
     '/api/v1/credit-notes' +
       branchTargetQuery(target, {
         approvalState: filter.approvalState ?? null,
         invoiceId: filter.invoiceId ?? null,
-        limit: 50,
+        // The screen walks the pages with the route's own cursor (`OperationalGrid`).
+        cursor: page.cursor ?? null,
+        limit: page.limit ?? 50,
       })
   );
 }

@@ -2,10 +2,11 @@
 
 import { regexes } from 'zod';
 
-import type { Locale } from '@/i18n/config';
+import { directionOf, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
+import { formatDateTime } from '@/lib/format';
 import { formatMoney } from '@/lib/money';
 
 import type { MoneyView, ReceiptStatus } from '../payments-contract';
@@ -52,10 +53,19 @@ export function withoutKey(
   return Object.fromEntries(Object.entries(record).filter(([name]) => name !== key));
 }
 
-export const PRIMARY_BUTTON =
-  'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover';
-export const SECONDARY_BUTTON =
-  'rounded-md border border-border bg-surface px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard';
+/**
+ * A moment, in the reader's language AND the reader's direction.
+ *
+ * The Arabic date format carries right-to-left marks between its parts, so a
+ * formatted Arabic moment boxed as left to right is re-ordered by the browser:
+ * on the printed invoice the issue line read "/2026/09، 9:37 م24", the day
+ * jumped to the end (checkpoint browser QA, OBS-3). The moment is isolated
+ * (`<bdi>`) in the direction of the language it was formatted in, so it reads
+ * in order in both languages, on screen and on paper.
+ */
+export function When({ value, locale }: { readonly value: string; readonly locale: Locale }) {
+  return <bdi dir={directionOf(locale)}>{formatDateTime(value, locale)}</bdi>;
+}
 
 /** A money figure, as the server stated it, with its ISO code. */
 export function Money({ money, locale }: { readonly money: MoneyView; readonly locale: Locale }) {

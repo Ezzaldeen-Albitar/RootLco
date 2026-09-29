@@ -48,7 +48,10 @@
  *
  * ## What the backend does not publish, said rather than hidden
  *
- * - No payer NAME on any receipt read — only `payerPartnerId`.
+ * - No payer NAME on the receipt detail — only `payerPartnerId`. The list
+ *   names the payer beside the id (`ReceiptListEntry.payer`) for a caller who
+ *   may read customers, and the screen asks the list for the one receipt's
+ *   payer when it opens a receipt (Owner directive, browser QA row 5.6b).
  * - No cashier: `received_by` is stored and never selected, deliberately.
  * - No note or memo on a receipt; the only free text is `reference`, the
  *   branch's opaque receipt number.
@@ -158,7 +161,23 @@ export interface Receipt {
   readonly recordVersion: number;
 }
 
-/** `sal.receipt-detail` — `ReceiptDetailView`; the list's row plus its allocation history. */
+/**
+ * Who paid, by name — `ReceiptPayerView`. Every field is `null` when the payer is
+ * not named to this caller: withheld without `crm.customer.read`, or retired
+ * since the receipt was taken. The id is `payerPartnerId` beside it.
+ */
+export interface ReceiptPayer {
+  readonly displayName: string | null;
+  readonly displayNumber: string | null;
+  readonly partyType: string | null;
+}
+
+/** One row of `sal.receipt-list` — `ReceiptListView`: the receipt and its payer's name. */
+export interface ReceiptListEntry extends Receipt {
+  readonly payer: ReceiptPayer;
+}
+
+/** `sal.receipt-detail` — `ReceiptDetailView`; the receipt plus its allocation history. */
 export interface ReceiptDetail extends Receipt {
   readonly allocations: readonly ReceiptAllocation[];
   /** True when the receipt holds more allocations than the read publishes (100). */

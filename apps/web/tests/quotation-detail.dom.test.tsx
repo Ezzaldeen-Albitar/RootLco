@@ -1,8 +1,19 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr } from './render';
+import ar from '../src/i18n/messages/ar.json';
+import {
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr as renderLtrBare,
+  renderRtl as renderRtlBare,
+} from './render';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 
 /**
  * One quotation, rendered (P1-30, `W3`, FE-004 revisions, FE-007 approval
@@ -14,7 +25,22 @@ import { renderLtr } from './render';
  * server's outcome and are recorded against the presented revision; the
  * approval limits appear only under their own code; a closed quotation
  * offers no writes; and the route page renders every read outcome as itself.
+ *
+ * On the shared Material UI wrappers since the sales and finance slice
+ * (ADR-022): the revision history is a grid, the forms are the Material fields,
+ * the expiry is typed part by part on the quotation's own branch clock, issuing
+ * asks first, and a write stays busy until the quotation has been read again.
+ * The job and the payer are named, never shown as references.
  */
+
+function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderLtr = (ui: ReactElement) => renderLtrBare(withMui(ui, 'en'));
 
 const EN = en as Record<string, string>;
 
@@ -64,6 +90,11 @@ vi.mock('next/navigation', () => ({
 let PERMISSIONS: readonly string[] = [];
 vi.mock('@/features/authentication/api/session', () => ({
   requireSession: async () => ({ permissions: PERMISSIONS, email: 'operator@test.local' }),
+}));
+
+const readWorkOrderDetail = vi.fn();
+vi.mock('@/features/work-orders/api', () => ({
+  readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
 }));
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
@@ -132,7 +163,7 @@ function discountApproval(over: Record<string, unknown> = {}) {
     revisionId: ISSUED_ID,
     revisionNumber: 2,
     companyId: 'company-1',
-    branchId: 'b',
+    branchId: TEST_BRANCH.id,
     status: 'pending',
     origin: 'requested',
     currency: 'JOD',
@@ -172,7 +203,7 @@ function quotation(over: Record<string, unknown> = {}) {
     quotationNumber: 'QUO-000001',
     workOrderId: WORK_ORDER_ID,
     companyId: 'company-1',
-    branchId: 'b',
+    branchId: TEST_BRANCH.id,
     currency: 'JOD',
     status: 'active',
     payerPartnerRef: PARTNER_ID,
@@ -224,22 +255,52 @@ function decisions(over: Record<string, unknown> = {}) {
 
 function renderDetail(over: Record<string, unknown> = {}, q = quotation()) {
   return renderLtr(
-    <QuotationDetailScreen
-      locale="en"
-      messages={en}
-      quotation={q as never}
-      canManage
-      canDecide={false}
-      canReadLimits={false}
-      canReadServices={false}
-      {...over}
-    />
+    inBranch(
+      <QuotationDetailScreen
+        locale="en"
+        messages={en}
+        quotation={q as never}
+        canManage
+        canDecide={false}
+        canReadLimits={false}
+        canReadServices={false}
+        {...over}
+      />
+    )
   );
 }
 
 async function renderPage(params: Record<string, string>) {
   const tree = await QuotationDetailPage({ params: Promise.resolve(params) });
-  return renderLtr(tree as React.ReactElement);
+  return renderLtr(inBranch(tree as ReactElement));
+}
+
+const workOrder = {
+  id: WORK_ORDER_ID,
+  companyId: 'company-1',
+  branchId: TEST_BRANCH.id,
+  receptionVisitId: 'r',
+  vehicleId: 'v',
+  kind: 'ordinary',
+  state: 'open',
+  partsForwardState: 'none',
+  displayNumber: 'WO-000042',
+  openedAt: '2026-09-01T08:00:00Z',
+  recordVersion: 2,
+  customer: {
+    partnerId: PARTNER_ID,
+    displayName: 'Layla Haddad',
+    relationshipRole: 'vehicle_owner',
+    hasAdditionalParties: false,
+  },
+  vehicle: { vehicleId: 'v', registrationPlate: '12-34567', makeModel: 'Toyota Corolla' },
+};
+
+/** A moment typed part by part, in English order: day, month, year, hour, minute. */
+async function typeMoment(user: ReturnType<typeof userEvent.setup>, key: string, digits: string) {
+  const group = screen.getByRole('group', { name: labelled(key) });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(digits);
 }
 
 beforeEach(() => {
@@ -291,6 +352,8 @@ beforeEach(() => {
     created: { decision: 'approved', itemsDecided: 2 },
   });
   decideItem.mockResolvedValue({ state: success('quotations.decision.success'), created: {} });
+  // What a write reads again before it lets go of its button.
+  readQuotation.mockResolvedValue(okRead(quotation()));
 });
 
 const region = (key: string) => screen.getByRole('region', { name: EN[key] as string });
@@ -338,14 +401,22 @@ describe('the captured figures render as stated', () => {
       expect(listRevisions).toHaveBeenCalledWith(QUOTATION_ID, expect.anything(), null)
     );
     const revisions = region('quotations.revisions.heading');
-    const table = await within(revisions).findByRole('table');
+    const grid = await within(revisions).findByRole('grid', {
+      name: EN['quotations.revisions.caption'] as string,
+    });
     expect(
-      within(table).getByText(EN['quotations.revisionStatus.superseded'] as string)
+      await within(grid).findByText(EN['quotations.revisionStatus.superseded'] as string)
     ).toBeVisible();
-    await user.click(
-      within(table).getByRole('button', { name: `${EN['quotations.revisions.show']} 1` })
-    );
+    const show = within(grid).getByRole('button', { name: `${EN['quotations.revisions.show']} 1` });
+    // A choice among the rows: which revision is shown is announced with it.
+    expect(show).toHaveAttribute('aria-pressed', 'false');
+    await user.click(show);
     await waitFor(() => expect(readRevision).toHaveBeenCalledWith(OLD_ID));
+    await waitFor(() =>
+      expect(
+        within(grid).getByRole('button', { name: `${EN['quotations.revisions.show']} 1` })
+      ).toHaveAttribute('aria-pressed', 'true')
+    );
     const chosen = await within(revisions).findByRole('region', {
       name: EN['quotations.revisions.chosenHeading'] as string,
     });
@@ -559,7 +630,8 @@ describe('the decision form points at what to fix (route sweep B3)', () => {
       within(form).getByLabelText(labelled('quotations.decide.evidenceKind')),
       'document'
     );
-    const box = within(form).getByTestId('quotation-decide-document');
+    expect(within(form).getByTestId('quotation-decide-document')).toBeVisible();
+    const box = within(form).getByLabelText(labelled('quotations.decide.documentVersionId'));
     expect(box).toHaveAccessibleDescription(EN['quotations.decide.documentHelp'] as string);
     await user.click(
       within(form).getByRole('button', { name: EN['quotations.decide.submit'] as string })
@@ -584,11 +656,18 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
     const user = userEvent.setup();
     renderDetail({}, quotation({ currentRevision: revision({ status: 'draft', issuedAt: null }) }));
     const form = screen.getByRole('form', { name: EN['quotations.issue.heading'] as string });
-    fireEvent.change(within(form).getByLabelText(labelled('quotations.issue.expiresAt')), {
-      target: { value: '2026-12-01T10:00' },
-    });
+    // The expiry is typed on the quotation's own branch clock (Asia/Riyadh, +03:00).
+    await typeMoment(user, 'quotations.issue.expiresAt', '011220261000');
     await user.click(
       within(form).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    );
+    // Issuing asks first; nothing is sent until the question is answered.
+    const dialog = await screen.findByRole('alertdialog', {
+      name: (EN['quotations.issue.confirmTitle'] as string).replace('{number}', '2'),
+    });
+    expect(issueQuotation).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['quotations.issue.submit'] as string })
     );
     await waitFor(() => expect(issueQuotation).toHaveBeenCalled());
     const [id, body, ifMatch] = issueQuotation.mock.calls[0] as [
@@ -598,10 +677,142 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
     ];
     expect(id).toBe(QUOTATION_ID);
     expect(body['revisionId']).toBe(ISSUED_ID);
-    expect(typeof body['expiresAt']).toBe('string');
+    // An instant with the branch's offset for that moment, as the route accepts it.
+    expect(body['expiresAt']).toBe('2026-12-01T10:00:00+03:00');
     // The QUOTATION's version (5), never the revision's own (1).
     expect(ifMatch).toBe(5);
+    // The quotation is read again before the question lets go.
+    await waitFor(() => expect(readQuotation).toHaveBeenCalledWith(QUOTATION_ID));
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
+  it('stays busy until the quotation has been read again, so a second press cannot send the spent version', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    readQuotation.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    const user = userEvent.setup();
+    renderDetail({}, quotation({ currentRevision: revision({ status: 'draft', issuedAt: null }) }));
+    const form = screen.getByRole('form', { name: EN['quotations.issue.heading'] as string });
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    );
+    await waitFor(() => expect(issueQuotation).toHaveBeenCalledTimes(1));
+    // The re-read is still out: the question is still up, and its buttons are held.
+    await waitFor(() =>
+      expect(
+        within(screen.getByRole('alertdialog')).getByRole('button', {
+          name: EN['overlay.working'] as string,
+        })
+      ).toBeDisabled()
+    );
+    expect(
+      within(screen.getByRole('alertdialog')).getByRole('button', {
+        name: EN['overlay.cancel'] as string,
+      })
+    ).toBeDisabled();
+    answer(okRead(quotation({ recordVersion: 6 })));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(issueQuotation).toHaveBeenCalledTimes(1);
+  });
+
+  it('without the quotation’s branch clock, offers no expiry and still issues without one', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <QuotationDetailScreen
+          locale="en"
+          messages={en}
+          quotation={
+            quotation({ currentRevision: revision({ status: 'draft', issuedAt: null }) }) as never
+          }
+          canManage
+          canDecide={false}
+          canReadLimits={false}
+          canReadServices={false}
+        />,
+        {
+          snapshot: branchSnapshot([
+            { ...TEST_BRANCH, id: '99999999-0000-4000-8000-000000000009' },
+          ]),
+        }
+      )
+    );
+    expect(screen.getByTestId('quotation-issue-no-clock')).toHaveTextContent(
+      EN['quotations.issue.zoneUnknown'] as string
+    );
+    expect(
+      screen.queryByRole('group', { name: labelled('quotations.issue.expiresAt') })
+    ).toBeNull();
+    const form = screen.getByRole('form', { name: EN['quotations.issue.heading'] as string });
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    );
+    await waitFor(() => expect(issueQuotation).toHaveBeenCalled());
+    expect(issueQuotation.mock.calls[0]?.[1]).toEqual({ revisionId: ISSUED_ID });
+  });
+
+  describe('the version an issue sends is the one its work was based on (useEditBaseline)', () => {
+    const draft = () =>
+      quotation({ currentRevision: revision({ status: 'draft', issuedAt: null }) });
+    const screenFor = (q: ReturnType<typeof quotation>) =>
+      withMui(
+        inBranch(
+          <QuotationDetailScreen
+            locale="en"
+            messages={en}
+            quotation={q as never}
+            canManage
+            canDecide={false}
+            canReadLimits={false}
+            canReadServices={false}
+          />
+        )
+      );
+
+    async function issueNow(user: ReturnType<typeof userEvent.setup>) {
+      const form = screen.getByRole('form', { name: EN['quotations.issue.heading'] as string });
+      await user.click(
+        within(form).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+      );
+      const dialog = await screen.findByRole('alertdialog');
+      await user.click(
+        within(dialog).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+      );
+      await waitFor(() => expect(issueQuotation).toHaveBeenCalledTimes(1));
+    }
+
+    it('with an expiry typed, a refresh that moves the quotation on does not move the version sent', async () => {
+      const user = userEvent.setup();
+      const view = renderLtrBare(screenFor(draft()));
+      await typeMoment(user, 'quotations.issue.expiresAt', '011220261000');
+      // Another tab moved the quotation on; the page read now holds version 6.
+      view.rerender(screenFor({ ...draft(), recordVersion: 6 }));
+      await issueNow(user);
+      // The work was built on version 5, so version 5 is sent — and a server
+      // that has moved on refuses it as a conflict rather than applying it.
+      expect(issueQuotation.mock.calls[0]?.[2]).toBe(5);
+    });
+
+    it('with nothing typed, the refreshed quotation’s version is the one sent', async () => {
+      const user = userEvent.setup();
+      const view = renderLtrBare(screenFor(draft()));
+      view.rerender(screenFor({ ...draft(), recordVersion: 6 }));
+      await issueNow(user);
+      expect(issueQuotation.mock.calls[0]?.[2]).toBe(6);
+    });
   });
 
   it('says there is no draft to issue when the current revision is issued', () => {
@@ -617,9 +828,19 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
     await user.click(
       within(form).getByRole('button', { name: EN['quotations.issue.submit'] as string })
     );
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    );
     expect(await within(form).findByText(EN['quotations.detail.conflict'] as string)).toBeVisible();
     expect(within(form).getByText('corr-9')).toBeVisible();
     expect(refresh).not.toHaveBeenCalled();
+    // The way out of a conflict is to look again: offered beside it.
+    await userEvent
+      .setup()
+      .click(within(form).getByRole('button', { name: EN['quotations.detail.reload'] as string }));
+    await waitFor(() => expect(readQuotation).toHaveBeenCalledWith(QUOTATION_ID));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 
   it('adds a revision from lines with the quotation’s recordVersion', async () => {
@@ -627,7 +848,7 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
     renderDetail();
     const form = screen.getByRole('form', { name: EN['quotations.revise.heading'] as string });
     await user.type(
-      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
       SERVICE_ID
     );
     await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '3');
@@ -652,7 +873,7 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
       within(form).getByText(EN['quotations.build.discountApprovalHelp'] as string)
     ).toBeVisible();
     await user.type(
-      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
       SERVICE_ID
     );
     await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '3');
@@ -687,7 +908,7 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
     renderDetail();
     const form = screen.getByRole('form', { name: EN['quotations.revise.heading'] as string });
     await user.type(
-      within(form).getByLabelText(labelled('quotations.picker.serviceIdField')),
+      within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
       SERVICE_ID
     );
     await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '0.333');
@@ -699,7 +920,7 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
       await within(form).findByText(EN['form.violation.inexact_line_base'] as string)
     ).toBeVisible();
     expect(within(form).getByLabelText(labelled('quotations.lines.quantity'))).toHaveValue('0.333');
-    expect(within(form).getByLabelText(labelled('quotations.picker.serviceIdField'))).toHaveValue(
+    expect(within(form).getByLabelText(labelled('pricing.picker.serviceReference'))).toHaveValue(
       SERVICE_ID
     );
   });
@@ -887,11 +1108,49 @@ describe('the /quotations/[quotationId] route page renders the read as what it w
     readQuotation.mockResolvedValue(okRead(quotation()));
     await renderPage({ locale: 'en', quotationId: QUOTATION_ID });
     expect(readQuotation).toHaveBeenCalledWith(QUOTATION_ID);
-    expect(region('quotations.detail.summaryHeading')).toBeVisible();
+    // Without the work-order read the job is not read, and nothing prints a reference.
+    expect(readWorkOrderDetail).not.toHaveBeenCalled();
+    const summary = region('quotations.detail.summaryHeading');
+    expect(summary).toBeVisible();
+    expect(summary.textContent).not.toContain(WORK_ORDER_ID);
+    expect(summary.textContent).not.toContain(PARTNER_ID);
+    expect(
+      within(summary).getByText(EN['quotations.detail.payerNotNamed'] as string)
+    ).toBeVisible();
     expect(screen.getByText(EN['quotations.revise.heading'] as string)).toBeVisible();
     expect(
       await screen.findByRole('form', { name: EN['quotations.decide.heading'] as string })
     ).toBeVisible();
+  });
+
+  it('with the work-order read, names the job by its number and the payer by name', async () => {
+    PERMISSIONS = ['quo.quotation.read', 'wo.work_order.read'];
+    readQuotation.mockResolvedValue(okRead(quotation()));
+    readWorkOrderDetail.mockResolvedValue(
+      okRead({ workOrder, jobs: [], nextStates: [], reachableStates: [] })
+    );
+    await renderPage({ locale: 'en', quotationId: QUOTATION_ID });
+    expect(readWorkOrderDetail).toHaveBeenCalledWith(WORK_ORDER_ID);
+    const summary = region('quotations.detail.summaryHeading');
+    expect(within(summary).getByRole('link', { name: 'WO-000042' })).toHaveAttribute(
+      'href',
+      `/en/work-orders/${WORK_ORDER_ID}`
+    );
+    expect(within(summary).getByText('Layla Haddad')).toBeVisible();
+    expect(summary.textContent).not.toContain(WORK_ORDER_ID);
+    expect(summary.textContent).not.toContain(PARTNER_ID);
+  });
+
+  it('a job that could not be read is linked in words, never by its reference', async () => {
+    PERMISSIONS = ['quo.quotation.read', 'wo.work_order.read'];
+    readQuotation.mockResolvedValue(okRead(quotation()));
+    readWorkOrderDetail.mockResolvedValue({ status: 'denied', correlationId: 'corr-wo' });
+    await renderPage({ locale: 'en', quotationId: QUOTATION_ID });
+    const summary = region('quotations.detail.summaryHeading');
+    expect(
+      within(summary).getByRole('link', { name: EN['quotations.list.openWorkOrder'] as string })
+    ).toBeVisible();
+    expect(summary.textContent).not.toContain(WORK_ORDER_ID);
   });
 
   it('a locale it does not serve is not found', async () => {
@@ -899,5 +1158,36 @@ describe('the /quotations/[quotationId] route page renders the read as what it w
     await expect(renderPage({ locale: 'xx', quotationId: QUOTATION_ID })).rejects.toThrow(
       'notFound'
     );
+  });
+});
+
+describe('dates read in order in both languages', () => {
+  it('isolates each moment in the direction of the language it is written in', () => {
+    renderRtlBare(
+      withMui(
+        inBranch(
+          <QuotationDetailScreen
+            locale="ar"
+            messages={ar}
+            quotation={quotation() as never}
+            canManage={false}
+            canDecide={false}
+            canReadLimits={false}
+            canReadServices={false}
+          />,
+          { locale: 'ar' }
+        ),
+        'ar'
+      )
+    );
+    const current = screen.getByRole('region', {
+      name: (ar as Record<string, string>)['quotations.current.heading'] as string,
+    });
+    const moments = Array.from(current.querySelectorAll('bdi[dir]')).filter((node) =>
+      /2026/.test(node.textContent ?? '')
+    );
+    expect(moments.length).toBeGreaterThan(0);
+    // Never boxed left to right: the Arabic date would be re-ordered on paper.
+    for (const moment of moments) expect(moment).toHaveAttribute('dir', 'rtl');
   });
 });

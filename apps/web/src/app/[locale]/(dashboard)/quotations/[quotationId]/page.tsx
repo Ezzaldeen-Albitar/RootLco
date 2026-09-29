@@ -14,6 +14,8 @@ import { readQuotation } from '@/features/quotations/api';
 import { QuotationDetailScreen } from '@/features/quotations/components/QuotationDetailScreen';
 import { QUOTATION_PERMISSIONS } from '@/features/quotations/quotations-contract';
 import { SERVICE_PERMISSIONS } from '@/features/services/services-contract';
+import { readWorkOrderDetail } from '@/features/work-orders/api';
+import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -71,11 +73,24 @@ export default async function QuotationDetailPage({
     return shell(<ErrorState messages={messages} correlationId={reference} />);
   }
 
+  /*
+   * The quotation's job, read only for an operator who may read work orders, so
+   * the page names it by its number (and the paying customer, when the job's
+   * customer pays) instead of printing a reference. Without the code, or when the
+   * read fails, the screen says so in words; nothing here gates the quotation.
+   */
+  let workOrder: WorkOrderListEntry | null = null;
+  if (holds(session.permissions, QUOTATION_PERMISSIONS.workOrderRead)) {
+    const job = await readWorkOrderDetail(detail.data.workOrderId);
+    if (job.status === 'ok') workOrder = job.data.workOrder;
+  }
+
   return shell(
     <QuotationDetailScreen
       locale={locale}
       messages={messages}
       quotation={detail.data}
+      workOrder={workOrder}
       canManage={holds(session.permissions, QUOTATION_PERMISSIONS.manage)}
       canDecide={holds(session.permissions, QUOTATION_PERMISSIONS.decide)}
       canReadLimits={holds(session.permissions, QUOTATION_PERMISSIONS.limitsRead)}

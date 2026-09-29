@@ -1,6 +1,6 @@
 'use server';
 
-import type { TableRequest } from '@/components/data-table/table-state';
+import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage } from '@/components/data-table/use-server-table';
 import { authorizedClient } from '@/lib/api/server-client';
 import {
@@ -19,8 +19,9 @@ import type { Outstanding } from '@/features/billing/billing-contract';
 import type {
   Allocation,
   PaymentMethod,
-  Receipt,
   ReceiptDetail,
+  ReceiptListEntry,
+  ReceiptPayer,
   ReceiptStatus,
   RecordedReceipt,
 } from './payments-contract';
@@ -109,16 +110,20 @@ function underFormControl(state: ActionState): ActionState {
   return { ...state, fieldErrors: { currency: currencyCode, ...rest } };
 }
 
-/** The receipts of ONE branch (`sal.receipt-list`), newest received first. */
+/**
+ * The receipts of ONE branch (`sal.receipt-list`), newest received first. Each
+ * row names its payer beside the id where the caller may read customers
+ * (`ReceiptListEntry.payer`).
+ */
 export async function listReceipts(
   target: BranchTarget,
   criteria: ReceiptCriteria,
   request: TableRequest,
   cursor: string | null
-): Promise<ServerPage<Receipt>> {
+): Promise<ServerPage<ReceiptListEntry>> {
   const client = await authorizedClient();
   if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
-  const result = await client.get<CursorPage<Receipt>>(
+  const result = await client.get<CursorPage<ReceiptListEntry>>(
     '/api/v1/payments' +
       branchTargetQuery(target, {
         payerPartnerId: criteria.payerPartnerId,
@@ -138,6 +143,32 @@ export async function listReceipts(
     hasMore: result.data.hasMore,
     correlationId: result.correlationId,
   };
+}
+
+/**
+ * Who paid one receipt, by name — asked of `sal.receipt-list`, the one receipt
+ * read that names a payer (Owner directive, browser QA row 5.6b).
+ *
+ * `sal.receipt-detail` publishes the payer's id only. The list, narrowed to that
+ * payer in the receipt's own branch, answers the name under exactly the rules the
+ * list applies — the branch authorized server-side, the name withheld (`null`)
+ * without `crm.customer.read` — and one row is enough: every row of a payer
+ * names the same payer. An empty page (the receipt was deleted meanwhile) or any
+ * refusal answers `null`, and the screen says the name is not shown rather than
+ * printing the id.
+ */
+export async function readReceiptPayer(
+  target: BranchTarget,
+  payerPartnerId: string
+): Promise<ReceiptPayer | null> {
+  const page = await listReceipts(
+    target,
+    { payerPartnerId, status: null, invoiceId: null },
+    { ...INITIAL_REQUEST, pageSize: 1 },
+    null
+  );
+  if (page.status !== 'ok') return null;
+  return page.rows[0]?.payer ?? null;
 }
 
 /**

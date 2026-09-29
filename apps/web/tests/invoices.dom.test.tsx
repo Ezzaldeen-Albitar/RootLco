@@ -11,12 +11,15 @@ import {
   TEST_BRANCH,
   branchSnapshot,
   inBranch,
-  renderLtr as renderInLtr,
-  renderRtl as renderInRtl,
+  renderLtr as renderLtrBare,
+  renderRtl as renderRtlBare,
   BranchSwitch,
   TEST_COMPANY,
   WorkingBranchProbe,
 } from './render';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 import {
   discardAndSwitch,
   forgetRememberedBranch,
@@ -25,6 +28,23 @@ import {
   switchExpectingQuestion,
   switchWithoutQuestion,
 } from './support/branch-switch';
+
+/*
+ * On the shared Material UI wrappers since the sales and finance slice
+ * (ADR-022): every render goes inside the Material foundation, as the locale
+ * layout mounts the screens.
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderInLtr = (ui: ReactElement, options?: Parameters<typeof renderLtrBare>[1]) =>
+  renderLtrBare(withMui(ui, 'en'), options);
+const renderInRtl = (ui: ReactElement, options?: Parameters<typeof renderRtlBare>[1]) =>
+  renderRtlBare(withMui(ui, 'ar'), options);
 
 /*
  * The credit-notes list is addressed to a branch, and that branch is the
@@ -349,13 +369,14 @@ describe('reached from a work order', () => {
     renderChooser();
     expect(screen.getByText(EN['invoices.choose.explain'] as string)).toBeVisible();
     expect(readInvoicePreview).not.toHaveBeenCalled();
-    // No box asks for a reference: the only text box is the search.
-    expect(screen.getAllByRole('searchbox')).toHaveLength(1);
+    // No box asks for a reference: the only box is the job search.
+    expect(screen.getAllByRole('combobox')).toHaveLength(1);
+    expect(screen.queryAllByRole('textbox')).toHaveLength(0);
     await user.type(
       screen.getByLabelText(EN['invoices.choose.workOrderId'] as string),
       'Layla{Enter}'
     );
-    const match = await screen.findByRole('button', { name: /WO-000042/ });
+    const match = await screen.findByRole('option', { name: /WO-000042/ });
     // Server-side, addressed to the branch the header holds, with the term as `q`.
     expect(listWorkOrders).toHaveBeenCalledWith(
       { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
@@ -368,7 +389,9 @@ describe('reached from a work order', () => {
     expect(match).toHaveTextContent('12-34567');
     expect(match).toHaveTextContent('Layla Haddad');
     await user.click(match);
-    expect(screen.getByTestId('work-order-picker-chosen')).toHaveTextContent('WO-000042');
+    expect(
+      (screen.getByLabelText(EN['invoices.choose.workOrderId'] as string) as HTMLInputElement).value
+    ).toContain('WO-000042');
     await user.click(screen.getByRole('button', { name: EN['invoices.choose.submit'] as string }));
     // The CHOSEN record travels; the search term never reaches the address.
     expect(push).toHaveBeenCalledWith(`/en/invoices?workOrderId=${WORK_ORDER_ID}`);
@@ -418,7 +441,9 @@ describe('finding the job when none is named (WorkOrderPicker)', () => {
     await user.click(screen.getByRole('button', { name: EN['invoices.choose.submit'] as string }));
     expect(box).toHaveValue('WO-42');
     expect(box).toHaveAttribute('aria-invalid', 'true');
-    await user.click(await screen.findByRole('button', { name: /WO-000042/ }));
+    // The matches reopen under the box once the operator is back in it.
+    await user.click(box);
+    await user.click(await screen.findByRole('option', { name: /WO-000042/ }));
     expect(screen.queryByText(EN['workOrders.picker.required'] as string)).toBeNull();
   });
 
@@ -589,7 +614,7 @@ describe('the job picker and the working context', () => {
     await user.selectOptions(chooser, OTHER_BRANCH.id);
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
     await user.type(box(), 'Layla{Enter}');
-    expect(await screen.findByRole('button', { name: /WO-000042/ })).toBeVisible();
+    expect(await screen.findByRole('option', { name: /WO-000042/ })).toBeVisible();
     expect(listWorkOrders).toHaveBeenCalledWith(
       { companyId: TEST_COMPANY.id, branchId: OTHER_BRANCH.id },
       { q: 'Layla' },
@@ -642,7 +667,7 @@ describe('the job picker and the working context', () => {
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
     answer(found([workOrder]));
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(screen.queryByRole('button', { name: /WO-000042/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: /WO-000042/ })).toBeNull();
     expect(box()).toHaveValue('');
     expect(listWorkOrders).toHaveBeenCalledTimes(1);
   });
@@ -653,13 +678,12 @@ describe('the job picker and the working context', () => {
     renderWith(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
     await user.click(screen.getByRole('button', { name: 'first' }));
     await user.type(box(), 'Layla{Enter}');
-    await user.click(await screen.findByRole('button', { name: /WO-000042/ }));
-    expect(screen.getByTestId('work-order-picker-chosen')).toHaveTextContent('WO-000042');
+    await user.click(await screen.findByRole('option', { name: /WO-000042/ }));
+    expect((box() as HTMLInputElement).value).toContain('WO-000042');
 
     await switchWithoutQuestion(user, 'second');
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
-    await waitFor(() => expect(screen.queryByTestId('work-order-picker-chosen')).toBeNull());
-    expect(box()).toHaveValue('');
+    await waitFor(() => expect(box()).toHaveValue(''));
     // Nothing is opened for a job that belonged to the previous branch.
     await user.click(submit());
     expect(push).not.toHaveBeenCalled();
@@ -758,9 +782,9 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     await waitFor(() => expect(createInvoice).toHaveBeenCalled());
     expect(createInvoice.mock.calls[0]?.[0]).toEqual({ workOrderId: WORK_ORDER_ID });
     expect(createInvoice.mock.calls[0]?.[1]).toMatch(UUID_SHAPE);
-    const note = await screen.findByRole('status');
-    expect(note).toHaveTextContent(EN['invoices.create.recorded'] as string);
-    expect(note).toHaveTextContent(INVOICE_ID);
+    const note = await screen.findByText(EN['invoices.create.recorded'] as string);
+    // A draft has no number yet, and its reference is never printed in its place.
+    expect(note.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}/i);
     expect(
       await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string })
     ).toBeVisible();
@@ -797,7 +821,7 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     // No box on this form asks for a partner reference.
     expect(within(form).queryByDisplayValue(UUID_SHAPE)).toBeNull();
     await user.type(within(form).getByLabelText(labelled('invoices.create.payer')), 'Fleet');
-    await user.click(await within(form).findByRole('button', { name: /Fleet Partner/ }));
+    await user.click(await screen.findByRole('option', { name: /Fleet Partner/ }));
     expect(searchCustomerDirectory.mock.calls.at(-1)?.[2]).toEqual({ q: 'Fleet' });
     await user.click(
       within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
@@ -1061,8 +1085,7 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     await user.click(
       within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
     );
-    const note = await screen.findByRole('status');
-    expect(note).toHaveTextContent(EN['invoices.create.replayed'] as string);
+    expect(await screen.findByText(EN['invoices.create.replayed'] as string)).toBeVisible();
   });
 });
 
@@ -1073,6 +1096,17 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
     );
     return { initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice() }) };
   };
+
+  /** The issue question, answered: nothing is sent before it. */
+  async function confirmIssue(user: ReturnType<typeof userEvent.setup>) {
+    const dialog = await screen.findByRole('alertdialog', {
+      name: EN['invoices.issue.confirmTitle'] as string,
+    });
+    expect(issueInvoice).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['invoices.issue.action'] as string })
+    );
+  }
 
   it('renders the detail with the server’s strings, and the open balance', async () => {
     renderScreen({ ...live() });
@@ -1167,9 +1201,11 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
     });
     const before = readInvoice.mock.calls.length;
     await user.click(button);
+    await confirmIssue(user);
     await waitFor(() => expect(issueInvoice).toHaveBeenCalledWith(INVOICE_ID, 5));
-    const note = await screen.findByRole('status');
-    expect(note).toHaveTextContent(EN['invoices.issue.recorded'] as string);
+    const note = await screen.findByText(EN['invoices.issue.recorded'] as string, {
+      exact: false,
+    });
     expect(note).toHaveTextContent('FXINV-000007');
     await waitFor(() => expect(readInvoice.mock.calls.length).toBeGreaterThan(before));
     expect(refresh).toHaveBeenCalled();
@@ -1191,6 +1227,7 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
     await user.click(
       await screen.findByRole('button', { name: EN['invoices.issue.action'] as string })
     );
+    await confirmIssue(user);
     expect(await screen.findByText(EN['invoices.detail.conflict'] as string)).toBeVisible();
     await waitFor(() => expect(readInvoice.mock.calls.length).toBeGreaterThan(before));
   });
@@ -1211,6 +1248,7 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
     await user.click(
       await screen.findByRole('button', { name: EN['invoices.issue.action'] as string })
     );
+    await confirmIssue(user);
     expect(
       await screen.findByText(EN['invoices.issue.replayed'] as string, { exact: false })
     ).toBeVisible();
@@ -1250,22 +1288,24 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
     await user.click(
       await screen.findByRole('button', { name: EN['invoices.cancel.open'] as string })
     );
-    const form = await screen.findByRole('form', { name: EN['invoices.cancel.heading'] as string });
-    await user.click(
-      within(form).getByRole('button', { name: EN['invoices.cancel.submit'] as string })
-    );
-    expect(await within(form).findByText(EN['field.required'] as string)).toBeVisible();
+    const dialog = await screen.findByRole('alertdialog', {
+      name: EN['invoices.cancel.heading'] as string,
+    });
+    const confirm = () =>
+      within(dialog).getByRole('button', { name: EN['invoices.cancel.submit'] as string });
+    // No reason, no cancel: the confirmation is held, and the box says why.
+    expect(confirm()).toBeDisabled();
+    const reason = within(dialog).getByLabelText(labelled('invoices.cancel.reason'));
+    await user.click(reason);
+    await user.tab();
+    expect(reason).toHaveAttribute('aria-invalid', 'true');
+    expect(within(dialog).getByText(EN['overlay.reasonRequired'] as string)).toBeVisible();
     expect(cancelInvoice).not.toHaveBeenCalled();
-    await user.type(
-      within(form).getByLabelText(labelled('invoices.cancel.reason')),
-      'wrong customer'
-    );
+    await user.type(reason, 'wrong customer');
     readWorkOrderInvoice.mockImplementation(async () =>
       okRead({ workOrderId: WORK_ORDER_ID, invoice: null })
     );
-    await user.click(
-      within(form).getByRole('button', { name: EN['invoices.cancel.submit'] as string })
-    );
+    await user.click(confirm());
     await waitFor(() =>
       expect(cancelInvoice).toHaveBeenCalledWith(INVOICE_ID, { reason: 'wrong customer' }, 5)
     );
@@ -1297,6 +1337,11 @@ describe('FE-020 — the printable copy', () => {
     expect(
       within(document).getByText(EN['invoices.print.descriptionsFromQuotation'] as string)
     ).toBeVisible();
+    // The payer by name (the job's customer pays), and the job by its number —
+    // never the payer's or the invoice's reference (browser QA OBS-4).
+    expect(within(document).getByTestId('invoice-print-payer')).toHaveTextContent('Layla Haddad');
+    expect(within(document).getByText('WO-000042')).toBeVisible();
+    expect(document.textContent).not.toContain(INVOICE_ID);
     await user.click(screen.getByRole('button', { name: EN['invoices.print.print'] as string }));
     expect(print).toHaveBeenCalledTimes(1);
     print.mockRestore();
@@ -1490,15 +1535,17 @@ describe('credit notes are reachable', () => {
     expect(within(section).queryAllByRole('combobox')).toEqual([]);
 
     expect(await screen.findByText('A part was billed twice on the same job')).toBeTruthy();
-    const table = screen.getByRole('table');
-    expect(within(table).getByText(money('40.0000'))).toBeTruthy();
-    expect(within(table).getByText(EN['creditNotes.state.pending'] as string)).toBeTruthy();
+    const grid = screen.getByRole('grid', { name: EN['creditNotes.list.caption'] as string });
+    expect(within(grid).getByText(money('40.0000'))).toBeTruthy();
+    expect(within(grid).getByText(EN['creditNotes.state.pending'] as string)).toBeTruthy();
     // And the read itself is addressed to that branch: both halves travel, and
     // they are the header's, not a pair the screen made up. It opens on the
-    // notes waiting for approval, which is the work the screen is for.
+    // notes waiting for approval, which is the work the screen is for, and it
+    // walks the route's own pages with its cursor.
     expect(listCreditNotes).toHaveBeenCalledWith(
       { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
-      { approvalState: 'pending' }
+      { approvalState: 'pending' },
+      { cursor: null, limit: expect.any(Number) }
     );
   });
 
@@ -1506,24 +1553,29 @@ describe('credit notes are reachable', () => {
     const user = userEvent.setup();
     renderLtr(creditNotesScreen());
     await screen.findByText('A part was billed twice on the same job');
-    await user.selectOptions(
-      screen.getByLabelText(labelled('creditNotes.list.status')),
-      EN['creditNotes.list.all'] as string
-    );
-    await waitFor(() =>
-      expect(listCreditNotes).toHaveBeenLastCalledWith({
-        companyId: TEST_BRANCH.companyId,
-        branchId: TEST_BRANCH.id,
-      })
-    );
-    await user.selectOptions(
-      screen.getByLabelText(labelled('creditNotes.list.status')),
-      EN['creditNotes.state.approved'] as string
+    const chips = screen.getByRole('group', { name: EN['creditNotes.list.status'] as string });
+    // The state the list opens on is the pressed chip.
+    expect(
+      within(chips).getByRole('button', { name: EN['creditNotes.state.pending'] as string })
+    ).toHaveAttribute('aria-pressed', 'true');
+    await user.click(
+      within(chips).getByRole('button', { name: EN['filters.chips.all'] as string })
     );
     await waitFor(() =>
       expect(listCreditNotes).toHaveBeenLastCalledWith(
         { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
-        { approvalState: 'approved' }
+        {},
+        expect.objectContaining({ cursor: null })
+      )
+    );
+    await user.click(
+      within(chips).getByRole('button', { name: EN['creditNotes.state.approved'] as string })
+    );
+    await waitFor(() =>
+      expect(listCreditNotes).toHaveBeenLastCalledWith(
+        { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id },
+        { approvalState: 'approved' },
+        expect.objectContaining({ cursor: null })
       )
     );
   });
@@ -1739,7 +1791,7 @@ describe('raising and approving a credit note', () => {
 
   async function chooseInvoice(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
     await user.type(invoiceSearch(form), 'INV-0001');
-    await user.click(await within(form).findByRole('button', { name: /INV-000123/ }));
+    await user.click(await screen.findByRole('option', { name: /INV-000123/ }));
   }
 
   it('raises a note against an invoice FOUND in the working branch, and opens it as pending', async () => {
@@ -1765,8 +1817,9 @@ describe('raising and approving a credit note', () => {
 
     await waitFor(() => expect(requestCreditNote).toHaveBeenCalledTimes(1));
     expect(requestCreditNote.mock.calls[0]?.[0]).toBe(INVOICE_ID);
+    // The amount is a string throughout, written back canonically as it leaves the box.
     expect(requestCreditNote.mock.calls[0]?.[1]).toEqual({
-      amount: '15.50',
+      amount: '15.5000',
       reason: 'Wrong part fitted',
     });
     expect(requestCreditNote.mock.calls[0]?.[2]).toMatch(UUID_SHAPE);
@@ -1815,7 +1868,7 @@ describe('raising and approving a credit note', () => {
     await user.click(submitIn(form));
     await waitFor(() =>
       expect(requestCreditNote.mock.calls[0]?.[1]).toEqual({
-        amount: '12.5',
+        amount: '12.5000',
         reason: 'Kept as typed',
       })
     );
@@ -1847,7 +1900,7 @@ describe('raising and approving a credit note', () => {
     ).toBeInTheDocument();
     expect(amountBox(form)).toHaveAttribute('aria-invalid', 'true');
     await waitFor(() => expect(amountBox(form)).toHaveFocus());
-    expect(amountBox(form).value).toBe('90');
+    expect(amountBox(form).value).toBe('90.0000');
     expect(reasonBox(form).value).toBe('Too much');
     expect(within(form).getByText('ref-409')).toBeInTheDocument();
 
@@ -1887,7 +1940,10 @@ describe('raising and approving a credit note', () => {
     await user.type(amountBox(form), '100');
     await user.click(submitIn(form));
     await waitFor(() => expect(requestCreditNote).toHaveBeenCalledTimes(1));
-    expect(requestCreditNote.mock.calls[0]?.[1]).toEqual({ amount: '100', reason: 'Too much' });
+    expect(requestCreditNote.mock.calls[0]?.[1]).toEqual({
+      amount: '100.0000',
+      reason: 'Too much',
+    });
   });
 
   it('a half-written credit is unsaved work: a branch switch asks first', async () => {
@@ -1909,7 +1965,7 @@ describe('raising and approving a credit note', () => {
       await user.type(amountBox(form), '10');
       await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
       expect(heldBranch()).toBe(TEST_BRANCH.id);
-      expect(amountBox(form).value).toBe('10');
+      expect(amountBox(form).value).toMatch(/^10(\.0000)?$/);
     } finally {
       forgetRememberedBranch();
     }
@@ -1917,11 +1973,11 @@ describe('raising and approving a credit note', () => {
 
   it('shows a note the caller raised as waiting for another approver, and offers them no approval', async () => {
     renderLtr(notesScreen(RAISED_BY, NOTE_ID));
-    const table = await screen.findByRole('table');
+    const grid = await screen.findByRole('grid');
     expect(
-      await within(table).findByText(EN['creditNotes.ownRequest'] as string)
+      await within(grid).findByText(EN['creditNotes.ownRequest'] as string)
     ).toBeInTheDocument();
-    expect(within(table).getByText(EN['creditNotes.byYou'] as string)).toBeInTheDocument();
+    expect(within(grid).getByText(EN['creditNotes.byYou'] as string)).toBeInTheDocument();
     const detail = await screen.findByRole('region', {
       name: EN['creditNotes.detail.heading'] as string,
     });
@@ -1940,14 +1996,26 @@ describe('raising and approving a credit note', () => {
     const detail = await screen.findByRole('region', {
       name: EN['creditNotes.detail.heading'] as string,
     });
-    const table = await screen.findByRole('table');
+    const grid = await screen.findByRole('grid');
     // Nothing on the list says it is the caller's own.
-    expect(within(table).queryByText(EN['creditNotes.ownRequest'] as string)).toBeNull();
+    await within(grid).findByText('Wrong part fitted');
+    expect(within(grid).queryByText(EN['creditNotes.ownRequest'] as string)).toBeNull();
     const reads = listCreditNotes.mock.calls.length;
     await user.click(
       await within(detail).findByRole('button', {
         name: EN['creditNotes.approve.action'] as string,
       })
+    );
+    // Approving asks first, naming the amount and the reason.
+    const dialog = await screen.findByRole('alertdialog', {
+      name: EN['creditNotes.approve.confirmTitle'] as string,
+    });
+    expect(dialog).toHaveTextContent('Wrong part fitted');
+    expect(approveCreditNote).not.toHaveBeenCalled();
+    // What the note reads as once it is read again.
+    readCreditNote.mockResolvedValue({ status: 'ok', data: approvedNote, correlationId: 'corr' });
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['creditNotes.approve.action'] as string })
     );
     await waitFor(() => expect(approveCreditNote).toHaveBeenCalledWith(NOTE_ID));
     expect(await screen.findByText(EN['creditNotes.approve.done'] as string)).toBeInTheDocument();
@@ -1982,6 +2050,10 @@ describe('raising and approving a credit note', () => {
         name: EN['creditNotes.approve.action'] as string,
       })
     );
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['creditNotes.approve.action'] as string })
+    );
     const alert = await within(detail).findByRole('alert');
     expect(alert).toHaveTextContent(EN['form.violation.credit_note_self_approval'] as string);
     expect(alert).toHaveTextContent('ref-409');
@@ -2006,6 +2078,10 @@ describe('raising and approving a credit note', () => {
       await within(detail).findByRole('button', {
         name: AR['creditNotes.approve.action'] as string,
       })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: AR['creditNotes.approve.action'] as string })
     );
     expect(await within(detail).findByRole('alert')).toHaveTextContent(
       AR['form.violation.credit_note_self_approval'] as string
@@ -2071,7 +2147,7 @@ describe('raising and approving a credit note', () => {
       await waitFor(() =>
         expect(requestCreditNote).toHaveBeenCalledWith(
           INVOICE_ID,
-          { amount: '40', reason: 'Labour billed twice' },
+          { amount: '40.0000', reason: 'Labour billed twice' },
           expect.stringMatching(UUID_SHAPE)
         )
       );
@@ -2138,6 +2214,122 @@ describe('raising and approving a credit note', () => {
       await renderPage({ locale: 'en' }, { workOrderId: WORK_ORDER_ID });
       expect(await requestForm()).toBeInTheDocument();
     });
+  });
+});
+
+describe('names, not references, and dates that read in order (browser QA 5.1b, OBS-3, OBS-4)', () => {
+  const issuedInvoice = () =>
+    invoice({
+      status: 'issued',
+      invoiceNumber: 'INV-000123',
+      issuedAt: '2026-09-24T18:37:00Z',
+      payerPartnerId: OTHER_PAYER,
+    });
+  const issuedDetail = () => {
+    const inv = { ...issuedInvoice(), recordVersion: 5 };
+    return { invoice: inv, lines: [line()], recordVersion: 5 };
+  };
+  const listEntry = (payerName: string | null) => ({
+    ...issuedInvoice(),
+    saleKind: 'work_order',
+    payer: { displayName: payerName, displayNumber: null, partyType: null },
+    outstanding: { amount: '100.0000', currency: 'USD' },
+  });
+
+  beforeEach(() => {
+    readWorkOrderInvoice.mockImplementation(async () =>
+      okRead({ workOrderId: WORK_ORDER_ID, invoice: issuedInvoice() })
+    );
+    readInvoice.mockImplementation(async () => okRead(issuedDetail()));
+  });
+
+  const issuedScreen = (render = renderLtr, over: Record<string, unknown> = {}) =>
+    render(
+      <InvoiceScreen
+        locale={render === renderRtl ? 'ar' : 'en'}
+        messages={render === renderRtl ? ar : en}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        workOrderRefused={null}
+        initialInvoice={okRead({ workOrderId: WORK_ORDER_ID, invoice: issuedInvoice() }) as never}
+        canViewFinance={true}
+        canIssue={false}
+        {...over}
+      />
+    );
+
+  it('a payer who is not the job’s customer is named from this invoice’s row of the branch list', async () => {
+    listInvoices.mockResolvedValue(
+      okRead({ items: [listEntry('Fleet Partner')], nextCursor: null, hasMore: false })
+    );
+    issuedScreen();
+    const panel = await screen.findByRole('region', {
+      name: EN['invoices.detail.heading'] as string,
+    });
+    expect(await within(panel).findByText('Fleet Partner')).toBeVisible();
+    // Found by its number, in its own branch, under the list's own rule.
+    expect(listInvoices).toHaveBeenCalledWith(
+      { companyId: 'c', branchId: 'b' },
+      { q: 'INV-000123' },
+      null
+    );
+    // Neither the payer's reference nor the invoice's is on the screen.
+    expect(panel.textContent).not.toContain(OTHER_PAYER);
+    expect(panel.textContent).not.toContain(INVOICE_ID);
+    expect(panel.textContent).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}/i);
+  });
+
+  it('a payer the list does not name for this reader is said not to be shown, never printed as a reference', async () => {
+    listInvoices.mockResolvedValue(
+      okRead({ items: [listEntry(null)], nextCursor: null, hasMore: false })
+    );
+    const user = userEvent.setup();
+    issuedScreen();
+    const panel = await screen.findByRole('region', {
+      name: EN['invoices.detail.heading'] as string,
+    });
+    expect(
+      await within(panel).findByText(EN['invoices.detail.payerNotShown'] as string)
+    ).toBeVisible();
+    expect(panel.textContent).not.toContain(OTHER_PAYER);
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    expect(within(document).getByTestId('invoice-print-payer')).toHaveTextContent(
+      EN['invoices.detail.payerNotShown'] as string
+    );
+    expect(document.textContent).not.toContain(OTHER_PAYER);
+  });
+
+  it('without finance view the branch list is not asked, and the payer is not shown', async () => {
+    readInvoice.mockImplementation(async () =>
+      okRead({ ...issuedDetail(), invoice: { ...issuedDetail().invoice, totals: null } })
+    );
+    issuedScreen(renderLtr, { canViewFinance: false });
+    const panel = await screen.findByRole('region', {
+      name: EN['invoices.detail.heading'] as string,
+    });
+    expect(
+      await within(panel).findByText(EN['invoices.detail.payerNotShown'] as string)
+    ).toBeVisible();
+    expect(listInvoices).not.toHaveBeenCalled();
+  });
+
+  it('prints the Arabic issue moment isolated right to left, so the day, month and year stay in order', async () => {
+    listInvoices.mockResolvedValue(
+      okRead({ items: [listEntry('Fleet Partner')], nextCursor: null, hasMore: false })
+    );
+    const user = userEvent.setup();
+    issuedScreen(renderRtl);
+    await screen.findByRole('region', { name: AR['invoices.detail.heading'] as string });
+    await user.click(screen.getByRole('button', { name: AR['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    const issued = within(document).getByTestId('invoice-print-issued-at');
+    const moment = issued.querySelector('bdi');
+    expect(moment).not.toBeNull();
+    // Never boxed left to right: that is what put the day at the end on paper.
+    expect(moment).toHaveAttribute('dir', 'rtl');
+    expect(issued).not.toHaveAttribute('dir', 'ltr');
+    expect(moment?.textContent).toMatch(/2026/);
   });
 });
 

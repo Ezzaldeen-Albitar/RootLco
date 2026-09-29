@@ -3,11 +3,12 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useId, useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
 
-import { DataTable, type Column } from '@/components/data-table/DataTable';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import { TextField } from '@/components/forms/Field';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
 import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
@@ -19,7 +20,7 @@ import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvid
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
-import type { ActionState } from '@/lib/forms/action-result';
+import { unreachable, type ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 
@@ -31,10 +32,9 @@ import {
   LinesEditor,
   lineErrors,
   lineValues,
+  linesDirty,
   OutcomeNote,
-  PRIMARY_BUTTON,
   QuotationStatusBadge,
-  SECONDARY_BUTTON,
   UUID,
   newLine,
   validateLines,
@@ -43,6 +43,10 @@ import {
 
 /**
  * The quotations of one work order, and the builder (P1-30, `W3`, FE-003, FE-005).
+ * On the shared Material UI wrappers since the sales and finance slice
+ * (ADR-022): the list is `OperationalGrid` (server paging, cursor footer), the
+ * job and the payer are found with the shared comboboxes, the builder's fields
+ * are the `forms/mui` fields, and every state is the Material state.
  *
  * ## Reached from a work order
  *
@@ -64,6 +68,11 @@ import {
  * and the quotation cannot be issued until a different person approves it
  * (P1-32-PRE-OD-DISC-01). Without a work order this page also lists the working
  * branch's discounts waiting for approval, where an approver decides them.
+ *
+ * ## Names, not references
+ *
+ * The job is named by its number; where the operator may not read work orders
+ * the link says so in words rather than printing the job's reference.
  */
 
 export function QuotationsScreen({
@@ -126,16 +135,19 @@ export function QuotationsScreen({
           <Figure label={translate(messages, 'quotations.list.workOrderRef')}>
             <Link
               href={`/${locale}/work-orders/${workOrderId}`}
-              className="font-mono text-caption text-primary underline-offset-2 hover:underline"
-              dir="ltr"
+              className="text-primary underline-offset-2 hover:underline"
             >
-              {workOrder?.displayNumber ?? workOrderId}
+              {workOrder?.displayNumber ? (
+                <bdi className="font-mono">{workOrder.displayNumber}</bdi>
+              ) : (
+                translate(messages, 'quotations.list.openWorkOrder')
+              )}
             </Link>
           </Figure>
           {workOrder ? (
             <>
               <Figure label={translate(messages, 'quotations.list.workOrderState')}>
-                <bdi>{workOrder.state}</bdi>
+                {translateDynamic(messages, `workOrders.state.${workOrder.state}`)}
               </Figure>
               <Figure label={translate(messages, 'quotations.list.customer')}>
                 {workOrder.customer ? (
@@ -159,14 +171,14 @@ export function QuotationsScreen({
 
       {canManage ? (
         <div className="flex flex-wrap items-center gap-3">
-          <button
+          <Button
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             aria-expanded={building}
             onClick={() => setBuilding((open) => !open)}
           >
             {translate(messages, 'quotations.list.create')}
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -286,17 +298,18 @@ function ChooseWorkOrder({
         needsBranchId={needsBranchId}
         countsAsUnsaved={false}
         offersBranchChooser
+        material
       />
       {canSearchWorkOrders ? (
         <div>
-          <button
+          <Button
             type="submit"
-            className={PRIMARY_BUTTON}
+            variant="contained"
             disabled={blocked}
             aria-describedby={blocked ? needsBranchId : undefined}
           >
             {translate(messages, 'quotations.choose.submit')}
-          </button>
+          </Button>
         </div>
       ) : null}
     </form>
@@ -322,7 +335,7 @@ function QuotationsResults({
   );
   const table = useServerTable<QuotationSummary>(load, { initial: INITIAL_REQUEST });
 
-  const columns = useMemo<readonly Column<QuotationSummary>[]>(
+  const columns = useMemo<readonly OperationalColumn<QuotationSummary>[]>(
     () => [
       {
         id: 'quotationNumber',
@@ -372,18 +385,15 @@ function QuotationsResults({
       <h2 id="quotations-heading" className="sr-only">
         {translate(messages, 'quotations.list.resultsHeading')}
       </h2>
-      <DataTable<QuotationSummary>
+      <OperationalGrid<QuotationSummary>
         messages={messages}
+        locale={locale}
+        label={translate(messages, 'quotations.list.caption')}
         columns={columns}
         rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'quotations.list.caption')}
+        table={table}
         suppressEmptyState
+        testId="quotations-grid"
       />
       {table.response && table.response.rows.length === 0 ? (
         <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
@@ -424,7 +434,6 @@ function QuotationBuilder({
    * unsaved work. Nobody is named for a discount: the server records whoever is
    * signed in as the one asking for it.
    *
-   *
    * The customer search needs `crm.customer.read`, and creating a quotation does
    * NOT: `quo.quotation-create` declares `quo.quotation.manage` and
    * `wo.work_order.read` only. So a caller without the customer read keeps the
@@ -446,18 +455,25 @@ function QuotationBuilder({
     refuse: localRefuse,
   } = useLocalRefusal({
     ...lineValues(lines),
-    payerPartnerRef: payerReference,
+    payerPartnerRef: canReadCustomers ? (payer?.id ?? '') : payerReference,
     customerClass,
   });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   /*
-   * A confirmed "Discard and change branch" opens the builder again as it first
-   * opened: the work order's own customer as payer and one empty line. The
-   * quotation is the work order's, nothing here is keyed on the branch, and the
-   * question told the operator what was typed would go.
+   * Unsaved work, declared to the shell: a changed payer reference, a customer
+   * class, or anything typed or chosen in the lines. A branch switch or leaving
+   * the page asks first. A confirmed "Discard and change branch" opens the
+   * builder again as it first opened: the work order's own customer as payer
+   * and one empty line. The quotation is the work order's, nothing here is
+   * keyed on the branch, and the question told the operator what was typed
+   * would go. (The payer picker declares its own choice.)
    */
-  useUnsavedGuard(!canReadCustomers && payerReference.trim() !== (initialPayer?.id ?? ''), () => {
+  const dirty =
+    (!canReadCustomers && payerReference.trim() !== (initialPayer?.id ?? '')) ||
+    customerClass.trim().length > 0 ||
+    linesDirty(lines);
+  useUnsavedGuard(dirty, () => {
     setPayer(initialPayer);
     setPayerReference(initialPayer?.id ?? '');
     setCustomerClass('');
@@ -471,7 +487,7 @@ function QuotationBuilder({
   };
 
   const submit = async () => {
-    const { bodies, errors: found } = validateLines(lines);
+    const { bodies, errors: found } = validateLines(lines, canReadServices);
     const payerId = canReadCustomers ? (payer?.id ?? '') : payerReference.trim();
     if (!canReadCustomers && payerId.length > 0 && !UUID.test(payerId))
       found['payerPartnerRef'] = 'quotations.build.payerReferenceFormat';
@@ -482,17 +498,30 @@ function QuotationBuilder({
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
-    const result = await createQuotation({
-      workOrderId,
-      ...(payerId ? { payerPartnerRef: payerId } : {}),
-      ...(klass ? { customerClass: klass } : {}),
-      lines: bodies,
-    });
-    setBusy(false);
-    setOutcome(result.state);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success' && result.created) {
-      router.push(`/${locale}/quotations/${result.created.id}`);
+    try {
+      let result: Awaited<ReturnType<typeof createQuotation>>;
+      try {
+        result = await createQuotation({
+          workOrderId,
+          ...(payerId ? { payerPartnerRef: payerId } : {}),
+          ...(klass ? { customerClass: klass } : {}),
+          lines: bodies,
+        });
+      } catch {
+        // No answer came back: what was typed stays, and the submit works again.
+        setOutcome(unreachable(1));
+        return;
+      }
+      setOutcome(result.state);
+      notifyActionResult(result.state, messages);
+      if (result.state.status === 'success' && result.created) {
+        // Stored, so nothing is unsaved any more: the lines go before the move.
+        setLines([newLine()]);
+        setCustomerClass('');
+        router.push(`/${locale}/quotations/${result.created.id}`);
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -526,31 +555,31 @@ function QuotationBuilder({
             error={errorFor('payerPartnerRef')}
             pristineId={initialPayer?.id ?? null}
             testId="quotation-payer-picker"
+            material
           />
           <p className="text-caption text-text-muted">
             {translate(messages, 'quotations.build.payerHelp')}
           </p>
         </div>
       ) : (
-        <TextField
+        <FormTextField
           label={translate(messages, 'quotations.build.payerReference')}
           description={translate(messages, 'quotations.build.payerReferenceHelp')}
-          spellCheck={false}
           autoComplete="off"
           dir="ltr"
           value={payerReference}
-          onChange={(event) => setPayerReference(event.target.value)}
+          onChange={setPayerReference}
           error={errorFor('payerPartnerRef')}
         />
       )}
       <div className="grid gap-3 sm:grid-cols-2">
-        <TextField
+        <FormTextField
           label={translate(messages, 'quotations.build.customerClass')}
           description={translate(messages, 'quotations.common.classHelp')}
-          spellCheck={false}
           dir="ltr"
+          autoComplete="off"
           value={customerClass}
-          onChange={(event) => setCustomerClass(event.target.value)}
+          onChange={setCustomerClass}
           error={errorFor('customerClass')}
         />
       </div>
@@ -559,6 +588,7 @@ function QuotationBuilder({
       </p>
       <LinesEditor
         messages={messages}
+        locale={locale}
         currency={null}
         lines={lines}
         onChange={setLines}
@@ -571,12 +601,12 @@ function QuotationBuilder({
         hintKey="quotations.build.discountRefusedHint"
       />
       <div className="flex flex-wrap items-center gap-3">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy} aria-busy={busy || undefined}>
           {translate(messages, 'quotations.build.submit')}
-        </button>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+        </Button>
+        <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'quotations.build.cancel')}
-        </button>
+        </Button>
       </div>
     </form>
   );

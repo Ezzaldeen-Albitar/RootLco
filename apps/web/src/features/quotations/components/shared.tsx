@@ -1,17 +1,17 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
 import { regexes } from 'zod';
 
-import { INITIAL_REQUEST } from '@/components/data-table/table-state';
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
-import { MoneyField } from '@/components/forms/MoneyField';
-import { listServices } from '@/features/services/api';
-import type { ServiceSummary } from '@/features/services/services-contract';
-import type { Locale } from '@/i18n/config';
+import { FormMoneyField } from '@/components/forms/mui/FormMoneyField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { ServicePicker } from '@/features/pricing/components/shared';
+import { directionOf, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import { formatDayInZone, isCalendarDay } from '@/lib/branch-time';
 import type { ActionState } from '@/lib/forms/action-result';
+import { formatDateTime, intlLocale } from '@/lib/format';
 import { formatMoney } from '@/lib/money';
 
 import type { QuotationLineBody } from '@/lib/contracts/quotations-contract';
@@ -27,7 +27,8 @@ import {
 } from '../quotations-contract';
 
 /**
- * Pieces the two quotation screens share (P1-30, `W3`).
+ * Pieces the two quotation screens share (P1-30, `W3`), on the shared Material
+ * UI wrappers since the sales and finance slice (ADR-022).
  *
  * Money is rendered through `formatMoney` from the strings the server sent;
  * quantities and tax rates are rendered verbatim — they are decimal strings
@@ -43,10 +44,28 @@ import {
  */
 export const UUID = regexes.uuid();
 
-export const PRIMARY_BUTTON =
-  'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover';
-export const SECONDARY_BUTTON =
-  'rounded-md border border-border bg-surface px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard';
+/**
+ * A moment, in the reader's language AND the reader's direction.
+ *
+ * The Arabic date format carries right-to-left marks between its parts, so a
+ * formatted Arabic moment boxed as left to right is re-ordered by the browser —
+ * on paper the day jumped to the end of the line (checkpoint browser QA,
+ * OBS-3). The moment is isolated (`<bdi>`) in the direction of the language it
+ * was formatted in, so it reads in order in both, on screen and on paper.
+ */
+export function When({ value, locale }: { readonly value: string; readonly locale: Locale }) {
+  return <bdi dir={directionOf(locale)}>{formatDateTime(value, locale)}</bdi>;
+}
+
+/**
+ * A calendar day (`YYYY-MM-DD`), written as a person writes it in the reader's
+ * language, and isolated in that language's direction for the reason `When`
+ * gives. A day names no instant, so it is placed on no clock but its own.
+ */
+export function Day({ value, locale }: { readonly value: string; readonly locale: Locale }) {
+  if (!isCalendarDay(value)) return <bdi dir="ltr">{value}</bdi>;
+  return <bdi dir={directionOf(locale)}>{formatDayInZone(value, intlLocale(locale), 'UTC')}</bdi>;
+}
 
 /* ------------------------------------------------------------------ *
  * Badges, notes, figures
@@ -232,11 +251,6 @@ export function LinesTable({
                     {translateDynamic(messages, `quotations.itemKind.${line.itemKind}`)}
                   </span>
                   {line.description ? <bdi>{line.description}</bdi> : null}
-                  {line.serviceId ? (
-                    <code className="font-mono text-caption" dir="ltr">
-                      {line.serviceId}
-                    </code>
-                  ) : null}
                 </span>
               </td>
               <td className="py-2 pe-3 text-end">
@@ -340,8 +354,19 @@ export const newLine = (): DraftLine => ({
   description: '',
 });
 
-/** Validates the draft lines; returns the bodies to send, or the errors keyed by `line-<key>-<field>`. */
-export function validateLines(lines: readonly DraftLine[]): {
+/**
+ * Validates the draft lines; returns the bodies to send, or the errors keyed by
+ * `line-<key>-<field>`.
+ *
+ * A line with no service says so in the words of the control the operator has:
+ * "find the service and choose it" beside the service search, "this field is
+ * required" beside the reference box a caller without the catalogue read keeps.
+ * A reference that is not one is refused before anything is sent.
+ */
+export function validateLines(
+  lines: readonly DraftLine[],
+  canReadServices = true
+): {
   readonly bodies: QuotationLineBody[];
   readonly errors: Record<string, string>;
 } {
@@ -351,7 +376,13 @@ export function validateLines(lines: readonly DraftLine[]): {
   if (lines.length > MAX_ITEMS_PER_REVISION) errors['lines'] = 'quotations.lines.tooMany';
   for (const line of lines) {
     const serviceId = line.serviceId.trim();
-    if (!UUID.test(serviceId)) errors[`line-${line.key}-serviceId`] = 'quotations.common.idFormat';
+    if (serviceId.length === 0) {
+      errors[`line-${line.key}-serviceId`] = canReadServices
+        ? 'pricing.picker.serviceRequired'
+        : 'field.required';
+    } else if (!UUID.test(serviceId)) {
+      errors[`line-${line.key}-serviceId`] = 'pricing.picker.serviceReferenceFormat';
+    }
     const quantity = line.quantity.trim();
     if (!QUANTITY.test(quantity) || /^0(?:\.0+)?$/.test(quantity)) {
       errors[`line-${line.key}-quantity`] = 'quotations.lines.quantityFormat';
@@ -414,107 +445,38 @@ export function lineErrors(
   return { ...own, lines: published };
 }
 
-/**
- * A service, found by the beginning of its code or name when the operator
- * holds `svc.service.read`, and named by identifier when they do not.
- */
-export function ServicePicker({
-  messages,
-  canRead,
-  value,
-  onChange,
-  error,
-}: {
-  readonly messages: Messages;
-  readonly canRead: boolean;
-  readonly value: string;
-  readonly onChange: (serviceId: string) => void;
-  readonly error?: string | undefined;
-}) {
-  const [term, setTerm] = useState('');
-  const [found, setFound] = useState<readonly ServiceSummary[] | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const search = async () => {
-    const needle = term.trim();
-    setBusy(true);
-    const page = await listServices(needle ? { search: needle } : {}, INITIAL_REQUEST, null);
-    setBusy(false);
-    if (page.status === 'ok') {
-      setFound(page.rows);
-      setNote(page.rows.length === 0 ? 'quotations.picker.noServices' : null);
-    } else {
-      setFound(null);
-      setNote(
-        page.status === 'denied'
-          ? 'quotations.picker.servicesRefused'
-          : 'quotations.picker.searchFailed'
-      );
-    }
-  };
-
-  const options = useMemo(
-    () =>
-      (found ?? []).map((service) => ({
-        value: service.id,
-        label: `${service.serviceCode} — ${service.name}`,
-      })),
-    [found]
-  );
-
-  if (!canRead) {
-    return (
-      <TextField
-        label={translate(messages, 'quotations.picker.serviceIdField')}
-        description={translate(messages, 'quotations.picker.servicesNotReadable')}
-        required
-        spellCheck={false}
-        dir="ltr"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        error={error}
-      />
-    );
-  }
+/** Whether a draft line holds anything the operator typed or chose. */
+function lineTouched(line: DraftLine): boolean {
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-end gap-2">
-        <div className="grow">
-          <TextField
-            label={translate(messages, 'quotations.picker.serviceSearch')}
-            spellCheck={false}
-            value={term}
-            onChange={(event) => setTerm(event.target.value)}
-          />
-        </div>
-        <button
-          type="button"
-          className={SECONDARY_BUTTON}
-          disabled={busy}
-          onClick={() => {
-            void search();
-          }}
-        >
-          {translate(messages, 'quotations.picker.search')}
-        </button>
-      </div>
-      <SelectField
-        label={translate(messages, 'quotations.picker.service')}
-        required
-        {...(note ? { description: translateDynamic(messages, note) } : {})}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        options={options}
-        placeholder={translate(messages, 'quotations.picker.chooseService')}
-        error={error}
-      />
-    </div>
+    line.serviceId.trim().length > 0 ||
+    line.quantity.trim().length > 0 ||
+    line.discount.trim().length > 0 ||
+    line.description.trim().length > 0
   );
 }
 
+/**
+ * Whether the lines hold work the operator would lose: more than the one empty
+ * line a builder opens with, or anything typed or chosen in a line.
+ */
+export function linesDirty(lines: readonly DraftLine[]): boolean {
+  return lines.length !== 1 || lines.some(lineTouched);
+}
+
+/**
+ * The lines a builder sends, on the shared Material UI fields (ADR-022).
+ *
+ * A service is FOUND through the catalogue search the pricing screens use
+ * (`ServicePicker`, the shared combobox) when the operator holds
+ * `svc.service.read`, and named by the reference box it always had when they do
+ * not. The quantity is a text box with a numeric keypad and the discount a money
+ * field in the document's currency, both kept as the strings typed; nothing is
+ * priced here. Every control carries its own error, and correcting a field
+ * withdraws the complaint (the caller's `useLocalRefusal`).
+ */
 export function LinesEditor({
   messages,
+  locale,
   currency,
   lines,
   onChange,
@@ -522,6 +484,7 @@ export function LinesEditor({
   errors,
 }: {
   readonly messages: Messages;
+  readonly locale?: Locale | undefined;
   /** The document's currency, once known; the first line decides it on the server. */
   readonly currency: string | null;
   readonly lines: readonly DraftLine[];
@@ -552,29 +515,34 @@ export function LinesEditor({
       {lines.map((line, index) => (
         <div
           key={line.key}
+          role="group"
           className="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-2"
           aria-label={`${translate(messages, 'quotations.lines.one')} ${index + 1}`}
         >
           <div className="sm:col-span-2">
             <ServicePicker
               messages={messages}
+              locale={locale}
               canRead={canReadServices}
+              label={translate(messages, 'quotations.picker.service')}
               value={line.serviceId}
               onChange={(serviceId) => update(line.key, { serviceId })}
               error={errorFor(`line-${line.key}-serviceId`)}
+              testId={`quotation-line-${index + 1}-service`}
             />
           </div>
-          <TextField
+          <FormTextField
             label={translate(messages, 'quotations.lines.quantity')}
             description={translate(messages, 'quotations.lines.quantityHelp')}
             required
             inputMode="decimal"
             dir="ltr"
+            autoComplete="off"
             value={line.quantity}
-            onChange={(event) => update(line.key, { quantity: event.target.value })}
+            onChange={(quantity) => update(line.key, { quantity })}
             error={errorFor(`line-${line.key}-quantity`)}
           />
-          <MoneyField
+          <FormMoneyField
             messages={messages}
             label={translate(messages, 'quotations.lines.discount')}
             description={translate(messages, 'quotations.lines.discountHelp')}
@@ -584,34 +552,36 @@ export function LinesEditor({
             error={errorFor(`line-${line.key}-discount`)}
           />
           <div className="sm:col-span-2">
-            <TextAreaField
+            <FormTextField
               label={translate(messages, 'quotations.lines.description')}
+              multiline
+              rows={2}
               value={line.description}
-              onChange={(event) => update(line.key, { description: event.target.value })}
+              onChange={(description) => update(line.key, { description })}
               error={errorFor(`line-${line.key}-description`)}
             />
           </div>
           <div className="sm:col-span-2">
-            <button
+            <Button
               type="button"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
               disabled={lines.length === 1}
               onClick={() => onChange(lines.filter((entry) => entry.key !== line.key))}
             >
               {translate(messages, 'quotations.lines.remove')}
-            </button>
+            </Button>
           </div>
         </div>
       ))}
       <div>
-        <button
+        <Button
           type="button"
-          className={SECONDARY_BUTTON}
+          variant="outlined"
           disabled={lines.length >= MAX_ITEMS_PER_REVISION}
           onClick={() => onChange([...lines, newLine()])}
         >
           {translate(messages, 'quotations.lines.add')}
-        </button>
+        </Button>
       </div>
     </fieldset>
   );
