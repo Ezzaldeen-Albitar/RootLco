@@ -96,6 +96,11 @@ interface Props {
    * operator may cancel; `null` records that it was deliberately not read.
    */
   readonly cancellationReasons: IntakeCatalogueResult | null;
+  /**
+   * `apt.catalogue.manage` — may set up the cancellation reasons, so an empty
+   * list links the setup screen instead of sending the operator to someone else.
+   */
+  readonly canSetUpCatalogue?: boolean | undefined;
 }
 
 export function AppointmentDetailScreen({
@@ -105,6 +110,7 @@ export function AppointmentDetailScreen({
   canManage,
   canEndLifecycle,
   cancellationReasons,
+  canSetUpCatalogue = false,
 }: Props) {
   const router = useRouter();
   const context = useWorkingContext();
@@ -194,6 +200,7 @@ export function AppointmentDetailScreen({
           appointmentId={detail.id}
           version={version}
           reasons={cancellationReasons}
+          canSetUpCatalogue={canSetUpCatalogue}
           onResult={changed}
           onReload={() => router.refresh()}
         />
@@ -606,6 +613,7 @@ function CancelSection({
   appointmentId,
   version,
   reasons,
+  canSetUpCatalogue,
   onResult,
   onReload,
 }: {
@@ -614,6 +622,7 @@ function CancelSection({
   readonly appointmentId: string;
   readonly version: number;
   readonly reasons: IntakeCatalogueResult | null;
+  readonly canSetUpCatalogue: boolean;
   readonly onResult: (result: AppointmentChangeState) => void;
   readonly onReload: () => void;
 }) {
@@ -695,7 +704,9 @@ function CancelSection({
   if (reasons.options.length === 0) {
     // Zero rows is the catalogue WORKING and unpopulated (the no-fake-data
     // policy ships every business table empty). Said as a provisioning fact,
-    // never rendered as an error.
+    // never rendered as an error, with the way forward for THIS operator: the
+    // setup screen for one who may set the reasons up, an administrator for
+    // anyone else.
     return (
       <section
         aria-labelledby="appointment-cancel-heading"
@@ -703,8 +714,22 @@ function CancelSection({
       >
         {heading}
         <p role="status" className="mt-2 text-supporting text-text-secondary" lang={locale}>
-          {translate(messages, 'appointments.cancel.noReasons')}
+          {translate(
+            messages,
+            canSetUpCatalogue
+              ? 'appointments.cancel.noReasonsSetUp'
+              : 'appointments.cancel.noReasons'
+          )}
         </p>
+        {canSetUpCatalogue ? (
+          <Link
+            href={`/${locale}/administration/appointment-setup`}
+            className="mt-2 inline-block text-supporting text-primary underline-offset-2 hover:underline"
+            data-testid="appointment-cancel-setup-link"
+          >
+            {translate(messages, 'appointments.cancel.openSetup')}
+          </Link>
+        ) : null}
       </section>
     );
   }
