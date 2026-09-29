@@ -1051,10 +1051,16 @@ be undone.
 reopened; book a new appointment instead.
 
 **Restrictions — the reason list is the organisation's own.** If no reasons have been entered yet,
-cancelling waits for them:
+cancelling waits for them. Someone who may set them up reads:
+
+> "The list of cancellation reasons has not been set up yet, so an appointment cannot be cancelled
+> here. Set up cancellation reasons first." <!-- appointments.cancel.noReasonsSetUp -->
+
+with the link **"Open appointment setup"** <!-- appointments.cancel.openSetup --> ; anyone else
+reads:
 
 > "The list of cancellation reasons has not been set up for this workspace yet, so an appointment
-> cannot be cancelled here. An administrator adds the reasons." <!-- appointments.cancel.noReasons -->
+> cannot be cancelled here. Ask an administrator to add the reasons." <!-- appointments.cancel.noReasons -->
 
 The reasons are entered on **Appointment setup** (Part 2, §2.10.11) by someone holding the
 appointment setup permission — the first administrator holds it since the Owner decision of

@@ -85,6 +85,7 @@ const ALL = [
   APPOINTMENT_PERMISSIONS.read,
   APPOINTMENT_PERMISSIONS.manage,
   APPOINTMENT_PERMISSIONS.lifecycleManage,
+  APPOINTMENT_PERMISSIONS.catalogueManage,
 ];
 
 /** Walks a returned element tree for the first node carrying `marker`. */
@@ -230,6 +231,9 @@ describe('the detail route', () => {
   for (const { prop, permission } of [
     { prop: 'canManage', permission: APPOINTMENT_PERMISSIONS.manage },
     { prop: 'canEndLifecycle', permission: APPOINTMENT_PERMISSIONS.lifecycleManage },
+    // The cancel dialog's setup link: offered only to a holder of the
+    // appointment catalogue's own code, never inferred from any other.
+    { prop: 'canSetUpCatalogue', permission: APPOINTMENT_PERMISSIONS.catalogueManage },
   ]) {
     it(`grants ${prop} for ${permission} and for nothing else`, async () => {
       PERMISSIONS = [APPOINTMENT_PERMISSIONS.read, permission];

@@ -1013,8 +1013,8 @@ Known limitations of this slice, one line each:
 - The setup screen has no search: the management-list operations accept only `cursor` and `limit`
   (`apps/api/src/app/api/v1/appointment-catalogue/management/appointment-types/route.ts:52-54`), so
   there is nothing for it to call. This is not a regression.
-- The appointment cancel dialog does not link an empty cancellation-reason catalogue to the setup
-  screen; only the booking form links an empty type catalogue there, which is what the slice asked.
+- The appointment cancel dialog now links an empty cancellation-reason catalogue to the setup
+  screen for a holder of `apt.catalogue.manage`; see the Arabic afternoon times section below.
 - The short reference accepts only `[a-z0-9_]`; Arabic-Indic digits are refused with
   `appointmentSetup.codeInvalid` rather than converted; the field hint names the characters it accepts.
 - `check-p1-28-access` rule 1 (gate before read) cannot see a page that reads only through
@@ -2869,3 +2869,22 @@ Fix round 2 (review of `3940795b`), residual items, one line each:
   to `listQcQueue` or `readMyQueue`: a stale answer is dropped, not cancelled (as in the base code).
 - hosted-clean-room stopped at `validate:p1-27-closing-values` (the recorded unit and web runs are
   stale at this head), so its later steps did not run on `3940795b`.
+
+### Arabic afternoon times, locale-aware work-order crumbs and the cancel-dialog setup link
+
+The date-time pickers read an Arabic afternoon time (`م`) back as the afternoon, every breadcrumb
+href carries the route's locale, and the appointment cancel dialog tells a holder of
+`apt.catalogue.manage` whose organisation has no cancellation reason to set them up, with a link
+to the setup screen; anyone else is asked to have an administrator add them. The detail page's
+`canSetUpCatalogue` is pinned by route invocation in `apps/web/tests/p1-28-appointment-routes.test.ts`
+and `apps/web/tests/p1-28-permission-route-binding.test.ts`.
+
+Known limitations of this slice, one line each:
+
+- The crumb check in `shell.dom.test.tsx` recognises only `crumbs={[...]}` and `const crumbs = [...]`; a trail under another name, built by a helper or written in a `.ts` file would not be checked. A grep of `apps/web/src` finds none today; falsified by restoring `inventory/counts/page.tsx` to its develop version in a scratch copy, which failed "opens every crumb href with the route locale" and that page's Arabic-trail case.
+- Links outside the breadcrumbs are not covered by the static check: `navigation.ts`, `platform-navigation.ts`, `administration/page.tsx` and `StockOperationLinks` store bare paths and prefix the locale where they render (`/${locale}${href}`); a grep found no bare href or `router.push` path without the locale in `apps/web/src`.
+- The Arabic picker tests use only Asia/Amman (UTC+3 all year), so no case covers an Arabic afternoon time in a zone with daylight saving; the zone and daylight-saving handling in `DateField.tsx` is unchanged and the English daylight-saving cases still pass.
+- `ProductDayjsAdapter` relies on `dayjs-locale.ts` and MUI X's `AdapterDayjs` sharing one dayjs instance (`customParseFormat` and the Arabic locale are registered on it); dayjs 1.11.23 declares only `main`, so there is one instance, as the earlier Arabic locale registration already assumed.
+- A scratch probe against the real `ProductDayjsAdapter` read all 24 hours back exactly in ten formats (`A hh:mm DD/MM/YYYY`, `h:mm A`, `hh:mm:ss A`, `LT`, `LLL`, `DD MMMM YYYY hh:mm A`, a bracketed Arabic literal before `hh:mm A`, lowercase `a`, `fullTime12h`, `keyboardDateTime12h`) and refused trailing junk, an unknown or doubled day-period word, `م 00:30` and 31/09; English `h:mm a` still reads 3:00 pm as 15:00, and the adapter's default locale stays `en`.
+- The new setup link uses the Tailwind utilities the component and other screens already use (`text-primary underline-offset-2 hover:underline`); `validate:theme` exits 0, and there are no `sx` or token changes.
+- The e2e suite was not changed: the authenticated-browser job passed at `7a29b582` (job 109436183762), but no Playwright spec types an Arabic afternoon time or clicks a work-order breadcrumb.
