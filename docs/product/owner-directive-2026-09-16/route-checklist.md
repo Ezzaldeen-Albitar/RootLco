@@ -3036,6 +3036,8 @@ Deliberate behaviour changes:
 - A quotation line no longer prints its service's reference; the discount limits say whether a
   person or a role holds each limit instead of printing the holder's reference; the quotation's
   record version is no longer printed.
+- An expiry typed only in part, or typed whole but impossible, refuses the issue on the field with
+  the cursor put back in it; it is never dropped and the quotation is never issued without it.
 
 Known limitations of this slice, one line each:
 
@@ -3060,3 +3062,19 @@ Known limitations of this slice, one line each:
 - The unit tier gains one test file (`tests/unit/p1-32-receipt-payer-names.test.ts`, five cases) and
   the web tier gains cases in existing files (no web test file added or removed); the recorded tiers
   are retaken at the final head.
+- The quotation's issue panel offers no expiry when the quotation's branch is missing from the
+  working context or has no time zone (`quotation-issue-no-clock`); the screen before this slice
+  offered one there.
+- While the payer's name is still being read, the printed invoice and the printed receipt say the
+  name is not shown; print readiness waits for the preview read only.
+- The Material job chooser under "All my branches" shows no chosen job and draws the
+  choose-one-branch sentence; the choice is cleared on a context change anyway, and the other
+  consumers of the chooser are unchanged.
+- The same `When` helper is copied in the quotation, billing and payments `components/shared.tsx`
+  files: convention drift, not a defect.
+- The receipt list's payer block (the customer read, finance view alone, a retired partner, the
+  tenant boundary) is proved on the runtime login by `tests/backend/p1-30-w7-payments.test.ts`; the
+  backend tier was not run locally and needs the database run.
+- The review checked the discount separation, the credit-note second person, `If-Match` and the
+  allocation wording by reading the code against the base; it did not re-run the implementer's
+  falsification mutations.

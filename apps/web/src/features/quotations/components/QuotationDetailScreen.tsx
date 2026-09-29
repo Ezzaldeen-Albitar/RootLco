@@ -13,7 +13,7 @@ import {
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
-import { ZonedDateTimeField, type DateProblem } from '@/components/forms/mui/DateField';
+import { ZonedDateTimeField, type MomentProblem } from '@/components/forms/mui/DateField';
 import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
@@ -1080,12 +1080,20 @@ function IssuePanel({
     storedVersion: quotation.recordVersion,
   });
   const expiresAt = edit.values.expiresAt;
-  const [problem, setProblem] = useState<DateProblem>(null);
+  /*
+   * What the expiry field finds wrong, including an entry only partly typed
+   * (`'incomplete'`). A partial or impossible entry holds no instant, so its
+   * value is `''` — the same as no expiry at all — and only this tells the two
+   * apart. The complaint is kept against the value AND the finding, so it
+   * stands while the entry is still unfinished or impossible, and is withdrawn
+   * once the entry is whole or emptied again.
+   */
+  const [problem, setProblem] = useState<MomentProblem>(null);
   const {
     errorKey: localErrorKey,
     formRef: localFormRef,
     refuse: localRefuse,
-  } = useLocalRefusal({ expiresAt });
+  } = useLocalRefusal({ expiresAt: `${expiresAt}|${problem ?? ''}` });
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
@@ -1097,7 +1105,10 @@ function IssuePanel({
 
   const ask = () => {
     if (!draft) return;
-    if (expiresAt !== '' && problem !== null) {
+    // Refused whatever the value: an unfinished or impossible expiry is `''`,
+    // and issuing then would send no expiry at all on an act that cannot be undone.
+    // Without the branch clock there is no expiry field, so nothing to refuse.
+    if (zone !== null && problem !== null) {
       localRefuse({ expiresAt: 'quotations.issue.dateFormat' });
       return;
     }

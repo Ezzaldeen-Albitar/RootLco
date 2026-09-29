@@ -687,6 +687,62 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
   });
 
+  /*
+   * An expiry that is only partly typed, or typed whole but impossible, holds no
+   * instant: the field's value is `''`, the same as no expiry at all. Issuing is
+   * refused on the field instead of going out without the expiry the operator
+   * was typing. Falsified by restoring the guard `expiresAt !== '' && problem
+   * !== null` (and, for the partial entry, by removing the field's `'incomplete'`
+   * report): the question then opens and the issue is sent with no expiry.
+   */
+  async function refusedExpiry(user: ReturnType<typeof userEvent.setup>, digits: string) {
+    renderDetail({}, quotation({ currentRevision: revision({ status: 'draft', issuedAt: null }) }));
+    const form = screen.getByRole('form', { name: EN['quotations.issue.heading'] as string });
+    await typeMoment(user, 'quotations.issue.expiresAt', digits);
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    );
+    const group = screen.getByRole('group', { name: labelled('quotations.issue.expiresAt') });
+    await waitFor(() => expect(group).toHaveAttribute('aria-invalid', 'true'));
+    expect(within(form).getByText(EN['quotations.issue.dateFormat'] as string)).toBeInTheDocument();
+    // The cursor is put back into the expiry, and nothing was asked or sent.
+    await waitFor(() => expect(group.contains(document.activeElement)).toBe(true));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(issueQuotation).not.toHaveBeenCalled();
+    return { form, group };
+  }
+
+  it('refuses a partly typed expiry on the field, keeps what was typed, and issues once it is finished', async () => {
+    const user = userEvent.setup();
+    const { form, group } = await refusedExpiry(user, '0112');
+    // The cursor waits on the empty year; finishing the entry withdraws the complaint.
+    await user.keyboard('20261000');
+    await waitFor(() => expect(group).not.toHaveAttribute('aria-invalid'));
+    expect(within(form).queryByText(EN['quotations.issue.dateFormat'] as string)).toBeNull();
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    );
+    await waitFor(() => expect(issueQuotation).toHaveBeenCalled());
+    expect((issueQuotation.mock.calls[0]?.[1] as Record<string, unknown>)['expiresAt']).toBe(
+      '2026-12-01T10:00:00+03:00'
+    );
+  });
+
+  it('refuses an impossible expiry on the field and sends nothing', async () => {
+    const user = userEvent.setup();
+    const { form } = await refusedExpiry(user, '310220261000');
+    // Asking again with the entry unchanged is refused again.
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    );
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(issueQuotation).not.toHaveBeenCalled();
+  });
+
   it('stays busy until the quotation has been read again, so a second press cannot send the spent version', async () => {
     let answer: (value: unknown) => void = () => undefined;
     readQuotation.mockImplementationOnce(
