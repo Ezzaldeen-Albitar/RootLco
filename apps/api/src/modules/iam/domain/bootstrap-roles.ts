@@ -467,6 +467,46 @@
  * organisations, and it skips and reports every administrator role an organisation
  * has customised. Other existing organisations are left unchanged for now. The run is
  * an operator act, not performed by this change.
+ *
+ * ## The four appointment codes — by Owner decision
+ *
+ * The Owner decided on 2026-09-29 that the standard tenant administrator holds all
+ * four appointment codes, and that the appointment setup screen is built so the
+ * organisation can enter its own appointment types, booking channels and
+ * cancellation reasons. The four already exist in the permission catalogue seed, so
+ * nothing is minted. The scope was measured before they were carried: twenty-one
+ * operations declare them, every one of them in the reception module, and every one
+ * of them bound to the caller's own organisation by the database:
+ *
+ *  - `apt.appointment.read` — `apt.appointment-list`, `apt.appointment-detail` and
+ *    the three booking pickers (`apt.catalogue-*-list`). They read appointments and
+ *    the active catalogue entries. The list and the detail also show the vehicle's
+ *    number and the requesting customer's display name, read-only, through a join
+ *    on the same organisation; nothing else of the customer or the vehicle is read.
+ *  - `apt.appointment.manage` — `apt.appointment-create` and
+ *    `apt.appointment-reschedule`, branch-scoped and audited.
+ *  - `apt.appointment.lifecycle.manage` — `apt.appointment-cancel` (a catalogued
+ *    reason is required) and `apt.appointment-no-show`, branch-scoped and audited.
+ *  - `apt.catalogue.manage` — the create, rename and retire-or-restore commands and
+ *    the full lists of the three appointment catalogues. A new entry is always the
+ *    organisation's own; a shared platform entry cannot be changed here, and each
+ *    change is audited.
+ *
+ * None of them reaches another organisation, a platform setting, a subscription or
+ * plan, sign-in or session policy, roles and grants, or a financial control, and none
+ * writes a customer or a vehicle.
+ *
+ * Carried HERE and nowhere else: `first_owner` stays frozen at its three IAM codes,
+ * and no front-desk or reception role gains anything by this entry — whether they
+ * should is a later decision. An administrator can now delegate the codes to the
+ * roles it builds, which is the point.
+ *
+ * Organisations provisioned before this entry keep the set they were given.
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list at run
+ * time; by the same decision it is run only for the previously authorised QA
+ * organisations, and it skips and reports every administrator role an organisation
+ * has customised. Other existing organisations are left unchanged. The run is an
+ * operator act, not performed by this change.
  */
 
 export interface BootstrapRoleDefinition {
@@ -578,6 +618,14 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'rec.reception.signature.manage',
     'rec.reception.approve',
     'rec.reception.convert',
+    // Owner decision 2026-09-29: appointments. Read, book and reschedule, cancel or
+    // record a no-show, and set up the organisation's own appointment types, booking
+    // channels and cancellation reasons. Twenty-one reception operations declare
+    // them, all bound to the caller's own organisation; see the section above.
+    'apt.appointment.read',
+    'apt.appointment.manage',
+    'apt.appointment.lifecycle.manage',
+    'apt.catalogue.manage',
     // The P1-30 commercial chain: held to be exercised and to be delegated to
     // the commercial personas. Each is declared by a shipped P1-30 screen or
     // gates one of its navigation entries; none is minted here.

@@ -146,6 +146,31 @@
  *           is refused every settings write, with the registered refusal, and
  *           nothing is written
  *
+ * ## The Owner decision on the four appointment codes
+ *
+ * The Owner decided on 2026-09-29 that the standard tenant administrator holds
+ * `apt.appointment.read`, `apt.appointment.manage`,
+ * `apt.appointment.lifecycle.manage` and `apt.catalogue.manage`, and sets up its
+ * own appointment types, booking channels and cancellation reasons. B29 keeps the
+ * scope audit falsifiable the way B23 does: a new declarer fails it.
+ *
+ *   P31-B29 the four codes are in the bundle once each; exactly the twenty-one
+ *           audited reception operations declare them, none a platform operation,
+ *           each bound to the caller's tenant, company or branch; every write
+ *           among them is audited; all four were catalogue rows already; and
+ *           first_owner is untouched
+ *   P31-B30 the provisioned administrator effectively holds all four and can
+ *           delegate each onto a role it creates
+ *   P31-B31 it sets up an appointment type of its own — created as the
+ *           organisation's own entry, listed for management and offered to
+ *           booking, renamed under its version (a stale version is a conflict),
+ *           retired so booking no longer offers it — and each change is audited
+ *   P31-B32 the administrator of ANOTHER organisation, holding the same codes,
+ *           neither sees nor changes this organisation's entry, and nothing moves
+ *   P31-B33 a front-desk role the administrator builds WITHOUT the codes is
+ *           refused the setup list and the create, with the registered refusal,
+ *           and nothing is written
+ *
  * Operations exercised: platform.organization-provision, iam.role-create,
  * iam.role-permission-add, iam.audit-event-list, rpt.report-catalogue,
  * shared.export-catalogue, org.branch-create, crm.individual-create,
@@ -155,7 +180,10 @@
  * rec.reception-evidence-binding, iam.grant-issue, sal.credit-note-create,
  * sal.credit-note-list, sal.credit-note-approve, iam.tenant-settings-update,
  * iam.company-settings-write, iam.branch-settings-write,
- * platform.subscription-assign, platform.organization-lifecycle.
+ * platform.subscription-assign, platform.organization-lifecycle,
+ * apt.catalogue-appointment-type-create, apt.catalogue-appointment-type-list,
+ * apt.catalogue-appointment-type-management-list,
+ * apt.catalogue-appointment-type-update, apt.catalogue-appointment-type-status-set.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -262,6 +290,24 @@ import {
   ORGANIZATION_LIFECYCLE_OPERATION,
   POST as organizationLifecycleRoute,
 } from '@/app/api/v1/platform/organizations/[tenantId]/status/route';
+import {
+  APPOINTMENT_TYPE_CREATE_OPERATION,
+  APPOINTMENT_TYPE_LIST_OPERATION,
+  GET as appointmentTypeListRoute,
+  POST as appointmentTypeCreateRoute,
+} from '@/app/api/v1/appointment-catalogue/appointment-types/route';
+import {
+  APPOINTMENT_TYPE_MANAGEMENT_LIST_OPERATION,
+  GET as appointmentTypeManagementListRoute,
+} from '@/app/api/v1/appointment-catalogue/management/appointment-types/route';
+import {
+  APPOINTMENT_TYPE_UPDATE_OPERATION,
+  PATCH as appointmentTypeUpdateRoute,
+} from '@/app/api/v1/appointment-catalogue/appointment-types/[appointmentTypeId]/route';
+import {
+  APPOINTMENT_TYPE_STATUS_OPERATION,
+  POST as appointmentTypeStatusRoute,
+} from '@/app/api/v1/appointment-catalogue/appointment-types/[appointmentTypeId]/status/route';
 
 /**
  * The six codes prerequisite P-1 adds. Written out rather than derived from
@@ -457,12 +503,26 @@ const ADDED_BY_CREDIT_DECISION = Object.freeze(['sal.credit.manage']);
  */
 const ADDED_BY_SETTINGS_DECISION = Object.freeze(['org.settings.manage']);
 
+/**
+ * The fifth widening after P1-31, on the Owner decision of 2026-09-29: the four
+ * appointment codes, so the standard tenant administrator reads, books, reschedules,
+ * cancels and sets up appointments for its own organisation. B29–B33 below measure
+ * the scope and its limits. 90 + 4 = 94.
+ */
+const ADDED_BY_APPOINTMENT_DECISION = Object.freeze([
+  'apt.appointment.read',
+  'apt.appointment.manage',
+  'apt.appointment.lifecycle.manage',
+  'apt.catalogue.manage',
+]);
+
 /** Every code carried after P1-31 closed. */
 const ADDED_AFTER_P1_31 = Object.freeze([
   ...ADDED_BY_P1_32_MATERIAL,
   ...ADDED_BY_OD_QA_CAMPAIGN,
   ...ADDED_BY_CREDIT_DECISION,
   ...ADDED_BY_SETTINGS_DECISION,
+  ...ADDED_BY_APPOINTMENT_DECISION,
 ]);
 
 const IDENTITY_PROVIDER = 'test_harness';
@@ -2103,7 +2163,8 @@ async function branchSettingRows(branchId: string): Promise<number> {
 describe('Owner decision — org.settings.manage: the organisation edits its own settings', () => {
   it('P31-B23 the bundle carries org.settings.manage once; exactly the twelve audited operations declare it, none of them a platform operation; the runtime updates three tenant columns under an own-tenant policy; first_owner is untouched', async () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
-    expect(bundle).toHaveLength(90);
+    // 94 since the four appointment codes joined (B29 measures them).
+    expect(bundle).toHaveLength(94);
     for (const code of ADDED_BY_SETTINGS_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -2483,5 +2544,352 @@ describe('Owner decision — org.settings.manage: the organisation edits its own
     expect(await tenantRow(probe.tenantId)).toEqual(before);
     expect(await companySettingRows(scope.companyId)).toBe(companyRowsBefore);
     expect(await branchSettingRows(scope.branchId)).toBe(branchRowsBefore);
+  });
+});
+
+/**
+ * The twenty-one operations the scope audit of 2026-09-29 found declaring one of the
+ * four appointment codes, by id. B29 compares the register against this list, so an
+ * twenty-second declarer fails the case and sends the scope back for review.
+ */
+const APPOINTMENT_DECLARERS = Object.freeze([
+  'apt.appointment-cancel',
+  'apt.appointment-create',
+  'apt.appointment-detail',
+  'apt.appointment-list',
+  'apt.appointment-no-show',
+  'apt.appointment-reschedule',
+  'apt.catalogue-appointment-type-create',
+  'apt.catalogue-appointment-type-list',
+  'apt.catalogue-appointment-type-management-list',
+  'apt.catalogue-appointment-type-status-set',
+  'apt.catalogue-appointment-type-update',
+  'apt.catalogue-cancellation-reason-create',
+  'apt.catalogue-cancellation-reason-list',
+  'apt.catalogue-cancellation-reason-management-list',
+  'apt.catalogue-cancellation-reason-status-set',
+  'apt.catalogue-cancellation-reason-update',
+  'apt.catalogue-source-channel-create',
+  'apt.catalogue-source-channel-list',
+  'apt.catalogue-source-channel-management-list',
+  'apt.catalogue-source-channel-status-set',
+  'apt.catalogue-source-channel-update',
+]);
+
+interface CatalogueEntryReply {
+  readonly id: string;
+  readonly scope?: string;
+  readonly code: string;
+  readonly name: string;
+  readonly status?: string;
+  readonly recordVersion?: number;
+}
+
+interface CataloguePageReply {
+  readonly items: readonly CatalogueEntryReply[];
+}
+
+/** The appointment types the organisation's management list shows, by id. */
+async function managedTypes(tenant: Provisioned): Promise<CatalogueEntryReply[]> {
+  asOwnerOf(tenant);
+  const listed = await call<CataloguePageReply>(appointmentTypeManagementListRoute, {
+    path: '/appointment-catalogue/management/appointment-types?limit=100',
+    method: 'GET',
+  });
+  expect(listed.status).toBe(200);
+  return [...listed.body.items];
+}
+
+/** The appointment types booking is offered, by id. */
+async function offeredTypes(tenant: Provisioned): Promise<CatalogueEntryReply[]> {
+  asOwnerOf(tenant);
+  const listed = await call<CataloguePageReply>(appointmentTypeListRoute, {
+    path: '/appointment-catalogue/appointment-types?limit=100',
+    method: 'GET',
+  });
+  expect(listed.status).toBe(200);
+  return [...listed.body.items];
+}
+
+/** One stored appointment type, read back on the admin connection. */
+async function storedType(id: string): Promise<{
+  tenantId: string | null;
+  scope: string;
+  name: string;
+  status: string;
+  version: number;
+}> {
+  const { rows } = await admin.query<{
+    tenant_id: string | null;
+    scope: string;
+    name: string;
+    status: string;
+    record_version: number;
+  }>(
+    'SELECT tenant_id, scope, name, status, record_version FROM apt.appointment_types WHERE id = $1',
+    [id]
+  );
+  const row = rows[0];
+  if (row === undefined) throw new Error('appointment type not stored');
+  return {
+    tenantId: row.tenant_id,
+    scope: row.scope,
+    name: row.name,
+    status: row.status,
+    version: row.record_version,
+  };
+}
+
+let setupTypePromise: Promise<CatalogueEntryReply> | undefined;
+
+/** ONE appointment type the provisioned administrator created, shared by B31 and B32. */
+function setupType(): Promise<CatalogueEntryReply> {
+  setupTypePromise ??= (async () => {
+    asOwnerOf(probe);
+    const created = await call<CatalogueEntryReply>(appointmentTypeCreateRoute, {
+      path: '/appointment-catalogue/appointment-types',
+      body: { code: `routine_${RUN}`, name: 'Routine service' },
+      idempotencyKey: randomUUID(),
+    });
+    expect(created.status).toBe(201);
+    return created.body;
+  })();
+  return setupTypePromise;
+}
+
+describe('Owner decision — the four appointment codes: the organisation runs its own appointments', () => {
+  it('P31-B29 the bundle carries the four codes once each; exactly the twenty-one audited reception operations declare them, none of them a platform operation; every write is audited; first_owner is untouched', () => {
+    const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
+    expect(bundle).toHaveLength(94);
+    for (const code of ADDED_BY_APPOINTMENT_DECISION) {
+      expect(bundle.filter((c) => c === code)).toHaveLength(1);
+      expect(ADDED_ALL).not.toContain(code);
+      expect(ADDED_BY_P1_32_MATERIAL).not.toContain(code);
+      expect(ADDED_BY_OD_QA_CAMPAIGN).not.toContain(code);
+      expect(ADDED_BY_CREDIT_DECISION).not.toContain(code);
+      expect(ADDED_BY_SETTINGS_DECISION).not.toContain(code);
+    }
+
+    // NOTHING IS MINTED: each is a catalogue row already.
+    const seed = readFileSync(
+      join(REPOSITORY_ROOT, 'supabase/seeds/04_iam_permission_catalog.sql'),
+      'utf8'
+    );
+    for (const code of ADDED_BY_APPOINTMENT_DECISION) {
+      expect(seed).toMatch(new RegExp(`\\('${code.replace(/\./g, '\\.')}',`));
+    }
+
+    // THE SCOPE AUDIT, kept falsifiable: the declarers are exactly the twenty-one it read.
+    const register = JSON.parse(
+      readFileSync(
+        join(REPOSITORY_ROOT, 'docs/phase-1/phase-1-24/evidence/operation-register.json'),
+        'utf8'
+      )
+    ) as {
+      operations: Array<{
+        id: string;
+        domain: string;
+        method: string;
+        permissions: string[];
+        scope: string;
+        route: string;
+        auditClass: string;
+      }>;
+    };
+    const declarers = register.operations.filter((op) =>
+      op.permissions.some((code) => ADDED_BY_APPOINTMENT_DECISION.includes(code))
+    );
+    expect(declarers.map((op) => op.id).sort()).toEqual([...APPOINTMENT_DECLARERS]);
+    for (const operation of declarers) {
+      expect(operation.id.startsWith('apt.')).toBe(true);
+      expect(operation.domain).toBe('reception');
+      expect(operation.route).toMatch(/^\/api\/v1\/(appointments|appointment-catalogue)(\/|$)/);
+      expect(['tenant', 'company', 'branch']).toContain(operation.scope);
+      // Every code the operation declares is one of the four: none of them needs
+      // or confers a platform, security or financial authority besides.
+      for (const code of operation.permissions) {
+        expect(ADDED_BY_APPOINTMENT_DECISION).toContain(code);
+      }
+      // Every write leaves an audit record; only the reads are unaudited.
+      if (operation.method === 'GET') expect(operation.auditClass).toBe('none');
+      else expect(operation.auditClass).toBe('privileged');
+    }
+
+    // The catalogue commands, by declaration: tenant-bound and audited.
+    expect(APPOINTMENT_TYPE_CREATE_OPERATION.permissions).toEqual(['apt.catalogue.manage']);
+    expect(APPOINTMENT_TYPE_CREATE_OPERATION.scope).toBe('tenant');
+    expect(APPOINTMENT_TYPE_CREATE_OPERATION.auditAction).toBe('apt.appointment_type.created');
+    expect(APPOINTMENT_TYPE_UPDATE_OPERATION.versionGuarded).toBe(true);
+    expect(APPOINTMENT_TYPE_UPDATE_OPERATION.auditAction).toBe('apt.appointment_type.renamed');
+    expect(APPOINTMENT_TYPE_STATUS_OPERATION.versionGuarded).toBe(true);
+    expect(APPOINTMENT_TYPE_STATUS_OPERATION.auditAction).toBe(
+      'apt.appointment_type.status_changed'
+    );
+    expect(APPOINTMENT_TYPE_MANAGEMENT_LIST_OPERATION.permissions).toEqual([
+      'apt.catalogue.manage',
+    ]);
+    expect(APPOINTMENT_TYPE_LIST_OPERATION.permissions).toEqual(['apt.appointment.read']);
+
+    // Carried here and nowhere else: the frozen bootstrap role gains nothing.
+    expect([...FIRST_OWNER_ROLE.permissionCodes]).toEqual([
+      'iam.user.manage',
+      'iam.role.manage',
+      'iam.grant.manage',
+    ]);
+  });
+
+  it('P31-B30 the provisioned administrator effectively holds all four, and can delegate each onto a role it creates', async () => {
+    const held = await codesHeldBy(probe.ownerAccountId);
+    for (const code of ADDED_BY_APPOINTMENT_DECISION) expect(held).toContain(code);
+    const roleId = await newRole(probe, `appointment_desk_${RUN}`);
+    for (const code of ADDED_BY_APPOINTMENT_DECISION) {
+      const mapped = await mapCode(probe, roleId, code);
+      expect({ code, status: mapped.status }).toEqual({ code, status: 201 });
+    }
+    expect(await codesOfRole(roleId)).toEqual([...ADDED_BY_APPOINTMENT_DECISION].sort());
+  });
+
+  it('P31-B31 it sets up an appointment type of its own: created, listed, offered, renamed under its version, retired, and each change audited', async () => {
+    const created = await setupType();
+    const stored = await storedType(created.id);
+    // The organisation's own entry, never a shared one.
+    expect(stored).toMatchObject({ tenantId: probe.tenantId, scope: 'tenant', status: 'active' });
+    expect(created.recordVersion).toBe(stored.version);
+    expect(await auditRecordsFor(probe.tenantId, 'apt.appointment_type.created', created.id)).toBe(
+      1
+    );
+
+    // Listed for management (with its status and version) and offered to booking.
+    const managed = (await managedTypes(probe)).find((entry) => entry.id === created.id);
+    expect(managed).toMatchObject({ name: 'Routine service', status: 'active' });
+    expect((await offeredTypes(probe)).map((entry) => entry.id)).toContain(created.id);
+
+    // Renamed under the version it was read at.
+    asOwnerOf(probe);
+    const renamed = await call<CatalogueEntryReply>(appointmentTypeUpdateRoute, {
+      path: `/appointment-catalogue/appointment-types/${created.id}`,
+      method: 'PATCH',
+      params: { appointmentTypeId: created.id },
+      body: { name: 'Routine check' },
+      ifMatch: managed?.recordVersion ?? 0,
+    });
+    expect(renamed.status).toBe(200);
+    expect(renamed.body.name).toBe('Routine check');
+    expect(await auditRecordsFor(probe.tenantId, 'apt.appointment_type.renamed', created.id)).toBe(
+      1
+    );
+
+    // The version it was read at is now stale: a conflict, and nothing changes.
+    asOwnerOf(probe);
+    const stale = await call<{ code?: string }>(appointmentTypeUpdateRoute, {
+      path: `/appointment-catalogue/appointment-types/${created.id}`,
+      method: 'PATCH',
+      params: { appointmentTypeId: created.id },
+      body: { name: 'Overwritten' },
+      ifMatch: managed?.recordVersion ?? 0,
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.body.code).toBe('ERR-CON-001');
+    expect((await storedType(created.id)).name).toBe('Routine check');
+
+    // Retired: booking no longer offers it, and management still lists it.
+    asOwnerOf(probe);
+    const retired = await call<CatalogueEntryReply>(appointmentTypeStatusRoute, {
+      path: `/appointment-catalogue/appointment-types/${created.id}/status`,
+      params: { appointmentTypeId: created.id },
+      body: { status: 'inactive' },
+      ifMatch: renamed.body.recordVersion ?? 0,
+      idempotencyKey: randomUUID(),
+    });
+    expect(retired.status).toBe(200);
+    expect(retired.body.status).toBe('inactive');
+    expect((await offeredTypes(probe)).map((entry) => entry.id)).not.toContain(created.id);
+    expect((await managedTypes(probe)).find((entry) => entry.id === created.id)?.status).toBe(
+      'inactive'
+    );
+    expect(
+      await auditRecordsFor(probe.tenantId, 'apt.appointment_type.status_changed', created.id)
+    ).toBe(1);
+  });
+
+  it('P31-B32 the administrator of ANOTHER organisation, holding the same codes, neither sees nor changes this organisation entry', async () => {
+    const created = await setupType();
+    const other = await otherOrganisation();
+    const theirCodes = await codesHeldBy(other.ownerAccountId);
+    for (const code of ADDED_BY_APPOINTMENT_DECISION) expect(theirCodes).toContain(code);
+    const before = await storedType(created.id);
+
+    // Its lists are its own organisation's: this entry is in neither.
+    expect((await managedTypes(other)).map((entry) => entry.id)).not.toContain(created.id);
+    expect((await offeredTypes(other)).map((entry) => entry.id)).not.toContain(created.id);
+
+    // Addressed by id, the entry does not exist for it.
+    asOwnerOf(other);
+    const rename = await call<{ code?: string }>(appointmentTypeUpdateRoute, {
+      path: `/appointment-catalogue/appointment-types/${created.id}`,
+      method: 'PATCH',
+      params: { appointmentTypeId: created.id },
+      body: { name: 'Taken over' },
+      ifMatch: before.version,
+    });
+    expect(rename.status).toBe(404);
+    asOwnerOf(other);
+    const status = await call<{ code?: string }>(appointmentTypeStatusRoute, {
+      path: `/appointment-catalogue/appointment-types/${created.id}/status`,
+      params: { appointmentTypeId: created.id },
+      body: { status: before.status === 'active' ? 'inactive' : 'active' },
+      ifMatch: before.version,
+      idempotencyKey: randomUUID(),
+    });
+    expect(status.status).toBe(404);
+
+    // Nothing of this organisation moved.
+    expect(await storedType(created.id)).toEqual(before);
+  });
+
+  it('P31-B33 a front-desk role built WITHOUT the codes is refused the setup list and the create, with the registered refusal, and nothing is written', async () => {
+    const scope = await scopeOf(probe);
+    const desk = await seedMember(probe, 'front_desk');
+    const roleId = await grantBranchRole(
+      probe,
+      'front_desk',
+      ['rec.reception.read', 'crm.customer.read'],
+      desk.userId,
+      scope
+    );
+    // The role is exactly what the administrator built: the bundle gave it nothing.
+    expect(await codesOfRole(roleId)).toEqual(['crm.customer.read', 'rec.reception.read']);
+    const countBefore = await admin.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM apt.appointment_types WHERE tenant_id = $1',
+      [probe.tenantId]
+    );
+
+    asMember(probe, desk.subject);
+    const listed = await call<{ code?: string; requiredPermissions?: string[] }>(
+      appointmentTypeManagementListRoute,
+      { path: '/appointment-catalogue/management/appointment-types', method: 'GET' }
+    );
+    expect(listed.status).toBe(403);
+    expect(listed.body.code).toBe('ERR-IAM-001');
+    expect(listed.body.requiredPermissions).toEqual(['apt.catalogue.manage']);
+
+    asMember(probe, desk.subject);
+    const created = await call<{ code?: string; requiredPermissions?: string[] }>(
+      appointmentTypeCreateRoute,
+      {
+        path: '/appointment-catalogue/appointment-types',
+        body: { code: `desk_try_${RUN}`, name: 'Front desk try' },
+        idempotencyKey: randomUUID(),
+      }
+    );
+    expect(created.status).toBe(403);
+    expect(created.body.code).toBe('ERR-IAM-001');
+    expect(created.body.requiredPermissions).toEqual(['apt.catalogue.manage']);
+
+    const countAfter = await admin.query<{ n: number }>(
+      'SELECT count(*)::int AS n FROM apt.appointment_types WHERE tenant_id = $1',
+      [probe.tenantId]
+    );
+    expect(countAfter.rows[0]?.n).toBe(countBefore.rows[0]?.n);
   });
 });
