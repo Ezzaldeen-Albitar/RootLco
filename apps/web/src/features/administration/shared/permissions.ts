@@ -59,6 +59,10 @@ export const PERMISSIONS = {
   // operations declare.
   priceRead: 'svc.price.read',
   priceManage: 'svc.price.manage',
+  // Appointment setup (Owner decision 2026-09-29): the organisation's own
+  // appointment types, booking channels and cancellation reasons, all behind the
+  // one code the twelve catalogue operations declare.
+  appointmentCatalogueManage: 'apt.catalogue.manage',
 } as const;
 
 export type PermissionKey = keyof typeof PERMISSIONS;

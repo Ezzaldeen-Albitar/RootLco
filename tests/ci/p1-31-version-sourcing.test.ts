@@ -173,8 +173,10 @@ describe('the tree as it stands passes, and the run is not vacuous', () => {
         // employee register's own screen; 27 with the Owner directive's reorder-level
         // retirement adapter, which sends the level's own version for an inv operation;
         // 28 with the discount threshold screen, which sends the threshold's record
-        // version for a svc operation.
-        '28 versioned send(s) outside the subject.'
+        // version for a svc operation; 34 with the appointment setup screen (Owner
+        // decision 2026-09-29), whose six catalogue renames and status changes each
+        // send the entry's version for an apt operation.
+        '34 versioned send(s) outside the subject.'
     );
     expect(out).toContain(
       'OK: every version-guarded P1-31 command sources its If-Match from a read or a command ' +

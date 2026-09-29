@@ -54,6 +54,10 @@ describe('the navigation model', () => {
     const available = ALL.filter((entry) => entry.status === 'available').map((e) => e.key);
     expect(available.sort()).toEqual([
       'administration',
+      // Owner decision 2026-09-29: the organisation's own appointment types,
+      // booking channels and cancellation reasons, gated on
+      // `apt.catalogue.manage` — the code its management lists declare.
+      'administration.appointmentSetup',
       'administration.approvalLimits',
       'administration.auditLog',
       // P1-32 preparation: the department and employee registers, each gated on
@@ -411,5 +415,35 @@ describe('permission filtering — unknown means denied', () => {
     // A cashier built from payment and invoice codes is not offered the entry.
     const cashier = ['sal.invoice.manage', 'sal.finance.view', 'sal.payment.record'];
     expect(keysFor(cashier)).not.toContain('creditNotes');
+  });
+
+  it('offers Appointments and Appointment setup to the first administrator of a provisioned organisation, and moves nothing else (Owner decision 2026-09-29)', () => {
+    /*
+     * The same generated set. The four appointment codes are the only difference
+     * the decision makes to the bundle, so exactly the entries they gate may
+     * appear or disappear with them — the calendar and the setup screen.
+     */
+    const appointmentCodes = [
+      'apt.appointment.read',
+      'apt.appointment.manage',
+      'apt.appointment.lifecycle.manage',
+      'apt.catalogue.manage',
+    ];
+    const administrator = accountManifest['org-administrator'];
+    for (const code of appointmentCodes) expect(administrator).toContain(code);
+    const keysFor = (permissions: readonly string[]) =>
+      flattenNavigation(visibleNavigation(NAVIGATION, { permissions })).map((entry) => entry.key);
+    const withCodes = keysFor(administrator);
+    const withoutCodes = keysFor(administrator.filter((code) => !appointmentCodes.includes(code)));
+    expect(withCodes.filter((key) => !withoutCodes.includes(key)).sort()).toEqual([
+      'administration.appointmentSetup',
+      'appointments',
+    ]);
+    expect(withoutCodes.filter((key) => !withCodes.includes(key))).toEqual([]);
+
+    // A front-desk role built from reception and customer codes is offered neither.
+    const frontDesk = ['rec.reception.read', 'crm.customer.read'];
+    expect(keysFor(frontDesk)).not.toContain('appointments');
+    expect(keysFor(frontDesk)).not.toContain('administration.appointmentSetup');
   });
 });

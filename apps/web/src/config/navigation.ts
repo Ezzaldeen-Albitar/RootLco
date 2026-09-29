@@ -862,6 +862,22 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             status: 'available',
             scope: 'company',
           },
+          /*
+           * Appointment setup (Owner decision 2026-09-29): the organisation's own
+           * appointment types, booking channels and cancellation reasons. Gated on
+           * `apt.catalogue.manage`, the code its management list declares, so the
+           * entry is shown to exactly the sessions whose first request succeeds.
+           * Tenant-wide: the entries are the organisation's, not a branch's.
+           */
+          {
+            key: 'administration.appointmentSetup',
+            labelKey: 'nav.appointmentSetup',
+            icon: 'appointments',
+            href: '/administration/appointment-setup',
+            permission: 'apt.catalogue.manage',
+            status: 'available',
+            scope: 'tenant',
+          },
           {
             key: 'administration.auditLog',
             labelKey: 'nav.auditLog',

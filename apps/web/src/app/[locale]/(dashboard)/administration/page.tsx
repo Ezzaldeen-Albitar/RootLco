@@ -93,6 +93,11 @@ const SECTIONS: readonly {
         labelKey: 'nav.systemSettings',
         permission: PERMISSIONS.settingsManage,
       },
+      {
+        href: '/administration/appointment-setup',
+        labelKey: 'nav.appointmentSetup',
+        permission: PERMISSIONS.appointmentCatalogueManage,
+      },
     ],
   },
   {

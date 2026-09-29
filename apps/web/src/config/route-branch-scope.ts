@@ -277,6 +277,7 @@ export const ROUTE_BRANCH_SCOPES: readonly RouteScopeDeclaration[] = Object.free
   },
   // ── None: tenant-wide, or one record reached by address ──
   { pattern: '/administration', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/administration/appointment-setup', scope: 'none', why: TENANT_WIDE },
   { pattern: '/administration/approval-limits', scope: 'none', why: TENANT_WIDE },
   { pattern: '/administration/audit-log', scope: 'none', why: TENANT_WIDE },
   { pattern: '/administration/currencies', scope: 'none', why: TENANT_WIDE },

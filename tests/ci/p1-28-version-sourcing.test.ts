@@ -195,9 +195,16 @@ describe('the gate is green on the CURRENT tree', () => {
     // count that collapsed would pass as "nothing to check"; a withheld count
     // that grew would be this gate's subject shrinking without anybody
     // deciding to.
+    //
+    // Since the Owner decision of 2026-09-29 six of the fifteen are reached: the
+    // rename and the status change of the three APPOINTMENT catalogues, from the
+    // appointment setup screen. They moved from withheld to expected — and so
+    // came under every rule here — in the same change that gave them adapters.
+    // Nine stay withheld: the reception catalogue administration.
     expect(live.guarded).toHaveLength(22);
-    expect(live.withheld).toHaveLength(15);
-    expect(live.expected).toHaveLength(7);
+    expect(live.withheld).toHaveLength(9);
+    expect(live.expected).toHaveLength(13);
+    for (const entry of live.withheld) expect(entry.id).toMatch(/^rec\./);
     for (const operation of live.guarded) expect(operation.id).toMatch(/^(apt|rec)\./);
   });
 
@@ -223,9 +230,11 @@ describe('the gate is green on the CURRENT tree', () => {
     // whole of `apps/web/src` on purpose, and since P1-29 W3 and W4 that tree
     // also holds versioned adapters for `wo` and `tech` operations — real,
     // correct, and not this contract's subject. They are declared by name in
-    // `OUT_OF_SUBJECT_ADAPTERS` and still held to every rule below; the seven
-    // accounted for are the apt/rec adapters this contract is about.
-    expect(live.accountedFor).toHaveLength(7);
+    // `OUT_OF_SUBJECT_ADAPTERS` and still held to every rule below; the thirteen
+    // accounted for are the apt/rec adapters this contract is about — the seven
+    // operator commands and, since the Owner decision of 2026-09-29, the six
+    // appointment catalogue renames and status changes.
+    expect(live.accountedFor).toHaveLength(13);
     expect(live.adapters.length).toBeGreaterThanOrEqual(live.accountedFor.length);
     for (const adapter of live.adapters) {
       expect(adapter.required, `${adapter.name} declares an optional ifMatch`).toBe(true);
@@ -1232,6 +1241,12 @@ describe('a version held by the edit-baseline hook is traced, not trusted by nam
     expect(traced.map((site) => site.adapter).sort()).toEqual([
       'createPriceListVersion',
       'publishPriceListVersion',
+      // The rename dialog of the appointment setup screen (Owner decision
+      // 2026-09-29): the stored name and its version held through the hook, fed
+      // the management list's version, once per catalogue.
+      'renameAppointmentType',
+      'renameCancellationReason',
+      'renameSourceChannel',
       // The appointment reschedule form, since the appointments slice: its
       // confirmed times are held through the hook, fed the detail's version.
       'rescheduleAppointment',

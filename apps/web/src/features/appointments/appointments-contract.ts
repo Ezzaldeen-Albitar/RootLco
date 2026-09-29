@@ -103,14 +103,14 @@ export const APPOINTMENT_PERMISSIONS = {
    * Administering the appointment intake catalogues — appointment types,
    * cancellation reasons and source channels.
    *
-   * The code is named here because the backend registers it and this layer must
-   * know every code its domain can be denied for; it is NOT consulted by any
-   * screen, because there is no catalogue-administration screen. No canonical
-   * P1-28 task binds one, and who administers the intake catalogues and through
-   * which surface is `P1-28-OD-001` (`docs/phase-1/phase-1-28/canonical-plan.md`
-   * §7). The twelve operations behind it are recorded in
-   * `docs/phase-1/phase-1-28/write-reachability.json`, the writes among them as
-   * DELIBERATELY_ABSENT against that decision.
+   * Consulted by the appointment setup route (`/administration/appointment-setup`)
+   * and by the booking route, which links an empty type catalogue there. For the
+   * appointment catalogues the Owner decided on 2026-09-29 who administers them
+   * and through which surface: the standard tenant administrator, on that screen —
+   * which answers `P1-28-OD-001` for these three catalogues. The twelve operations
+   * behind the code are recorded in `docs/phase-1/phase-1-28/write-reachability.json`,
+   * the writes among them as REACHABLE through the setup screen. The reception
+   * catalogues (`rec.catalogue.manage`) stay withheld under that decision.
    */
   catalogueManage: 'apt.catalogue.manage',
 } as const;

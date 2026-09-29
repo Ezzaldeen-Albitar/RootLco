@@ -21,7 +21,9 @@ import { pageMetadata } from '@/lib/page-metadata';
  * OUTCOME travels to the screen: "failed", "truncated" and "empty" are three
  * different renderable facts (the vehicle-search Make column precedent), and
  * an empty catalogue in particular is the no-fake-data policy working — the
- * screen says "not configured", never "error".
+ * screen says "not configured", never "error". A holder of `apt.catalogue.manage`
+ * is shown the way to the appointment setup screen from an empty type catalogue
+ * (Owner decision 2026-09-29); the capability is decided here, not in the screen.
  */
 export default async function AppointmentBookingPage({
   params,
@@ -62,6 +64,7 @@ export default async function AppointmentBookingPage({
       messages={messages}
       types={types}
       channels={channels}
+      canSetUpCatalogue={holds(session.permissions, APPOINTMENT_PERMISSIONS.catalogueManage)}
     />
   );
 }
