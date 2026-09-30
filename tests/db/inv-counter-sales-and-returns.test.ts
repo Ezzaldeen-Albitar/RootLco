@@ -310,7 +310,8 @@ describe('sal.invoices — a counter sale is an invoice kind', () => {
       await seedStock(c, item, warehouse, 20, 'odcs_price');
       await seedStock(c, unpriced, warehouse, 5, 'odcs_unpriced');
       const taxClass = await seedTax(c, 'odcs_price', '0.160000');
-      // 12.3400 x 3 = 37.0200 net; 16% of that is 5.9232 tax, gross 42.9432.
+      // 12.3400 x 3 = 37.0200 net; 16% of that is 5.9232, rounded half-up to the
+      // USD minor unit (ADR-023, D1): 5.92 tax, gross 42.94.
       await setPrice(c, item, '12.3400', { taxClass });
 
       const sale = await createCounterSale(c, partner, [
@@ -322,7 +323,7 @@ describe('sal.invoices — a counter sale is an invoice kind', () => {
            FROM sal.invoice_amounts WHERE invoice_id = $1`,
         [sale]
       );
-      expect(amounts).toEqual({ net: '37.0200', tax: '5.9232', gross: '42.9432' });
+      expect(amounts).toEqual({ net: '37.0200', tax: '5.9200', gross: '42.9400' });
       const line = await one<{ unit: string; net: string; tax: string; customer: string }>(
         c,
         `SELECT unit_price::text AS unit, net_amount::text AS net, tax_amount::text AS tax,
@@ -333,8 +334,8 @@ describe('sal.invoices — a counter sale is an invoice kind', () => {
       expect(line).toEqual({
         unit: '12.3400',
         net: '37.0200',
-        tax: '5.9232',
-        customer: '42.9432',
+        tax: '5.9200',
+        customer: '42.9400',
       });
       // A draft moves NO stock.
       expect(await onHand(c, item, warehouse)).toBe('20.000');
@@ -665,9 +666,10 @@ describe('inv.sales_returns — condition, ceiling and credit', () => {
           )
         );
       }
-      // The cumulative share, rounded once: 6.6667, then 13.3333 - 6.6667, then
-      // 20.0000 - 13.3333. Their sum is the line's gross to the last digit.
-      expect(credits).toEqual(['6.6667', '6.6666', '6.6667']);
+      // The cumulative share, rounded once to the USD minor unit (ADR-023, D1):
+      // 6.67, then 13.33 - 6.67, then what remains of the 20.00 gross, 20.00 -
+      // 13.33. Their sum is the line's gross to the last digit.
+      expect(credits).toEqual(['6.6700', '6.6600', '6.6700']);
       expect(
         await scalar(
           c,
