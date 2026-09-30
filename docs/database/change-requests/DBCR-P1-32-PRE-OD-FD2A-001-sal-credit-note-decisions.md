@@ -15,7 +15,9 @@ database is a separate, rehearsed step.
 - **Executable proof:** `tests/db/sal-credit-note-decisions.test.ts` (requester-only withdrawal,
   rejection by a different holder of `sal.credit.manage` with a reason, terminal decisions through
   the primitives and through raw UPDATEs on the owner connection, the narrowed grants, and the
-  decision dates stamped at approval and frozen afterwards on credit notes and receipt reversals),
+  decision dates stamped at approval and frozen afterwards on credit notes and receipt reversals, and
+  a raw INSERT on the runtime login that names a decided state, decider, date or reason being born
+  pending and undecided),
   `tests/db/inv-counter-sales-and-returns.test.ts` (a withdrawn return credit no longer counts in the
   cumulative share), `tests/db/sal-finance-controls.test.ts` (the narrowed decision-column grant),
   `tests/db/foundation.test.ts` (routine inventory),
@@ -49,6 +51,7 @@ date could be backdated after the decision.
 | `sal.guard_dual_control_approval()`                   | Re-issued (receipt reversals only): stamps `reversed_at` at approval and freezes `approved_at` and `reversed_at` once decided.                                                                                                                                                     |
 | `sal.approve_receipt_reversal(uuid, uuid)`            | Re-issued: no longer names `reversed_at`.                                                                                                                                                                                                                                          |
 | `sal.request_return_credit_note(uuid, numeric, text)` | Re-issued: earlier returns count while their note is neither rejected nor withdrawn.                                                                                                                                                                                               |
+| `sal.stamp_dual_control_maker()`                      | Re-issued (fix round 1 of #489): on `sal.credit_notes` the BEFORE INSERT stamp also forces `approval_state` to `pending` and clears `issued_at`, `decided_by`, `decided_at` and `decision_reason`, so a raw INSERT cannot create a decided note; receipt reversals unchanged.      |
 | Grants                                                | `app_runtime`: `UPDATE (issued_at)` on `sal.credit_notes` and `UPDATE (reversed_at)` on `sal.receipt_reversals` REVOKED; `UPDATE (decision_reason)` on `sal.credit_notes` GRANTED.                                                                                                 |
 
 Every function is `SECURITY INVOKER` with an empty `search_path`, and `EXECUTE` is revoked from

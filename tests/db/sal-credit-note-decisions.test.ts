@@ -10,7 +10,9 @@
  *    not blank; approved, rejected and withdrawn are terminal. Each rule is held
  *    by the trigger `sal.guard_credit_note_decision`, so it is proved through the
  *    primitives AND through a raw UPDATE on the owner connection, which bypasses
- *    every grant but not the trigger.
+ *    every grant but not the trigger. A raw INSERT on the runtime login cannot
+ *    skip that trigger: `sal.stamp_dual_control_maker` births every note pending,
+ *    with no decider, decision date, decision reason or issue date.
  *  - Frozen dates: an approved note's `issued_at`, a declined note's decider and
  *    decision time, and an approved reversal's `reversed_at` cannot be changed
  *    afterwards — the runtime login holds no UPDATE on any of them, and the
@@ -32,6 +34,9 @@ import {
   setContext,
   withRolledBackTx,
   USER_A,
+  TENANT_A,
+  COMPANY_A1,
+  BRANCH_A1,
 } from './helpers';
 import {
   seedP111Base,
@@ -309,6 +314,76 @@ describe('D3 — a decision is terminal', () => {
         expect(error.code, `${next}`).toBe('23514');
         expect(error.message, `${next}`).toContain('credit_note_decision_frozen');
       }
+    });
+  });
+});
+
+describe('D3 — a raw INSERT cannot create a decided note', () => {
+  // The decision guard is BEFORE UPDATE only and app_runtime holds table-level
+  // INSERT on sal.credit_notes, so the BEFORE INSERT stamp
+  // `sal.stamp_dual_control_maker` must birth every note pending and undecided.
+  // Without it the 'rejected' and 'withdrawn' rows below are stored as written:
+  // a fabricated decider, a backdated decision time, and no decision rule run.
+  it('births every note pending with no decider, decision date, reason or issue date', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { invoice } = await seedInvoiceWithLine(c, 'fd2a_forged_insert', { net: 100, tax: 0 });
+      await issueInvoice(c, invoice);
+      const forged: Record<string, string> = {};
+      for (const [state, decider, reason] of [
+        ['rejected', P11.APPROVER_USER, 'forged'],
+        ['withdrawn', USER_A, null],
+        ['approved', P11.APPROVER_USER, null],
+        ['pending', null, null],
+      ] as const) {
+        const row = (
+          await c.query<{
+            id: string;
+            approval_state: string;
+            decided_by: string | null;
+            decided_at: Date | null;
+            decision_reason: string | null;
+            issued_at: Date | null;
+            approved_by: string | null;
+            approved_at: Date | null;
+            requested_by: string;
+          }>(
+            `INSERT INTO sal.credit_notes
+               (tenant_id, company_id, branch_id, invoice_id, currency_code, amount, reason,
+                created_by, approval_state, decided_by, decided_at, decision_reason, issued_at,
+                approved_by, approved_at)
+             VALUES ($1, $2, $3, $4, 'USD', 10, 'forged decision', $5, $6, $7,
+                     '2020-01-01T00:00:00Z', $8, '2020-01-01T00:00:00Z', $7, '2020-01-01T00:00:00Z')
+             RETURNING id, approval_state, decided_by, decided_at, decision_reason, issued_at,
+                       approved_by, approved_at, requested_by`,
+            [TENANT_A, COMPANY_A1, BRANCH_A1, invoice, USER_A, state, decider, reason]
+          )
+        ).rows[0]!;
+        const { id, ...stored } = row;
+        expect(stored, state).toEqual({
+          approval_state: 'pending',
+          decided_by: null,
+          decided_at: null,
+          decision_reason: null,
+          issued_at: null,
+          approved_by: null,
+          approved_at: null,
+          requested_by: USER_A,
+        });
+        forged[state] = id;
+      }
+      // Each is an ordinary pending request: the decision rules still apply to it.
+      await expectFail(c, '23514', `SELECT sal.reject_credit_note($1, 'mine')`, [forged.rejected]);
+      await setUser(c, P11.APPROVER_USER);
+      await c.query(`SELECT sal.reject_credit_note($1, 'not due')`, [forged.rejected]);
+      expect(
+        await scalar(
+          c,
+          `SELECT (approval_state = 'rejected' AND decided_by = $2
+                   AND decided_at > now() - interval '1 hour')::text AS v
+             FROM sal.credit_notes WHERE id = $1`,
+          [forged.rejected, P11.APPROVER_USER]
+        )
+      ).toBe('true');
     });
   });
 });

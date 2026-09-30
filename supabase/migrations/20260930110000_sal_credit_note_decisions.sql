@@ -5,8 +5,9 @@
 -- Rollback classification: ROLLBACK-SAFE WITH DATA NOTE. Three nullable
 --   columns are added to sal.credit_notes, one CHECK is widened and four are
 --   added; one trigger function is added and the credit-note approval trigger
---   is re-pointed at it; three functions are added and four are re-issued with
---   the same names and signatures; two column grants are narrowed and one is
+--   is re-pointed at it; three functions are added and five are re-issued with
+--   the same names and signatures (one of them the shared BEFORE INSERT maker
+--   stamp, which now also births every credit note pending and undecided); two column grants are narrowed and one is
 --   added. No row is written, moved or deleted. The inverse at the foot of this
 --   file restores every previous definition; the data note is that a note
 --   withdrawn or rejected after this migration keeps its state only while the
@@ -32,7 +33,12 @@
 --       The rules live in the BEFORE UPDATE trigger sal.guard_credit_note_decision,
 --       so a raw UPDATE is held to them exactly as the primitives are. The
 --       decider and the decision time are stamped from the session by the
---       trigger (decided_by, decided_at); a caller never supplies them.
+--       trigger (decided_by, decided_at); a caller never supplies them. A raw
+--       INSERT cannot bypass that trigger either: the BEFORE INSERT stamp
+--       sal.stamp_dual_control_maker (re-issued in section 2a) births every
+--       credit note 'pending' with no decider, decision time, decision reason or
+--       issue date, whatever the statement names, so the only way to a decision
+--       is an UPDATE the guard sees.
 --       Withdrawn and rejected notes credit nothing: every credited figure
 --       counts approval_state = 'approved' only, so the open receivable and the
 --       derived credit status (D7) are unchanged by either decision.
@@ -196,6 +202,42 @@ CREATE TRIGGER tg_credit_notes_approval BEFORE UPDATE ON sal.credit_notes
 -- assigns needs no privilege of the caller.
 REVOKE UPDATE (issued_at) ON sal.credit_notes FROM app_runtime;
 GRANT UPDATE (decision_reason) ON sal.credit_notes TO app_runtime;
+
+-- ----------------------------------------------------------------------------
+-- 2a. Every credit note is born pending and undecided
+-- ----------------------------------------------------------------------------
+
+-- Re-issued from 20260724092000_sal_payments.sql. The guard above is BEFORE
+-- UPDATE only, and app_runtime holds table-level INSERT on sal.credit_notes,
+-- which covers the decision columns added in section 1. Without this, one raw
+-- INSERT naming approval_state 'rejected' or 'withdrawn' with a chosen decider,
+-- a backdated decision time and a reason would create a note terminal from
+-- birth that no decision rule ever saw. The stamp is shared with
+-- sal.receipt_reversals, whose behaviour is unchanged; for sal.credit_notes it
+-- now also forces the state to 'pending' and clears every decision field and
+-- the issue date. It overrides rather than refuses, exactly as it already does
+-- for requested_by, approved_by and approved_at.
+CREATE OR REPLACE FUNCTION sal.stamp_dual_control_maker()
+RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
+BEGIN
+  NEW.requested_by := iam.current_user_id();
+  IF NEW.requested_by IS NULL THEN
+    RAISE EXCEPTION 'dual control: no user context (requested_by cannot be stamped)' USING ERRCODE = 'insufficient_privilege';
+  END IF;
+  NEW.approved_by := NULL;
+  NEW.approved_at := NULL;
+  IF TG_TABLE_SCHEMA = 'sal' AND TG_TABLE_NAME = 'credit_notes' THEN
+    NEW.approval_state := 'pending';
+    NEW.issued_at := NULL;
+    NEW.decided_by := NULL;
+    NEW.decided_at := NULL;
+    NEW.decision_reason := NULL;
+  END IF;
+  RETURN NEW;
+END; $$;
+COMMENT ON FUNCTION sal.stamp_dual_control_maker() IS
+  'BEFORE INSERT stamp on sal.credit_notes and sal.receipt_reversals: requested_by from the session, approver fields cleared. On sal.credit_notes it also forces approval_state = pending and clears issued_at, decided_by, decided_at and decision_reason (P1-32-PRE-OD-FD2A, D3), so a decision is reached only through an UPDATE that sal.guard_credit_note_decision sees.';
+REVOKE EXECUTE ON FUNCTION sal.stamp_dual_control_maker() FROM PUBLIC;
 
 -- ----------------------------------------------------------------------------
 -- 3. The primitives: approve (re-issued), withdraw and reject (new)
@@ -429,7 +471,9 @@ GRANT EXECUTE ON FUNCTION sal.request_return_credit_note(uuid, numeric, text) TO
 -- Inverse (ROLLBACK-SAFE WITH DATA NOTE — run only while no credit note is
 -- withdrawn; a withdrawn note has no state in the previous vocabulary)
 --
---   Re-issue sal.request_return_credit_note from
+--   Re-issue sal.stamp_dual_control_maker from 20260724092000_sal_payments.sql
+--   (with its REVOKE; COMMENT ON FUNCTION sal.stamp_dual_control_maker() IS NULL),
+--   sal.request_return_credit_note from
 --   20260930100000_sal_minor_unit_rounding.sql, and sal.approve_credit_note,
 --   sal.approve_receipt_reversal and sal.guard_dual_control_approval from
 --   20260930090000_sal_finance_controls.sql, each with its REVOKE and GRANT, then:

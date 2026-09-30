@@ -3359,3 +3359,37 @@ Known limitations of this slice, one line each:
   tier one (`tests/db/sal-credit-note-decisions.test.ts`) and the backend tier one
   (`tests/backend/od-finance-credit-decisions.test.ts`); the web tier gains cases in existing files
   (no web test file added or removed); the recorded tiers are retaken at the final head.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- A server refusal of the reject reason (`reasonError` in `CreditNotesScreen.tsx`) clears only when
+  the dialog reopens or a decision succeeds, not on editing the reason; the client-side blank check
+  (`ReasonDialog.tsx:75`) does clear on correction. The server path is unreachable from the screen:
+  the client trims, blocks a blank reason and caps it at 2000 characters, as the server does.
+- The reject dialog is destructive, so focus opens on Cancel and Confirm stays disabled while the
+  reason is blank; first-invalid focus never triggers for a blank reason (existing `ReasonDialog`
+  behaviour, shared with its other consumers).
+- Closing the reject dialog drops a reason already typed without asking (existing `ReasonDialog`
+  behaviour; no unsaved-work prompt).
+- Approve and Reject are offered to anyone other than the requester; a viewer who passes the page
+  gate on a grant in another branch still sees both and the server answers 403, as Approve already
+  did.
+- The race test (`tests/backend/od-finance-credit-decisions.test.ts:624`) covers approve against
+  reject only; approve against withdraw and reject against withdraw are untested, though all three
+  take the same row lock (`FOR UPDATE`), so one winner follows from the database design.
+- `sal.guard_dual_control_approval` (re-issued in the migration) still stamps anyone rejecting a
+  receipt reversal as `approved_by`, the requester included, with no permission check; unchanged
+  from before and belongs to D4.
+- `businessRefusalDetail`'s identifier pattern would admit a rule code shaped like an amount (for
+  example `amount_10.00`); every rule code today is a compile-time constant, so no live path exists.
+- The approval pre-check labels every failure inside its open-amount try block as
+  `credit_note_exceeds_open_amount` (`invoice-service.ts:1616-1624`); a Decimal parse fault there
+  would be mislabelled, which is unlikely and does not change the caller's response.
+- In the contract review the database and backend tiers were not run locally (no disposable
+  database was available and port 54322 is off limits); for those tiers the review relied on hosted
+  CI, which passed both at 8c1a0d17 (Database migrations and RLS tests, integration-tests).
+- Fixed in this round: a raw INSERT on the runtime login could create a credit note already
+  rejected or withdrawn, with a chosen decider and a backdated decision date, because the decision
+  guard runs on UPDATE only. `sal.stamp_dual_control_maker` (BEFORE INSERT, re-issued in the same
+  migration) now births every credit note pending with no decider, decision date, decision reason
+  or issue date; `tests/db/sal-credit-note-decisions.test.ts` proves it on the runtime login.
