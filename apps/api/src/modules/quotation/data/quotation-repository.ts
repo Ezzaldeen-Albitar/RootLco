@@ -546,16 +546,6 @@ export class QuotationRepository extends Repository {
   }
 
   /**
-   * The database's `now()` — the ONE clock expiry is decided by.
-   *
-   * `now()` is the current transaction's start time, so a caller that reads it once
-   * and reuses it agrees with every `expires_at <= now()` predicate in the same
-   * transaction *by construction*. Reading the application's clock instead would
-   * make the sweep's SQL predicate and its own re-check answer to two different
-   * clocks, and a container whose clock ran ahead of the database's would expire a
-   * revision the database does not consider lapsed.
-   */
-  /**
    * The minor unit `shared.currencies` records for a currency (JOD 3, USD 2), or
    * `null` for a code it does not hold. What a fixed discount is checked against
    * (ADR-023, D1).
@@ -570,6 +560,16 @@ export class QuotationRepository extends Repository {
     return row ? row.minor_unit : null;
   }
 
+  /**
+   * The database's `now()` — the ONE clock expiry is decided by.
+   *
+   * `now()` is the current transaction's start time, so a caller that reads it once
+   * and reuses it agrees with every `expires_at <= now()` predicate in the same
+   * transaction *by construction*. Reading the application's clock instead would
+   * make the sweep's SQL predicate and its own re-check answer to two different
+   * clocks, and a container whose clock ran ahead of the database's would expire a
+   * revision the database does not consider lapsed.
+   */
   public async serverNow(db: DbHandle): Promise<Date> {
     const row = await this.runOne<{ now: Date }>(db, `SELECT now() AS now`);
     if (row === null) {

@@ -11,8 +11,14 @@
  *  - D7 on the report: the invoice-and-payment report publishes the credit status
  *    as its own column, beside the invoice's status rather than inside it.
  *
+ *  - D1 in the source's own words: no application comment still cites the two
+ *    per-line CHECKs the D1 migration dropped, the invoice preview describes the
+ *    sum of rounded lines it now computes, and `serverNow` keeps its own doc.
+ *
  * Each assertion fails if the rule it names is removed or inverted.
  */
+import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   CREDIT_STATUSES,
@@ -24,6 +30,7 @@ import {
 import { Decimal, MONEY } from '@api/modules/pricing/domain/decimal';
 import { assertMinorUnitScale } from '@api/server/http/validation';
 import { REPORT_DATASETS } from '@api/modules/reporting/domain/report-datasets';
+import { API_SRC_ROOT, WEB_SRC_ROOT } from '../../scripts/lib/repository-paths.mjs';
 
 const money = (amount: string): Decimal => Decimal.parse(amount, MONEY);
 
@@ -98,5 +105,66 @@ describe('D7 — the invoice-and-payment report carries the credit status as its
         (column) => column.key === 'creditStatus'
       )?.kind
     ).toBe('text');
+  });
+});
+
+/** Every .ts/.tsx file under a directory, as [path, text]. */
+function sourceFiles(dir: string): Array<[string, string]> {
+  const out: Array<[string, string]> = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...sourceFiles(full));
+    else if (/\.tsx?$/.test(entry.name)) out.push([full, readFileSync(full, 'utf8')]);
+  }
+  return out;
+}
+
+/** The JSDoc block that ends immediately before `marker`, or null when none does. */
+function docBlockBefore(text: string, marker: string): string | null {
+  const at = text.indexOf(marker);
+  if (at < 0) return null;
+  const match = /\/\*\*((?:(?!\*\/)[\s\S])*)\*\/\s*$/.exec(text.slice(0, at));
+  return match?.[1] ?? null;
+}
+
+describe('D1 — the source describes the arithmetic the database now enforces', () => {
+  it('cites neither per-line CHECK the D1 migration dropped, in the API or the web source', () => {
+    const dropped = /ck_quotation_items_(?:tax_amount|line_total)\b/;
+    const citing = [...sourceFiles(API_SRC_ROOT), ...sourceFiles(WEB_SRC_ROOT)]
+      .filter(([, text]) => dropped.test(text))
+      .map(([path]) => path);
+    expect(citing).toEqual([]);
+  });
+
+  it('describes the invoice preview as the sum of rounded lines, not a round(…, 4) expression', () => {
+    const route = readFileSync(
+      join(API_SRC_ROOT, 'app/api/v1/work-orders/[workOrderId]/invoice-preview/route.ts'),
+      'utf8'
+    );
+    const read = docBlockBefore(
+      readFileSync(
+        join(API_SRC_ROOT, 'modules/billing/application/billing-read-service.ts'),
+        'utf8'
+      ),
+      'public async previewInvoice('
+    );
+    expect(read).not.toBeNull();
+    for (const text of [route, read ?? '']) {
+      expect(text).toContain('tg_quotation_items_money');
+      expect(text).not.toMatch(/round\(\s*…\s*,\s*4\s*\)/);
+    }
+  });
+
+  it('keeps serverNow’s own doc block directly above serverNow', () => {
+    const repository = readFileSync(
+      join(API_SRC_ROOT, 'modules/quotation/data/quotation-repository.ts'),
+      'utf8'
+    );
+    const serverNowDoc = docBlockBefore(repository, 'public async serverNow(');
+    expect(serverNowDoc).toContain("The database's `now()`");
+    expect(serverNowDoc).not.toContain('shared.currencies');
+    expect(docBlockBefore(repository, 'public async minorUnitForCurrency(')).toContain(
+      'shared.currencies'
+    );
   });
 });

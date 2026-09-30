@@ -34,9 +34,13 @@
  *
  * ## What this module deliberately does not do
  *
- * - **It does not compute money.** Every amount is summed by PostgreSQL in
- *   `numeric`, inside the same `round(…, 4)` expression shape the CHECK constraints
- *   on `sal.invoice_amounts` and `sal.invoice_line_amounts` validate. `Money` and
+ * - **It does not compute money.** Every amount is computed by PostgreSQL in
+ *   `numeric`: each line's net and tax are rounded half-up to the currency's minor
+ *   unit where the line is priced (`tg_quotation_items_money` for a quotation line,
+ *   `sal.create_counter_sale_invoice` for a counter sale), and every header total
+ *   is the sum of those rounded lines (ADR-023, D1). The CHECK constraints on
+ *   `sal.invoice_amounts` and `sal.invoice_line_amounts` still validate
+ *   `gross = round(net + tax, 4)` on the result. `Money` and
  *   `Decimal` come from `@/modules/pricing` and expose no `add` and no `multiply`,
  *   so a second arithmetic engine is unexpressible rather than merely discouraged.
  * - **It does not accept an amount from a client.** `CreateInvoiceInput` has no

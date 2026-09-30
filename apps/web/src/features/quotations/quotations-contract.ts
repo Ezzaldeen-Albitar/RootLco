@@ -28,7 +28,9 @@
  * A revision carries `subtotal`, `discountTotal`, `taxTotal` and `grandTotal`,
  * and every line carries `unitPrice`, `quantity`, `discount`, `taxRate`,
  * `taxAmount` and `lineTotal` — all decimal STRINGS the database computed and
- * constrained (`ck_quotation_revisions_totals`, `ck_quotation_items_line_total`).
+ * constrained (`ck_quotation_revisions_totals`, `tg_quotation_items_money`; each
+ * line rounded to the currency's minor unit and every total the sum of the
+ * rounded lines, ADR-023 D1).
  * A screen renders them and never re-derives one from another; that is the
  * phase's closure condition (`P1-30 RENDERS SERVER ARITHMETIC ONLY`).
  *

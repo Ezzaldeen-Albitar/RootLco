@@ -3273,3 +3273,50 @@ Residual items from the contract review of this slice (fix round 2), one line ea
   trigger lines round only the net and tax money.
 - Not run locally (machine memory): the full root unit tier; the focused
   `tests/ci/p1-31-error-path-matrix.test.ts` ran (8 of 8) and hosted CI runs the tier.
+
+Residual items from the contract review of this slice (fix round 3), one line each:
+
+- Comments corrected, no behaviour change: `serverNow` has its own doc block again, and the invoice
+  preview, billing module, quotation revision route, pricing discount base, quotation contract and
+  `lineBase` comments now name `tg_quotation_items_money` and the sum-of-rounded-lines rule (D1);
+  `lineBase` keeps its scale-4 exactness refusal for the discount ceiling
+  (`ck_quotation_items_discount`), no longer for the removed SUM expression.
+- dependency-security (job 109793354851) is still red: audit-web-full reports 1 moderate and 1 high,
+  audit-web-production is clean; red since round 1, no manifest or lockfile changed, but it is a
+  required check and blocks the merge until it is handled on develop.
+- hosted-clean-room (job 109793354507) is red only in `validate:p1-27-closing-values`
+  (RUN_RECORD_STALE for the unit and web runs at bd7095a7; RUN_RECORD_FILE_COUNT_DISAGREES, unit 145
+  against 146 for the new `tests/unit/od-finance-rounding.test.ts`), the records-step cascade; its
+  three test tiers passed, and locally `verify:policies` fails only on that validator.
+- A legacy invoice whose gross has a fourth decimal (a probe: 14.3202 credited 14.320) reads
+  `partly_credited` and `open` permanently, since a receipt or manual credit note cannot clear
+  0.0002; ADR-023 Consequences documents it, legacy data only.
+- A legacy draft revision carrying a sub-minor-unit residue is refused at issue ("re-priced by a
+  revision", ADR-023); whether a new revision can be cut from an unissued draft was not checked, and
+  if not, that draft is stranded; no live data path exists (business tables start empty, no hosted
+  environment).
+- Arabic wording: the credit status uses "الخصم" / "مخصومة بالكامل", the same word as the discount
+  label (carried from rounds 1 and 2); Owner review of the wording is advised.
+- The warranty payer split is always `NO_WARRANTY_SHARE`; a percentage split would need
+  `customer_pay_amount = round(net + tax, 4) - warranty` (`billing-repository.ts:1808-1809`) rounded
+  to the minor unit.
+- The server CSV export (`report-export-service.ts:189`) emits the raw `creditStatus` code
+  (`partly_credited`), as it already does for `status`; consistent with existing export behaviour.
+- No web DOM test covers the amount-threshold `minor_unit_scale` refusal on the discount threshold
+  screen; it uses the existing `outcome.fieldErrors.thresholdValue` path, and the backend refusal is
+  covered by `tests/backend/od-finance-rounding.test.ts:485`.
+- No test proves a return is still accepted against a fully credited invoice; the backend test pins
+  the status as `issued` (`od-finance-rounding.test.ts:586`) and `inv.lock_return_source` is
+  unchanged, so the path is preserved by construction.
+- Other comments outside this round's list still name the removed line constraints
+  (`tests/backend/p1-22-invoice-lifecycle.test.ts:29` and `:326`, and the P1-30 A2 seam note in
+  `scripts/check-operation-test-coverage.mjs`); left for a later pass.
+- Re-checked and holding at 7645af5e: D1 rounds only net and tax per line to the minor unit, totals
+  are sums of rounded lines, discounts and amount thresholds are refused with `minor_unit_scale`
+  while price rules and item sale prices are not, the migration writes no row, and issued snapshots
+  are pinned by DB cases; D7 derives from approved credits only, settles only after
+  `balanceIsTrustworthy`, keeps payment and refund apart, and never sets the invoice to credited.
+- Probe (scratchpad script against the real modules): `assertMinorUnitScale` accepts 1.975 and
+  12.3450 JOD and 0.10 USD and refuses 1.9752 JOD and 0.0050 USD; `deriveCreditStatus` gives none,
+  partly_credited and credited at 0, 14.319 and 14.320 against 14.320; `derivePaymentStatus` gives
+  nothing_due for (0, 0) and paid for (5, 0); all match ADR-023.

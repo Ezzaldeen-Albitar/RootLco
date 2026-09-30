@@ -811,11 +811,13 @@ export class BillingReadService {
   /**
    * What an invoice for this work order would contain, without creating one.
    *
-   * Every amount is computed by PostgreSQL in `numeric`, in the same
-   * `round(…, 4)` shape `ck_invoice_amounts_gross` enforces and
-   * `sal.issue_invoice` later applies, from the captured values of the accepted
-   * quotation revision. So the preview is not an estimate that the create path
-   * might contradict — it is the same expression over the same frozen rows.
+   * Every amount is summed by PostgreSQL in `numeric` from the captured line
+   * amounts of the accepted quotation revision, each already rounded half-up to
+   * the currency's minor unit by `tg_quotation_items_money` (ADR-023, D1: a
+   * document total is the sum of its rounded lines), which is how
+   * `sal.issue_invoice` later recomputes the header from the invoice lines. So
+   * the preview is not an estimate that the create path might contradict — it is
+   * the same sum over the same frozen rows.
    *
    * Nothing here defaults a tax rate, a discount, a currency or a jurisdiction. The
    * rate is `quo.quotation_items.captured_tax_rate`, resolved by the pricing layer
