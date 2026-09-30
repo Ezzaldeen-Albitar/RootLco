@@ -3139,3 +3139,36 @@ Known limitations of this slice, one line each:
 - The unit tier gains one test file (`tests/unit/od-finance-controls.test.ts`); the web tier gains
   cases in existing files (no web test file added or removed); the recorded tiers are retaken at the
   final head.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- M-01: after approval the guard's non-pending branch freezes neither `issued_at` (credit notes) nor
+  `reversed_at` (receipt reversals), and `app_runtime` may still update both, so an approved
+  timestamp can be backdated; older than this slice, narrowed by it, outside M-01; a later forward
+  migration may freeze them.
+- M-09: the allocation route stores the raw `Idempotency-Key` header while the transport store trims
+  it, so a key with surrounding spaces is a different business key; harmless with generated UUIDs.
+- M-09: the allocation key is unique per tenant, not per user; a collision with a row the caller
+  cannot see (RLS) misses the lookup and fails the insert with 23505 rather than a clear refusal;
+  it needs a UUID collision, so no live path reaches it.
+- GAP-15: `minorUnitOf` takes decimals from Intl/CLDR, not `shared.currencies.minor_unit`; they
+  agree for the seeded JOD, USD and EUR but not for IQD, LBP or SYP (CLDR says 0).
+- GAP-15: amounts above about 15 significant digits display imprecisely through a double (for
+  example 99999999999999.9999 JOD shows as 100,000,000,000,000.0000); older than this slice.
+- `payments-repository.ts`: `findCurrency` and `findAllocationByIdempotencyKey` sit beneath the
+  docblocks of `minorUnitForCurrency` and `findAllocation`; the one above
+  `findAllocationByIdempotencyKey` says it binds the scope pair, which it does not (documentation
+  drift only).
+- GAP-05: when a later cumulative share rounds to zero (a very small line gross), the whole return
+  is refused as having nothing to credit, as the old per-return rounding did.
+- M-09: the remembered uncertain allocations live in module memory for the life of the browser tab,
+  keyed by receipt id, and survive a sign-out and sign-in in that tab; negligible with UUID ids.
+- M-09 web cases: split so each opens the receipt at most twice, with a documented per-case budget
+  and the remembered attempts cleared around every test; one three-opening case had outrun the
+  30 s budget on the hosted runner and its late work failed the two cases after it.
+- The reviewer did not run the database tier (no disposable PostgreSQL was authorised to it); DB and
+  backend behaviour rests on the hosted database, integration, migration-replay and
+  security-matrix jobs. The negative control for the race cases was not run.
+- hosted-clean-room is red only on `validate:p1-27-closing-values` (stale unit and web run records,
+  and a unit file count of 144 against 145 in the tree), the records-step cascade; the recorded
+  tiers are retaken at the final head.

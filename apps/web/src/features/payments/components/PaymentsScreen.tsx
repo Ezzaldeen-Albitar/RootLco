@@ -1245,6 +1245,14 @@ const uncertainAllocations = new Map<
   { readonly key: string; readonly invoiceId: string; readonly amount: string }
 >();
 
+/**
+ * Test seam. Never called by application code. The remembered attempts outlive
+ * a mounted screen by design, so each test starts from none.
+ */
+export function __resetUncertainAllocationsForTests(): void {
+  uncertainAllocations.clear();
+}
+
 /** The answers that do not say whether the allocation was booked. */
 const UNCERTAIN_OUTCOMES: ReadonlySet<ActionState['status']> = new Set<ActionState['status']>([
   'unavailable',
