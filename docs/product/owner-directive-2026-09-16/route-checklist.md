@@ -3172,3 +3172,45 @@ Residual items from the contract review of this slice (fix round 1), one line ea
 - hosted-clean-room is red only on `validate:p1-27-closing-values` (stale unit and web run records,
   and a unit file count of 144 against 145 in the tree), the records-step cascade; the recorded
   tiers are retaken at the final head.
+
+### Finance decision record, money at the minor unit, and the derived credit status (P1-32-PRE-OD-FD1)
+
+The Owner's sales and finance decisions D1–D17 of 2026-09-30 are recorded in
+[ADR-023](../../adr/ADR-023-sales-and-finance-policy-decisions.md), with a mapping to the pull
+requests that implement them. This slice implements D1 (money rounded half-up, per line, to the
+currency's minor unit; entered amounts that are money checked against it) and D7 (the credit status
+derived, apart from the payment and refund status). One forward migration,
+`20260930100000_sal_minor_unit_rounding.sql` (163 migrations). No route, operation, permission code
+or policy is added; `sal.invoice-outstanding-read` gains a `settlement` block and the
+invoice-and-payment report a `creditStatus` column, both additive.
+
+| Route                                       | What changed                                                                                                                                                                                                                                   |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/invoices`                                 | The open balance shows Credit (none / partly / fully credited), Payment (not paid / partly paid / paid / nothing to pay) and Refund (none), with the credited and paid amounts; the printed copy states the credit and payment positions (D7). |
+| `/reports`                                  | The invoice-and-payment report has a Credit column, worded in the reader's language, apart from the invoice's status (D7).                                                                                                                     |
+| `/quotations`, `/quotations/{id}`           | A line is priced at the minor unit (a JOD 16% line of 12.345 is 1.975 tax, 14.320 total); a fixed discount finer than the currency is refused above the lines, with what was typed kept (D1).                                                  |
+| `/pricing/{priceListId}`                    | A price finer than the list currency is refused beside the amount field, red and described, with the figure kept (D1).                                                                                                                         |
+| `/inventory/items/{itemId}` (selling price) | A selling price finer than its currency is refused on the price field (D1).                                                                                                                                                                    |
+| `/administration/discount-threshold`        | An amount threshold finer than its currency is refused on the value field; a percentage keeps its own scale (D1).                                                                                                                              |
+| `/inventory/counter-sales`                  | Each line's net and tax are rounded to the sale currency's minor unit (D1).                                                                                                                                                                    |
+
+Wrapper extensions: none. The field errors use the existing server-violation path and one new
+catalogued message (`form.violation.minor_unit_scale`); the quotation line editor folds a
+`discount` refusal into the alert above the lines, as it already did for `quantity`. The design
+gallery is unchanged.
+
+Known limitations of this slice, one line each:
+
+- Approval-limit amounts are not yet checked against the minor unit; planned with D13.
+- The price-list, selling-price and threshold forms learn of a sub-minor-unit amount from the server;
+  they do not refuse it before sending, because only the server holds `shared.currencies`.
+- The quotation service still refuses a quantity whose product with the unit price is not exact at
+  four decimals (`inexact_line_base`); with totals now summed from rounded lines that refusal is no
+  longer needed for reconciliation, and relaxing it is left to a later slice.
+- The report's credit status is computed at run time, like its open receivable; the as-of period
+  snapshot is D16.
+- Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
+  they run in hosted CI. Focused DB and backend files ran against a disposable database only.
+- The unit tier gains one test file (`tests/unit/od-finance-rounding.test.ts`); the web tier gains
+  cases in existing files (no web test file added or removed); the recorded tiers are retaken at the
+  final head.

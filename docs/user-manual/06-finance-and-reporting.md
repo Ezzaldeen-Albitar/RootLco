@@ -240,9 +240,31 @@ does not include." <!-- invoices.preview.needsFinance --> and no figures appear.
 
 **IMPLEMENTED (UI)**
 
-The panel is headed "Open balance" <!-- invoices.outstanding.heading --> and shows "Amount open" <!-- invoices.outstanding.amount -->
-and "Settlement" <!-- invoices.outstanding.settlement --> , which reads either "Settled" <!-- invoices.outstanding.settled -->
-or "Open" <!-- invoices.outstanding.open --> .
+The panel is headed "Open balance" <!-- invoices.outstanding.heading --> and shows "Amount open" <!-- invoices.outstanding.amount --> .
+
+Once the invoice is issued it shows three separate positions, each worked out by the server on every
+read (Owner decision D7, ADR-023), with the two amounts behind them:
+
+- "Credit" <!-- invoices.settlement.credit --> — how much of the invoice has been credited by
+  **approved** credit notes: "No credit" <!-- invoices.creditStatus.none --> , "Partly credited"
+  <!-- invoices.creditStatus.partly_credited --> , or "Fully credited" <!-- invoices.creditStatus.credited -->
+  when the approved credits reach the invoice's total. A note still waiting for a second person, or
+  refused, credits nothing and does not count. "Credited so far" <!-- invoices.settlement.credited -->
+  is the total of the approved credits.
+- "Payment" <!-- invoices.settlement.payment --> — how much of what is still payable has been paid:
+  "Not paid yet" <!-- invoices.paymentStatus.open --> , "Partly paid" <!-- invoices.paymentStatus.partly_paid --> ,
+  "Paid" <!-- invoices.paymentStatus.paid --> , or "Nothing to pay" <!-- invoices.paymentStatus.nothing_due -->
+  when credits cleared the invoice and no money was received. "Paid so far" <!-- invoices.settlement.paid -->
+  is the total of the receipts allocated to it, reversed receipts left out.
+- "Refund" <!-- invoices.settlement.refund --> — "No refund" <!-- invoices.refundStatus.none --> . The
+  application has no way to pay money back yet, so nothing else can appear here.
+
+A fully credited invoice therefore reads "Fully credited" and "Nothing to pay" — never "Paid". The
+invoice's own status stays "Issued", so a part sold on it can still be returned.
+
+Before issue the panel shows "Settlement" <!-- invoices.outstanding.settlement --> instead, reading
+"Settled" <!-- invoices.outstanding.settled --> or "Open" <!-- invoices.outstanding.open --> for the
+server's zero.
 
 Its own note explains where the figure comes from: "Computed by the server on every read from the
 issued amount, the receipts allocated to it and the approved credits." <!-- invoices.outstanding.note -->
@@ -302,6 +324,8 @@ receipt (6.3.5).
 - **Amounts are written in their currency's own decimals** — three for JOD, two for USD — on
   screen and on paper. A figure with a digit below that is shown in full rather than rounded, so a
   fraction no payment can settle is visible instead of hidden.
+- **The printed copy states the credit and payment positions** the open balance panel read
+  (§6.2.7), beside the status. A person who may not see amounts gets a copy without them.
 - **Screenshot:** no screenshot available at this version.
 
 ### 6.2.9 When amounts are hidden from you
@@ -346,7 +370,9 @@ never approve it.
   (6.2.6). After issue, the way to give money back on an invoice is a credit note.
 
 The status "Credited" <!-- invoices.status.credited --> can appear on an invoice, and the "Invoices
-and payments" report has a "Credit notes" <!-- reports.field.creditNotes --> column.
+and payments" report has a "Credit notes" <!-- reports.field.creditNotes --> column. How much of an
+invoice has been credited is not its status: it is the "Credit" position of §6.2.7, and the report
+shows it in its own "Credit" <!-- reports.field.creditStatus --> column, in your language.
 
 There is no ledger, no chart of accounts and no accounting module of any kind. Nothing beyond
 invoices, credit notes, receipts and allocations exists.
@@ -522,6 +548,28 @@ across them.
 
 Like Numbering rules, this screen writes organization settings and needs `org.settings.manage`,
 which the tenant-administrator bundle holds since 2026-09-27.
+
+### 6.2.13 Amounts and rounding
+
+**IMPLEMENTED** (Owner decision D1, ADR-023)
+
+- **Each line is rounded, half-up, to its currency's smallest coin** — the fils for JOD (three
+  decimals), the cent for USD (two). A line's net amount is rounded first, its tax is worked out on
+  that rounded net and rounded the same way, and the line total is the two added together. A JOD
+  line of 12.345 at 16% tax is therefore 1.975 tax and 14.320 in total, and a payment of exactly
+  14.320 settles it.
+- **Document totals are the sum of the rounded lines**, so the lines always add up to the total.
+- **Quantities, tax rates and unit prices keep their own precision.** A quantity of 1.5 or a rate of
+  16.5% is accepted as it is; only amounts of money take the currency's decimals.
+- **An amount you type must fit the currency.** A price on a price list, an item's selling price, a
+  fixed discount on a quotation line and an amount threshold for discount approval are refused when
+  they have more decimals than the currency allows, with "This amount has more decimal places than
+  the currency allows. Use no more decimal places than the currency's smallest coin, then try
+  again." <!-- form.violation.minor_unit_scale --> beside the field, and what you typed is kept.
+  On a quotation the currency is only known once the lines are priced, so that sentence is shown
+  above the lines.
+- **Documents already issued keep their figures.** The rule applies to amounts worked out from now
+  on; nothing already issued is recalculated.
 
 ---
 
