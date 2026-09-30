@@ -95,6 +95,9 @@ const listCreditNotes = vi.fn();
 const readCreditNote = vi.fn();
 const requestCreditNote = vi.fn();
 const approveCreditNote = vi.fn();
+// ADR-023 D3: the requester withdraws, somebody else rejects.
+const withdrawCreditNote = vi.fn();
+const rejectCreditNote = vi.fn();
 const listInvoices = vi.fn();
 vi.mock('@/features/billing/api', () => ({
   readWorkOrderInvoice: (...args: unknown[]) => readWorkOrderInvoice(...args),
@@ -108,6 +111,8 @@ vi.mock('@/features/billing/api', () => ({
   readCreditNote: (...args: unknown[]) => readCreditNote(...args),
   requestCreditNote: (...args: unknown[]) => requestCreditNote(...args),
   approveCreditNote: (...args: unknown[]) => approveCreditNote(...args),
+  withdrawCreditNote: (...args: unknown[]) => withdrawCreditNote(...args),
+  rejectCreditNote: (...args: unknown[]) => rejectCreditNote(...args),
   listInvoices: (...args: unknown[]) => listInvoices(...args),
 }));
 
@@ -1829,6 +1834,9 @@ describe('raising and approving a credit note', () => {
     approvedBy: null,
     approvedAt: null,
     issuedAt: null,
+    decidedBy: null,
+    decidedAt: null,
+    decisionReason: null,
     recordVersion: 1,
     ...over,
   });
@@ -2221,6 +2229,260 @@ describe('raising and approving a credit note', () => {
     expect(state.messageKey).toBe('form.violation.credit_note_self_approval');
     expect(EN['form.violation.credit_note_self_approval']).toBeTruthy();
     expect(AR['form.violation.credit_note_self_approval']).toBeTruthy();
+  });
+
+  /**
+   * ADR-023 D3. The requester may withdraw their own pending request; somebody
+   * else may reject it, stating why. Each decision is offered only to the person
+   * the server lets take it, sends the note's version exactly as the detail read
+   * published it, and is final.
+   */
+  describe('withdrawing and rejecting a pending credit note', () => {
+    const detailRegion = (name = EN['creditNotes.detail.heading'] as string) =>
+      screen.findByRole('region', { name });
+    const withdrawnNote = pendingNote({
+      approvalState: 'withdrawn',
+      decidedBy: RAISED_BY,
+      decidedAt: '2026-09-30T08:00:00Z',
+      recordVersion: 2,
+    });
+    const rejectedNote = pendingNote({
+      approvalState: 'rejected',
+      decidedBy: SIGNED_IN,
+      decidedAt: '2026-09-30T09:00:00Z',
+      decisionReason: 'Raised twice for one return',
+      recordVersion: 2,
+    });
+
+    beforeEach(() => {
+      withdrawCreditNote.mockResolvedValue({
+        state: { status: 'success', messageKey: 'creditNotes.withdraw.success', attempt: 1 },
+        created: { creditNote: withdrawnNote, replayed: false },
+      });
+      rejectCreditNote.mockResolvedValue({
+        state: { status: 'success', messageKey: 'creditNotes.reject.success', attempt: 1 },
+        created: { creditNote: rejectedNote, replayed: false },
+      });
+    });
+
+    it('offers the requester a withdrawal and nothing else, and withdraws under the version read', async () => {
+      const user = userEvent.setup();
+      readCreditNote.mockResolvedValue({
+        status: 'ok',
+        data: pendingNote({ recordVersion: 3 }),
+        correlationId: 'corr',
+      });
+      renderLtr(notesScreen(RAISED_BY, NOTE_ID));
+      const detail = await detailRegion();
+      const withdraw = await within(detail).findByRole('button', {
+        name: EN['creditNotes.withdraw.action'] as string,
+      });
+      expect(
+        within(detail).queryByRole('button', { name: EN['creditNotes.approve.action'] as string })
+      ).toBeNull();
+      expect(
+        within(detail).queryByRole('button', { name: EN['creditNotes.reject.action'] as string })
+      ).toBeNull();
+
+      await user.click(withdraw);
+      const dialog = await screen.findByRole('alertdialog', {
+        name: EN['creditNotes.withdraw.confirmTitle'] as string,
+      });
+      expect(dialog).toHaveTextContent('Wrong part fitted');
+      expect(withdrawCreditNote).not.toHaveBeenCalled();
+      readCreditNote.mockResolvedValue({
+        status: 'ok',
+        data: withdrawnNote,
+        correlationId: 'corr',
+      });
+      await user.click(
+        within(dialog).getByRole('button', { name: EN['creditNotes.withdraw.action'] as string })
+      );
+      // The version is the one the detail read published — never computed.
+      await waitFor(() => expect(withdrawCreditNote).toHaveBeenCalledWith(NOTE_ID, 3));
+      expect(
+        await screen.findByText(EN['creditNotes.withdraw.done'] as string)
+      ).toBeInTheDocument();
+      expect(
+        await within(detail).findByText(EN['creditNotes.state.withdrawn'] as string)
+      ).toBeVisible();
+      expect(
+        within(detail).getByText(EN['creditNotes.detail.withdrawnAt'] as string)
+      ).toBeVisible();
+      expect(
+        within(detail).getByText(new RegExp(escape(EN['creditNotes.detail.final'] as string)))
+      ).toBeVisible();
+      expect(
+        within(detail).queryByRole('button', { name: EN['creditNotes.withdraw.action'] as string })
+      ).toBeNull();
+    });
+
+    it('offers somebody else approval and rejection, and no withdrawal', async () => {
+      renderLtr(notesScreen(SIGNED_IN, NOTE_ID));
+      const detail = await detailRegion();
+      expect(
+        await within(detail).findByRole('button', {
+          name: EN['creditNotes.reject.action'] as string,
+        })
+      ).toBeVisible();
+      expect(
+        within(detail).getByRole('button', { name: EN['creditNotes.approve.action'] as string })
+      ).toBeVisible();
+      expect(
+        within(detail).queryByRole('button', { name: EN['creditNotes.withdraw.action'] as string })
+      ).toBeNull();
+    });
+
+    it('refuses a blank reason on the reason box itself, keeps what was typed, and rejects once there is one', async () => {
+      const user = userEvent.setup();
+      renderLtr(notesScreen(SIGNED_IN, NOTE_ID));
+      const detail = await detailRegion();
+      await user.click(
+        await within(detail).findByRole('button', {
+          name: EN['creditNotes.reject.action'] as string,
+        })
+      );
+      const dialog = await screen.findByRole('alertdialog', {
+        name: EN['creditNotes.reject.confirmTitle'] as string,
+      });
+      const reason = within(dialog).getByLabelText(labelled('creditNotes.reject.reason'));
+      const confirm = within(dialog).getByRole('button', {
+        name: EN['creditNotes.reject.action'] as string,
+      });
+      expect(confirm).toBeDisabled();
+      await user.type(reason, '   ');
+      await user.tab();
+      await waitFor(() => expect(reason).toHaveAttribute('aria-invalid', 'true'));
+      expect(reason).toHaveAccessibleDescription(
+        expect.stringContaining(EN['overlay.reasonRequired'] as string)
+      );
+      expect(rejectCreditNote).not.toHaveBeenCalled();
+
+      await user.type(reason, 'Raised twice for one return');
+      expect(reason).not.toHaveAttribute('aria-invalid', 'true');
+      readCreditNote.mockResolvedValue({ status: 'ok', data: rejectedNote, correlationId: 'corr' });
+      await user.click(confirm);
+      await waitFor(() =>
+        expect(rejectCreditNote).toHaveBeenCalledWith(
+          NOTE_ID,
+          { reason: 'Raised twice for one return' },
+          1
+        )
+      );
+      expect(await screen.findByText(EN['creditNotes.reject.done'] as string)).toBeInTheDocument();
+      expect(await within(detail).findByText('Raised twice for one return')).toBeVisible();
+      expect(within(detail).getByText(EN['creditNotes.detail.rejectedAt'] as string)).toBeVisible();
+    });
+
+    it('keeps the server’s refusal of the reason on the box, with the typed text', async () => {
+      const user = userEvent.setup();
+      rejectCreditNote.mockResolvedValueOnce({
+        state: {
+          status: 'invalid',
+          messageKey: 'form.formError',
+          fieldErrors: { reason: 'form.violation.too_small' },
+          correlationId: 'ref-422',
+          attempt: 1,
+        },
+        created: null,
+      });
+      renderLtr(notesScreen(SIGNED_IN, NOTE_ID));
+      const detail = await detailRegion();
+      await user.click(
+        await within(detail).findByRole('button', {
+          name: EN['creditNotes.reject.action'] as string,
+        })
+      );
+      const dialog = await screen.findByRole('alertdialog');
+      const reason = within(dialog).getByLabelText(labelled('creditNotes.reject.reason'));
+      await user.type(reason, 'x');
+      await user.click(
+        within(dialog).getByRole('button', { name: EN['creditNotes.reject.action'] as string })
+      );
+      await waitFor(() => expect(reason).toHaveAttribute('aria-invalid', 'true'));
+      expect(reason).toHaveAccessibleDescription(
+        expect.stringContaining(EN['form.violation.too_small'] as string)
+      );
+      expect((reason as HTMLTextAreaElement).value).toBe('x');
+    });
+
+    it('says a conflict in words and reads the note again', async () => {
+      const user = userEvent.setup();
+      withdrawCreditNote.mockResolvedValueOnce({
+        state: {
+          status: 'conflict',
+          messageKey: 'creditNotes.decision.conflict',
+          correlationId: 'ref-409',
+          attempt: 1,
+        },
+        created: null,
+      });
+      renderLtr(notesScreen(RAISED_BY, NOTE_ID));
+      const detail = await detailRegion();
+      await user.click(
+        await within(detail).findByRole('button', {
+          name: EN['creditNotes.withdraw.action'] as string,
+        })
+      );
+      const dialog = await screen.findByRole('alertdialog');
+      await user.click(
+        within(dialog).getByRole('button', { name: EN['creditNotes.withdraw.action'] as string })
+      );
+      const alert = await within(detail).findByRole('alert');
+      expect(alert).toHaveTextContent(EN['creditNotes.decision.conflict'] as string);
+      expect(alert).toHaveTextContent('ref-409');
+      await waitFor(() => expect(readCreditNote).toHaveBeenCalledTimes(2));
+    });
+
+    it('shows a rejected note’s reason and offers nothing on it', async () => {
+      readCreditNote.mockResolvedValue({ status: 'ok', data: rejectedNote, correlationId: 'corr' });
+      renderLtr(notesScreen(RAISED_BY, NOTE_ID));
+      const detail = await detailRegion();
+      expect(await within(detail).findByText('Raised twice for one return')).toBeVisible();
+      expect(within(detail).getByText(EN['creditNotes.state.rejected'] as string)).toBeVisible();
+      for (const key of [
+        'creditNotes.withdraw.action',
+        'creditNotes.approve.action',
+        'creditNotes.reject.action',
+      ]) {
+        expect(within(detail).queryByRole('button', { name: EN[key] as string }), key).toBeNull();
+      }
+      // A declined note never reads as "not approved yet".
+      expect(within(detail).queryByText(EN['creditNotes.detail.notApproved'] as string)).toBeNull();
+    });
+
+    it('offers the withdrawal and its question in Arabic, right to left', async () => {
+      const user = userEvent.setup();
+      renderRtl(
+        <CreditNotesScreen
+          locale="ar"
+          messages={ar}
+          initialCreditNoteId={NOTE_ID}
+          currentUserId={RAISED_BY}
+        />
+      );
+      const detail = await detailRegion(AR['creditNotes.detail.heading'] as string);
+      await user.click(
+        await within(detail).findByRole('button', {
+          name: AR['creditNotes.withdraw.action'] as string,
+        })
+      );
+      const dialog = await screen.findByRole('alertdialog', {
+        name: AR['creditNotes.withdraw.confirmTitle'] as string,
+      });
+      expect(dialog.closest('[dir="rtl"]')).not.toBeNull();
+    });
+
+    it('lists withdrawn among the states the list can show', async () => {
+      renderLtr(notesScreen(SIGNED_IN));
+      const toolbar = await screen.findByTestId('credit-notes-toolbar');
+      expect(
+        within(toolbar).getByRole('button', { name: EN['creditNotes.state.withdrawn'] as string })
+      ).toBeInTheDocument();
+      expect(
+        within(toolbar).getByRole('button', { name: EN['creditNotes.state.rejected'] as string })
+      ).toBeInTheDocument();
+    });
   });
 
   describe('from the invoice itself', () => {

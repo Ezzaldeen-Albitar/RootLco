@@ -1129,13 +1129,15 @@ export type SalesReturnSourceKind = (typeof SALES_RETURN_SOURCE_KINDS)[number];
  * `SALES_RETURN_DISPLAY_STATES`, mirrored: what a return SHOWS, derived by the
  * server from its credit note's own decision (GAP-04). `credit_requested` waits
  * for a second person, `credited` was approved, `credit_rejected` was refused,
- * and `credit_raised` names a note whose decision this reader may not see.
+ * `credit_withdrawn` was withdrawn by whoever asked for it (ADR-023, D3), and
+ * `credit_raised` names a note whose decision this reader may not see.
  */
 export const SALES_RETURN_STATES = [
   'received',
   'credit_requested',
   'credited',
   'credit_rejected',
+  'credit_withdrawn',
   'credit_raised',
 ] as const;
 export type SalesReturnState = (typeof SALES_RETURN_STATES)[number];

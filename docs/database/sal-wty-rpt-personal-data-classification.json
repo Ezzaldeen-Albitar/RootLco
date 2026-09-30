@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-11-SEC — Billing / Payment / Delivery / Warranty / Reporting financial-and-personal-data classification registry. Restricted = financial amounts (invoice/line/receipt/allocation/credit/reversal/financial-event) gated by sal.finance.view, plus receiver identity evidence and delivery signature document references gated by sal.delivery.view. No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 431,
+  "columnCount": 434,
   "columns": {
     "rpt.report_configuration_versions.created_at": {
       "classification": "internal",
@@ -340,6 +340,21 @@
       "dataType": "uuid"
     },
     "sal.credit_notes.currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.credit_notes.decided_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.credit_notes.decided_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.credit_notes.decision_reason": {
       "classification": "internal",
       "searchable": false,
       "dataType": "text"

@@ -561,9 +561,12 @@ describe('D7 — the credit status is derived, and kept apart from payment', () 
         `SELECT set_config('app.user_id',$1,true), set_config('app.tenant_id',$2,true)`,
         [SAL_APPROVER.userId, TENANT_A]
       );
-      await admin.query(`UPDATE sal.credit_notes SET approval_state = 'rejected' WHERE id = $1`, [
-        pending,
-      ]);
+      // A rejection states why since ADR-023 D3 (sal.guard_credit_note_decision).
+      await admin.query(
+        `UPDATE sal.credit_notes SET approval_state = 'rejected', decision_reason = 'Not due'
+          WHERE id = $1`,
+        [pending]
+      );
       await admin.query('COMMIT');
     } catch (error) {
       await admin.query('ROLLBACK');

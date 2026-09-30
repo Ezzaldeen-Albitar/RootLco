@@ -166,7 +166,9 @@ describe('the tree as it stands passes, and the run is not vacuous', () => {
       // more If-Match-guarded operation: the reorder-level retirement.
       // 80 with the company discount threshold (P1-32-PRE-OD-DISC-01), whose write
       // is If-Match-guarded.
-      'P1-31 version sourcing: 11 guarded operation(s) in scope of 80 the contract guards, ' +
+      // 82 with the credit-note withdrawal and rejection (P1-32-PRE-OD-FD2A,
+      // ADR-023 D3), both If-Match-guarded by the note's version.
+      'P1-31 version sourcing: 11 guarded operation(s) in scope of 82 the contract guards, ' +
         '5 with a consumer, 6 pending one, 6 in-scope send(s), 5 adapter call site(s), ' +
         // 23 -> 25 with the P1-32 stock-operation adapters: posting a goods receipt and
         // recording a count line each send a version for an inv operation; 26 with the
@@ -175,8 +177,10 @@ describe('the tree as it stands passes, and the run is not vacuous', () => {
         // 28 with the discount threshold screen, which sends the threshold's record
         // version for a svc operation; 34 with the appointment setup screen (Owner
         // decision 2026-09-29), whose six catalogue renames and status changes each
-        // send the entry's version for an apt operation.
-        '34 versioned send(s) outside the subject.'
+        // send the entry's version for an apt operation; 36 with the credit-note
+        // screen's withdrawal and rejection, each sending the note's version for a
+        // sal operation.
+        '36 versioned send(s) outside the subject.'
     );
     expect(out).toContain(
       'OK: every version-guarded P1-31 command sources its If-Match from a read or a command ' +

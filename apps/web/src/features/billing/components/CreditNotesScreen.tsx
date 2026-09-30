@@ -1,11 +1,12 @@
 'use client';
 
 /**
- * Credit notes (DEF-T-07): raise one, see what is waiting, and approve. On the
- * shared Material UI wrappers since the sales and finance slice (ADR-022): the
- * branch's notes are `OperationalGrid` rows walked with the route's cursor, the
- * state filter is `FilterToolbar`'s chips, and approving asks first
- * (`ConfirmDialog`).
+ * Credit notes (DEF-T-07): raise one, see what is waiting, and approve, reject
+ * or withdraw it. On the shared Material UI wrappers since the sales and finance
+ * slice (ADR-022): the branch's notes are `OperationalGrid` rows walked with the
+ * route's cursor, the state filter is `FilterToolbar`'s chips, approving and
+ * withdrawing ask first (`ConfirmDialog`), and rejecting asks for the reason
+ * (`ReasonDialog`).
  *
  * The acceptance campaign took a counter-sale part back, was told "a credit note
  * is waiting for a second person to approve it", and then found nothing anywhere
@@ -43,9 +44,15 @@
  * same person in another session, or a note decided meanwhile) is said in plain
  * words and the note is read again.
  *
- * There is no rejection. The backend publishes no operation for it, and a
- * pending note credits nothing, so leaving one unapproved is already the safe
- * outcome.
+ * ## Rejecting and withdrawing (ADR-023, D3)
+ *
+ * A pending note can now be turned down, so it no longer waits forever. Somebody
+ * other than the requester REJECTS it and says why; the requester WITHDRAWS
+ * their own. Each is offered only to the person the server lets take it, each
+ * sends the note's version as the detail read published it, and each is final:
+ * a withdrawn or rejected note credits nothing and can never be approved. The
+ * server remains the guarantee, and a refusal that arrives anyway is said in
+ * words and the note is read again.
  */
 
 import { useCallback, useMemo, useState } from 'react';
@@ -59,6 +66,7 @@ import {
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
@@ -71,13 +79,28 @@ import { useReread } from '@/lib/api/use-reread';
 import { unreachable, type ActionState } from '@/lib/forms/action-result';
 import { formatMoney } from '@/lib/money';
 
-import { approveCreditNote, listCreditNotes, readCreditNote } from '../api';
-import { CREDIT_NOTE_STATES, type CreditNote, type CreditNoteState } from '../billing-contract';
+import {
+  approveCreditNote,
+  listCreditNotes,
+  readCreditNote,
+  rejectCreditNote,
+  withdrawCreditNote,
+  type CreateOutcome,
+} from '../api';
+import {
+  CREDIT_NOTE_STATES,
+  type CreditNote,
+  type CreditNoteEcho,
+  type CreditNoteState,
+} from '../billing-contract';
 import { CreditNoteRequestForm } from './CreditNoteRequestForm';
 import { OutcomeNote, When } from './shared';
 
 /** `''` is every state — the toolbar's own "All" choice. */
 type ListFilter = CreditNoteState | '';
+
+/** The route's `MAX_REASON` for a rejection reason: two thousand characters. */
+const CREDIT_NOTE_REASON_MAX = 2000;
 
 export function CreditNotesScreen({
   locale,
@@ -125,7 +148,7 @@ export function CreditNotesScreen({
           creditNoteId={chosen}
           currentUserId={currentUserId}
           onClose={() => setChosen(null)}
-          onApproved={(key) => {
+          onDecided={(key) => {
             setNotice(key);
             setEpoch((n) => n + 1);
           }}
@@ -354,69 +377,135 @@ function BranchCreditNotes({
 }
 
 /**
- * One credit note, read by id — and, when it is waiting and the caller did not
- * raise it, the approval.
+ * One credit note, read by id — and, while it is waiting, the decisions the
+ * signed-in person may take on it (ADR-023, D3).
  *
  * The read takes no branch, so a note reached from a return's result is shown
- * without the operator having to work out which branch raised it. Approving
- * asks first, naming the amount and the reason, and stays busy until the note
- * has been read again.
+ * without the operator having to work out which branch raised it.
+ *
+ *  - Somebody else's pending note: approve it (asks first, naming the amount and
+ *    the reason) or reject it (asks for the reason, which is required and is a
+ *    field error when blank).
+ *  - Your own pending note: it waits for another approver, and you may withdraw
+ *    it (asks first).
+ *  - A decided note shows its decision and offers nothing: every decision is
+ *    final.
+ *
+ * Rejecting and withdrawing send the note's `recordVersion` exactly as this read
+ * published it. A conflict — the note changed or was decided since it was read —
+ * is said in words and the note is read again; every decision stays busy until
+ * the note has been read again.
  */
+type Decision = 'approve' | 'reject' | 'withdraw';
+
 function CreditNoteDetail({
   locale,
   messages,
   creditNoteId,
   currentUserId,
   onClose,
-  onApproved,
+  onDecided,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly creditNoteId: string;
   readonly currentUserId: string;
   readonly onClose: () => void;
-  readonly onApproved: (noticeKey: string) => void;
+  readonly onDecided: (noticeKey: string) => void;
 }) {
   const read = useCallback(() => readCreditNote(creditNoteId), [creditNoteId]);
   const detail = useReread<CreditNote>(read);
-  const [asking, setAsking] = useState(false);
+  const [asking, setAsking] = useState<Decision | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // The server's refusal of the rejection reason, drawn on the reason box itself.
+  const [reasonError, setReasonError] = useState<string | undefined>(undefined);
 
+  const state = detail.value;
+  const note = state?.status === 'ok' ? state.data : null;
+  const own = note !== null && note.requestedBy === currentUserId;
+
+  /**
+   * What a decision's answer does to the screen. Returns true when the note must
+   * be read again — after a decision that landed, and after a conflict, which
+   * means the note or its invoice moved on — so each sender below re-reads in
+   * its own body, right after its own guarded call.
+   */
+  const settle = (
+    decision: Decision,
+    result: CreateOutcome<CreditNoteEcho> | null,
+    notices: { readonly done: string; readonly replayed: string }
+  ): boolean => {
+    if (result === null) {
+      setAsking(null);
+      setOutcome(unreachable(1));
+      return false;
+    }
+    notifyActionResult(result.state, messages);
+    if (result.state.status === 'success' && result.created) {
+      setAsking(null);
+      setOutcome(null);
+      setReasonError(undefined);
+      onDecided(result.created.replayed ? notices.replayed : notices.done);
+      return true;
+    }
+    const reasonRefusal = result.state.fieldErrors?.['reason'];
+    if (decision === 'reject' && reasonRefusal !== undefined) {
+      // A refusal of the reason stays on the reason box, with the typed text kept.
+      setReasonError(translateDynamic(messages, reasonRefusal));
+      return false;
+    }
+    setAsking(null);
+    setOutcome(result.state);
+    return result.state.status === 'conflict';
+  };
+
+  // Each sender stays busy until the note has been read again.
   const approve = async () => {
     setBusy(true);
     try {
-      let result: Awaited<ReturnType<typeof approveCreditNote>>;
-      try {
-        result = await approveCreditNote(creditNoteId);
-      } catch {
-        setAsking(false);
-        setOutcome(unreachable(1));
-        return;
-      }
-      notifyActionResult(result.state, messages);
-      setAsking(false);
-      if (result.state.status === 'success' && result.created) {
-        setOutcome(null);
-        onApproved(
-          result.created.replayed ? 'creditNotes.approve.replayed' : 'creditNotes.approve.done'
-        );
-        // Busy until the note, now approved, is read again.
-        await detail.reload();
-        return;
-      }
-      setOutcome(result.state);
-      // A conflict means the note or its invoice moved on: read it again so what
-      // is shown is what the server now holds.
-      if (result.state.status === 'conflict') await detail.reload();
+      const result = await approveCreditNote(creditNoteId).catch(() => null);
+      const reread = settle('approve', result, {
+        done: 'creditNotes.approve.done',
+        replayed: 'creditNotes.approve.replayed',
+      });
+      if (reread) await detail.reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const withdraw = async (version: number) => {
+    setBusy(true);
+    try {
+      const result = await withdrawCreditNote(creditNoteId, version).catch(() => null);
+      const reread = settle('withdraw', result, {
+        done: 'creditNotes.withdraw.done',
+        replayed: 'creditNotes.withdraw.replayed',
+      });
+      if (reread) await detail.reload();
+    } finally {
+      setBusy(false);
+    }
+  };
+  const reject = async (version: number, reason: string) => {
+    setBusy(true);
+    try {
+      const result = await rejectCreditNote(creditNoteId, { reason }, version).catch(() => null);
+      const reread = settle('reject', result, {
+        done: 'creditNotes.reject.done',
+        replayed: 'creditNotes.reject.replayed',
+      });
+      if (reread) await detail.reload();
     } finally {
       setBusy(false);
     }
   };
 
-  const state = detail.value;
-  const note = state?.status === 'ok' ? state.data : null;
-  const own = note !== null && note.requestedBy === currentUserId;
+  const open = (decision: Decision) => {
+    setOutcome(null);
+    setReasonError(undefined);
+    setAsking(decision);
+  };
 
   return (
     <section aria-labelledby="credit-note-detail-heading" className={PANEL}>
@@ -463,18 +552,7 @@ function CreditNoteDetail({
                 {translateDynamic(messages, `creditNotes.state.${state.data.approvalState}`)}
               </dd>
             </div>
-            <div>
-              <dt className="text-caption text-text-muted">
-                {translate(messages, 'creditNotes.detail.approvedAt')}
-              </dt>
-              <dd className="text-body text-text-primary">
-                {state.data.approvedAt === null ? (
-                  translate(messages, 'creditNotes.detail.notApproved')
-                ) : (
-                  <When value={state.data.approvedAt} locale={locale} />
-                )}
-              </dd>
-            </div>
+            <DecisionDate note={state.data} locale={locale} messages={messages} />
           </dl>
           <div>
             <p className="text-caption text-text-muted">
@@ -484,36 +562,82 @@ function CreditNoteDetail({
               <bdi>{state.data.reason}</bdi>
             </p>
           </div>
-          <p className="text-caption text-text-muted">
-            {translate(messages, 'creditNotes.detail.approvalNote')}
-          </p>
-          {state.data.approvalState !== 'pending' ? null : own ? (
-            <p className="text-body text-text-secondary">
-              {translate(messages, 'creditNotes.detail.ownRequest')}
+          {state.data.approvalState === 'rejected' && state.data.decisionReason !== null ? (
+            <div>
+              <p className="text-caption text-text-muted">
+                {translate(messages, 'creditNotes.detail.rejectionReason')}
+              </p>
+              <p className="text-body text-text-primary">
+                <bdi>{state.data.decisionReason}</bdi>
+              </p>
+            </div>
+          ) : null}
+          {state.data.approvalState === 'pending' ? (
+            <p className="text-caption text-text-muted">
+              {translate(messages, 'creditNotes.detail.approvalNote')}
             </p>
+          ) : (
+            <p className="text-caption text-text-muted">
+              {state.data.approvalState === 'withdrawn' && state.data.decidedBy === currentUserId
+                ? translate(messages, 'creditNotes.detail.withdrawnByYou')
+                : null}{' '}
+              {translate(messages, 'creditNotes.detail.final')}
+            </p>
+          )}
+          {state.data.approvalState !== 'pending' ? null : own ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-body text-text-secondary">
+                {translate(messages, 'creditNotes.detail.ownRequest')}
+              </p>
+              <p className="text-caption text-text-muted">
+                {translate(messages, 'creditNotes.withdraw.explain')}
+              </p>
+              <div>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  color="error"
+                  disabled={busy}
+                  aria-busy={busy || undefined}
+                  onClick={() => open('withdraw')}
+                >
+                  {translate(messages, 'creditNotes.withdraw.action')}
+                </Button>
+              </div>
+            </div>
           ) : (
             <div className="flex flex-col gap-2">
               <p className="text-caption text-text-muted">
                 {translate(messages, 'creditNotes.approve.explain')}
               </p>
-              <div>
+              <p className="text-caption text-text-muted">
+                {translate(messages, 'creditNotes.reject.explain')}
+              </p>
+              <div className="flex flex-wrap gap-2">
                 <Button
                   type="button"
                   variant="contained"
                   disabled={busy}
                   aria-busy={busy || undefined}
-                  onClick={() => {
-                    setOutcome(null);
-                    setAsking(true);
-                  }}
+                  onClick={() => open('approve')}
                 >
                   {translate(messages, 'creditNotes.approve.action')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outlined"
+                  color="error"
+                  disabled={busy}
+                  aria-busy={busy || undefined}
+                  onClick={() => open('reject')}
+                >
+                  {translate(messages, 'creditNotes.reject.action')}
                 </Button>
               </div>
             </div>
           )}
           <ConfirmDialog
-            open={asking && note !== null && !own}
+            open={asking === 'approve' && note !== null && !own}
             messages={messages}
             title={translate(messages, 'creditNotes.approve.confirmTitle')}
             description={formatMessage(translate(messages, 'creditNotes.approve.confirmExplain'), {
@@ -522,9 +646,41 @@ function CreditNoteDetail({
             })}
             confirmLabel={translate(messages, 'creditNotes.approve.action')}
             pending={busy}
-            onCancel={() => setAsking(false)}
+            onCancel={() => setAsking(null)}
             onConfirm={() => void approve()}
             testId="credit-note-approve-dialog"
+          />
+          <ConfirmDialog
+            open={asking === 'withdraw' && note !== null && own}
+            messages={messages}
+            title={translate(messages, 'creditNotes.withdraw.confirmTitle')}
+            description={formatMessage(translate(messages, 'creditNotes.withdraw.confirmExplain'), {
+              amount: formatMoney(state.data.amount, locale),
+              reason: state.data.reason,
+            })}
+            confirmLabel={translate(messages, 'creditNotes.withdraw.action')}
+            destructive
+            pending={busy}
+            onCancel={() => setAsking(null)}
+            onConfirm={() => void withdraw(state.data.recordVersion)}
+            testId="credit-note-withdraw-dialog"
+          />
+          <ReasonDialog
+            open={asking === 'reject' && note !== null && !own}
+            messages={messages}
+            title={translate(messages, 'creditNotes.reject.confirmTitle')}
+            description={formatMessage(translate(messages, 'creditNotes.reject.confirmExplain'), {
+              amount: formatMoney(state.data.amount, locale),
+            })}
+            confirmLabel={translate(messages, 'creditNotes.reject.action')}
+            reasonLabel={translate(messages, 'creditNotes.reject.reason')}
+            reasonError={reasonError}
+            maxLength={CREDIT_NOTE_REASON_MAX}
+            destructive
+            pending={busy}
+            onCancel={() => setAsking(null)}
+            onConfirm={(reason) => void reject(state.data.recordVersion, reason)}
+            testId="credit-note-reject-dialog"
           />
         </>
       )}
@@ -535,5 +691,41 @@ function CreditNoteDetail({
         </Button>
       </div>
     </section>
+  );
+}
+
+/**
+ * The date that says where a note stands: approved on, withdrawn on or rejected
+ * on — or, while it waits, that it is not approved yet. A withdrawn or rejected
+ * note never reads "not approved yet", which would suggest it still might be.
+ */
+function DecisionDate({
+  note,
+  locale,
+  messages,
+}: {
+  readonly note: CreditNote;
+  readonly locale: Locale;
+  readonly messages: Messages;
+}) {
+  const declined = note.approvalState === 'withdrawn' || note.approvalState === 'rejected';
+  const labelKey =
+    note.approvalState === 'withdrawn'
+      ? 'creditNotes.detail.withdrawnAt'
+      : note.approvalState === 'rejected'
+        ? 'creditNotes.detail.rejectedAt'
+        : 'creditNotes.detail.approvedAt';
+  const when = declined ? note.decidedAt : note.approvedAt;
+  return (
+    <div>
+      <dt className="text-caption text-text-muted">{translate(messages, labelKey)}</dt>
+      <dd className="text-body text-text-primary">
+        {when === null ? (
+          translate(messages, 'creditNotes.detail.notApproved')
+        ) : (
+          <When value={when} locale={locale} />
+        )}
+      </dd>
+    </div>
   );
 }

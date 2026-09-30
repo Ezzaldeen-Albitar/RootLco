@@ -117,6 +117,24 @@ import {
 } from '@/app/api/v1/discount-thresholds/[companyId]/route';
 
 let admin: Pool;
+
+/**
+ * Business-rule refusals recorded for one discount approval (ADR-023, D12): one
+ * `iam.security_events` row per refused decision, written after the refused
+ * command rolled back, naming the approval and the rule.
+ */
+async function discountRefusalEvents(approvalId: string, rule: string): Promise<number> {
+  const result = await admin.query<{ n: string }>(
+    `SELECT count(*)::text AS n FROM iam.security_events
+      WHERE event_type = 'business-rule.refused'
+        AND detail = $1`,
+    [
+      `operation=quo.discount-approval-decide entity=quo.discount_approval/${approvalId} ` +
+        `rule=${rule} outcome=refused`,
+    ]
+  );
+  return Number(result.rows[0]?.n ?? '0');
+}
 let runtime: Pool;
 let codeSeq = 0;
 let assignmentPriority = 100;
@@ -2616,6 +2634,10 @@ describe('quo.discount-approval-decide — a discount is approved by somebody el
       ]);
     }
     expect((await reread(created.id)).currentRevision?.discountApproval?.status).toBe('pending');
+    // Each refused attempt survives its rollback as exactly one record (ADR-023, D12).
+    expect(
+      await discountRefusalEvents(approvalOf(created).id, 'discount_approver_must_differ')
+    ).toBe(2);
   });
 
   it('never counts a limit the approver set for themselves, and does count one somebody else set', async () => {
@@ -2651,6 +2673,10 @@ describe('quo.discount-approval-decide — a discount is approved by somebody el
       expect(((await refused.json()) as Problem).violations).toEqual([
         { path: 'body', rule: 'discount_no_approval_limit' },
       ]);
+      // The refusal by a self-created limit is recorded once (ADR-023, D12).
+      expect(
+        await discountRefusalEvents(approvalOf(created).id, 'discount_no_approval_limit')
+      ).toBe(1);
 
       // The same shape of limit, set by somebody else. The self-set account limit goes
       // first: two account limits of one type may not overlap in time.

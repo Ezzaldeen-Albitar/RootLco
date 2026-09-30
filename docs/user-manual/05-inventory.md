@@ -1562,7 +1562,13 @@ credit note's own decision, never more: while the note waits it shows **Credit n
 <!-- inventory.returnStatus.credit_requested --> and **Waiting for approval**; once a second person
 
 approves it, **Credited** <!-- inventory.returnStatus.credited -->; if the note is refused, **Credit
-refused** <!-- inventory.returnStatus.credit_rejected -->. A person who may not see amounts is told
+refused** <!-- inventory.returnStatus.credit_rejected -->; if whoever raised it withdraws it, **Credit
+request withdrawn** <!-- inventory.returnStatus.credit_withdrawn --> — the part stays taken back,
+and nothing was credited. Taking a part back needs the stock permission and the permission to see
+amounts, never the permission to approve credit: the credit request is recorded in the audit log as
+its own event, naming the return, and is never approved by the return itself. Pressing **Take back**
+again after a lost answer returns the same return and moves no stock a second time. A person who may
+not see amounts is told
 only **Credit note raised** <!-- inventory.returnStatus.credit_raised -->, because the decision is
 not shown to them. The row carries **Open the credit note** <!-- inventory.returns.openCredit --> ,
 which takes you to the note itself (Part 6, §6.2a).

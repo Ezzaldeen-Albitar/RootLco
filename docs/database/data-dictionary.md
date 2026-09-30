@@ -4934,11 +4934,14 @@ Credit-note (invoice-linked, WHOLE ROW gated); dual control.
 | `currency_code`   | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                |
 | `amount`          | `numeric(18,4)` | restricted | no    | RESTRICTED credit amount (>0); credit <= invoice open receivable at approval (under the invoice lock). |
 | `reason`          | `text`          | internal   | no    | Free-text reason.                                                                                      |
-| `approval_state`  | `text`          | internal   | no    | CHECK IN ('pending','approved','rejected'); immutable once approved.                                   |
+| `approval_state`  | `text`          | internal   | no    | CHECK IN ('pending','approved','rejected','withdrawn'); every state but pending is final (ADR-023 D3). |
 | `requested_by`    | `uuid`          | internal   | no    | Maker; server-stamped `iam.current_user_id()` (H-fin-6).                                               |
 | `approved_by`     | `uuid`          | internal   | yes   | Approver; server-stamped at approval; CHECK `approved_by <> requested_by`.                             |
 | `approved_at`     | `timestamptz`   | internal   | yes   | Approval time (set with approval).                                                                     |
-| `issued_at`       | `timestamptz`   | internal   | yes   | Issue time (set at approval).                                                                          |
+| `issued_at`       | `timestamptz`   | internal   | yes   | Issue time, stamped by the trigger at approval; frozen afterwards.                                     |
+| `decided_by`      | `uuid`          | internal   | yes   | Who withdrew (the requester) or rejected (another person) the request; stamped by the trigger.         |
+| `decided_at`      | `timestamptz`   | internal   | yes   | When it was withdrawn or rejected; stamped by the trigger, frozen afterwards.                          |
+| `decision_reason` | `text`          | internal   | yes   | Why it was rejected; required, not blank, at most 2000 characters, on a rejection only.                |
 | `idempotency_key` | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                   |
 | `record_version`  | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                 |
 | `created_at`      | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                |

@@ -56,6 +56,18 @@ export interface CreditNoteCreateBody {
   readonly currency?: string;
 }
 
+/**
+ * `sal.credit-note-reject` — `POST /credit-notes/{creditNoteId}/rejection`
+ * (ADR-023, D3). Idempotent through the transport key; `If-Match` required.
+ *
+ * Another authorised person turns a pending note down; the requester withdraws
+ * instead (`sal.credit-note-withdraw`, bodyless). The reason is the record.
+ */
+export interface CreditNoteRejectBody {
+  /** One to two thousand characters, not blank. */
+  readonly reason: string;
+}
+
 /* ------------------------------------------------------------------ *
  * P1-32 — the counter sale. Sent by the counter-sale screen under
  * `app/[locale]/(dashboard)/inventory/counter-sales`.

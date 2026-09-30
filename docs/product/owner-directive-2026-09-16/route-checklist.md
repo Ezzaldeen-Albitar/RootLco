@@ -3320,3 +3320,76 @@ Residual items from the contract review of this slice (fix round 3), one line ea
   12.3450 JOD and 0.10 USD and refuses 1.9752 JOD and 0.0050 USD; `deriveCreditStatus` gives none,
   partly_credited and credited at 0, 14.319 and 14.320 against 14.320; `derivePaymentStatus` gives
   nothing_due for (0, 0) and paid for (5, 0); all match ADR-023.
+
+### Credit-note withdrawal and rejection, return credit audit, refusal records, frozen dates (P1-32-PRE-OD-FD2A)
+
+This slice implements ADR-023 D3 (the requester withdraws their own pending credit note; somebody
+else rejects one, with a reason; every decision is final), D9 (a return's credit request is audited
+as one, naming the return, and never approves itself), D12 (a refusal by business rule is recorded as
+one security event after its command rolls back) and freezes the decision dates. One forward
+migration, `20260930110000_sal_credit_note_decisions.sql` (164 migrations). Two operations are added,
+`sal.credit-note-withdraw` (`sal.credit.manage`) and `sal.credit-note-reject` (`sal.credit.manage` +
+`sal.finance.view`), both version-guarded and idempotent; two audit actions,
+`sal.credit_note.withdrawn` and `sal.credit_note.rejected`. No permission code or policy is added.
+
+| Route                         | What changed                                                                                                                                                                                                                                                        |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/credit-notes`               | A pending note offers Withdraw request to the person who raised it (asks first) and Reject beside Approve to anybody else (asks for the reason; a blank reason is a field error on the box). A decided note shows its date, the rejection reason, and nothing more. |
+| `/credit-notes` (list)        | The state filter offers Waiting, Approved, Rejected and Withdrawn; state labels in English and Arabic.                                                                                                                                                              |
+| `/inventory/customer-returns` | A return whose credit request was withdrawn reads "Credit request withdrawn"; a retried return answers with itself and moves no second stock.                                                                                                                       |
+
+Wrapper extensions: none. The screen uses the existing `ConfirmDialog` (approve, withdraw) and
+`ReasonDialog` (reject, with its `reasonError` for the server's refusal of the reason); the design
+gallery is unchanged. The If-Match version is the detail read's `recordVersion`, passed as it was
+read, and every decision re-reads the note afterwards.
+
+Known limitations of this slice, one line each:
+
+- Discount requests have no separate withdraw operation; the requester withdraws one by revising the
+  quotation, which supersedes it. Rejection already requires a reason. Recorded in ADR-023 as planned.
+- The approval route stays unguarded by If-Match, as before; only the two new decisions are.
+- A refused attempt is recorded only where the command reaches its service; a refusal by the pipeline
+  itself (missing permission, stale version, malformed request) is not a business-rule refusal and
+  is not recorded here.
+- Credit-approval limits (D13) are the next slice; its limit refusals mark their failure with the same
+  seam (`withBusinessRefusal`).
+- Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the
+  builds; they run in hosted CI. Focused DB and backend files ran against a disposable database only.
+- The unit tier gains one test file (`tests/unit/od-finance-refusal-records.test.ts`), the database
+  tier one (`tests/db/sal-credit-note-decisions.test.ts`) and the backend tier one
+  (`tests/backend/od-finance-credit-decisions.test.ts`); the web tier gains cases in existing files
+  (no web test file added or removed); the recorded tiers are retaken at the final head.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- A server refusal of the reject reason (`reasonError` in `CreditNotesScreen.tsx`) clears only when
+  the dialog reopens or a decision succeeds, not on editing the reason; the client-side blank check
+  (`ReasonDialog.tsx:75`) does clear on correction. The server path is unreachable from the screen:
+  the client trims, blocks a blank reason and caps it at 2000 characters, as the server does.
+- The reject dialog is destructive, so focus opens on Cancel and Confirm stays disabled while the
+  reason is blank; first-invalid focus never triggers for a blank reason (existing `ReasonDialog`
+  behaviour, shared with its other consumers).
+- Closing the reject dialog drops a reason already typed without asking (existing `ReasonDialog`
+  behaviour; no unsaved-work prompt).
+- Approve and Reject are offered to anyone other than the requester; a viewer who passes the page
+  gate on a grant in another branch still sees both and the server answers 403, as Approve already
+  did.
+- The race test (`tests/backend/od-finance-credit-decisions.test.ts:624`) covers approve against
+  reject only; approve against withdraw and reject against withdraw are untested, though all three
+  take the same row lock (`FOR UPDATE`), so one winner follows from the database design.
+- `sal.guard_dual_control_approval` (re-issued in the migration) still stamps anyone rejecting a
+  receipt reversal as `approved_by`, the requester included, with no permission check; unchanged
+  from before and belongs to D4.
+- `businessRefusalDetail`'s identifier pattern would admit a rule code shaped like an amount (for
+  example `amount_10.00`); every rule code today is a compile-time constant, so no live path exists.
+- The approval pre-check labels every failure inside its open-amount try block as
+  `credit_note_exceeds_open_amount` (`invoice-service.ts:1616-1624`); a Decimal parse fault there
+  would be mislabelled, which is unlikely and does not change the caller's response.
+- In the contract review the database and backend tiers were not run locally (no disposable
+  database was available and port 54322 is off limits); for those tiers the review relied on hosted
+  CI, which passed both at 8c1a0d17 (Database migrations and RLS tests, integration-tests).
+- Fixed in this round: a raw INSERT on the runtime login could create a credit note already
+  rejected or withdrawn, with a chosen decider and a backdated decision date, because the decision
+  guard runs on UPDATE only. `sal.stamp_dual_control_maker` (BEFORE INSERT, re-issued in the same
+  migration) now births every credit note pending with no decider, decision date, decision reason
+  or issue date; `tests/db/sal-credit-note-decisions.test.ts` proves it on the runtime login.

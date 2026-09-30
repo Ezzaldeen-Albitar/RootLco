@@ -556,7 +556,12 @@ describe('the coverage include lists are pinned, because they are the denominato
     // `modules/pricing/application/discount-threshold-service.ts` (the versioned
     // company threshold). The routes live under `src/app`, which this include list
     // does not admit. The floors are untouched for the reason above.
-    expect(files.length).toBe(322);
+    // 323 with the business-refusal record (P1-32-PRE-OD-FD2A, ADR-023 D12), which
+    // adds ONE: `server/audit/business-refusals.ts`, the seam that records a refusal
+    // by business rule after its command rolls back. The two credit-note decision
+    // routes live under `src/app`, which this include list does not admit. The
+    // floors are untouched for the reason above.
+    expect(files.length).toBe(323);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -664,7 +669,9 @@ describe('the coverage include lists are pinned, because they are the denominato
     // 319 with the Owner directive UX backend, whose four added files are not
     // under `server/openapi/` either, so the two numbers move by four together
     // for the same reason. 321 with the discount approval record's two, for the
-    // same reason again.
-    expect(instrumented.length).toBe(321);
+    // same reason again. 322 with the business-refusal record's one
+    // (`server/audit/business-refusals.ts`, P1-32-PRE-OD-FD2A), which is not under
+    // `server/openapi/` either, so the two numbers move by one together.
+    expect(instrumented.length).toBe(322);
   });
 });

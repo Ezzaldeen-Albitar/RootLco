@@ -26,6 +26,8 @@ describe('GAP-04 — a sales return shows its credit note’s decision', () => {
     expect(salesReturnDisplayState('note-1', 'pending')).toBe('credit_requested');
     expect(salesReturnDisplayState('note-1', 'approved')).toBe('credited');
     expect(salesReturnDisplayState('note-1', 'rejected')).toBe('credit_rejected');
+    // ADR-023 D3: a credit request its requester withdrew.
+    expect(salesReturnDisplayState('note-1', 'withdrawn')).toBe('credit_withdrawn');
   });
 
   it('never calls a pending credit "credited"', () => {
@@ -39,12 +41,13 @@ describe('GAP-04 — a sales return shows its credit note’s decision', () => {
     expect(salesReturnDisplayState('note-1', 'something new')).toBe('credit_raised');
   });
 
-  it('publishes exactly the five shown states, beside the two stored ones', () => {
+  it('publishes exactly the six shown states, beside the two stored ones', () => {
     expect([...SALES_RETURN_DISPLAY_STATES]).toEqual([
       'received',
       'credit_requested',
       'credited',
       'credit_rejected',
+      'credit_withdrawn',
       'credit_raised',
     ]);
     expect([...SALES_RETURN_STATES]).toEqual(['received', 'credited']);

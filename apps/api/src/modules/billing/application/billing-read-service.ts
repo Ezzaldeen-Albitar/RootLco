@@ -343,6 +343,15 @@ export interface CreditNoteView {
   readonly approvedBy: string | null;
   readonly approvedAt: string | null;
   readonly issuedAt: string | null;
+  /**
+   * Who withdrew or rejected the request and when (ADR-023, D3) — the requester
+   * for a withdrawal, a different person for a rejection; `null` while pending
+   * and on an approved note, whose approver is `approvedBy`.
+   */
+  readonly decidedBy: string | null;
+  readonly decidedAt: string | null;
+  /** Why the request was rejected; `null` on every other state. */
+  readonly decisionReason: string | null;
   readonly recordVersion: number;
 }
 
@@ -469,6 +478,9 @@ export const toCreditNoteView = (row: CreditNoteRow): CreditNoteView => ({
   approvedBy: row.approvedBy,
   approvedAt: row.approvedAt?.toISOString() ?? null,
   issuedAt: row.issuedAt?.toISOString() ?? null,
+  decidedBy: row.decidedBy,
+  decidedAt: row.decidedAt?.toISOString() ?? null,
+  decisionReason: row.decisionReason,
   recordVersion: row.recordVersion,
 });
 

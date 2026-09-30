@@ -1053,7 +1053,7 @@ function withExtra(adapter: string, screen: string = SEAL_SCREEN) {
 }
 
 describe('an adapter the contract places outside apt/rec is excluded from the count, and only it', () => {
-  it('on the live tree, excludes exactly the four inventory and pricing adapters by their guarded operations', () => {
+  it('on the live tree, excludes exactly the six billing, inventory and pricing adapters by their guarded operations', () => {
     const live = run() as Report & {
       outsideByContract: { name: string; operations: string[] }[];
     };
@@ -1065,8 +1065,12 @@ describe('an adapter the contract places outside apt/rec is excluded from the co
     // The third arrived with the Owner directive's reorder-level retirement, which
     // is an inv operation reached from the setup screen. The fourth is the company
     // discount threshold (P1-32-PRE-OD-DISC-01), a pricing operation reached from
-    // the administration screen.
+    // the administration screen. The fifth and sixth are the credit-note
+    // withdrawal and rejection (P1-32-PRE-OD-FD2A, ADR-023 D3), sal operations
+    // reached from the credit-notes screen with the note's own version.
     expect(live.outsideByContract.map((one) => one.name)).toEqual([
+      'withdrawCreditNote',
+      'rejectCreditNote',
       'postGoodsReceipt',
       'recordStockCountLine',
       'retireReorderLevel',
@@ -1074,8 +1078,10 @@ describe('an adapter the contract places outside apt/rec is excluded from the co
     ]);
     for (const entry of live.outsideByContract) {
       expect(entry.operations).toHaveLength(1);
-      expect(entry.operations[0]).toMatch(/^(inv|svc)[.]/);
+      expect(entry.operations[0]).toMatch(/^(inv|svc|sal)[.]/);
     }
+    expect(live.accountedFor).not.toContain('withdrawCreditNote');
+    expect(live.accountedFor).not.toContain('rejectCreditNote');
     expect(live.accountedFor).not.toContain('postGoodsReceipt');
     expect(live.accountedFor).not.toContain('recordStockCountLine');
     expect(live.accountedFor).not.toContain('retireReorderLevel');

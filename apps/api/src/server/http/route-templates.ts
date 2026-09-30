@@ -84,6 +84,8 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/credit-notes',
   '/credit-notes/{creditNoteId}',
   '/credit-notes/{creditNoteId}/approval',
+  '/credit-notes/{creditNoteId}/rejection',
+  '/credit-notes/{creditNoteId}/withdrawal',
   '/customer-duplicates',
   '/customer-duplicates/{candidateId}/review',
   '/customer-supplied-parts',

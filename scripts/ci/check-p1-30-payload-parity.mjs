@@ -92,6 +92,10 @@ export const BODYLESS = Object.freeze({
   // The amount was fixed at request time; the approval names the note in the path.
   'sal.credit-note-approve':
     'the approval carries nothing but the credit note in the path and the caller as approver',
+  // ADR-023 D3: the requester is the caller and the note is the path parameter;
+  // its version travels as If-Match. A withdrawal has no parameters.
+  'sal.credit-note-withdraw':
+    'the withdrawal carries nothing but the credit note in the path, its version as If-Match and the caller as requester',
   // The withdrawal names the template and the item in the path and the caller as the
   // actor; there is no field a body could carry. It entered this scope because it is a
   // `sal` DELETE (P1-31 P-9), not because a P1-30 screen sends it.

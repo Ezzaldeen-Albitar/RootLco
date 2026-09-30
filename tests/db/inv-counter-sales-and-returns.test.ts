@@ -697,6 +697,61 @@ describe('inv.sales_returns — condition, ceiling and credit', () => {
     });
   });
 
+  it('leaves a withdrawn return credit out of the cumulative share, like a rejected one (D3, D9)', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const partner = await seedPartner(c, 'odcs_withdrawn');
+      const { item } = await seedItem(c, 'odcs_withdrawn');
+      const { warehouse } = await seedLocations(c, 'odcs_withdrawn');
+      await seedStock(c, item, warehouse, 10, 'odcs_withdrawn');
+      const taxClass = await seedTax(c, 'odcs_withdrawn', '0.333333');
+      await setPrice(c, item, '5.0000', { taxClass });
+      const sale = await createCounterSale(c, partner, [
+        { itemId: item, locationId: warehouse, quantity: '3' },
+      ]);
+      const line = await one<{ id: string }>(
+        c,
+        `SELECT id FROM sal.invoice_lines WHERE invoice_id = $1`,
+        [sale]
+      );
+      await issueInvoice(c, sale);
+      await c.query(`SELECT inv.post_counter_sale_line($1,NULL)`, [line.id]);
+
+      const creditOf = async (returnId: string) =>
+        scalar(
+          c,
+          `SELECT amount::text AS v FROM sal.credit_notes
+            WHERE id = (SELECT credit_note_id FROM inv.sales_returns WHERE id = $1)`,
+          [returnId]
+        );
+      const first = await one<{ id: string }>(
+        c,
+        `SELECT inv.receive_sales_return('invoice_line',$1,1,'restockable',$2,NULL,'One back',NULL,NULL) AS id`,
+        [line.id, warehouse]
+      );
+      expect(await creditOf(first.id)).toBe('6.6700');
+      // The requester withdraws the first return's credit request.
+      await c.query(
+        `SELECT sal.withdraw_credit_note(
+           (SELECT credit_note_id FROM inv.sales_returns WHERE id = $1))`,
+        [first.id]
+      );
+      // The next unit is credited as the FIRST share of the line again — 6.67 —
+      // not as the second (13.33 - 6.67 = 6.66), because the withdrawn note no
+      // longer stands and its credit was never given.
+      const second = await one<{ id: string }>(
+        c,
+        `SELECT inv.receive_sales_return('invoice_line',$1,1,'restockable',$2,NULL,'One more',NULL,NULL) AS id`,
+        [line.id, warehouse]
+      );
+      expect(await creditOf(second.id)).toBe('6.6700');
+      // Withdrawing credits nothing, and never moves stock back out.
+      expect(await scalar(c, `SELECT sal.invoice_open_receivable($1)::text AS v`, [sale])).toBe(
+        '20.0000'
+      );
+      expect(await onHand(c, item, warehouse)).toBe('9.000');
+    });
+  });
+
   it('bounds the total against BOTH return tables and reports the remainder', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const { item } = await seedItem(c, 'odcs_ceiling');

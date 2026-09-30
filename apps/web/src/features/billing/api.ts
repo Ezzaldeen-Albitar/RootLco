@@ -11,6 +11,7 @@ import {
 import type {
   CounterSaleCreateBody,
   CreditNoteCreateBody,
+  CreditNoteRejectBody,
   InvoiceCancelBody,
   InvoiceCreateBody,
 } from '@/lib/contracts/billing-contract';
@@ -351,6 +352,85 @@ export async function approveCreditNote(
   return {
     state: {
       ...success('creditNotes.approve.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * A refused withdrawal or rejection, as the screen states it. A named rule keeps
+ * its own sentence; a conflict with no rule is the version guard — the note
+ * changed since it was read — and is said as that, not as a refusal of the step.
+ */
+function decisionFailure(result: Parameters<typeof fromFailure>[0], attempt: number): ActionState {
+  const state = fromFailure(result, attempt);
+  if (state.status === 'conflict' && (result.problem?.violations ?? []).length === 0) {
+    return { ...state, messageKey: 'creditNotes.decision.conflict' };
+  }
+  return state;
+}
+
+/**
+ * Withdraw your own pending credit note (`sal.credit-note-withdraw`, ADR-023 D3).
+ *
+ * No body: the requester is the session. `ifMatch` is the NOTE's
+ * `recordVersion` from the detail read, required, never computed. The server
+ * refuses anyone but the requester with the named rule
+ * `credit_note_withdraw_not_requester`, and a decided note with
+ * `credit_note_decision_frozen`; both reach the banner as their own sentences.
+ * A stale version is a conflict the screen answers by reading the note again.
+ */
+export async function withdrawCreditNote(
+  creditNoteId: string,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<CreditNoteEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<CreditNoteEcho>(
+    'POST',
+    `/api/v1/credit-notes/${encodeURIComponent(creditNoteId)}/withdrawal`,
+    undefined,
+    { ifMatch }
+  );
+  if (!result.ok) return { state: decisionFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('creditNotes.withdraw.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Reject a pending credit note somebody else raised (`sal.credit-note-reject`,
+ * ADR-023 D3), stating why.
+ *
+ * `ifMatch` is the NOTE's `recordVersion` from the detail read, required. A
+ * blank reason is refused on the reason itself (`fieldErrors.reason`); the
+ * requester is refused with `credit_note_self_rejection` and a decided note
+ * with `credit_note_decision_frozen`.
+ */
+export async function rejectCreditNote(
+  creditNoteId: string,
+  body: CreditNoteRejectBody,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<CreditNoteEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<CreditNoteEcho>(
+    'POST',
+    `/api/v1/credit-notes/${encodeURIComponent(creditNoteId)}/rejection`,
+    body,
+    { ifMatch }
+  );
+  if (!result.ok) return { state: decisionFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('creditNotes.reject.success', attempt),
       correlationId: result.correlationId,
     },
     created: result.data,

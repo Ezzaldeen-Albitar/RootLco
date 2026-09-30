@@ -209,8 +209,11 @@ describe('every route body serialises a named type', () => {
     // 505 with the reference-value reads (P1-32-PRE-OD-REF): two operations, each
     // serialising the NAMED `ReferenceValuesView`, so `named` moves by two and
     // `composed` still does not move.
-    expect(summary.bodies).toBe(505);
-    expect(summary.named).toBe(453);
+    // 507 with the credit-note decisions (P1-32-PRE-OD-FD2A, ADR-023 D3): two
+    // commands, withdrawal and rejection, each serialising `CreditNoteResult`, a
+    // NAMED interface, so `named` moves by two and `composed` does not.
+    expect(summary.bodies).toBe(507);
+    expect(summary.named).toBe(455);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

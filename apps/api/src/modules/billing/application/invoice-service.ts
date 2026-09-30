@@ -48,6 +48,7 @@
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
+import { withBusinessRefusal } from '@/server/audit/business-refusals';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, sqlState, SQLSTATE, violatedConstraint } from '@/server/db/repository';
 import { Decimal, MONEY } from '@/modules/pricing';
@@ -170,6 +171,104 @@ function isSelfApprovalViolation(error: unknown): boolean {
       ? (error as { message?: unknown }).message
       : undefined;
   return typeof message === 'string' && message.includes(SELF_APPROVAL_TRIGGER_TOKEN);
+}
+
+/**
+ * The stable rule codes a refused credit-note decision names (ADR-023, D3, D12).
+ *
+ * Each is the token the screen reads from `safeDetails.violations[].rule` for the
+ * two new decisions, and the rule a business-refusal record carries. The approval
+ * keeps its published answer (`credit_note_self_approval` on a self-approval, no
+ * token on its other two refusals); only its record is new.
+ */
+export const CREDIT_NOTE_REFUSAL_RULES = Object.freeze({
+  selfApproval: 'credit_note_self_approval',
+  selfRejection: 'credit_note_self_rejection',
+  notRequester: 'credit_note_withdraw_not_requester',
+  decided: 'credit_note_decision_frozen',
+  exceedsOpenAmount: 'credit_note_exceeds_open_amount',
+} as const);
+
+/** The message of a driver error, or `undefined`. */
+function driverMessage(error: unknown): string | undefined {
+  const message =
+    typeof error === 'object' && error !== null && 'message' in error
+      ? (error as { message?: unknown }).message
+      : undefined;
+  return typeof message === 'string' ? message : undefined;
+}
+
+/**
+ * The token a guard of `20260930110000_sal_credit_note_decisions.sql` raised,
+ * read from before the first colon of a `check_violation` message, or `null`.
+ * Those guards put a stable identifier there precisely so this is the whole parse.
+ */
+function decisionRefusalToken(error: unknown): string | null {
+  if (!isSqlState(error, SQLSTATE.checkViolation)) return null;
+  return /^([a-z_]+):/.exec(driverMessage(error) ?? '')?.[1] ?? null;
+}
+
+/** True for `sal.approve_credit_note`'s own ceiling refusal under the invoice lock. */
+function isOpenAmountViolation(error: unknown): boolean {
+  return (
+    isSqlState(error, SQLSTATE.checkViolation) &&
+    (driverMessage(error) ?? '').includes('exceeds invoice open receivable')
+  );
+}
+
+/**
+ * Throws what `raise` throws, marked as a refusal of a credit note by business
+ * rule, so the route pipeline records it after the command rolls back (D12).
+ * Only a controlled `AppFailure` is marked: an unexpected fault is a fault, not a
+ * refusal, and is never recorded as one.
+ */
+function refuseCreditNote(creditNoteId: string, rule: string, raise: () => never): never {
+  try {
+    raise();
+  } catch (failure) {
+    if (failure instanceof AppFailure) {
+      withBusinessRefusal(failure, { entityType: 'sal.credit_note', entityId: creditNoteId, rule });
+    }
+    throw failure;
+  }
+}
+
+/** A named `ERR-TRN-001` about the credit note in the path, recorded as a refusal. */
+function decisionConflict(creditNoteId: string, rule: string, message: string): never {
+  return refuseCreditNote(creditNoteId, rule, () => {
+    throw new AppFailure('ERR-TRN-001', {
+      message,
+      safeDetails: { violations: [{ path: 'path.creditNoteId', rule }] },
+    });
+  });
+}
+
+/**
+ * Translates a refusal raised by a decision primitive or its guard.
+ *
+ * The pre-checks answer every rule first, so reaching here means a rule the
+ * pre-checks do not repeat: the reason (a field error, never recorded as a
+ * refusal of the note) or the permission in scope (an authorization denial,
+ * `42501`, through `toDomainFailure`). A rule token the pre-checks do name is
+ * still translated, and recorded, in case the row moved between the two.
+ */
+function refuseDecisionFailure(error: unknown, creditNoteId: string, what: string): never {
+  const token = decisionRefusalToken(error);
+  if (token === 'credit_note_reject_reason_required') {
+    throw new AppFailure('ERR-VAL-001', {
+      message: 'A rejection states why, within the permitted length',
+      safeDetails: { violations: [{ path: 'body.reason', rule: 'too_small' }] },
+      cause: error,
+    });
+  }
+  if (
+    token === CREDIT_NOTE_REFUSAL_RULES.selfRejection ||
+    token === CREDIT_NOTE_REFUSAL_RULES.notRequester ||
+    token === CREDIT_NOTE_REFUSAL_RULES.decided
+  ) {
+    decisionConflict(creditNoteId, token, `${what} was refused by the rule ${token}`);
+  }
+  toDomainFailure(error, what);
 }
 
 export interface CreateInvoiceInput {
@@ -1468,10 +1567,12 @@ export class InvoiceService {
       return { creditNote: toCreditNoteView(note), replayed: true };
     }
     if (note.approvalState !== 'pending') {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Credit note ${creditNoteId} is "${note.approvalState}"; only a pending request ` +
-          'can be approved, and a decided one is frozen.',
+      refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.decided, () => {
+        throw new AppFailure('ERR-TRN-001', {
+          message:
+            `Credit note ${creditNoteId} is "${note.approvalState}"; only a pending request ` +
+            'can be approved, and a decided one is frozen.',
+        });
       });
     }
 
@@ -1491,11 +1592,13 @@ export class InvoiceService {
     }
 
     if (note.requestedBy === db.context.principal.userId) {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          'The approver of a credit note must differ from the requester. Ask a second ' +
-          'authorised person to approve this request.',
-        safeDetails: SELF_APPROVAL_REFUSAL,
+      refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.selfApproval, () => {
+        throw new AppFailure('ERR-TRN-001', {
+          message:
+            'The approver of a credit note must differ from the requester. Ask a second ' +
+            'authorised person to approve this request.',
+          safeDetails: SELF_APPROVAL_REFUSAL,
+        });
       });
     }
 
@@ -1516,20 +1619,29 @@ export class InvoiceService {
         Decimal.fromDatabase(open.amount, MONEY)
       );
     } catch (error) {
-      toDomainFailure(error, 'Credit note approval');
+      refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.exceedsOpenAmount, () =>
+        toDomainFailure(error, 'Credit note approval')
+      );
     }
 
     try {
       await this.repository.approveCreditNote(db, creditNoteId, db.context.correlationId);
     } catch (error) {
       if (isSelfApprovalViolation(error)) {
-        throw new AppFailure('ERR-TRN-001', {
-          message:
-            'The approver of a credit note must differ from the requester. Ask a second ' +
-            'authorised person to approve this request.',
-          safeDetails: SELF_APPROVAL_REFUSAL,
-          cause: error,
+        refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.selfApproval, () => {
+          throw new AppFailure('ERR-TRN-001', {
+            message:
+              'The approver of a credit note must differ from the requester. Ask a second ' +
+              'authorised person to approve this request.',
+            safeDetails: SELF_APPROVAL_REFUSAL,
+            cause: error,
+          });
         });
+      }
+      if (isOpenAmountViolation(error)) {
+        refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.exceedsOpenAmount, () =>
+          toDomainFailure(error, 'Credit note approval')
+        );
       }
       toDomainFailure(error, 'Credit note approval');
     }
@@ -1582,9 +1694,212 @@ export class InvoiceService {
     return { creditNote: toCreditNoteView(approved), replayed: false };
   }
 
+  /**
+   * The requester withdraws their own pending credit note (ADR-023, D3).
+   *
+   * Withdrawal only ever reduces exposure: a pending note credits nothing, and a
+   * withdrawn one never will, so no second person is asked. It is the requester's
+   * act and nobody else's. The database refuses anyone else
+   * (`sal.withdraw_credit_note`, `sal.guard_credit_note_decision`), and this
+   * refuses them first with the named rule `credit_note_withdraw_not_requester`.
+   *
+   * ### Order of the checks
+   *
+   * The note is locked, its scope authorized, and the `If-Match` version compared
+   * with the LOCKED row, as `issueInvoice` does; a stale version is a conflict the
+   * caller resolves by reading again, not a refusal by rule. Then the requester,
+   * then the state: a note already withdrawn answers `replayed: true` with no
+   * second audit record, and any other decided state is refused with
+   * `credit_note_decision_frozen`. Every refusal by rule is recorded after the
+   * rollback (D12).
+   *
+   * No financial event and no outbox event: nothing was credited, so no consumer
+   * has anything to read again.
+   */
+  public async withdrawCreditNote(
+    db: DbHandle,
+    creditNoteId: string,
+    expectedVersion: number,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<CreditNoteResult> {
+    const note = await this.lockDecidableCreditNote(
+      db,
+      creditNoteId,
+      expectedVersion,
+      authorizeScope
+    );
+
+    if (note.requestedBy !== db.context.principal.userId) {
+      decisionConflict(
+        note.id,
+        CREDIT_NOTE_REFUSAL_RULES.notRequester,
+        `Credit note ${creditNoteId} can be withdrawn only by the person who requested it.`
+      );
+    }
+    if (note.approvalState === 'withdrawn') {
+      return { creditNote: toCreditNoteView(note), replayed: true };
+    }
+    if (note.approvalState !== 'pending') {
+      decisionConflict(
+        note.id,
+        CREDIT_NOTE_REFUSAL_RULES.decided,
+        `Credit note ${creditNoteId} is "${note.approvalState}"; a decided credit note is frozen.`
+      );
+    }
+
+    try {
+      await this.repository.withdrawCreditNote(db, creditNoteId);
+    } catch (error) {
+      refuseDecisionFailure(error, note.id, 'Credit note withdrawal');
+    }
+
+    const withdrawn = await this.repository.findCreditNote(db, creditNoteId);
+    /* c8 ignore next 5 -- the note is held `FOR UPDATE` in this transaction. */
+    if (!withdrawn) {
+      throw new AppFailure('ERR-SYS-001', { message: 'Credit note vanished after withdrawal' });
+    }
+
+    await appendAudit(db, {
+      action: 'sal.credit_note.withdrawn',
+      entityType: 'sal.credit_note',
+      entityId: withdrawn.id,
+      companyId: withdrawn.companyId,
+      branchId: withdrawn.branchId,
+      requestRef: 'sal.credit-note-withdraw',
+      details: [
+        {
+          field: 'approvalState',
+          classification: 'internal',
+          previousValue: note.approvalState,
+          value: withdrawn.approvalState,
+        },
+        { field: 'invoiceId', classification: 'internal', value: withdrawn.invoiceId },
+        { field: 'currencyCode', classification: 'internal', value: withdrawn.currencyCode },
+        { field: 'amount', classification: 'restricted', value: withdrawn.amount },
+      ],
+    });
+
+    return { creditNote: toCreditNoteView(withdrawn), replayed: false };
+  }
+
+  /**
+   * A different authorised person rejects a pending credit note, with a reason
+   * (ADR-023, D3).
+   *
+   * The operation declares `sal.credit.manage` and `sal.finance.view`, and the
+   * pipeline authorizes both in the note's own company and branch. The person
+   * must also not be the requester, who withdraws instead
+   * (`credit_note_self_rejection`). The database holds both rules itself:
+   * `sal.guard_credit_note_decision` checks `sal.credit.manage` in the note's
+   * scope and refuses the requester, so a raw UPDATE is held to them too.
+   *
+   * The reason is required, trimmed and bounded here first, so a blank one is a
+   * field error on `body.reason` rather than a refusal of the note; the database
+   * refuses a blank or over-long reason again. Order and replay as
+   * `withdrawCreditNote`; every refusal by rule is recorded after the rollback.
+   */
+  public async rejectCreditNote(
+    db: DbHandle,
+    creditNoteId: string,
+    input: { readonly reason: string },
+    expectedVersion: number,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<CreditNoteResult> {
+    const reason = requireReason(input.reason, 'body.reason');
+    const note = await this.lockDecidableCreditNote(
+      db,
+      creditNoteId,
+      expectedVersion,
+      authorizeScope
+    );
+
+    if (note.requestedBy === db.context.principal.userId) {
+      decisionConflict(
+        note.id,
+        CREDIT_NOTE_REFUSAL_RULES.selfRejection,
+        `Credit note ${creditNoteId} is rejected by someone other than the person who ` +
+          'requested it; the requester withdraws it instead.'
+      );
+    }
+    if (note.approvalState === 'rejected') {
+      return { creditNote: toCreditNoteView(note), replayed: true };
+    }
+    if (note.approvalState !== 'pending') {
+      decisionConflict(
+        note.id,
+        CREDIT_NOTE_REFUSAL_RULES.decided,
+        `Credit note ${creditNoteId} is "${note.approvalState}"; a decided credit note is frozen.`
+      );
+    }
+
+    try {
+      await this.repository.rejectCreditNote(db, creditNoteId, reason);
+    } catch (error) {
+      refuseDecisionFailure(error, note.id, 'Credit note rejection');
+    }
+
+    const rejected = await this.repository.findCreditNote(db, creditNoteId);
+    /* c8 ignore next 5 -- the note is held `FOR UPDATE` in this transaction. */
+    if (!rejected) {
+      throw new AppFailure('ERR-SYS-001', { message: 'Credit note vanished after rejection' });
+    }
+
+    await appendAudit(db, {
+      action: 'sal.credit_note.rejected',
+      entityType: 'sal.credit_note',
+      entityId: rejected.id,
+      companyId: rejected.companyId,
+      branchId: rejected.branchId,
+      requestRef: 'sal.credit-note-reject',
+      details: [
+        {
+          field: 'approvalState',
+          classification: 'internal',
+          previousValue: note.approvalState,
+          value: rejected.approvalState,
+        },
+        { field: 'invoiceId', classification: 'internal', value: rejected.invoiceId },
+        { field: 'currencyCode', classification: 'internal', value: rejected.currencyCode },
+        { field: 'decisionReason', classification: 'internal', value: rejected.decisionReason },
+        { field: 'amount', classification: 'restricted', value: rejected.amount },
+      ],
+    });
+
+    return { creditNote: toCreditNoteView(rejected), replayed: false };
+  }
+
   // -------------------------------------------------------------------------
   // Internals.
   // -------------------------------------------------------------------------
+
+  /**
+   * Locks a credit note for a withdrawal or a rejection, authorizes its own scope,
+   * and compares the caller's `If-Match` version with the LOCKED row.
+   *
+   * The note's lock is the first one an approval takes too, so a concurrent
+   * approval and rejection of the same note serialise here: whichever comes
+   * second finds the note decided and is refused.
+   */
+  private async lockDecidableCreditNote(
+    db: DbHandle,
+    creditNoteId: string,
+    expectedVersion: number,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<CreditNoteRow> {
+    const note = await this.repository.findCreditNoteForUpdate(db, creditNoteId);
+    if (!note) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Credit note ${creditNoteId} was not found in scope`,
+      });
+    }
+    await authorizeScope({ companyId: note.companyId, branchId: note.branchId });
+    if (note.recordVersion !== expectedVersion) {
+      throw new AppFailure('ERR-CON-001', {
+        message: 'The credit note has changed since it was read; re-read it and retry',
+      });
+    }
+    return note;
+  }
 
   /**
    * Refuses a commercial source whose lines cannot become invoice lines.

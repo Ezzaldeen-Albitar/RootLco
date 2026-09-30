@@ -64,6 +64,7 @@ import {
   type PermissionProbe,
 } from '@/modules/pricing';
 import { appendAudit } from '@/server/audit/audit';
+import { withBusinessRefusal } from '@/server/audit/business-refusals';
 import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import type { DbHandle } from '@/server/db/transaction';
@@ -204,6 +205,32 @@ function refuse(
   message: string
 ): never {
   throw new AppFailure(code, { message, safeDetails: { violations: [{ path, rule }] } });
+}
+
+/**
+ * The approval blocks a refused decision is RECORDED under (ADR-023, D12): the
+ * decider is the requester, holds no limit that counts (none, one they created
+ * themselves, or one in another currency), holds too small a limit, or lacks the
+ * recorded permission. Each is a refusal by business rule, and each refused
+ * attempt leaves one security event after the command rolls back. The answer the
+ * caller receives is exactly the refusal the pricing module threw.
+ */
+const RECORDED_DECISION_REFUSALS: ReadonlySet<string> = new Set<DiscountApprovalBlock>([
+  'discount_approver_must_differ',
+  'discount_approval_permission_missing',
+  'discount_no_approval_limit',
+  'discount_limit_currency_mismatch',
+  'discount_over_approval_limit',
+]);
+
+/** Marks a refused decision for the record, when it is one of the recorded blocks. */
+function recordDecisionRefusal(error: unknown, approvalId: string): unknown {
+  if (!(error instanceof AppFailure)) return error;
+  const rule = error.safeDetails.violations?.[0]?.rule;
+  if (rule !== undefined && RECORDED_DECISION_REFUSALS.has(rule)) {
+    withBusinessRefusal(error, { entityType: 'quo.discount_approval', entityId: approvalId, rule });
+  }
+  return error;
 }
 
 /** The approval-side block, as the reason the screen states. */
@@ -433,31 +460,37 @@ export class DiscountApprovalService {
     const approverId = db.context.principal.userId;
     const probePermission = permissionProbe(db, approval.companyId, approval.branchId);
     const discounts = pricingModule().discounts;
-    if (input.decision === 'approved') {
-      // The application's check names the refusal; the database checks the same
-      // decision again and computes the limit it records.
-      await discounts.authorizeApproval(
-        db,
-        {
-          companyId: approval.companyId,
-          discountAmount: approval.discountTotal,
-          currency: approval.currencyCode,
-          asOf: await this.repository.businessDate(db),
-          requestedBy: approval.requestedBy,
-          approverId,
-          requiredPermissionCode: approval.requiredPermissionCode,
-        },
-        probePermission
-      );
-    } else {
-      await discounts.authorizeRejection(
-        {
-          requestedBy: approval.requestedBy,
-          approverId,
-          requiredPermissionCode: approval.requiredPermissionCode,
-        },
-        probePermission
-      );
+    try {
+      if (input.decision === 'approved') {
+        // The application's check names the refusal; the database checks the same
+        // decision again and computes the limit it records.
+        await discounts.authorizeApproval(
+          db,
+          {
+            companyId: approval.companyId,
+            discountAmount: approval.discountTotal,
+            currency: approval.currencyCode,
+            asOf: await this.repository.businessDate(db),
+            requestedBy: approval.requestedBy,
+            approverId,
+            requiredPermissionCode: approval.requiredPermissionCode,
+          },
+          probePermission
+        );
+      } else {
+        await discounts.authorizeRejection(
+          {
+            requestedBy: approval.requestedBy,
+            approverId,
+            requiredPermissionCode: approval.requiredPermissionCode,
+          },
+          probePermission
+        );
+      }
+    } catch (error) {
+      // Recorded after the rollback by the route pipeline (D12), then rethrown
+      // unchanged.
+      throw recordDecisionRefusal(error, approval.id);
     }
 
     const decided = await this.repository.decideDiscountApproval(db, {

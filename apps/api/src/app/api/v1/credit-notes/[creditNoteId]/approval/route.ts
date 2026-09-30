@@ -26,12 +26,18 @@
  * writes a second financial event — `uq_financial_events_source` would refuse the second
  * event with `23505` in any case, which is a free backstop.
  *
+ * ## Refusals are recorded
+ *
+ * A self-approval, an approval of a note that is no longer pending and an approval
+ * above the invoice's open amount are refused as before, and each refused attempt
+ * is now also recorded as one security event after the command rolls back
+ * (ADR-023, D12). The answer the caller receives is unchanged.
+ *
  * ## What is NOT here
  *
- * No rejection route. `approval_state` admits `'rejected'` and
- * `guard_dual_control_approval` stamps it without the maker≠approver test, but the P1-22
- * operation inventory does not include a rejection authority — and a `pending` credit note
- * credits nothing, so leaving one unapproved is already the safe outcome.
+ * Rejection and withdrawal are their own operations since ADR-023 D3:
+ * `sal.credit-note-reject` (another authorised person, with a reason) and
+ * `sal.credit-note-withdraw` (the requester). Both are terminal, like an approval.
  *
  * No refund and no partial reversal: both are structurally absent from `sal`
  * (`P1-22-L-05`).

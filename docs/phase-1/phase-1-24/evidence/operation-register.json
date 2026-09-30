@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 505,
-    "openapiPaths": 395,
-    "openapiOperations": 505,
+    "operations": 507,
+    "openapiPaths": 397,
+    "openapiOperations": 507,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 34,
     "permissionCodes": 132,
-    "auditActions": 289
+    "auditActions": 291
   },
   "counts": {
-    "Covered": 505
+    "Covered": 507
   },
   "operations": [
     {
@@ -12946,9 +12946,11 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-finance-credit-decisions.test.ts",
         "tests/backend/p1-22-credit-note.test.ts",
         "tests/backend/p1-22-currency-coherence.test.ts",
-        "tests/backend/p1-31-provisioning-bundle.test.ts"
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
+        "tests/unit/od-finance-refusal-records.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/credit-notes/[creditNoteId]/approval/route.ts"
@@ -13065,6 +13067,100 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/credit-notes/route.ts"
+    },
+    {
+      "id": "sal.credit-note-reject",
+      "domain": "billing",
+      "method": "POST",
+      "route": "/api/v1/credit-notes/{creditNoteId}/rejection",
+      "permissions": ["sal.credit.manage", "sal.finance.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "approval",
+      "auditAction": "sal.credit_note.rejected",
+      "idempotent": true,
+      "versionGuarded": true,
+      "openapi": "POST /api/v1/credit-notes/{creditNoteId}/rejection",
+      "documentedResponses": ["200", "401", "403", "409", "422", "428", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/od-finance-credit-decisions.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/credit-notes/[creditNoteId]/rejection/route.ts"
+    },
+    {
+      "id": "sal.credit-note-withdraw",
+      "domain": "billing",
+      "method": "POST",
+      "route": "/api/v1/credit-notes/{creditNoteId}/withdrawal",
+      "permissions": ["sal.credit.manage"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "financial",
+      "auditAction": "sal.credit_note.withdrawn",
+      "idempotent": true,
+      "versionGuarded": true,
+      "openapi": "POST /api/v1/credit-notes/{creditNoteId}/withdrawal",
+      "documentedResponses": ["200", "401", "403", "409", "422", "428", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/od-finance-credit-decisions.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/credit-notes/[creditNoteId]/withdrawal/route.ts"
     },
     {
       "id": "sal.delivery-checklist-record",
@@ -14386,6 +14482,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-finance-credit-decisions.test.ts",
         "tests/backend/p1-22-concurrency.test.ts",
         "tests/backend/p1-22-currency-coherence.test.ts",
         "tests/backend/p1-22-payments.test.ts",
