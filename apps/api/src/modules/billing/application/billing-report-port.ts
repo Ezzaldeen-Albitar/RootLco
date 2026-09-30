@@ -44,6 +44,8 @@
  */
 import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
+import { Decimal, MONEY } from '@/modules/pricing';
+import { deriveCreditStatus, type CreditStatus } from '../domain/billing';
 import type {
   BillingRepository,
   InvoiceDocumentFilter,
@@ -88,6 +90,13 @@ export interface InvoiceDocumentEntry {
    * subtracts it there: the database function has already counted it.
    */
   readonly creditNoteAmount: string | null;
+  /**
+   * How much of the invoice has been credited (D7, ADR-023): `none`,
+   * `partly_credited` or `credited`, derived from its approved credits against its
+   * gross. Null on a credit note, and on an invoice whose gross is not readable.
+   * Separate from `status`, which stays the invoice's own term.
+   */
+  readonly creditStatus: CreditStatus | null;
   /**
    * The microsecond-precision position this row occupies in the merged order.
    *
@@ -185,6 +194,15 @@ export class BillingReportPort extends ApplicationService {
         invoicedAmount: row.invoicedAmount,
         outstanding: row.outstanding,
         creditNoteAmount: row.creditNoteAmount,
+        creditStatus:
+          row.documentType === 'invoice' &&
+          row.invoicedAmount !== null &&
+          row.creditedAmount !== null
+            ? deriveCreditStatus(
+                Decimal.fromDatabase(row.creditedAmount, MONEY),
+                Decimal.fromDatabase(row.invoicedAmount, MONEY)
+              )
+            : null,
         sortValue: row.sortValue,
       })),
     };

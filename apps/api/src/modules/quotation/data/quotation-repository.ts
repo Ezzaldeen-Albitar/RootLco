@@ -4,18 +4,22 @@
  * ## Where the money is calculated
  *
  * In `insertItem`, in SQL, in `numeric` — never in TypeScript. The two computed
- * columns are written as the *same expressions* the CHECK constraints validate:
+ * columns are written as the *same expressions* `tg_quotation_items_money`
+ * validates (ADR-023, D1), each monetary amount rounded half-up to the
+ * currency's minor unit by `shared.round_to_minor_unit`:
  *
  * ```
- * captured_tax_amount = round(((unit * qty) - discount) * rate, 4)
- * captured_line_total = round(((unit * qty) - discount) + tax_amount, 4)
+ * line net            = round_minor((unit * qty) - discount)
+ * captured_tax_amount = round_minor(line net * rate)
+ * captured_line_total = line net + captured_tax_amount
  * ```
  *
  * That is deliberate and is the core control of P1-20-BE-014. If the application
  * computed these and sent them as literals, a TypeScript rounding difference
- * would be caught by `ck_quotation_items_tax_amount` as an opaque constraint
- * violation. By computing them in the statement, PostgreSQL is both the engine
- * and the validator, and the two cannot disagree.
+ * would be caught by the trigger as an opaque constraint violation. By computing
+ * them in the statement, PostgreSQL is both the engine and the validator, and
+ * the two cannot disagree. The unit price, quantity and rate keep their own
+ * scales; only the monetary amounts take the currency's.
  *
  * The document totals are not written here at all: `quo.issue_revision` computes
  * them by SUM over the live items when the revision is issued.
@@ -542,6 +546,21 @@ export class QuotationRepository extends Repository {
   }
 
   /**
+   * The minor unit `shared.currencies` records for a currency (JOD 3, USD 2), or
+   * `null` for a code it does not hold. What a fixed discount is checked against
+   * (ADR-023, D1).
+   */
+  public async minorUnitForCurrency(db: DbHandle, code: string): Promise<number | null> {
+    this.assertContext(db);
+    const row = await this.runOne<{ minor_unit: number }>(
+      db,
+      `SELECT minor_unit FROM shared.currencies WHERE code = $1`,
+      [code]
+    );
+    return row ? row.minor_unit : null;
+  }
+
+  /**
    * The database's `now()` — the ONE clock expiry is decided by.
    *
    * `now()` is the current transaction's start time, so a caller that reads it once
@@ -973,20 +992,19 @@ export class QuotationRepository extends Repository {
    * Inserts one line, with **PostgreSQL computing the money**.
    *
    * `captured_tax_amount` and `captured_line_total` are written as the exact
-   * expressions `ck_quotation_items_tax_amount` and `ck_quotation_items_line_total`
-   * validate. No amount is computed in TypeScript, so the engine and the
-   * validator are the same thing and cannot disagree.
+   * expressions `tg_quotation_items_money` validates (ADR-023, D1): the line net
+   * `(unit * qty) - discount` rounded half-up to the currency's minor unit, the
+   * tax on that ROUNDED net rounded the same way, and the line total their sum.
+   * No amount is computed in TypeScript, so the engine and the validator are the
+   * same thing and cannot disagree.
    *
    * Each parameter is cast to its **column's** precision and scale, not to bare
-   * `numeric`. The CHECK constraints re-evaluate against the values as STORED, so
-   * an input carrying more decimal places than its column would be rounded on
-   * storage while the computed tax used the unrounded figure — and the row would
-   * be rejected by its own constraint with an opaque message. `Decimal` already
-   * refuses over-scale input at the boundary; this makes the guarantee
-   * structural rather than dependent on that check staying in place.
-   *
-   * The tax base `(unit * qty) - discount` is deliberately NOT rounded before
-   * use, because the constraint does not round it either.
+   * `numeric`. The trigger evaluates the values as STORED, so an input carrying
+   * more decimal places than its column would be rounded on storage while the
+   * computed tax used the unrounded figure — and the row would be rejected with an
+   * opaque message. `Decimal` already refuses over-scale input at the boundary;
+   * this makes the guarantee structural rather than dependent on that check
+   * staying in place.
    */
   public async insertItem(
     db: DbHandle,
@@ -1002,14 +1020,13 @@ export class QuotationRepository extends Repository {
           price_rule_ref, description, currency_code,
           captured_unit_price, captured_quantity, captured_discount, captured_tax_rate,
           captured_tax_amount, captured_line_total, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
-               $14::numeric(18,4), $15::numeric(12,3), $16::numeric(18,4), $17::numeric(9,6),
-               round((($14::numeric(18,4) * $15::numeric(12,3)) - $16::numeric(18,4))
-                     * $17::numeric(9,6), 4),
-               round((($14::numeric(18,4) * $15::numeric(12,3)) - $16::numeric(18,4))
-                     + round((($14::numeric(18,4) * $15::numeric(12,3)) - $16::numeric(18,4))
-                             * $17::numeric(9,6), 4), 4),
-               $18)
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
+              $14::numeric(18,4), $15::numeric(12,3), $16::numeric(18,4), $17::numeric(9,6),
+              money.tax, money.net + money.tax, $18
+         FROM (SELECT net, shared.round_to_minor_unit(net * $17::numeric(9,6), $13) AS tax
+                 FROM (SELECT shared.round_to_minor_unit(
+                                ($14::numeric(18,4) * $15::numeric(12,3)) - $16::numeric(18,4),
+                                $13) AS net) AS line) AS money
        RETURNING ${ITEM_COLUMNS}`,
       [
         context.principal.tenantId,

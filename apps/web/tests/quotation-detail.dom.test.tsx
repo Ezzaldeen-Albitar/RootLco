@@ -980,6 +980,113 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
       SERVICE_ID
     );
   });
+
+  it('states a discount finer than the currency above the lines, with what was typed kept (D1)', async () => {
+    /*
+     * A fixed discount is money, so it must fit the quotation currency's minor unit
+     * (ADR-023, D1) — which only the server knows once it has priced the lines. The
+     * refusal arrives against `body.lines[0].discount`, as the leaf `discount`, and
+     * is stated over the lines exactly like the quantity refusal above.
+     */
+    createQuotationRevision.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { discount: 'form.violation.minor_unit_scale' },
+        correlationId: 'corr-minor-unit',
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderDetail();
+    const form = screen.getByRole('form', { name: EN['quotations.revise.heading'] as string });
+    await user.type(
+      within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '1');
+    await user.type(within(form).getByLabelText(labelled('quotations.lines.discount')), '0.0005');
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.revise.submit'] as string })
+    );
+    await waitFor(() => expect(createQuotationRevision).toHaveBeenCalledTimes(1));
+    expect(
+      await within(form).findByText(EN['form.violation.minor_unit_scale'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('quotations.lines.discount'))).toHaveValue(
+      '0.0005'
+    );
+  });
+
+  it('marks the discount of the line the server names: red, described, focused, and cleared once corrected (D1)', async () => {
+    /*
+     * The adapter keeps the position of `body.lines[1].discount` as
+     * `lines.1.discount`, so on a quotation with two lines the sentence goes
+     * beside the SECOND line's discount — never the first, and not only above
+     * the lines — with `aria-invalid` on that box and the cursor in it. What was
+     * typed stays, and correcting the figure withdraws the complaint.
+     */
+    createQuotationRevision.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: {
+          discount: 'form.violation.minor_unit_scale',
+          'lines.1.discount': 'form.violation.minor_unit_scale',
+        },
+        correlationId: 'corr-minor-unit-2',
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderDetail();
+    const form = screen.getByRole('form', { name: EN['quotations.revise.heading'] as string });
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.lines.add'] as string })
+    );
+    const lineGroup = (n: number) =>
+      within(form).getByRole('group', { name: `${EN['quotations.lines.one'] as string} ${n}` });
+    for (const n of [1, 2]) {
+      const group = within(lineGroup(n));
+      await user.type(
+        group.getByLabelText(labelled('pricing.picker.serviceReference')),
+        SERVICE_ID
+      );
+      await user.type(group.getByLabelText(labelled('quotations.lines.quantity')), '1');
+    }
+    await user.type(
+      within(lineGroup(1)).getByLabelText(labelled('quotations.lines.discount')),
+      '0.500'
+    );
+    const offending = within(lineGroup(2)).getByLabelText(
+      labelled('quotations.lines.discount')
+    ) as HTMLInputElement;
+    await user.type(offending, '0.0005');
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.revise.submit'] as string })
+    );
+    await waitFor(() => expect(createQuotationRevision).toHaveBeenCalledTimes(1));
+
+    const sentence = EN['form.violation.minor_unit_scale'] as string;
+    expect(await within(lineGroup(2)).findByText(sentence)).toBeVisible();
+    expect(offending).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(offending).toHaveFocus());
+    expect(offending.value).toBe('0.0005');
+    // Only that line: the first discount is not marked, and the sentence is not
+    // repeated above the lines.
+    const first = within(lineGroup(1)).getByLabelText(labelled('quotations.lines.discount'));
+    expect(first).not.toHaveAttribute('aria-invalid', 'true');
+    expect(within(lineGroup(1)).queryByText(sentence)).toBeNull();
+    expect(within(form).getAllByText(sentence)).toHaveLength(1);
+
+    // Correcting the figure withdraws the complaint.
+    await user.clear(offending);
+    await user.type(offending, '0.500');
+    await waitFor(() => expect(offending).not.toHaveAttribute('aria-invalid', 'true'));
+    expect(within(form).queryByText(sentence)).toBeNull();
+  });
 });
 
 /**

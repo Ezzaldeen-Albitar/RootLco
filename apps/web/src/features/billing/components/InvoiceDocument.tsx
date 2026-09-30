@@ -7,7 +7,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 
-import type { InvoiceDetail, InvoicePreview } from '../billing-contract';
+import type { InvoiceDetail, InvoicePreview, Settlement } from '../billing-contract';
 import { Money, Unavailable, When } from './shared';
 
 /**
@@ -62,6 +62,7 @@ export function InvoiceDocument({
   descriptions,
   workOrderNumber,
   payer,
+  settlement = null,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -71,6 +72,12 @@ export function InvoiceDocument({
   readonly workOrderNumber: string | null;
   /** Who the invoice bills, as the screen could name them. */
   readonly payer: PayerName;
+  /**
+   * The credit and payment positions the screen read (Owner decision D7), printed
+   * beside the status when known. Omitted — never guessed — when the reader may
+   * not see amounts or the invoice claims nothing yet.
+   */
+  readonly settlement?: Settlement | null;
 }) {
   const invoice = detail.invoice;
   const describe = (line: InvoiceDetail['lines'][number]): ReactNode | null => {
@@ -165,6 +172,26 @@ export function InvoiceDocument({
               {translateDynamic(messages, `invoices.status.${invoice.status}`)}
             </dd>
           </div>
+          {settlement ? (
+            <>
+              <div>
+                <dt className="inline text-text-muted">
+                  {translate(messages, 'invoices.settlement.credit')}{' '}
+                </dt>
+                <dd className="inline" data-testid="invoice-print-credit-status">
+                  {translateDynamic(messages, `invoices.creditStatus.${settlement.creditStatus}`)}
+                </dd>
+              </div>
+              <div>
+                <dt className="inline text-text-muted">
+                  {translate(messages, 'invoices.settlement.payment')}{' '}
+                </dt>
+                <dd className="inline" data-testid="invoice-print-payment-status">
+                  {translateDynamic(messages, `invoices.paymentStatus.${settlement.paymentStatus}`)}
+                </dd>
+              </div>
+            </>
+          ) : null}
           <div>
             <dt className="inline text-text-muted">
               {translate(messages, 'invoices.print.issuedAt')}{' '}

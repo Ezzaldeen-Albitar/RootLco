@@ -216,7 +216,11 @@ export async function draftRevision(c: Q, quotation: string, revNo: number): Pro
   ).rows[0].id;
 }
 
-/** Adds a service line to a draft revision (tax + line total computed in SQL to satisfy CHECKs). */
+/**
+ * Adds a service line to a draft revision, the tax and line total computed in SQL
+ * exactly as `tg_quotation_items_money` requires (ADR-023, D1): line net and tax
+ * each rounded half-up to the currency's minor unit, the line total their sum.
+ */
 export async function addServiceItem(
   c: Q,
   revision: string,
@@ -233,10 +237,11 @@ export async function addServiceItem(
          (tenant_id, company_id, branch_id, quotation_revision_id, line_number, item_kind, service_id,
           currency_code, captured_unit_price, captured_quantity, captured_discount, captured_tax_rate,
           captured_tax_amount, captured_line_total, created_by)
-       VALUES ($1,$2,$3,$4,$5,'service',$6,'USD',$7,$8,$9,$10,
-          round(($7::numeric*$8::numeric - $9::numeric) * $10::numeric, 4),
-          round($7::numeric*$8::numeric - $9::numeric + round(($7::numeric*$8::numeric - $9::numeric) * $10::numeric, 4), 4),
-          $11) RETURNING id`,
+       SELECT $1,$2,$3,$4,$5,'service',$6,'USD',$7,$8,$9,$10, m.tax, m.net + m.tax, $11
+         FROM (SELECT n.net, shared.round_to_minor_unit(n.net * $10::numeric(9,6), 'USD') AS tax
+                 FROM (SELECT shared.round_to_minor_unit(
+                                $7::numeric(18,4) * $8::numeric(12,3) - $9::numeric(18,4), 'USD') AS net) n) m
+       RETURNING id`,
       [T, CO, BR, revision, line, service, unit, qty, discount, taxRate, U]
     )
   ).rows[0].id;

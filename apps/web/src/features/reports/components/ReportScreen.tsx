@@ -16,6 +16,7 @@ import {
   fieldHeading,
   formatReportTime,
   groupDisplayLabel,
+  reportCreditStatusLabel,
   reportStateLabel,
   reportTitle,
   runTitle,
@@ -677,6 +678,10 @@ function CellValue({
   // it is English whatever the reader's language (Browser QA part 7, row 6.7).
   const state = column.key === 'state' ? reportStateLabel(messages, cell.value) : null;
   if (state !== null) return <bdi>{state}</bdi>;
+  // An invoice's credit status (D7) is said in the reader's language too.
+  const credit =
+    column.key === 'creditStatus' ? reportCreditStatusLabel(messages, cell.value) : null;
+  if (credit !== null) return <bdi>{credit}</bdi>;
   if (cell.label !== null) return <bdi>{cell.label}</bdi>;
   if (cell.value !== null) return <MachineName value={cell.value} />;
   return (

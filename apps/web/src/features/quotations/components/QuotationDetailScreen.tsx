@@ -64,6 +64,7 @@ import {
   LinesEditor,
   lineErrors,
   lineValues,
+  serverLineRefusals,
   linesDirty,
   LinesTable,
   Money,
@@ -1359,6 +1360,10 @@ function NewRevisionPanel({
         await onCreated();
         return;
       }
+      // A refused discount is marked on its own line, focused and withdrawn once
+      // corrected (ADR-023, D1): `lines` here is the draft that was sent.
+      const placed = serverLineRefusals(lines, result.state);
+      if (Object.keys(placed).length > 0) localRefuse(placed);
       setOutcome(
         result.state.status === 'conflict' &&
           (result.state.messageKey === undefined ||

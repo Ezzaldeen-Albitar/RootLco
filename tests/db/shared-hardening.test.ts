@@ -236,6 +236,14 @@ describe('module security posture', () => {
       'shared.complete_document_scan',
       'shared.document_deletion_eligibility',
       'shared.document_ids_for_entity',
+      // P1-32-PRE-OD-FD1 (ADR-023, D1) money rounding. Both are STABLE SECURITY
+      // INVOKER with an empty search_path and only read shared.currencies, which
+      // app_runtime can already SELECT, so the grant confers no new power. It is
+      // REQUIRED: the invoker trigger quo.guard_quotation_item_money, the invoker
+      // routines quo.issue_revision, quo.guard_revision_totals,
+      // sal.create_counter_sale_invoice and sal.request_return_credit_note, and
+      // the quotation repository's line-total query all call them as the caller.
+      'shared.fits_minor_unit',
       // P1-32 friendly search. Pure IMMUTABLE SECURITY INVOKER text folding that
       // reads no table. The grant is REQUIRED rather than convenient:
       // crm.normalize_name, crm.normalize_phone, veh.normalize_vin and
@@ -246,6 +254,8 @@ describe('module security posture', () => {
       'shared.missing_translations',
       'shared.next_display_number',
       'shared.resolve_setting',
+      // P1-32-PRE-OD-FD1 money rounding; see shared.fits_minor_unit above.
+      'shared.round_to_minor_unit',
     ]);
   });
 

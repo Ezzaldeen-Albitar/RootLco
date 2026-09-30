@@ -2,6 +2,7 @@
 
 import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage } from '@/components/data-table/use-server-table';
+import { violationMessageKey, type ApiFailure } from '@/lib/api/client';
 import { authorizedClient } from '@/lib/api/server-client';
 import {
   STATUS_BY_KIND,
@@ -189,6 +190,35 @@ export async function listDiscountApprovals(
 }
 
 /**
+ * A refused line discount, kept with the position of its line (ADR-023, D1).
+ *
+ * The API refuses a fixed discount finer than the quotation currency's minor
+ * unit against `body.lines[<n>].discount`. `fromStateRefusal` keeps only the
+ * leaf of a path, so on its own that arrives as `discount` with the line gone,
+ * and the builder could only say "a discount is wrong" above every line. The
+ * position is added here as `lines.<n>.discount` — the key
+ * `serverLineRefusals` in `components/shared.tsx` reads — so the builder can
+ * mark the discount box of that very line. The leaf entry is left as it was.
+ * Only a catalogue key is ever produced, never server text.
+ */
+const LINE_DISCOUNT_PATH = /^body\.lines(?:\[(\d+)\]|\.(\d+))\.discount$/;
+
+function withLineDiscountRefusals(state: ActionState, failure: ApiFailure): ActionState {
+  const violations = failure.problem?.violations;
+  if (!Array.isArray(violations)) return state;
+  const placed: Record<string, string> = {};
+  for (const violation of violations) {
+    if (typeof violation?.path !== 'string' || typeof violation?.rule !== 'string') continue;
+    const match = LINE_DISCOUNT_PATH.exec(violation.path);
+    if (match === null) continue;
+    const field = `lines.${match[1] ?? match[2]}.discount`;
+    if (!(field in placed)) placed[field] = violationMessageKey(violation.rule);
+  }
+  if (Object.keys(placed).length === 0) return state;
+  return { ...state, fieldErrors: { ...(state.fieldErrors ?? {}), ...placed } };
+}
+
+/**
  * Create a quotation on a work order (`quo.quotation-create`). The server
  * prices every line and measures any discount against the company's threshold;
  * a discount that reaches it comes back as a PENDING request on the revision,
@@ -201,7 +231,12 @@ export async function createQuotation(
   const client = await authorizedClient();
   if (!client) return { state: expired(attempt), created: null };
   const result = await client.send<QuotationDetail>('POST', '/api/v1/quotations', body);
-  if (!result.ok) return { state: fromStateRefusal(result, attempt), created: null };
+  if (!result.ok) {
+    return {
+      state: withLineDiscountRefusals(fromStateRefusal(result, attempt), result),
+      created: null,
+    };
+  }
   return {
     state: {
       ...success('quotations.create.success', attempt),
@@ -230,7 +265,12 @@ export async function createQuotationRevision(
     body,
     { ifMatch }
   );
-  if (!result.ok) return { state: fromStateRefusal(result, attempt), created: null };
+  if (!result.ok) {
+    return {
+      state: withLineDiscountRefusals(fromStateRefusal(result, attempt), result),
+      created: null,
+    };
+  }
   return {
     state: {
       ...success('quotations.revision.created', attempt),

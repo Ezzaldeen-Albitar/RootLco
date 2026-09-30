@@ -3172,3 +3172,151 @@ Residual items from the contract review of this slice (fix round 1), one line ea
 - hosted-clean-room is red only on `validate:p1-27-closing-values` (stale unit and web run records,
   and a unit file count of 144 against 145 in the tree), the records-step cascade; the recorded
   tiers are retaken at the final head.
+
+### Finance decision record, money at the minor unit, and the derived credit status (P1-32-PRE-OD-FD1)
+
+The Owner's sales and finance decisions D1–D17 of 2026-09-30 are recorded in
+[ADR-023](../../adr/ADR-023-sales-and-finance-policy-decisions.md), with a mapping to the pull
+requests that implement them. This slice implements D1 (money rounded half-up, per line, to the
+currency's minor unit; entered amounts that are money checked against it, unit prices at their own scale) and D7 (the credit status
+derived, apart from the payment and refund status). One forward migration,
+`20260930100000_sal_minor_unit_rounding.sql` (163 migrations). No route, operation, permission code
+or policy is added; `sal.invoice-outstanding-read` gains a `settlement` block and the
+invoice-and-payment report a `creditStatus` column, both additive.
+
+| Route                                       | What changed                                                                                                                                                                                                                                                                       |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/invoices`                                 | The open balance shows Credit (none / partly / fully credited), Payment (not paid / partly paid / paid / nothing to pay) and Refund (none), with the credited and paid amounts; the printed copy states the credit and payment positions (D7).                                     |
+| `/reports`                                  | The invoice-and-payment report has a Credit column, worded in the reader's language, apart from the invoice's status (D7).                                                                                                                                                         |
+| `/quotations`, `/quotations/{id}`           | A line is priced at the minor unit (a JOD 16% line of 12.345 is 1.975 tax, 14.320 total); a fixed discount finer than the currency is refused beside the discount of the line the server names, red, described and focused, cleared once corrected, with what was typed kept (D1). |
+| `/pricing/{priceListId}`                    | A price rule's amount is a unit price: it keeps up to four decimals and is not held to the list currency (D1).                                                                                                                                                                     |
+| `/inventory/items/{itemId}` (selling price) | A selling price is a unit price: it keeps up to four decimals and is not held to its currency (D1).                                                                                                                                                                                |
+| `/administration/discount-threshold`        | An amount threshold finer than its currency is refused on the value field; a percentage keeps its own scale (D1).                                                                                                                                                                  |
+| `/inventory/counter-sales`                  | Each line's net and tax are rounded to the sale currency's minor unit (D1).                                                                                                                                                                                                        |
+
+Wrapper extensions: none. The field errors use the existing server-violation path and one new
+catalogued message (`form.violation.minor_unit_scale`). The quotation adapters keep the line
+position of a `body.lines[<n>].discount` refusal (`lines.<n>.discount`), and the line editor records
+it as the form's own refusal on that line's discount box; a refusal with no position is still folded
+into the alert above the lines, as for `quantity`. The design gallery is unchanged.
+
+Known limitations of this slice, one line each:
+
+- Approval-limit amounts are not yet checked against the minor unit; planned with D13.
+- The threshold form and the quotation discount learn of a sub-minor-unit amount from the server;
+  they do not refuse it before sending, because only the server holds `shared.currencies`.
+- The quotation service still refuses a quantity whose product with the unit price is not exact at
+  four decimals (`inexact_line_base`); with totals now summed from rounded lines that refusal is no
+  longer needed for reconciliation, and relaxing it is left to a later slice.
+- The report's credit status is computed at run time, like its open receivable; the as-of period
+  snapshot is D16.
+- Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
+  they run in hosted CI. Focused DB and backend files ran against a disposable database only.
+- The unit tier gains one test file (`tests/unit/od-finance-rounding.test.ts`); the web tier gains
+  cases in existing files (no web test file added or removed); the recorded tiers are retaken at the
+  final head.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- dependency-security (job 109764762163) is red on npm audit of the full web tree (1 moderate, 1
+  high; the production tree is clean); it passed on base d55e85d0 and this diff touches no manifest
+  or lockfile, but it is a required check and blocks the merge until it is handled on develop.
+- Arabic wording: the credit status is labelled "الخصم" with "لا خصم" and "مخصومة بالكامل"
+  (`invoices.settlement.credit`, `reports.field.creditStatus`), the same word as the discount label,
+  following the existing "إشعار الخصم" term for a credit note; Owner review of the wording is advised.
+- An invoice issued before the rule with a four-decimal gross keeps its snapshot, and its residue
+  can be cleared only by a full return (a receipt and a manual credit note are held to the minor
+  unit), so GAP-01 is fixed for new documents only; ADR-023 now says so.
+- `quo.guard_revision_totals`: the only path to it on a legacy issued revision is an admin or owner
+  partial delete of items; app_runtime has no DELETE grant and issued items are frozen.
+- The warranty payer split is always `NO_WARRANTY_SHARE` (`invoice-service.ts:661`); a percentage
+  split would also need `customer_pay_amount = gross - warranty` (`billing-repository.ts:1808-1809`)
+  rounded to the minor unit.
+- Verified by the review: ADR-023 D1–D17 match the Owner's clarifications and the spot-checked
+  citations resolve; the re-issued counter-sale and return-credit functions differ from their
+  predecessors only in rounding; D7 matches `sal.invoice_open_receivable`; the settlement is
+  returned only after `balanceIsTrustworthy`; invoice status stays `issued`.
+- Not run locally in the review: test:db, test:backend, test:web-e2e and the builds; the review
+  relied on PR CI run 36677214075 at 70596468 (integration-tests and authenticated-browser green; the
+  database tier red only on shared-hardening, addressed in this round).
+
+Residual items from the contract review of this slice (fix round 2), one line each:
+
+- The two generated P1-31 matrices (`error-path-matrix.md`, `isolation-matrix.md`) were
+  regenerated with `P1_31_MATRIX_WRITE=1`, so they now cite `tests/db/shared-hardening.test.ts:346`
+  after round 1 added ten lines to that file; they were not edited by hand.
+- dependency-security (job 109785883778) is still red on npm audit of the full web tree (1 moderate,
+  1 high; the production tree is clean), as in round 1; this diff touches no manifest or lockfile,
+  but it is a required check and blocks the merge until it is handled on develop.
+- The dated, hand-written P1-31 records still cite `tests/db/shared-hardening.test.ts:336`, now ten
+  lines off (`determination-evidence-index-2026-09-18.md:252`, `reviewer-packet-2026-09-18.md:155`);
+  no gate reads them, and re-anchoring a dated record is the records owner's decision.
+- An invoice issued before the rule with a four-decimal gross (for example 2.1481 JOD) keeps that
+  residue; only a full return clears it, as ADR-023 Consequences states and
+  `tests/db/sal-minor-unit-rounding.test.ts` pins with `fits = false`.
+- Arabic wording: the credit status uses "الخصم" / "مخصومة بالكامل", the same word as the discount
+  label (carried from round 1); Owner review of the wording is advised.
+- The warranty payer split is always `NO_WARRANTY_SHARE` (`invoice-service.ts:661`); a percentage
+  split would need `customer_pay_amount` rounded to the minor unit.
+- Quotation discounts: `assertMinorUnitScale` throws on the first offending discount, so one line is
+  marked per submit and the next submit marks the next; acceptable, but not all at once.
+- Round-1 defects re-checked and closed: shared-hardening lists `shared.fits_minor_unit` and
+  `shared.round_to_minor_unit` with the reason (database-security 109785883963 and the database
+  job 109785740224 green); `functionCountDiscrepancyNote` moved (`tests/ci/baseline-integrity.test.ts`
+  passes); price-rule and selling-price refusals removed, with the p1-20 boundary pins back to base;
+  new DB cases cover a superseded four-decimal issued revision and an exact outstanding balance on a
+  four-decimal issued invoice (a BigInt probe of 134,136 issuable legacy revisions found none where
+  the old rounded sum differs from the sum of per-line roundings); the discount refusal lands on its
+  own line with DOM and adapter tests.
+- Probe: JOD 12.345 x 1 at 16% gives net 12.345, tax 1.975, total 14.320, as ADR-023 and the backend
+  test state; unit prices are not forced to the currency scale, since the counter-sale and quotation
+  trigger lines round only the net and tax money.
+- Not run locally (machine memory): the full root unit tier; the focused
+  `tests/ci/p1-31-error-path-matrix.test.ts` ran (8 of 8) and hosted CI runs the tier.
+
+Residual items from the contract review of this slice (fix round 3), one line each:
+
+- Comments corrected, no behaviour change: `serverNow` has its own doc block again, and the invoice
+  preview, billing module, quotation revision route, pricing discount base, quotation contract and
+  `lineBase` comments now name `tg_quotation_items_money` and the sum-of-rounded-lines rule (D1);
+  `lineBase` keeps its scale-4 exactness refusal for the discount ceiling
+  (`ck_quotation_items_discount`), no longer for the removed SUM expression.
+- dependency-security (job 109793354851) is still red: audit-web-full reports 1 moderate and 1 high,
+  audit-web-production is clean; red since round 1, no manifest or lockfile changed, but it is a
+  required check and blocks the merge until it is handled on develop.
+- hosted-clean-room (job 109793354507) is red only in `validate:p1-27-closing-values`
+  (RUN_RECORD_STALE for the unit and web runs at bd7095a7; RUN_RECORD_FILE_COUNT_DISAGREES, unit 145
+  against 146 for the new `tests/unit/od-finance-rounding.test.ts`), the records-step cascade; its
+  three test tiers passed, and locally `verify:policies` fails only on that validator.
+- A legacy invoice whose gross has a fourth decimal (a probe: 14.3202 credited 14.320) reads
+  `partly_credited` and `open` permanently, since a receipt or manual credit note cannot clear
+  0.0002; ADR-023 Consequences documents it, legacy data only.
+- A legacy draft revision carrying a sub-minor-unit residue is refused at issue ("re-priced by a
+  revision", ADR-023); whether a new revision can be cut from an unissued draft was not checked, and
+  if not, that draft is stranded; no live data path exists (business tables start empty, no hosted
+  environment).
+- Arabic wording: the credit status uses "الخصم" / "مخصومة بالكامل", the same word as the discount
+  label (carried from rounds 1 and 2); Owner review of the wording is advised.
+- The warranty payer split is always `NO_WARRANTY_SHARE`; a percentage split would need
+  `customer_pay_amount = round(net + tax, 4) - warranty` (`billing-repository.ts:1808-1809`) rounded
+  to the minor unit.
+- The server CSV export (`report-export-service.ts:189`) emits the raw `creditStatus` code
+  (`partly_credited`), as it already does for `status`; consistent with existing export behaviour.
+- No web DOM test covers the amount-threshold `minor_unit_scale` refusal on the discount threshold
+  screen; it uses the existing `outcome.fieldErrors.thresholdValue` path, and the backend refusal is
+  covered by `tests/backend/od-finance-rounding.test.ts:485`.
+- No test proves a return is still accepted against a fully credited invoice; the backend test pins
+  the status as `issued` (`od-finance-rounding.test.ts:586`) and `inv.lock_return_source` is
+  unchanged, so the path is preserved by construction.
+- Other comments outside this round's list still name the removed line constraints
+  (`tests/backend/p1-22-invoice-lifecycle.test.ts:29` and `:326`, and the P1-30 A2 seam note in
+  `scripts/check-operation-test-coverage.mjs`); left for a later pass.
+- Re-checked and holding at 7645af5e: D1 rounds only net and tax per line to the minor unit, totals
+  are sums of rounded lines, discounts and amount thresholds are refused with `minor_unit_scale`
+  while price rules and item sale prices are not, the migration writes no row, and issued snapshots
+  are pinned by DB cases; D7 derives from approved credits only, settles only after
+  `balanceIsTrustworthy`, keeps payment and refund apart, and never sets the invoice to credited.
+- Probe (scratchpad script against the real modules): `assertMinorUnitScale` accepts 1.975 and
+  12.3450 JOD and 0.10 USD and refuses 1.9752 JOD and 0.0050 USD; `deriveCreditStatus` gives none,
+  partly_credited and credited at 0, 14.319 and 14.320 against 14.320; `derivePaymentStatus` gives
+  nothing_due for (0, 0) and paid for (5, 0); all match ADR-023.

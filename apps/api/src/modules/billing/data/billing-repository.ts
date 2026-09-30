@@ -289,6 +289,21 @@ export interface OpenReceivableRow {
 }
 
 /**
+ * What has been credited and what has been paid against one invoice (Owner
+ * decision D7, ADR-023), as decimal STRINGS in the invoice's currency.
+ *
+ * The same predicates `sal.invoice_open_receivable` subtracts, and no others:
+ * `credited` is the sum of APPROVED credit notes, `paid` the sum of allocations
+ * whose receipt is not reversed. `gross` is `null` when the header amounts are
+ * hidden or absent. Nothing is stored.
+ */
+export interface CreditPositionRow {
+  readonly gross: string | null;
+  readonly credited: string;
+  readonly paid: string;
+}
+
+/**
  * One invoice as the branch list returns it (Owner directive, P1-32-PRE-OD-UX).
  *
  * The header exactly as `findInvoice` reads it — money folded to `null` where
@@ -376,6 +391,12 @@ export interface InvoiceDocumentRow {
    * second derivation would be a second authority for the same money.
    */
   readonly creditNoteAmount: string | null;
+  /**
+   * The invoice's effective credits — the sum of its APPROVED credit notes, the
+   * predicate `sal.invoice_open_receivable` subtracts — as a decimal string; null
+   * on a credit note. What the credit status is derived from (D7, ADR-023).
+   */
+  readonly creditedAmount: string | null;
   /**
    * The party this document names, and the ROLE under which it names them.
    *
@@ -493,15 +514,15 @@ export interface CommercialSourceRow {
   readonly itemCount: number;
   readonly approvedCount: number;
   readonly rejectedCount: number;
-  /** `Σ round(unit × qty, 4)`. */
+  /** `Σ (line gross − tax + discount)`: each line's rounded net plus its discount. */
   readonly subtotal: string;
   /** `Σ captured_discount`. Already `numeric(18,4)`, so no rounding step. */
   readonly discountTotal: string;
-  /** `Σ captured_tax_amount`, validated by `ck_quotation_items_tax_amount`. */
+  /** `Σ captured_tax_amount`, validated by `tg_quotation_items_money`. */
   readonly taxTotal: string;
-  /** `Σ round(unit × qty − discount, 4)` — what becomes `net_total`. */
+  /** `Σ (line gross − tax)`, the rounded line nets — what becomes `net_total`. */
   readonly netTotal: string;
-  /** `round(netTotal + taxTotal, 4)` — the shape `ck_invoice_amounts_gross` enforces. */
+  /** `Σ captured_line_total` = `netTotal + taxTotal`, as `ck_invoice_amounts_gross` requires. */
   readonly grossTotal: string;
 }
 
@@ -511,7 +532,7 @@ export interface CommercialSourceRow {
  * `netAmount`, `taxAmount` and `grossAmount` are computed in `numeric` by the
  * query, from the captured values `quo` froze when the revision was issued. Tax
  * comes from `captured_tax_rate`/`captured_tax_amount` — configuration the
- * pricing layer resolved at quotation time and `ck_quotation_items_tax_amount`
+ * pricing layer resolved at quotation time and `tg_quotation_items_money`
  * validated — so nothing here defaults, guesses or computes a rate.
  */
 export interface CommercialSourceLineRow {
@@ -989,6 +1010,48 @@ export class BillingRepository extends Repository {
   }
 
   /**
+   * An invoice's credit position (D7): its gross, its effective credits and what
+   * has been paid against it.
+   *
+   * `credited` and `paid` use exactly the predicates `sal.invoice_open_receivable`
+   * subtracts — approved credit notes, and allocations of receipts that are not
+   * reversed — so `gross − paid − credited` is the open receivable the same read
+   * reports, and the two can never tell different stories. A pending or rejected
+   * credit note is not a credit. Both sums are cast to `numeric(18,4)` so an empty
+   * sum reads `0.0000` at the scale every other amount carries.
+   *
+   * The caller must have established that the balance is trustworthy
+   * (`balanceIsTrustworthy`): every input is gated by `sal.finance.view`.
+   */
+  public async creditPosition(
+    db: DbHandle,
+    scope: { readonly invoiceId: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<CreditPositionRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ gross: string | null; credited: string; paid: string }>(
+      db,
+      `SELECT a.gross_total::text AS gross,
+              COALESCE((SELECT sum(cn.amount) FROM sal.credit_notes cn
+                         WHERE cn.tenant_id = i.tenant_id AND cn.invoice_id = i.id
+                           AND cn.approval_state = 'approved'), 0)::numeric(18,4)::text AS credited,
+              COALESCE((SELECT sum(pa.amount) FROM sal.payment_allocations pa
+                          JOIN sal.receipts r
+                            ON r.tenant_id = pa.tenant_id AND r.company_id = pa.company_id
+                           AND r.branch_id = pa.branch_id AND r.id = pa.receipt_id
+                         WHERE pa.tenant_id = i.tenant_id AND pa.invoice_id = i.id
+                           AND r.status <> 'reversed'), 0)::numeric(18,4)::text AS paid
+         FROM sal.invoices i
+         LEFT JOIN sal.invoice_amounts a
+           ON a.tenant_id = i.tenant_id AND a.company_id = i.company_id
+          AND a.branch_id = i.branch_id AND a.invoice_id = i.id AND a.deleted_at IS NULL
+        WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
+          AND i.id = $4 AND i.deleted_at IS NULL`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId]
+    );
+    return row ? { gross: row.gross, credited: row.credited, paid: row.paid } : null;
+  }
+
+  /**
    * The branch's BILLING documents in a period, with the invoice totals of the
    * whole selection (P1-31 P-11, engine slice 4).
    *
@@ -1138,6 +1201,7 @@ export class BillingRepository extends Repository {
       invoiced_amount: string | null;
       outstanding: string | null;
       credit_note_amount: string | null;
+      credited_amount: string | null;
       sort_value: string;
     }>(
       db,
@@ -1149,13 +1213,17 @@ export class BillingRepository extends Repository {
                 a.gross_total::text                               AS invoiced_amount,
                 round(sal.invoice_open_receivable(i.id), 4)::text AS outstanding,
                 NULL::text                                        AS credit_note_amount,
+                COALESCE((SELECT sum(cn.amount) FROM sal.credit_notes cn
+                           WHERE cn.tenant_id = i.tenant_id AND cn.invoice_id = i.id
+                             AND cn.approval_state = 'approved'), 0)::numeric(18,4)::text
+                                                                  AS credited_amount,
                 ${cursorTimestamp('i.issued_at')}                 AS sort_value
            ${invoiceScope}
              ${after('i.issued_at', 'i.id')}
          UNION ALL
          SELECT 'credit_note'::text, c.id, NULL, c.issued_at, i.payer_partner_id,
                 'invoice_payer'::text,
-                c.currency_code, c.approval_state, NULL, NULL, c.amount::text,
+                c.currency_code, c.approval_state, NULL, NULL, c.amount::text, NULL,
                 ${cursorTimestamp('c.issued_at')}
            ${creditNoteScope}
             ${after('c.issued_at', 'c.id')}
@@ -1193,6 +1261,7 @@ export class BillingRepository extends Repository {
         invoicedAmount: row.invoiced_amount,
         outstanding: row.outstanding,
         creditNoteAmount: row.credit_note_amount,
+        creditedAmount: row.credited_amount,
         sortValue: row.sort_value,
       })),
     };
@@ -1341,8 +1410,9 @@ export class BillingRepository extends Repository {
    * `captured_unit_price`, `captured_quantity`, `captured_discount`,
    * `captured_tax_rate` and `captured_tax_amount`, frozen when the revision was
    * issued (`quo.guard_quotation_item` refuses any write once the parent leaves
-   * draft), and `ck_quotation_items_tax_amount` has already validated that
-   * `captured_tax_amount = round((unit × qty − discount) × rate, 4)`.
+   * draft), and `tg_quotation_items_money` has already validated that
+   * `captured_tax_amount` is the rounded line net times the rate, rounded half-up
+   * to the currency's minor unit (ADR-023, D1).
    *
    * So every rate and every discount in the preview is captured configuration.
    * Nothing here reads a live price list, resolves a tax rate, or defaults one:
@@ -1372,11 +1442,11 @@ export class BillingRepository extends Repository {
    * ### Round-then-sum, not sum-then-round
    *
    * `sal.issue_invoice` recomputes the header from `Σ` of the *already rounded*
-   * per-line `sal.invoice_line_amounts` (L-fin-3). The aggregate below rounds each
-   * line first and then sums, so the preview equals what issue will write. The
-   * identity `grossTotal = round(subtotal − discountTotal + taxTotal, 4)` also
-   * holds exactly here, because `captured_discount` is `numeric(18,4)`: subtracting
-   * a scale-4 value commutes with rounding to scale 4.
+   * per-line `sal.invoice_line_amounts` (L-fin-3). The aggregate below sums the
+   * quotation lines' own rounded amounts (ADR-023, D1: document totals are sums
+   * of rounded lines), so the preview equals what issue will write. A line's
+   * subtotal is `captured_line_total − captured_tax_amount + captured_discount`,
+   * so `grossTotal = subtotal − discountTotal + taxTotal` holds by construction.
    *
    * `count(it.id)` rather than `count(*)`: the join to items is a LEFT JOIN, so
    * `count(*)` would report 1 for a revision with no items and the caller could not
@@ -1409,15 +1479,13 @@ export class BillingRepository extends Repository {
               count(it.id)::int AS item_count,
               count(d.id) FILTER (WHERE d.decision = 'approved')::int AS approved_count,
               count(d.id) FILTER (WHERE d.decision = 'rejected')::int AS rejected_count,
-              COALESCE(sum(round(it.captured_unit_price * it.captured_quantity, 4)), 0)::text
-                AS subtotal,
+              COALESCE(sum(it.captured_line_total - it.captured_tax_amount
+                           + it.captured_discount), 0)::text AS subtotal,
               COALESCE(sum(it.captured_discount), 0)::text AS discount_total,
               COALESCE(sum(it.captured_tax_amount), 0)::text AS tax_total,
-              COALESCE(sum(round(it.captured_unit_price * it.captured_quantity
-                                 - it.captured_discount, 4)), 0)::text AS net_total,
-              round(COALESCE(sum(round(it.captured_unit_price * it.captured_quantity
-                                       - it.captured_discount, 4)), 0)
-                    + COALESCE(sum(it.captured_tax_amount), 0), 4)::text AS gross_total
+              COALESCE(sum(it.captured_line_total - it.captured_tax_amount), 0)::text
+                AS net_total,
+              COALESCE(sum(it.captured_line_total), 0)::text AS gross_total
          FROM quo.quotations q
          JOIN quo.quotation_revisions r
            ON r.tenant_id = q.tenant_id AND r.company_id = q.company_id
@@ -1458,15 +1526,16 @@ export class BillingRepository extends Repository {
   /**
    * The approved commercial lines of one revision, in the shape the invoice stores.
    *
-   * The per-line amounts are computed by the same `numeric` expressions the
-   * aggregate sums, so a line list and a total can never disagree:
-   * `net = round(unit × qty − discount, 4)`, `tax = captured_tax_amount`,
-   * `gross = round(net + tax, 4)`. That last value is provably
-   * `captured_line_total`, since `ck_quotation_items_line_total` already fixes
-   * `captured_line_total = round(unit × qty − discount + tax, 4)` and adding a
-   * scale-4 tax commutes with rounding to scale 4 — so the invoice line inherits an
-   * amount the quotation's own CHECK constraint validated, rather than a
-   * recomputation of it.
+   * The per-line amounts are the quotation line's own, copied rather than
+   * recomputed, and the aggregate sums the same expressions, so a line list and a
+   * total can never disagree: `gross = captured_line_total`,
+   * `tax = captured_tax_amount`, `net = gross − tax` (ADR-023, D1). Since
+   * `tg_quotation_items_money` fixes `captured_line_total = line net + tax`, each
+   * rounded half-up to the currency's minor unit, `net` IS the rounded line net —
+   * and for a line written under the earlier four-decimal rule it is exactly
+   * `round(unit × qty − discount, 4)`, the figure this query used to compute. The
+   * invoice line therefore inherits the amount the quotation line was issued with
+   * and never a recomputation of it.
    *
    * `item_kind` is carried through unmapped. `quo` uses `service`/`part` and
    * `ck_invoice_lines_line_type` admits `service`/`part`/`fee`; the two vocabularies
@@ -1501,12 +1570,9 @@ export class BillingRepository extends Repository {
               it.captured_quantity::text   AS quantity,
               it.captured_discount::text   AS discount,
               it.captured_tax_rate::text   AS tax_rate,
-              round(it.captured_unit_price * it.captured_quantity
-                    - it.captured_discount, 4)::text AS net_amount,
+              (it.captured_line_total - it.captured_tax_amount)::text AS net_amount,
               it.captured_tax_amount::text AS tax_amount,
-              round(round(it.captured_unit_price * it.captured_quantity
-                          - it.captured_discount, 4)
-                    + it.captured_tax_amount, 4)::text AS gross_amount
+              it.captured_line_total::text AS gross_amount
          FROM quo.quotation_items it
         WHERE it.tenant_id = $1 AND it.company_id = $2 AND it.branch_id = $3
           AND it.quotation_revision_id = $4 AND it.deleted_at IS NULL

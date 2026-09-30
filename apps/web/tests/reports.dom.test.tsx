@@ -822,6 +822,51 @@ describe('the result is rendered from the envelope, column kind by column kind',
     expect(within(container).queryByText('1h 30m')).toBeNull();
   });
 
+  it('says an invoice’s credit status in the reader’s language, in English and Arabic (D7)', async () => {
+    const envelope = {
+      ...NEW_ENVELOPE,
+      columns: [
+        { key: 'status', kind: 'text', drillThrough: null },
+        { key: 'creditStatus', kind: 'text', drillThrough: null },
+      ],
+      rows: {
+        items: [
+          {
+            cells: [
+              { key: 'status', label: null, value: 'issued' },
+              { key: 'creditStatus', label: null, value: 'partly_credited' },
+            ],
+          },
+          {
+            cells: [
+              { key: 'status', label: null, value: 'approved' },
+              { key: 'creditStatus', label: null, value: null },
+            ],
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      },
+    };
+    runReport.mockResolvedValue(runOk(envelope));
+    const { unmount } = await showReport();
+    const rows = within(await waitFor(() => rowsTable()));
+    expect(rows.getByText(EN['invoices.creditStatus.partly_credited'] as string)).toBeVisible();
+    // The machine code is never what a reader is shown.
+    expect(rows.queryByText('partly_credited')).toBeNull();
+    // A document with no credit status (a credit note, a receipt) reads as none.
+    expect(rows.getAllByText(EN['reports.cell.none'] as string).length).toBeGreaterThan(0);
+    unmount();
+
+    runReport.mockResolvedValue(runOk(envelope));
+    await showReport('ar');
+    expect(
+      within(await waitFor(() => rowsTable('ar'))).getByText(
+        AR['invoices.creditStatus.partly_credited'] as string
+      )
+    ).toBeVisible();
+  });
+
   it('says a column with no cell is not reported rather than drawing it empty', async () => {
     runReport.mockResolvedValue(
       runOk({

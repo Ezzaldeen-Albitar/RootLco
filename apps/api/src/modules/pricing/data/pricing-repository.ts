@@ -591,6 +591,21 @@ export class PricingRepository extends Repository {
     return toDiscountPolicyVersion(row);
   }
 
+  /**
+   * The minor unit `shared.currencies` records for a currency (JOD 3, USD 2), or
+   * `null` for a code it does not hold. An amount threshold must fit it (ADR-023,
+   * D1); a price rule's amount is a unit price and keeps its own scale.
+   */
+  public async minorUnitForCurrency(db: DbHandle, code: string): Promise<number | null> {
+    this.assertContext(db);
+    const row = await this.runOne<{ minor_unit: number }>(
+      db,
+      `SELECT minor_unit FROM shared.currencies WHERE code = $1`,
+      [code]
+    );
+    return row ? row.minor_unit : null;
+  }
+
   /** Whether `code` is a currency in the shared register. */
   public async currencyExists(db: DbHandle, code: string): Promise<boolean> {
     this.assertContext(db);

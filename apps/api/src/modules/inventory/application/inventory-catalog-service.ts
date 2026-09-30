@@ -577,6 +577,9 @@ export class InventoryCatalogService {
       }
       throw cause;
     }
+    // A selling price is a UNIT price, so it keeps the column's own scale and is
+    // NOT held to the currency's minor unit (ADR-023, D1). The money a sale
+    // makes of it is rounded on the line, where it is computed.
 
     let priceId: string;
     try {

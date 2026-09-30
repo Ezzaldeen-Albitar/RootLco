@@ -432,6 +432,9 @@ export const REPORT_DATASETS = Object.freeze({
    * D-4: an invoice fully credited is not paid and is not outstanding, and
    * folding it into either bucket misstates both. `status` carries the invoice's
    * own term, the receipt's own term, or the credit note's approval state.
+   * `creditStatus` (D7, ADR-023) carries how much of an INVOICE has been credited
+   * — `none`, `partly_credited`, `credited` — derived from its approved credits
+   * against its gross, because no status column is ever set to `credited`.
    *
    * ## `document` drills through BY DOCUMENT KIND (Owner, 2026-09-12)
    *
@@ -513,6 +516,10 @@ export const REPORT_DATASETS = Object.freeze({
       Object.freeze({ key: 'creditNoteAmount', kind: 'money' }),
       Object.freeze({ key: 'outstanding', kind: 'money' }),
       Object.freeze({ key: 'status', kind: 'text' }),
+      // An invoice's credit position (D7, ADR-023): `none`, `partly_credited` or
+      // `credited`, derived from its approved credits against its gross. Null on a
+      // receipt and a credit note. Never folded into `status`.
+      Object.freeze({ key: 'creditStatus', kind: 'text' }),
     ]),
   }),
 } as const satisfies Record<string, ReportDatasetDefinition>);

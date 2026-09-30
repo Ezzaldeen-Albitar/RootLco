@@ -31,6 +31,7 @@
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { AppFailure } from '@/server/errors/app-failure';
+import { assertMinorUnitScale } from '@/server/http/validation';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
@@ -1309,7 +1310,40 @@ export class QuotationService {
     if (currency === null) {
       throw new QuotationRuleError('No line resolved a currency');
     }
+    await this.refuseDiscountsFinerThanCurrency(db, currency, discounts);
     return { currency, items, discounts };
+  }
+
+  /**
+   * A fixed discount is an amount of money, so it must fit the quotation
+   * currency's minor unit (ADR-023, D1) — three decimals for JOD, two for USD.
+   *
+   * Checked once the currency is known, which is only after every line resolved
+   * its price: the route's pattern admits the column's four decimals because it
+   * cannot know the currency. Refused here, naming the line's field, rather than
+   * by `tg_quotation_items_money` as an opaque constraint violation. A quantity
+   * and a unit price are not amounts of money and keep their own scales.
+   */
+  private async refuseDiscountsFinerThanCurrency(
+    db: DbHandle,
+    currency: string,
+    discounts: readonly LineDiscount[]
+  ): Promise<void> {
+    const minorUnit = await this.repository.minorUnitForCurrency(db, currency);
+    if (minorUnit === null) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `Currency ${currency} is not a supported currency.`,
+        safeDetails: { violations: [{ path: 'body.lines', rule: 'unknown_currency' }] },
+      });
+    }
+    for (const line of discounts) {
+      assertMinorUnitScale(
+        line.discount,
+        currency,
+        minorUnit,
+        `body.lines[${line.lineNumber - 1}].discount`
+      );
+    }
   }
 
   /**
@@ -1560,33 +1594,23 @@ export class QuotationService {
   /**
    * `unit * qty` computed by PostgreSQL, and refused unless it is EXACT at scale 4.
    *
-   * The exactness check is the load-bearing part, and it closes a defect that made
-   * some perfectly legal quotations permanently unissuable.
-   *
+   * The exactness refusal is kept for ONE reason now: the discount ceiling.
    * `captured_unit_price` is `numeric(18,4)` and `captured_quantity` is
-   * `numeric(12,3)`, so the raw product has scale **7**. Two constraints then
-   * disagree about what to do with those extra digits:
+   * `numeric(12,3)`, so the raw product has scale **7**, and
+   * `ck_quotation_items_discount` compares a discount against that **unrounded**
+   * product. A base rounded to scale 4 could therefore authorize a discount the
+   * CHECK then rejects; returning only an EXACT product keeps the two in step, and
+   * a quantity whose product does not fit is refused here, naming the field,
+   * instead of failing as an opaque constraint violation.
    *
-   *  - `ck_quotation_items_line_total` rounds per line, so each stored line holds
-   *    `round(baseᵢ, 4)`;
-   *  - `quo.issue_revision` assigns `SUM(captured_unit_price * captured_quantity)`
-   *    into a `numeric(18,4)` variable, i.e. `round(Σ baseᵢ, 4)`, and
-   *    `ck_quotation_revisions_totals` compares that against `SUM(line_total)`.
-   *
-   * `Σ round(baseᵢ, 4) = round(Σ baseᵢ, 4)` is **not** an identity. Two lines of
-   * `1.0001 × 1.500` give `1.5001500` each: the per-line sum is `3.0004` and the
-   * rounded sum is `3.0003`, so the revision CHECK fails inside
-   * `quo.issue_revision` — a `23514` surfacing as `ERR-SYS-001`, HTTP 500, with the
-   * draft left unissuable and the caller told nothing useful.
-   *
-   * Both constraints are frozen, so the application must keep the disagreement from
-   * arising: if every line's product is exact at scale 4 then `round(baseᵢ,4) = baseᵢ`
-   * and the two expressions coincide by construction. A quantity whose product does
-   * not fit is refused here, naming the field, instead of failing far away at issue.
-   *
-   * Returning the EXACT product also fixes the discount ceiling:
-   * `ck_quotation_items_discount` compares against the **unrounded** product, so a
-   * rounded-up base could authorize a discount the CHECK then rejects.
+   * It is no longer about the revision totals. It was originally added because a
+   * per-line CHECK rounded each line total to scale 4 while `quo.issue_revision`
+   * assigned the unrounded sum of `unit * qty`, and `Σ round(baseᵢ, 4) ≠
+   * round(Σ baseᵢ, 4)` left some drafts unissuable. That CHECK is gone:
+   * `tg_quotation_items_money` now fixes each line's net and tax at the currency's
+   * minor unit, and `quo.issue_revision` writes totals that are sums of those
+   * rounded lines (ADR-023, D1), so the revision totals agree with the lines by
+   * construction whatever scale the product carries.
    */
   private async lineBase(
     db: DbHandle,
