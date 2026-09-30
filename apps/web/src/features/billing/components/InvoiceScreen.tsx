@@ -40,6 +40,7 @@ import {
   type InvoiceDetail,
   type InvoicePreview,
   type Outstanding,
+  type Settlement,
   type WorkOrderInvoice,
 } from '../billing-contract';
 import { CreditNoteRequestForm } from './CreditNoteRequestForm';
@@ -1084,6 +1085,7 @@ function InvoicePanel({
         workOrderNumber={workOrder?.displayNumber ?? null}
         payer={payer}
         canViewFinance={canViewFinance}
+        settlement={balance?.settlement ?? null}
       />
     </>
   );
@@ -1322,11 +1324,19 @@ function OutstandingPanel({
           <Field label={translate(messages, 'invoices.outstanding.amount')}>
             <Money money={state.data.outstanding} locale={locale} />
           </Field>
-          <Field label={translate(messages, 'invoices.outstanding.settlement')}>
-            {state.data.isSettled
-              ? translate(messages, 'invoices.outstanding.settled')
-              : translate(messages, 'invoices.outstanding.open')}
-          </Field>
+          {state.data.settlement ? (
+            <SettlementFields
+              locale={locale}
+              messages={messages}
+              settlement={state.data.settlement}
+            />
+          ) : (
+            <Field label={translate(messages, 'invoices.outstanding.settlement')}>
+              {state.data.isSettled
+                ? translate(messages, 'invoices.outstanding.settled')
+                : translate(messages, 'invoices.outstanding.open')}
+            </Field>
+          )}
           <Field label={translate(messages, 'invoices.detail.status')}>
             <InvoiceStatusBadge messages={messages} status={state.data.status} />
             {state.data.status === 'draft' ? (
@@ -1341,6 +1351,49 @@ function OutstandingPanel({
         {translate(messages, 'invoices.outstanding.note')}
       </p>
     </section>
+  );
+}
+
+/**
+ * The three positions of an issued invoice, kept apart (Owner decision D7,
+ * ADR-023): how much has been credited, how much of what is payable has been
+ * paid, and whether anything was handed back. Each is the server's derivation,
+ * worded here; a fully credited invoice reads "Fully credited" and "Nothing to
+ * pay", never "Settled". The credited and paid amounts are shown beside them.
+ */
+function SettlementFields({
+  locale,
+  messages,
+  settlement,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly settlement: Settlement;
+}) {
+  return (
+    <>
+      <Field label={translate(messages, 'invoices.settlement.credit')}>
+        <span data-testid="invoice-credit-status">
+          {translateDynamic(messages, `invoices.creditStatus.${settlement.creditStatus}`)}
+        </span>
+      </Field>
+      <Field label={translate(messages, 'invoices.settlement.credited')}>
+        <Money money={settlement.credited} locale={locale} />
+      </Field>
+      <Field label={translate(messages, 'invoices.settlement.payment')}>
+        <span data-testid="invoice-payment-status">
+          {translateDynamic(messages, `invoices.paymentStatus.${settlement.paymentStatus}`)}
+        </span>
+      </Field>
+      <Field label={translate(messages, 'invoices.settlement.paid')}>
+        <Money money={settlement.paid} locale={locale} />
+      </Field>
+      <Field label={translate(messages, 'invoices.settlement.refund')}>
+        <span data-testid="invoice-refund-status">
+          {translateDynamic(messages, `invoices.refundStatus.${settlement.refundStatus}`)}
+        </span>
+      </Field>
+    </>
   );
 }
 
@@ -1585,6 +1638,7 @@ export function CounterSalePrintPanel({
       workOrderNumber={null}
       payer={payer}
       canViewFinance={canViewFinance}
+      settlement={null}
     />
   );
 }
@@ -1596,6 +1650,7 @@ function PrintPanel({
   workOrderNumber,
   payer,
   canViewFinance,
+  settlement,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -1603,6 +1658,8 @@ function PrintPanel({
   readonly workOrderNumber: string | null;
   readonly payer: PayerName;
   readonly canViewFinance: boolean;
+  /** The credit and payment positions as the balance panel read them (D7), or null. */
+  readonly settlement: Settlement | null;
 }) {
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<ReadState<InvoicePreview> | null>(null);
@@ -1676,6 +1733,7 @@ function PrintPanel({
                       : { kind: 'mismatch' }
             }
             workOrderNumber={workOrderNumber}
+            settlement={settlement}
           />
         )
       ) : null}

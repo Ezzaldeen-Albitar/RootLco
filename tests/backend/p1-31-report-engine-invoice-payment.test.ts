@@ -1125,6 +1125,8 @@ describe('the dataset is registered as the Owner approved it', () => {
       'creditNoteAmount',
       'outstanding',
       'status',
+      // D7 (ADR-023): the invoice's credit position, apart from its status.
+      'creditStatus',
     ]);
     expect(
       view.columns.filter((column) => column.kind === 'money').map((column) => column.key)
@@ -1247,6 +1249,9 @@ describe('the rows are the documents of the period, and only those', () => {
     expect(cellValue(row, 'currency')).toBe(USD);
     expect(cellValue(row, 'invoicedAmount')).toBe('165.0000');
     expect(cellValue(row, 'status')).toBe('issued');
+    // No approved credit note stands against it, so its derived credit status is
+    // `none` — kept apart from `status`, which never becomes `credited` (D7).
+    expect(cellValue(row, 'creditStatus')).toBe('none');
     // NULL, not zero: an invoice is not a receipt and has applied nothing, and it
     // is not a credit note either.
     expect(cellValue(row, 'receiptAmount')).toBeNull();
@@ -1379,6 +1384,9 @@ describe('the rows are the documents of the period, and only those', () => {
     expect(cellValue(invoice, 'outstanding')).toBe(
       await openReceivableOf(invoiceCredited.invoiceId)
     );
+    // D7: the approved credits equal the gross, so the DERIVED credit status says
+    // so from the credit notes themselves, not from the status column.
+    expect(cellValue(invoice, 'creditStatus')).toBe('credited');
 
     const credit = rowFor(view, creditNoteId);
     expect(credit).toBeDefined();
@@ -1392,6 +1400,8 @@ describe('the rows are the documents of the period, and only those', () => {
     // table itself rather than against a number written here.
     expect(cellValue(credit, 'creditNoteAmount')).toBe('40.0000');
     expect(cellValue(credit, 'creditNoteAmount')).toBe(await creditNoteAmountOf(creditNoteId));
+    // A credit note is not itself credited: its credit status is null.
+    expect(cellValue(credit, 'creditStatus')).toBeNull();
     // Every other money column is null rather than zero: a credit note is not an
     // invoice and not a receipt, and a zero would be a claim about money.
     for (const key of [

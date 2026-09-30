@@ -31,6 +31,7 @@
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { AppFailure } from '@/server/errors/app-failure';
+import { assertMinorUnitScale } from '@/server/http/validation';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
@@ -1309,7 +1310,40 @@ export class QuotationService {
     if (currency === null) {
       throw new QuotationRuleError('No line resolved a currency');
     }
+    await this.refuseDiscountsFinerThanCurrency(db, currency, discounts);
     return { currency, items, discounts };
+  }
+
+  /**
+   * A fixed discount is an amount of money, so it must fit the quotation
+   * currency's minor unit (ADR-023, D1) — three decimals for JOD, two for USD.
+   *
+   * Checked once the currency is known, which is only after every line resolved
+   * its price: the route's pattern admits the column's four decimals because it
+   * cannot know the currency. Refused here, naming the line's field, rather than
+   * by `tg_quotation_items_money` as an opaque constraint violation. A quantity
+   * and a unit price are not amounts of money and keep their own scales.
+   */
+  private async refuseDiscountsFinerThanCurrency(
+    db: DbHandle,
+    currency: string,
+    discounts: readonly LineDiscount[]
+  ): Promise<void> {
+    const minorUnit = await this.repository.minorUnitForCurrency(db, currency);
+    if (minorUnit === null) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `Currency ${currency} is not a supported currency.`,
+        safeDetails: { violations: [{ path: 'body.lines', rule: 'unknown_currency' }] },
+      });
+    }
+    for (const line of discounts) {
+      assertMinorUnitScale(
+        line.discount,
+        currency,
+        minorUnit,
+        `body.lines[${line.lineNumber - 1}].discount`
+      );
+    }
   }
 
   /**

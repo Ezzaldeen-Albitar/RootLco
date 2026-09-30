@@ -241,3 +241,60 @@ export function assertInvoiceIsDraft(status: string, what: string): void {
     );
   }
 }
+
+/**
+ * How much of an invoice has been credited (Owner decision D7, ADR-023).
+ *
+ * Derived on every read and stored nowhere. `sal.invoices.status` stays `issued`
+ * however much is credited: a terminal `credited` status would stop returns
+ * against the invoice (`inv.lock_return_source` accepts only `issued`), so the
+ * credit position is a separate, derived fact.
+ *
+ *  - `none` — no effective credit;
+ *  - `partly_credited` — effective credits above zero and below the eligible total;
+ *  - `credited` — effective credits equal to (or, never expected, above) it.
+ *
+ * "Effective" credits are APPROVED credit notes only: a pending or rejected note
+ * credits nothing, and the model holds no reversal of an approved credit note, so
+ * there is no reversed credit to exclude yet. When one exists it must be
+ * subtracted in the one query that feeds this (`creditPositions`), never here.
+ * The eligible total is the invoice's gross.
+ */
+export const CREDIT_STATUSES = Object.freeze(['none', 'partly_credited', 'credited'] as const);
+export type CreditStatus = (typeof CREDIT_STATUSES)[number];
+
+/**
+ * How much of what is still payable has been paid, kept apart from the credit
+ * position (D7): `open` — nothing received and something payable; `partly_paid` —
+ * something received and something still open; `paid` — nothing open and money
+ * received; `nothing_due` — nothing open because credits cleared it, with no money
+ * received. The fourth value exists because a fully credited invoice that was
+ * never paid is neither open nor paid.
+ */
+export const PAYMENT_STATUSES = Object.freeze([
+  'open',
+  'partly_paid',
+  'paid',
+  'nothing_due',
+] as const);
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+
+/**
+ * Whether money has been handed back (D7 keeps it separate). The platform has no
+ * refund instrument yet (D2 is planned), so the only honest value is `none`.
+ */
+export const REFUND_STATUSES = Object.freeze(['none'] as const);
+export type RefundStatus = (typeof REFUND_STATUSES)[number];
+
+/** `credited` compared with the eligible total, by `Decimal` — never by `Number()`. */
+export function deriveCreditStatus(credited: Decimal, eligibleTotal: Decimal): CreditStatus {
+  if (!credited.greaterThan(Decimal.zero(MONEY))) return 'none';
+  return credited.lessThan(eligibleTotal) ? 'partly_credited' : 'credited';
+}
+
+/** `paid` and the open receivable, compared by `Decimal`. */
+export function derivePaymentStatus(paid: Decimal, open: Decimal): PaymentStatus {
+  const received = paid.greaterThan(Decimal.zero(MONEY));
+  if (open.greaterThan(Decimal.zero(MONEY))) return received ? 'partly_paid' : 'open';
+  return received ? 'paid' : 'nothing_due';
+}

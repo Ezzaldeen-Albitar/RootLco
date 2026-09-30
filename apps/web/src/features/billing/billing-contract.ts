@@ -82,6 +82,31 @@ export const BILLING_PERMISSIONS = {
 export const INVOICE_STATUSES = ['draft', 'issued', 'credited', 'void_before_issue'] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
+/**
+ * How much of an invoice has been credited (Owner decision D7, ADR-023) —
+ * `BillingReadService.SettlementView.creditStatus`, derived by the server from the
+ * approved credits against the invoice's gross. Never read from `status`.
+ */
+export const CREDIT_STATUSES = ['none', 'partly_credited', 'credited'] as const;
+export type CreditStatus = (typeof CREDIT_STATUSES)[number];
+
+/** What was paid against what is still open (D7). `nothing_due`: credits cleared it, nothing paid. */
+export const PAYMENT_STATUSES = ['open', 'partly_paid', 'paid', 'nothing_due'] as const;
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+
+/** Money handed back (D7). The platform has no refund instrument yet, so only `none`. */
+export const REFUND_STATUSES = ['none'] as const;
+export type RefundStatus = (typeof REFUND_STATUSES)[number];
+
+/** `SettlementView` — three separate positions of an issued invoice, and the two amounts behind them. */
+export interface Settlement {
+  readonly creditStatus: CreditStatus;
+  readonly paymentStatus: PaymentStatus;
+  readonly refundStatus: RefundStatus;
+  readonly credited: MoneyView;
+  readonly paid: MoneyView;
+}
+
 /** `ck_invoice_lines_line_type`, mirrored. The preview carries `service` and `part` only. */
 export const LINE_TYPES = ['service', 'part', 'fee'] as const;
 export type LineType = (typeof LINE_TYPES)[number];
@@ -245,6 +270,8 @@ export interface Outstanding {
   readonly status: InvoiceStatus;
   readonly outstanding: MoneyView;
   readonly isSettled: boolean;
+  /** `null` for a draft or voided invoice, which claims nothing yet. */
+  readonly settlement: Settlement | null;
 }
 
 /** The echo of `sal.invoice-create` — the detail plus whether the key had already been used. */

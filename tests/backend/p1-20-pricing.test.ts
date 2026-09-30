@@ -487,17 +487,36 @@ describe('svc.price-rule-record — exact money at the boundary', () => {
     return { listId: list.id, versionId: version.id };
   }
 
+  // The list is in JOD, so an entered price carries at most three decimals (ADR-023,
+  // D1). The boundary values are the smallest and largest amounts that fit it; a
+  // value a double cannot represent (1.005, 2.675) is still stored exactly.
   it.each([
     ['0', '0.0000'],
-    ['0.0001', '0.0001'],
+    ['0.001', '0.0010'],
     ['1.005', '1.0050'],
     ['2.675', '2.6750'],
-    ['99999999999999.9999', '99999999999999.9999'],
+    ['99999999999999.999', '99999999999999.9990'],
   ])('stores %s as %s with no floating drift', async (input, expected) => {
     const { listId, versionId } = await draftVersion();
     const response = await recordRule(listId, versionId, { serviceId: SERVICE_A, amount: input });
     expect(response.status).toBe(201);
     expect(((await response.json()) as RuleBody).amount).toBe(expected);
+  });
+
+  it('refuses a price finer than the list currency’s minor unit, on the amount field (D1)', async () => {
+    const { listId, versionId } = await draftVersion();
+    for (const fine of ['0.0001', '99999999999999.9999', '12.3456']) {
+      const response = await recordRule(listId, versionId, { serviceId: SERVICE_A, amount: fine });
+      expect(response.status, `amount ${fine}`).toBe(422);
+      const problem = (await response.json()) as {
+        violations?: readonly { path: string; rule: string }[];
+      };
+      expect(problem.violations).toEqual([{ path: 'body.amount', rule: 'minor_unit_scale' }]);
+    }
+    // Trailing zeros are not significant: 12.3450 is a whole number of fils.
+    expect(
+      (await recordRule(listId, versionId, { serviceId: SERVICE_A, amount: '12.3450' })).status
+    ).toBe(201);
   });
 
   it('refuses over-scale, negative and exponential amounts', async () => {

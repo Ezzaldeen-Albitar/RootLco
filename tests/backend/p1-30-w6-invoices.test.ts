@@ -191,6 +191,14 @@ interface OutstandingBody {
   readonly status: string;
   readonly outstanding: MoneyBody;
   readonly isSettled: boolean;
+  /** D7 (ADR-023): the credit, payment and refund positions; null before issue. */
+  readonly settlement: {
+    readonly creditStatus: string;
+    readonly paymentStatus: string;
+    readonly refundStatus: string;
+    readonly credited: MoneyBody;
+    readonly paid: MoneyBody;
+  } | null;
 }
 interface ProblemBody {
   readonly code: string;
@@ -670,6 +678,8 @@ describe('FE-014 → FE-015 → FE-019 on one work order', () => {
       status: 'draft',
       outstanding: { amount: '0.0000', currency: 'USD' },
       isSettled: true,
+      // A draft claims nothing, so it has no credit, payment or refund position.
+      settlement: null,
     });
     authAs(SAL_READER);
     expect((await outstanding(invoiceId)).status).toBe(200);
@@ -719,6 +729,13 @@ describe('FE-014 → FE-015 → FE-019 on one work order', () => {
       status: 'issued',
       outstanding: { amount: '165.0000', currency: 'USD' },
       isSettled: false,
+      settlement: {
+        creditStatus: 'none',
+        paymentStatus: 'open',
+        refundStatus: 'none',
+        credited: { amount: '0.0000', currency: 'USD' },
+        paid: { amount: '0.0000', currency: 'USD' },
+      },
     });
     authAs(SAL_NO_FINANCE);
     const refused = await outstanding(invoiceId);

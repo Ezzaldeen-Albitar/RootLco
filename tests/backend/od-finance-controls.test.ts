@@ -524,7 +524,8 @@ describe('GAP-04 / GAP-05 / GAP-09 — returns, their credits and the sale they 
       'credit_requested',
     ]);
 
-    // GAP-05: the cumulative share, rounded once, sums to the line's gross.
+    // GAP-05: the cumulative share, rounded once — to the USD minor unit since
+    // ADR-023 D1 — sums to the line's gross.
     const amounts: string[] = [];
     for (const row of returns) {
       const result = await admin.query<{ amount: string }>(
@@ -533,7 +534,7 @@ describe('GAP-04 / GAP-05 / GAP-09 — returns, their credits and the sale they 
       );
       amounts.push(result.rows[0]?.amount ?? '');
     }
-    expect(amounts).toEqual(['6.6667', '6.6666', '6.6667']);
+    expect(amounts).toEqual(['6.6700', '6.6600', '6.6700']);
 
     // Every credit is approvable on the unpaid sale by a second person.
     for (const row of returns) {

@@ -94,6 +94,20 @@ export function reportStateLabel(messages: Messages, code: string | null): strin
 }
 
 /**
+ * An invoice's credit status (Owner decision D7, ADR-023) in the reader's
+ * language, or `null` when the code is not one this build words.
+ *
+ * The invoice and payment report publishes `none`, `partly_credited` or
+ * `credited` as a machine code; it is said with the same words the invoice screen
+ * uses, and a code outside that vocabulary falls back to being shown as a code.
+ */
+export function reportCreditStatusLabel(messages: Messages, code: string | null): string | null {
+  if (code === null) return null;
+  const key = `invoices.creditStatus.${code}`;
+  return resolves(messages, key) ? translateDynamic(messages, key) : null;
+}
+
+/**
  * The name a group is shown under.
  *
  * Only a group keyed by `state` alone is re-worded, because `state` is the one

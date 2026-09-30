@@ -39,6 +39,7 @@ import { appendAudit } from '@/server/audit/audit';
 import type { DbHandle } from '@/server/db/transaction';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import { AppFailure } from '@/server/errors/app-failure';
+import { assertMinorUnitScale } from '@/server/http/validation';
 import { Decimal, MONEY } from '../domain/decimal';
 import { assertPercentageRange, type ThresholdKind } from '../domain/pricing';
 import type { DiscountPolicyVersionRow, PricingRepository } from '../data/pricing-repository';
@@ -151,8 +152,14 @@ export class DiscountThresholdService {
   ): Promise<DiscountThresholdView> {
     await this.requireCompany(db, input.companyId);
     const currency = this.validate(input);
-    if (currency !== null && !(await this.repository.currencyExists(db, currency))) {
-      refuseField('body.currency', 'unknown_currency', `Currency ${currency} is not registered`);
+    if (currency !== null) {
+      // An amount threshold is an amount of money, so it must fit its currency's
+      // minor unit (ADR-023, D1). A percentage is a rate and keeps its own scale.
+      const minorUnit = await this.repository.minorUnitForCurrency(db, currency);
+      if (minorUnit === null) {
+        refuseField('body.currency', 'unknown_currency', `Currency ${currency} is not registered`);
+      }
+      assertMinorUnitScale(input.thresholdValue, currency, minorUnit, 'body.thresholdValue');
     }
 
     // The next version is one above every number the company has used — deleted and

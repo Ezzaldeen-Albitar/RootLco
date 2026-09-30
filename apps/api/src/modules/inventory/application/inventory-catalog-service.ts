@@ -45,6 +45,7 @@
  * the Owner rather than decided here.
  */
 import { AppFailure } from '@/server/errors/app-failure';
+import { assertMinorUnitScale } from '@/server/http/validation';
 import { appendAudit } from '@/server/audit/audit';
 import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
@@ -577,6 +578,19 @@ export class InventoryCatalogService {
       }
       throw cause;
     }
+
+    // A selling price is an amount of money, so it must fit its currency's minor
+    // unit (ADR-023, D1): a JOD price of 1.2345 is refused here, naming the field,
+    // rather than sold and left as a residue no receipt can settle.
+    const minorUnit = await this.repository.minorUnitForCurrency(db, currencyCode);
+    if (minorUnit === null) {
+      refuse(
+        'body.currencyCode',
+        'unknown_currency',
+        `Currency ${currencyCode} is not a supported currency`
+      );
+    }
+    assertMinorUnitScale(unitPrice, currencyCode, minorUnit, 'body.unitPrice');
 
     let priceId: string;
     try {

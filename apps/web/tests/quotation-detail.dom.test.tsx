@@ -980,6 +980,44 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
       SERVICE_ID
     );
   });
+
+  it('states a discount finer than the currency above the lines, with what was typed kept (D1)', async () => {
+    /*
+     * A fixed discount is money, so it must fit the quotation currency's minor unit
+     * (ADR-023, D1) — which only the server knows once it has priced the lines. The
+     * refusal arrives against `body.lines[0].discount`, as the leaf `discount`, and
+     * is stated over the lines exactly like the quantity refusal above.
+     */
+    createQuotationRevision.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { discount: 'form.violation.minor_unit_scale' },
+        correlationId: 'corr-minor-unit',
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderDetail();
+    const form = screen.getByRole('form', { name: EN['quotations.revise.heading'] as string });
+    await user.type(
+      within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '1');
+    await user.type(within(form).getByLabelText(labelled('quotations.lines.discount')), '0.0005');
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.revise.submit'] as string })
+    );
+    await waitFor(() => expect(createQuotationRevision).toHaveBeenCalledTimes(1));
+    expect(
+      await within(form).findByText(EN['form.violation.minor_unit_scale'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('quotations.lines.discount'))).toHaveValue(
+      '0.0005'
+    );
+  });
 });
 
 /**

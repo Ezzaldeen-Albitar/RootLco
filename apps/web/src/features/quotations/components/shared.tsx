@@ -435,12 +435,17 @@ export function lineValues(lines: readonly DraftLine[]): Record<string, string> 
  * Pointing at one line would be a guess, and guessing the wrong line is worse
  * than naming none. A line error the operator's own draft already produced wins,
  * because that one does know its line.
+ *
+ * A discount refused against `body.lines[<n>].discount` arrives the same way,
+ * as `discount`, and is folded in the same place: a fixed discount finer than
+ * the quotation currency's minor unit (ADR-023, D1) is only knowable once the
+ * server has priced the lines, so the browser cannot refuse it first.
  */
 export function lineErrors(
   own: Readonly<Record<string, string>>,
   outcome: ActionState | null
 ): Readonly<Record<string, string>> {
-  const published = outcome?.fieldErrors?.['quantity'];
+  const published = outcome?.fieldErrors?.['quantity'] ?? outcome?.fieldErrors?.['discount'];
   if (published === undefined || own['lines'] !== undefined) return own;
   return { ...own, lines: published };
 }

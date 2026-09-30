@@ -287,6 +287,13 @@ const outstanding = {
   status: 'issued',
   outstanding: { amount: '100.0000', currency: 'USD' },
   isSettled: false,
+  settlement: {
+    creditStatus: 'none',
+    paymentStatus: 'open',
+    refundStatus: 'none',
+    credited: { amount: '0.0000', currency: 'USD' },
+    paid: { amount: '0.0000', currency: 'USD' },
+  },
 };
 
 const okRead = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 'corr' });
@@ -1126,7 +1133,83 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
       name: EN['invoices.outstanding.heading'] as string,
     });
     expect(await within(balance).findByText(money('100.0000'))).toBeVisible();
-    expect(within(balance).getByText(EN['invoices.outstanding.open'] as string)).toBeVisible();
+    // D7: the credit, payment and refund positions, each the server's, each named.
+    expect(within(balance).getByTestId('invoice-credit-status')).toHaveTextContent(
+      EN['invoices.creditStatus.none'] as string
+    );
+    expect(within(balance).getByTestId('invoice-payment-status')).toHaveTextContent(
+      EN['invoices.paymentStatus.open'] as string
+    );
+    expect(within(balance).getByTestId('invoice-refund-status')).toHaveTextContent(
+      EN['invoices.refundStatus.none'] as string
+    );
+  });
+
+  it('a fully credited invoice reads "fully credited" and "nothing to pay" — never settled or paid (D7)', async () => {
+    readOutstanding.mockImplementation(async () =>
+      okRead({
+        ...outstanding,
+        outstanding: { amount: '0.0000', currency: 'USD' },
+        isSettled: true,
+        settlement: {
+          creditStatus: 'credited',
+          paymentStatus: 'nothing_due',
+          refundStatus: 'none',
+          credited: { amount: '165.0000', currency: 'USD' },
+          paid: { amount: '0.0000', currency: 'USD' },
+        },
+      })
+    );
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    expect(await within(balance).findByTestId('invoice-credit-status')).toHaveTextContent(
+      EN['invoices.creditStatus.credited'] as string
+    );
+    expect(within(balance).getByTestId('invoice-payment-status')).toHaveTextContent(
+      EN['invoices.paymentStatus.nothing_due'] as string
+    );
+    expect(within(balance).getByText(money('165.0000'))).toBeVisible();
+    expect(within(balance).queryByText(EN['invoices.outstanding.settled'] as string)).toBeNull();
+    expect(within(balance).queryByText(EN['invoices.paymentStatus.paid'] as string)).toBeNull();
+  });
+
+  it('a partly credited invoice says so in Arabic, apart from its payment position (D7)', async () => {
+    readOutstanding.mockImplementation(async () =>
+      okRead({
+        ...outstanding,
+        outstanding: { amount: '60.0000', currency: 'USD' },
+        settlement: {
+          creditStatus: 'partly_credited',
+          paymentStatus: 'open',
+          refundStatus: 'none',
+          credited: { amount: '40.0000', currency: 'USD' },
+          paid: { amount: '0.0000', currency: 'USD' },
+        },
+      })
+    );
+    renderRtl(
+      <InvoiceScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        workOrderRefused={null}
+        initialInvoice={live().initialInvoice as never}
+        canViewFinance={true}
+        canIssue={false}
+      />
+    );
+    const balance = await screen.findByRole('region', {
+      name: AR['invoices.outstanding.heading'] as string,
+    });
+    expect(await within(balance).findByTestId('invoice-credit-status')).toHaveTextContent(
+      AR['invoices.creditStatus.partly_credited'] as string
+    );
+    expect(within(balance).getByTestId('invoice-payment-status')).toHaveTextContent(
+      AR['invoices.paymentStatus.open'] as string
+    );
   });
 
   it('without finance view every amount area says not available, no zero appears, and the balance is not read', async () => {
@@ -1175,6 +1258,7 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
         status: 'draft',
         outstanding: { amount: '0.0000', currency: 'USD' },
         isSettled: true,
+        settlement: null,
       })
     );
     renderScreen({ ...live() });
@@ -1359,6 +1443,29 @@ describe('FE-020 — the printable copy', () => {
     expect(scope.children.length).toBeGreaterThan(1);
   });
 
+  it('prints the credit and payment positions the balance panel read (D7)', async () => {
+    const user = userEvent.setup();
+    readOutstanding.mockImplementation(async () =>
+      okRead({
+        ...outstanding,
+        settlement: { ...outstanding.settlement, creditStatus: 'partly_credited' },
+      })
+    );
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    await within(balance).findByTestId('invoice-credit-status');
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    expect(within(document).getByTestId('invoice-print-credit-status')).toHaveTextContent(
+      EN['invoices.creditStatus.partly_credited'] as string
+    );
+    expect(within(document).getByTestId('invoice-print-payment-status')).toHaveTextContent(
+      EN['invoices.paymentStatus.open'] as string
+    );
+  });
+
   it('with a preview of another revision, prints without descriptions and says so', async () => {
     const user = userEvent.setup();
     readInvoicePreview.mockImplementation(async () =>
@@ -1410,6 +1517,9 @@ describe('FE-020 — the printable copy', () => {
       })
     ).toBeVisible();
     expect(within(document).queryByText(/0\.00/)).toBeNull();
+    // No balance was read, so no credit or payment position is printed or guessed.
+    expect(within(document).queryByTestId('invoice-print-credit-status')).toBeNull();
+    expect(within(document).queryByTestId('invoice-print-payment-status')).toBeNull();
   });
 });
 
@@ -2172,13 +2282,20 @@ describe('raising and approving a credit note', () => {
           ...outstanding,
           outstanding: { amount: '0.0000', currency: 'USD' },
           isSettled: true,
+          settlement: {
+            ...outstanding.settlement,
+            paymentStatus: 'paid',
+            paid: { amount: '165.0000', currency: 'USD' },
+          },
         })
       );
       issuedScreen({ canRaiseCredit: true });
       const balance = await screen.findByRole('region', {
         name: EN['invoices.outstanding.heading'] as string,
       });
-      await within(balance).findByText(EN['invoices.outstanding.settled'] as string);
+      expect(await within(balance).findByTestId('invoice-payment-status')).toHaveTextContent(
+        EN['invoices.paymentStatus.paid'] as string
+      );
       expect(
         screen.queryByRole('form', { name: EN['creditNotes.request.heading'] as string })
       ).toBeNull();

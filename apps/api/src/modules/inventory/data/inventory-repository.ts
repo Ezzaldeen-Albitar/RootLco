@@ -5485,6 +5485,20 @@ export class InventoryRepository extends Repository {
     return row ? toItemSalePrice(row) : null;
   }
 
+  /**
+   * The minor unit `shared.currencies` records for a currency (JOD 3, USD 2), or
+   * `null` for a code it does not hold. A selling price must fit it (ADR-023, D1).
+   */
+  public async minorUnitForCurrency(db: DbHandle, code: string): Promise<number | null> {
+    this.assertContext(db);
+    const row = await this.runOne<{ minor_unit: number }>(
+      db,
+      `SELECT minor_unit FROM shared.currencies WHERE code = $1`,
+      [code]
+    );
+    return row ? row.minor_unit : null;
+  }
+
   /** `inv.set_item_sale_price` — one live row per (item, company, branch). */
   public async setItemSalePrice(
     db: DbHandle,

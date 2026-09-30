@@ -496,6 +496,34 @@ describe('a rule on a draft carries the canonical amount string', () => {
     await waitFor(() => expect(listPriceRules).toHaveBeenCalledWith(LIST_ID, DRAFT_ID));
   });
 
+  it('shows a price finer than the list currency beside the amount, red and described, with the figure kept (D1)', async () => {
+    recordPriceRule.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { amount: 'form.violation.minor_unit_scale' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderDetail();
+    const region = rulesRegion();
+    const form = await within(region).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    await pickService(user, form);
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '1.2345');
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.rule.submit'] as string })
+    );
+    const message = await within(form).findByText(EN['form.violation.minor_unit_scale'] as string);
+    expect(message).toBeVisible();
+    const amount = within(form).getByLabelText(labelled('pricing.rule.amount')) as HTMLInputElement;
+    expect(amount).toHaveAttribute('aria-invalid', 'true');
+    expect(amount.value).toBe('1.2345');
+  });
+
   it('shows a duplicate rule refusal beside the priority, with the amount still typed', async () => {
     recordPriceRule.mockResolvedValue({
       state: {

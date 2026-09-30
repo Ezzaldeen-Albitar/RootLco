@@ -61,6 +61,13 @@ import {
   type EntitySearchTerms,
 } from '@/shared/text/search-terms';
 import { CREDIT_NOTE_ORDER, INVOICE_LIST_ORDER } from '../data/billing-repository';
+import {
+  deriveCreditStatus,
+  derivePaymentStatus,
+  type CreditStatus,
+  type PaymentStatus,
+  type RefundStatus,
+} from '../domain/billing';
 import type {
   BillingRepository,
   CommercialSourceRow,
@@ -206,6 +213,30 @@ export interface OutstandingView {
   readonly status: string;
   readonly outstanding: MoneyView;
   readonly isSettled: boolean;
+  /**
+   * The credit, payment and refund positions, kept apart (Owner decision D7,
+   * ADR-023). `null` for a draft or a voided invoice, which has claimed nothing
+   * and so has nothing to credit, pay or refund.
+   */
+  readonly settlement: SettlementView | null;
+}
+
+/**
+ * Three separate facts about an issued invoice, derived on every read (D7).
+ *
+ * `creditStatus` compares the effective (approved) credits with the eligible
+ * total, the invoice's gross; `paymentStatus` compares what was paid with what
+ * is still open; `refundStatus` is `none`, because the platform has no refund
+ * instrument yet. A fully credited invoice reads `credited` / `nothing_due` —
+ * never "settled" or "paid". `credited` and `paid` are the two amounts the
+ * statuses were derived from, in the invoice's currency.
+ */
+export interface SettlementView {
+  readonly creditStatus: CreditStatus;
+  readonly paymentStatus: PaymentStatus;
+  readonly refundStatus: RefundStatus;
+  readonly credited: MoneyView;
+  readonly paid: MoneyView;
 }
 
 /**
@@ -294,7 +325,7 @@ export interface InvoicePreview {
   readonly subtotal: string;
   readonly discountTotal: string;
   readonly taxTotal: string;
-  /** `Σ round(unit × qty − discount, 4)` — what becomes the invoice's `net_total`. */
+  /** `Σ` of the rounded line nets (ADR-023, D1) — what becomes the invoice's `net_total`. */
   readonly netTotal: string;
   readonly grossTotal: string;
   readonly lines: readonly InvoicePreviewLine[];
@@ -736,6 +767,44 @@ export class BillingReadService {
       status: open.status,
       outstanding: moneyView(open.amount, open.currencyCode),
       isSettled: !amount.greaterThan(Decimal.zero(MONEY)),
+      settlement: await this.settlementOf(db, invoice, open.amount),
+    };
+  }
+
+  /**
+   * The credit, payment and refund positions of a trustworthy invoice (D7), or
+   * `null` for one that claims nothing yet (draft, voided).
+   *
+   * Every comparison is between `Decimal`s built from the database's strings, and
+   * the amounts are the ones `sal.invoice_open_receivable` itself subtracts, read
+   * in the same transaction (`creditPosition`).
+   */
+  private async settlementOf(
+    db: DbHandle,
+    invoice: InvoiceRow,
+    openAmount: string
+  ): Promise<SettlementView | null> {
+    if (invoice.status !== 'issued' && invoice.status !== 'credited') return null;
+    const position = await this.repository.creditPosition(db, {
+      invoiceId: invoice.id,
+      companyId: invoice.companyId,
+      branchId: invoice.branchId,
+    });
+    /* c8 ignore next 5 -- the invoice was read in the same transaction under the
+       same context, and an issued invoice always has its amounts row. */
+    if (!position || position.gross === null) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'billing: an issued invoice has no readable amounts for its credit position',
+      });
+    }
+    const credited = Decimal.fromDatabase(position.credited, MONEY);
+    const paid = Decimal.fromDatabase(position.paid, MONEY);
+    return {
+      creditStatus: deriveCreditStatus(credited, Decimal.fromDatabase(position.gross, MONEY)),
+      paymentStatus: derivePaymentStatus(paid, Decimal.fromDatabase(openAmount, MONEY)),
+      refundStatus: 'none',
+      credited: moneyView(position.credited, invoice.currencyCode),
+      paid: moneyView(position.paid, invoice.currencyCode),
     };
   }
 
@@ -750,7 +819,7 @@ export class BillingReadService {
    *
    * Nothing here defaults a tax rate, a discount, a currency or a jurisdiction. The
    * rate is `quo.quotation_items.captured_tax_rate`, resolved by the pricing layer
-   * when the revision was priced and validated by `ck_quotation_items_tax_amount`;
+   * when the revision was priced and validated by `tg_quotation_items_money`;
    * the discount is `captured_discount`, bounded by `ck_quotation_items_discount`;
    * the currency is the revision's. A work order with no accepted revision produces
    * `ERR-RES-001`, never a guessed zero.
@@ -790,7 +859,7 @@ export class BillingReadService {
      * previewing".
      *
      * Without it the promise was breakable. PostgreSQL's `sum()` returns UNCONSTRAINED
-     * `numeric`, not `numeric(18,4)`, and `ck_quotation_items_line_total` bounds each
+     * `numeric`, not `numeric(18,4)`, and `tg_quotation_items_money` bounds each
      * line's own total without bounding their sum — so a Σ exceeding 14 integer digits
      * was returned here as a cheerful `200`, while `POST /invoices` for the same work
      * order answered `409` on SQLSTATE `22003`. The preview now fails on exactly the

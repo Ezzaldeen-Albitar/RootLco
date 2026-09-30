@@ -659,6 +659,8 @@ interface InvoicePaymentDocument {
   readonly unallocatedAmount: string | null;
   readonly creditNoteAmount: string | null;
   readonly outstanding: string | null;
+  /** An invoice's derived credit status (D7); null on every other document. */
+  readonly creditStatus: string | null;
 }
 
 /**
@@ -786,6 +788,7 @@ const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
         unallocatedAmount: null,
         creditNoteAmount: document.creditNoteAmount,
         outstanding: document.outstanding,
+        creditStatus: document.creditStatus,
       },
       sortValue: document.sortValue,
       id: document.documentId,
@@ -808,6 +811,8 @@ const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
         // A receipt has no outstanding balance of its own. What it has NOT yet
         // applied is a different question, and `unallocatedAmount` answers it.
         outstanding: null,
+        // A receipt is not credited; the invoice it was applied to is.
+        creditStatus: null,
       },
       sortValue: document.sortValue,
       id: document.documentId,
@@ -891,6 +896,10 @@ const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
           // The invoice's own status, the receipt's, or the credit note's
           // approval state.
           cell('status', null, document.status),
+          // How much of an invoice has been credited (D7, ADR-023): kept apart
+          // from `status`, which stays the invoice's own term. Null on a receipt
+          // and a credit note.
+          cell('creditStatus', null, document.creditStatus),
         ],
       })),
     },
