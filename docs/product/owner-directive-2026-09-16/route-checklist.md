@@ -3239,3 +3239,37 @@ Residual items from the contract review of this slice (fix round 1), one line ea
 - Not run locally in the review: test:db, test:backend, test:web-e2e and the builds; the review
   relied on PR CI run 36677214075 at 70596468 (integration-tests and authenticated-browser green; the
   database tier red only on shared-hardening, addressed in this round).
+
+Residual items from the contract review of this slice (fix round 2), one line each:
+
+- The two generated P1-31 matrices (`error-path-matrix.md`, `isolation-matrix.md`) were
+  regenerated with `P1_31_MATRIX_WRITE=1`, so they now cite `tests/db/shared-hardening.test.ts:346`
+  after round 1 added ten lines to that file; they were not edited by hand.
+- dependency-security (job 109785883778) is still red on npm audit of the full web tree (1 moderate,
+  1 high; the production tree is clean), as in round 1; this diff touches no manifest or lockfile,
+  but it is a required check and blocks the merge until it is handled on develop.
+- The dated, hand-written P1-31 records still cite `tests/db/shared-hardening.test.ts:336`, now ten
+  lines off (`determination-evidence-index-2026-09-18.md:252`, `reviewer-packet-2026-09-18.md:155`);
+  no gate reads them, and re-anchoring a dated record is the records owner's decision.
+- An invoice issued before the rule with a four-decimal gross (for example 2.1481 JOD) keeps that
+  residue; only a full return clears it, as ADR-023 Consequences states and
+  `tests/db/sal-minor-unit-rounding.test.ts` pins with `fits = false`.
+- Arabic wording: the credit status uses "الخصم" / "مخصومة بالكامل", the same word as the discount
+  label (carried from round 1); Owner review of the wording is advised.
+- The warranty payer split is always `NO_WARRANTY_SHARE` (`invoice-service.ts:661`); a percentage
+  split would need `customer_pay_amount` rounded to the minor unit.
+- Quotation discounts: `assertMinorUnitScale` throws on the first offending discount, so one line is
+  marked per submit and the next submit marks the next; acceptable, but not all at once.
+- Round-1 defects re-checked and closed: shared-hardening lists `shared.fits_minor_unit` and
+  `shared.round_to_minor_unit` with the reason (database-security 109785883963 and the database
+  job 109785740224 green); `functionCountDiscrepancyNote` moved (`tests/ci/baseline-integrity.test.ts`
+  passes); price-rule and selling-price refusals removed, with the p1-20 boundary pins back to base;
+  new DB cases cover a superseded four-decimal issued revision and an exact outstanding balance on a
+  four-decimal issued invoice (a BigInt probe of 134,136 issuable legacy revisions found none where
+  the old rounded sum differs from the sum of per-line roundings); the discount refusal lands on its
+  own line with DOM and adapter tests.
+- Probe: JOD 12.345 x 1 at 16% gives net 12.345, tax 1.975, total 14.320, as ADR-023 and the backend
+  test state; unit prices are not forced to the currency scale, since the counter-sale and quotation
+  trigger lines round only the net and tax money.
+- Not run locally (machine memory): the full root unit tier; the focused
+  `tests/ci/p1-31-error-path-matrix.test.ts` ran (8 of 8) and hosted CI runs the tier.
