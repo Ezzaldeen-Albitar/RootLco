@@ -354,8 +354,9 @@ describe('the prices panel', () => {
     );
     expect(screen.getByText(EN['inventory.prices.appliesCompany'] as string)).toBeTruthy();
     expect(screen.getByText(EN['inventory.prices.appliesTenant'] as string)).toBeTruthy();
-    expect(screen.getByText('12.5000 JOD')).toBeTruthy();
-    expect(screen.getByText('14.2500 JOD')).toBeTruthy();
+    // Through the one money formatter, in JOD's own three decimals (GAP-15).
+    expect(screen.getByText('12.500 JOD')).toBeTruthy();
+    expect(screen.getByText('14.250 JOD')).toBeTruthy();
   });
 
   it('says an item with no price refuses a counter sale of it', async () => {

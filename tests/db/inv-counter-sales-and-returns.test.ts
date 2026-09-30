@@ -48,6 +48,7 @@ import {
   addInvoiceLine,
   seedP111Base,
   seedPartner,
+  P11,
 } from './p1-11-helpers';
 
 type Q = { query: Client['query'] };
@@ -615,6 +616,82 @@ describe('inv.sales_returns — condition, ceiling and credit', () => {
           [sale]
         )
       ).toBe('34.8000');
+    });
+  });
+
+  it('credits a line returned one unit at a time cumulatively, to exactly its gross (GAP-05)', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const partner = await seedPartner(c, 'odcs_cumulative');
+      const { item } = await seedItem(c, 'odcs_cumulative');
+      const { warehouse } = await seedLocations(c, 'odcs_cumulative');
+      await seedStock(c, item, warehouse, 10, 'odcs_cumulative');
+      // 5.0000 x 3 = 15.0000 net; 15.0000 x 0.333333 = 4.999995, rounded to
+      // 5.0000 tax; 20.0000 gross on a line of three. A third of it is 6.66666…,
+      // so a per-return round(gross * 1 / 3, 4) credits 6.6667 three times —
+      // 20.0001, more than the line.
+      const taxClass = await seedTax(c, 'odcs_cumulative', '0.333333');
+      await setPrice(c, item, '5.0000', { taxClass });
+      const sale = await createCounterSale(c, partner, [
+        { itemId: item, locationId: warehouse, quantity: '3' },
+      ]);
+      const line = await one<{ id: string }>(
+        c,
+        `SELECT id FROM sal.invoice_lines WHERE invoice_id = $1`,
+        [sale]
+      );
+      expect(
+        await scalar(
+          c,
+          `SELECT gross_amount::text AS v FROM sal.invoice_line_amounts WHERE invoice_line_id = $1`,
+          [line.id]
+        )
+      ).toBe('20.0000');
+      await issueInvoice(c, sale);
+      await c.query(`SELECT inv.post_counter_sale_line($1,NULL)`, [line.id]);
+
+      const credits: string[] = [];
+      for (let unit = 0; unit < 3; unit++) {
+        const returned = await one<{ id: string }>(
+          c,
+          `SELECT inv.receive_sales_return('invoice_line',$1,1,'restockable',$2,NULL,'One back',NULL,NULL) AS id`,
+          [line.id, warehouse]
+        );
+        credits.push(
+          await scalar(
+            c,
+            `SELECT amount::text AS v FROM sal.credit_notes
+              WHERE id = (SELECT credit_note_id FROM inv.sales_returns WHERE id = $1)`,
+            [returned.id]
+          )
+        );
+      }
+      // The cumulative share, rounded once: 6.6667, then 13.3333 - 6.6667, then
+      // 20.0000 - 13.3333. Their sum is the line's gross to the last digit.
+      expect(credits).toEqual(['6.6667', '6.6666', '6.6667']);
+      expect(
+        await scalar(
+          c,
+          `SELECT sum(amount)::text AS v FROM sal.credit_notes WHERE invoice_id = $1`,
+          [sale]
+        )
+      ).toBe('20.0000');
+
+      // And every one of them is approvable by a second person on the unpaid sale:
+      // with the old rounding the third exceeded the open receivable forever.
+      await c.query(`SELECT set_config('app.user_id',$1,true)`, [P11.APPROVER_USER]);
+      const notes = (
+        await c.query<{ id: string }>(
+          `SELECT id FROM sal.credit_notes WHERE invoice_id = $1 ORDER BY created_at, id`,
+          [sale]
+        )
+      ).rows;
+      for (const note of notes) {
+        await c.query(`SELECT sal.approve_credit_note($1)`, [note.id]);
+      }
+      await c.query(`SELECT set_config('app.user_id',$1,true)`, [USER_A]);
+      expect(await scalar(c, `SELECT sal.invoice_open_receivable($1)::text AS v`, [sale])).toBe(
+        '0.0000'
+      );
     });
   });
 

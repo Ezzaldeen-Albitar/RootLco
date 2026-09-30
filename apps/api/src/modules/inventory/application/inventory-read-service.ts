@@ -29,6 +29,7 @@ import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import type {
   BalanceReconciliationRow,
   InventoryRepository,
+  ItemLabel,
   ItemListFilter,
   ItemRow,
   MovementListFilter,
@@ -443,6 +444,26 @@ export class InventoryReadService {
       openIssues: counts.openIssues,
       blocking: counts.activeReservations > 0 || counts.openIssues > 0,
     };
+  }
+
+  /**
+   * The code and name of each named item, for a document that prints what it sold
+   * (P1-32-PRE-OD-FIN, GAP-09: a counter-sale invoice line names its item).
+   *
+   * Cross-module port with no authorization of its own, like `openCommitmentsFor`:
+   * `inv.item_master` is tenant-wide reference data readable by every tenant
+   * caller (`sel_item_master_tenant`), and the caller has already authorized the
+   * document it is describing. Archived items are named too — a line sold before
+   * its item was archived still printed that item. An id this tenant cannot see is
+   * simply absent from the map.
+   */
+  public async describeItems(
+    db: DbHandle,
+    itemIds: readonly string[]
+  ): Promise<ReadonlyMap<string, ItemLabel>> {
+    const unique = [...new Set(itemIds)];
+    if (unique.length === 0) return new Map();
+    return this.repository.describeItems(db, unique);
   }
 
   /**

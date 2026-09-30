@@ -35,6 +35,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
+import { formatMoney } from '@/lib/money';
 import type { GoodsReceiptCreateLine } from '@/lib/contracts/inventory-contract';
 
 import {
@@ -857,14 +858,14 @@ function CostHistoryPanel({
                 translate(messages, 'inventory.receipts.costHistory.neverPriced')
               ) : (
                 <span dir="ltr">
-                  {history.latestUnitCost} {history.currencyCode ?? ''}
+                  {costText(history.latestUnitCost, history.currencyCode, locale)}
                 </span>
               )}
             </Fact>
             <Fact label={translate(messages, 'inventory.receipts.costHistory.average')}>
               {history.weightedAverageCost !== null ? (
                 <span dir="ltr">
-                  {history.weightedAverageCost} {history.currencyCode ?? ''}
+                  {costText(history.weightedAverageCost, history.currencyCode, locale)}
                 </span>
               ) : history.mixedCurrencies ? (
                 translate(messages, 'inventory.receipts.costHistory.mixed')
@@ -905,7 +906,10 @@ function CostHistoryPanel({
                         <Qty value={layer.quantity} />
                       </td>
                       <td className="text-end" dir="ltr">
-                        {layer.unitCost} {layer.currencyCode}
+                        {formatMoney(
+                          { amount: layer.unitCost, currency: layer.currencyCode },
+                          locale
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -927,4 +931,13 @@ function CostHistoryPanel({
       </div>
     </section>
   );
+}
+
+/**
+ * A cost, through the one money formatter when its currency is known (GAP-15):
+ * written with the currency's own minor unit, and never rounded below it. A cost
+ * whose currency the server did not state is shown as the server sent it.
+ */
+function costText(amount: string, currency: string | null, locale: Locale): string {
+  return currency === null ? amount : formatMoney({ amount, currency }, locale);
 }

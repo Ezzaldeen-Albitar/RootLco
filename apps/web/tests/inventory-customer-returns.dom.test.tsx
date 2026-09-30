@@ -474,7 +474,7 @@ describe('the credit note', () => {
     createSalesReturn.mockResolvedValue(
       succeeded(
         'inventory.returns.create.success',
-        received({ creditNoteId: CREDIT_NOTE_ID, status: 'credited' })
+        received({ creditNoteId: CREDIT_NOTE_ID, status: 'credit_requested' })
       )
     );
     renderLtr(operable());
@@ -493,16 +493,43 @@ describe('the credit note', () => {
     );
   });
 
-  it('marks a returned row that raised a credit note as waiting for approval', async () => {
+  it('marks a returned row whose credit note is still pending as waiting for approval', async () => {
     listSalesReturns.mockResolvedValue(
-      okPage([received({ creditNoteId: CREDIT_NOTE_ID, status: 'credited' })])
+      okPage([received({ creditNoteId: CREDIT_NOTE_ID, status: 'credit_requested' })])
     );
     renderLtr(operable());
     await openBranch();
     await waitFor(() =>
       expect(screen.getByText(EN['inventory.returns.creditPending'] as string)).toBeTruthy()
     );
-    expect(screen.getByText(EN['inventory.returnStatus.credited'] as string)).toBeTruthy();
+    expect(screen.getByText(EN['inventory.returnStatus.credit_requested'] as string)).toBeTruthy();
+    // Never "credited" while the note waits for a second person (GAP-04).
+    expect(screen.queryByText(EN['inventory.returnStatus.credited'] as string)).toBeNull();
+  });
+
+  it('says credited only once the credit note was approved, and waits for nobody then', async () => {
+    listSalesReturns.mockResolvedValue(
+      okPage([received({ creditNoteId: CREDIT_NOTE_ID, status: 'credited' })])
+    );
+    renderLtr(operable());
+    await openBranch();
+    await waitFor(() =>
+      expect(screen.getByText(EN['inventory.returnStatus.credited'] as string)).toBeTruthy()
+    );
+    expect(screen.queryByText(EN['inventory.returns.creditPending'] as string)).toBeNull();
+  });
+
+  it('says a refused credit was refused, in Arabic too', async () => {
+    listSalesReturns.mockResolvedValue(
+      okPage([received({ creditNoteId: CREDIT_NOTE_ID, status: 'credit_rejected' })])
+    );
+    renderLtr(operable());
+    await openBranch();
+    await waitFor(() =>
+      expect(screen.getByText(EN['inventory.returnStatus.credit_rejected'] as string)).toBeTruthy()
+    );
+    expect(screen.queryByText(EN['inventory.returns.creditPending'] as string)).toBeNull();
+    expect((AR['inventory.returnStatus.credit_rejected'] ?? '').length).toBeGreaterThan(0);
   });
 
   it('marks a damaged row as held apart in the list', async () => {
@@ -832,7 +859,7 @@ describe('naming the part handed to a job instead of typing its reference (route
 describe('reaching the credit a return raised', () => {
   it('links the waiting credit to the screen that shows it', async () => {
     listSalesReturns.mockResolvedValue(
-      okPage([received({ creditNoteId: CREDIT_NOTE_ID, status: 'credited' })])
+      okPage([received({ creditNoteId: CREDIT_NOTE_ID, status: 'credit_requested' })])
     );
     renderLtr(operable());
     await openBranch();

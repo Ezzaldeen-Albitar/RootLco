@@ -255,6 +255,11 @@ export interface InvoiceLineRow {
   readonly sourceServiceLineId: string | null;
   readonly sourcePartIssueId: string | null;
   readonly sourceQuotationItemId: string | null;
+  /**
+   * The item a counter-sale line sold (`sal.invoice_lines.item_id`); null on a
+   * work-order line, which is described by its quotation item instead.
+   */
+  readonly itemId: string | null;
   readonly recordVersion: number;
   readonly money: InvoiceLineAmountsRow | null;
 }
@@ -601,6 +606,7 @@ interface InvoiceLineSql {
   source_service_line_id: string | null;
   source_part_issue_id: string | null;
   source_quotation_item_id: string | null;
+  item_id: string | null;
   record_version: number;
   unit_price: string | null;
   net_amount: string | null;
@@ -622,6 +628,7 @@ const toInvoiceLine = (r: InvoiceLineSql): InvoiceLineRow => ({
   sourceServiceLineId: r.source_service_line_id,
   sourcePartIssueId: r.source_part_issue_id,
   sourceQuotationItemId: r.source_quotation_item_id,
+  itemId: r.item_id,
   recordVersion: r.record_version,
   money:
     r.unit_price !== null &&
@@ -913,7 +920,7 @@ export class BillingRepository extends Repository {
       `SELECT l.id, l.company_id, l.branch_id, l.line_number, l.line_type,
               l.quantity::text AS quantity, l.tax_class_id, l.currency_code,
               l.source_service_line_id, l.source_part_issue_id, l.source_quotation_item_id,
-              l.record_version,
+              l.item_id, l.record_version,
               la.unit_price::text          AS unit_price,
               la.net_amount::text          AS net_amount,
               la.tax_amount::text          AS tax_amount,
@@ -1898,10 +1905,8 @@ export class BillingRepository extends Repository {
    * unrepresentable.
    *
    * `currency_code` is bound from the PARENT INVOICE's row by the caller, never
-   * from client input. Five triggers fire on this table and not one reads
-   * `sal.invoices.currency_code`, and `sal.approve_credit_note` compares the amount
-   * but never the currency — so the application's `assertCurrencyMatches` is the
-   * ONLY defence against a JOD credit note against a USD invoice (P1-22-L-02).
+   * from client input. `sal.guard_credit_note_currency` refuses any other code on
+   * insert (GAP-13, closing P1-22-L-02), so a mismatch cannot be stored.
    */
   public async insertCreditNote(
     db: DbHandle,

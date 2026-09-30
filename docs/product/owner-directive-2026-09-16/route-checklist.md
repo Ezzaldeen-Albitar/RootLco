@@ -3107,3 +3107,68 @@ Known limitations of this slice, one line each:
   1.5 s keeps that from returning.
 - No authenticated browser spec targets these screens by test id; review round 2 observed hosted
   authenticated-browser job 109551243742 pass on `0a1f7925`.
+
+### Finance controls that need no business decision (P1-32-PRE-OD-FIN)
+
+From the read-only finance contract review of 2026-09-30 (items M-01, M-07, M-09, GAP-04, GAP-05,
+GAP-09, GAP-13, GAP-15, GAP-17). One forward migration, `20260930090000_sal_finance_controls.sql`
+(162 migrations). No route, operation, permission code or policy is added.
+
+| Route                         | What changed                                                                                                                                                           |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/inventory/counter-sales`    | An open sale carries the invoice's printable copy in a print scope; each line prints the item it sold; no work-order preview is waited for (GAP-09).                   |
+| `/inventory/customer-returns` | A return shows its credit note's decision — raised and waiting, credited, refused, or raised but not visible to this reader — never "credited" while pending (GAP-04). |
+| `/payments`                   | An allocation whose answer was lost is retried under the same key, even from a reopened form (M-09).                                                                   |
+| `/reports`                    | A credit note in the invoice-and-payment report links to `/credit-notes?creditNoteId=` (M-07).                                                                         |
+| every money figure            | Written with its currency's minor unit (JOD 3, USD 2), and a digit below it is shown rather than rounded (GAP-15); item prices and costs now use the same formatter.   |
+
+Wrapper extensions: none. The invoice print panel is reused (`CounterSalePrintPanel`, exported from
+the billing invoice screen) rather than copied; the design gallery is unchanged.
+
+Known limitations of this slice, one line each:
+
+- Receipt currency must be an ACTIVE currency; binding it to the company's base currency is not
+  done, because the model binds documents to their price-list currency, not to the base currency.
+- The reversal half of residual SB1 (a reversal in another currency than its receipt) is still a
+  residual and still pinned as one; no reversal request exists yet (GAP-06, an Owner decision).
+- Business-rule refusals are still not recorded as security events (GAP-18, an Owner decision).
+- The race cases force both orders behind a held row lock; the negative control (the same cases
+  with the lock removed) was not re-run for them.
+- Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
+  they run in hosted CI. Focused DB and backend files ran against a disposable database only.
+- The unit tier gains one test file (`tests/unit/od-finance-controls.test.ts`); the web tier gains
+  cases in existing files (no web test file added or removed); the recorded tiers are retaken at the
+  final head.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- M-01: after approval the guard's non-pending branch freezes neither `issued_at` (credit notes) nor
+  `reversed_at` (receipt reversals), and `app_runtime` may still update both, so an approved
+  timestamp can be backdated; older than this slice, narrowed by it, outside M-01; a later forward
+  migration may freeze them.
+- M-09: the allocation route stores the raw `Idempotency-Key` header while the transport store trims
+  it, so a key with surrounding spaces is a different business key; harmless with generated UUIDs.
+- M-09: the allocation key is unique per tenant, not per user; a collision with a row the caller
+  cannot see (RLS) misses the lookup and fails the insert with 23505 rather than a clear refusal;
+  it needs a UUID collision, so no live path reaches it.
+- GAP-15: `minorUnitOf` takes decimals from Intl/CLDR, not `shared.currencies.minor_unit`; they
+  agree for the seeded JOD, USD and EUR but not for IQD, LBP or SYP (CLDR says 0).
+- GAP-15: amounts above about 15 significant digits display imprecisely through a double (for
+  example 99999999999999.9999 JOD shows as 100,000,000,000,000.0000); older than this slice.
+- `payments-repository.ts`: `findCurrency` and `findAllocationByIdempotencyKey` sit beneath the
+  docblocks of `minorUnitForCurrency` and `findAllocation`; the one above
+  `findAllocationByIdempotencyKey` says it binds the scope pair, which it does not (documentation
+  drift only).
+- GAP-05: when a later cumulative share rounds to zero (a very small line gross), the whole return
+  is refused as having nothing to credit, as the old per-return rounding did.
+- M-09: the remembered uncertain allocations live in module memory for the life of the browser tab,
+  keyed by receipt id, and survive a sign-out and sign-in in that tab; negligible with UUID ids.
+- M-09 web cases: split so each opens the receipt at most twice, with a documented per-case budget
+  and the remembered attempts cleared around every test; one three-opening case had outrun the
+  30 s budget on the hosted runner and its late work failed the two cases after it.
+- The reviewer did not run the database tier (no disposable PostgreSQL was authorised to it); DB and
+  backend behaviour rests on the hosted database, integration, migration-replay and
+  security-matrix jobs. The negative control for the race cases was not run.
+- hosted-clean-room is red only on `validate:p1-27-closing-values` (stale unit and web run records,
+  and a unit file count of 144 against 145 in the tree), the records-step cascade; the recorded
+  tiers are retaken at the final head.

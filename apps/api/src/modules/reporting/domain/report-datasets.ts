@@ -438,17 +438,15 @@ export const REPORT_DATASETS = Object.freeze({
    * The cell carries the document id beside its number, and the column publishes
    * a template PER KIND rather than one template, because one column addresses
    * three kinds of document. `documentType` is the discriminator, and the
-   * templates name the routes of the detail operations that already exist:
-   * `sal.invoice-detail` on `/invoices/{id}` and `sal.receipt-detail` on
-   * `/payments/{id}`.
+   * templates name the routes of the detail operations that exist:
+   * `sal.invoice-detail` on `/invoices/{id}`, `sal.receipt-detail` on
+   * `/payments/{id}` and `sal.credit-note-detail` on `/credit-notes/{id}`.
    *
-   * A credit note maps to NULL, and that is a measured absence rather than an
-   * oversight: the operation register holds `sal.credit-note-create` and
-   * `sal.credit-note-approve` and NO credit-note read, so there is no authorized
-   * target route to name. Publishing an invented one would be a link that cannot
-   * resolve. The key is present carrying null so a client can tell "no screen for
-   * this kind" from "this kind is not in the map at all"; a credit-note read
-   * operation is the named prerequisite that would fill it.
+   * A credit note used to map to NULL because the register held no credit-note
+   * read. `sal.credit-note-detail` (DEF-T-07) has since filled that prerequisite,
+   * so the template is published (P1-32-PRE-OD-FIN, M-07). The key stays present
+   * for every kind, so "no screen for this kind" remains distinguishable from
+   * "this kind is not in the map at all" should a kind ever lose its read.
    *
    * ## The party is named by its ROLE, and its NAME is capability-gated (Owner, 2026-09-12)
    *
@@ -483,9 +481,8 @@ export const REPORT_DATASETS = Object.freeze({
             invoice: '/invoices/{id}',
             // `sal.receipt-detail`.
             receipt: '/payments/{id}',
-            // NULL, measured: the register holds no credit-note READ operation,
-            // so there is no authorized target route to name.
-            credit_note: null,
+            // `sal.credit-note-detail` (M-07).
+            credit_note: '/credit-notes/{id}',
           }),
         }),
       }),

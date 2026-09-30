@@ -2,18 +2,17 @@
  * Currency coherence, boundary scale and exact decimal arithmetic (Phase 1-22).
  *
  * This suite is the APPLICATION half of a two-part argument. The other half is
- * `tests/db/p1-22-protected-residuals.test.ts`, which proves — against the deployed DDL,
- * on the `app_runtime` login — that the protected schema ACCEPTS a JOD credit note
- * against a USD invoice, APPROVES it, and lets `sal.invoice_open_receivable` subtract
- * 40 JOD from a USD gross (100.0000 → 60.0000). Five triggers fire on
- * `sal.credit_notes` and not one reads `sal.invoices.currency_code`;
- * `sal.approve_credit_note` compares the amount and never the currency; and the
- * receivable function has no currency predicate at all.
+ * `tests/db/p1-22-protected-residuals.test.ts`. When P1-22 wrote it, it proved that
+ * the protected schema ACCEPTED a JOD credit note against a USD invoice and let
+ * `sal.invoice_open_receivable` subtract 40 JOD from a USD gross (P1-22-L-02,
+ * change-control candidate CC-1). Migration `20260930090000_sal_finance_controls.sql`
+ * closed that for credit notes (GAP-13): `sal.guard_credit_note_currency` refuses the
+ * insert and `sal.approve_credit_note` compares the codes, and the DB case now proves
+ * the refusal.
  *
- * So the question these cases answer is not "is the invariant enforced" — it is
- * enforced NOWHERE below this layer — but "does the backend refuse what the database
- * allows". Every refusal below is the only refusal there is (P1-22-L-02,
- * change-control candidate CC-1).
+ * So the question these cases answer is "does the backend refuse FIRST, on the field
+ * that carried the wrong value, and write nothing" — a caller told which field is wrong
+ * rather than handed a database refusal.
  *
  * ## Four properties every assertion here respects
  *
@@ -367,16 +366,10 @@ describe('sal.credit-note-create — currency equality with the parent invoice',
     expect(invoice.gross).toBe('100.0000');
     const before = await creditNoteRowsFor(invoice.invoiceId);
 
-    // THE DATABASE WOULD HAVE ACCEPTED THIS, AND WOULD HAVE APPROVED IT.
-    // `tests/db/p1-22-protected-residuals.test.ts`, in
-    // "accepts, approves, and subtracts a JOD credit note from a USD invoice",
-    // performs exactly this insert on the `app_runtime` login, approves it through
-    // `sal.approve_credit_note`, and then reads `sal.invoice_open_receivable` back as
-    // 60.0000 — 40 JOD subtracted from a USD gross as though the two were one unit.
-    // That case still PASSES, so the hole below is closed in application code only:
-    // no migration has been authored, the residual is `P1-22-L-02`, and the fix is
-    // change-control candidate CC-1. A reader must not conclude from a green suite
-    // here that the schema now defends this.
+    // Until GAP-13 the database would have accepted and approved this (P1-22-L-02).
+    // It now refuses the same insert (`tests/db/p1-22-protected-residuals.test.ts`,
+    // "refuses a JOD credit note against a USD invoice, so nothing is subtracted"),
+    // and this case proves the application refuses first, on `body.currency`.
     authAs(SAL_FULL);
     const response = await requestCreditNote(invoice.invoiceId, {
       amount: '40.0000',

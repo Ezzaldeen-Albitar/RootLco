@@ -220,6 +220,12 @@ function escapeLikeTerm(term: string): string {
   return term.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
 }
 
+/** What a document prints for an item it sold: its code (the SKU) and its name. */
+export interface ItemLabel {
+  readonly code: string;
+  readonly name: string;
+}
+
 export interface ItemRow {
   readonly id: string;
   readonly itemCategoryId: string;
@@ -1241,6 +1247,11 @@ export interface SalesReturnRow {
   readonly reason: string | null;
   readonly creditNoteId: string | null;
   readonly status: string;
+  /**
+   * The approval state of the credit note the return raised, or null when it raised
+   * none or the note is not visible to the reader (`sel_credit_notes_gated`).
+   */
+  readonly creditApprovalState: string | null;
   readonly recordVersion: number;
   readonly createdAt: Date;
 }
@@ -1268,7 +1279,19 @@ export const SALES_RETURN_ORDER: OrderingContract = Object.freeze({
 
 const SALES_RETURN_COLUMNS = `r.id, r.company_id, r.branch_id, r.source_kind, r.source_id,
   r.item_id, r.quantity::text AS quantity, r.return_condition, r.received_location_id,
-  r.quarantine_location_id, r.reason, r.credit_note_id, r.status, r.record_version, r.created_at`;
+  r.quarantine_location_id, r.reason, r.credit_note_id, r.status, r.record_version, r.created_at,
+  cn.approval_state AS credit_approval_state`;
+
+/**
+ * The one column of `sal.credit_notes` this module reads (GAP-04): the approval
+ * state of the note a return raised, so the return shows the note's decision rather
+ * than the stored `credited`. A LEFT JOIN under the reader's own RLS: a reader
+ * without `sal.finance.view` sees no note row and the state stays null, which the
+ * domain reports as "credit raised" rather than guessing.
+ */
+const SALES_RETURN_CREDIT_JOIN = `LEFT JOIN sal.credit_notes cn
+    ON cn.tenant_id = r.tenant_id AND cn.company_id = r.company_id
+   AND cn.branch_id = r.branch_id AND cn.id = r.credit_note_id`;
 
 interface SalesReturnSql {
   id: string;
@@ -1284,6 +1307,7 @@ interface SalesReturnSql {
   reason: string | null;
   credit_note_id: string | null;
   status: string;
+  credit_approval_state: string | null;
   record_version: number;
   created_at: Date;
 }
@@ -1302,6 +1326,7 @@ const toSalesReturn = (r: SalesReturnSql): SalesReturnRow => ({
   reason: r.reason,
   creditNoteId: r.credit_note_id,
   status: r.status,
+  creditApprovalState: r.credit_approval_state,
   recordVersion: r.record_version,
   createdAt: r.created_at,
 });
@@ -5259,6 +5284,22 @@ export class InventoryRepository extends Repository {
     };
   }
 
+  /** Code and name of each named item this tenant can see (`describeItems`). */
+  public async describeItems(
+    db: DbHandle,
+    itemIds: readonly string[]
+  ): Promise<ReadonlyMap<string, ItemLabel>> {
+    const context = this.assertContext(db);
+    const result = await this.run<{ id: string; sku: string; name: string }>(
+      db,
+      `SELECT i.id, i.sku, i.name
+         FROM inv.item_master i
+        WHERE i.tenant_id = $1 AND i.id = ANY($2::uuid[])`,
+      [context.principal.tenantId, itemIds]
+    );
+    return new Map(result.rows.map((row) => [row.id, { code: row.sku, name: row.name }]));
+  }
+
   /**
    * Active reservations and unreturned issues of one work order. "Unreturned" is
    * `quantity > PART_ISSUE_RETURNED_SQL` — both return tables, the same sum the
@@ -5571,6 +5612,7 @@ export class InventoryRepository extends Repository {
       db,
       `SELECT ${SALES_RETURN_COLUMNS}
          FROM inv.sales_returns r
+         ${SALES_RETURN_CREDIT_JOIN}
         WHERE r.tenant_id = $1 AND r.id = $2`,
       [context.principal.tenantId, returnId]
     );
@@ -5586,6 +5628,7 @@ export class InventoryRepository extends Repository {
       db,
       `SELECT ${SALES_RETURN_COLUMNS}
          FROM inv.sales_returns r
+         ${SALES_RETURN_CREDIT_JOIN}
         WHERE r.tenant_id = $1 AND r.idempotency_key = $2`,
       [context.principal.tenantId, key]
     );
@@ -5625,6 +5668,7 @@ export class InventoryRepository extends Repository {
               ${cursorTimestamp('r.created_at')} AS sort_value
          FROM inv.sales_returns r
          JOIN inv.item_master i ON i.tenant_id = r.tenant_id AND i.id = r.item_id
+         ${SALES_RETURN_CREDIT_JOIN}
         WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
           AND ($4::text IS NULL OR r.source_kind = $4)
           AND ($5::uuid IS NULL OR r.source_id = $5)

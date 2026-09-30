@@ -50,6 +50,7 @@ import { Decimal, MONEY, moneyView, type MoneyView } from '@/modules/pricing';
 // definition of what may be billed. Importing the surface does not boot the
 // quotation composition root — `quotationModule()` is memoised behind a closure.
 import { rollUpDecisions } from '@/modules/quotation';
+import { inventoryModule, type ItemLabel } from '@/modules/inventory';
 import type { DbHandle } from '@/server/db/transaction';
 import { callerHoldsPermissionAnywhere, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page } from '@/server/db/pagination';
@@ -105,9 +106,22 @@ export interface InvoiceLineView {
   readonly quantity: string;
   readonly currency: string;
   readonly sourceQuotationItemId: string | null;
+  /**
+   * What a counter-sale line sold, by code and name (GAP-09), so the line can be
+   * printed with a description. `null` on a work-order line, which is described by
+   * the quotation item it was copied from. Not money: shown to every invoice reader.
+   */
+  readonly item: InvoiceLineItemView | null;
   readonly recordVersion: number;
   /** `null` without `sal.finance.view`. */
   readonly money: InvoiceLineMoneyView | null;
+}
+
+/** An item a counter-sale line sold. `code` is the SKU. */
+export interface InvoiceLineItemView {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
 }
 
 export interface InvoiceView {
@@ -386,13 +400,17 @@ function withoutVehicleArms(terms: EntitySearchTerms): EntitySearchTerms {
   return { ...terms, plateFragment: '', vinFragment: '' };
 }
 
-export const toInvoiceLineView = (row: InvoiceLineRow): InvoiceLineView => ({
+export const toInvoiceLineView = (
+  row: InvoiceLineRow,
+  items: ReadonlyMap<string, ItemLabel> = new Map()
+): InvoiceLineView => ({
   id: row.id,
   lineNumber: row.lineNumber,
   lineType: row.lineType,
   quantity: row.quantity,
   currency: row.currencyCode,
   sourceQuotationItemId: row.sourceQuotationItemId,
+  item: lineItemView(row.itemId, items),
   recordVersion: row.recordVersion,
   money: row.money
     ? {
@@ -558,6 +576,30 @@ export interface WorkOrderInvoiceView {
   readonly invoice: InvoiceView | null;
 }
 
+/** The line's item as published, or null when it names none or cannot be named. */
+function lineItemView(
+  itemId: string | null,
+  items: ReadonlyMap<string, ItemLabel>
+): InvoiceLineItemView | null {
+  if (itemId === null) return null;
+  const label = items.get(itemId);
+  return label ? { id: itemId, code: label.code, name: label.name } : null;
+}
+
+/**
+ * The code and name of every item the lines sold, from `@/modules/inventory`'s
+ * port — the item master is that module's table (GAP-09). One read per invoice,
+ * and none at all for a work-order invoice, whose lines name no item.
+ */
+export async function describeLineItems(
+  db: DbHandle,
+  lines: readonly InvoiceLineRow[]
+): Promise<ReadonlyMap<string, ItemLabel>> {
+  const ids = lines.flatMap((line) => (line.itemId === null ? [] : [line.itemId]));
+  if (ids.length === 0) return new Map();
+  return inventoryModule().reads.describeItems(db, ids);
+}
+
 export class BillingReadService {
   public constructor(private readonly repository: BillingRepository) {}
 
@@ -586,9 +628,10 @@ export class BillingReadService {
       companyId: invoice.companyId,
       branchId: invoice.branchId,
     });
+    const items = await describeLineItems(db, lines);
     return {
       invoice: toInvoiceView(invoice),
-      lines: lines.map(toInvoiceLineView),
+      lines: lines.map((line) => toInvoiceLineView(line, items)),
       recordVersion: invoice.recordVersion,
     };
   }

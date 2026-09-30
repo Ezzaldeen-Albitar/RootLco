@@ -496,8 +496,9 @@ describe('the cost history', () => {
       companyId: COMPANY_ID,
       branchId: BRANCH_ID,
     });
-    expect(await within(history).findByText('13.0000 USD')).toBeVisible();
-    expect(within(history).getByText('12.7500 USD')).toBeVisible();
+    // Through the one money formatter, in USD's own two decimals (GAP-15).
+    expect(await within(history).findByText('13.00 USD')).toBeVisible();
+    expect(within(history).getByText('12.75 USD')).toBeVisible();
   });
 
   it('says why no average is shown when the costs span currencies', async () => {

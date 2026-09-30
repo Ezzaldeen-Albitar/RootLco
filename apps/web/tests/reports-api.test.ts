@@ -441,6 +441,45 @@ describe('the contract mirrors what the operations publish', () => {
     expect(contract.drillThroughHref(technician, row, row.cells[0]!, 'en')).toBeNull();
   });
 
+  it('opens a credit note on the credit-notes screen, named in the address (M-07)', () => {
+    const row = {
+      cells: [
+        { key: 'document', label: 'CN-1', value: 'cn-7' },
+        { key: 'documentType', label: 'Credit note', value: 'credit_note' },
+      ],
+    };
+    // The template the engine now publishes for the kind — `sal.credit-note-detail`.
+    const column = {
+      key: 'document',
+      kind: 'reference',
+      drillThrough: null,
+      drillThroughByKind: {
+        discriminator: 'documentType',
+        templates: {
+          invoice: '/invoices/{id}',
+          receipt: '/payments/{id}',
+          credit_note: '/credit-notes/{id}',
+        },
+      },
+    };
+    expect(contract.drillThroughHref(column, row, row.cells[0]!, 'ar')).toBe(
+      '/ar/credit-notes?creditNoteId=cn-7'
+    );
+    // The value is encoded, never interpolated raw.
+    const odd = { cells: [{ ...row.cells[0]!, value: 'a b' }, row.cells[1]!] };
+    expect(contract.drillThroughHref(column, odd, odd.cells[0]!, 'en')).toBe(
+      '/en/credit-notes?creditNoteId=a%20b'
+    );
+    // An invoice still has no screen of its own in this application.
+    const invoiceRow = {
+      cells: [
+        { key: 'document', label: 'INV-1', value: 'inv-1' },
+        { key: 'documentType', label: 'Invoice', value: 'invoice' },
+      ],
+    };
+    expect(contract.drillThroughHref(column, invoiceRow, invoiceRow.cells[0]!, 'en')).toBeNull();
+  });
+
   it('resolves a per-kind drill-through by the row’s own discriminating value', () => {
     const row = {
       cells: [

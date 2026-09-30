@@ -60,9 +60,11 @@
  * - **It raises no credit note itself.** A sales return against a counter sale
  *   credits the customer through `sal.request_return_credit_note`, the `sal`-owned
  *   primitive `inv.receive_sales_return` calls in the same transaction. No
- *   TypeScript in this module reads or writes a `sal` table, and none imports
+ *   TypeScript in this module writes a `sal` table, and none imports
  *   `@/modules/billing` — which would close a cycle, because billing imports this
- *   module.
+ *   module. It READS exactly one `sal` column, the approval state of the credit
+ *   note a return raised, under the reader's own RLS, so a return shows the note's
+ *   decision rather than the stored `credited` (GAP-04, `salesReturnDisplayState`).
  */
 import { composeModule } from '@/server/layering';
 import { InventoryRepository } from './data/inventory-repository';
@@ -91,6 +93,7 @@ export type {
   ItemIdentifierRow,
   ItemCategoryRow,
   ItemCostSummaryRow,
+  ItemLabel,
   ItemListFilter,
   ItemRow,
   ItemSalePriceRow,
@@ -302,6 +305,7 @@ export {
   REFERENCE_KINDS,
   RESERVATION_STATES,
   RETURN_CONDITIONS,
+  SALES_RETURN_DISPLAY_STATES,
   SALES_RETURN_SOURCE_KINDS,
   SALES_RETURN_STATES,
   SERVICE_CONDITION_FORMAT,
@@ -322,6 +326,7 @@ export {
   assertWorkOrderAcceptsParts,
   barcodeSymbologyFor,
   isLegalMovementReference,
+  salesReturnDisplayState,
   type AdjustmentDecision,
   type AdjustmentState,
   type BarcodeSymbology,
@@ -349,6 +354,7 @@ export {
   type ReferenceKind,
   type ReservationState,
   type ReturnCondition,
+  type SalesReturnDisplayState,
   type SalesReturnSourceKind,
   type SalesReturnState,
   type StockCountState,

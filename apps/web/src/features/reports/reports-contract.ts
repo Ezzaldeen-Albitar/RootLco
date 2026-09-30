@@ -428,23 +428,31 @@ export function isReportPeriod(from: string, to: string): boolean {
 }
 
 /**
- * The route templates THIS application can serve.
+ * The published route templates THIS application can serve, and the address each
+ * one opens.
  *
  * The API publishes a route TEMPLATE rather than a built URL, precisely because
  * it does not own the client's route table — and the client's route table is
- * what decides whether a template resolves. Three templates are published
- * across the four approved datasets and only the work-order one has a page
- * today: there is no per-technician screen, no invoice detail screen and no
- * receipt detail screen in this application, and a credit note has no read
- * operation at all, so the server publishes an explicit absence for it.
+ * what decides whether a template resolves. Two published templates have a page
+ * today. A work order opens on its own detail route. A credit note opens on the
+ * credit-notes screen with the note named in the address, which is how that
+ * screen is entered from anywhere (P1-32-PRE-OD-FIN, M-07); the screen applies its
+ * own permission gate. There is no per-technician screen, no invoice detail
+ * screen and no receipt detail screen in this application.
  *
- * A reference cell whose template is not in this set renders as the reference it
+ * A reference cell whose template is not in this map renders as the reference it
  * is, with no link. Rendering a link to a route that 404s is the defect the
  * navigation model refuses for exactly the same reason.
  */
-export const SERVED_DRILL_THROUGH_TEMPLATES: readonly string[] = Object.freeze([
-  '/work-orders/{id}',
-]);
+export const SERVED_DRILL_THROUGH_ROUTES: Readonly<Record<string, string>> = Object.freeze({
+  '/work-orders/{id}': '/work-orders/{id}',
+  '/credit-notes/{id}': '/credit-notes?creditNoteId={id}',
+});
+
+/** The templates of `SERVED_DRILL_THROUGH_ROUTES`. */
+export const SERVED_DRILL_THROUGH_TEMPLATES: readonly string[] = Object.freeze(
+  Object.keys(SERVED_DRILL_THROUGH_ROUTES)
+);
 
 /**
  * The template a cell drills through to, or nothing.
@@ -483,9 +491,11 @@ export function drillThroughHref(
 ): string | null {
   const template = drillThroughTemplate(column, row);
   if (template === null) return null;
-  if (!SERVED_DRILL_THROUGH_TEMPLATES.includes(template)) return null;
+  if (!Object.prototype.hasOwnProperty.call(SERVED_DRILL_THROUGH_ROUTES, template)) return null;
+  const route = SERVED_DRILL_THROUGH_ROUTES[template];
+  if (route === undefined) return null;
   if (cell.value === null || cell.value.length === 0) return null;
-  const filled = template.replace('{id}', encodeURIComponent(cell.value));
+  const filled = route.replace('{id}', encodeURIComponent(cell.value));
   return filled.includes('{') ? null : `/${locale}${filled}`;
 }
 

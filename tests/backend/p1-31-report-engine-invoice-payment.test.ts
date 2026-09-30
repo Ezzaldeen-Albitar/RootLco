@@ -1150,20 +1150,19 @@ describe('the dataset is registered as the Owner approved it', () => {
     ).toBe(true);
   });
 
-  it('resolves the document drill-through per KIND, and publishes no route for a credit note', async () => {
+  it('resolves the document drill-through per KIND, a credit note included', async () => {
     authAs(FIN_RPT_FULL);
     const view = await body(await report());
     const document = view.columns.find((column) => column.key === 'document');
     expect(document?.drillThroughByKind?.discriminator).toBe('documentType');
-    // Two authorized target routes that already exist — `sal.invoice-detail` and
-    // `sal.receipt-detail` — and an explicit NULL for the kind that has none.
+    // Three authorized target routes that exist — `sal.invoice-detail`,
+    // `sal.receipt-detail` and `sal.credit-note-detail` (M-07: the credit note used
+    // to map to NULL on the stale premise that no credit-note read existed).
     expect(document?.drillThroughByKind?.templates).toEqual({
       invoice: '/invoices/{id}',
       receipt: '/payments/{id}',
-      credit_note: null,
+      credit_note: '/credit-notes/{id}',
     });
-    // The absence is a measured fact about the operation register, not a
-    // rendering choice: nothing reads a credit note, so there is nothing to open.
     // The discriminator names a column this report actually publishes, so a
     // client can choose the template from the cell beside the id.
     expect(view.columns.map((column) => column.key)).toContain(

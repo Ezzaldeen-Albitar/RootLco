@@ -124,8 +124,37 @@ describe('formatting is display only', () => {
 
   it('groups thousands for a human', () => {
     expect(formatMoney({ amount: '1234567.8900', currency: 'JOD' }, 'en-GB')).toBe(
-      '1,234,567.89 JOD'
+      '1,234,567.890 JOD'
     );
+  });
+
+  it("writes an amount with its currency's own minor unit (GAP-15)", () => {
+    // JOD has three decimals, USD two, JPY none — shared.currencies.minor_unit.
+    expect(formatMoney({ amount: '12.5000', currency: 'JOD' }, 'en')).toBe('12.500 JOD');
+    expect(formatMoney({ amount: '12.5000', currency: 'USD' }, 'en')).toBe('12.50 USD');
+    expect(formatMoney({ amount: '1250.0000', currency: 'JPY' }, 'en')).toBe('1,250 JPY');
+    expect(formatMoney({ amount: '0.0000', currency: 'JOD' }, 'en')).toBe('0.000 JOD');
+    expect(formatMoney({ amount: '-3.2000', currency: 'KWD' }, 'en')).toBe('-3.200 KWD');
+  });
+
+  it('never rounds away a digit below the minor unit — a residue is shown, not tidied', () => {
+    // 1.9752 JOD cannot be paid in fils; hiding the fourth decimal would show a
+    // balance a customer could settle when it cannot be.
+    expect(formatMoney({ amount: '1.9752', currency: 'JOD' }, 'en')).toBe('1.9752 JOD');
+    expect(formatMoney({ amount: '10.0050', currency: 'USD' }, 'en')).toBe('10.005 USD');
+  });
+
+  it('writes the minor unit in Arabic too', () => {
+    const latin = formatMoney({ amount: '12.5000', currency: 'JOD' }, 'ar-JO-u-nu-latn');
+    expect(latin).toMatch(/12.500 JOD$/);
+    const arabic = formatMoney({ amount: '12.5000', currency: 'JOD' }, 'ar');
+    expect(arabic.endsWith(' JOD')).toBe(true);
+    // Whatever digits the locale writes, three of them follow the separator.
+    expect(arabic.replace(' JOD', '')).toMatch(/[.,٫]\p{Nd}{3}$/u);
+  });
+
+  it('falls back to two decimals for a code the platform cannot describe', () => {
+    expect(formatMoney({ amount: '7.5000', currency: 'ZZZ' }, 'en')).toBe('7.50 ZZZ');
   });
 
   it('uses Latin digits for Arabic, matching workshop paperwork', () => {
@@ -138,7 +167,7 @@ describe('formatting is display only', () => {
     // '12.5' is a legitimate shorthand and is padded. 'abc' is not an amount at
     // all, and formatting it as 0 or NaN would put a wrong number on a screen
     // that looks exactly like a right one.
-    expect(formatMoney({ amount: '12.5', currency: 'JOD' }, 'en-GB')).toBe('12.50 JOD');
+    expect(formatMoney({ amount: '12.5', currency: 'JOD' }, 'en-GB')).toBe('12.500 JOD');
     expect(() => formatMoney({ amount: 'abc', currency: 'JOD' }, 'en-GB')).toThrow();
     expect(() => formatMoney({ amount: '', currency: 'JOD' }, 'en-GB')).toThrow();
     expect(() => formatMoney({ amount: '1,250', currency: 'JOD' }, 'en-GB')).toThrow();

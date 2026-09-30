@@ -1557,10 +1557,20 @@ it."_ <!-- inventory.returns.damagedExplain -->
 refund: _"A part sold over the counter raises a credit note when it comes back. The note waits for a
 second person to approve it, and nobody has been refunded until
 then."_ <!-- inventory.returns.creditExplain --> The result message says the same: **"The part was
-taken back, and a credit note is waiting for a second person to approve it."** The row shows
-**Credit note raised** <!-- inventory.returnStatus.credited --> and **Waiting for approval**, and
-carries **Open the credit note** <!-- inventory.returns.openCredit --> , which takes you to the note
-itself (Part 6, §6.2a).
+taken back, and a credit note is waiting for a second person to approve it."** The row states the
+credit note's own decision, never more: while the note waits it shows **Credit note raised**
+<!-- inventory.returnStatus.credit_requested --> and **Waiting for approval**; once a second person
+
+approves it, **Credited** <!-- inventory.returnStatus.credited -->; if the note is refused, **Credit
+refused** <!-- inventory.returnStatus.credit_rejected -->. A person who may not see amounts is told
+only **Credit note raised** <!-- inventory.returnStatus.credit_raised -->, because the decision is
+not shown to them. The row carries **Open the credit note** <!-- inventory.returns.openCredit --> ,
+which takes you to the note itself (Part 6, §6.2a).
+
+**Returning a line a piece at a time credits exactly what was charged.** Each return is credited
+the share of the line's charged total for everything returned so far, less what the earlier returns
+of that line were already credited. Three returns of one piece from a line of three charged 20.000
+are credited 6.667, 6.666 and 6.667 — 20.000 together, never more than the line.
 
 **Read the next paragraph before you promise a customer a refund.** The credit note has a screen at
 this version, and **the second person the message names has to be somebody other than whoever took

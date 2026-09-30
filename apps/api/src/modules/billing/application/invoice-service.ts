@@ -29,14 +29,15 @@
  * numbering, maker≠approver on a credit note, and the financial-event completeness
  * triggers. None of it is re-implemented here.
  *
- * This service owns three rules the database does **not** enforce, and each is
- * named at its call site:
+ * This service states three rules at their call sites. The first is now held by
+ * the database as well; the other two are not:
  *
- *  - **credit-note currency = invoice currency.** Five triggers fire on
- *    `sal.credit_notes` and not one reads `sal.invoices.currency_code`;
- *    `sal.approve_credit_note` compares the amount and never the currency; and
- *    `sal.invoice_open_receivable` subtracts approved credits with no currency
- *    predicate either. `assertCurrencyMatches` is the ONLY defence (P1-22-L-02).
+ *  - **credit-note currency = invoice currency.** Until migration
+ *    `20260930090000_sal_finance_controls.sql` nothing in the database compared the
+ *    two codes (P1-22-L-02). `sal.guard_credit_note_currency` now refuses a
+ *    mismatched insert and `sal.approve_credit_note` compares them again under the
+ *    invoice lock (GAP-13). `assertCurrencyMatches` still answers first, so the
+ *    caller is told which field is wrong rather than receiving a refusal.
  *  - **a numbering sequence must be provisioned before the expensive work.**
  *    `shared.next_display_number` raises `no_data_found` and `app_runtime` holds no
  *    INSERT on `shared.number_sequences`, so an unprovisioned tenant cannot be
@@ -78,6 +79,7 @@ import {
 import {
   FINANCE_VIEW_PERMISSION,
   balanceIsTrustworthy,
+  describeLineItems,
   resolveCommercialSource,
   toCreditNoteView,
   toInvoiceLineView,
@@ -1244,16 +1246,14 @@ export class InvoiceService {
    * reason — an event named `credit-note.issued` fired at request time would tell
    * every consumer the receivable had fallen when it had not.
    *
-   * ### The currency comes from the invoice row, and this is the only check there is
+   * ### The currency comes from the invoice row
    *
    * `currency_code` is read from the locked parent invoice and stored from there.
-   * If the caller named a currency, `assertCurrencyMatches` refuses a mismatch —
-   * and that assertion is the ONLY defence in the entire platform: five triggers
-   * fire on `sal.credit_notes` and none reads `sal.invoices.currency_code`,
-   * `sal.approve_credit_note` compares the amount but never the currency, and
-   * `sal.invoice_open_receivable` subtracts approved credits with no currency
-   * predicate either. A JOD credit note against a USD invoice would be accepted,
-   * approved, and silently subtracted from the USD gross (P1-22-L-02).
+   * If the caller named a currency, `assertCurrencyMatches` refuses a mismatch on
+   * the field that carried it. The database refuses the same mismatch since
+   * `20260930090000_sal_finance_controls.sql` (`sal.guard_credit_note_currency`,
+   * GAP-13); before it, a JOD credit note against a USD invoice would have been
+   * accepted and subtracted from the USD gross (P1-22-L-02).
    *
    * ### The ceiling is checked under the invoice lock
    *
@@ -1444,9 +1444,9 @@ export class InvoiceService {
    *
    * `assertCurrencyMatches` runs at request time and again here, because the
    * approval is the moment the credit becomes a real subtraction from the
-   * receivable and nothing in the database compares the two codes at any point. A
-   * row inserted by a path that skipped the request service — `app_runtime` holds
-   * raw INSERT on `sal.credit_notes` — is caught here.
+   * receivable. `sal.guard_credit_note_currency` refuses a mismatched insert and
+   * `sal.approve_credit_note` compares the codes under the invoice lock (GAP-13);
+   * this comparison answers first with a refusal the caller can read.
    *
    * Idempotent on an already-`approved` note: no second audit record, no second
    * event.
@@ -1685,9 +1685,10 @@ export class InvoiceService {
       companyId: fresh.companyId,
       branchId: fresh.branchId,
     });
+    const items = await describeLineItems(db, lines);
     return {
       invoice: toInvoiceView(fresh),
-      lines: lines.map(toInvoiceLineView),
+      lines: lines.map((line) => toInvoiceLineView(line, items)),
       recordVersion: fresh.recordVersion,
     };
   }
