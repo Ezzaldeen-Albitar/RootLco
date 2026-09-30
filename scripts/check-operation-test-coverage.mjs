@@ -2748,6 +2748,17 @@ export const MANIFEST = {
     required: ['denial'],
     note: 'what the second person is asked to approve — amount, reason, requester, approval state — read back by the id the list publishes; an absent note and one the caller may not see are the SAME 404 because sel_credit_notes_gated gates the whole row and telling the two apart would confirm a financial document exists (cross-tenant); the record version is published and echoed as the ETag because the row carries one, not as a claim that the approval is version-guarded',
   },
+  // ADR-023 D3 (P1-32-PRE-OD-FD2A): the two decisions a pending note lacked.
+  'sal.credit-note-withdraw': {
+    files: ['tests/backend/od-finance-credit-decisions.test.ts'],
+    required: ['denial', 'stale-version'],
+    note: 'the requester withdraws their own pending note and nobody else may — refused by name (credit_note_withdraw_not_requester) in the service and again by sal.guard_credit_note_decision, so a raw UPDATE is held to the same rule; a withdrawn note credits nothing and is terminal, so the open receivable is unchanged and a later approval is refused; If-Match is the NOTE version compared with the locked row, a stale one is a conflict and a missing one 428; a replay under the same key writes one audit record; each refusal by rule leaves exactly one security event after the rollback (ADR-023 D12)',
+  },
+  'sal.credit-note-reject': {
+    files: ['tests/backend/od-finance-credit-decisions.test.ts'],
+    required: ['denial', 'stale-version'],
+    note: 'another authorised person rejects a pending note with a reason; the requester is refused by name (credit_note_self_rejection) and withdraws instead, and sal.guard_credit_note_decision checks sal.credit.manage in the note scope and the reason again; a missing or blank reason is a 422 on body.reason and is NOT recorded as a refusal of the note; rejected is terminal and an approval racing a rejection has exactly one winner, forced behind a held row lock; another tenant is a 404 and another branch a 403',
+  },
   'sal.payment-record': {
     files: [
       'tests/backend/p1-22-payments.test.ts',

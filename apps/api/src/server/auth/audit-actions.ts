@@ -1933,6 +1933,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A credit note was approved under dual control and became a real reduction of the receivable. sal.guard_dual_control_approval stamps the approver from the session and refuses approved_by = requested_by, so the maker cannot approve their own request; the amount ceiling is re-checked against sal.invoice_open_receivable inside the approving transaction.',
   },
   {
+    code: 'sal.credit_note.withdrawn',
+    class: 'financial',
+    entityType: 'sal.credit_note',
+    description:
+      'The requester withdrew their own pending credit note (ADR-023, D3). Only the person who raised it may withdraw it, which sal.guard_credit_note_decision enforces from the session; the decider and the time are stamped by that trigger. A withdrawn note credits nothing and is terminal, so the open receivable and the derived credit status are unchanged, and it can never be approved afterwards.',
+  },
+  {
+    code: 'sal.credit_note.rejected',
+    class: 'approval',
+    entityType: 'sal.credit_note',
+    description:
+      'A pending credit note was rejected by someone other than its requester, with a stated reason (ADR-023, D3). sal.guard_credit_note_decision refuses the requester, requires sal.credit.manage in the note’s company and branch and a reason that is not blank, and stamps the decider and the time. A rejected note credits nothing and is terminal.',
+  },
+  {
     code: 'sal.receipt.recorded',
     class: 'financial',
     entityType: 'sal.receipt',

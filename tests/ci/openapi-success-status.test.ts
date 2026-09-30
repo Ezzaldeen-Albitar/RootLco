@@ -103,7 +103,9 @@ describe('every operation publishes the success status it returns', () => {
     // over three new route modules — three answer 200 and the threshold write 201.
     // 505 with the reference-value reads (P1-32-PRE-OD-REF): two GETs over two new
     // route modules, both answering 200.
-    expect(actual.size).toBe(505);
+    // 507 with the credit-note decisions (P1-32-PRE-OD-FD2A): withdrawal and
+    // rejection over two new route modules, both answering 200.
+    expect(actual.size).toBe(507);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -248,7 +250,9 @@ describe('every operation publishes the success status it returns', () => {
     // approval decision and the threshold read each answer 200.
     // 363 -> 365 with the reference-value reads (P1-32-PRE-OD-REF): two GETs
     // answering 200, so the 201 count does not move.
-    expect(counts[200]).toBe(365);
+    // 365 -> 367 with the credit-note withdrawal and rejection, both answering
+    // 200 as the approval does, so the 201 count does not move.
+    expect(counts[200]).toBe(367);
   });
 
   it('reads the handler, not the declaration', () => {

@@ -1761,7 +1761,10 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
     );
     expect(seed).toContain("('sal.credit.manage'");
 
-    // DECLARED by exactly the four credit-note operations, read from the register.
+    // DECLARED by exactly the six credit-note operations, read from the register.
+    // Rejection and withdrawal joined the four in ADR-023 D3 (P1-32-PRE-OD-FD2A);
+    // withdrawal declares this code alone, because only the requester may withdraw
+    // and the note's whole row is gated by the finance view regardless.
     const register = JSON.parse(
       readFileSync(
         join(REPOSITORY_ROOT, 'docs/phase-1/phase-1-24/evidence/operation-register.json'),
@@ -1778,6 +1781,8 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
       'sal.credit-note-create',
       'sal.credit-note-detail',
       'sal.credit-note-list',
+      'sal.credit-note-reject',
+      'sal.credit-note-withdraw',
     ]);
 
     // The existing controls, by declaration: every one is branch-scoped and needs both

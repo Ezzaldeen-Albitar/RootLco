@@ -180,18 +180,11 @@ export class InventorySalesReturnService {
     const source = await this.requireSource(db, input.sourceKind, input.sourceId);
     await authorizeScope({ companyId: source.companyId, branchId: source.branchId });
 
-    // Checked here so the counter is told the remaining figure rather than a bare
-    // invariant refusal. The binding check is still the ceiling trigger, under the
-    // source lock, which is what makes two tills racing the last unit safe.
-    const remaining = Quantity.fromDatabase(source.remainingQuantity, 'remainingQuantity');
-    if (quantity.isGreaterThan(remaining)) {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Only ${remaining.toString()} of the ${source.sourceQuantity} that left may still be ` +
-          `returned; ${quantity.toString()} was offered`,
-      });
-    }
-
+    // A repeated key is answered BEFORE the remaining quantity is re-evaluated
+    // (ADR-023, D9): the return already happened, and a return that took the last
+    // unit would otherwise refuse its own retry as "nothing left to return". The
+    // retry gets the return it made — one stock movement set, one credit note —
+    // and a key reused for a different return is refused, never replayed.
     const existing =
       input.idempotencyKey === undefined
         ? null
@@ -211,6 +204,18 @@ export class InventorySalesReturnService {
       }
       await authorizeScope({ companyId: existing.companyId, branchId: existing.branchId });
       return toSalesReturnView(existing, true);
+    }
+
+    // Checked here so the counter is told the remaining figure rather than a bare
+    // invariant refusal. The binding check is still the ceiling trigger, under the
+    // source lock, which is what makes two tills racing the last unit safe.
+    const remaining = Quantity.fromDatabase(source.remainingQuantity, 'remainingQuantity');
+    if (quantity.isGreaterThan(remaining)) {
+      throw new AppFailure('ERR-TRN-001', {
+        message:
+          `Only ${remaining.toString()} of the ${source.sourceQuantity} that left may still be ` +
+          `returned; ${quantity.toString()} was offered`,
+      });
     }
 
     // Both ends of the posting are checked before the call, so a wrong location is
@@ -270,6 +275,38 @@ export class InventorySalesReturnService {
         { field: 'creditNoteId', classification: 'internal', value: received.creditNoteId },
       ],
     });
+
+    // The credit request the return raised is audited as a credit request, in THIS
+    // transaction (ADR-023, D9; finance review GAP-12). Receiving the goods and
+    // asking for a credit are separate events: the return's own record above is
+    // the stock event, and this is the financial one, under the same action and
+    // entity type a credit note raised against an invoice is recorded with. The
+    // note is born pending — a return never approves a credit or a refund — so
+    // the second person's approval stays the only way it becomes real.
+    //
+    // The return is named on it (`salesReturnId`) so either record leads to the
+    // other. No amount: the note carries it under `sal.finance.view`, and
+    // `iam.audit_records` is not gated by that permission.
+    if (received.creditNoteId !== null) {
+      await appendAudit(db, {
+        action: 'sal.credit_note.requested',
+        entityType: 'sal.credit_note',
+        entityId: received.creditNoteId,
+        companyId: received.companyId,
+        branchId: received.branchId,
+        requestRef: 'inv.sales-return-create',
+        details: [
+          { field: 'salesReturnId', classification: 'internal', value: received.id },
+          { field: 'sourceKind', classification: 'internal', value: received.sourceKind },
+          { field: 'invoiceLineId', classification: 'internal', value: received.sourceId },
+          {
+            field: 'approvalState',
+            classification: 'internal',
+            value: received.creditApprovalState,
+          },
+        ],
+      });
+    }
 
     return toSalesReturnView(received, false);
   }

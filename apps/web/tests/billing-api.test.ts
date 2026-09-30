@@ -33,6 +33,8 @@ const {
   readInvoicePreview,
   readOutstanding,
   readWorkOrderInvoice,
+  rejectCreditNote,
+  withdrawCreditNote,
 } = await import('@/features/billing/api');
 const { requiresIdempotencyKey, resolveOperation } = await import('@/lib/api/operation-contract');
 
@@ -361,5 +363,97 @@ describe('raising and approving a credit note', () => {
     ).toBe('expired');
     expect((await approveCreditNote(NOTE_ID)).state.status).toBe('expired');
     expect(send).not.toHaveBeenCalled();
+  });
+
+  /*
+   * ADR-023 D3: withdrawing your own request and rejecting somebody else's.
+   * Both are version-guarded by the NOTE's version and idempotent, so the
+   * transport carries the key; the version is whatever the screen passed,
+   * forwarded untouched.
+   */
+  it('withdrawal and rejection are published idempotent operations', () => {
+    expect(
+      resolveOperation('POST', `/api/v1/credit-notes/${NOTE_ID}/withdrawal`)?.operationId
+    ).toBe('sal.credit-note-withdraw');
+    expect(resolveOperation('POST', `/api/v1/credit-notes/${NOTE_ID}/rejection`)?.operationId).toBe(
+      'sal.credit-note-reject'
+    );
+    expect(requiresIdempotencyKey('POST', `/api/v1/credit-notes/${NOTE_ID}/withdrawal`)).toBe(true);
+    expect(requiresIdempotencyKey('POST', `/api/v1/credit-notes/${NOTE_ID}/rejection`)).toBe(true);
+  });
+
+  it('withdraws with no body and the note version as If-Match', async () => {
+    send.mockResolvedValue(ok({ creditNote: { id: NOTE_ID }, replayed: false }));
+    const out = await withdrawCreditNote(NOTE_ID, 4);
+    expect(send).toHaveBeenCalledWith(
+      'POST',
+      `/api/v1/credit-notes/${NOTE_ID}/withdrawal`,
+      undefined,
+      { ifMatch: 4 }
+    );
+    expect(out.state.status).toBe('success');
+    expect(out.created?.creditNote.id).toBe(NOTE_ID);
+  });
+
+  it('rejects with the reason as the body and the note version as If-Match', async () => {
+    send.mockResolvedValue(ok({ creditNote: { id: NOTE_ID }, replayed: false }));
+    await rejectCreditNote(NOTE_ID, { reason: 'Raised twice' }, 2);
+    expect(send).toHaveBeenCalledWith(
+      'POST',
+      `/api/v1/credit-notes/${NOTE_ID}/rejection`,
+      { reason: 'Raised twice' },
+      { ifMatch: 2 }
+    );
+  });
+
+  it('a named refusal of either decision reaches the banner as its own sentence', async () => {
+    send.mockResolvedValue(
+      conflict([{ path: 'path.creditNoteId', rule: 'credit_note_withdraw_not_requester' }])
+    );
+    expect((await withdrawCreditNote(NOTE_ID, 1)).state.messageKey).toBe(
+      'form.violation.credit_note_withdraw_not_requester'
+    );
+    send.mockResolvedValue(
+      conflict([{ path: 'path.creditNoteId', rule: 'credit_note_self_rejection' }])
+    );
+    expect((await rejectCreditNote(NOTE_ID, { reason: 'r' }, 1)).state.messageKey).toBe(
+      'form.violation.credit_note_self_rejection'
+    );
+    send.mockResolvedValue(
+      conflict([{ path: 'path.creditNoteId', rule: 'credit_note_decision_frozen' }])
+    );
+    expect((await rejectCreditNote(NOTE_ID, { reason: 'r' }, 1)).state.messageKey).toBe(
+      'form.violation.credit_note_decision_frozen'
+    );
+  });
+
+  it('a stale version, a conflict with no rule, says the note changed or was decided', async () => {
+    send.mockResolvedValue(conflict());
+    expect((await withdrawCreditNote(NOTE_ID, 1)).state.messageKey).toBe(
+      'creditNotes.decision.conflict'
+    );
+    expect((await rejectCreditNote(NOTE_ID, { reason: 'r' }, 1)).state.messageKey).toBe(
+      'creditNotes.decision.conflict'
+    );
+  });
+
+  it('files a refusal of the rejection reason on the reason', async () => {
+    send.mockResolvedValue({
+      ok: false as const,
+      kind: 'validation',
+      status: 422,
+      correlationId: 'corr-422',
+      problem: {
+        type: 'about:blank',
+        title: 'Unprocessable',
+        status: 422,
+        code: 'ERR-VAL-001',
+        correlationId: 'corr-422',
+        violations: [{ path: 'body.reason', rule: 'too_small' }],
+      },
+    });
+    const out = await rejectCreditNote(NOTE_ID, { reason: ' ' }, 1);
+    expect(out.created).toBeNull();
+    expect(out.state.fieldErrors?.['reason']).toBe('form.violation.too_small');
   });
 });

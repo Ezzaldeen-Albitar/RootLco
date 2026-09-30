@@ -248,8 +248,8 @@ read (Owner decision D7, ADR-023), with the two amounts behind them:
 - "Credit" <!-- invoices.settlement.credit --> — how much of the invoice has been credited by
   **approved** credit notes: "No credit" <!-- invoices.creditStatus.none --> , "Partly credited"
   <!-- invoices.creditStatus.partly_credited --> , or "Fully credited" <!-- invoices.creditStatus.credited -->
-  when the approved credits reach the invoice's total. A note still waiting for a second person, or
-  refused, credits nothing and does not count. "Credited so far" <!-- invoices.settlement.credited -->
+  when the approved credits reach the invoice's total. A note still waiting for a second person,
+  rejected or withdrawn credits nothing and does not count. "Credited so far" <!-- invoices.settlement.credited -->
   is the total of the approved credits.
 - "Payment" <!-- invoices.settlement.payment --> — how much of what is still payable has been paid:
   "Not paid yet" <!-- invoices.paymentStatus.open --> , "Partly paid" <!-- invoices.paymentStatus.partly_paid --> ,
@@ -358,12 +358,11 @@ your work requires the figures.
 
 Whichever way it is raised, the note is born waiting for approval and credits nothing. **Approving
 it is a second person's act, on the Credit notes screen** (§6.2a): the person who raised a note can
-never approve it.
+never approve it. **While it waits, another authorised person may reject it, saying why, and the
+person who raised it may withdraw it** (§6.2a). Approved, rejected and withdrawn are final.
 
 **What is still NOT AVAILABLE:**
 
-- **There is no rejection.** A credit note nobody approves stays **Waiting for a second person**
-  and credits nothing; no screen refuses one, and the application publishes no operation that would.
 - **There is no payment-reversal screen.** A receipt can appear as "Reversed" <!-- payments.status.reversed -->
   , and no screen reverses one.
 - An **issued** invoice still cannot be cancelled from any screen. Only a draft can be cancelled
@@ -416,10 +415,22 @@ already there. So in a freshly provisioned organisation:
 - **Second person.** A credit note is raised as **Waiting for a second person** and credits nothing.
   The person who raised it can never approve it; a different person who also holds both permissions
   must. Only then does the amount the customer owes go down.
+- **Reject and withdraw.** Only somebody other than the person who raised a note may reject it, and
+  must say why; only the person who raised it may withdraw it. A rejected or withdrawn note credits
+  nothing, can never be approved afterwards, and the amount the customer owes does not change.
+- **Final decisions.** Once a note is approved, rejected or withdrawn, nothing about the decision —
+  who took it, when, or why — can be changed, and the date a credit was given cannot be moved.
 - **The open amount.** A note cannot credit more than is still open on its invoice. That is checked
   when it is raised and again when it is approved.
-- **Audit.** Raising a credit note and approving one are each recorded in the organisation's audit
-  log.
+- **Audit.** Raising, approving, rejecting and withdrawing a credit note are each recorded in the
+  organisation's audit log.
+- **Refused attempts are recorded too.** When the application refuses a decision by rule — approving
+  your own note, rejecting a note you raised, withdrawing somebody else's, deciding a note already
+  decided, crediting more than is open, deciding a discount you asked for or have no limit for, or
+  allocating more money than a receipt or an invoice has left — the attempt is recorded as a security
+  event in the organisation's log, after the refusal, naming who tried, what, and which rule refused
+  it. No amount, name or typed text is recorded with it. Reading that log needs the audit permission,
+  and only within your own organisation.
 
 **An organisation created before this change** keeps the set it was given until the platform
 operator runs the administrator backfill for it. That run adds the permission only to an
@@ -438,8 +449,8 @@ it."**, and a counter-sale return moves the stock but not the money.
    it. The notes shown are those of the branch you are working in." <!-- creditNotes.targetExplain -->
 2. Read **Credit notes at this branch** <!-- creditNotes.list.heading --> . It opens on the notes
    **Waiting for a second person** <!-- creditNotes.state.pending --> ; the buttons under **Show**
-   <!-- creditNotes.list.status --> change it to **Approved**, **Refused** or **All**
-   <!-- creditNotes.state.approved / .rejected / filters.chips.all --> , the one in force shown
+   <!-- creditNotes.list.status --> change it to **Approved**, **Rejected**, **Withdrawn** or **All**
+   <!-- creditNotes.state.approved / .rejected / .withdrawn / filters.chips.all --> , the one in force shown
    pressed. The list pages with **Previous** and **Next**. The columns are **Why it
    was raised**, **Amount** and **Approval** <!-- creditNotes.column.* --> ; an unsettled
    note shows **Nothing credited yet** <!-- creditNotes.notIssued --> under its reason. A note you
@@ -486,6 +497,34 @@ On a note you raised yourself there is no approve button; the note says "You rai
 note, so it is waiting for another approver: a different person who can manage credit notes must
 approve it." <!-- creditNotes.detail.ownRequest -->
 
+**Rejecting a credit note** — by somebody other than the person who raised it
+
+1. Open the note from the list. While it waits, **Reject** <!-- creditNotes.reject.action --> stands
+   beside the approval: "If this credit should not be given, reject it and say why. A rejected credit
+   note is never credited and can no longer be approved." <!-- creditNotes.reject.explain -->
+2. Press **Reject**. The screen asks **Reject this credit note?** <!-- creditNotes.reject.confirmTitle -->
+   and for **Why it is being rejected** <!-- creditNotes.reject.reason --> . The reason is required:
+   until one is typed the button stays unavailable, and a box left blank is marked "A reason is
+   required." <!-- overlay.reasonRequired --> What you typed is kept if the reason is refused.
+3. Press **Reject** again. The screen says "The credit note was rejected. Nothing was credited."
+   <!-- creditNotes.reject.done --> and the note reads **Rejected** <!-- creditNotes.state.rejected -->
+   with **Rejected on** <!-- creditNotes.detail.rejectedAt --> and **Why it was rejected**
+   <!-- creditNotes.detail.rejectionReason --> .
+
+**Withdrawing your own request** — by the person who raised it
+
+1. Open your note while it waits. **Withdraw request** <!-- creditNotes.withdraw.action --> is
+   offered, and nothing else: "While it is still waiting, you can withdraw this request. A withdrawn
+   request is never credited and can no longer be approved." <!-- creditNotes.withdraw.explain -->
+2. Press it. The screen asks **Withdraw this credit request?** <!-- creditNotes.withdraw.confirmTitle -->
+   , naming the amount and the reason; press **Withdraw request** again, or **Cancel**.
+3. The screen says "The credit request was withdrawn. Nothing was credited."
+   <!-- creditNotes.withdraw.done --> and the note reads **Withdrawn** <!-- creditNotes.state.withdrawn -->
+   with **Withdrawn on** <!-- creditNotes.detail.withdrawnAt --> .
+
+A decided note offers nothing more and says "This decision is final: the credit note can no longer be
+approved, rejected or withdrawn." <!-- creditNotes.detail.final -->
+
 **What the screen explains about itself.** "A credit note is raised when something already billed is
 given back or corrected. A second person approves it, and nothing is credited until they
 do." <!-- creditNotes.explain --> — and, on every note, "Approving is a second person's step:
@@ -493,20 +532,23 @@ whoever raised a credit note cannot approve it." <!-- creditNotes.detail.approva
 
 **Restrictions**
 
-- **No rejection.** A note that should not be approved is simply left waiting; it credits nothing.
 - One branch at a time. There is no view across a company.
 - Where none exists: **"Nothing has been credited at this branch."** <!-- creditNotes.list.none -->
 
 **If it goes wrong**
 
-| Message                                                                                                                                                                    | What it means                                                                                                            |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| **"You do not have permission to see the credit notes of this branch. That also needs permission to see amounts."** <!-- creditNotes.list.refused -->                      | One or both permissions are missing.                                                                                     |
-| **"The credit notes could not be read just now. Try again."** <!-- creditNotes.list.unavailable -->                                                                        | The service did not answer.                                                                                              |
-| **"That credit note was not found."** <!-- creditNotes.detail.missing -->                                                                                                  | The note is not at this branch, or is gone.                                                                              |
-| **"The invoice cannot be credited by this amount. …"** <!-- creditNotes.request.overOpen -->                                                                               | The amount is more than is still open on the invoice, or the invoice is no longer open for credit. Enter less.           |
-| **"You raised this credit note, so you cannot approve it. Another person who can manage credit notes must approve it."** <!-- form.violation.credit_note_self_approval --> | The person who raised the note tried to approve it (for example from another window). Ask a second person.               |
-| **"This credit note could not be approved as it stands. …"** <!-- creditNotes.approve.conflict -->                                                                         | It was decided meanwhile, or its invoice no longer has that much open. The note has been read again; check what it says. |
+| Message                                                                                                                                                                    | What it means                                                                                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| **"You do not have permission to see the credit notes of this branch. That also needs permission to see amounts."** <!-- creditNotes.list.refused -->                      | One or both permissions are missing.                                                                                        |
+| **"The credit notes could not be read just now. Try again."** <!-- creditNotes.list.unavailable -->                                                                        | The service did not answer.                                                                                                 |
+| **"That credit note was not found."** <!-- creditNotes.detail.missing -->                                                                                                  | The note is not at this branch, or is gone.                                                                                 |
+| **"The invoice cannot be credited by this amount. …"** <!-- creditNotes.request.overOpen -->                                                                               | The amount is more than is still open on the invoice, or the invoice is no longer open for credit. Enter less.              |
+| **"You raised this credit note, so you cannot approve it. Another person who can manage credit notes must approve it."** <!-- form.violation.credit_note_self_approval --> | The person who raised the note tried to approve it (for example from another window). Ask a second person.                  |
+| **"This credit note could not be approved as it stands. …"** <!-- creditNotes.approve.conflict -->                                                                         | It was decided meanwhile, or its invoice no longer has that much open. The note has been read again; check what it says.    |
+| **"You raised this credit note, so you cannot reject it. You can withdraw it instead."** <!-- form.violation.credit_note_self_rejection -->                                | The person who raised the note tried to reject it. Withdraw it instead.                                                     |
+| **"Only the person who raised this credit request can withdraw it."** <!-- form.violation.credit_note_withdraw_not_requester -->                                           | Somebody other than the person who raised the note tried to withdraw it.                                                    |
+| **"This credit note has already been decided, so it can no longer be changed."** <!-- form.violation.credit_note_decision_frozen -->                                       | It was approved, rejected or withdrawn meanwhile.                                                                           |
+| **"This credit note changed since it was shown, or it has already been decided. …"** <!-- creditNotes.decision.conflict -->                                                | Somebody changed or decided it after you opened it. The note has been read again; check it and try again if it still waits. |
 
 **Screenshot** — no screenshot available at this version.
 

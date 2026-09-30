@@ -66,8 +66,17 @@ export type InvoiceHistoryState = (typeof INVOICE_HISTORY_STATES)[number];
 export const INVOICE_LINE_TYPES = Object.freeze(['service', 'part', 'fee'] as const);
 export type InvoiceLineType = (typeof INVOICE_LINE_TYPES)[number];
 
-/** `ck_credit_notes_approval_state`, identical to the reversal vocabulary. */
-export const APPROVAL_STATES = Object.freeze(['pending', 'approved', 'rejected'] as const);
+/**
+ * `ck_credit_notes_approval_state`. `withdrawn` is the requester's own
+ * withdrawal of a pending request (ADR-023, D3); the receipt-reversal vocabulary
+ * has no such state. Every state but `pending` is terminal.
+ */
+export const APPROVAL_STATES = Object.freeze([
+  'pending',
+  'approved',
+  'rejected',
+  'withdrawn',
+] as const);
 export type ApprovalState = (typeof APPROVAL_STATES)[number];
 
 /** `ck_financial_events_event_type`. Closed at six. */

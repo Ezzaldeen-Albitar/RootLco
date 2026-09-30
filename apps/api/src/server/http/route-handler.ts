@@ -63,6 +63,7 @@ import { RATE_LIMIT_POLICIES, enforceRateLimit, type RateLimitPolicy } from './r
 import { resolveClientAddress } from './trusted-proxy';
 import { backendConfig } from '../config/backend-config';
 import { recordSecurityEvent } from '../audit/security-events';
+import { businessRefusalOf, recordBusinessRefusal } from '../audit/business-refusals';
 
 /** What a handler returns. `status` defaults to 200. */
 export interface HandlerResult<T> {
@@ -495,7 +496,14 @@ export async function handleOperation<T>(
     try {
       result = await run();
     } catch (error) {
-      if (!(error instanceof IdempotencyRaceError)) throw error;
+      if (!(error instanceof IdempotencyRaceError)) {
+        // The command's transaction has rolled back by now, and a refusal by
+        // business rule (ADR-023, D12) is recorded AFTER it, on a transaction of
+        // its own, so the record survives the refusal. At most one event per
+        // attempt, and never a change to what the caller is told.
+        await persistBusinessRefusal(operation, context as RequestContext, error);
+        throw error;
+      }
       // Another transaction won the key while this one executed. This
       // transaction rolled back, so nothing partial committed; re-read the
       // winner's stored response on a fresh transaction.
@@ -612,6 +620,42 @@ function respondWithFailure(
     status: failure.status,
     headers: problemHeaders(failure, correlationId),
   });
+}
+
+/**
+ * Records a refusal by business rule after its command rolled back (ADR-023, D12).
+ *
+ * Only a failure a service marked with `withBusinessRefusal` is recorded; every
+ * other failure passes through untouched. The operation id is this pipeline's
+ * own registration, never anything the caller or the service supplied. The write
+ * runs on the operation's own connection, so a control-plane refusal is recorded
+ * by the platform role and a tenant refusal by the runtime role. It can never
+ * fail the request: a lost record is logged, and the caller still receives the
+ * refusal the service threw.
+ */
+async function persistBusinessRefusal(
+  operation: RegisteredOperation,
+  context: RequestContext,
+  error: unknown
+): Promise<void> {
+  const refusal = businessRefusalOf(error);
+  if (!refusal) return;
+  try {
+    await withTransaction(
+      context,
+      async (db) => recordBusinessRefusal(db, { ...refusal, operationId: operation.id }),
+      isControlPlane(operation) ? { connection: 'platform' as const } : {}
+    );
+  } catch (failure) {
+    log.error('Business refusal could not be recorded', {
+      ...contextLogFields(context),
+      result: 'failure',
+      context: {
+        rule: refusal.rule,
+        reason: failure instanceof Error ? failure.name : 'unknown',
+      },
+    });
+  }
 }
 
 /**

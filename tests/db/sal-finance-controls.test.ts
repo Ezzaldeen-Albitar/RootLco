@@ -112,10 +112,14 @@ describe('M-01 — the runtime login may UPDATE only what a decision writes', ()
         )
       ).rows[0]!.p;
 
-    for (const column of ['approval_state', 'issued_at']) {
+    // `issued_at` and `reversed_at` left the grant in
+    // `20260930110000_sal_credit_note_decisions.sql`: the trigger stamps both at
+    // approval, so the runtime login writes no decision date at all.
+    for (const column of ['approval_state', 'decision_reason']) {
       expect(await privilege('sal.credit_notes', column), column).toBe(true);
     }
     for (const column of [
+      'issued_at',
       'requested_by',
       'amount',
       'reason',
@@ -125,10 +129,11 @@ describe('M-01 — the runtime login may UPDATE only what a decision writes', ()
     ]) {
       expect(await privilege('sal.credit_notes', column), column).toBe(false);
     }
-    for (const column of ['approval_state', 'reversed_at']) {
+    for (const column of ['approval_state']) {
       expect(await privilege('sal.receipt_reversals', column), column).toBe(true);
     }
     for (const column of [
+      'reversed_at',
       'requested_by',
       'amount',
       'reason',

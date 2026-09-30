@@ -476,6 +476,15 @@ export interface CreditNoteRow {
   readonly approvedBy: string | null;
   readonly approvedAt: Date | null;
   readonly issuedAt: Date | null;
+  /**
+   * Who withdrew or rejected the request, and when — stamped from the session by
+   * `sal.guard_credit_note_decision`, `null` while pending and on an approval
+   * (ADR-023, D3).
+   */
+  readonly decidedBy: string | null;
+  readonly decidedAt: Date | null;
+  /** Why it was rejected; present on a rejection only. */
+  readonly decisionReason: string | null;
   readonly idempotencyKey: string | null;
   readonly recordVersion: number;
 }
@@ -682,6 +691,9 @@ interface CreditNoteSql {
   approved_by: string | null;
   approved_at: Date | null;
   issued_at: Date | null;
+  decided_by: string | null;
+  decided_at: Date | null;
+  decision_reason: string | null;
   idempotency_key: string | null;
   record_version: number;
 }
@@ -699,13 +711,17 @@ const toCreditNote = (r: CreditNoteSql): CreditNoteRow => ({
   approvedBy: r.approved_by,
   approvedAt: r.approved_at,
   issuedAt: r.issued_at,
+  decidedBy: r.decided_by,
+  decidedAt: r.decided_at,
+  decisionReason: r.decision_reason,
   idempotencyKey: r.idempotency_key,
   recordVersion: r.record_version,
 });
 
 const CREDIT_NOTE_COLUMNS = `c.id, c.company_id, c.branch_id, c.invoice_id, c.currency_code,
   c.amount::text AS amount, c.reason, c.approval_state, c.requested_by, c.approved_by,
-  c.approved_at, c.issued_at, c.idempotency_key, c.record_version`;
+  c.approved_at, c.issued_at, c.decided_by, c.decided_at, c.decision_reason,
+  c.idempotency_key, c.record_version`;
 
 export class BillingRepository extends Repository {
   protected readonly module = 'billing';
@@ -1995,7 +2011,8 @@ export class BillingRepository extends Repository {
        VALUES ($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9)
        RETURNING id, company_id, branch_id, invoice_id, currency_code,
                  amount::text AS amount, reason, approval_state, requested_by, approved_by,
-                 approved_at, issued_at, idempotency_key, record_version`,
+                 approved_at, issued_at, decided_by, decided_at, decision_reason,
+                 idempotency_key, record_version`,
       [
         context.principal.tenantId,
         input.companyId,
@@ -2018,10 +2035,11 @@ export class BillingRepository extends Repository {
    * The primitive locks the note, returns silently for an already-`approved` one,
    * refuses any other non-`pending` state, locks the invoice, re-checks the amount
    * against `sal.invoice_open_receivable` *inside* that lock, sets
-   * `approval_state = 'approved'` and `issued_at = now()`, and writes the
-   * `credit_note_issued` financial event. The `BEFORE UPDATE` trigger stamps
-   * `approved_by` from the session and raises `check_violation` when it equals
-   * `requested_by`.
+   * `approval_state = 'approved'`, and writes the `credit_note_issued` financial
+   * event. The `BEFORE UPDATE` trigger `sal.guard_credit_note_decision` stamps
+   * `approved_by`, `approved_at` and `issued_at` from the session and the clock —
+   * the runtime login may write none of them — and raises `check_violation` when
+   * the approver equals `requested_by`.
    *
    * It does **not** compare the credit note's currency to the invoice's. That
    * comparison happens before the request is ever stored, in the service.
@@ -2035,6 +2053,32 @@ export class BillingRepository extends Repository {
       creditNoteId,
       correlationId,
     ]);
+  }
+
+  /**
+   * The requester withdraws their own pending note, through
+   * `sal.withdraw_credit_note` (ADR-023, D3).
+   *
+   * The primitive locks the note, refuses anyone but the requester
+   * (`credit_note_withdraw_not_requester`) and any decided state
+   * (`credit_note_decision_frozen`), and returns silently for the requester on a
+   * note already withdrawn. `sal.guard_credit_note_decision` stamps the decider
+   * and the time. No financial event: a withdrawn note never credited.
+   */
+  public async withdrawCreditNote(db: DbHandle, creditNoteId: string): Promise<void> {
+    await this.run(db, `SELECT sal.withdraw_credit_note($1::uuid)`, [creditNoteId]);
+  }
+
+  /**
+   * A different person rejects a pending note with a reason, through
+   * `sal.reject_credit_note` (ADR-023, D3).
+   *
+   * The primitive refuses the requester (`credit_note_self_rejection`) and any
+   * other decided state; the trigger checks `sal.credit.manage` in the note's
+   * company and branch and the reason, and stamps the decider and the time.
+   */
+  public async rejectCreditNote(db: DbHandle, creditNoteId: string, reason: string): Promise<void> {
+    await this.run(db, `SELECT sal.reject_credit_note($1::uuid, $2)`, [creditNoteId, reason]);
   }
 
   // -------------------------------------------------------------------------

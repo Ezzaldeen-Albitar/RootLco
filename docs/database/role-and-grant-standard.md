@@ -462,6 +462,23 @@ freezes the request's facts for any role that can still write them.
 needs no privilege of the caller. `SELECT` and `INSERT` are unchanged, no policy
 changes, and `app_readonly` keeps `SELECT` only.
 
+### 5.10 Decision dates written by triggers only (DBCR-P1-32-PRE-OD-FD2A-001, migration `20260930110000`)
+
+The decision columns of 5.9 still let the runtime role write the date a decision
+took effect: `issued_at` on an approved credit note and `reversed_at` on an
+approved receipt reversal, so either could be backdated after the decision. Both
+are now stamped by the decision triggers at the moment of approval and frozen
+afterwards, and the runtime role no longer holds `UPDATE` on either. A rejection
+states its reason, so `decision_reason` is the one column the runtime role gains.
+
+| Object                  | `app_runtime` UPDATE (was)                            | Stamped and frozen by the trigger                                     |
+| ----------------------- | ----------------------------------------------------- | --------------------------------------------------------------------- |
+| `sal.credit_notes`      | `approval_state`, `decision_reason` (was `issued_at`) | `approved_by`, `approved_at`, `issued_at`, `decided_by`, `decided_at` |
+| `sal.receipt_reversals` | `approval_state` (was `reversed_at`)                  | `approved_by`, `approved_at`, `reversed_at`                           |
+
+`SELECT` and `INSERT` are unchanged, no policy changes, and `app_readonly` keeps
+`SELECT` only.
+
 ---
 
 ## 6. How later phases attach real logins

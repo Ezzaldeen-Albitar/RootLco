@@ -303,6 +303,12 @@ export interface VoidedInvoice {
  * | `sal.credit-note-detail` | GET    | `/credit-notes/{creditNoteId}`   | `sal.credit.manage`, `sal.finance.view`  |
  * | `sal.credit-note-create` | POST   | `/invoices/{invoiceId}/credit-notes` | `sal.credit.manage`, `sal.finance.view` |
  * | `sal.credit-note-approve` | POST  | `/credit-notes/{creditNoteId}/approval` | `sal.credit.manage`, `sal.finance.view` |
+ * | `sal.credit-note-reject`  | POST  | `/credit-notes/{creditNoteId}/rejection` | `sal.credit.manage`, `sal.finance.view` |
+ * | `sal.credit-note-withdraw` | POST | `/credit-notes/{creditNoteId}/withdrawal` | `sal.credit.manage` |
+ *
+ * Rejection and withdrawal (ADR-023, D3) are version-guarded: `If-Match` is the
+ * NOTE's `recordVersion` from the detail read. Only the requester withdraws, and
+ * only someone else rejects, with a reason; every state but `pending` is final.
  *
  * Both DECLARE `sal.finance.view` rather than nulling amounts the way the
  * invoice reads do, and that asymmetry is the database's: the invoice header is
@@ -313,8 +319,8 @@ export interface VoidedInvoice {
  * never null on this surface.
  * ------------------------------------------------------------------ */
 
-/** `ck_credit_notes_approval_state`, mirrored. */
-export const CREDIT_NOTE_STATES = ['pending', 'approved', 'rejected'] as const;
+/** `ck_credit_notes_approval_state`, mirrored. `withdrawn` is the requester's own withdrawal. */
+export const CREDIT_NOTE_STATES = ['pending', 'approved', 'rejected', 'withdrawn'] as const;
 export type CreditNoteState = (typeof CREDIT_NOTE_STATES)[number];
 
 /** `sal.credit-note-list` and `sal.credit-note-detail` — `CreditNoteView`. */
@@ -333,6 +339,15 @@ export interface CreditNote {
   readonly approvedBy: string | null;
   readonly approvedAt: string | null;
   readonly issuedAt: string | null;
+  /**
+   * Who withdrew or rejected the request, and when — the requester for a
+   * withdrawal, somebody else for a rejection; `null` while pending and on an
+   * approved note. An id, compared with the signed-in person and never shown.
+   */
+  readonly decidedBy: string | null;
+  readonly decidedAt: string | null;
+  /** Why it was rejected, as the person who rejected it wrote it; `null` otherwise. */
+  readonly decisionReason: string | null;
   readonly recordVersion: number;
 }
 
@@ -342,7 +357,10 @@ export interface CreditNote {
  * holds against the route's zod schema.
  */
 
-/** The echo of `sal.credit-note-create` and `sal.credit-note-approve` — `CreditNoteResult`. */
+/**
+ * The echo of `sal.credit-note-create`, `sal.credit-note-approve`,
+ * `sal.credit-note-reject` and `sal.credit-note-withdraw` — `CreditNoteResult`.
+ */
 export interface CreditNoteEcho {
   readonly creditNote: CreditNote;
   /** True when the key (create) or an already-approved note (approve) was met again. */

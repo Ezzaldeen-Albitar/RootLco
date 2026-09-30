@@ -50,6 +50,7 @@
  * added here.
  */
 import { AppFailure } from '@/server/errors/app-failure';
+import { withBusinessRefusal } from '@/server/audit/business-refusals';
 import { assertMinorUnitScale } from '@/server/http/validation';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
@@ -245,6 +246,24 @@ export interface AllocatePaymentInput {
    * already made; a key reused for another receipt, invoice or amount is refused.
    */
   readonly idempotencyKey?: string | undefined;
+}
+
+/**
+ * The rule an over-allocation is recorded under (ADR-023, D12): more than the
+ * receipt has left, or more than the invoice still has open. One security event
+ * per refused attempt, written by the route pipeline after the command rolls
+ * back, naming the receipt; the amounts themselves are not recorded, because the
+ * rule is all the record needs.
+ */
+export const OVER_ALLOCATION_RULE = 'payment_over_allocation';
+
+/** An `ERR-TRN-001` for an allocation outside its bounds, marked for the record. */
+function overAllocation(receiptId: string, message: string): AppFailure {
+  return withBusinessRefusal(new AppFailure('ERR-TRN-001', { message }), {
+    entityType: 'sal.receipt',
+    entityId: receiptId,
+    rule: OVER_ALLOCATION_RULE,
+  });
 }
 
 /**
@@ -694,7 +713,7 @@ export class PaymentService {
       );
     } catch (error) {
       if (error instanceof PaymentRuleError) {
-        throw new AppFailure('ERR-TRN-001', { message: error.message });
+        throw overAllocation(receipt.id, error.message);
       }
       throw error;
     }
@@ -721,6 +740,19 @@ export class PaymentService {
           message: 'The receipt or the invoice is no longer in scope for this allocation',
           cause: error,
         });
+      }
+      // The primitive's own bounds, re-checked under its locks: another allocation
+      // against the same invoice can land between the pre-check above and this
+      // call. The same refusal, recorded the same way.
+      if (
+        isSqlState(error, SQLSTATE.checkViolation) &&
+        error instanceof Error &&
+        /exceeds (receipt unallocated|invoice open receivable)/.test(error.message)
+      ) {
+        throw overAllocation(
+          receipt.id,
+          'Allocating a payment was refused: the amount exceeds what the receipt or the invoice has left'
+        );
       }
       toDomainFailure(error, 'Allocating a payment');
     }

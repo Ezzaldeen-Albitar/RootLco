@@ -534,6 +534,9 @@ const ALLOWED_ROUTINES = new Set([
   'sal.create_counter_sale_invoice',
   'sal.guard_authorized_receiver',
   'sal.guard_credit_note_currency',
+  // P1-32-PRE-OD-FD2A (ADR-023, D3): the credit-note decision guard and the
+  // withdraw and reject primitives. All three SECURITY INVOKER, empty search_path.
+  'sal.guard_credit_note_decision',
   'sal.guard_delivery_coherence',
   'sal.guard_dual_control_approval',
   'sal.guard_dual_control_request_frozen',
@@ -551,9 +554,11 @@ const ALLOWED_ROUTINES = new Set([
   'sal.partner_outstanding_balance',
   'sal.receipt_unallocated',
   'sal.record_receipt',
+  'sal.reject_credit_note',
   'sal.request_return_credit_note',
   'sal.stamp_delivering_employee_identity',
   'sal.stamp_dual_control_maker',
+  'sal.withdraw_credit_note',
   'shared.archive_document',
   // P1-OD-025 scanner handoff. Both SECURITY INVOKER with an empty search_path,
   // which is why they may join this list at all — the posture case in

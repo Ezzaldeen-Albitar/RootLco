@@ -81,6 +81,8 @@ export type SalesReturnState = (typeof SALES_RETURN_STATES)[number];
  *  - `credit_requested` — the note waits for a second person.
  *  - `credited`         — the note was approved; the credit is real.
  *  - `credit_rejected`  — the note was refused.
+ *  - `credit_withdrawn` — the requester withdrew the credit request (ADR-023, D3);
+ *                         the goods stay received, and nothing was credited.
  *  - `credit_raised`    — a note exists but its decision is not visible to this
  *                         reader: credit notes are gated whole-row by
  *                         `sal.finance.view`, so the state is not guessed.
@@ -90,6 +92,7 @@ export const SALES_RETURN_DISPLAY_STATES = Object.freeze([
   'credit_requested',
   'credited',
   'credit_rejected',
+  'credit_withdrawn',
   'credit_raised',
 ] as const);
 export type SalesReturnDisplayState = (typeof SALES_RETURN_DISPLAY_STATES)[number];
@@ -113,6 +116,8 @@ export function salesReturnDisplayState(
       return 'credited';
     case 'rejected':
       return 'credit_rejected';
+    case 'withdrawn':
+      return 'credit_withdrawn';
     default:
       return 'credit_raised';
   }
