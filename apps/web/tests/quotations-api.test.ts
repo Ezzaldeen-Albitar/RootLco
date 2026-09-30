@@ -246,6 +246,47 @@ describe('the guarded writes carry the QUOTATION version, and the others carry n
     expect(outcome.created).toBeNull();
   });
 
+  it('a discount finer than the currency keeps the position of its line, on both writes (D1)', async () => {
+    // The API names the line: `body.lines[1].discount`. Keeping only the leaf
+    // would lose which discount box is wrong, so the adapter adds the position.
+    const refused = {
+      ...failure('validation'),
+      status: 422,
+      problem: {
+        code: 'ERR-VAL-001',
+        violations: [
+          { path: 'body.lines[1].discount', rule: 'minor_unit_scale' },
+          { path: 'body.lines[3].discount', rule: 'minor_unit_scale' },
+        ],
+      },
+    };
+    send.mockResolvedValue(refused);
+    const lines = [
+      { serviceId: SERVICE_ID, quantity: '1' },
+      { serviceId: SERVICE_ID, quantity: '1', discount: '0.0005' },
+    ];
+    const revised = await createQuotationRevision(QUOTATION_ID, { lines }, 3);
+    expect(revised.state.status).toBe('invalid');
+    expect(revised.state.fieldErrors).toMatchObject({
+      discount: 'form.violation.minor_unit_scale',
+      'lines.1.discount': 'form.violation.minor_unit_scale',
+      'lines.3.discount': 'form.violation.minor_unit_scale',
+    });
+    const created = await createQuotation({ workOrderId: WORK_ORDER_ID, lines });
+    expect(created.state.fieldErrors?.['lines.1.discount']).toBe('form.violation.minor_unit_scale');
+    expect(created.created).toBeNull();
+    // A refusal of anything else on a line gains no position.
+    send.mockResolvedValue({
+      ...refused,
+      problem: {
+        code: 'ERR-VAL-001',
+        violations: [{ path: 'body.lines[0].quantity', rule: 'invalid' }],
+      },
+    });
+    const other = await createQuotationRevision(QUOTATION_ID, { lines }, 3);
+    expect(Object.keys(other.state.fieldErrors ?? {})).toEqual(['quantity']);
+  });
+
   it('decideRevision and decideItem post the decision bodies unchanged, and no version', async () => {
     send.mockResolvedValue(ok({ decision: 'approved' }));
     const body = {

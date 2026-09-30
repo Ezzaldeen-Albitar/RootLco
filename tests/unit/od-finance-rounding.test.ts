@@ -38,7 +38,7 @@ function refusal(amount: string, currency: string, minorUnit: number): unknown {
 }
 
 describe('D1 — an entered amount must fit the currency’s minor unit', () => {
-  it('refuses a JOD price at four decimals and accepts it at three, trailing zeros included', () => {
+  it('refuses a JOD amount at four decimals and accepts it at three, trailing zeros included', () => {
     expect(refusal('1.2345', 'JOD', 3)).toEqual([
       { path: 'body.amount', rule: 'minor_unit_scale' },
     ]);

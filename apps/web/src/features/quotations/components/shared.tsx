@@ -436,18 +436,50 @@ export function lineValues(lines: readonly DraftLine[]): Record<string, string> 
  * than naming none. A line error the operator's own draft already produced wins,
  * because that one does know its line.
  *
- * A discount refused against `body.lines[<n>].discount` arrives the same way,
- * as `discount`, and is folded in the same place: a fixed discount finer than
- * the quotation currency's minor unit (ADR-023, D1) is only knowable once the
- * server has priced the lines, so the browser cannot refuse it first.
+ * A discount refused against `body.lines[<n>].discount` is different: a fixed
+ * discount finer than the quotation currency's minor unit (ADR-023, D1) is only
+ * knowable once the server has priced the lines, and the adapter keeps its
+ * line's position (`lines.<n>.discount`). The builder places it on that line's
+ * discount box through `serverLineRefusals`, so it is not repeated here. Only
+ * a bare `discount` with no position is folded above the lines.
  */
 export function lineErrors(
   own: Readonly<Record<string, string>>,
   outcome: ActionState | null
 ): Readonly<Record<string, string>> {
-  const published = outcome?.fieldErrors?.['quantity'] ?? outcome?.fieldErrors?.['discount'];
-  if (published === undefined || own['lines'] !== undefined) return own;
-  return { ...own, lines: published };
+  const published = outcome?.fieldErrors ?? {};
+  const placed = Object.keys(published).some((field) => LINE_DISCOUNT_FIELD.test(field));
+  const folded = published['quantity'] ?? (placed ? undefined : published['discount']);
+  if (folded === undefined || own['lines'] !== undefined) return own;
+  return { ...own, lines: folded };
+}
+
+/** `lines.<n>.discount`: a refused discount with its line's position (quotations `api.ts`). */
+const LINE_DISCOUNT_FIELD = /^lines\.(\d+)\.discount$/;
+
+/**
+ * A server refusal of a line's discount, keyed to the control that holds it.
+ *
+ * The API names the line by its position in the body it was sent, and the
+ * body's lines are the draft lines in order (`validateLines`), so position
+ * `<n>` is `lines[n]` of the draft that was submitted. The result is keyed
+ * `line-<key>-discount`, the key the discount box reads, so the caller can
+ * record it as the form's own refusal: the box turns red with the sentence
+ * beside it and `aria-invalid`, the cursor moves to it, and the complaint is
+ * withdrawn once the discount is corrected (ADR-023, D1).
+ */
+export function serverLineRefusals(
+  submitted: readonly DraftLine[],
+  state: ActionState
+): Record<string, string> {
+  const found: Record<string, string> = {};
+  for (const [field, key] of Object.entries(state.fieldErrors ?? {})) {
+    const match = LINE_DISCOUNT_FIELD.exec(field);
+    if (match === null) continue;
+    const line = submitted[Number(match[1])];
+    if (line !== undefined) found[`line-${line.key}-discount`] = key;
+  }
+  return found;
 }
 
 /** Whether a draft line holds anything the operator typed or chose. */

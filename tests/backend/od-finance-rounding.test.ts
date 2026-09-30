@@ -9,9 +9,10 @@
  *    figures, a receipt of exactly the gross settles it, and the delivery
  *    module's financial blocker reads "nothing outstanding".
  *  - D1, USD at two decimals: a counter sale of 10.99 at 16% is taxed 1.76.
- *  - D1, entry: a price rule, an item selling price, an amount threshold and a
- *    fixed discount finer than JOD's three decimals are refused on their own
- *    field with `minor_unit_scale`; a quantity of 1.5 is not money and is still
+ *  - D1, entry: an amount threshold and a fixed discount finer than JOD's three
+ *    decimals are refused on their own field with `minor_unit_scale`. A price
+ *    rule's amount and an item selling price are UNIT prices, so a four-decimal
+ *    one is kept as entered; a quantity of 1.5 is not money and is still
  *    accepted (a 16.5% rate is proved at the database layer, in
  *    `tests/db/sal-minor-unit-rounding.test.ts`).
  *  - D7: an invoice's credit status is `none`, then `partly_credited`, then
@@ -336,8 +337,6 @@ afterAll(async () => {
 describe('D1 — a JOD 16% line, quoted, invoiced and paid to the fils', () => {
   it('quotes 12.345 at 1.975 tax and 14.320 gross, and a receipt of exactly that settles it', async () => {
     const { listId, versionId } = await jodDraftVersion();
-    // A price finer than the fils is refused on its own field; the fils price is not.
-    await expectMinorUnitRefusal(await recordRule(listId, versionId, '1.2345'), 'body.amount');
     expect((await recordRule(listId, versionId, '12.345')).status).toBe(201);
     await publishAndAssign(listId, versionId);
 
@@ -452,8 +451,17 @@ describe('D1 — a JOD 16% line, quoted, invoiced and paid to the fils', () => {
   });
 });
 
-describe('D1 — entered amounts must fit the currency', () => {
-  it('refuses an item selling price and an amount threshold finer than JOD', async () => {
+describe('D1 — entered amounts of money must fit the currency; unit prices keep their scale', () => {
+  it('keeps a price rule and an item selling price finer than JOD, because each is a unit price', async () => {
+    // A rule amount is the line's unit price (price resolution uses it as one),
+    // and so is an item's selling price. The Owner's D1 keeps unit-price
+    // precision apart from money: both are stored at four decimals, and only the
+    // line's amounts are rounded to the fils.
+    const { listId, versionId } = await jodDraftVersion();
+    const rule = await recordRule(listId, versionId, '1.2345');
+    expect(rule.status).toBe(201);
+    expect((await bodyOf<{ amount: string }>(rule)).amount).toBe('1.2345');
+
     authAs(INV_COUNTER);
     const price = await (SALE_PRICE_SET as ParamHandler<{ itemId: string }>)(
       json(`http://localhost/api/v1/items/${ITEM_A}/sale-prices`, {
@@ -464,8 +472,17 @@ describe('D1 — entered amounts must fit the currency', () => {
       }),
       { params: Promise.resolve({ itemId: ITEM_A }) }
     );
-    await expectMinorUnitRefusal(price, 'body.unitPrice');
+    expect(price.status).toBeLessThan(300);
+    const stored = await admin.query<{ unit_price: string }>(
+      `SELECT unit_price::text AS unit_price FROM inv.item_sale_prices
+        WHERE item_id = $1 AND company_id = $2 AND branch_id = $3 AND currency_code = 'JOD'
+          AND deleted_at IS NULL`,
+      [ITEM_A, COMPANY_A1, BRANCH_A1]
+    );
+    expect(stored.rows.map((r) => r.unit_price)).toEqual(['1.2345']);
+  });
 
+  it('refuses an amount threshold finer than JOD', async () => {
     authAsPricing(SVC_FULL);
     const current = await bodyOf<{ recordVersion: number }>(
       await READ_THRESHOLD(

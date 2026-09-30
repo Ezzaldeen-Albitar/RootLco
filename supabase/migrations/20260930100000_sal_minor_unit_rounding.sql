@@ -33,10 +33,11 @@
 --     * QUANTITIES, RATES AND UNIT PRICES KEEP THEIR OWN SCALES. The currency's
 --       scale is applied to monetary amounts only: a quantity stays
 --       numeric(12,3), a tax rate numeric(9,6), and a unit price keeps the
---       calculation precision of numeric(18,4). The application refuses a price
---       ENTERED finer than the minor unit (price rules, item selling prices,
---       fixed discounts, amount thresholds); nothing here forces the scale onto a
---       unit price the database derived.
+--       calculation precision of numeric(18,4). The application refuses an
+--       amount of money ENTERED finer than the minor unit (fixed discounts,
+--       amount thresholds); a unit price - a price rule's amount or an item
+--       selling price - is entered at its own scale, and nothing here forces the
+--       currency's scale onto a unit price.
 --     * ISSUED DOCUMENTS KEEP THEIR SNAPSHOTS. The replaced CHECKs are dropped,
 --       not re-validated, and the new trigger fires on INSERT and on an UPDATE
 --       that changes a money column, so no stored line is recomputed and an
@@ -190,8 +191,16 @@ GRANT EXECUTE ON FUNCTION quo.issue_revision(uuid, timestamptz) TO app_runtime;
 -- The deferred totals identity checks an issued revision against the same sums
 -- quo.issue_revision writes. Re-issued from 20260723096000_quo_quotations.sql;
 -- the only change is the subtotal, now the sum of each line's gross less its tax
--- plus its discount. For every line written under the earlier rule that is
--- round(unit x qty, 4), so an issued revision that reconciled before still does.
+-- plus its discount. For a line written under the earlier rule that is
+-- round(unit x qty, 4) (ck_quotation_items_line_total with a four-decimal
+-- discount and tax), so the new subtotal is the SUM OF PER-LINE ROUNDINGS, where
+-- the earlier quo.issue_revision stored round(SUM(unit x qty), 4). The two can
+-- differ once unit x qty carries more than four decimals on two or more lines,
+-- but such a revision could never be issued: ck_quotation_revisions_totals
+-- requires grand = subtotal - discount + tax, and grand was the sum of the line
+-- totals, which forces the stored subtotal to equal the sum of per-line
+-- roundings. So every revision issued under the earlier rule reconciles under
+-- this one; tests/db/sal-minor-unit-rounding.test.ts proves both halves.
 CREATE OR REPLACE FUNCTION quo.guard_revision_totals()
 RETURNS trigger LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $$
 DECLARE v_tenant uuid; v_rev uuid; v_status text;

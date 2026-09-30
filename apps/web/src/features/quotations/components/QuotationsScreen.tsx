@@ -32,6 +32,7 @@ import {
   LinesEditor,
   lineErrors,
   lineValues,
+  serverLineRefusals,
   linesDirty,
   OutcomeNote,
   QuotationStatusBadge,
@@ -514,6 +515,10 @@ function QuotationBuilder({
       }
       setOutcome(result.state);
       notifyActionResult(result.state, messages);
+      // A refused discount is marked on its own line, focused and withdrawn once
+      // corrected (ADR-023, D1): `lines` here is the draft that was sent.
+      const placed = serverLineRefusals(lines, result.state);
+      if (Object.keys(placed).length > 0) localRefuse(placed);
       if (result.state.status === 'success' && result.created) {
         // Stored, so nothing is unsaved any more: the lines go before the move.
         setLines([newLine()]);

@@ -561,13 +561,14 @@ which the tenant-administrator bundle holds since 2026-09-27.
 - **Document totals are the sum of the rounded lines**, so the lines always add up to the total.
 - **Quantities, tax rates and unit prices keep their own precision.** A quantity of 1.5 or a rate of
   16.5% is accepted as it is; only amounts of money take the currency's decimals.
-- **An amount you type must fit the currency.** A price on a price list, an item's selling price, a
-  fixed discount on a quotation line and an amount threshold for discount approval are refused when
-  they have more decimals than the currency allows, with "This amount has more decimal places than
-  the currency allows. Use no more decimal places than the currency's smallest coin, then try
-  again." <!-- form.violation.minor_unit_scale --> beside the field, and what you typed is kept.
-  On a quotation the currency is only known once the lines are priced, so that sentence is shown
-  above the lines.
+- **An amount of money you type must fit the currency.** A fixed discount on a quotation line and
+  an amount threshold for discount approval are refused when they have more decimals than the
+  currency allows, with "This amount has more decimal places than the currency allows. Use no more
+  decimal places than the currency's smallest coin, then try again."
+  <!-- form.violation.minor_unit_scale --> beside the field, and what you typed is kept. On a
+  quotation the sentence is shown beside the discount of the line that has too many decimals, and
+  the cursor moves there. A price on a price list and an item's selling price are unit prices, so
+  they keep up to four decimals.
 - **Documents already issued keep their figures.** The rule applies to amounts worked out from now
   on; nothing already issued is recalculated.
 

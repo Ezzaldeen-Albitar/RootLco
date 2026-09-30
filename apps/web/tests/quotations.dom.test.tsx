@@ -896,6 +896,49 @@ describe('the builder sends lines as strings and prices nothing', () => {
     );
   });
 
+  it('marks a discount finer than the currency on its own line, focused, and clears it once corrected (D1)', async () => {
+    // The adapter keeps the line of `body.lines[0].discount` as
+    // `lines.0.discount`; the builder puts the sentence beside that discount box.
+    createQuotation.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: {
+          discount: 'form.violation.minor_unit_scale',
+          'lines.0.discount': 'form.violation.minor_unit_scale',
+        },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderScreen({ canManage: true });
+    await user.click(screen.getByRole('button', { name: EN['quotations.list.create'] as string }));
+    const form = await builderForm();
+    await user.type(
+      within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
+      SERVICE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '1');
+    const discount = within(form).getByLabelText(
+      labelledExactly('quotations.lines.discount')
+    ) as HTMLInputElement;
+    await user.type(discount, '0.0005');
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.build.submit'] as string })
+    );
+    const sentence = EN['form.violation.minor_unit_scale'] as string;
+    expect(await within(form).findByText(sentence)).toBeVisible();
+    expect(discount).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(discount).toHaveFocus());
+    expect(discount.value).toBe('0.0005');
+    expect(within(form).getAllByText(sentence)).toHaveLength(1);
+    await user.clear(discount);
+    await user.type(discount, '0.500');
+    await waitFor(() => expect(discount).not.toHaveAttribute('aria-invalid', 'true'));
+    expect(within(form).queryByText(sentence)).toBeNull();
+  });
+
   it('adds and removes lines, never below one', async () => {
     const user = userEvent.setup();
     renderScreen({ canManage: true });

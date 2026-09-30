@@ -27,7 +27,6 @@
  */
 import type { DbHandle } from '@/server/db/transaction';
 import { AppFailure } from '@/server/errors/app-failure';
-import { assertMinorUnitScale } from '@/server/http/validation';
 import { appendAudit } from '@/server/audit/audit';
 import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import { publishEvent } from '@/server/events/publisher';
@@ -445,17 +444,10 @@ export class PriceListService {
     if (amount.isNegative) {
       throw new AppFailure('ERR-VAL-001', { message: 'A price amount may not be negative' });
     }
-    // An entered price is an amount of money in the LIST's currency, so it must fit
-    // that currency's minor unit (ADR-023, D1): a JOD rule of 1.2345 is refused,
-    // naming the field, rather than quoted and left as a residue no receipt settles.
-    const minorUnit = await this.repository.minorUnitForCurrency(db, list.currencyCode);
-    if (minorUnit === null) {
-      throw new AppFailure('ERR-VAL-001', {
-        message: `Currency ${list.currencyCode} is not a supported currency.`,
-        safeDetails: { violations: [{ path: 'body.amount', rule: 'unknown_currency' }] },
-      });
-    }
-    assertMinorUnitScale(input.amount, list.currencyCode, minorUnit, 'body.amount');
+    // A rule amount is a UNIT price (price resolution uses it as the line's unit
+    // price), so it keeps the column's own scale and is NOT held to the list
+    // currency's minor unit (ADR-023, D1). The money it produces is rounded on
+    // the line, where it is computed.
     if (input.taxClassId !== undefined && input.companyId === undefined) {
       throw new AppFailure('ERR-VAL-001', {
         message: 'A tax class may only be set on a company-scoped price rule',

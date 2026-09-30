@@ -60,6 +60,8 @@ port of its own, replayed through all 163 migrations and seeded twice with
 
 - `scripts/ci/migration-replay-checks.mjs --phase post` reported `functions` 633 (was 630) and
   `triggers` 633 (was 632); `tables` 277, `policies` 803 and `security_definer` 0 did not move;
+- `npm run validate:schema-inventory` reported `functions` 331 (was 328) over the seventeen RootLco
+  schemas, the companion figure `functionCountDiscrepancyNote` records;
 - `npm run validate:schema-inventory -- --hash-only` produced the schema hash recorded in
   `.github/ci-baselines/schema-baseline.json`;
 - the database tests named above passed on that database. This is a local measurement; the hosted
@@ -70,6 +72,9 @@ The acceptance database was not read or written by this change.
 ## 4. Records this change moves
 
 `.github/ci-baselines/schema-baseline.json` (`migrationCount` 163, `schemaHash`,
-`structuralTotals.functions` 633 and `.triggers` 633, `structuralTotalsNote163`), the P1-15
+`structuralTotals.functions` 633 and `.triggers` 633, `structuralTotalsNote163`, and the 630/328 ->
+633/331 step in `functionCountDiscrepancyNote`), the approved `app_runtime` iam/shared function
+surface in `tests/db/shared-hardening.test.ts` (the two helpers are granted because the invoker
+trigger and routines above call them as the caller), the P1-15
 migration census, the routine and trigger inventories in `tests/db/foundation.test.ts`, and the
 P1-27 migration-count records.
