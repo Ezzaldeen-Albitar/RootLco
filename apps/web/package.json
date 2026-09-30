@@ -44,8 +44,8 @@
     "@mui/x-tree-view": "9.14.0",
     "dayjs": "1.11.23",
     "next": "16.3.8",
-    "react": "19.2.8",
-    "react-dom": "19.2.8",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
     "react-hook-form": "^7.84.0",
     "stylis": "4.2.0",
     "zod": "^4.3.6"
