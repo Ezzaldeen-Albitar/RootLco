@@ -17,6 +17,13 @@ import { AppFailure } from '@/server/errors/app-failure';
  * here exist for a different reason: an unbounded password is an unbounded input
  * to the provider's hashing routine, which is a cheap denial-of-service.
  */
+/**
+ * The approval-limit type a credit-note approval consults (ADR-023 D13), as the
+ * billing module's `CREDIT_NOTE_LIMIT_TYPE` spells it. Repeated rather than
+ * imported: a domain service of this module does not reach into another module.
+ */
+const CREDIT_NOTE_LIMIT_TYPE = 'credit_note';
+
 const PASSWORD_MIN = 8;
 const PASSWORD_MAX = 200;
 
@@ -95,8 +102,15 @@ export class CredentialPolicy extends DomainService {
    * (`schemas.money`) and stays a string all the way to the bound parameter:
    * parsing it into a JavaScript number would silently round 0.1 and turn an
    * exact contract into an approximate one.
+   *
+   * A credit-note limit (`credit_note`, ADR-023 D13) must also be above zero: a
+   * credit note is always above zero, so a zero limit could approve nothing and
+   * would only look like an authority. `iam.guard_approval_limit_money` refuses
+   * the same row. Whether the amount fits the currency's minor unit is answered by
+   * that guard too, which reads `shared.currencies`, and the service files its
+   * refusal on the amount.
    */
-  assertApprovalAmount(amount: string, currency: string): void {
+  assertApprovalAmount(amount: string, currency: string, limitType?: string): void {
     const violation = (path: string, rule: string): never => {
       throw new AppFailure('ERR-VAL-001', {
         message: 'Approval limit amount or currency is not valid',
@@ -112,6 +126,9 @@ export class CredentialPolicy extends DomainService {
       violation('body.amount', 'invalid_decimal_or_negative');
     }
     if (!/^[A-Z]{3}$/.test(currency)) violation('body.currency', 'invalid_currency_code');
+    if (limitType === CREDIT_NOTE_LIMIT_TYPE && /^0+(?:\.0+)?$/.test(amount)) {
+      violation('body.amount', 'not_positive');
+    }
   }
 
   /**

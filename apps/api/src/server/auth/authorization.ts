@@ -519,6 +519,92 @@ export async function callerApprovalCeiling(
 }
 
 /**
+ * Where the CALLER stands against a per-currency approval limit (ADR-023, D13).
+ *
+ * `counted` carries the limit that counts; every other value names why none does.
+ * The four outcomes are the ones `sal.guard_credit_note_decision` raises, in the
+ * same precedence, because this is the application's mirror of that guard: the
+ * service names the refusal first and the database decides again.
+ */
+export type ApprovalLimitStanding =
+  | { readonly standing: 'counted'; readonly amount: string; readonly currencyCode: string }
+  | { readonly standing: 'none' }
+  | { readonly standing: 'self-created' }
+  | { readonly standing: 'currency-mismatch' };
+
+/**
+ * The CALLER's approval limit of one type IN ONE CURRENCY, with the reason when
+ * none counts (ADR-023, D13 — the credit-note limit).
+ *
+ * The same reach as `callerApprovalCeiling` — the caller's own limit or a role whose
+ * active grant reaches the company, in force on `asOf` — and the same separation of
+ * duties: a limit the caller created never counts. It differs in one respect: a
+ * subject may hold one limit of this type per currency (the credit-note exclusion
+ * constraint keys on the currency), so the limit in `currencyCode` is the one
+ * consulted, and among those the caller's own limit wins over a role's, then the
+ * largest.
+ *
+ * One ordered read decides all four outcomes, in the precedence the database guard
+ * uses: a limit that counts sorts first; failing that, a row the caller created
+ * means every limit on file is their own (`self-created`); failing that, a row in
+ * another currency means none is in this one (`currency-mismatch`); no row at all is
+ * `none`. Each outcome other than `counted` is no authority, never unlimited.
+ */
+export async function callerApprovalLimitStanding(
+  db: DbHandle,
+  companyId: string,
+  limitType: string,
+  currencyCode: string,
+  asOf: string
+): Promise<ApprovalLimitStanding> {
+  const result = await db.query<{
+    amount: string;
+    currency_code: string;
+    own_creation: boolean;
+  }>(
+    `SELECT al.amount::text AS amount, al.currency_code, (al.created_by = $4) AS own_creation
+       FROM iam.approval_limits al
+      WHERE al.tenant_id = $1 AND al.company_id = $2 AND al.limit_type = $3
+        AND al.effective_from <= $6::date
+        AND (al.effective_to IS NULL OR al.effective_to > $6::date)
+        AND (al.user_id = $4
+             OR (al.user_id IS NULL AND al.role_id IN (
+                   SELECT g.role_id
+                     FROM iam.role_grants g
+                    WHERE g.tenant_id = $1 AND g.user_id = $4
+                      AND g.status = 'active'
+                      AND g.valid_from <= now()
+                      AND (g.valid_to IS NULL OR g.valid_to > now())
+                      AND (
+                        g.scope_mode = 'unrestricted'
+                        OR EXISTS (
+                          SELECT 1 FROM iam.grant_scopes s
+                           WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id
+                             AND s.company_id = $2
+                        )
+                      ))))
+      ORDER BY (al.created_by <> $4) DESC,
+               (al.currency_code = $5) DESC,
+               (al.user_id IS NOT NULL) DESC,
+               al.amount DESC
+      LIMIT 1`,
+    [
+      db.context.principal.tenantId,
+      companyId,
+      limitType,
+      db.context.principal.userId,
+      currencyCode,
+      asOf,
+    ]
+  );
+  const row = result.rows[0];
+  if (!row) return { standing: 'none' };
+  if (row.own_creation) return { standing: 'self-created' };
+  if (row.currency_code !== currencyCode) return { standing: 'currency-mismatch' };
+  return { standing: 'counted', amount: row.amount, currencyCode: row.currency_code };
+}
+
+/**
  * Enforces authorization against a scope discovered INSIDE the transaction,
  * failing closed when the caller names no scope to narrow by.
  *

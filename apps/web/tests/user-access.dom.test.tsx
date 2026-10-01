@@ -590,7 +590,7 @@ describe('an approval limit’s effective window', () => {
 
     await user.click(await screen.findByRole('button', { name: EN('approvalLimits.create') }));
     const dialog = await screen.findByRole('dialog');
-    await user.type(
+    await user.selectOptions(
       within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.limitType')}`)),
       'discount'
     );
@@ -625,6 +625,143 @@ describe('an approval limit’s effective window', () => {
     expect(
       within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.limitType')}`))
     ).toHaveValue('discount');
+  });
+});
+
+/**
+ * ADR-023 D13: a credit-note approval limit is its own type, chosen by name, never a
+ * discount limit; it is above zero and fits the currency's smallest coin. The
+ * client refuses a zero on the amount before sending; the server files a finer
+ * amount on the same field.
+ */
+describe('a credit-note approval limit (ADR-023 D13)', () => {
+  const roles = [
+    {
+      id: ROLE.id,
+      roleCode: ROLE.roleCode,
+      name: ROLE.name,
+      description: null,
+      isSystem: false,
+      recordVersion: 1,
+    },
+  ];
+  const emptyList = {
+    ok: true,
+    status: 200,
+    data: { items: [], nextCursor: null },
+    correlationId: 'corr-page',
+  };
+
+  async function openCreate(locale: 'en' | 'ar' = 'en') {
+    const user = userEvent.setup();
+    const render = locale === 'en' ? renderLtr : renderRtl;
+    render(
+      inBranch(
+        <ApprovalLimitsScreen
+          locale={locale}
+          messages={locale === 'en' ? en : ar}
+          roles={roles}
+          canManage
+        />,
+        { locale }
+      )
+    );
+    const text = locale === 'en' ? EN : AR;
+    await user.click(await screen.findByRole('button', { name: text('approvalLimits.create') }));
+    const dialog = await screen.findByRole('dialog');
+    const field = (key: string) => within(dialog).getByLabelText(new RegExp(`^${text(key)}`));
+    return { user, dialog, field, text };
+  }
+
+  it('offers exactly the discount and credit-note types, by name, and no default', async () => {
+    get.mockResolvedValue(emptyList);
+    const { field } = await openCreate();
+    const type = field('approvalLimits.field.limitType') as HTMLSelectElement;
+    expect(type).toHaveValue('');
+    const offered = [...type.options].filter((o) => o.value !== '').map((o) => [o.value, o.text]);
+    expect(offered).toEqual([
+      ['discount', EN('approvalLimits.type.discount')],
+      ['credit_note', EN('approvalLimits.type.credit_note')],
+    ]);
+  });
+
+  it('refuses a zero credit-note limit on the amount, sends nothing, and keeps what was typed', async () => {
+    get.mockResolvedValue(emptyList);
+    const { user, dialog, field } = await openCreate();
+    await user.selectOptions(field('approvalLimits.field.limitType'), 'credit_note');
+    await user.type(field('approvalLimits.field.amount'), '0.000');
+    await user.type(field('approvalLimits.field.currency'), 'JOD');
+    await user.type(field('approvalLimits.field.effectiveFrom'), '2026-10-01');
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
+    expect(await within(dialog).findByText(EN('approvalLimits.error.positive'))).toBeVisible();
+    expect(field('approvalLimits.field.amount')).toHaveAttribute('aria-invalid', 'true');
+    expect(field('approvalLimits.field.amount')).toHaveValue('0.000');
+    expect(field('approvalLimits.field.limitType')).toHaveValue('credit_note');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('sends a credit-note limit as typed, and files the server refusal of a finer amount on the amount', async () => {
+    get.mockResolvedValue(emptyList);
+    send.mockResolvedValue(refusal([{ path: 'body.amount', rule: 'minor_unit_scale' }]));
+    const { user, dialog, field } = await openCreate();
+    await user.selectOptions(field('approvalLimits.field.limitType'), 'credit_note');
+    await user.type(field('approvalLimits.field.amount'), '250.0005');
+    await user.type(field('approvalLimits.field.currency'), 'JOD');
+    await user.type(field('approvalLimits.field.effectiveFrom'), '2026-10-01');
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const [, path, body] = send.mock.calls[0] as [string, string, Record<string, unknown>];
+    expect(path).toBe('/api/v1/iam/approval-limits');
+    expect(body).toMatchObject({ limitType: 'credit_note', amount: '250.0005', currency: 'JOD' });
+    expect(await within(dialog).findByText(EN('form.violation.minor_unit_scale'))).toBeVisible();
+    expect(field('approvalLimits.field.amount')).toHaveAttribute('aria-invalid', 'true');
+    expect(field('approvalLimits.field.amount')).toHaveValue('250.0005');
+  });
+
+  it('names a stored credit-note limit in words in the list', async () => {
+    get.mockResolvedValue({
+      ...emptyList,
+      data: {
+        items: [
+          {
+            id: 'limit-1',
+            companyId: 'company-1',
+            roleId: ROLE.id,
+            userId: null,
+            limitType: 'credit_note',
+            amount: '500.000',
+            currencyCode: 'JOD',
+            effectiveFrom: '2026-10-01',
+            effectiveTo: null,
+            recordVersion: 1,
+          },
+        ],
+        nextCursor: null,
+      },
+    });
+    renderLtr(inBranch(<ApprovalLimitsScreen locale="en" messages={en} roles={roles} canManage />));
+    expect(await screen.findByText(EN('approvalLimits.type.credit_note'))).toBeVisible();
+    expect(screen.queryByText('credit_note')).toBeNull();
+  });
+
+  it('labels the types and the zero refusal in Arabic', async () => {
+    get.mockResolvedValue(emptyList);
+    const { user, dialog, field } = await openCreate('ar');
+    const type = field('approvalLimits.field.limitType') as HTMLSelectElement;
+    expect([...type.options].map((o) => o.text)).toEqual(
+      expect.arrayContaining([
+        AR('approvalLimits.type.discount'),
+        AR('approvalLimits.type.credit_note'),
+      ])
+    );
+    await user.selectOptions(type, 'credit_note');
+    await user.type(field('approvalLimits.field.amount'), '0');
+    await user.type(field('approvalLimits.field.currency'), 'JOD');
+    await user.type(field('approvalLimits.field.effectiveFrom'), '2026-10-01');
+    await user.click(within(dialog).getByRole('button', { name: AR('admin.create') }));
+    const sentence = await within(dialog).findByText(AR('approvalLimits.error.positive'));
+    expect(sentence.textContent ?? '').toMatch(/[\u0600-\u06ff]/);
+    expect(send).not.toHaveBeenCalled();
   });
 });
 
@@ -684,7 +821,7 @@ describe('an approval limit refused for separation of duties says why (QA rows 7
     await user.click(await screen.findByRole('button', { name: text('approvalLimits.create') }));
     const dialog = await screen.findByRole('dialog');
     const field = (key: string) => within(dialog).getByLabelText(new RegExp(`^${text(key)}`));
-    await user.type(field('approvalLimits.field.limitType'), 'discount');
+    await user.selectOptions(field('approvalLimits.field.limitType'), 'discount');
     await user.type(field('approvalLimits.field.amount'), '10.0000');
     await user.type(field('approvalLimits.field.currency'), 'JOD');
     await user.type(field('approvalLimits.field.effectiveFrom'), '2026-10-01');
@@ -776,7 +913,7 @@ describe('an approval limit’s person is found by name (route sweep B3)', () =>
   }
 
   async function fillTheRest(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) {
-    await user.type(
+    await user.selectOptions(
       within(dialog).getByLabelText(label('approvalLimits.field.limitType')),
       'discount'
     );

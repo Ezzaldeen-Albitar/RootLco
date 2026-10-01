@@ -122,6 +122,7 @@
     "rec.reception.signature.manage",
     "rpt.report.configure",
     "rpt.report.read",
+    "sal.credit.approve",
     "sal.credit.manage",
     "sal.delivery.complete",
     "sal.delivery.manage",

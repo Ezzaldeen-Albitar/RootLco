@@ -57,6 +57,25 @@ export interface ApprovalLimitRow {
 }
 
 /**
+ * The limit types the platform itself consults, in the order the form offers them.
+ *
+ * `discount` is read by a discount approval (`DISCOUNT_LIMIT_TYPE` in the pricing
+ * module) and `credit_note` by a credit-note approval (`CREDIT_NOTE_LIMIT_TYPE` in
+ * the billing module, Owner decision D13, ADR-023). They are SEPARATE: a discount
+ * limit never counts for a credit note and a credit-note limit never counts for a
+ * discount. The form offers exactly these, so a limit is never created under a
+ * type nothing reads; a row of any other type already on file is still listed,
+ * under its own code.
+ */
+export const APPROVAL_LIMIT_TYPES = Object.freeze(['discount', 'credit_note'] as const);
+export type ApprovalLimitType = (typeof APPROVAL_LIMIT_TYPES)[number];
+
+/** Whether a stored limit type is one the platform consults (and so has a name). */
+export function isKnownApprovalLimitType(value: string): value is ApprovalLimitType {
+  return (APPROVAL_LIMIT_TYPES as readonly string[]).includes(value);
+}
+
+/**
  * The server's own cap on the approval-limit list.
  *
  * `access.listApprovalLimits` calls the repository with a hard `200`, and the

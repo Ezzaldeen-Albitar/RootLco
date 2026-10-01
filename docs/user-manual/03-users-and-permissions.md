@@ -788,6 +788,14 @@ them. The requester of a credit note can never approve it, every credit-note act
 the branches a person's grant covers, and both steps are recorded in the audit log. No cashier or
 other role gains the permission unless an administrator gives it. Part 6, §6.2a.
 
+**Approving credit notes is its own permission (Owner decision D13).** Approving or rejecting a
+credit note needs the credit-approval permission (`sal.credit.approve`), which is also in the bundle;
+`sal.credit.manage` alone now only reads, raises and withdraws. An approver also needs a credit note
+approval limit in the note's currency, set by somebody else on the **Approval limits** screen, that
+covers every credit already approved on the same invoice plus the one being approved. A discount
+limit never counts. An organisation created before this decision keeps the set it was given until
+an administrator grants the new permission and sets a limit. Part 2, §2.10.3; Part 6, §6.2a.
+
 ---
 
 ## 3.16 Maker and checker: one administrator is not enough — IMPLEMENTED (UI)

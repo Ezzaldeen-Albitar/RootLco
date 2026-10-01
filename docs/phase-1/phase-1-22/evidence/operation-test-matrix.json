@@ -76,7 +76,10 @@
       "method": "POST",
       "path": "/credit-notes/{creditNoteId}/approval",
       "public": false,
-      "files": ["tests/backend/p1-22-credit-note.test.ts"],
+      "files": [
+        "tests/backend/p1-22-credit-note.test.ts",
+        "tests/backend/od-finance-credit-limits.test.ts"
+      ],
       "referenced": true,
       "derived": [
         "route",

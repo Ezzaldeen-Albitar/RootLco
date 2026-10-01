@@ -29,11 +29,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * its detail, which is how the customer-returns screen links to the credit a
  * return raised.
  *
- * Raising a note and approving one declare the same two codes, so the page gate
- * covers both. Two things are passed on: who is signed in, so a note the caller
- * raised is shown as waiting for another approver rather than offered to them;
- * and `sal.invoice.manage`, which the invoice list behind the raise form's
- * invoice picker declares.
+ * Raising a note declares the same two codes, so the page gate covers it.
+ * Deciding one — approving or rejecting — declares `sal.credit.approve` instead
+ * (Owner decision D13, ADR-023), so it is passed on and the screen offers the
+ * decision only to a holder. Two further things are passed on: who is signed in,
+ * so a note the caller raised is shown as waiting for another approver rather than
+ * offered to them; and `sal.invoice.manage`, which the invoice list behind the
+ * raise form's invoice picker declares.
  */
 export default async function CreditNotesPage({
   params,
@@ -88,6 +90,7 @@ export default async function CreditNotesPage({
           messages={messages}
           initialCreditNoteId={named && UUID.test(named) ? named : null}
           currentUserId={session.userId}
+          canDecide={holds(session.permissions, BILLING_PERMISSIONS.creditApprove)}
           canSearchInvoices={holds(session.permissions, BILLING_PERMISSIONS.manage)}
         />
       </PageBody>

@@ -656,8 +656,10 @@ approval-management permission. The first administrator holds it. **Where** Side
    . Fill in: **Applies to** _(required)_ — **Role** <!-- approvalLimits.subject.role --> or
    **Person** <!-- approvalLimits.subject.user --> — then **Role reference** <!-- approvalLimits.field.roleId -->
    or **Person reference** <!-- approvalLimits.field.userId --> _(required)_, **Company reference**
-   _(required)_ <!-- approvalLimits.field.companyId --> , **Limit type** _(required_ — _"Lower case
-   letters, digits and underscores. Your organization decides what each type means."_ <!-- approvalLimits.field.limitTypeHint -->
+   _(required)_ <!-- approvalLimits.field.companyId --> , **Limit type** _(required_ — chosen from
+   **Discount approval** <!-- approvalLimits.type.discount --> or **Credit note approval**
+   <!-- approvalLimits.type.credit_note --> ; _"What this limit covers. A discount limit never counts
+   for credit notes, and a credit note limit never counts for discounts."_ <!-- approvalLimits.field.limitTypeHint -->
    _)_, **Amount** _(required)_, **Currency** _(required_ — _"Three-letter ISO code, for example JOD
    or USD."_ <!-- approvalLimits.field.currencyHint --> _)_, **Effective from** <!-- approvalLimits.field.effectiveFrom -->
    and **Effective until** <!-- approvalLimits.field.effectiveTo --> .
@@ -669,9 +671,28 @@ approval-management permission. The first administrator holds it. **Where** Side
   does not say whether it stopped there, so this list may be incomplete. Narrow it by company to be
   sure."_ <!-- approvalLimits.mayBeTruncated --> When the list is known to be whole, the screen says
   so instead: _"This is the complete list for the current filters, not a page of it."_ <!-- approvalLimits.completeList -->
-- You may type any limit type you like, but at this version the application reads exactly one of
-  them: `discount`, used when someone applies a discount to a quotation line. A limit of any other
-  type is stored and is not consulted by anything.
+- The application reads exactly two limit types, and the screen offers exactly those two:
+  **Discount approval**, used when someone approves a discount on a quotation, and **Credit note
+  approval**, used when someone approves a credit note (Owner decision D13). They are separate: a
+  discount limit never lets anybody approve a credit note, and a credit note limit never lets
+  anybody approve a discount. A limit of any other type already on file is listed under its stored
+  code and is not consulted by anything.
+- **Credit note limits are per currency.** A role or a person may hold one credit note limit in each
+  currency at the same time — for example one in JOD and one in USD — and the limit in the credit
+  note's currency is the one that counts. A limit in another currency approves nothing.
+- **A credit note limit covers the whole invoice, not one note.** It must cover every credit already
+  approved on the same invoice plus the note being approved, so a large credit split into several
+  small notes cannot slip under a low limit. Notes that are still waiting, rejected or withdrawn do
+  not count.
+- **Amounts follow the currency.** A limit cannot be finer than the currency's smallest coin (three
+  decimal places for JOD, two for USD), and a credit note limit must be above zero. Either mistake is
+  marked on **Amount**: _"A credit note limit must be above zero."_ <!-- approvalLimits.error.positive -->
+  or _"This amount has more decimal places than the currency allows. …"_ <!-- form.violation.minor_unit_scale -->
+- **A limit you set never counts for you.** As with discounts, a credit note limit you set — for your
+  own account or for a role you hold — never lets you approve anything; somebody else must set yours.
+- Holding a credit note limit is not enough on its own: approving a credit note also needs the
+  credit-approval permission (`sal.credit.approve`) in the note's branch. The permission says you
+  may decide credit notes; the limit says how much.
 - The discount check fails closed. **If no discount limit is recorded for a person, that person has
   no discount authority at all** — an absent limit means none, never unlimited. Equally, a large
   limit does not grant the permission: a permission says what kind of thing you may approve, a limit

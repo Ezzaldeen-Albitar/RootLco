@@ -17,7 +17,12 @@ import { SubmitButton } from '@/features/authentication/components/SubmitButton'
 import { AccountPicker, type ChosenAccount } from '../../users/components/AccountPicker';
 import { useServerTable } from '../../shared/use-server-table';
 import { listApprovalLimits } from '../api';
-import type { ApprovalLimitRow, RoleRow } from '../types';
+import {
+  APPROVAL_LIMIT_TYPES,
+  isKnownApprovalLimitType,
+  type ApprovalLimitRow,
+  type RoleRow,
+} from '../types';
 import { createApprovalLimitAction, endApprovalLimitAction } from '../actions';
 import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
@@ -34,10 +39,15 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  *
  * ## No approval hierarchy is invented
  *
- * `limitType` and `currency` are operator-supplied. The contract fixes their
- * *shape* — `^[a-z][a-z0-9_]{1,62}$` and `^[A-Z]{3}$` — and not their meaning,
- * so this screen supplies neither a default limit type nor a default currency,
- * and implies no ordering between types.
+ * The limit type is CHOSEN from the types the platform consults
+ * (`APPROVAL_LIMIT_TYPES`): a discount approval limit and a credit-note approval
+ * limit (Owner decision D13, ADR-023). They are separate — neither counts for the
+ * other — and the screen names each in words. A row of any other type already on
+ * file is listed under its own code. `currency` stays operator-supplied, by
+ * shape (`^[A-Z]{3}$`). This screen supplies neither a default limit type nor a
+ * default currency, and implies no ordering between types. A credit-note limit
+ * must be above zero, and every amount must fit its currency's smallest coin; the
+ * server answers the second, on the amount field.
  *
  * ## The list is complete, and says so
  *
@@ -96,7 +106,12 @@ export function ApprovalLimitsScreen({
     {
       id: 'limitType',
       headerKey: 'approvalLimits.column.type',
-      cell: (row) => <code className="font-mono text-caption">{row.limitType}</code>,
+      cell: (row) =>
+        isKnownApprovalLimitType(row.limitType) ? (
+          <span>{t(`approvalLimits.type.${row.limitType}`)}</span>
+        ) : (
+          <code className="font-mono text-caption">{row.limitType}</code>
+        ),
     },
     {
       id: 'amount',
@@ -325,6 +340,8 @@ function CreateDialog({
   const { companies: workingCompanies } = useWorkingContext();
   const [companyId, setCompanyId] = useState(workingCompanies[0]?.id ?? '');
   const [roleId, setRoleId] = useState(roles[0]?.id ?? '');
+  // No default: the operator states what the limit covers (see the file header).
+  const [limitType, setLimitType] = useState('');
   /*
    * The person, FOUND by name or email (route sweep B3). Held in state like the
    * selects above, so the Server Action's form reset cannot lose it; the
@@ -468,15 +485,22 @@ function CreateDialog({
           />
         )}
 
-        <TextField
+        <SelectField
           key={`limitType-${state.attempt ?? 0}`}
           name="limitType"
           label={t('approvalLimits.field.limitType')}
           description={t('approvalLimits.field.limitTypeHint')}
           required
-          spellCheck={false}
-          defaultValue={retained('limitType')}
-          onChange={retain('limitType')}
+          defaultValue={limitType}
+          onChange={(event) => {
+            refusalEdited('limitType');
+            setLimitType(event.target.value);
+          }}
+          options={APPROVAL_LIMIT_TYPES.map((value) => ({
+            value,
+            label: t(`approvalLimits.type.${value}`),
+          }))}
+          placeholder={t('form.select.placeholder')}
           error={error('limitType')}
         />
 

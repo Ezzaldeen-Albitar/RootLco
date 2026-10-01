@@ -2074,11 +2074,66 @@ export class BillingRepository extends Repository {
    * `sal.reject_credit_note` (ADR-023, D3).
    *
    * The primitive refuses the requester (`credit_note_self_rejection`) and any
-   * other decided state; the trigger checks `sal.credit.manage` in the note's
-   * company and branch and the reason, and stamps the decider and the time.
+   * other decided state; the trigger checks `sal.credit.approve` in the note's
+   * company and branch (ADR-023 D13) and the reason, and stamps the decider and
+   * the time.
    */
   public async rejectCreditNote(db: DbHandle, creditNoteId: string, reason: string): Promise<void> {
     await this.run(db, `SELECT sal.reject_credit_note($1::uuid, $2)`, [creditNoteId, reason]);
+  }
+
+  /**
+   * The approved credit an invoice would carry if `creditNoteId` were approved
+   * too (ADR-023, D13 — the anti-splitting total).
+   *
+   * Every other note on the invoice in the state `approved`, plus the note being
+   * decided. Pending, rejected and withdrawn notes credit nothing and are not
+   * counted; a credit note has no reversal, so every approved note stands. Summed
+   * by the database, never in JavaScript, and read while the caller holds the
+   * invoice row lock, so an approval that committed while this one waited is
+   * included — the same total `sal.guard_credit_note_decision` compares under the
+   * same lock. Returned as the database's exact decimal string at scale 4.
+   */
+  public async cumulativeApprovedCreditWith(
+    db: DbHandle,
+    scope: {
+      readonly invoiceId: string;
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly creditNoteId: string;
+    }
+  ): Promise<string> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ total: string }>(
+      db,
+      `SELECT round(COALESCE(sum(cn.amount), 0), 4)::text AS total
+         FROM sal.credit_notes cn
+        WHERE cn.tenant_id = $1 AND cn.company_id = $2 AND cn.branch_id = $3
+          AND cn.invoice_id = $4
+          AND (cn.approval_state = 'approved' OR cn.id = $5)`,
+      [
+        context.principal.tenantId,
+        scope.companyId,
+        scope.branchId,
+        scope.invoiceId,
+        scope.creditNoteId,
+      ]
+    );
+    /* c8 ignore next 3 -- an aggregate without GROUP BY always yields one row. */
+    if (!row) {
+      throw new Error('billing: the approved credit total returned no row');
+    }
+    return row.total;
+  }
+
+  /** The database's business date, the `asOf` an approval limit is resolved on. */
+  public async businessDate(db: DbHandle): Promise<string> {
+    const row = await this.runOne<{ today: string }>(db, `SELECT current_date::text AS today`, []);
+    /* c8 ignore next 3 -- `SELECT current_date` always yields one row. */
+    if (!row) {
+      throw new Error('billing: the database returned no business date');
+    }
+    return row.today;
   }
 
   // -------------------------------------------------------------------------

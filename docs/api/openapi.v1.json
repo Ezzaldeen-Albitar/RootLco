@@ -3049,7 +3049,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["sal.credit.manage", "sal.finance.view"],
+        "x-required-permissions": ["sal.credit.approve", "sal.finance.view"],
         "x-scope": "branch",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",
@@ -3115,7 +3115,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["sal.credit.manage", "sal.finance.view"],
+        "x-required-permissions": ["sal.credit.approve", "sal.finance.view"],
         "x-scope": "branch",
         "x-audit-class": "approval",
         "x-rate-limit-policy": "standard-command",

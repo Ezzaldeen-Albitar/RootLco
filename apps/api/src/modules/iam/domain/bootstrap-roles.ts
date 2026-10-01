@@ -424,6 +424,35 @@
  * role the organisation has customised. The run is an operator act, not performed by
  * this change.
  *
+ * ## `sal.credit.approve` — deciding a credit note, by Owner decision D13
+ *
+ * The Owner decided on 2026-09-30 (ADR-023, D13) that approving a credit note is
+ * its own authority with its own limit, never inherited from `sal.credit.manage` or
+ * from a discount limit. The code is MINTED by that decision (seeded in
+ * `04_iam_permission_catalog.sql`), and `sal.credit-note-approve` and
+ * `sal.credit-note-reject` now declare it in place of `sal.credit.manage`;
+ * requesting and withdrawing keep `sal.credit.manage`.
+ *
+ * The standard tenant administrator carries it because it is the one standard role
+ * that carried credit approval before, through `sal.credit.manage` — there is no
+ * standard finance-manager role, so no other role is widened. Carrying it changes
+ * no control: the approver is still never the requester, holds the code in the
+ * note's own company and branch, and approves only within a `credit_note` approval
+ * limit in the note's currency that somebody else set and that covers the
+ * invoice's cumulative approved credit. An administrator holding the code and no
+ * such limit can reject a note but approve none, and it can now delegate the code
+ * to a finance approver it chooses.
+ *
+ * Organisations provisioned before this entry keep the set they were given, so
+ * nobody in them can approve a credit note until an administrator who holds the
+ * code grants it and a credit-note limit is set — a behaviour change by design of
+ * D13. `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list
+ * at run time; by the Owner's decision it is run only for the previously authorised
+ * QA organisations (`--tenant odqa_alpha --tenant odqa_beta`), and it skips and
+ * reports every administrator role an organisation has customised. Other existing
+ * organisations are left unchanged. The run is an operator act, not performed by
+ * this change.
+ *
  * ## `org.settings.manage` — the organisation's own settings, by Owner decision
  *
  * The Owner decided on 2026-09-27 that the standard tenant administrator edits its
@@ -678,6 +707,9 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     // four credit-note operations, each alongside `sal.finance.view`; branch-scoped,
     // born pending, and approved only by a second person. See the section above.
     'sal.credit.manage',
+    // Owner decision D13 (ADR-023): approving and rejecting a credit note, within a
+    // credit-note approval limit somebody else sets. See the section above.
+    'sal.credit.approve',
     'sal.payment.record',
     'sal.payment.allocate',
     // The P1-31 delivery, warranty and reporting chain (prerequisite P-1). Held

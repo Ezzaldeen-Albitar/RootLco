@@ -320,3 +320,41 @@ lacking only that code.
 
 The run is an operator act taken after this change merges. This addendum does not claim it was
 performed anywhere.
+
+---
+
+## 11. Addendum — `sal.credit.approve`, run selectively (Owner decision D13 of 2026-09-30)
+
+The Owner decided (ADR-023, D13) that approving and rejecting a credit note is its own authority,
+with its own credit-note approval limit, never inherited from `sal.credit.manage` or from a discount
+limit. The code `sal.credit.approve` is minted in the permission catalogue seed and carried in
+`TENANT_ADMINISTRATOR_ROLE`, so the bundle is now 95 codes and new organisations receive it at
+provisioning. It is carried because the standard tenant administrator is the one standard role that
+decided credit notes before, through `sal.credit.manage`; there is no standard finance-manager role,
+and no other role gains anything.
+
+The shape of the run for existing organisations is the one sections 9 and 10 set:
+
+- **Selective.** Only the previously authorised QA organisations are named:
+  `--tenant odqa_alpha --tenant odqa_beta`. `--all` is not used, and every other existing
+  organisation is left unchanged. In those organisations nobody can approve a credit note until an
+  administrator who holds the code grants it and a credit-note limit is set — a behaviour change by
+  design of D13.
+- **Customised roles are preserved.** An administrator role showing any sign of customisation is
+  skipped whole and reported with `sal.credit.approve` under `withheld`.
+- **Dry run first.** For an organisation already current with the appointment widening the dry run
+  lists exactly `sal.credit.approve` and nothing else.
+- **A limit is still needed.** The run grants the code only. A credit-note limit for the people who
+  approve is set afterwards by the organisation's administrator on the approval-limit screen; a limit
+  the approver set themselves never counts.
+
+The script needed no change: it reads the bundle from `bootstrap-roles.ts` at run time. **BF-20**
+proves the shape on real rows — two named organisations whose standard role lacks only the new code,
+the standard one offered exactly `sal.credit.approve` by a dry run that writes nothing and then
+widened (a finance clerk role it built gains nothing), the customised one skipped with the code
+withheld, an organisation nobody named untouched row for row, and a second run a no-op. **BF-10** now
+counts the code among the ten an 85-code organisation is offered, and **BF-19** measures the
+appointment widening on a role lacking only the four appointment codes.
+
+The run is an operator act taken after this change merges, never against a database without a
+backup and a rehearsal. This addendum does not claim it was performed anywhere.

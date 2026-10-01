@@ -12,12 +12,14 @@
  *
  * ## Who may reject
  *
- * The same two codes an approval declares, `sal.credit.manage` and
- * `sal.finance.view`, authorized in the note's own company and branch — and a
- * person who is not the requester (`credit_note_self_rejection`). The database
- * holds both rules itself: `sal.guard_credit_note_decision` checks
- * `sal.credit.manage` in the note's scope and refuses the requester, so the rule
- * does not depend on this route being the only way in.
+ * The same two codes an approval declares, `sal.credit.approve` and
+ * `sal.finance.view`, authorized in the note's own company and branch — only an
+ * authorised decision-maker turns a request down (ADR-023 D13) — and a person who
+ * is not the requester (`credit_note_self_rejection`). No credit-note limit is
+ * needed: a rejection credits nothing. The database holds both rules itself:
+ * `sal.guard_credit_note_decision` checks `sal.credit.approve` in the note's scope
+ * and refuses the requester, so the rule does not depend on this route being the
+ * only way in.
  *
  * ## The reason is the record
  *
@@ -53,7 +55,7 @@ export const CREDIT_NOTE_REJECT_OPERATION = defineOperation({
   method: 'POST',
   path: '/credit-notes/{creditNoteId}/rejection',
   summary: 'Reject a pending credit note raised by someone else, stating why.',
-  permissions: ['sal.credit.manage', 'sal.finance.view'],
+  permissions: ['sal.credit.approve', 'sal.finance.view'],
   scope: 'branch',
   auditClass: 'approval',
   auditAction: 'sal.credit_note.rejected',

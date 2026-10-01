@@ -114,6 +114,14 @@ export const INVOICE_ISSUE = 'sal.invoice.issue';
 export const PAYMENT_RECORD = 'sal.payment.record';
 export const PAYMENT_ALLOCATE = 'sal.payment.allocate';
 export const CREDIT_MANAGE = 'sal.credit.manage';
+/**
+ * Deciding a credit note (Owner decision D13, ADR-023, P1-32-PRE-OD-FD2C): the
+ * approval and the rejection declare it in place of `sal.credit.manage`. Held by every
+ * principal that holds the full `sal`/`wty` set, which models an operator with the
+ * whole finance authority; an approval additionally needs a credit-note limit, which
+ * `establishP1_22Fixtures` sets for each of them.
+ */
+export const CREDIT_APPROVE = 'sal.credit.approve';
 export const REVERSAL_APPROVE = 'sal.reversal.approve';
 export const FINANCE_VIEW = 'sal.finance.view';
 export const DELIVERY_MANAGE = 'sal.delivery.manage';
@@ -159,6 +167,7 @@ const ALL_SAL_WTY = [
   PAYMENT_RECORD,
   PAYMENT_ALLOCATE,
   CREDIT_MANAGE,
+  CREDIT_APPROVE,
   REVERSAL_APPROVE,
   FINANCE_VIEW,
   DELIVERY_MANAGE,
@@ -177,6 +186,7 @@ const CATALOGUE: readonly (readonly [string, string])[] = [
   [PAYMENT_RECORD, 'sal'],
   [PAYMENT_ALLOCATE, 'sal'],
   [CREDIT_MANAGE, 'sal'],
+  [CREDIT_APPROVE, 'sal'],
   [REVERSAL_APPROVE, 'sal'],
   [FINANCE_VIEW, 'sal'],
   [DELIVERY_MANAGE, 'sal'],
@@ -683,6 +693,33 @@ export async function establishP1_22Fixtures(pool: Pool): Promise<void> {
     companyId: COMPANY_A9,
     branchId: BRANCH_A9,
   });
+
+  // ---- Credit-note approval limits (ADR-023, D13) ----------------------------
+  //
+  // An approval needs a `credit_note` limit in the note's currency that somebody
+  // else set and that covers the invoice's approved credit. Every principal holding
+  // the approval code gets one per fixture currency in each company of its tenant,
+  // set by USER_A — who is none of them — and large enough that no P1-22 suite meets
+  // it by accident. `tests/backend/od-finance-credit-limits.test.ts` owns the limit
+  // proofs on principals of its own. Idempotent: one per (user, company, currency).
+  for (const principal of P1_22_PRINCIPALS) {
+    if (!principal.permissions.includes(CREDIT_APPROVE)) continue;
+    const companies = principal.tenantId === TENANT_A ? [COMPANY_A1, COMPANY_A9] : [COMPANY_B1];
+    for (const companyId of companies) {
+      for (const currency of ['USD', 'JOD']) {
+        await admin.query(
+          `INSERT INTO iam.approval_limits
+             (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+           SELECT $1, $2, $3, 'credit_note', 1000000, $4, '2020-01-01'::date, $5
+            WHERE NOT EXISTS (
+              SELECT 1 FROM iam.approval_limits
+               WHERE tenant_id = $1 AND company_id = $2 AND user_id = $3
+                 AND limit_type = 'credit_note' AND currency_code = $4)`,
+          [principal.tenantId, companyId, principal.userId, currency, USER_A]
+        );
+      }
+    }
+  }
 
   // ---- Numbering sequences --------------------------------------------------
   //

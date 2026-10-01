@@ -382,8 +382,10 @@ invoices, credit notes, receipts and allocations exists.
 notes** <!-- nav.creditNotes --> ), described as "What has been credited back to a customer, and
 what is still waiting for a second person to approve it." <!-- creditNotes.page.description -->
 
-**Who** — `sal.credit.manage` **and** `sal.finance.view`, together, for everything on the screen:
-the list, one note, raising a note and approving one. None of them answers without both. Finding an
+**Who** — `sal.credit.manage` **and** `sal.finance.view`, together, to open the screen, read the
+list and one note, raise a note and withdraw your own. **Approving or rejecting** a note needs the
+credit-approval permission `sal.credit.approve` **and** `sal.finance.view` instead (Owner decision
+D13); an approval also needs a credit note approval limit, described below. Finding an
 invoice on this screen also needs `sal.invoice.manage`, because the invoice search is the invoices
 list; without it the invoice box says so and the note can still be raised from the invoice's own
 screen by somebody who can open it.
@@ -401,11 +403,39 @@ already there. So in a freshly provisioned organisation:
 - the first administrator may **raise** a credit note against an issued invoice in a branch it is
   allowed to work in;
 - the first administrator **cannot approve a note it raised itself**. Somebody else must: the
-  administrator can **give both permissions to somebody else** — for example a finance approver
-  role, granted only for one branch — because an administrator may hand on a permission it holds
-  itself. Nobody else gains them automatically: a cashier or any other role holds them only if an
-  administrator maps them onto that role. A cashier who can see amounts but does not hold
-  `sal.credit.manage` is not offered **Raise a credit note** on an invoice.
+  administrator can **give the permissions to somebody else** — for example a finance approver
+  role holding `sal.credit.manage`, `sal.credit.approve` and `sal.finance.view`, granted only for
+  one branch — because an administrator may hand on a permission it holds itself, and then **set a
+  credit note approval limit** for that role or person (Part 2, §2.10.3). Nobody else gains them
+  automatically: a cashier or any other role holds them only if an administrator maps them onto that
+  role. A cashier who can see amounts but does not hold `sal.credit.manage` is not offered **Raise a
+  credit note** on an invoice.
+
+**Who may approve, and how much (Owner decision D13).** Approving a credit note is its own
+authority, never borrowed from the permission to raise one or from a discount limit:
+
+- **The permission.** Approve and Reject are offered only to somebody holding `sal.credit.approve`
+  who did not raise the note. Anybody else who can see a note is told "You can see this request, but
+  you cannot approve or reject credit notes. Someone who can approve credit notes must decide it."
+  <!-- creditNotes.detail.cannotDecide --> The permission must cover the note's own branch.
+- **The limit.** An approver also needs a **credit note approval limit** in the note's currency,
+  set by somebody else on the **Approval limits** screen. A discount limit never counts, a limit in
+  another currency never counts, and a limit you set yourself — for your own account or for a role
+  you hold — never counts.
+- **The whole invoice counts (no splitting).** The limit must cover every credit already approved on
+  the same invoice plus the note being approved: "You can approve only within your credit note
+  approval limit, and every credit note already approved on the same invoice counts toward it."
+  <!-- creditNotes.approve.limitExplain --> Splitting one large credit into several small notes
+  therefore cannot get past a low limit. Notes that are still waiting, rejected or withdrawn do not
+  count. Two people approving two notes on the same invoice at the same moment are handled one after
+  the other, so together they can never pass the limit.
+- **Rejecting needs the permission and no limit**, because a rejection never credits anything.
+  Withdrawing your own request is unchanged and needs only `sal.credit.manage`.
+- **Existing organisations.** An organisation created before this decision keeps the permissions it
+  was given. Nobody in it can approve a credit note until an administrator who holds
+  `sal.credit.approve` grants it to the right people and a credit note approval limit is set for
+  them. The platform operator runs the administrator backfill only for the organisations the Owner
+  named; every other organisation is left as it is, by design of D13.
 
 **The controls that still apply.** Holding the permission does not remove any of them:
 
@@ -413,8 +443,8 @@ already there. So in a freshly provisioned organisation:
   person granted one branch cannot see, raise or approve credit notes in another, and nobody can
   reach another organisation's invoices at all.
 - **Second person.** A credit note is raised as **Waiting for a second person** and credits nothing.
-  The person who raised it can never approve it; a different person who also holds both permissions
-  must. Only then does the amount the customer owes go down.
+  The person who raised it can never approve it; a different person who holds the credit-approval
+  permission and a limit that covers it must. Only then does the amount the customer owes go down.
 - **Reject and withdraw.** Only somebody other than the person who raised a note may reject it, and
   must say why; only the person who raised it may withdraw it. A rejected or withdrawn note credits
   nothing, can never be approved afterwards, and the amount the customer owes does not change.
@@ -426,7 +456,9 @@ already there. So in a freshly provisioned organisation:
   organisation's audit log.
 - **Refused attempts are recorded too.** When the application refuses a decision by rule — approving
   your own note, rejecting a note you raised, withdrawing somebody else's, deciding a note already
-  decided, crediting more than is open, deciding a discount you asked for or have no limit for, or
+  decided, crediting more than is open, approving a credit note without the permission in its branch
+  or without a credit note limit that covers it, deciding a discount you asked for or have no limit
+  for, or
   allocating more money than a receipt or an invoice has left — the attempt is recorded as a security
   event in the organisation's log, after the refusal, naming who tried, what, and which rule refused
   it. No amount, name or typed text is recorded with it. Reading that log needs the audit permission,
@@ -481,7 +513,8 @@ A field that is missing or wrong is marked, the cursor moves to the first one, w
 kept, and the complaint goes as soon as you correct it. Changing branch in the header with a
 half-written credit asks first.
 
-**Approving a credit note** — by somebody other than the person who raised it
+**Approving a credit note** — by somebody other than the person who raised it, who holds the
+credit-approval permission and a credit note approval limit that covers it
 
 1. Open the note from the list (step 3 above).
 2. Check the amount and the reason, and press **Approve this credit note**
@@ -494,8 +527,9 @@ half-written credit asks first.
    is read again.
 
 On a note you raised yourself there is no approve button; the note says "You raised this credit
-note, so it is waiting for another approver: a different person who can manage credit notes must
-approve it." <!-- creditNotes.detail.ownRequest -->
+note, so it is waiting for another approver: a different person who can approve credit notes must
+approve it." <!-- creditNotes.detail.ownRequest --> Without the credit-approval permission there is
+no approve or reject button on anybody's note either.
 
 **Rejecting a credit note** — by somebody other than the person who raised it
 
@@ -537,18 +571,23 @@ whoever raised a credit note cannot approve it." <!-- creditNotes.detail.approva
 
 **If it goes wrong**
 
-| Message                                                                                                                                                                    | What it means                                                                                                               |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **"You do not have permission to see the credit notes of this branch. That also needs permission to see amounts."** <!-- creditNotes.list.refused -->                      | One or both permissions are missing.                                                                                        |
-| **"The credit notes could not be read just now. Try again."** <!-- creditNotes.list.unavailable -->                                                                        | The service did not answer.                                                                                                 |
-| **"That credit note was not found."** <!-- creditNotes.detail.missing -->                                                                                                  | The note is not at this branch, or is gone.                                                                                 |
-| **"The invoice cannot be credited by this amount. …"** <!-- creditNotes.request.overOpen -->                                                                               | The amount is more than is still open on the invoice, or the invoice is no longer open for credit. Enter less.              |
-| **"You raised this credit note, so you cannot approve it. Another person who can manage credit notes must approve it."** <!-- form.violation.credit_note_self_approval --> | The person who raised the note tried to approve it (for example from another window). Ask a second person.                  |
-| **"This credit note could not be approved as it stands. …"** <!-- creditNotes.approve.conflict -->                                                                         | It was decided meanwhile, or its invoice no longer has that much open. The note has been read again; check what it says.    |
-| **"You raised this credit note, so you cannot reject it. You can withdraw it instead."** <!-- form.violation.credit_note_self_rejection -->                                | The person who raised the note tried to reject it. Withdraw it instead.                                                     |
-| **"Only the person who raised this credit request can withdraw it."** <!-- form.violation.credit_note_withdraw_not_requester -->                                           | Somebody other than the person who raised the note tried to withdraw it.                                                    |
-| **"This credit note has already been decided, so it can no longer be changed."** <!-- form.violation.credit_note_decision_frozen -->                                       | It was approved, rejected or withdrawn meanwhile.                                                                           |
-| **"This credit note changed since it was shown, or it has already been decided. …"** <!-- creditNotes.decision.conflict -->                                                | Somebody changed or decided it after you opened it. The note has been read again; check it and try again if it still waits. |
+| Message                                                                                                                                                                     | What it means                                                                                                                |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| **"You do not have permission to see the credit notes of this branch. That also needs permission to see amounts."** <!-- creditNotes.list.refused -->                       | One or both permissions are missing.                                                                                         |
+| **"The credit notes could not be read just now. Try again."** <!-- creditNotes.list.unavailable -->                                                                         | The service did not answer.                                                                                                  |
+| **"That credit note was not found."** <!-- creditNotes.detail.missing -->                                                                                                   | The note is not at this branch, or is gone.                                                                                  |
+| **"The invoice cannot be credited by this amount. …"** <!-- creditNotes.request.overOpen -->                                                                                | The amount is more than is still open on the invoice, or the invoice is no longer open for credit. Enter less.               |
+| **"You raised this credit note, so you cannot approve it. Another person who can approve credit notes must approve it."** <!-- form.violation.credit_note_self_approval --> | The person who raised the note tried to approve it (for example from another window). Ask a second person.                   |
+| **"You cannot approve credit notes for this branch. …"** <!-- form.violation.credit_approval_permission_missing -->                                                         | Your credit-approval permission does not cover this note's branch. Ask an administrator, or leave it for another approver.   |
+| **"You have no credit note approval limit for this company, so you cannot approve this credit note. …"** <!-- form.violation.credit_no_approval_limit -->                   | Nobody has set you a credit note limit here (a discount limit does not count). Ask an administrator to set one.              |
+| **"The only credit note approval limits you hold were set by you, …"** <!-- form.violation.credit_limit_self_created -->                                                    | A limit you set yourself never counts. Ask another administrator to set your limit.                                          |
+| **"Your credit note approval limit is in another currency, …"** <!-- form.violation.credit_limit_currency_mismatch -->                                                      | Your limit is not in the note's currency. Leave it for an approver whose limit is.                                           |
+| **"Approving this credit note would take the total approved credit on its invoice above your approval limit. …"** <!-- form.violation.credit_limit_exceeded -->             | The notes already approved on the invoice plus this one are more than your limit. Leave it for a higher limit, or reject it. |
+| **"This credit note could not be approved as it stands. …"** <!-- creditNotes.approve.conflict -->                                                                          | It was decided meanwhile, or its invoice no longer has that much open. The note has been read again; check what it says.     |
+| **"You raised this credit note, so you cannot reject it. You can withdraw it instead."** <!-- form.violation.credit_note_self_rejection -->                                 | The person who raised the note tried to reject it. Withdraw it instead.                                                      |
+| **"Only the person who raised this credit request can withdraw it."** <!-- form.violation.credit_note_withdraw_not_requester -->                                            | Somebody other than the person who raised the note tried to withdraw it.                                                     |
+| **"This credit note has already been decided, so it can no longer be changed."** <!-- form.violation.credit_note_decision_frozen -->                                        | It was approved, rejected or withdrawn meanwhile.                                                                            |
+| **"This credit note changed since it was shown, or it has already been decided. …"** <!-- creditNotes.decision.conflict -->                                                 | Somebody changed or decided it after you opened it. The note has been read again; check it and try again if it still waits.  |
 
 **Screenshot** — no screenshot available at this version.
 

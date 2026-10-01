@@ -3393,3 +3393,44 @@ Residual items from the contract review of this slice (fix round 1), one line ea
   guard runs on UPDATE only. `sal.stamp_dual_control_maker` (BEFORE INSERT, re-issued in the same
   migration) now births every credit note pending with no decider, decision date, decision reason
   or issue date; `tests/db/sal-credit-note-decisions.test.ts` proves it on the runtime login.
+
+### Credit-approval permission and credit-note approval limits (P1-32-PRE-OD-FD2C)
+
+This slice implements ADR-023 D13: approving and rejecting a credit note is its own authority,
+`sal.credit.approve` (minted), with its own limit, the `credit_note` type of `iam.approval_limits`,
+never inherited from `sal.credit.manage` or from a discount limit. The limit covers the cumulative
+approved credit on the invoice including the note being approved (anti-splitting), and decisions on
+one invoice serialise on its row lock. One forward migration,
+`20261001090000_sal_credit_approval_limits.sql` (165 migrations). No operation, route or audit action
+is added; `sal.credit-note-approve` and `sal.credit-note-reject` now declare `sal.credit.approve` +
+`sal.finance.view`. The standard tenant administrator carries the new code (95 codes); no other
+standard role exists that carried credit approval, so no other role is widened.
+
+| Route                             | What changed                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/credit-notes`                   | Approve and Reject are offered only to a holder of the credit-approval permission who did not raise the note; anybody else who can see the note is told deciding it needs that permission. The approval explains that the limit covers every approved credit on the invoice. A limit refusal is said in words, in English and Arabic, with its reference. |
+| `/administration/approval-limits` | The limit type is chosen by name — Discount approval or Credit note approval — instead of typed; a stored credit-note limit is named in words. A zero credit-note limit is a field error on the amount before sending; an amount finer than the currency's smallest coin is the server's field error on the same box.                                     |
+
+Wrapper extensions: none. The credit-note screen keeps `ConfirmDialog` and `ReasonDialog`; the
+approval-limit form keeps its existing `SelectField` with the key, `defaultValue` and `onChange`
+shape the form-reset gate requires. The design gallery is unchanged.
+
+Preserved: maker ≠ approver; the requester-only withdrawal; the credit ceiling against the open
+amount; the If-Match version on rejection and withdrawal; tenant and branch isolation (another tenant
+404; an approver whose permission covers another branch only 403, recorded as a refusal); the
+discount-approval rules.
+
+Known limitations of this slice, one line each:
+
+- Existing organisations other than the QA organisations named for the backfill cannot approve a
+  credit note until an administrator grants `sal.credit.approve` and sets a credit-note limit — by
+  design of D13.
+- Approval limits stay company-scoped, as every approval limit is; the branch is enforced by the
+  permission.
+- An approver holding `sal.credit.approve` nowhere is refused by the pipeline before the service runs,
+  so that attempt is an authorization denial, not a recorded business refusal; holding it in another
+  branch is refused and recorded as `credit_approval_permission_missing`.
+- The screen offers the decision on the session's permission list; the branch reach and the limit are
+  the server's answer, said in words when it refuses.
+- Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the
+  builds; they run in hosted CI. Focused DB and backend files ran against a disposable database only.

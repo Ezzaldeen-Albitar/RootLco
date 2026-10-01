@@ -1633,6 +1633,7 @@ describe('credit notes are reachable', () => {
       messages={en}
       initialCreditNoteId={initial}
       currentUserId={currentUserId}
+      canDecide
       canSearchInvoices
     />
   );
@@ -1795,6 +1796,48 @@ describe('credit notes are reachable', () => {
     expect(screen.queryByText(EN['creditNotes.list.refused'] as string)).toBeNull();
   });
 
+  it('offers the decision on somebody else\u2019s note only to a holder of the credit-approval permission (D13)', async () => {
+    const decide = () =>
+      screen.queryByRole('button', { name: EN['creditNotes.approve.action'] as string });
+    const turnDown = () =>
+      screen.queryByRole('button', { name: EN['creditNotes.reject.action'] as string });
+
+    // The request code and the finance view: the note is read, and no decision offered.
+    PERMISSIONS = ['sal.credit.manage', 'sal.finance.view', 'org.branch.read'];
+    const { unmount } = renderLtr(
+      (await CreditNotesPage({
+        params: Promise.resolve({ locale: 'en' }),
+        searchParams: Promise.resolve({ creditNoteId: CREDIT_NOTE_ID }),
+      })) as React.ReactElement
+    );
+    expect(await screen.findByTestId('credit-note-cannot-decide')).toHaveTextContent(
+      EN['creditNotes.detail.cannotDecide'] as string
+    );
+    expect(decide()).toBeNull();
+    expect(turnDown()).toBeNull();
+    unmount();
+
+    // With sal.credit.approve beside them, both decisions are offered.
+    PERMISSIONS = [
+      'sal.credit.manage',
+      'sal.credit.approve',
+      'sal.finance.view',
+      'org.branch.read',
+    ];
+    renderLtr(
+      (await CreditNotesPage({
+        params: Promise.resolve({ locale: 'en' }),
+        searchParams: Promise.resolve({ creditNoteId: CREDIT_NOTE_ID }),
+      })) as React.ReactElement
+    );
+    expect(
+      await screen.findByRole('button', { name: EN['creditNotes.approve.action'] as string })
+    ).toBeVisible();
+    expect(turnDown()).not.toBeNull();
+    expect(screen.queryByTestId('credit-note-cannot-decide')).toBeNull();
+    expect(screen.getByText(EN['creditNotes.approve.limitExplain'] as string)).toBeVisible();
+  });
+
   it('ignores an address that names something that is not a reference', async () => {
     PERMISSIONS = ['sal.credit.manage', 'sal.finance.view', 'org.branch.read'];
     renderLtr(
@@ -1886,13 +1929,15 @@ describe('raising and approving a credit note', () => {
   const notesScreen = (
     currentUserId: string,
     initial: string | null = null,
-    canSearchInvoices = true
+    canSearchInvoices = true,
+    canDecide = true
   ) => (
     <CreditNotesScreen
       locale="en"
       messages={en}
       initialCreditNoteId={initial}
       currentUserId={currentUserId}
+      canDecide={canDecide}
       canSearchInvoices={canSearchInvoices}
     />
   );
@@ -2188,6 +2233,7 @@ describe('raising and approving a credit note', () => {
         messages={ar}
         initialCreditNoteId={NOTE_ID}
         currentUserId={SIGNED_IN}
+        canDecide
       />
     );
     const detail = await screen.findByRole('region', {
@@ -2229,6 +2275,125 @@ describe('raising and approving a credit note', () => {
     expect(state.messageKey).toBe('form.violation.credit_note_self_approval');
     expect(EN['form.violation.credit_note_self_approval']).toBeTruthy();
     expect(AR['form.violation.credit_note_self_approval']).toBeTruthy();
+  });
+
+  it('offers somebody else\u2019s note neither approval nor rejection without the credit-approval permission, and says why', async () => {
+    renderLtr(notesScreen(SIGNED_IN, NOTE_ID, true, false));
+    const detail = await screen.findByRole('region', {
+      name: EN['creditNotes.detail.heading'] as string,
+    });
+    expect(await within(detail).findByTestId('credit-note-cannot-decide')).toHaveTextContent(
+      EN['creditNotes.detail.cannotDecide'] as string
+    );
+    for (const key of ['creditNotes.approve.action', 'creditNotes.reject.action']) {
+      expect(within(detail).queryByRole('button', { name: EN[key] as string })).toBeNull();
+    }
+    expect(approveCreditNote).not.toHaveBeenCalled();
+    expect(rejectCreditNote).not.toHaveBeenCalled();
+  });
+
+  const limitRefusal = {
+    state: {
+      status: 'denied',
+      messageKey: 'form.violation.credit_limit_exceeded',
+      correlationId: 'ref-403',
+      attempt: 1,
+    },
+    created: null,
+  };
+
+  it('says a credit-limit refusal in words, with its reference, and the note stays pending', async () => {
+    const user = userEvent.setup();
+    approveCreditNote.mockResolvedValueOnce(limitRefusal);
+    renderLtr(notesScreen(SIGNED_IN, NOTE_ID));
+    const detail = await screen.findByRole('region', {
+      name: EN['creditNotes.detail.heading'] as string,
+    });
+    await user.click(
+      await within(detail).findByRole('button', {
+        name: EN['creditNotes.approve.action'] as string,
+      })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['creditNotes.approve.action'] as string })
+    );
+    const alert = await within(detail).findByRole('alert');
+    expect(alert).toHaveTextContent(EN['form.violation.credit_limit_exceeded'] as string);
+    expect(alert).toHaveTextContent('ref-403');
+    expect(within(detail).getByText(EN['creditNotes.state.pending'] as string)).toBeVisible();
+  });
+
+  it('says the same credit-limit refusal in Arabic, right to left', async () => {
+    const user = userEvent.setup();
+    approveCreditNote.mockResolvedValueOnce(limitRefusal);
+    renderRtl(
+      <CreditNotesScreen
+        locale="ar"
+        messages={ar}
+        initialCreditNoteId={NOTE_ID}
+        currentUserId={SIGNED_IN}
+        canDecide
+      />
+    );
+    const detail = await screen.findByRole('region', {
+      name: AR['creditNotes.detail.heading'] as string,
+    });
+    await user.click(
+      await within(detail).findByRole('button', {
+        name: AR['creditNotes.approve.action'] as string,
+      })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog.closest('[dir="rtl"]')).not.toBeNull();
+    await user.click(
+      within(dialog).getByRole('button', { name: AR['creditNotes.approve.action'] as string })
+    );
+    expect(await within(detail).findByRole('alert')).toHaveTextContent(
+      AR['form.violation.credit_limit_exceeded'] as string
+    );
+  });
+
+  it('each credit-approval rule the server names becomes its own sentence, in both catalogues', async () => {
+    const { fromFailure } = await import('@/lib/forms/action-result');
+    const rules = [
+      'credit_approval_permission_missing',
+      'credit_no_approval_limit',
+      'credit_limit_self_created',
+      'credit_limit_currency_mismatch',
+      'credit_limit_exceeded',
+    ];
+    const sentences = new Set<string>();
+    for (const rule of rules) {
+      const state = fromFailure(
+        {
+          ok: false,
+          kind: 'forbidden',
+          status: 403,
+          correlationId: 'ref-403',
+          problem: {
+            type: 'about:blank',
+            title: 'Forbidden',
+            status: 403,
+            code: 'ERR-IAM-001',
+            correlationId: 'ref-403',
+            violations: [{ path: 'path.creditNoteId', rule }],
+          },
+        } as never,
+        1
+      );
+      expect(state.messageKey).toBe(`form.violation.${rule}`);
+      const english = EN[`form.violation.${rule}`] as string;
+      const arabic = AR[`form.violation.${rule}`] as string;
+      expect(english).toBeTruthy();
+      expect(arabic).toBeTruthy();
+      // Plain words: no rule token, no field name, no code leaks into the sentence.
+      for (const sentence of [english, arabic]) {
+        expect(sentence).not.toMatch(/credit_|sal\.|ERR-/);
+      }
+      sentences.add(english);
+    }
+    expect(sentences.size).toBe(rules.length);
   });
 
   /**
@@ -2459,6 +2624,7 @@ describe('raising and approving a credit note', () => {
           messages={ar}
           initialCreditNoteId={NOTE_ID}
           currentUserId={RAISED_BY}
+          canDecide
         />
       );
       const detail = await detailRegion(AR['creditNotes.detail.heading'] as string);

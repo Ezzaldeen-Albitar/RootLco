@@ -25,7 +25,7 @@ this document following it. A seed change and a regeneration of this file are on
 
 That gate exists because nothing was watching. This document was reconciled by hand on 2026-07-22
 (Phase 1-14, finding PC-2) against a seed holding 43 codes, and then stood still through six phases
-while the seed grew to 132. It listed no `tech.` code at all — not even `tech.technician.read`,
+while the seed grew to 133. It listed no `tech.` code at all — not even `tech.technician.read`,
 which Phase 1-19 seeded. `tests/db/iam-seeds.test.ts` is the assertion usually credited with
 covering this, and it does not: it asserts a FLOOR — at least 19 codes across `org` and `iam`, valid
 risk levels, no wildcard — which every one of those six phases satisfied while the drift
@@ -41,11 +41,11 @@ each such case in a comment beside the row.
 
 | Measure                               | Value |
 | ------------------------------------- | ----- |
-| Permission codes seeded               | 132   |
+| Permission codes seeded               | 133   |
 | Domains                               | 18    |
 | Risk `low`                            | 24    |
 | Risk `medium`                         | 57    |
-| Risk `high`                           | 51    |
+| Risk `high`                           | 52    |
 | Risk `critical`                       | 0     |
 | Baseline roles (fixture-proven)       | 6     |
 | Baseline role grants (fixture-proven) | 23    |
@@ -65,7 +65,7 @@ each such case in a comment beside the row.
 | `quo`      | 3     | 1     | 1        | 1      | 0          |
 | `rec`      | 12    | 1     | 3        | 8      | 0          |
 | `rpt`      | 3     | 1     | 1        | 1      | 0          |
-| `sal`      | 10    | 0     | 4        | 6      | 0          |
+| `sal`      | 11    | 0     | 4        | 7      | 0          |
 | `shared`   | 6     | 2     | 3        | 1      | 0          |
 | `svc`      | 5     | 1     | 2        | 2      | 0          |
 | `tech`     | 5     | 2     | 2        | 1      | 0          |
@@ -170,6 +170,7 @@ by" column would be a guess dressed as a derivation. Read the seed for it.
 | `rpt.export`                                  | rpt      | high   | Export report data (audited downstream)                                                |
 | `rpt.report.configure`                        | rpt      | medium | Manage report configurations                                                           |
 | `rpt.report.read`                             | rpt      | low    | Read published report definitions                                                      |
+| `sal.credit.approve`                          | sal      | high   | Approve and reject credit notes within a credit-note approval limit                    |
 | `sal.credit.manage`                           | sal      | high   | Request and manage credit notes                                                        |
 | `sal.delivery.complete`                       | sal      | high   | Complete deliveries and close custody                                                  |
 | `sal.delivery.manage`                         | sal      | medium | Manage deliveries, receivers, signatures                                               |

@@ -355,6 +355,10 @@ const ALLOWED_ROUTINES = new Set([
   'iam.enforce_grant_delegation_within_authority',
   'iam.enforce_scoped_grant_has_scope',
   'iam.grant_delegation_within_authority',
+  // P1-32-PRE-OD-FD2C (ADR-023, D1 and D13): a new approval limit fits its
+  // currency's minor unit, and a credit-note limit is above zero. SECURITY INVOKER,
+  // empty search_path, EXECUTE revoked from PUBLIC.
+  'iam.guard_approval_limit_money',
   'iam.has_permission',
   'iam.has_permission_in_scope',
   'iam.has_platform_authority',
@@ -821,6 +825,7 @@ describe('database foundation', () => {
       'tg_appointments_transition',
       'tg_approval_limits_creator',
       'tg_approval_limits_immutable',
+      'tg_approval_limits_money',
       'tg_approval_limits_touch_metadata',
       'tg_authorizations_authority',
       'tg_authorized_receivers_immutable',
