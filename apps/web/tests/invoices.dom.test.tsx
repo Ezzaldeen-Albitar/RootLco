@@ -2147,6 +2147,38 @@ describe('credit notes are reachable', () => {
       expect((await screen.findByTestId('credit-note-trace')).textContent).not.toContain('u3');
     });
 
+    it('a withdrawn note names who withdrew it, under its own label', async () => {
+      readCreditNote.mockResolvedValue(
+        okRead(
+          note({
+            approvalState: 'withdrawn',
+            decidedBy: 'u3',
+            decidedByName: 'Omar Khalil',
+            decidedAt: '2026-09-20T10:00:00Z',
+          })
+        )
+      );
+      renderLtr(detailOf());
+      const decided = await screen.findByTestId('credit-note-decided-by');
+      expect(decided).toHaveTextContent('Omar Khalil');
+      const row = decided.closest('div');
+      expect(row).toHaveTextContent(EN['creditNotes.detail.withdrawnBy'] as string);
+      expect(row).not.toHaveTextContent(EN['creditNotes.detail.rejectedBy'] as string);
+      expect(row).not.toHaveTextContent(EN['creditNotes.detail.approvedBy'] as string);
+      expect((await screen.findByTestId('credit-note-trace')).textContent).not.toContain('u3');
+    });
+
+    it('an invoice the detail read does not trace is said in words, with no link or reference', async () => {
+      readCreditNote.mockResolvedValue(okRead(note({ invoice: null })));
+      renderLtr(detailOf());
+      const trace = await screen.findByTestId('credit-note-trace');
+      const shown = within(trace).getByTestId('credit-note-invoice');
+      expect(shown).toHaveTextContent(EN['creditNotes.detail.invoiceUnavailable'] as string);
+      expect(within(shown).queryAllByRole('link')).toEqual([]);
+      expect(within(trace).queryByTestId('credit-note-customer')).toBeNull();
+      expect(trace.textContent).not.toContain(INVOICE_ID);
+    });
+
     it('in Arabic, the trace reads right to left with its own words', async () => {
       readCreditNote.mockResolvedValue(okRead(note({ sourceReturn: returned })));
       renderRtl(detailOf({ locale: 'ar', messages: ar }));

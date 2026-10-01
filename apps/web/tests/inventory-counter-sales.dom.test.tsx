@@ -1241,6 +1241,149 @@ describe('finance checkpoint fixes B', () => {
     expect(readInvoice).not.toHaveBeenCalled();
   });
 
+  /** The issued-sales list's Open action on its one row. */
+  async function openFromList(user: ReturnType<typeof userEvent.setup>) {
+    const grid = await screen.findByTestId('counter-issued-grid');
+    await within(grid).findAllByText('CS-0007');
+    await user.click(
+      within(grid).getByRole('button', {
+        name: new RegExp(`^${EN['inventory.counterSales.issued.open'] as string}`),
+      })
+    );
+  }
+  const heldLines = () =>
+    screen.queryByRole('table', { name: EN['inventory.counterSales.draft.caption'] as string });
+
+  it('DF-B3: opening an issued sale mid-sale keeps the unsaved sale protected and kept', async () => {
+    const user = userEvent.setup();
+    issuedPages([issuedRow()]);
+    readInvoice.mockResolvedValue(okRead(issuedDetail()));
+    renderLtr(screenAt());
+    await buildOneLine(user);
+    await waitFor(() => expect(leavingIsQuestioned()).toBe(true));
+    await openFromList(user);
+    expect(await screen.findByRole('article')).toBeTruthy();
+    // The buyer and the line are not saved anywhere, so leaving still asks while
+    // the reprint is on screen.
+    expect(leavingIsQuestioned()).toBe(true);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.sale.next'] as string })
+    );
+    // Back at the counter, what was being built is still there, and still guarded.
+    const lines = heldLines();
+    expect(lines).not.toBeNull();
+    expect(within(lines as HTMLElement).getAllByText('BRK-001').length).toBeGreaterThan(0);
+    expect(within(lines as HTMLElement).getAllByRole('row')).toHaveLength(2);
+    expect(screen.getByLabelText(labelled('inventory.counterSales.buyer.label'))).toHaveValue(
+      BUYER_ID
+    );
+    expect(leavingIsQuestioned()).toBe(true);
+    expect(createCounterSale).not.toHaveBeenCalled();
+  });
+
+  it('reopening a stored draft mid-sale keeps the unsaved sale protected and kept too', async () => {
+    const stranded = invoice({ id: '77777777-7777-4777-8777-777777777777' });
+    listCounterSales.mockResolvedValue(
+      okRead({ items: [stranded], nextCursor: null, hasMore: false })
+    );
+    readInvoice.mockResolvedValue(okRead({ invoice: stranded, lines: [], recordVersion: 1 }));
+    const user = userEvent.setup();
+    renderLtr(screenAt());
+    await buildOneLine(user);
+    await user.click(
+      await screen.findByRole('button', {
+        name: EN['inventory.counterSales.drafts.reopen'] as string,
+      })
+    );
+    expect(
+      await screen.findByText(EN['inventory.counterSales.drafts.reopened'] as string)
+    ).toBeTruthy();
+    expect(leavingIsQuestioned()).toBe(true);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.sale.next'] as string })
+    );
+    expect(within(heldLines() as HTMLElement).getAllByText('BRK-001').length).toBeGreaterThan(0);
+    expect(leavingIsQuestioned()).toBe(true);
+  });
+
+  /** What `readInvoice` answers, and the plain-language notice each answer gives. */
+  const refusals: readonly (readonly [string, () => unknown, string])[] = [
+    ['refused', () => ({ status: 'denied', correlationId: 'ref-403' }), 'openRefused'],
+    ['missing', () => ({ status: 'not-found', correlationId: 'ref-404' }), 'openMissing'],
+    ['unavailable', () => ({ status: 'unavailable', correlationId: 'ref-503' }), 'openUnavailable'],
+    [
+      'an invoice of a job',
+      () =>
+        okRead({
+          ...issuedDetail(),
+          invoice: invoice({
+            status: 'issued',
+            invoiceNumber: 'INV-0009',
+            workOrderId: '88888888-8888-4888-8888-888888888888',
+            saleKind: 'work_order',
+          }),
+        }),
+      'notCounterSale',
+    ],
+  ];
+
+  it.each(refusals)(
+    'DF-B3: opening from the list (%s) is said in words and opens nothing',
+    async (_label, answer, noticeKey) => {
+      const user = userEvent.setup();
+      issuedPages([issuedRow()]);
+      readInvoice.mockResolvedValue(answer());
+      renderLtr(screenAt());
+      await openFromList(user);
+      await waitFor(() => expect(readInvoice).toHaveBeenCalledWith(INVOICE_ID));
+      const notice = await screen.findByText(
+        EN[`inventory.counterSales.issued.${noticeKey}`] as string
+      );
+      expect(notice).toHaveAttribute('role', 'status');
+      expect(screen.queryByRole('article')).toBeNull();
+      expect(screen.queryByText(EN['inventory.counterSales.sale.heading'] as string)).toBeNull();
+      // Still at the counter, with the list in place to try another.
+      expect(screen.getByTestId('counter-issued-grid')).toBeTruthy();
+      expect(document.body.textContent).not.toContain('ref-');
+    }
+  );
+
+  it.each(refusals)(
+    'DF-B3: a sale named in the address (%s) is said in words and opens nothing',
+    async (_label, answer, noticeKey) => {
+      readInvoice.mockResolvedValue(answer());
+      renderLtr(
+        (await CounterSalesPage({
+          params: Promise.resolve({ locale: 'en' }),
+          searchParams: Promise.resolve({ invoiceId: INVOICE_ID }),
+        } as never)) as React.ReactElement
+      );
+      await waitFor(() => expect(readInvoice).toHaveBeenCalledWith(INVOICE_ID));
+      expect(
+        await screen.findByText(EN[`inventory.counterSales.issued.${noticeKey}`] as string)
+      ).toHaveAttribute('role', 'status');
+      expect(screen.queryByRole('article')).toBeNull();
+      expect(screen.queryByText(EN['inventory.counterSales.sale.heading'] as string)).toBeNull();
+      // Asked once: the address is consumed, not read again on every render.
+      expect(readInvoice).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('DF-2: while the balance is being read, the panel says so and claims nothing', async () => {
+    const user = userEvent.setup();
+    issuedPages([issuedRow()]);
+    readInvoice.mockResolvedValue(okRead(issuedDetail()));
+    readOutstanding.mockReturnValue(new Promise(() => undefined));
+    renderLtr(screenAt());
+    await openFromList(user);
+    expect(
+      await screen.findByText(EN['inventory.counterSales.sale.positionLoading'] as string)
+    ).toHaveAttribute('role', 'status');
+    expect(screen.queryByTestId('counter-sale-payment-status')).toBeNull();
+    expect(screen.queryByTestId('counter-sale-due')).toBeNull();
+    expect(screen.queryByTestId('counter-sale-position-unavailable')).toBeNull();
+  });
+
   it('Arabic: the issued sale, its position and its settlement are in Arabic, right to left', async () => {
     const user = userEvent.setup();
     issuedPages([issuedRow()]);

@@ -300,9 +300,15 @@ function BranchCounter({
    * Unsaved work, declared to the shell. A buyer chosen or a line added before
    * the draft exists is held only here, under THIS branch's key, so a branch
    * switch asks first; a confirmed switch remounts the counter empty. Once the
-   * draft exists it is stored, and the drafts list offers it back.
+   * draft exists it is stored, the composition is let go, and the drafts list
+   * offers it back.
+   *
+   * Declared on what is HELD, not on what is shown: opening an issued sale to
+   * print it again, or reopening a stored draft, sets the composition aside
+   * without saving it, so it stays protected while that sale is on screen and
+   * is still there when the operator comes back to the counter.
    */
-  useUnsavedGuard(sale === null && (buyer !== null || lines.length > 0));
+  useUnsavedGuard(buyer !== null || lines.length > 0);
   /*
    * DEF-T-13. The branch's drafted sales, so one is reachable again after a
    * reload. Re-read after every draft, issue and void, because each of those
@@ -365,6 +371,10 @@ function BranchCounter({
             buyer={buyer}
             lines={lines}
             onDrafted={(created) => {
+              // The buyer and the lines are now the stored draft, so they are no
+              // longer unsaved work held here.
+              setLines([]);
+              setBuyer(null);
               setSale(created);
               drafts.reload();
               setNotice(
@@ -391,10 +401,10 @@ function BranchCounter({
               setNotice(noticeKey);
             }}
             onNewSale={() => {
+              // Back to the counter. A composition set aside to open this sale is
+              // kept as it was; one that became this sale was let go when drafted.
               setSale(null);
               setOrigin('counter');
-              setLines([]);
-              setBuyer(null);
               setNotice(null);
               drafts.reload();
             }}

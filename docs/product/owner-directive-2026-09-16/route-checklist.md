@@ -3576,3 +3576,23 @@ Known limitations of this slice, one line each:
 - The "as of" moment is the balance read's; the credit position is read in the same request a moment later.
 - Quotation, credit-note and receipt-allocation prints and any tax presentation change are not part of this slice (later D10 work; tax waits on the Owner's accounting questionnaire).
 - Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the builds; they run in hosted CI. Focused backend files ran against a disposable database only.
+
+Fix round 1 of this slice's contract review: the counter declares unsaved work on what it holds (a
+chosen buyer or lines not yet drafted), not on what it shows, so opening an issued sale to print it
+again, or reopening a stored draft, keeps that work protected and the "next sale" button returns to
+it unchanged; drafting lets the composition go, because it is then the stored draft. New DOM cases
+cover that, every refusal of opening a sale (refused, not found, unavailable, an invoice of a job)
+from the issued list and from `?invoiceId=`, the balance-loading state, and the credit-note trace
+for an untraced invoice and a withdrawn note.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- `?invoiceId=` opens any counter sale the server returns, even one of a branch other than the working target, and offers issue and void when it is a draft; the server still enforces scope, and the only link the screens generate (the credit note, same branch) cannot produce this.
+- The printed copy states the settlement time in UTC, labelled "UTC", when the invoice's branch is not among the context's branches: labelled honestly, but not the branch clock.
+- The payer name on the credit-note detail is gated on `crm.customer.read` held in any scope (`callerHoldsPermissionAnywhere`), not in the note's scope, matching the existing `sal.invoice-list` rule.
+- Focus is not moved after opening a reprint: the list unmounts and focus falls to the page body; the `role=status` notice still announces it, as the drafts reopen path already did.
+- The drafts reopen path lost unsaved work before this slice; the fix above covers it too, with its own case.
+- Commit 19e2d4196 has a 73-character subject (limit 72); published history is not rewritten.
+- The database and backend tiers were not run by the reviewer; the DF-B4 and DF-B3 isolation claims (another tenant 404, another branch 403, sale kind 422) rest on `tests/backend/od-finance-credit-decisions.test.ts` and the hosted integration and database jobs.
+- In the reviewer's local root unit run, `tests/ci/tailwind-theme-gate.test.ts` and `tests/ci/p1-28-access-gate.test.ts` reached the 30-second limit; neither touches this slice's files, and they are left to the hosted unit tier as local timeouts under load.
+- The reviewer falsified the DF-B2 contract check: with `data-print-scope` removed from the counter-sales page, the "only the document reaches the paper" case fails.
