@@ -3512,3 +3512,18 @@ Known limitations of this slice, one line each:
   already recorded (`payment_over_allocation`).
 - Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the
   builds; they run in hosted CI. Focused backend files ran against a disposable database only.
+
+Fix round 1 of this slice's contract review: the approval-limits screen reads names through
+administration's own directory read (`features/administration/shared/person-name.ts`), no longer
+the receptions read-back hook, so the page does not load a P1-28 feature tree and the P1-28 access
+gate still finds fourteen screens. The signed-in reports case now expects the zone's name and fails
+if the identifier is shown.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- DF-3 order: a retry under the same key sent after an approval is refused at the ceiling before the replay lookup and writes one `business-rule.refused` event for what is really a replay; the order predates this slice and the path is narrow (a delayed retry after an approval).
+- DF-B7: only the form's own quantity complaint clears on correction; a server refusal of the quantity (for example more than remains returnable) stays red until the next submit, which predates this slice.
+- `ReasonDialog`: while a resubmit with different text is in flight, the previous server refusal briefly shows under the new text (the parent clears it only when the answer lands); cosmetic.
+- DF-7: the invoice figure read again at the refusal cannot be cancelled and is not ignored if the working context changes; the receipt figure is the panel's last read.
+- DF-B6: names are read one per distinct person, all at once, so a long approval-limits list (up to 200 rows) can send many reads together; they are dropped on unmount or when the list changes.
+- The reconciliation note written before this slice is outside the repository's tracked files and is not part of the pull request.

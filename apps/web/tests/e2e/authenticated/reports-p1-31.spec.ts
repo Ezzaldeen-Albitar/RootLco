@@ -122,6 +122,40 @@ async function catalogueName(page: Page, locale: 'en' | 'ar', code: string): Pro
 }
 
 /**
+ * The words the run screen uses for the period's zone, in the reader's language.
+ *
+ * The handoff records the zone as its identifier (`Asia/Amman`), and the screen deliberately
+ * does NOT print that identifier any more (finance checkpoint, DF-B5): it names the zone by
+ * its generic name with the offset in force — `Jordan Time (GMT+3)`, `توقيت الأردن (غرينتش+3)`
+ * — and writes the universal clock as `UTC` in both languages. This restates that rule from
+ * `Intl` directly rather than importing the screen's formatter, so a screen that drifted from
+ * it would disagree with this case instead of agreeing with itself. The locale tags are the
+ * product's own (`en-GB`, `ar-JO-u-nu-latn`), and the offset is read at the moment of the run.
+ */
+const UTC_ZONE_NAMES: ReadonlySet<string> = new Set([
+  'UTC',
+  'Etc/UTC',
+  'Etc/UCT',
+  'UCT',
+  'Etc/Universal',
+  'Universal',
+  'Etc/Zulu',
+  'Zulu',
+]);
+
+function zoneWords(zone: string, locale: 'en' | 'ar', at: Date): string {
+  if (UTC_ZONE_NAMES.has(zone)) return 'UTC';
+  const tag = locale === 'ar' ? 'ar-JO-u-nu-latn' : 'en-GB';
+  const part = (style: 'shortOffset' | 'longGeneric') =>
+    new Intl.DateTimeFormat(tag, { timeZone: zone, timeZoneName: style })
+      .formatToParts(at)
+      .find((piece) => piece.type === 'timeZoneName')?.value;
+  const offset = part('shortOffset') ?? zone;
+  const name = part('longGeneric');
+  return name && name !== offset && name !== zone ? `${name} (${offset})` : offset;
+}
+
+/**
  * Runs one report through its own form, for the branch and period the harness used.
  *
  * `scope` is the two identifiers the form needs rather than the whole handoff: the export
@@ -450,7 +484,19 @@ test.describe('P1-31 reporting screens, over the acceptance journey records', ()
         context.getByText(say(locale, 'reports.context.to'), { exact: true })
       ).toBeVisible();
       if (echoed.timezone !== null) {
-        await expect(context.getByText(echoed.timezone, { exact: true })).toBeVisible();
+        // Named for a reader, and never as the identifier the handoff carries — see
+        // `zoneWords`. The second assertion is what fails if the identifier comes back.
+        const words = zoneWords(echoed.timezone, locale, new Date());
+        await expect(
+          context.getByText(words, { exact: true }),
+          `the period's zone must read "${words}"`
+        ).toBeVisible();
+        if (!words.includes(echoed.timezone)) {
+          await expect(
+            context.getByText(echoed.timezone),
+            `the zone identifier ${echoed.timezone} must not be shown`
+          ).toHaveCount(0);
+        }
       }
       // "Read from the live records the moment you asked" — the freshness the dataset
       // registry declares, and the only claim the screen makes about how current it is.

@@ -25,8 +25,7 @@ import {
 } from '../types';
 import { createApprovalLimitAction, endApprovalLimitAction } from '../actions';
 import { useActionRefusal } from '@/lib/forms/use-action-refusal';
-import { usePersonNames } from '@/features/receptions/components/steps/EvidencePanels';
-import type { PersonName } from '@/features/receptions/people/person-name';
+import { usePersonNames, type PersonName } from '../../shared/person-name';
 import { roleDisplayName } from '../role-name';
 
 /**
@@ -55,8 +54,8 @@ import { roleDisplayName } from '../role-name';
  * ## A person and a role are NAMED (finance checkpoint, DF-B6)
  *
  * A limit held by a person used to read "Person: 0b3d8c05-…" — the account
- * reference. The person is now named through the same directory read every
- * read-back uses (`usePersonNames`, one read per distinct person, only with
+ * reference. The person is now named through administration's own directory
+ * read (`shared/person-name.ts`, one read per distinct person, only with
  * `iam.user.read`); without that permission, or when the read fails, the cell
  * says so in words and never prints the reference. A provisioned role is named
  * in the reader's language (`roleDisplayName`); a role this screen cannot see is
