@@ -1085,7 +1085,7 @@ function InvoicePanel({
         workOrderNumber={workOrder?.displayNumber ?? null}
         payer={payer}
         canViewFinance={canViewFinance}
-        settlement={balance?.settlement ?? null}
+        balance={balance}
       />
     </>
   );
@@ -1617,17 +1617,28 @@ function ActionsPanel({
  * payer found the same way, and lines described by the item each one sold, which
  * the detail itself now names. The caller places it as its own direct child of a
  * `data-print-scope`, so paper carries the copy and not the working panels.
+ *
+ * `balance` is the counter's own balance read of the issued sale: the copy prints
+ * it as its "settlement as of" section, exactly as a job's copy does (finance
+ * checkpoint, DF-B1; it used to pass none, so the paper carried no paid, credited
+ * or due figure). `initiallyOpen` opens the copy at once — the counter's way back
+ * to an issued sale is a request to print it again (DF-B3).
  */
 export function CounterSalePrintPanel({
   locale,
   messages,
   detail,
   canViewFinance,
+  balance = null,
+  initiallyOpen = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly detail: InvoiceDetail;
   readonly canViewFinance: boolean;
+  /** The sale's balance read, or `null` while it is unread or not the reader's to see. */
+  readonly balance?: Outstanding | null;
+  readonly initiallyOpen?: boolean;
 }) {
   const payer = usePayerName(detail.invoice, null, canViewFinance);
   return (
@@ -1638,7 +1649,8 @@ export function CounterSalePrintPanel({
       workOrderNumber={null}
       payer={payer}
       canViewFinance={canViewFinance}
-      settlement={null}
+      balance={canViewFinance ? balance : null}
+      initiallyOpen={initiallyOpen}
     />
   );
 }
@@ -1650,7 +1662,8 @@ function PrintPanel({
   workOrderNumber,
   payer,
   canViewFinance,
-  settlement,
+  balance,
+  initiallyOpen = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -1658,10 +1671,15 @@ function PrintPanel({
   readonly workOrderNumber: string | null;
   readonly payer: PayerName;
   readonly canViewFinance: boolean;
-  /** The credit and payment positions as the balance panel read them (D7), or null. */
-  readonly settlement: Settlement | null;
+  /**
+   * The balance as the balance panel read it — what is due, the credit and
+   * payment positions (D7) and when they were read (D10) — or `null`.
+   */
+  readonly balance: Outstanding | null;
+  /** Open the copy at once rather than on request. */
+  readonly initiallyOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [preview, setPreview] = useState<ReadState<InvoicePreview> | null>(null);
   const workOrderId = detail.invoice.workOrderId;
   useEffect(() => {
@@ -1733,7 +1751,7 @@ function PrintPanel({
                       : { kind: 'mismatch' }
             }
             workOrderNumber={workOrderNumber}
-            settlement={settlement}
+            balance={balance}
           />
         )
       ) : null}

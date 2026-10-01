@@ -67,6 +67,17 @@
  * so the row no longer reads "Waiting for a second person" for a note that is no
  * longer waiting; every decision that lands re-reads it too.
  *
+ * ## What the note is traceable to (finance checkpoint, DF-B4)
+ *
+ * An approver used to be offered Approve and Reject on an amount, a state and a
+ * reason, without seeing which invoice the credit reduces. The detail now names
+ * the invoice — its number and who it bills, linked to the invoice for a reader
+ * who may open one — the customer return that raised the note, linked to the
+ * returns screen for a reader it admits, who requested it and when, and, once
+ * decided, who decided it and when. People are named, never shown by reference:
+ * a name the server withholds (a reader who may not read users or customers) is
+ * said to be not shown.
+ *
  * ## Rejecting and withdrawing (ADR-023, D3)
  *
  * A pending note can now be turned down, so it no longer waits forever. Somebody
@@ -78,6 +89,7 @@
  * words; a note that moved on offers the latest version.
  */
 
+import Link from 'next/link';
 import { useCallback, useMemo, useState } from 'react';
 import Button from '@mui/material/Button';
 
@@ -113,6 +125,7 @@ import {
 import {
   CREDIT_NOTE_STATES,
   type CreditNote,
+  type CreditNoteDetail as CreditNoteRecord,
   type CreditNoteEcho,
   type CreditNoteState,
 } from '../billing-contract';
@@ -143,6 +156,7 @@ export function CreditNotesScreen({
   currentUserId,
   canDecide = false,
   canSearchInvoices = false,
+  canOpenReturns = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -162,8 +176,14 @@ export function CreditNotesScreen({
    * and checks the approver's limit, whatever the screen offered.
    */
   readonly canDecide?: boolean;
-  /** `sal.invoice.manage` — the invoice list the raise form finds an invoice through. */
+  /**
+   * `sal.invoice.manage` — the invoice list the raise form finds an invoice
+   * through, and the gate of the screens that open an invoice, so the detail
+   * links the note's invoice only for a holder (DF-B4).
+   */
   readonly canSearchInvoices?: boolean;
+  /** `inv.stock.read` — the customer-returns screen's gate; the return is linked only for a holder. */
+  readonly canOpenReturns?: boolean;
 }) {
   const [target, setTarget] = useState<StockTarget | null>(null);
   const [chosen, setChosen] = useState<string | null>(initialCreditNoteId);
@@ -189,6 +209,8 @@ export function CreditNotesScreen({
           creditNoteId={chosen}
           currentUserId={currentUserId}
           canDecide={canDecide}
+          canOpenInvoices={canSearchInvoices}
+          canOpenReturns={canOpenReturns}
           onClose={() => setChosen(null)}
           onDecided={(key) => {
             setNotice(key);
@@ -448,6 +470,8 @@ function CreditNoteDetail({
   creditNoteId,
   currentUserId,
   canDecide,
+  canOpenInvoices,
+  canOpenReturns,
   onClose,
   onDecided,
   onListChanged,
@@ -457,13 +481,17 @@ function CreditNoteDetail({
   readonly creditNoteId: string;
   readonly currentUserId: string;
   readonly canDecide: boolean;
+  /** Whether the invoice the note reduces may be opened from here. */
+  readonly canOpenInvoices: boolean;
+  /** Whether the customer-returns screen may be opened from here. */
+  readonly canOpenReturns: boolean;
   readonly onClose: () => void;
   readonly onDecided: (noticeKey: string) => void;
   /** Asks the branch list to read again: a conflict means its row may be stale too. */
   readonly onListChanged: () => void;
 }) {
   const read = useCallback(() => readCreditNote(creditNoteId), [creditNoteId]);
-  const detail = useReread<CreditNote>(read);
+  const detail = useReread<CreditNoteRecord>(read);
   const [asking, setAsking] = useState<Decision | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
@@ -631,6 +659,14 @@ function CreditNoteDetail({
             </div>
             <DecisionDate note={state.data} locale={locale} messages={messages} />
           </dl>
+          <CreditNoteTrace
+            locale={locale}
+            messages={messages}
+            note={state.data}
+            own={own}
+            canOpenInvoices={canOpenInvoices}
+            canOpenReturns={canOpenReturns}
+          />
           <div>
             <p className="text-caption text-text-muted">
               {translate(messages, 'creditNotes.detail.reason')}
@@ -826,5 +862,176 @@ function DecisionDate({
         )}
       </dd>
     </div>
+  );
+}
+
+/** Where a link goes for the invoice a note reduces: a job's invoice screen, or the counter. */
+function invoiceHref(locale: Locale, note: CreditNoteRecord): string | null {
+  if (note.invoice === null) return null;
+  return note.invoice.workOrderId !== null
+    ? `/${locale}/invoices?workOrderId=${encodeURIComponent(note.invoice.workOrderId)}`
+    : `/${locale}/inventory/counter-sales?invoiceId=${encodeURIComponent(note.invoiceId)}`;
+}
+
+/**
+ * What a credit note is traceable to (finance checkpoint, DF-B4): the invoice it
+ * reduces and who that invoice bills, the customer return that raised it, who
+ * requested it and when, and — once decided — who decided it. Every person is
+ * named as the server names them; a name it withholds is said to be not shown,
+ * and no reference is ever printed in its place.
+ */
+function CreditNoteTrace({
+  locale,
+  messages,
+  note,
+  own,
+  canOpenInvoices,
+  canOpenReturns,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly note: CreditNoteRecord;
+  readonly own: boolean;
+  readonly canOpenInvoices: boolean;
+  readonly canOpenReturns: boolean;
+}) {
+  const name = (value: string | null) =>
+    value === null ? (
+      <span className="text-text-muted">
+        {translate(messages, 'creditNotes.detail.nameNotShown')}
+      </span>
+    ) : (
+      <bdi>{value}</bdi>
+    );
+  const href = canOpenInvoices ? invoiceHref(locale, note) : null;
+  const number = note.invoice?.invoiceNumber ?? null;
+  const decider =
+    note.approvalState === 'approved'
+      ? { labelKey: 'creditNotes.detail.approvedBy' as const, value: note.approvedByName }
+      : note.approvalState === 'rejected'
+        ? { labelKey: 'creditNotes.detail.rejectedBy' as const, value: note.decidedByName }
+        : note.approvalState === 'withdrawn'
+          ? { labelKey: 'creditNotes.detail.withdrawnBy' as const, value: note.decidedByName }
+          : null;
+  const returned = note.sourceReturn;
+  return (
+    <dl className="grid gap-3 sm:grid-cols-2" data-testid="credit-note-trace">
+      <div>
+        <dt className="text-caption text-text-muted">
+          {translate(messages, 'creditNotes.detail.invoice')}
+        </dt>
+        <dd className="text-body text-text-primary" data-testid="credit-note-invoice">
+          {note.invoice === null ? (
+            <span className="text-text-muted">
+              {translate(messages, 'creditNotes.detail.invoiceUnavailable')}
+            </span>
+          ) : (
+            <span className="flex flex-col">
+              {href !== null ? (
+                <Link href={href} className="text-primary underline-offset-2 hover:underline">
+                  {number !== null ? (
+                    <bdi className="font-mono" dir="ltr">
+                      {number}
+                    </bdi>
+                  ) : (
+                    translate(messages, 'creditNotes.detail.openInvoice')
+                  )}
+                </Link>
+              ) : number !== null ? (
+                <bdi className="font-mono" dir="ltr">
+                  {number}
+                </bdi>
+              ) : null}
+              <span className="text-caption text-text-muted">
+                {translate(
+                  messages,
+                  note.invoice.saleKind === 'counter_sale'
+                    ? 'creditNotes.detail.counterSale'
+                    : 'creditNotes.detail.workOrderInvoice'
+                )}
+              </span>
+              <span data-testid="credit-note-customer">
+                {note.invoice.payerName === null ? (
+                  <span className="text-text-muted">
+                    {translate(messages, 'creditNotes.detail.customerNotShown')}
+                  </span>
+                ) : (
+                  <bdi>{note.invoice.payerName}</bdi>
+                )}
+              </span>
+            </span>
+          )}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-caption text-text-muted">
+          {translate(messages, 'creditNotes.detail.source')}
+        </dt>
+        <dd className="text-body text-text-primary" data-testid="credit-note-source">
+          {returned === null ? (
+            translate(messages, 'creditNotes.detail.sourceByHand')
+          ) : (
+            <span className="flex flex-col">
+              <span>{translate(messages, 'creditNotes.detail.sourceReturn')}</span>
+              <span>
+                {returned.itemCode !== null ? (
+                  <bdi className="font-mono" dir="ltr">
+                    {returned.itemCode}
+                  </bdi>
+                ) : null}{' '}
+                {returned.itemName !== null ? <bdi>{returned.itemName}</bdi> : null}{' '}
+                <span className="text-text-muted">
+                  {translate(messages, 'creditNotes.detail.returnedQuantity')}{' '}
+                  <bdi className="font-mono" dir="ltr">
+                    {returned.quantity}
+                  </bdi>
+                </span>
+              </span>
+              <span className="text-caption text-text-muted">
+                {translate(messages, 'creditNotes.detail.returnReceivedAt')}{' '}
+                <When value={returned.receivedAt} locale={locale} />
+              </span>
+              {canOpenReturns ? (
+                <Link
+                  href={`/${locale}/inventory/customer-returns`}
+                  className="text-primary underline-offset-2 hover:underline"
+                >
+                  {translate(messages, 'creditNotes.detail.openReturns')}
+                </Link>
+              ) : null}
+            </span>
+          )}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-caption text-text-muted">
+          {translate(messages, 'creditNotes.detail.requestedBy')}
+        </dt>
+        <dd className="text-body text-text-primary" data-testid="credit-note-requested-by">
+          {name(note.requestedByName)}
+          {own ? (
+            <span className="ms-2 text-caption text-text-muted">
+              {translate(messages, 'creditNotes.byYou')}
+            </span>
+          ) : null}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-caption text-text-muted">
+          {translate(messages, 'creditNotes.detail.requestedAt')}
+        </dt>
+        <dd className="text-body text-text-primary" data-testid="credit-note-requested-at">
+          <When value={note.requestedAt} locale={locale} />
+        </dd>
+      </div>
+      {decider === null ? null : (
+        <div>
+          <dt className="text-caption text-text-muted">{translate(messages, decider.labelKey)}</dt>
+          <dd className="text-body text-text-primary" data-testid="credit-note-decided-by">
+            {name(decider.value)}
+          </dd>
+        </div>
+      )}
+    </dl>
   );
 }

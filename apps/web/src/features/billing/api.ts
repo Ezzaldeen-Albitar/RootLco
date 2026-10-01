@@ -19,6 +19,7 @@ import { fromFailure, success, type ActionState } from '@/lib/forms/action-resul
 import type {
   CreatedInvoice,
   CreditNote,
+  CreditNoteDetail,
   CreditNoteEcho,
   CreditNoteState,
   Invoice,
@@ -28,6 +29,7 @@ import type {
   InvoiceStatus,
   IssuedInvoice,
   Outstanding,
+  SaleKind,
   VoidedInvoice,
   WorkOrderInvoice,
 } from './billing-contract';
@@ -264,10 +266,14 @@ export async function listCreditNotes(
 
 /**
  * One credit note (`sal.credit-note-detail`) — what a second person is asked to
- * approve: the amount, the reason the requester gave, and the approval state.
+ * approve: the amount, the reason the requester gave, the approval state, and
+ * what the note is traceable to — the invoice it reduces, the return that raised
+ * it and the people on it, by name (DF-B4).
  */
-export async function readCreditNote(creditNoteId: string): Promise<ReadState<CreditNote>> {
-  return readOperation<CreditNote>(`/api/v1/credit-notes/${encodeURIComponent(creditNoteId)}`);
+export async function readCreditNote(creditNoteId: string): Promise<ReadState<CreditNoteDetail>> {
+  return readOperation<CreditNoteDetail>(
+    `/api/v1/credit-notes/${encodeURIComponent(creditNoteId)}`
+  );
 }
 
 /**
@@ -490,6 +496,8 @@ export async function listInvoices(
     readonly q?: string | undefined;
     readonly status?: InvoiceStatus | undefined;
     readonly allocatable?: boolean | undefined;
+    /** One kind only — the counter lists its own issued sales (DF-B3). */
+    readonly saleKind?: SaleKind | undefined;
   },
   cursor: string | null
 ): Promise<ReadState<CursorPage<InvoiceListEntry>>> {
@@ -498,6 +506,7 @@ export async function listInvoices(
       branchTargetQuery(target, {
         status: filter.status ?? null,
         allocatable: filter.allocatable === true ? 'true' : null,
+        saleKind: filter.saleKind ?? null,
         q: filter.q ?? null,
         cursor,
         limit: 10,

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { formatMoney } from '../src/lib/money';
+import { formatInZone } from '../src/lib/branch-time';
 import accountManifest from './e2e/authenticated/account-manifest.json';
 import type { ReactElement } from 'react';
 import {
@@ -299,9 +300,31 @@ const outstanding = {
     credited: { amount: '0.0000', currency: 'USD' },
     paid: { amount: '0.0000', currency: 'USD' },
   },
+  asOf: '2026-10-01T07:30:00.000Z',
 };
 
 const okRead = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 'corr' });
+
+/**
+ * What `sal.credit-note-detail` traces a note to (finance checkpoint, DF-B4):
+ * a job's invoice, raised by hand, requested by a person the reader may name.
+ */
+function trace(over: Record<string, unknown> = {}) {
+  return {
+    requestedAt: '2026-09-19T08:00:00Z',
+    requestedByName: 'Rana Saleh',
+    approvedByName: null,
+    decidedByName: null,
+    invoice: {
+      invoiceNumber: 'INV-000123',
+      saleKind: 'work_order',
+      workOrderId: WORK_ORDER_ID,
+      payerName: 'Layla Haddad',
+    },
+    sourceReturn: null,
+    ...over,
+  };
+}
 const denied = () => ({ status: 'denied' as const, correlationId: 'ref-403' });
 const notFound = () => ({ status: 'not-found' as const, correlationId: 'ref-404' });
 
@@ -1471,6 +1494,157 @@ describe('FE-020 — the printable copy', () => {
     );
   });
 
+  it('DF-B1: prints each line discount and the discount total as issued, from the matched revision', async () => {
+    const user = userEvent.setup();
+    renderScreen({ ...live() });
+    await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    await within(document).findByText('Front brake service');
+    // 2 × 100.00 less 50.00 → net 150.00: the discount is on the paper.
+    expect(
+      within(document).getByRole('columnheader', {
+        name: EN['invoices.print.column.discount'] as string,
+      })
+    ).toBeTruthy();
+    expect(within(document).getByTestId('invoice-print-line-discount')).toHaveTextContent(
+      money('50.0000')
+    );
+    const issued = within(document).getByTestId('invoice-print-issued-totals');
+    expect(within(issued).getByTestId('invoice-print-subtotal')).toHaveTextContent(
+      money('200.0000')
+    );
+    expect(within(issued).getByTestId('invoice-print-discount-total')).toHaveTextContent(
+      money('50.0000')
+    );
+    expect(within(issued).getByText(money('150.0000'))).toBeTruthy();
+    expect(within(issued).getByText(money('165.0000'))).toBeTruthy();
+  });
+
+  it('DF-B1: a discount the matched revision cannot vouch for is said to be unavailable, never zero', async () => {
+    const user = userEvent.setup();
+    readInvoicePreview.mockImplementation(async () =>
+      okRead({ ...structuredClone(preview), quotationRevisionId: 'other-revision' })
+    );
+    renderScreen({ ...live() });
+    await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    await within(document).findByText(EN['invoices.print.descriptionsUnavailable'] as string);
+    expect(within(document).queryByTestId('invoice-print-line-discount')).toBeNull();
+    expect(within(document).getByTestId('invoice-print-discount-total')).toHaveTextContent(
+      EN['invoices.money.unavailable'] as string
+    );
+    expect(within(document).queryByText(money('50.0000'))).toBeNull();
+  });
+
+  it('DF-B1: prints paid, credited and balance due as of the read, apart from the issued totals', async () => {
+    const user = userEvent.setup();
+    readOutstanding.mockImplementation(async () =>
+      okRead({
+        ...outstanding,
+        outstanding: { amount: '100.0000', currency: 'USD' },
+        settlement: {
+          ...outstanding.settlement,
+          paymentStatus: 'partly_paid',
+          paid: { amount: '65.0000', currency: 'USD' },
+        },
+      })
+    );
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    await within(balance).findByTestId('invoice-credit-status');
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    const settlement = within(document).getByTestId('invoice-print-settlement');
+    expect(settlement.textContent).toContain(EN['invoices.print.settlementAsOf'] as string);
+    expect(within(settlement).getByTestId('invoice-print-paid')).toHaveTextContent(
+      money('65.0000')
+    );
+    expect(within(settlement).getByTestId('invoice-print-credited')).toHaveTextContent(
+      money('0.0000')
+    );
+    expect(within(settlement).getByTestId('invoice-print-balance-due')).toHaveTextContent(
+      money('100.0000')
+    );
+    expect(within(settlement).getByTestId('invoice-print-payment-status')).toHaveTextContent(
+      EN['invoices.paymentStatus.partly_paid'] as string
+    );
+    // The fixture's branch is not one of the working context's, so its clock is
+    // not known here: the moment is written on UTC and says so.
+    expect(within(settlement).getByTestId('invoice-print-settlement-as-of')).toHaveTextContent(
+      formatInZone('2026-10-01T07:30:00.000Z', 'en-GB', 'UTC')
+    );
+    expect(within(settlement).getByTestId('invoice-print-settlement-clock')).toHaveTextContent(
+      'UTC'
+    );
+    expect(within(document).getByTestId('invoice-print-issued-totals').contains(settlement)).toBe(
+      false
+    );
+  });
+
+  it('DF-B1: the as-of moment is written on the invoice branch clock when the context knows it', async () => {
+    const user = userEvent.setup();
+    const inBranchInvoice = { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id };
+    readWorkOrderInvoice.mockImplementation(async () =>
+      okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice(inBranchInvoice) })
+    );
+    readInvoice.mockImplementation(async () => okRead(detail(inBranchInvoice)));
+    renderScreen({
+      initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice(inBranchInvoice) }),
+    });
+    await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
+    await waitFor(() => expect(readOutstanding).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    const settlement = await within(document).findByTestId('invoice-print-settlement');
+    expect(within(settlement).getByTestId('invoice-print-settlement-as-of')).toHaveTextContent(
+      formatInZone('2026-10-01T07:30:00.000Z', 'en-GB', TEST_BRANCH.timezone)
+    );
+    expect(within(settlement).getByTestId('invoice-print-settlement-clock')).toHaveTextContent(
+      'GMT+3'
+    );
+  });
+
+  it('DF-B1 in Arabic: discount, settlement and the as-of line read right to left', async () => {
+    const user = userEvent.setup();
+    renderRtl(
+      <InvoiceScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        workOrderRefused={null}
+        initialInvoice={live().initialInvoice as never}
+        canViewFinance
+        canIssue={false}
+      />
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    await screen.findByRole('region', { name: AR['invoices.detail.heading'] as string });
+    await waitFor(() => expect(readOutstanding).toHaveBeenCalled());
+    await user.click(screen.getByRole('button', { name: AR['invoices.print.open'] as string }));
+    const paper = await screen.findByRole('article');
+    await within(paper).findByText('Front brake service');
+    expect(
+      within(paper).getByRole('columnheader', {
+        name: AR['invoices.print.column.discount'] as string,
+      })
+    ).toBeTruthy();
+    const settlement = await within(paper).findByTestId('invoice-print-settlement');
+    expect(settlement.textContent).toContain(AR['invoices.print.settlementAsOf'] as string);
+    expect(settlement.textContent).toContain(AR['invoices.print.balanceDue'] as string);
+    expect(within(settlement).getByTestId('invoice-print-payment-status')).toHaveTextContent(
+      AR['invoices.paymentStatus.open'] as string
+    );
+    expect(within(settlement).getByTestId('invoice-print-settlement-as-of')).toHaveAttribute(
+      'dir',
+      'rtl'
+    );
+  });
+
   it('with a preview of another revision, prints without descriptions and says so', async () => {
     const user = userEvent.setup();
     readInvoicePreview.mockImplementation(async () =>
@@ -1522,9 +1696,13 @@ describe('FE-020 — the printable copy', () => {
       })
     ).toBeVisible();
     expect(within(document).queryByText(/0\.00/)).toBeNull();
-    // No balance was read, so no credit or payment position is printed or guessed.
+    // No balance was read, so no credit or payment position is printed or guessed —
+    // and no settlement section at all (DF-B1: the finance view's own rule).
+    expect(readOutstanding).not.toHaveBeenCalled();
     expect(within(document).queryByTestId('invoice-print-credit-status')).toBeNull();
     expect(within(document).queryByTestId('invoice-print-payment-status')).toBeNull();
+    expect(within(document).queryByTestId('invoice-print-settlement')).toBeNull();
+    expect(within(document).queryByTestId('invoice-print-balance-due')).toBeNull();
   });
 });
 
@@ -1601,6 +1779,8 @@ describe('credit notes are reachable', () => {
     approvedAt: null,
     issuedAt: null,
     recordVersion: 1,
+    // What the detail read traces the note to (DF-B4).
+    ...trace(),
     ...over,
   });
 
@@ -1838,6 +2018,189 @@ describe('credit notes are reachable', () => {
     expect(screen.getByText(EN['creditNotes.approve.limitExplain'] as string)).toBeVisible();
   });
 
+  describe('DF-B4 — what a note is traceable to', () => {
+    const detailOf = (props: Record<string, unknown> = {}) => (
+      <CreditNotesScreen
+        locale="en"
+        messages={en}
+        initialCreditNoteId={CREDIT_NOTE_ID}
+        currentUserId={SIGNED_IN}
+        canDecide
+        canSearchInvoices
+        canOpenReturns
+        {...props}
+      />
+    );
+    const returned = {
+      id: 'return-reference-1',
+      itemCode: 'BRK-001',
+      itemName: 'Brake pad',
+      quantity: '1.000',
+      receivedAt: '2026-09-19T07:55:00Z',
+    };
+
+    it('names the invoice, its customer, the return and the requester, each linked where allowed', async () => {
+      readCreditNote.mockResolvedValue(okRead(note({ sourceReturn: returned })));
+      renderLtr(detailOf());
+      const trace = await screen.findByTestId('credit-note-trace');
+      const invoiceLink = within(trace).getByRole('link', { name: 'INV-000123' });
+      expect(invoiceLink).toHaveAttribute('href', `/en/invoices?workOrderId=${WORK_ORDER_ID}`);
+      expect(within(trace).getByTestId('credit-note-customer')).toHaveTextContent('Layla Haddad');
+      const source = within(trace).getByTestId('credit-note-source');
+      expect(source).toHaveTextContent(EN['creditNotes.detail.sourceReturn'] as string);
+      expect(source).toHaveTextContent('BRK-001');
+      expect(source).toHaveTextContent('Brake pad');
+      expect(source).toHaveTextContent('1.000');
+      expect(
+        within(source).getByRole('link', { name: EN['creditNotes.detail.openReturns'] as string })
+      ).toHaveAttribute('href', '/en/inventory/customer-returns');
+      expect(within(trace).getByTestId('credit-note-requested-by')).toHaveTextContent('Rana Saleh');
+      expect(within(trace).getByTestId('credit-note-requested-at').textContent).not.toBe('');
+      // Names, never references: no person, invoice, return or item id is shown.
+      const shown = trace.textContent ?? '';
+      for (const reference of ['u1', INVOICE_ID, WORK_ORDER_ID, 'return-reference-1']) {
+        expect(shown).not.toContain(reference);
+      }
+      // Still pending: nobody has decided it, so nobody is named as deciding it.
+      expect(within(trace).queryByTestId('credit-note-decided-by')).toBeNull();
+    });
+
+    it('a note raised by hand says so, and a counter sale links to the counter', async () => {
+      readCreditNote.mockResolvedValue(
+        okRead(
+          note({
+            invoice: {
+              invoiceNumber: 'CS-0007',
+              saleKind: 'counter_sale',
+              workOrderId: null,
+              payerName: 'Another garage',
+            },
+          })
+        )
+      );
+      renderLtr(detailOf());
+      const trace = await screen.findByTestId('credit-note-trace');
+      expect(within(trace).getByRole('link', { name: 'CS-0007' })).toHaveAttribute(
+        'href',
+        `/en/inventory/counter-sales?invoiceId=${INVOICE_ID}`
+      );
+      expect(within(trace).getByTestId('credit-note-invoice')).toHaveTextContent(
+        EN['creditNotes.detail.counterSale'] as string
+      );
+      expect(within(trace).getByTestId('credit-note-source')).toHaveTextContent(
+        EN['creditNotes.detail.sourceByHand'] as string
+      );
+    });
+
+    it('without the right to open them, names the invoice and the return without links', async () => {
+      readCreditNote.mockResolvedValue(okRead(note({ sourceReturn: returned })));
+      renderLtr(detailOf({ canSearchInvoices: false, canOpenReturns: false }));
+      const trace = await screen.findByTestId('credit-note-trace');
+      expect(within(trace).queryAllByRole('link')).toEqual([]);
+      expect(within(trace).getByTestId('credit-note-invoice')).toHaveTextContent('INV-000123');
+      expect(within(trace).getByTestId('credit-note-source')).toHaveTextContent('BRK-001');
+    });
+
+    it('a name the server withholds is said to be not shown, never replaced by a reference', async () => {
+      readCreditNote.mockResolvedValue(
+        okRead(
+          note({
+            requestedByName: null,
+            invoice: {
+              invoiceNumber: 'INV-000123',
+              saleKind: 'work_order',
+              workOrderId: WORK_ORDER_ID,
+              payerName: null,
+            },
+          })
+        )
+      );
+      renderLtr(detailOf());
+      const trace = await screen.findByTestId('credit-note-trace');
+      expect(within(trace).getByTestId('credit-note-requested-by')).toHaveTextContent(
+        EN['creditNotes.detail.nameNotShown'] as string
+      );
+      expect(within(trace).getByTestId('credit-note-customer')).toHaveTextContent(
+        EN['creditNotes.detail.customerNotShown'] as string
+      );
+      expect(trace.textContent).not.toContain('u1');
+    });
+
+    it('a decided note names who decided it', async () => {
+      readCreditNote.mockResolvedValue(
+        okRead(
+          note({
+            approvalState: 'rejected',
+            decidedBy: 'u3',
+            decidedByName: 'Omar Khalil',
+            decidedAt: '2026-09-20T10:00:00Z',
+            decisionReason: 'Not billed twice',
+          })
+        )
+      );
+      renderLtr(detailOf());
+      const decided = await screen.findByTestId('credit-note-decided-by');
+      expect(decided).toHaveTextContent('Omar Khalil');
+      expect(decided.closest('div')).toHaveTextContent(
+        EN['creditNotes.detail.rejectedBy'] as string
+      );
+      expect((await screen.findByTestId('credit-note-trace')).textContent).not.toContain('u3');
+    });
+
+    it('in Arabic, the trace reads right to left with its own words', async () => {
+      readCreditNote.mockResolvedValue(okRead(note({ sourceReturn: returned })));
+      renderRtl(detailOf({ locale: 'ar', messages: ar }));
+      expect(document.documentElement.dir).toBe('rtl');
+      const trace = await screen.findByTestId('credit-note-trace');
+      for (const key of [
+        'creditNotes.detail.invoice',
+        'creditNotes.detail.source',
+        'creditNotes.detail.requestedBy',
+        'creditNotes.detail.requestedAt',
+        'creditNotes.detail.sourceReturn',
+      ]) {
+        expect(trace.textContent).toContain(AR[key] as string);
+      }
+      expect(within(trace).getByRole('link', { name: 'INV-000123' })).toHaveAttribute(
+        'href',
+        `/ar/invoices?workOrderId=${WORK_ORDER_ID}`
+      );
+    });
+
+    it('the page links the return only for a reader the returns screen admits', async () => {
+      readCreditNote.mockResolvedValue(okRead(note({ sourceReturn: returned })));
+      const openReturns = () =>
+        screen.queryByRole('link', { name: EN['creditNotes.detail.openReturns'] as string });
+      PERMISSIONS = ['sal.credit.manage', 'sal.finance.view'];
+      const { unmount } = renderLtr(
+        (await CreditNotesPage({
+          params: Promise.resolve({ locale: 'en' }),
+          searchParams: Promise.resolve({ creditNoteId: CREDIT_NOTE_ID }),
+        })) as React.ReactElement
+      );
+      await screen.findByTestId('credit-note-trace');
+      expect(openReturns()).toBeNull();
+      // Nor the invoice, without the invoice screens' own code.
+      expect(screen.queryByRole('link', { name: 'INV-000123' })).toBeNull();
+      unmount();
+      PERMISSIONS = [
+        'sal.credit.manage',
+        'sal.finance.view',
+        'inv.stock.read',
+        'sal.invoice.manage',
+      ];
+      renderLtr(
+        (await CreditNotesPage({
+          params: Promise.resolve({ locale: 'en' }),
+          searchParams: Promise.resolve({ creditNoteId: CREDIT_NOTE_ID }),
+        })) as React.ReactElement
+      );
+      await screen.findByTestId('credit-note-trace');
+      expect(openReturns()).not.toBeNull();
+      expect(screen.getByRole('link', { name: 'INV-000123' })).toBeTruthy();
+    });
+  });
+
   it('ignores an address that names something that is not a reference', async () => {
     PERMISSIONS = ['sal.credit.manage', 'sal.finance.view', 'org.branch.read'];
     renderLtr(
@@ -1881,11 +2244,13 @@ describe('raising and approving a credit note', () => {
     decidedAt: null,
     decisionReason: null,
     recordVersion: 1,
+    ...trace(),
     ...over,
   });
   const approvedNote = pendingNote({
     approvalState: 'approved',
     approvedBy: SIGNED_IN,
+    approvedByName: 'Omar Khalil',
     approvedAt: '2026-09-20T10:00:00Z',
     issuedAt: '2026-09-20T10:00:00Z',
     recordVersion: 2,

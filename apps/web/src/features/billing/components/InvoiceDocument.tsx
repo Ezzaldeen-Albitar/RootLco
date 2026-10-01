@@ -3,11 +3,14 @@
 import type { ReactNode } from 'react';
 
 import { PrintDocument, PrintTable } from '@/components/print/PrintDocument';
-import type { Locale } from '@/i18n/config';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import { directionOf, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import { formatInZone, zoneLabelAt } from '@/lib/branch-time';
+import { intlLocale } from '@/lib/format';
 
-import type { InvoiceDetail, InvoicePreview, Settlement } from '../billing-contract';
+import type { InvoiceDetail, InvoicePreview, MoneyView, Outstanding } from '../billing-contract';
 import { Money, Unavailable, When } from './shared';
 
 /**
@@ -54,6 +57,27 @@ export type DescriptionSource =
  * the copy says the name is not shown — never the payer's reference. The work
  * order is printed by its number, or not at all. The issue moment is isolated in
  * the reader's direction (`When`), so an Arabic copy prints it in order.
+ *
+ * ## What was issued, and what has happened since (Owner decision D10)
+ *
+ * The paper keeps two things apart. The ISSUED facts — the lines, each line's
+ * discount and the totals — never change once the invoice is issued, and are
+ * printed exactly as the server holds them. The SETTLEMENT — paid, credited,
+ * still due, and the payment and credit positions — moves with every payment
+ * and credit note, so it is printed in a section of its own headed with the
+ * moment it was read, on the branch's clock with the clock's name beside it
+ * (finance checkpoint, DF-B1).
+ *
+ * Every figure is the server's. A job's line discount comes from the accepted
+ * quotation revision the invoice was copied from — the preview, used only when
+ * it describes that very revision, exactly as the descriptions are — and is
+ * otherwise said to be unavailable rather than guessed. A counter sale takes no
+ * discount (its create body refuses one), so its copy has no discount column.
+ * The settlement is the balance read (`sal.invoice-outstanding-read`): it is
+ * printed only when the screen passes one, which it reads only for a reader
+ * holding `sal.finance.view`, and only for an invoice that claims something
+ * (issued or credited). Nothing on this paper is added, subtracted or rounded
+ * here.
  */
 export function InvoiceDocument({
   locale,
@@ -62,7 +86,7 @@ export function InvoiceDocument({
   descriptions,
   workOrderNumber,
   payer,
-  settlement = null,
+  balance = null,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -73,13 +97,34 @@ export function InvoiceDocument({
   /** Who the invoice bills, as the screen could name them. */
   readonly payer: PayerName;
   /**
-   * The credit and payment positions the screen read (Owner decision D7), printed
-   * beside the status when known. Omitted — never guessed — when the reader may
-   * not see amounts or the invoice claims nothing yet.
+   * The balance read the screen made (`sal.invoice-outstanding-read`): what is
+   * still due, the credit and payment positions (Owner decision D7) and the
+   * moment they were read. Printed as its own "settlement as of" section when it
+   * carries a settlement. Omitted — never guessed — when the reader may not see
+   * amounts or the invoice claims nothing yet.
    */
-  readonly settlement?: Settlement | null;
+  readonly balance?: Outstanding | null;
 }) {
   const invoice = detail.invoice;
+  const context = useWorkingContext();
+  const settlement = balance?.settlement ?? null;
+  /*
+   * A job's discount is printed per line; a counter sale takes none. The preview
+   * is the only read that carries a line's discount, and it is believed only
+   * when it describes the revision this invoice was made from. A job's invoice
+   * is the one with a work order (`ck_invoices_sale_kind_source`).
+   */
+  const discounted = invoice.workOrderId !== null;
+  const matched = descriptions.kind === 'matched' ? descriptions.preview : null;
+  const previewMoney = (amount: string): MoneyView | null =>
+    matched === null ? null : { amount, currency: matched.currency };
+  const lineDiscount = (line: InvoiceDetail['lines'][number]): MoneyView | null => {
+    if (matched === null || line.sourceQuotationItemId === null) return null;
+    const found = matched.lines.find(
+      (row) => row.sourceQuotationItemId === line.sourceQuotationItemId
+    );
+    return found ? { amount: found.discount, currency: matched.currency } : null;
+  };
   const describe = (line: InvoiceDetail['lines'][number]): ReactNode | null => {
     if (descriptions.kind === 'items') {
       // The item the line sold, by name and code. The code is isolated left to
@@ -107,6 +152,7 @@ export function InvoiceDocument({
     translate(messages, 'invoices.print.column.type'),
     translate(messages, 'invoices.print.column.quantity'),
     translate(messages, 'invoices.print.column.unitPrice'),
+    ...(discounted ? [translate(messages, 'invoices.print.column.discount')] : []),
     translate(messages, 'invoices.print.column.net'),
     translate(messages, 'invoices.print.column.tax'),
     translate(messages, 'invoices.print.column.gross'),
@@ -133,6 +179,9 @@ export function InvoiceDocument({
       ) : (
         <Unavailable key="u" messages={messages} />
       ),
+      ...(discounted
+        ? [<LineDiscount key="di" value={lineDiscount(line)} locale={locale} messages={messages} />]
+        : []),
       line.money ? (
         <Money key="ne" money={line.money.net} locale={locale} />
       ) : (
@@ -172,26 +221,6 @@ export function InvoiceDocument({
               {translateDynamic(messages, `invoices.status.${invoice.status}`)}
             </dd>
           </div>
-          {settlement ? (
-            <>
-              <div>
-                <dt className="inline text-text-muted">
-                  {translate(messages, 'invoices.settlement.credit')}{' '}
-                </dt>
-                <dd className="inline" data-testid="invoice-print-credit-status">
-                  {translateDynamic(messages, `invoices.creditStatus.${settlement.creditStatus}`)}
-                </dd>
-              </div>
-              <div>
-                <dt className="inline text-text-muted">
-                  {translate(messages, 'invoices.settlement.payment')}{' '}
-                </dt>
-                <dd className="inline" data-testid="invoice-print-payment-status">
-                  {translateDynamic(messages, `invoices.paymentStatus.${settlement.paymentStatus}`)}
-                </dd>
-              </div>
-            </>
-          ) : null}
           <div>
             <dt className="inline text-text-muted">
               {translate(messages, 'invoices.print.issuedAt')}{' '}
@@ -257,7 +286,34 @@ export function InvoiceDocument({
         rows={rows}
         caption={translate(messages, 'invoices.print.linesCaption')}
       />
-      <dl className="mt-6 ms-auto grid max-w-xs grid-cols-2 gap-1 text-body">
+      <dl
+        className="mt-6 ms-auto grid max-w-xs grid-cols-2 gap-1 text-body"
+        aria-label={translate(messages, 'invoices.print.issuedTotals')}
+        data-testid="invoice-print-issued-totals"
+      >
+        <dt className="col-span-2 text-caption font-medium text-text-muted">
+          {translate(messages, 'invoices.print.issuedTotals')}
+        </dt>
+        {discounted ? (
+          <>
+            <dt className="text-text-muted">{translate(messages, 'invoices.print.subtotal')}</dt>
+            <dd className="text-end" data-testid="invoice-print-subtotal">
+              <PreviewFigure
+                value={matched ? previewMoney(matched.subtotal) : null}
+                locale={locale}
+                messages={messages}
+              />
+            </dd>
+            <dt className="text-text-muted">{translate(messages, 'invoices.print.discount')}</dt>
+            <dd className="text-end" data-testid="invoice-print-discount-total">
+              <PreviewFigure
+                value={matched ? previewMoney(matched.discountTotal) : null}
+                locale={locale}
+                messages={messages}
+              />
+            </dd>
+          </>
+        ) : null}
         <dt className="text-text-muted">{translate(messages, 'invoices.detail.net')}</dt>
         <dd className="text-end">
           {invoice.totals ? (
@@ -283,6 +339,115 @@ export function InvoiceDocument({
           )}
         </dd>
       </dl>
+      {balance !== null && settlement !== null ? (
+        <SettlementSection
+          locale={locale}
+          messages={messages}
+          balance={balance}
+          settlement={settlement}
+          zone={context.branches.find((entry) => entry.id === invoice.branchId)?.timezone || 'UTC'}
+        />
+      ) : null}
     </PrintDocument>
+  );
+}
+
+/** A line's discount as the matched revision states it, or "not available". */
+function LineDiscount({
+  value,
+  locale,
+  messages,
+}: {
+  readonly value: MoneyView | null;
+  readonly locale: Locale;
+  readonly messages: Messages;
+}) {
+  return value === null ? (
+    <Unavailable messages={messages} />
+  ) : (
+    <span data-testid="invoice-print-line-discount">
+      <Money money={value} locale={locale} />
+    </span>
+  );
+}
+
+/** A figure of the matched revision (subtotal, discount), or "not available". */
+function PreviewFigure({
+  value,
+  locale,
+  messages,
+}: {
+  readonly value: MoneyView | null;
+  readonly locale: Locale;
+  readonly messages: Messages;
+}) {
+  return value === null ? (
+    <Unavailable messages={messages} />
+  ) : (
+    <Money money={value} locale={locale} />
+  );
+}
+
+/**
+ * The settlement, apart from the issued facts and headed with the moment it was
+ * read (D10). The moment is the server's (`asOf`), written on the branch's clock
+ * with that clock's name beside it, so a copy printed in another zone still
+ * says which clock it means. Amounts and positions are the balance read's own.
+ */
+function SettlementSection({
+  locale,
+  messages,
+  balance,
+  settlement,
+  zone,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly balance: Outstanding;
+  readonly settlement: NonNullable<Outstanding['settlement']>;
+  readonly zone: string;
+}) {
+  const language = intlLocale(locale);
+  return (
+    <section
+      className="mt-6 border-t border-border pt-4"
+      aria-labelledby="invoice-print-settlement-heading"
+      data-testid="invoice-print-settlement"
+    >
+      <h3 id="invoice-print-settlement-heading" className="text-body font-medium">
+        {translate(messages, 'invoices.print.settlementAsOf')}{' '}
+        <bdi dir={directionOf(locale)} data-testid="invoice-print-settlement-as-of">
+          {formatInZone(balance.asOf, language, zone)}
+        </bdi>{' '}
+        <bdi className="text-caption text-text-muted" data-testid="invoice-print-settlement-clock">
+          {zoneLabelAt(balance.asOf, language, zone)}
+        </bdi>
+      </h3>
+      <p className="text-caption text-text-muted">
+        {translate(messages, 'invoices.print.settlementExplain')}
+      </p>
+      <dl className="mt-2 ms-auto grid max-w-xs grid-cols-2 gap-1 text-body">
+        <dt className="text-text-muted">{translate(messages, 'invoices.settlement.payment')}</dt>
+        <dd className="text-end" data-testid="invoice-print-payment-status">
+          {translateDynamic(messages, `invoices.paymentStatus.${settlement.paymentStatus}`)}
+        </dd>
+        <dt className="text-text-muted">{translate(messages, 'invoices.settlement.credit')}</dt>
+        <dd className="text-end" data-testid="invoice-print-credit-status">
+          {translateDynamic(messages, `invoices.creditStatus.${settlement.creditStatus}`)}
+        </dd>
+        <dt className="text-text-muted">{translate(messages, 'invoices.print.amountPaid')}</dt>
+        <dd className="text-end" data-testid="invoice-print-paid">
+          <Money money={settlement.paid} locale={locale} />
+        </dd>
+        <dt className="text-text-muted">{translate(messages, 'invoices.print.amountCredited')}</dt>
+        <dd className="text-end" data-testid="invoice-print-credited">
+          <Money money={settlement.credited} locale={locale} />
+        </dd>
+        <dt className="font-medium">{translate(messages, 'invoices.print.balanceDue')}</dt>
+        <dd className="text-end font-medium" data-testid="invoice-print-balance-due">
+          <Money money={balance.outstanding} locale={locale} />
+        </dd>
+      </dl>
+    </section>
   );
 }
