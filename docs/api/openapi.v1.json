@@ -9816,6 +9816,15 @@
             }
           },
           {
+            "name": "saleKind",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["work_order", "counter_sale"]
+            }
+          },
+          {
             "name": "q",
             "in": "query",
             "required": false,

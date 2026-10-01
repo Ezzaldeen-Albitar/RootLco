@@ -22,6 +22,13 @@
  *    checkpoint DF-3), and an over-allocation names the bound it broke on the
  *    amount (DF-7) without the figures.
  *
+ *  - Finance checkpoint fixes B (DF-B1, DF-B3, DF-B4): the credit-note detail
+ *    names the invoice, its payer, the return that raised the note and the
+ *    people on it — names only for a reader who may read customers and users —
+ *    and stays refused to another tenant and another branch; the balance read
+ *    states the moment it was read on the database clock; the invoice list
+ *    narrows to one kind of sale.
+ *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
  *   sal.credit-note-withdraw: route service authorization success denial audit idempotency stale-version isolation cross-tenant
  *   sal.credit-note-reject: route service authorization success denial audit idempotency stale-version isolation cross-tenant
@@ -58,6 +65,7 @@ import {
 import {
   PAYMENT_METHOD_A,
   SAL_APPROVER,
+  SAL_CREDIT_TRACE,
   SAL_FULL,
   SAL_PERMISSION_ELSEWHERE,
   SAL_TENANT_B,
@@ -87,6 +95,9 @@ import {
 import { POST as RECORD_PAYMENT } from '@/app/api/v1/payments/route';
 import { POST as ALLOCATE_PAYMENT } from '@/app/api/v1/payments/[paymentId]/allocations/route';
 import { POST as SALES_RETURN_CREATE } from '@/app/api/v1/sales-returns/route';
+import { GET as CREDIT_NOTE_DETAIL } from '@/app/api/v1/credit-notes/[creditNoteId]/route';
+import { GET as INVOICE_OUTSTANDING } from '@/app/api/v1/invoices/[invoiceId]/outstanding/route';
+import { GET as INVOICE_LIST } from '@/app/api/v1/invoices/route';
 
 let admin: Pool;
 let runtime: Pool;
@@ -942,5 +953,214 @@ describe('D9 — a return raises a pending credit request, audited, and never tw
     expect(await notesOnInvoice()).toBe(1);
     // Never approved by the return itself.
     expect(await approvedCreditEvents(noteId)).toBe(0);
+  });
+});
+
+/*
+ * Finance checkpoint fixes B (P1-32-PRE-OD-FQB). The reads behind a printed copy
+ * and behind a credit note's detail: additive fields only, under the same gates.
+ */
+interface TraceBody {
+  readonly id: string;
+  readonly requestedBy: string;
+  readonly requestedAt: string;
+  readonly requestedByName: string | null;
+  readonly approvedByName: string | null;
+  readonly decidedByName: string | null;
+  readonly invoice: {
+    readonly invoiceNumber: string | null;
+    readonly saleKind: string;
+    readonly workOrderId: string | null;
+    readonly payerName: string | null;
+  } | null;
+  readonly sourceReturn: {
+    readonly id: string;
+    readonly itemCode: string | null;
+    readonly itemName: string | null;
+    readonly quantity: string;
+    readonly receivedAt: string;
+  } | null;
+}
+
+const readDetail = (creditNoteId: string): Promise<Response> =>
+  (CREDIT_NOTE_DETAIL as ParamHandler<{ creditNoteId: string }>)(
+    new Request(`http://localhost/api/v1/credit-notes/${creditNoteId}`, { method: 'GET' }),
+    { params: Promise.resolve({ creditNoteId }) }
+  );
+
+describe('finance checkpoint fixes B — what a credit note is traceable to (DF-B4)', () => {
+  it('names the invoice, its payer, the return that raised it and the requester — to a reader who may read them', async () => {
+    const sale = await issuedThreeUnitSale();
+    authAs(INV_COUNTER);
+    const received = await bodyOf<ReturnBody>(
+      await post(SALES_RETURN_CREATE, '/api/v1/sales-returns', {
+        sourceKind: 'invoice_line',
+        sourceId: sale.lineId,
+        quantity: '1',
+        condition: 'restockable',
+        receivedLocationId: sale.cell,
+        reason: 'One came back',
+      })
+    );
+    const noteId = received.creditNoteId ?? '';
+    expect(noteId).not.toBe('');
+    const stored = await admin.query<{
+      invoice_number: string;
+      payer_name: string;
+      sku: string;
+      item_name: string;
+      requester_name: string;
+    }>(
+      `SELECT i.invoice_number, bp.display_name AS payer_name, im.sku, im.name AS item_name,
+              ua.display_name AS requester_name
+         FROM sal.credit_notes c
+         JOIN sal.invoices i ON i.id = c.invoice_id
+         JOIN crm.business_partners bp ON bp.id = i.payer_partner_id
+         JOIN inv.sales_returns r ON r.credit_note_id = c.id
+         JOIN inv.item_master im ON im.id = r.item_id
+         JOIN iam.user_accounts ua ON ua.id = c.requested_by
+        WHERE c.id = $1`,
+      [noteId]
+    );
+    const expected = stored.rows[0];
+    expect(expected).toBeDefined();
+
+    authAs(SAL_CREDIT_TRACE);
+    const named = await readDetail(noteId);
+    expect(named.status).toBe(200);
+    const body = await bodyOf<TraceBody>(named);
+    expect(body.invoice).toEqual({
+      invoiceNumber: expected?.invoice_number,
+      saleKind: 'counter_sale',
+      workOrderId: null,
+      payerName: expected?.payer_name,
+    });
+    expect(body.sourceReturn).toEqual({
+      id: received.id,
+      itemCode: expected?.sku,
+      itemName: expected?.item_name,
+      quantity: '1.000',
+      receivedAt: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/),
+    });
+    expect(body.requestedByName).toBe(expected?.requester_name);
+    expect(body.requestedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(body.approvedByName).toBeNull();
+    expect(body.decidedByName).toBeNull();
+
+    // Without the customer and user reads, the same note names nobody — the
+    // fields keep their shape and say null, never an id in a name's place.
+    authAs(SAL_FULL);
+    const plain = await bodyOf<TraceBody>(await readDetail(noteId));
+    expect(plain.invoice?.payerName).toBeNull();
+    expect(plain.requestedByName).toBeNull();
+    expect(plain.invoice?.invoiceNumber).toBe(expected?.invoice_number);
+    expect(plain.sourceReturn?.id).toBe(received.id);
+  });
+
+  it('says a note raised by hand has no return, names who decided it, and stays refused across tenant and branch', async () => {
+    const invoice = await seedIssuedInvoice('odfqb_trace_by_hand');
+    const note = await pendingNote(invoice.invoiceId, '10.00', SAL_FULL);
+    // Somebody other than the requester rejects it (D3).
+    authAs(SAL_APPROVER);
+    const rejected = await reject(note.id, note.version, { reason: 'Not owed' });
+    expect(rejected.status).toBe(200);
+
+    authAs(SAL_CREDIT_TRACE);
+    const body = await bodyOf<TraceBody>(await readDetail(note.id));
+    expect(body.sourceReturn).toBeNull();
+    expect(body.invoice?.invoiceNumber).toBe(invoice.invoiceNumber);
+    // The person who rejected it, by the name the directory holds.
+    const decider = await admin.query<{ display_name: string }>(
+      `SELECT ua.display_name FROM sal.credit_notes c
+         JOIN iam.user_accounts ua ON ua.id = c.decided_by WHERE c.id = $1`,
+      [note.id]
+    );
+    expect(body.decidedByName).toBe(decider.rows[0]?.display_name ?? 'missing');
+
+    authAs(SAL_TENANT_B);
+    expect((await readDetail(note.id)).status).toBe(404);
+    authAs(SAL_PERMISSION_ELSEWHERE);
+    expect((await readDetail(note.id)).status).toBe(403);
+  });
+});
+
+describe('finance checkpoint fixes B — the balance says when it was read (DF-B1)', () => {
+  it('states the moment on the database clock, with every other field unchanged', async () => {
+    const invoice = await seedIssuedInvoice('odfqb_as_of');
+    const before = Date.now();
+    authAs(SAL_FULL);
+    const response = await (INVOICE_OUTSTANDING as ParamHandler<{ invoiceId: string }>)(
+      new Request(`http://localhost/api/v1/invoices/${invoice.invoiceId}/outstanding`, {
+        method: 'GET',
+      }),
+      { params: Promise.resolve({ invoiceId: invoice.invoiceId }) }
+    );
+    const after = Date.now();
+    expect(response.status).toBe(200);
+    const body = await bodyOf<{
+      outstanding: { amount: string; currency: string };
+      asOf: string;
+      settlement: unknown;
+    }>(response);
+    expect(body.asOf).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    // The database's clock and this process's agree to within a minute here;
+    // the point is that it is the moment of THIS read, not a stored date.
+    const moment = Date.parse(body.asOf);
+    expect(moment).toBeGreaterThan(before - 60_000);
+    expect(moment).toBeLessThan(after + 60_000);
+    expect(body.outstanding.amount).toBe(await invoiceOpenReceivable(invoice.invoiceId));
+    expect(body.settlement).not.toBeNull();
+
+    // Still refused to another tenant: the new field opens nothing.
+    authAs(SAL_TENANT_B);
+    const foreign = await (INVOICE_OUTSTANDING as ParamHandler<{ invoiceId: string }>)(
+      new Request(`http://localhost/api/v1/invoices/${invoice.invoiceId}/outstanding`, {
+        method: 'GET',
+      }),
+      { params: Promise.resolve({ invoiceId: invoice.invoiceId }) }
+    );
+    expect(foreign.status).toBe(404);
+  });
+});
+
+describe('finance checkpoint fixes B — the counter finds its issued sales (DF-B3)', () => {
+  const list = (query: Record<string, string>): Promise<Response> =>
+    INVOICE_LIST(
+      new Request(
+        `http://localhost/api/v1/invoices?${new URLSearchParams({
+          companyId: COMPANY_A1,
+          branchId: BRANCH_A1,
+          ...query,
+        }).toString()}`,
+        { method: 'GET' }
+      )
+    );
+  const ids = async (response: Response): Promise<readonly string[]> =>
+    (await bodyOf<{ items: readonly { id: string; saleKind: string }[] }>(response)).items.map(
+      (row) => row.id
+    );
+
+  it('narrows to counter sales or to jobs, refuses another value, and keeps the branch boundary', async () => {
+    const sale = await issuedThreeUnitSale();
+    const job = await seedIssuedInvoice('odfqb_list_kind');
+    authAs(SAL_FULL);
+    const counter = await list({ saleKind: 'counter_sale', status: 'issued', limit: '100' });
+    expect(counter.status).toBe(200);
+    const counterIds = await ids(counter);
+    expect(counterIds).toContain(sale.invoiceId);
+    expect(counterIds).not.toContain(job.invoiceId);
+    authAs(SAL_FULL);
+    const jobs = await list({ saleKind: 'work_order', limit: '100' });
+    const jobIds = await ids(jobs);
+    expect(jobIds).not.toContain(sale.invoiceId);
+    authAs(SAL_FULL);
+    expect((await list({ saleKind: 'refund' })).status).toBe(422);
+    // A caller whose authority is in another branch cannot list this one.
+    authAs(SAL_PERMISSION_ELSEWHERE);
+    expect((await list({ saleKind: 'counter_sale' })).status).toBe(403);
+    authAs(SAL_TENANT_B);
+    const foreign = await list({ saleKind: 'counter_sale' });
+    expect(foreign.status === 403 || foreign.status === 200).toBe(true);
+    if (foreign.status === 200) expect(await ids(foreign)).not.toContain(sale.invoiceId);
   });
 });

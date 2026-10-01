@@ -77,6 +77,13 @@
  * Leaving the parameter out is how a caller asks for every invoice; any other
  * value — `false` included — is refused `422 ERR-VAL-001`.
  *
+ * ## `saleKind`
+ *
+ * `saleKind=counter_sale` narrows to the sales made over the counter, and
+ * `saleKind=work_order` to the invoices of jobs. The counter keeps its issued
+ * sales findable this way, so a copy can be printed again after the operator
+ * has left the counter (finance checkpoint, DF-B3). Leaving it out is every kind.
+ *
  * The query parameters are published in the OpenAPI document from `ListQuery`
  * itself (`queryParameterSchema`), so the contract and the parser cannot drift.
  *
@@ -120,7 +127,7 @@ import {
   searchParamsToObject,
 } from '@/server/http/validation';
 import { MAX_SEARCH_FRAGMENT, MIN_SEARCH_FRAGMENT } from '@/shared/text/search-terms';
-import { INVOICE_STATUSES, billingModule } from '@/modules/billing';
+import { INVOICE_STATUSES, SALE_KINDS, billingModule } from '@/modules/billing';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -188,6 +195,8 @@ const ListQuery = z
     status: z.enum(INVOICE_STATUSES).optional(),
     /** Only the invoices a receipt can still be applied to. `true` only; see the file header. */
     allocatable: z.literal('true').optional(),
+    /** Only one kind of invoice: a job's, or a sale over the counter. See the file header. */
+    saleKind: z.enum(SALE_KINDS).optional(),
     /**
      * One free-text box: part of the invoice number; part of the payer's name
      * with `crm.customer.read`; part of any plate or the VIN of the job's vehicle
@@ -230,6 +239,7 @@ export async function GET(request: Request): Promise<Response> {
             branchId: query.branchId,
             ...(query.status === undefined ? {} : { status: query.status }),
             ...(query.allocatable === 'true' ? { allocatable: true } : {}),
+            ...(query.saleKind === undefined ? {} : { saleKind: query.saleKind }),
             ...(query.q === undefined ? {} : { q: query.q }),
           },
           {

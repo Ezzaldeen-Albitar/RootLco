@@ -286,6 +286,12 @@ export interface OpenReceivableRow {
   readonly amount: string;
   readonly currencyCode: string;
   readonly status: string;
+  /**
+   * The database's clock when this statement computed the balance
+   * (`statement_timestamp()`): the moment the figure is true "as of" (Owner
+   * decision D10, ADR-023). Never the caller's clock.
+   */
+  readonly asOf: Date;
 }
 
 /**
@@ -487,6 +493,32 @@ export interface CreditNoteRow {
   readonly decisionReason: string | null;
   readonly idempotencyKey: string | null;
   readonly recordVersion: number;
+}
+
+/**
+ * What a credit note is traceable to (finance checkpoint, DF-B4): when it was
+ * requested, the invoice it reduces, who that invoice bills, and the customer
+ * return that raised it, if one did. Ids only for people and the item; the
+ * service turns them into names through their owners' ports.
+ */
+export interface CreditNoteTraceRow {
+  readonly requestedAt: Date;
+  /** `null` only if the invoice header is not visible — it shares the note's scope. */
+  readonly invoice: {
+    readonly invoiceNumber: string | null;
+    readonly saleKind: string;
+    readonly workOrderId: string | null;
+    /** The payer's display name, read here; whether it is PUBLISHED is the service's decision. */
+    readonly payerDisplayName: string | null;
+  } | null;
+  /** The return that raised the note (`inv.sales_returns.credit_note_id`), or `null`. */
+  readonly sourceReturn: {
+    readonly id: string;
+    readonly itemId: string;
+    /** `numeric(12,3)` decimal string. */
+    readonly quantity: string;
+    readonly receivedAt: Date;
+  } | null;
 }
 
 /** A work order's scope. `sal.invoices` must be created in exactly this scope. */
@@ -1006,10 +1038,12 @@ export class BillingRepository extends Repository {
       amount: string;
       currency_code: string;
       status: string;
+      as_of: Date;
     }>(
       db,
       `SELECT i.id AS invoice_id, i.currency_code, i.status,
-              round(sal.invoice_open_receivable(i.id), 4)::text AS amount
+              round(sal.invoice_open_receivable(i.id), 4)::text AS amount,
+              statement_timestamp() AS as_of
          FROM sal.invoices i
         WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
           AND i.id = $4 AND i.deleted_at IS NULL`,
@@ -1021,6 +1055,7 @@ export class BillingRepository extends Repository {
           amount: row.amount,
           currencyCode: row.currency_code,
           status: row.status,
+          asOf: row.as_of,
         }
       : null;
   }
@@ -1357,6 +1392,89 @@ export class BillingRepository extends Repository {
       [context.principal.tenantId, creditNoteId]
     );
     return row ? toCreditNote(row) : null;
+  }
+
+  /**
+   * What one credit note is traceable to (finance checkpoint, DF-B4): the moment
+   * it was requested, the invoice it reduces and that invoice's payer, and the
+   * customer return that raised it.
+   *
+   * Every join is a LEFT JOIN under the caller's own RLS, in the note's own scope.
+   * The invoice and the return are scope-gated exactly as the note is
+   * (`sel_invoices_scope`, `sel_sales_returns_scope`), so a reader of the note
+   * reads both; the payer's name is read here and published only by the service,
+   * on the same customer-read answer `sal.invoice-list` uses. The return is the
+   * one column-set of `inv.sales_returns` this module reads — the reverse of the
+   * one column of `sal.credit_notes` the inventory module reads (GAP-04): a
+   * return raises at most one note (`sal.request_return_credit_note` is called
+   * once per return), and the oldest is taken should that ever change.
+   */
+  public async findCreditNoteTrace(
+    db: DbHandle,
+    note: { readonly id: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<CreditNoteTraceRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      requested_at: Date;
+      invoice_id: string | null;
+      invoice_number: string | null;
+      sale_kind: string | null;
+      work_order_id: string | null;
+      payer_display_name: string | null;
+      return_id: string | null;
+      return_item_id: string | null;
+      return_quantity: string | null;
+      return_received_at: Date | null;
+    }>(
+      db,
+      `SELECT c.created_at AS requested_at,
+              i.id AS invoice_id, i.invoice_number, i.sale_kind, i.work_order_id,
+              pp.display_name AS payer_display_name,
+              r.id AS return_id, r.item_id AS return_item_id,
+              r.quantity::text AS return_quantity, r.created_at AS return_received_at
+         FROM sal.credit_notes c
+         LEFT JOIN sal.invoices i
+           ON i.tenant_id = c.tenant_id AND i.company_id = c.company_id
+          AND i.branch_id = c.branch_id AND i.id = c.invoice_id AND i.deleted_at IS NULL
+         LEFT JOIN crm.business_partners pp
+           ON pp.tenant_id = i.tenant_id AND pp.id = i.payer_partner_id
+          AND pp.deleted_at IS NULL
+         LEFT JOIN LATERAL (
+           SELECT sr.id, sr.item_id, sr.quantity, sr.created_at
+             FROM inv.sales_returns sr
+            WHERE sr.tenant_id = c.tenant_id AND sr.company_id = c.company_id
+              AND sr.branch_id = c.branch_id AND sr.credit_note_id = c.id
+            ORDER BY sr.created_at, sr.id
+            LIMIT 1
+         ) r ON true
+        WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3 AND c.id = $4`,
+      [context.principal.tenantId, note.companyId, note.branchId, note.id]
+    );
+    if (!row) return null;
+    return {
+      requestedAt: row.requested_at,
+      invoice:
+        row.invoice_id === null || row.sale_kind === null
+          ? null
+          : {
+              invoiceNumber: row.invoice_number,
+              saleKind: row.sale_kind,
+              workOrderId: row.work_order_id,
+              payerDisplayName: row.payer_display_name,
+            },
+      sourceReturn:
+        row.return_id === null ||
+        row.return_item_id === null ||
+        row.return_quantity === null ||
+        row.return_received_at === null
+          ? null
+          : {
+              id: row.return_id,
+              itemId: row.return_item_id,
+              quantity: row.return_quantity,
+              receivedAt: row.return_received_at,
+            },
+    };
   }
 
   /**
@@ -2341,6 +2459,8 @@ export class BillingRepository extends Repository {
        * the invoices `sal.payment-allocate` could still apply money to.
        */
       readonly allocatable?: boolean | undefined;
+      /** `counter_sale` or `work_order`; every kind when absent (DF-B3). */
+      readonly saleKind?: string | undefined;
       /** Already reduced by `toEntitySearchTerms`. */
       readonly search?: EntitySearchTerms | undefined;
     },
@@ -2353,6 +2473,7 @@ export class BillingRepository extends Repository {
       filter.branchId,
       filter.status ?? null,
       filter.allocatable === true,
+      filter.saleKind ?? null,
     ];
     const search = searchFragment(
       filter.search ?? NO_SEARCH_TERMS,
@@ -2392,6 +2513,7 @@ export class BillingRepository extends Repository {
             AND i.deleted_at IS NULL
             AND ($4::text IS NULL OR i.status = $4)
             AND (NOT $5::boolean OR i.status IN ('issued', 'credited'))
+            AND ($6::text IS NULL OR i.sale_kind = $6)
             ${search.predicate}
             ${keyset.predicate}
        )

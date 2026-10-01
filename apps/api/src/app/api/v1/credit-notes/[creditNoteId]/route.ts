@@ -6,6 +6,16 @@
  * invoice it is raised against, who requested it and — once approved — who
  * approved it and when.
  *
+ * ## What the note is traceable to (finance checkpoint, DF-B4)
+ *
+ * The approver used to be offered Approve and Reject on an amount and a reason
+ * alone. The detail now also names the invoice the note reduces (its number, its
+ * kind and who it bills), the customer return that raised it, when it was
+ * requested, and the people on it by name (`CreditNoteDetailView`). All of it is
+ * additive: every field this read published before is unchanged. A payer is named
+ * only to a caller who may read customers, and a person only to one who may read
+ * users; otherwise the name is `null`, never an id in its place.
+ *
  * `recordVersion` is published and echoed as the response ETag for the same
  * reason every other detail read publishes one. `sal.credit-note-approve` carries
  * no `If-Match` today, so this version guards nothing yet; it is reported because

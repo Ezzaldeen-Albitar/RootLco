@@ -199,6 +199,8 @@ interface OutstandingBody {
     readonly credited: MoneyBody;
     readonly paid: MoneyBody;
   } | null;
+  /** D10 (ADR-023): the moment the balance was read, on the database clock. */
+  readonly asOf: string;
 }
 interface ProblemBody {
   readonly code: string;
@@ -680,6 +682,7 @@ describe('FE-014 → FE-015 → FE-019 on one work order', () => {
       isSettled: true,
       // A draft claims nothing, so it has no credit, payment or refund position.
       settlement: null,
+      asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
     });
     authAs(SAL_READER);
     expect((await outstanding(invoiceId)).status).toBe(200);
@@ -736,6 +739,7 @@ describe('FE-014 → FE-015 → FE-019 on one work order', () => {
         credited: { amount: '0.0000', currency: 'USD' },
         paid: { amount: '0.0000', currency: 'USD' },
       },
+      asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
     });
     authAs(SAL_NO_FINANCE);
     const refused = await outstanding(invoiceId);
