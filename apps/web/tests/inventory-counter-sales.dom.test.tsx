@@ -1306,6 +1306,60 @@ describe('finance checkpoint fixes B', () => {
     expect(leavingIsQuestioned()).toBe(true);
   });
 
+  it('a Draft retried after a lost answer and a reprint detour replays the same attempt', async () => {
+    const user = userEvent.setup();
+    issuedPages([issuedRow()]);
+    readInvoice.mockResolvedValue(okRead(issuedDetail()));
+    // The answer is lost: the server may already have made the draft.
+    createCounterSale.mockResolvedValueOnce({
+      state: {
+        status: 'unavailable',
+        messageKey: 'state.unavailable.message',
+        attempt: 1,
+        correlationId: 'corr-lost',
+      },
+      created: null,
+    });
+    renderLtr(screenAt());
+    await buildOneLine(user);
+    const draft = () =>
+      user.click(
+        screen.getByRole('button', { name: EN['inventory.counterSales.create.submit'] as string })
+      );
+    await draft();
+    await waitFor(() => expect(createCounterSale).toHaveBeenCalledTimes(1));
+    const lost = EN['state.unavailable.message'] as string;
+    expect(await screen.findByText(lost)).toHaveAttribute('role', 'alert');
+    // A detour: open an issued sale to print it again, then come back.
+    await openFromList(user);
+    expect(await screen.findByRole('article')).toBeTruthy();
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.sale.next'] as string })
+    );
+    // The lost answer is still said beside the composition it belongs to.
+    expect(screen.getByText(lost)).toHaveAttribute('role', 'alert');
+    await draft();
+    await waitFor(() => expect(createCounterSale).toHaveBeenCalledTimes(2));
+    const [firstBody, firstKey] = createCounterSale.mock.calls[0] as [unknown, string];
+    const [secondBody, secondKey] = createCounterSale.mock.calls[1] as [unknown, string];
+    // Same composition, same key: the server replays the draft rather than making a second.
+    expect(secondBody).toEqual(firstBody);
+    expect(secondKey).toBe(firstKey);
+    await screen.findByText(EN['inventory.counterSales.sale.heading'] as string);
+    expect(screen.queryByText(lost)).toBeNull();
+    // Once a draft is made, the next composition is a new attempt with a key of its own.
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.sale.next'] as string })
+    );
+    expect(screen.queryByText(lost)).toBeNull();
+    resolveBarcode.mockClear();
+    await buildOneLine(user);
+    await draft();
+    await waitFor(() => expect(createCounterSale).toHaveBeenCalledTimes(3));
+    const [, thirdKey] = createCounterSale.mock.calls[2] as [unknown, string];
+    expect(thirdKey).not.toBe(firstKey);
+  });
+
   /** What `readInvoice` answers, and the plain-language notice each answer gives. */
   const refusals: readonly (readonly [string, () => unknown, string])[] = [
     ['refused', () => ({ status: 'denied', correlationId: 'ref-403' }), 'openRefused'],

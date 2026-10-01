@@ -246,6 +246,17 @@ function BranchCounter({
   const [origin, setOrigin] = useState<SaleOrigin>('counter');
   const [notice, setNotice] = useState<string | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
+  /*
+   * The draft attempt belongs to the composition, not to the Draft button: the
+   * button unmounts whenever a sale is on screen, and the composition outlives
+   * that (a reprint or a reopened draft sets it aside). Held here, a retry after
+   * a lost answer sends the SAME idempotency key, so the server replays the
+   * draft it may already have made instead of making a second one, and the
+   * lost-answer notice is still shown on return. Renewed only once a draft has
+   * been made.
+   */
+  const [draftKey, setDraftKey] = useState(() => crypto.randomUUID());
+  const [draftOutcome, setDraftOutcome] = useState<ActionState | null>(null);
   const balance = useSaleBalance(sale);
 
   /*
@@ -370,9 +381,15 @@ function BranchCounter({
             target={target}
             buyer={buyer}
             lines={lines}
+            attemptKey={draftKey}
+            outcome={draftOutcome}
+            onAttempted={setDraftOutcome}
             onDrafted={(created) => {
               // The buyer and the lines are now the stored draft, so they are no
-              // longer unsaved work held here.
+              // longer unsaved work held here, and the next composition is a new
+              // attempt with a key of its own.
+              setDraftKey(crypto.randomUUID());
+              setDraftOutcome(null);
               setLines([]);
               setBuyer(null);
               setSale(created);
@@ -1149,23 +1166,28 @@ function DraftSubmit({
   target,
   buyer,
   lines,
+  attemptKey,
+  outcome,
+  onAttempted,
   onDrafted,
 }: {
   readonly messages: Messages;
   readonly target: StockTarget;
   readonly buyer: CustomerSearchHit | null;
   readonly lines: readonly CounterSaleLine[];
+  /**
+   * The composition's idempotency key, held by the counter (not here) so it
+   * survives this panel unmounting while a sale is shown: pressing Draft again
+   * after a lost answer replays the draft that was already made.
+   */
+  readonly attemptKey: string;
+  /** The last draft attempt's answer, held with the key for the same reason. */
+  readonly outcome: ActionState | null;
+  readonly onAttempted: (state: ActionState) => void;
   readonly onDrafted: (created: CreatedInvoice) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  /*
-   * Derived ONCE per confirmation, not per keystroke and not per render: the
-   * whole point of the key is that pressing the button again after a lost answer
-   * replays the draft that was already made.
-   */
-  const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
 
   const submit = async () => {
     if (buyer === null) {
@@ -1192,10 +1214,9 @@ function DraftSubmit({
       attemptKey
     );
     setBusy(false);
-    setOutcome(result.state);
+    onAttempted(result.state);
     notifyActionResult(result.state, messages);
     if (result.state.status === 'success' && result.created) {
-      setAttemptKey(crypto.randomUUID());
       onDrafted(result.created);
     }
   };

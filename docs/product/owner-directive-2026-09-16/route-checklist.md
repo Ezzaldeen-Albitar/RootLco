@@ -3596,3 +3596,18 @@ Residual items from the contract review of this slice (fix round 1), one line ea
 - The database and backend tiers were not run by the reviewer; the DF-B4 and DF-B3 isolation claims (another tenant 404, another branch 403, sale kind 422) rest on `tests/backend/od-finance-credit-decisions.test.ts` and the hosted integration and database jobs.
 - In the reviewer's local root unit run, `tests/ci/tailwind-theme-gate.test.ts` and `tests/ci/p1-28-access-gate.test.ts` reached the 30-second limit; neither touches this slice's files, and they are left to the hosted unit tier as local timeouts under load.
 - The reviewer falsified the DF-B2 contract check: with `data-print-scope` removed from the counter-sales page, the "only the document reaches the paper" case fails.
+
+Fix round 2 of this slice's contract review: the Draft attempt (its idempotency key and its last
+answer) is held by the counter beside the buyer and the lines, not by the Draft panel, which
+unmounts while a sale is shown. A Draft retried after a lost answer, even after opening an issued
+sale or a stored draft and coming back with "next sale", sends the same key, so the server replays
+the draft it may already have made; the lost-answer notice is still shown on return; the key is
+renewed only once a draft has been made. A DOM case covers the detour, and it fails without the fix.
+
+Residual items from the contract review of this slice (fix round 2), one line each:
+
+- Round 1 was falsified by the reviewer: restoring the shown-sale guard, or the clearing on "next sale", fails both mid-sale cases; holding the composition after a draft fails the "where a drafted sale will be" case; the refusal, balance-loading, untraced-note and withdrawn-note cases cover the rest.
+- Carried from round 1 and listed above: cross-branch `?invoiceId=`, the UTC print time, the payer-name scope, focus after a reprint, and the 73-character subject of 19e2d4196.
+- `SalePosition` says the balance "could not be read just now" for a reader whose `sal.finance.view` does not cover the sale's branch (totals hidden); it needs a cross-scope grant, and the wording suggests a passing fault where there is no permission.
+- The reviewer's mutants and probe ran through the vitest Node API from a scratch location and were not written to the worktree.
+- The database and backend tiers were not run by the reviewer for round 2 either; the isolation claims still rest on the backend file and the hosted jobs named above.
