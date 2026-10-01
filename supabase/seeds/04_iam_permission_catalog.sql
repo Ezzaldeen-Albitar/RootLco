@@ -104,6 +104,13 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('sal.payment.record',       'sal', 'Record receipts',                           'medium', '00000000-0000-4000-8000-000000000001'),
   ('sal.payment.allocate',     'sal', 'Allocate receipts to invoices',             'medium', '00000000-0000-4000-8000-000000000001'),
   ('sal.credit.manage',        'sal', 'Request and manage credit notes',           'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Owner decision D13 (ADR-023, P1-32-PRE-OD-FD2C): deciding a credit note is its
+  -- own authority, minted rather than inherited from sal.credit.manage. Approving
+  -- and rejecting declare it; requesting and withdrawing keep sal.credit.manage. An
+  -- approval also needs a credit_note approval limit in iam.approval_limits that
+  -- covers the invoice's cumulative approved credit, so holding this code alone
+  -- approves nothing.
+  ('sal.credit.approve',       'sal', 'Approve and reject credit notes within a credit-note approval limit', 'high', '00000000-0000-4000-8000-000000000001'),
   ('sal.reversal.approve',     'sal', 'Approve receipt reversals (dual control)',   'high',   '00000000-0000-4000-8000-000000000001'),
   ('sal.finance.view',         'sal', 'View financial amounts (invoices/receipts/events)', 'high', '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-11 — Delivery & Custody (sal)

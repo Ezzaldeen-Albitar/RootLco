@@ -10,7 +10,7 @@
     "eventsDeliveryTested": 50,
     "outboxForeignWriters": 0,
     "errorCodes": 34,
-    "permissionCodes": 132,
+    "permissionCodes": 133,
     "auditActions": 291
   },
   "counts": {
@@ -3112,7 +3112,8 @@
       "tests": [
         "tests/backend/iam-access-administration.test.ts",
         "tests/backend/p1-14-idempotency-replay.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/iam/approval-limits/route.ts"
@@ -12910,7 +12911,7 @@
       "domain": "billing",
       "method": "POST",
       "route": "/api/v1/credit-notes/{creditNoteId}/approval",
-      "permissions": ["sal.credit.manage", "sal.finance.view"],
+      "permissions": ["sal.credit.approve", "sal.finance.view"],
       "public": false,
       "scope": "branch",
       "transaction": "transactional write",
@@ -12947,6 +12948,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/od-finance-credit-decisions.test.ts",
+        "tests/backend/od-finance-credit-limits.test.ts",
         "tests/backend/p1-22-credit-note.test.ts",
         "tests/backend/p1-22-currency-coherence.test.ts",
         "tests/backend/p1-31-provisioning-bundle.test.ts",
@@ -13073,7 +13075,7 @@
       "domain": "billing",
       "method": "POST",
       "route": "/api/v1/credit-notes/{creditNoteId}/rejection",
-      "permissions": ["sal.credit.manage", "sal.finance.view"],
+      "permissions": ["sal.credit.approve", "sal.finance.view"],
       "public": false,
       "scope": "branch",
       "transaction": "transactional write",
@@ -13110,6 +13112,7 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/od-finance-credit-decisions.test.ts",
+        "tests/backend/od-finance-credit-limits.test.ts",
         "tests/backend/p1-31-provisioning-bundle.test.ts"
       ],
       "classification": "Covered",

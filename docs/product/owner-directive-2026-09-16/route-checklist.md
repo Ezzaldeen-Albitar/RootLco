@@ -3393,3 +3393,74 @@ Residual items from the contract review of this slice (fix round 1), one line ea
   guard runs on UPDATE only. `sal.stamp_dual_control_maker` (BEFORE INSERT, re-issued in the same
   migration) now births every credit note pending with no decider, decision date, decision reason
   or issue date; `tests/db/sal-credit-note-decisions.test.ts` proves it on the runtime login.
+
+### Credit-approval permission and credit-note approval limits (P1-32-PRE-OD-FD2C)
+
+This slice implements ADR-023 D13: approving and rejecting a credit note is its own authority,
+`sal.credit.approve` (minted), with its own limit, the `credit_note` type of `iam.approval_limits`,
+never inherited from `sal.credit.manage` or from a discount limit. The limit covers the cumulative
+approved credit on the invoice including the note being approved (anti-splitting), and decisions on
+one invoice serialise on its row lock. One forward migration,
+`20261001090000_sal_credit_approval_limits.sql` (165 migrations). No operation, route or audit action
+is added; `sal.credit-note-approve` and `sal.credit-note-reject` now declare `sal.credit.approve` +
+`sal.finance.view`. The standard tenant administrator carries the new code (95 codes); no other
+standard role exists that carried credit approval, so no other role is widened.
+
+| Route                             | What changed                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/credit-notes`                   | Approve and Reject are offered only to a holder of the credit-approval permission who did not raise the note; anybody else who can see the note is told deciding it needs that permission. The approval explains that the limit covers every approved credit on the invoice. A limit refusal is said in words, in English and Arabic, with its reference. |
+| `/administration/approval-limits` | The limit type is chosen by name — Discount approval or Credit note approval — instead of typed; a stored credit-note limit is named in words. A zero credit-note limit is a field error on the amount before sending; an amount finer than the currency's smallest coin is the server's field error on the same box.                                     |
+
+Wrapper extensions: none. The credit-note screen keeps `ConfirmDialog` and `ReasonDialog`; the
+approval-limit form keeps its existing `SelectField` with the key, `defaultValue` and `onChange`
+shape the form-reset gate requires. The design gallery is unchanged.
+
+Preserved: maker ≠ approver; the requester-only withdrawal; the credit ceiling against the open
+amount; the If-Match version on rejection and withdrawal; tenant and branch isolation (another tenant
+404; an approver whose permission covers another branch only 403, recorded as a refusal); the
+discount-approval rules.
+
+Known limitations of this slice, one line each:
+
+- Existing organisations other than the QA organisations named for the backfill cannot approve a
+  credit note until an administrator grants `sal.credit.approve` and sets a credit-note limit — by
+  design of D13.
+- Approval limits stay company-scoped, as every approval limit is; the branch is enforced by the
+  permission.
+- An approver holding `sal.credit.approve` nowhere is refused by the pipeline before the service runs,
+  so that attempt is an authorization denial, not a recorded business refusal; holding it in another
+  branch is refused and recorded as `credit_approval_permission_missing`.
+- The screen offers the decision on the session's permission list; the branch reach and the limit are
+  the server's answer, said in words when it refuses.
+- Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the
+  builds; they run in hosted CI. Focused DB and backend files ran against a disposable database only.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- The reviewer ran no database or backend tier locally (no disposable PostgreSQL was listening and
+  port 54322 is off limits); that evidence is hosted CI only: `tests/db/sal-credit-approval-limits.test.ts`
+  23/23 in job 110179169705 (1950/1950 database tests) and `tests/backend/od-finance-credit-limits.test.ts`
+  15/15 in integration job 110179242564 (4030/4030). The implementer's 17 database and service
+  falsifications were not re-run by the reviewer.
+- Separation of duties: the list and detail reads still declare `sal.credit.manage`, which also lets
+  a person raise notes, so a person who only approves needs that code to reach a note and can
+  therefore raise notes too. D13 does not prohibit this; it is recorded here as a known trade-off.
+- Anti-splitting counts every approved note on the invoice, including notes approved by other
+  people, so an approver with a small limit is blocked once colleagues have approved credit on that
+  invoice; ADR-023 records this on purpose.
+- Credit-note limits apply per company; the branch is enforced only through
+  `has_permission_in_scope('sal.credit.approve', company, branch)`, so a role grant scoped to any
+  branch of the company reaches the company's limit, as the discount rule does (ADR-023).
+- Lock order is note then invoice in both the primitive and the guard; no code path was found that
+  locks the invoice and then a credit note, so no deadlock path was found, but this was not proven
+  exhaustively.
+- `canDecide` comes from the tenant-wide session permission union, so a person holding the code only
+  in another branch still sees the buttons and the server answers 403 with the named
+  `credit_approval_permission_missing` sentence; the backend test and the web catalogue test cover it.
+- Reviewer probe (scratch only): a mutant `CreditNotesScreen` with `&& canDecide` removed from
+  `decides` made both D13 gate tests in `apps/web/tests/invoices.dom.test.tsx` fail (2 failed), and an
+  unmutated control copy passed 2/2.
+- Fixed in this round: the screen's D13 docblock claimed a limit or permission refusal reads the note
+  again; it does not (only a conflict or a decision that landed does). The docblock now says the
+  refusal is shown in words and leaves the note pending, and the credit-limit refusal DOM test
+  asserts the note is read exactly once.

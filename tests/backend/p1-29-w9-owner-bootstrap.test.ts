@@ -489,7 +489,13 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // 2026-09-29: the administrator reads, books, reschedules, cancels and sets up
     // appointments for its own organisation. Declared by the twenty-one reception
     // operations of the appointment surface; all four were already catalogue rows.
-    expect(expected).toHaveLength(94);
+    // 95 with `sal.credit.approve`, MINTED by Owner decision D13 of 2026-09-30
+    // (ADR-023): approving and rejecting a credit note is its own authority, within a
+    // credit-note approval limit somebody else sets. Declared by the approval and the
+    // rejection; the standard administrator is the one role that decided credit notes
+    // before, through sal.credit.manage.
+    expect(expected).toHaveLength(95);
+    expect(expected).toContain('sal.credit.approve');
     expect(expected).toContain('sal.credit.manage');
     expect(expected).toContain('org.settings.manage');
     for (const code of [

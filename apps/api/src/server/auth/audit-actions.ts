@@ -1930,7 +1930,7 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     class: 'approval',
     entityType: 'sal.credit_note',
     description:
-      'A credit note was approved under dual control and became a real reduction of the receivable. sal.guard_dual_control_approval stamps the approver from the session and refuses approved_by = requested_by, so the maker cannot approve their own request; the amount ceiling is re-checked against sal.invoice_open_receivable inside the approving transaction.',
+      'A credit note was approved under dual control and became a real reduction of the receivable. sal.guard_dual_control_approval stamps the approver from the session and refuses approved_by = requested_by, so the maker cannot approve their own request; the amount ceiling is re-checked against sal.invoice_open_receivable inside the approving transaction. Since ADR-023 D13 the approver also holds sal.credit.approve in the note’s company and branch and a credit_note approval limit in the note’s currency, set by somebody else, covering every approved credit on the invoice including this one.',
   },
   {
     code: 'sal.credit_note.withdrawn',
@@ -1944,7 +1944,7 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     class: 'approval',
     entityType: 'sal.credit_note',
     description:
-      'A pending credit note was rejected by someone other than its requester, with a stated reason (ADR-023, D3). sal.guard_credit_note_decision refuses the requester, requires sal.credit.manage in the note’s company and branch and a reason that is not blank, and stamps the decider and the time. A rejected note credits nothing and is terminal.',
+      'A pending credit note was rejected by someone other than its requester, with a stated reason (ADR-023, D3). sal.guard_credit_note_decision refuses the requester, requires sal.credit.approve (ADR-023 D13) in the note’s company and branch and a reason that is not blank, and stamps the decider and the time. A rejected note credits nothing and is terminal.',
   },
   {
     code: 'sal.receipt.recorded',

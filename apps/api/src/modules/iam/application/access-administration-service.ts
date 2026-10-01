@@ -47,6 +47,22 @@ import { IdentityPolicy } from '../domain/identity-policy';
 /** SQLSTATE for an EXCLUDE-constraint violation (overlapping effective windows). */
 const EXCLUSION_VIOLATION = '23P01';
 
+/**
+ * The amount rule `iam.guard_approval_limit_money` raised, as the field rule the
+ * screen words, or `null` for any other failure. The guard puts a stable token
+ * before the first colon of its `check_violation` message.
+ */
+function approvalLimitAmountRule(error: unknown): string | null {
+  if (!isSqlState(error, SQLSTATE.checkViolation)) return null;
+  const message =
+    typeof error === 'object' && error !== null && 'message' in error
+      ? String((error as { message?: unknown }).message ?? '')
+      : '';
+  if (message.startsWith('approval_limit_minor_unit:')) return 'minor_unit_scale';
+  if (message.startsWith('approval_limit_not_positive:')) return 'not_positive';
+  return null;
+}
+
 /** The exact incoming scope shape a caller may submit for a grant. */
 interface IncomingScope {
   scopeType: 'company' | 'branch' | 'department';
@@ -679,7 +695,7 @@ export class AccessAdministrationService extends ApplicationService {
       );
     }
 
-    this.credentialPolicy.assertApprovalAmount(input.amount, input.currency);
+    this.credentialPolicy.assertApprovalAmount(input.amount, input.currency, input.limitType);
     this.credentialPolicy.assertEffectiveWindow(input.effectiveFrom, input.effectiveTo ?? null);
     this.delegationPolicy.assertScopeWithinAuthority(facts, {
       scopeType: 'company',
@@ -710,6 +726,17 @@ export class AccessAdministrationService extends ApplicationService {
       if (isSqlState(error, SQLSTATE.foreignKeyViolation)) {
         throw new AppFailure('ERR-RES-001', {
           message: 'The company, role, user, or currency was not found',
+        });
+      }
+      // `iam.guard_approval_limit_money` (ADR-023 D1, D13): the amount is finer than
+      // the currency's minor unit, or a credit-note limit is not above zero. Both are
+      // about the amount the administrator typed, so both are filed on it.
+      const amountRule = approvalLimitAmountRule(error);
+      if (amountRule !== null) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'The approval limit amount does not fit its currency or its type',
+          safeDetails: { violations: [{ path: 'body.amount', rule: amountRule }] },
+          cause: error,
         });
       }
       throw error;

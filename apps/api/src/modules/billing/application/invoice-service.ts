@@ -56,7 +56,11 @@ import { findSequenceDefinition, sharedServicesModule } from '@/modules/shared-s
 import { inventoryModule } from '@/modules/inventory';
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
-import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import {
+  callerApprovalLimitStanding,
+  callerHoldsPermission,
+  type ScopeAuthorizer,
+} from '@/server/auth/authorization';
 import {
   BILLING_SQLSTATE,
   COUNTER_SALE_ORDER,
@@ -70,6 +74,8 @@ import {
 import { assertMinorUnitScale } from '@/server/http/validation';
 import {
   BillingRuleError,
+  CREDIT_APPROVE_PERMISSION,
+  CREDIT_NOTE_LIMIT_TYPE,
   INVOICE_LINE_TYPES,
   MAX_REASON,
   assertCreditWithinOpenAmount,
@@ -187,7 +193,74 @@ export const CREDIT_NOTE_REFUSAL_RULES = Object.freeze({
   notRequester: 'credit_note_withdraw_not_requester',
   decided: 'credit_note_decision_frozen',
   exceedsOpenAmount: 'credit_note_exceeds_open_amount',
+  // ADR-023 D13 — the approval permission and the credit-note approval limit. Each
+  // is also the token `sal.guard_credit_note_decision` raises for the same rule.
+  approvalPermissionMissing: 'credit_approval_permission_missing',
+  noApprovalLimit: 'credit_no_approval_limit',
+  limitSelfCreated: 'credit_limit_self_created',
+  limitCurrencyMismatch: 'credit_limit_currency_mismatch',
+  limitExceeded: 'credit_limit_exceeded',
 } as const);
+
+/**
+ * The D13 limit rules, in the order the database guard raises them, each with the
+ * sentence the operational log keeps. The caller is told the rule token only; the
+ * screen words it.
+ */
+const CREDIT_LIMIT_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
+  [CREDIT_NOTE_REFUSAL_RULES.noApprovalLimit]:
+    'The approver has no credit-note approval limit in this company',
+  [CREDIT_NOTE_REFUSAL_RULES.limitSelfCreated]:
+    'Every credit-note approval limit the approver holds was set by the approver, and none counts',
+  [CREDIT_NOTE_REFUSAL_RULES.limitCurrencyMismatch]:
+    "The approver has no credit-note approval limit in the credit note's currency",
+  [CREDIT_NOTE_REFUSAL_RULES.limitExceeded]:
+    "Approving this credit note would take the invoice's approved credit past the approver's limit",
+});
+
+/**
+ * A refusal of a credit-note APPROVAL by D13, recorded after the rollback (D12).
+ *
+ * `ERR-IAM-001`, like a discount approver's missing or insufficient limit: the
+ * approver lacks the authority, the note is not at fault. The rule is filed under
+ * the path parameter because the approval sends no body. No amount and no limit is
+ * put on the failure or the record.
+ */
+function refuseCreditApproval(creditNoteId: string, rule: string, cause?: unknown): never {
+  return refuseCreditNote(creditNoteId, rule, () => {
+    throw new AppFailure('ERR-IAM-001', {
+      message:
+        CREDIT_LIMIT_REFUSALS[rule] ?? `Credit note approval was refused by the rule ${rule}`,
+      safeDetails: { violations: [{ path: 'path.creditNoteId', rule }] },
+      ...(cause === undefined ? {} : { cause }),
+    });
+  });
+}
+
+/** The D13 rule tokens the decision guard raises on an approval. */
+const CREDIT_APPROVAL_TOKENS: ReadonlySet<string> = new Set([
+  CREDIT_NOTE_REFUSAL_RULES.approvalPermissionMissing,
+  CREDIT_NOTE_REFUSAL_RULES.noApprovalLimit,
+  CREDIT_NOTE_REFUSAL_RULES.limitSelfCreated,
+  CREDIT_NOTE_REFUSAL_RULES.limitCurrencyMismatch,
+  CREDIT_NOTE_REFUSAL_RULES.limitExceeded,
+]);
+
+/**
+ * The D13 token `sal.guard_credit_note_decision` raised on an approval, or `null`.
+ * The permission refusal is `insufficient_privilege`, the four limit refusals
+ * `check_violation`; each carries its token before the first colon.
+ */
+function creditApprovalToken(error: unknown): string | null {
+  if (
+    !isSqlState(error, SQLSTATE.checkViolation) &&
+    !isSqlState(error, SQLSTATE.insufficientPrivilege)
+  ) {
+    return null;
+  }
+  const token = /^([a-z_]+):/.exec(driverMessage(error) ?? '')?.[1] ?? null;
+  return token !== null && CREDIT_APPROVAL_TOKENS.has(token) ? token : null;
+}
 
 /** The message of a driver error, or `undefined`. */
 function driverMessage(error: unknown): string | undefined {
@@ -1547,6 +1620,19 @@ export class InvoiceService {
    * `sal.approve_credit_note` compares the codes under the invoice lock (GAP-13);
    * this comparison answers first with a refusal the caller can read.
    *
+   * ### The approver's authority (ADR-023, D13)
+   *
+   * The operation declares `sal.credit.approve`, authorized in the note's own
+   * company and branch; `sal.credit.manage` only requests. Holding the permission
+   * approves nothing by itself: the approver also needs a credit-note approval
+   * limit, in the note's currency, set by somebody else, that covers the invoice's
+   * cumulative approved credit with this note included — so one large credit split
+   * into small notes cannot pass a low limit (`assertCreditApprovalLimit`). Each
+   * refusal names its rule (`credit_no_approval_limit`, `credit_limit_self_created`,
+   * `credit_limit_currency_mismatch`, `credit_limit_exceeded`) and is recorded after
+   * the rollback (D12). `sal.guard_credit_note_decision` holds the same rules under
+   * the same invoice lock, and a token it raises is translated to the same refusal.
+   *
    * Idempotent on an already-`approved` note: no second audit record, no second
    * event.
    */
@@ -1561,7 +1647,7 @@ export class InvoiceService {
         message: `Credit note ${creditNoteId} was not found in scope`,
       });
     }
-    await authorizeScope({ companyId: note.companyId, branchId: note.branchId });
+    await this.authorizeApprovalScope(db, note, authorizeScope);
 
     if (note.approvalState === 'approved') {
       return { creditNote: toCreditNoteView(note), replayed: true };
@@ -1624,9 +1710,13 @@ export class InvoiceService {
       );
     }
 
+    await this.assertCreditApprovalLimit(db, note);
+
     try {
       await this.repository.approveCreditNote(db, creditNoteId, db.context.correlationId);
     } catch (error) {
+      const token = creditApprovalToken(error);
+      if (token !== null) refuseCreditApproval(note.id, token, error);
       if (isSelfApprovalViolation(error)) {
         refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.selfApproval, () => {
           throw new AppFailure('ERR-TRN-001', {
@@ -1786,12 +1876,13 @@ export class InvoiceService {
    * A different authorised person rejects a pending credit note, with a reason
    * (ADR-023, D3).
    *
-   * The operation declares `sal.credit.manage` and `sal.finance.view`, and the
-   * pipeline authorizes both in the note's own company and branch. The person
-   * must also not be the requester, who withdraws instead
-   * (`credit_note_self_rejection`). The database holds both rules itself:
-   * `sal.guard_credit_note_decision` checks `sal.credit.manage` in the note's
-   * scope and refuses the requester, so a raw UPDATE is held to them too.
+   * The operation declares `sal.credit.approve` (ADR-023 D13: only an authorised
+   * decision-maker rejects) and `sal.finance.view`, and the pipeline authorizes
+   * both in the note's own company and branch. No credit-note limit is needed: a
+   * rejection credits nothing. The person must also not be the requester, who
+   * withdraws instead (`credit_note_self_rejection`). The database holds both rules
+   * itself: `sal.guard_credit_note_decision` checks `sal.credit.approve` in the
+   * note's scope and refuses the requester, so a raw UPDATE is held to them too.
    *
    * The reason is required, trimmed and bounded here first, so a blank one is a
    * field error on `body.reason` rather than a refusal of the note; the database
@@ -1871,6 +1962,94 @@ export class InvoiceService {
   // -------------------------------------------------------------------------
   // Internals.
   // -------------------------------------------------------------------------
+
+  /**
+   * Authorizes the note's own company and branch for an approval, and records a
+   * caller who lacks the approval permission there as a refusal (ADR-023 D12, D13).
+   *
+   * The pipeline already refused anybody holding `sal.credit.approve` nowhere at
+   * all. What reaches here is a caller who holds it somewhere else — another
+   * branch, another company — and the deferred scope check refuses them exactly as
+   * before, with the same uniform authorization answer. The only addition is the
+   * record: when the code the caller lacks in this scope is the approval
+   * permission, the failure is marked `credit_approval_permission_missing` so one
+   * security event names the rule after the rollback. The answer is unchanged.
+   */
+  private async authorizeApprovalScope(
+    db: DbHandle,
+    note: CreditNoteRow,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<void> {
+    try {
+      await authorizeScope({ companyId: note.companyId, branchId: note.branchId });
+    } catch (failure) {
+      if (
+        failure instanceof AppFailure &&
+        failure.code === 'ERR-IAM-001' &&
+        !(await callerHoldsPermission(db, CREDIT_APPROVE_PERMISSION, {
+          companyId: note.companyId,
+          branchId: note.branchId,
+        }))
+      ) {
+        withBusinessRefusal(failure, {
+          entityType: 'sal.credit_note',
+          entityId: note.id,
+          rule: CREDIT_NOTE_REFUSAL_RULES.approvalPermissionMissing,
+        });
+      }
+      throw failure;
+    }
+  }
+
+  /**
+   * The approver's credit-note limit, against the invoice's cumulative approved
+   * credit with this note included (ADR-023, D13).
+   *
+   * Called with the note AND the invoice locked, in the order the primitive locks
+   * them, so the total read here already includes any approval of another note on
+   * the same invoice that committed while this one waited — two concurrent
+   * approvals cannot each pass the limit on a total that omits the other. The
+   * database repeats the whole rule in `sal.guard_credit_note_decision` under the
+   * same lock; this mirror exists to name the refusal.
+   *
+   * The limit is resolved by `callerApprovalLimitStanding`: the approver's own
+   * credit-note limit in the note's currency before a role's, never one the
+   * approver created, never a discount limit. The comparison is exact: both figures
+   * are the database's decimal strings, compared as `Decimal`s.
+   */
+  private async assertCreditApprovalLimit(db: DbHandle, note: CreditNoteRow): Promise<void> {
+    const standing = await callerApprovalLimitStanding(
+      db,
+      note.companyId,
+      CREDIT_NOTE_LIMIT_TYPE,
+      note.currencyCode,
+      await this.repository.businessDate(db)
+    );
+    switch (standing.standing) {
+      case 'none':
+        return refuseCreditApproval(note.id, CREDIT_NOTE_REFUSAL_RULES.noApprovalLimit);
+      case 'self-created':
+        return refuseCreditApproval(note.id, CREDIT_NOTE_REFUSAL_RULES.limitSelfCreated);
+      case 'currency-mismatch':
+        return refuseCreditApproval(note.id, CREDIT_NOTE_REFUSAL_RULES.limitCurrencyMismatch);
+      case 'counted': {
+        const cumulative = await this.repository.cumulativeApprovedCreditWith(db, {
+          invoiceId: note.invoiceId,
+          companyId: note.companyId,
+          branchId: note.branchId,
+          creditNoteId: note.id,
+        });
+        if (
+          Decimal.fromDatabase(cumulative, MONEY).greaterThan(
+            Decimal.fromDatabase(standing.amount, MONEY)
+          )
+        ) {
+          refuseCreditApproval(note.id, CREDIT_NOTE_REFUSAL_RULES.limitExceeded);
+        }
+        return;
+      }
+    }
+  }
 
   /**
    * Locks a credit note for a withdrawal or a rejection, authorizes its own scope,

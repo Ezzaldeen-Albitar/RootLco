@@ -72,8 +72,14 @@ export const BILLING_PERMISSIONS = {
   issue: 'sal.invoice.issue',
   /** The work-order header, for the screen's context. */
   workOrderRead: 'wo.work_order.read',
-  /** Credit notes — both reads and the approval declare it (DEF-T-07). */
+  /** Credit notes — both reads, the request and the withdrawal declare it (DEF-T-07). */
   creditManage: 'sal.credit.manage',
+  /**
+   * Deciding a credit note — the approval and the rejection declare it (Owner
+   * decision D13, ADR-023). An approval also needs a credit-note approval limit,
+   * which the server checks; holding the code is what makes the decision offered.
+   */
+  creditApprove: 'sal.credit.approve',
   /** A different payer is FOUND among customers, which `crm.customer-search` answers. */
   customerRead: 'crm.customer.read',
 } as const;
@@ -302,8 +308,8 @@ export interface VoidedInvoice {
  * | `sal.credit-note-list`   | GET    | `/credit-notes`                  | `sal.credit.manage`, `sal.finance.view`  |
  * | `sal.credit-note-detail` | GET    | `/credit-notes/{creditNoteId}`   | `sal.credit.manage`, `sal.finance.view`  |
  * | `sal.credit-note-create` | POST   | `/invoices/{invoiceId}/credit-notes` | `sal.credit.manage`, `sal.finance.view` |
- * | `sal.credit-note-approve` | POST  | `/credit-notes/{creditNoteId}/approval` | `sal.credit.manage`, `sal.finance.view` |
- * | `sal.credit-note-reject`  | POST  | `/credit-notes/{creditNoteId}/rejection` | `sal.credit.manage`, `sal.finance.view` |
+ * | `sal.credit-note-approve` | POST  | `/credit-notes/{creditNoteId}/approval` | `sal.credit.approve`, `sal.finance.view` |
+ * | `sal.credit-note-reject`  | POST  | `/credit-notes/{creditNoteId}/rejection` | `sal.credit.approve`, `sal.finance.view` |
  * | `sal.credit-note-withdraw` | POST | `/credit-notes/{creditNoteId}/withdrawal` | `sal.credit.manage` |
  *
  * Rejection and withdrawal (ADR-023, D3) are version-guarded: `If-Match` is the

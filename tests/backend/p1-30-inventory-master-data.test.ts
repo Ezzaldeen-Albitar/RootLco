@@ -434,8 +434,9 @@ describe('declarations', () => {
     // second person it delegates to — approve a credit note. 90 since the Owner
     // decided (2026-09-27) the administrator edits its own organisation settings,
     // and 94 since it decided (2026-09-29) the administrator holds the four
-    // appointment codes.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(94);
+    // appointment codes. 95 since Owner decision D13 (2026-09-30, ADR-023) carried
+    // the minted sal.credit.approve, which deciding a credit note now declares.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(95);
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).not.toContain('inv.cost.view');
   });
 });

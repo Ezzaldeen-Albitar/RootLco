@@ -44,6 +44,17 @@
  * same person in another session, or a note decided meanwhile) is said in plain
  * words and the note is read again.
  *
+ * ## Deciding needs its own permission and limit (ADR-023, D13)
+ *
+ * Approving and rejecting are offered only to a holder of the credit-approval
+ * permission who did not raise the note; anybody else who can see the note is
+ * told that deciding it needs that permission. An approval is further held by the
+ * server to the approver's credit-note limit over every approved credit on the
+ * invoice, this note included. Such a refusal (the permission or the limit)
+ * says which rule refused it, in words, and leaves the note pending. The note is
+ * not read again, because the refusal changed nothing; only a conflict (the note
+ * or its invoice moved on) or a decision that landed triggers a second read.
+ *
  * ## Rejecting and withdrawing (ADR-023, D3)
  *
  * A pending note can now be turned down, so it no longer waits forever. Somebody
@@ -107,6 +118,7 @@ export function CreditNotesScreen({
   messages,
   initialCreditNoteId,
   currentUserId,
+  canDecide = false,
   canSearchInvoices = false,
 }: {
   readonly locale: Locale;
@@ -121,6 +133,12 @@ export function CreditNotesScreen({
   readonly initialCreditNoteId: string | null;
   /** The signed-in person, compared with `requestedBy` to say why an approval is not offered. */
   readonly currentUserId: string;
+  /**
+   * `sal.credit.approve` — whether Approve and Reject are offered on somebody
+   * else's pending note (D13). The server re-checks it in the note's own branch,
+   * and checks the approver's limit, whatever the screen offered.
+   */
+  readonly canDecide?: boolean;
   /** `sal.invoice.manage` — the invoice list the raise form finds an invoice through. */
   readonly canSearchInvoices?: boolean;
 }) {
@@ -147,6 +165,7 @@ export function CreditNotesScreen({
           messages={messages}
           creditNoteId={chosen}
           currentUserId={currentUserId}
+          canDecide={canDecide}
           onClose={() => setChosen(null)}
           onDecided={(key) => {
             setNotice(key);
@@ -403,6 +422,7 @@ function CreditNoteDetail({
   messages,
   creditNoteId,
   currentUserId,
+  canDecide,
   onClose,
   onDecided,
 }: {
@@ -410,6 +430,7 @@ function CreditNoteDetail({
   readonly messages: Messages;
   readonly creditNoteId: string;
   readonly currentUserId: string;
+  readonly canDecide: boolean;
   readonly onClose: () => void;
   readonly onDecided: (noticeKey: string) => void;
 }) {
@@ -424,6 +445,8 @@ function CreditNoteDetail({
   const state = detail.value;
   const note = state?.status === 'ok' ? state.data : null;
   const own = note !== null && note.requestedBy === currentUserId;
+  // Somebody else's note, and the caller holds the credit-approval permission (D13).
+  const decides = note !== null && !own && canDecide;
 
   /**
    * What a decision's answer does to the screen. Returns true when the note must
@@ -605,10 +628,17 @@ function CreditNoteDetail({
                 </Button>
               </div>
             </div>
+          ) : !decides ? (
+            <p className="text-body text-text-secondary" data-testid="credit-note-cannot-decide">
+              {translate(messages, 'creditNotes.detail.cannotDecide')}
+            </p>
           ) : (
             <div className="flex flex-col gap-2">
               <p className="text-caption text-text-muted">
                 {translate(messages, 'creditNotes.approve.explain')}
+              </p>
+              <p className="text-caption text-text-muted">
+                {translate(messages, 'creditNotes.approve.limitExplain')}
               </p>
               <p className="text-caption text-text-muted">
                 {translate(messages, 'creditNotes.reject.explain')}
@@ -637,7 +667,7 @@ function CreditNoteDetail({
             </div>
           )}
           <ConfirmDialog
-            open={asking === 'approve' && note !== null && !own}
+            open={asking === 'approve' && decides}
             messages={messages}
             title={translate(messages, 'creditNotes.approve.confirmTitle')}
             description={formatMessage(translate(messages, 'creditNotes.approve.confirmExplain'), {
@@ -666,7 +696,7 @@ function CreditNoteDetail({
             testId="credit-note-withdraw-dialog"
           />
           <ReasonDialog
-            open={asking === 'reject' && note !== null && !own}
+            open={asking === 'reject' && decides}
             messages={messages}
             title={translate(messages, 'creditNotes.reject.confirmTitle')}
             description={formatMessage(translate(messages, 'creditNotes.reject.confirmExplain'), {

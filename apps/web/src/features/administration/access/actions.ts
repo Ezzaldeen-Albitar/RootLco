@@ -124,7 +124,9 @@ const limitSchema = z
     subject: z.enum(['role', 'user']),
     roleId: z.string().trim().optional(),
     userId: z.string().trim().optional(),
-    limitType: z.string().trim().regex(ROLE_CODE, 'approvalLimits.field.limitTypeHint'),
+    // One of the types the platform consults (`APPROVAL_LIMIT_TYPES`): the form
+    // offers no other, and a type nothing reads would be a limit that limits nothing.
+    limitType: z.enum(['discount', 'credit_note'], { message: 'approvalLimits.error.type' }),
     // A STRING. Validated by pattern, never parsed into a number.
     amount: z.string().trim().regex(AMOUNT, 'approvalLimits.error.amount'),
     currency: z.string().trim().regex(CURRENCY, 'approvalLimits.error.currency'),
@@ -149,6 +151,17 @@ const limitSchema = z
         code: 'custom',
         path: ['userId'],
         message: 'approvalLimits.error.person',
+      });
+    }
+    // A credit note is always above zero, so a zero credit-note limit could approve
+    // nothing (ADR-023 D13). Matched on the TEXT: the amount is never a number here.
+    // Whether it fits the currency's smallest coin is the server's answer, filed on
+    // the same field.
+    if (value.limitType === 'credit_note' && /^0+(?:\.0+)?$/.test(value.amount)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['amount'],
+        message: 'approvalLimits.error.positive',
       });
     }
   });

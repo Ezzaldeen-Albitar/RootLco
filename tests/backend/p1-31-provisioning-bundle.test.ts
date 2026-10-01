@@ -102,7 +102,9 @@
  *   P31-B17 the provisioned administrator holds it and can delegate it
  *   P31-B18 it requests a credit note in its own branch — pending, crediting
  *           nothing, audited — is refused approving its own request, and a second
- *           person it delegated the code to approves it, audited
+ *           person it delegated the request and approval codes to, given a
+ *           credit-note limit by the administrator through the shipped limit
+ *           operation (ADR-023 D13), approves it, audited
  *   P31-B19 another organisation's administrator, holding the same code, is
  *           refused this organisation's invoice (404, nothing written)
  *   P31-B20 a cashier role the administrator builds without the code is refused
@@ -114,6 +116,20 @@
  *   P31-B22 another organisation's administrator, holding both approval codes there
  *           and not the requester, is refused approving this organisation's note
  *           with the same 404 an unknown id gets, and nothing moves
+ *
+ * ## The Owner decision D13 on `sal.credit.approve`: deciding a credit note
+ *
+ * The Owner decided on 2026-09-30 (ADR-023, D13) that approving and rejecting a
+ * credit note is its own authority, with its own limit. The code is minted by that
+ * decision and the standard tenant administrator carries it, because it is the one
+ * standard role that carried credit approval before, through `sal.credit.manage`.
+ *
+ *   P31-B34 the code is in the bundle once; exactly the approval and the rejection
+ *           declare it, each with sal.finance.view and branch-scoped; it is a
+ *           catalogue row; sal.credit.manage still declares the request, the reads
+ *           and the withdrawal; first_owner is untouched
+ *   P31-B35 the provisioned administrator effectively holds it and can delegate it
+ *           onto a role it creates
  *
  * ## The Owner decision on `org.settings.manage`: the organisation's own settings
  *
@@ -178,7 +194,8 @@
  * inv.stock-location-create, inv.goods-receipt-create,
  * rec.reception-convert-to-work-order, wo.service-line-record,
  * rec.reception-evidence-binding, iam.grant-issue, sal.credit-note-create,
- * sal.credit-note-list, sal.credit-note-approve, iam.tenant-settings-update,
+ * sal.credit-note-list, sal.credit-note-approve, iam.approval-limit-create,
+ * iam.tenant-settings-update,
  * iam.company-settings-write, iam.branch-settings-write,
  * platform.subscription-assign, platform.organization-lifecycle,
  * apt.catalogue-appointment-type-create, apt.catalogue-appointment-type-list,
@@ -273,6 +290,8 @@ import {
 } from '@/app/api/v1/credit-notes/route';
 import { CREDIT_NOTE_DETAIL_OPERATION } from '@/app/api/v1/credit-notes/[creditNoteId]/route';
 import { POST as grantIssueRoute } from '@/app/api/v1/iam/grants/route';
+import { POST as approvalLimitCreateRoute } from '@/app/api/v1/iam/approval-limits/route';
+import { CREDIT_NOTE_REJECT_OPERATION } from '@/app/api/v1/credit-notes/[creditNoteId]/rejection/route';
 import { TENANT_UPDATE_OPERATION, PATCH as tenantUpdateRoute } from '@/app/api/v1/org/tenant/route';
 import {
   COMPANY_SETTINGS_WRITE_OPERATION,
@@ -516,6 +535,14 @@ const ADDED_BY_APPOINTMENT_DECISION = Object.freeze([
   'apt.catalogue.manage',
 ]);
 
+/**
+ * The sixth widening after P1-31, on Owner decision D13 of 2026-09-30 (ADR-023): the
+ * MINTED code `sal.credit.approve`, which the approval and the rejection of a credit
+ * note declare in place of `sal.credit.manage`. B34–B35 below measure it, and B18
+ * proves a delegated approver approves within a credit-note limit. 94 + 1 = 95.
+ */
+const ADDED_BY_CREDIT_APPROVAL_DECISION = Object.freeze(['sal.credit.approve']);
+
 /** Every code carried after P1-31 closed. */
 const ADDED_AFTER_P1_31 = Object.freeze([
   ...ADDED_BY_P1_32_MATERIAL,
@@ -523,6 +550,7 @@ const ADDED_AFTER_P1_31 = Object.freeze([
   ...ADDED_BY_CREDIT_DECISION,
   ...ADDED_BY_SETTINGS_DECISION,
   ...ADDED_BY_APPOINTMENT_DECISION,
+  ...ADDED_BY_CREDIT_APPROVAL_DECISION,
 ]);
 
 const IDENTITY_PROVIDER = 'test_harness';
@@ -1186,13 +1214,14 @@ describe('Owner directive 2026-09-17 — the codes the QA campaign found closed'
     expect(before + ADDED_BY_OD_QA_CAMPAIGN.length).toBe(88);
     // 89 since the Owner's credit-note decision; B16 owns that arithmetic. 90 since
     // the settings decision; B23 owns that one. 94 since the appointment decision;
-    // B29 owns that one.
+    // B29 owns that one. 95 since the credit-approval decision (D13); B34 owns it.
     expect(bundle).toHaveLength(
       before +
         ADDED_BY_OD_QA_CAMPAIGN.length +
         ADDED_BY_CREDIT_DECISION.length +
         ADDED_BY_SETTINGS_DECISION.length +
-        ADDED_BY_APPOINTMENT_DECISION.length
+        ADDED_BY_APPOINTMENT_DECISION.length +
+        ADDED_BY_CREDIT_APPROVAL_DECISION.length
     );
     expect(ADDED_BY_OD_QA_CAMPAIGN).toHaveLength(3);
 
@@ -1737,12 +1766,16 @@ interface CreditNoteReply {
 }
 
 describe('Owner decision — sal.credit.manage: credit notes in a provisioned organisation', () => {
-  it('P31-B16 the bundle carries sal.credit.manage and nothing else moved; the four credit-note operations declare it with sal.finance.view; it was already a catalogue row; first_owner is untouched', () => {
+  it('P31-B16 the bundle carries sal.credit.manage and nothing else moved; the request, the reads and the withdrawal declare it; it was already a catalogue row; first_owner is untouched', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
     // 89 with this code; 90 since the settings decision, which B23 owns; 94 since
-    // the appointment decision, which B29 owns.
+    // the appointment decision, which B29 owns; 95 since the credit-approval
+    // decision (D13), which B34 owns.
     expect(bundle).toHaveLength(
-      89 + ADDED_BY_SETTINGS_DECISION.length + ADDED_BY_APPOINTMENT_DECISION.length
+      89 +
+        ADDED_BY_SETTINGS_DECISION.length +
+        ADDED_BY_APPOINTMENT_DECISION.length +
+        ADDED_BY_CREDIT_APPROVAL_DECISION.length
     );
     for (const code of ADDED_BY_CREDIT_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
@@ -1761,10 +1794,11 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
     );
     expect(seed).toContain("('sal.credit.manage'");
 
-    // DECLARED by exactly the six credit-note operations, read from the register.
-    // Rejection and withdrawal joined the four in ADR-023 D3 (P1-32-PRE-OD-FD2A);
-    // withdrawal declares this code alone, because only the requester may withdraw
-    // and the note's whole row is gated by the finance view regardless.
+    // DECLARED by exactly four credit-note operations, read from the register.
+    // Withdrawal joined in ADR-023 D3 (P1-32-PRE-OD-FD2A) and declares this code
+    // alone, because only the requester may withdraw and the note's whole row is
+    // gated by the finance view regardless. The approval and the rejection moved to
+    // `sal.credit.approve` by D13 (P1-32-PRE-OD-FD2C), which B34 measures.
     const register = JSON.parse(
       readFileSync(
         join(REPOSITORY_ROOT, 'docs/phase-1/phase-1-24/evidence/operation-register.json'),
@@ -1777,11 +1811,9 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
         .map((op) => op.id)
         .sort()
     ).toEqual([
-      'sal.credit-note-approve',
       'sal.credit-note-create',
       'sal.credit-note-detail',
       'sal.credit-note-list',
-      'sal.credit-note-reject',
       'sal.credit-note-withdraw',
     ]);
 
@@ -1789,13 +1821,17 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
     // codes, and the two writes are audited under their own actions and classes.
     for (const operation of [
       CREDIT_NOTE_CREATE_OPERATION,
-      CREDIT_NOTE_APPROVE_OPERATION,
       CREDIT_NOTE_LIST_OPERATION,
       CREDIT_NOTE_DETAIL_OPERATION,
     ]) {
       expect(operation.permissions).toEqual(['sal.credit.manage', 'sal.finance.view']);
       expect(operation.scope).toBe('branch');
     }
+    expect(CREDIT_NOTE_APPROVE_OPERATION.permissions).toEqual([
+      'sal.credit.approve',
+      'sal.finance.view',
+    ]);
+    expect(CREDIT_NOTE_APPROVE_OPERATION.scope).toBe('branch');
     expect(CREDIT_NOTE_CREATE_OPERATION.auditAction).toBe('sal.credit_note.requested');
     expect(CREDIT_NOTE_CREATE_OPERATION.auditClass).toBe('financial');
     expect(CREDIT_NOTE_APPROVE_OPERATION.auditAction).toBe('sal.credit_note.approved');
@@ -1867,15 +1903,47 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
     expect(await auditRecordsFor(probe.tenantId, 'sal.credit_note.approved', note.id)).toBe(0);
 
     // The second person: a member the administrator gives a finance-approver role it
-    // builds from the two codes it holds, confined to the invoice's branch.
+    // builds from codes it holds — reading, and deciding (D13) — confined to the
+    // invoice's branch.
     const approver = await seedMember(probe, 'approver');
-    await grantBranchRole(
+    const approverRole = await grantBranchRole(
       probe,
       'finance_approver',
-      ['sal.credit.manage', 'sal.finance.view'],
+      ['sal.credit.manage', 'sal.credit.approve', 'sal.finance.view'],
       approver.userId,
       invoice
     );
+
+    // Holding the code approves nothing by itself (ADR-023 D13): without a
+    // credit-note limit the approval is refused by name, and nothing moves.
+    asMember(probe, approver.subject);
+    const unlimited = await call<{ violations?: Array<{ rule: string }> }>(creditNoteApproveRoute, {
+      path: `/credit-notes/${note.id}/approval`,
+      params: { creditNoteId: note.id },
+      idempotencyKey: randomUUID(),
+    });
+    expect(unlimited.status).toBe(403);
+    expect(unlimited.body.violations?.map((v) => v.rule)).toEqual(['credit_no_approval_limit']);
+    expect(await openReceivable(invoice.invoiceId)).toBe('100.0000');
+
+    // The administrator gives the role a credit-note limit in the invoice's currency
+    // through the shipped limit operation; it holds no such role itself, so the limit
+    // is somebody else's and counts.
+    asOwnerOf(probe);
+    const limit = await call<{ id?: string }>(approvalLimitCreateRoute, {
+      path: '/iam/approval-limits',
+      body: {
+        companyId: invoice.companyId,
+        roleId: approverRole,
+        limitType: 'credit_note',
+        amount: '100.000',
+        currency: 'JOD',
+        effectiveFrom: '2020-01-01',
+      },
+      idempotencyKey: randomUUID(),
+    });
+    expect(limit.status).toBe(201);
+
     asMember(probe, approver.subject);
     const approved = await call<CreditNoteReply>(creditNoteApproveRoute, {
       path: `/credit-notes/${note.id}/approval`,
@@ -1968,7 +2036,7 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
     await grantBranchRole(
       probe,
       'finance_approver_elsewhere',
-      ['sal.credit.manage', 'sal.finance.view'],
+      ['sal.credit.manage', 'sal.credit.approve', 'sal.finance.view'],
       approver.userId,
       elsewhere
     );
@@ -2007,7 +2075,7 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
     const invoice = await issuedInvoice();
     const other = await otherOrganisation();
     expect(await codesHeldBy(other.ownerAccountId)).toEqual(
-      expect.arrayContaining(['sal.credit.manage', 'sal.finance.view'])
+      expect.arrayContaining(['sal.credit.manage', 'sal.credit.approve', 'sal.finance.view'])
     );
     const note = await raiseCreditNote(invoice, '10.000', 'Cross-organisation probe');
     const openBefore = await openReceivable(invoice.invoiceId);
@@ -2173,8 +2241,9 @@ async function branchSettingRows(branchId: string): Promise<number> {
 describe('Owner decision — org.settings.manage: the organisation edits its own settings', () => {
   it('P31-B23 the bundle carries org.settings.manage once; exactly the twelve audited operations declare it, none of them a platform operation; the runtime updates three tenant columns under an own-tenant policy; first_owner is untouched', async () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
-    // 94 since the four appointment codes joined (B29 measures them).
-    expect(bundle).toHaveLength(94);
+    // 94 since the four appointment codes joined (B29 measures them); 95 since the
+    // credit-approval decision (D13; B34 measures it).
+    expect(bundle).toHaveLength(95);
     for (const code of ADDED_BY_SETTINGS_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -2670,7 +2739,8 @@ function setupType(): Promise<CatalogueEntryReply> {
 describe('Owner decision — the four appointment codes: the organisation runs its own appointments', () => {
   it('P31-B29 the bundle carries the four codes once each; exactly the twenty-one audited reception operations declare them, none of them a platform operation; every write is audited; first_owner is untouched', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
-    expect(bundle).toHaveLength(94);
+    // 94 with the four codes; 95 since the credit-approval decision (D13, B34).
+    expect(bundle).toHaveLength(95);
     for (const code of ADDED_BY_APPOINTMENT_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -2901,5 +2971,63 @@ describe('Owner decision — the four appointment codes: the organisation runs i
       [probe.tenantId]
     );
     expect(countAfter.rows[0]?.n).toBe(countBefore.rows[0]?.n);
+  });
+});
+
+describe('Owner decision D13 — sal.credit.approve: deciding a credit note', () => {
+  it('P31-B34 the bundle carries sal.credit.approve once; exactly the approval and the rejection declare it, branch-scoped with sal.finance.view; it is a catalogue row; first_owner is untouched', () => {
+    const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
+    expect(bundle).toHaveLength(95);
+    for (const code of ADDED_BY_CREDIT_APPROVAL_DECISION) {
+      expect(bundle.filter((c) => c === code)).toHaveLength(1);
+      expect(ADDED_ALL).not.toContain(code);
+      expect(ADDED_BY_P1_32_MATERIAL).not.toContain(code);
+      expect(ADDED_BY_OD_QA_CAMPAIGN).not.toContain(code);
+      expect(ADDED_BY_CREDIT_DECISION).not.toContain(code);
+    }
+    // The request code stays carried: the approver still reads and requests with it.
+    expect(bundle).toContain('sal.credit.manage');
+
+    // MINTED by D13, so it is a catalogue row of its own.
+    const seed = readFileSync(
+      join(REPOSITORY_ROOT, 'supabase/seeds/04_iam_permission_catalog.sql'),
+      'utf8'
+    );
+    expect(seed).toContain("('sal.credit.approve'");
+
+    // DECLARED by exactly the approval and the rejection, read from the register.
+    const register = JSON.parse(
+      readFileSync(
+        join(REPOSITORY_ROOT, 'docs/phase-1/phase-1-24/evidence/operation-register.json'),
+        'utf8'
+      )
+    ) as { operations: Array<{ id: string; permissions: string[] }> };
+    expect(
+      register.operations
+        .filter((op) => op.permissions.includes('sal.credit.approve'))
+        .map((op) => op.id)
+        .sort()
+    ).toEqual(['sal.credit-note-approve', 'sal.credit-note-reject']);
+    for (const operation of [CREDIT_NOTE_APPROVE_OPERATION, CREDIT_NOTE_REJECT_OPERATION]) {
+      expect(operation.permissions).toEqual(['sal.credit.approve', 'sal.finance.view']);
+      expect(operation.scope).toBe('branch');
+      expect(operation.auditClass).toBe('approval');
+    }
+
+    expect([...FIRST_OWNER_ROLE.permissionCodes]).toEqual([
+      'iam.user.manage',
+      'iam.role.manage',
+      'iam.grant.manage',
+    ]);
+  });
+
+  it('P31-B35 the provisioned administrator effectively holds it, and can delegate it onto a role it creates', async () => {
+    expect(await codesOfRole(probe.tenantAdministratorRoleId)).toContain('sal.credit.approve');
+    expect(await codesHeldBy(probe.ownerAccountId)).toContain('sal.credit.approve');
+
+    const roleId = await newRole(probe, 'credit_approval_delegation_probe');
+    const mapped = await mapCode(probe, roleId, 'sal.credit.approve');
+    expect(mapped.status).toBe(201);
+    expect(await codesOfRole(roleId)).toEqual(['sal.credit.approve']);
   });
 });

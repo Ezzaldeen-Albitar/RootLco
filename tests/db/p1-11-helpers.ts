@@ -49,6 +49,8 @@ export const P11_PERMISSIONS: Array<{ code: string; domain: string }> = [
   { code: 'sal.payment.record', domain: 'sal' },
   { code: 'sal.payment.allocate', domain: 'sal' },
   { code: 'sal.credit.manage', domain: 'sal' },
+  // ADR-023 D13: deciding a credit note is its own code (seeded beside sal.credit.manage).
+  { code: 'sal.credit.approve', domain: 'sal' },
   { code: 'sal.reversal.approve', domain: 'sal' },
   { code: 'sal.delivery.manage', domain: 'sal' },
   { code: 'sal.delivery.complete', domain: 'sal' },
@@ -130,6 +132,29 @@ export async function seedP111Base(admin: Pool): Promise<void> {
      ON CONFLICT DO NOTHING`,
     [T, U, P11.ROLE, P11.APPROVER_USER]
   );
+
+  // 3b. ADR-023 D13: an approval needs a credit-note approval limit that counts — in
+  //     the note's currency, and set by somebody else. The maker and the approver
+  //     each get one per fixture currency, set by the other, large enough that no
+  //     P1-11 suite meets the limit by accident. Idempotent: the exclusion constraint
+  //     keys one credit-note limit per (user, currency), so a second run inserts none.
+  for (const [userId, setBy] of [
+    [U, P11.APPROVER_USER],
+    [P11.APPROVER_USER, U],
+  ] as const) {
+    for (const currency of ['USD', 'JOD']) {
+      await admin.query(
+        `INSERT INTO iam.approval_limits
+           (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+         SELECT $1, $2, $3, 'credit_note', 1000000, $4, '2020-01-01'::date, $5
+          WHERE NOT EXISTS (
+            SELECT 1 FROM iam.approval_limits
+             WHERE tenant_id = $1 AND company_id = $2 AND user_id = $3
+               AND limit_type = 'credit_note' AND currency_code = $4)`,
+        [T, CO, userId, currency, setBy]
+      );
+    }
+  }
 
   // 4. Numbering sequences for invoice + receipt in the committed branch scope.
   await admin.query(

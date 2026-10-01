@@ -868,7 +868,7 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `iam.approval_limits`
 
-**Scope:** tenant (company) · **Retention class:** evidence-audit · Effective-dated monetary ceiling per role XOR user; NUMERIC(18,4); non-overlapping; identity/amount immutable.
+**Scope:** tenant (company) · **Retention class:** evidence-audit · Effective-dated monetary ceiling per role XOR user; NUMERIC(18,4), fitting the currency's minor unit on insert; non-overlapping per (company, subject, limit_type), and per currency for a `credit_note` limit (ADR-023 D13; a `credit_note` limit is above zero); identity/amount immutable.
 
 | Column           | Type                     | Null | Default           | Classification |
 | ---------------- | ------------------------ | ---- | ----------------- | -------------- |

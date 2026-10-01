@@ -193,7 +193,10 @@ describe('quo discount approvals', () => {
 
   /** Holds `svc.price.manage` and a discount limit of 1000 USD that USER_A set. */
   const APPROVER = 'd15c0000-0000-4000-8000-000000000001';
-  /** Holds the permission; their limit, 39.9999 USD, is below a 40 discount. */
+  /**
+   * Holds the permission; their limit, 39.99 USD, is below a 40 discount. Stated to
+   * the cent since a limit fits its currency's minor unit (ADR-023 D13).
+   */
   const APPROVER_LOW = 'd15c0000-0000-4000-8000-000000000002';
   /** Holds the permission; their limit is 1000 JOD. */
   const APPROVER_JOD = 'd15c0000-0000-4000-8000-000000000003';
@@ -254,7 +257,7 @@ describe('quo discount approvals', () => {
     }
     const limits: ReadonlyArray<readonly [string, string, string, string]> = [
       [APPROVER, '1000', 'USD', USER_A],
-      [APPROVER_LOW, '39.9999', 'USD', USER_A],
+      [APPROVER_LOW, '39.99', 'USD', USER_A],
       [APPROVER_JOD, '1000', 'JOD', USER_A],
       [APPROVER_SELF_SET, '1000', 'USD', APPROVER_SELF_SET],
       [NO_PERMISSION, '1000', 'USD', USER_A],

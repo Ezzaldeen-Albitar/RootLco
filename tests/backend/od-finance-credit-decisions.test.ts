@@ -418,7 +418,7 @@ afterAll(async () => {
 });
 
 describe('D3 — the two decisions are declared as the Owner rule requires', () => {
-  it('declares withdrawal for the credit code and rejection for the credit code and the finance view', () => {
+  it('declares withdrawal for the credit code and rejection for the approval code (D13) and the finance view', () => {
     expect(CREDIT_NOTE_WITHDRAW_OPERATION).toMatchObject({
       id: 'sal.credit-note-withdraw',
       permissions: ['sal.credit.manage'],
@@ -430,7 +430,7 @@ describe('D3 — the two decisions are declared as the Owner rule requires', () 
     });
     expect(CREDIT_NOTE_REJECT_OPERATION).toMatchObject({
       id: 'sal.credit-note-reject',
-      permissions: ['sal.credit.manage', 'sal.finance.view'],
+      permissions: ['sal.credit.approve', 'sal.finance.view'],
       scope: 'branch',
       auditClass: 'approval',
       auditAction: 'sal.credit_note.rejected',

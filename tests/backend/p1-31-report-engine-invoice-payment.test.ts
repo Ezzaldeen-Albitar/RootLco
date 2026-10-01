@@ -283,6 +283,11 @@ const PRINCIPALS: readonly Principal[] = [
 
 const REACH_ROLE = 'f1340000-0000-4000-8000-000000000151';
 const REACH_GRANT = 'f1340000-0000-4000-8000-000000000152';
+/**
+ * The approver's authority to decide a credit note (ADR-023, D13): its own role
+ * holding `sal.credit.approve`, so no report principal's permission set changes.
+ */
+const CREDIT_APPROVER_ROLE = 'f1340000-0000-4000-8000-0000000001c1';
 
 /**
  * The APPROVER of every dual-control decision below.
@@ -842,6 +847,40 @@ beforeAll(async () => {
   } finally {
     reach.release();
   }
+
+  // ADR-023 D13: approving the fixture credit note needs `sal.credit.approve` and a
+  // credit-note limit in its currency that somebody else set. The approver gets both
+  // here, on a role of its own and a limit attributed to USER_A.
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$2,'fx_p1_31_credit_approver','P1-31 credit approver',$3)
+     ON CONFLICT (id) DO NOTHING`,
+    [CREDIT_APPROVER_ROLE, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+      WHERE p.permission_code = 'sal.credit.approve'
+     ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+    [TENANT_A, CREDIT_APPROVER_ROLE, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+     SELECT $1,$2,$3,'unrestricted',$4,$4
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.role_grants WHERE tenant_id = $1 AND user_id = $2 AND role_id = $3)`,
+    [TENANT_A, APPROVER, CREDIT_APPROVER_ROLE, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.approval_limits
+       (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+     SELECT $1,$2,$3,'credit_note',1000000,$4,'2020-01-01'::date,$5
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.approval_limits
+         WHERE tenant_id = $1 AND company_id = $2 AND user_id = $3
+           AND limit_type = 'credit_note' AND currency_code = $4)`,
+    [TENANT_A, COMPANY_S, APPROVER, USD, USER_A]
+  );
 
   runtime = runtimeAppPool(6);
   __setPrimaryPoolForTests(runtime);

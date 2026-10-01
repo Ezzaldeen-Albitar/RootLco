@@ -33,6 +33,16 @@
  * is now also recorded as one security event after the command rolls back
  * (ADR-023, D12). The answer the caller receives is unchanged.
  *
+ * ## The approver's own permission and limit (ADR-023, D13)
+ *
+ * Approving is its own authority, `sal.credit.approve`, authorized in the note's
+ * company and branch; `sal.credit.manage` only requests a note. The approver also
+ * needs a credit-note approval limit in the note's currency, set by somebody else,
+ * covering every approved credit on the invoice with this note included, so a large
+ * credit split into small notes cannot pass a low limit. A discount limit never
+ * counts. Each refusal names its rule and is recorded like the ones above, and
+ * `sal.guard_credit_note_decision` holds the same rules under the invoice lock.
+ *
  * ## What is NOT here
  *
  * Rejection and withdrawal are their own operations since ADR-023 D3:
@@ -59,7 +69,7 @@ export const CREDIT_NOTE_APPROVE_OPERATION = defineOperation({
   method: 'POST',
   path: '/credit-notes/{creditNoteId}/approval',
   summary: 'Approve a pending credit note under dual control, reducing the open receivable.',
-  permissions: ['sal.credit.manage', 'sal.finance.view'],
+  permissions: ['sal.credit.approve', 'sal.finance.view'],
   scope: 'branch',
   auditClass: 'approval',
   auditAction: 'sal.credit_note.approved',

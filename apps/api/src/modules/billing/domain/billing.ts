@@ -129,6 +129,25 @@ export const INVOICE_TRANSITIONS: readonly {
   { from: 'issued', to: 'credited' },
 ]);
 
+/**
+ * The permission that decides a credit note (Owner decision D13, ADR-023).
+ *
+ * Approving and rejecting declare it; requesting and withdrawing keep
+ * `sal.credit.manage`. `sal.guard_credit_note_decision` checks the same code in the
+ * note's company and branch, so the rule does not depend on a route being the only
+ * way in.
+ */
+export const CREDIT_APPROVE_PERMISSION = 'sal.credit.approve';
+
+/**
+ * The `iam.approval_limits.limit_type` of a credit-note approval limit (D13).
+ *
+ * Separate from every discount type: a discount limit never counts for a credit
+ * note, and this one never counts for a discount. One per subject, company and
+ * currency at a time (`ex_approval_limits_*_no_overlap`).
+ */
+export const CREDIT_NOTE_LIMIT_TYPE = 'credit_note';
+
 /** Column widths, so a caller gets a 422 rather than a driver truncation error. */
 export const MAX_REASON = 2000;
 export const MAX_DESCRIPTION = 2000;
