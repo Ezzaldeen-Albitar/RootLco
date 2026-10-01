@@ -35,7 +35,11 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * decision only to a holder. Two further things are passed on: who is signed in,
  * so a note the caller raised is shown as waiting for another approver rather than
  * offered to them; and `sal.invoice.manage`, which the invoice list behind the
- * raise form's invoice picker declares.
+ * raise form's invoice picker declares. That same code is what opens an invoice
+ * (the invoice screen's and the counter's gate), so the note's detail links the
+ * invoice it reduces only for a holder; it links the customer return that raised
+ * the note only for a holder of the returns screen's gate, `inv.stock.read`
+ * (finance checkpoint, DF-B4).
  */
 export default async function CreditNotesPage({
   params,
@@ -92,6 +96,7 @@ export default async function CreditNotesPage({
           currentUserId={session.userId}
           canDecide={holds(session.permissions, BILLING_PERMISSIONS.creditApprove)}
           canSearchInvoices={holds(session.permissions, BILLING_PERMISSIONS.manage)}
+          canOpenReturns={holds(session.permissions, BILLING_PERMISSIONS.returnsRead)}
         />
       </PageBody>
     </>

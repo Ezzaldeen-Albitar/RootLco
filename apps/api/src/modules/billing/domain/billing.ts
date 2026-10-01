@@ -44,6 +44,14 @@ export const INVOICE_STATUSES = Object.freeze([
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
 
 /**
+ * `ck_invoices_sale_kind`. A `counter_sale` bills stock sold over the counter and
+ * has no work order; a `work_order` invoice bills a job (P1-32). Frozen for the
+ * life of the document.
+ */
+export const SALE_KINDS = Object.freeze(['work_order', 'counter_sale'] as const);
+export type SaleKind = (typeof SALE_KINDS)[number];
+
+/**
  * `ck_invoice_status_history_to_status` — SIX values, deliberately wider than the
  * four above.
  *

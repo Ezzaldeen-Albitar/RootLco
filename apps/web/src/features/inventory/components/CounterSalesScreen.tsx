@@ -40,37 +40,76 @@
  * search screen does. The number is sent as typed: the backend folds
  * Arabic-Indic digits before it compares.
  *
+ * ## Printing a sale again, and what the paper carries (finance checkpoint)
+ *
+ * An issued sale used to be reachable only while the operator stayed at the
+ * counter: the list offered drafts only and the invoice screen needs a work
+ * order, so a lost or second copy could not be printed (DF-B3). The branch's
+ * issued sales are now listed beside the drafts, found by the server's search
+ * (the sale number or the buyer's name; Arabic-Indic digits are folded by the
+ * server) and walked a page at a time with the server's cursor, and opening one
+ * shows the sale read-only with its printable copy already open.
+ *
+ * Wherever an issued sale is shown, its payment position is shown with it — Not
+ * paid yet, Partly paid, Paid or Nothing to pay — from the server's balance read
+ * (DF-2), and the printed copy carries the same read as its "settlement as of"
+ * section (DF-B1). The whole screen is one print scope, so while the copy is
+ * open the paper carries the copy alone and not the screen's text, the branch
+ * panel or a notice (DF-B2).
+ *
  * Permissions: `sal.invoice.manage` gates the page and offers the draft and the
  * void; `sal.finance.view` is required by construction wherever amounts are
- * written; `sal.invoice.issue` offers the issue; `inv.item.read` the catalogue;
- * `crm.customer.read` the buyer search; `org.branch.read` the branch picker.
+ * written, and is what the issued-sales list (`sal.invoice-list`) and the balance
+ * read declare; `sal.invoice.issue` offers the issue; `inv.item.read` the
+ * catalogue; `crm.customer.read` the buyer search and the buyer's name on the
+ * issued list; `org.branch.read` the branch picker.
  */
 
 import Link from 'next/link';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import {
+  OperationalGrid,
+  type OperationalColumn,
+  type RowAction,
+} from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
+import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { SelectField, TextField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
+import { MuiSearchStates } from '@/components/states/MuiStates';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import {
   cancelInvoice,
   createCounterSale,
   issueInvoice,
   listCounterSales,
+  listInvoices,
   readInvoice,
+  readOutstanding,
 } from '@/features/billing/api';
 import {
+  MAX_INVOICE_SEARCH,
   MAX_REASON as MAX_INVOICE_REASON,
+  MIN_INVOICE_SEARCH,
   type CreatedInvoice,
   type Invoice,
+  type InvoiceDetail,
+  type InvoiceListEntry,
+  type Outstanding,
 } from '@/features/billing/billing-contract';
 import { CounterSalePrintPanel } from '@/features/billing/components/InvoiceScreen';
+import { When } from '@/features/billing/components/shared';
 import { searchCustomerDirectoryCancellable } from '@/lib/customers/directory-read';
 import type { CustomerSearchHit } from '@/lib/customers/directory-contract';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
+import { useSearchRequest } from '@/lib/api/use-search-request';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatMoney } from '@/lib/money';
 
@@ -109,10 +148,14 @@ export function CounterSalesScreen({
   canSell,
   canIssue,
   canReadCustomers,
+  initialInvoiceId = null,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  /** `sal.invoice.manage` — drafting and voiding. */
+  /**
+   * `sal.invoice.manage` AND `sal.finance.view` — drafting and voiding, and the
+   * issued-sales list and balance read, which declare the finance view.
+   */
   readonly canSell: boolean;
   /** `sal.invoice.issue` — issuing, which is what moves the stock. */
   readonly canIssue: boolean;
@@ -125,10 +168,25 @@ export function CounterSalesScreen({
    * code.
    */
   readonly canReadBranches?: boolean;
+  /**
+   * A sale named in the address — how a credit note links the counter sale it
+   * reduces (DF-B4). Opened once, as soon as the branch is known, and never
+   * again after the operator moves on.
+   */
+  readonly initialInvoiceId?: string | null;
 }) {
   const [target, setTarget] = useState<StockTarget | null>(null);
+  const [named, setNamed] = useState<string | null>(initialInvoiceId);
+  const consumeNamed = useCallback(() => setNamed(null), []);
+  /*
+   * DF-B2. The whole screen is one print scope: while a printable copy is open
+   * below, every direct child that holds no copy — the links, the explanation,
+   * the branch panel, a notice — is left off the paper (`styles/print`), and the
+   * nested scope around the sale leaves its working panel off too. The page puts
+   * its own header in a scope of its own the same way.
+   */
   return (
-    <div className="flex min-h-0 flex-col gap-4">
+    <div data-print-scope="document" className="flex min-h-0 flex-col gap-4">
       <StockOperationLinks locale={locale} messages={messages} />
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.counterSales.explain')}
@@ -151,11 +209,16 @@ export function CounterSalesScreen({
           target={target}
           canIssue={canIssue}
           canReadCustomers={canReadCustomers}
+          openOnMount={named}
+          onOpened={consumeNamed}
         />
       )}
     </div>
   );
 }
+
+/** What the screen was asked to show of an issued sale: nothing, or how it was reached. */
+type SaleOrigin = 'counter' | 'reprint';
 
 function BranchCounter({
   locale,
@@ -163,25 +226,100 @@ function BranchCounter({
   target,
   canIssue,
   canReadCustomers,
+  openOnMount,
+  onOpened,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly target: StockTarget;
   readonly canIssue: boolean;
   readonly canReadCustomers: boolean;
+  /** A sale to open as soon as this branch's counter is shown, or `null`. */
+  readonly openOnMount: string | null;
+  /** Called once the named sale has been read, whatever the answer. */
+  readonly onOpened: () => void;
 }) {
   const locations = useLocations(target);
   const [buyer, setBuyer] = useState<CustomerSearchHit | null>(null);
   const [lines, setLines] = useState<readonly CounterSaleLine[]>([]);
   const [sale, setSale] = useState<CreatedInvoice | null>(null);
+  const [origin, setOrigin] = useState<SaleOrigin>('counter');
   const [notice, setNotice] = useState<string | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+  /*
+   * The draft attempt belongs to the composition, not to the Draft button: the
+   * button unmounts whenever a sale is on screen, and the composition outlives
+   * that (a reprint or a reopened draft sets it aside). Held here, a retry after
+   * a lost answer sends the SAME idempotency key, so the server replays the
+   * draft it may already have made instead of making a second one, and the
+   * lost-answer notice is still shown on return. Renewed only once a draft has
+   * been made.
+   */
+  const [draftKey, setDraftKey] = useState(() => crypto.randomUUID());
+  const [draftOutcome, setDraftOutcome] = useState<ActionState | null>(null);
+  const balance = useSaleBalance(sale);
+
+  /*
+   * DF-B3. An issued sale, opened read-only with its copy already open. The
+   * detail read is the sale panel's own (the list publishes a header only), and
+   * a sale that turns out not to be a counter sale is not shown here: a job's
+   * invoice belongs to the invoice screen. State is written only once the read
+   * has answered, never synchronously inside the effect that asks.
+   */
+  const showOpened = useCallback((answer: ReadState<InvoiceDetail>) => {
+    if (answer.status === 'ok' && answer.data.invoice.saleKind === 'counter_sale') {
+      setSale({ ...answer.data, replayed: false });
+      setOrigin(answer.data.invoice.status === 'draft' ? 'counter' : 'reprint');
+      setNotice(
+        answer.data.invoice.status === 'draft'
+          ? 'inventory.counterSales.drafts.reopened'
+          : 'inventory.counterSales.issued.opened'
+      );
+      return;
+    }
+    setNotice(
+      answer.status === 'ok'
+        ? 'inventory.counterSales.issued.notCounterSale'
+        : answer.status === 'denied'
+          ? 'inventory.counterSales.issued.openRefused'
+          : answer.status === 'not-found'
+            ? 'inventory.counterSales.issued.openMissing'
+            : 'inventory.counterSales.issued.openUnavailable'
+    );
+  }, []);
+
+  const openIssued = async (invoiceId: string): Promise<void> => {
+    setOpening(invoiceId);
+    const answer = await readInvoice(invoiceId);
+    setOpening(null);
+    showOpened(answer);
+  };
+
+  useEffect(() => {
+    if (openOnMount === null) return;
+    let live = true;
+    void readInvoice(openOnMount).then((answer) => {
+      if (!live) return;
+      showOpened(answer);
+      onOpened();
+    });
+    return () => {
+      live = false;
+    };
+  }, [openOnMount, showOpened, onOpened]);
   /*
    * Unsaved work, declared to the shell. A buyer chosen or a line added before
    * the draft exists is held only here, under THIS branch's key, so a branch
    * switch asks first; a confirmed switch remounts the counter empty. Once the
-   * draft exists it is stored, and the drafts list offers it back.
+   * draft exists it is stored, the composition is let go, and the drafts list
+   * offers it back.
+   *
+   * Declared on what is HELD, not on what is shown: opening an issued sale to
+   * print it again, or reopening a stored draft, sets the composition aside
+   * without saving it, so it stays protected while that sale is on screen and
+   * is still there when the operator comes back to the counter.
    */
-  useUnsavedGuard(sale === null && (buyer !== null || lines.length > 0));
+  useUnsavedGuard(buyer !== null || lines.length > 0);
   /*
    * DEF-T-13. The branch's drafted sales, so one is reachable again after a
    * reload. Re-read after every draft, issue and void, because each of those
@@ -214,6 +352,13 @@ function BranchCounter({
             }}
             onProblem={setNotice}
           />
+          <IssuedSales
+            locale={locale}
+            messages={messages}
+            target={target}
+            opening={opening}
+            onOpen={(invoiceId) => void openIssued(invoiceId)}
+          />
           <BuyerPicker
             messages={messages}
             canReadCustomers={canReadCustomers}
@@ -236,7 +381,17 @@ function BranchCounter({
             target={target}
             buyer={buyer}
             lines={lines}
+            attemptKey={draftKey}
+            outcome={draftOutcome}
+            onAttempted={setDraftOutcome}
             onDrafted={(created) => {
+              // The buyer and the lines are now the stored draft, so they are no
+              // longer unsaved work held here, and the next composition is a new
+              // attempt with a key of its own.
+              setDraftKey(crypto.randomUUID());
+              setDraftOutcome(null);
+              setLines([]);
+              setBuyer(null);
               setSale(created);
               drafts.reload();
               setNotice(
@@ -255,6 +410,7 @@ function BranchCounter({
             locale={locale}
             messages={messages}
             sale={sale}
+            balance={balance}
             canIssue={canIssue}
             onChanged={(next, noticeKey) => {
               setSale(next);
@@ -262,18 +418,22 @@ function BranchCounter({
               setNotice(noticeKey);
             }}
             onNewSale={() => {
+              // Back to the counter. A composition set aside to open this sale is
+              // kept as it was; one that became this sale was let go when drafted.
               setSale(null);
-              setLines([]);
-              setBuyer(null);
+              setOrigin('counter');
               setNotice(null);
               drafts.reload();
             }}
           />
           <CounterSalePrintPanel
+            key={`${sale.invoice.id}:${origin}`}
             locale={locale}
             messages={messages}
             detail={sale}
             canViewFinance={sale.invoice.totals !== null}
+            balance={balance !== null && balance.status === 'ok' ? balance.data : null}
+            initiallyOpen={origin === 'reprint'}
           />
         </div>
       )}
@@ -291,6 +451,231 @@ function BranchCounter({
  * every render would read the branch again on every render.
  */
 const DRAFT_SALES = (where: StockTarget) => listCounterSales(where, { status: 'draft' });
+
+/**
+ * The balance of an issued sale, as the server computes it on every read
+ * (`sal.invoice-outstanding-read`): what is still due, the payment and credit
+ * positions (D7) and when they were read (D10). Read for an issued or credited
+ * sale only — a draft claims nothing and a voided one never will — and read
+ * again whenever the sale changes. `null` while it is being read.
+ *
+ * A read for a sale the operator has already left is dropped: the answer is
+ * kept only for the sale it was asked for.
+ */
+function useSaleBalance(sale: CreatedInvoice | null): ReadState<Outstanding> | null {
+  const invoiceId = sale?.invoice.id ?? null;
+  const owing =
+    sale !== null && (sale.invoice.status === 'issued' || sale.invoice.status === 'credited');
+  const version = sale?.recordVersion ?? 0;
+  const [held, setHeld] = useState<{
+    readonly key: string;
+    readonly state: ReadState<Outstanding>;
+  } | null>(null);
+  const key = owing && invoiceId !== null ? `${invoiceId}#${version}` : null;
+  useEffect(() => {
+    if (key === null || invoiceId === null) return;
+    let live = true;
+    void readOutstanding(invoiceId)
+      .catch((): ReadState<Outstanding> => ({ status: 'unavailable', correlationId: null }))
+      .then((state) => {
+        if (live) setHeld({ key, state });
+      });
+    return () => {
+      live = false;
+    };
+  }, [key, invoiceId]);
+  return key !== null && held !== null && held.key === key ? held.state : null;
+}
+
+/* ------------------------------------------------------------------ *
+ * The issued sales of this branch (finance checkpoint, DF-B3)
+ * ------------------------------------------------------------------ */
+
+/** What the issued-sales search asks the server for. `q` absent: every issued sale. */
+interface IssuedCriteria {
+  readonly q?: string;
+}
+
+/**
+ * The branch's issued counter sales, newest first, each openable to print again.
+ *
+ * `sal.invoice-list` narrowed to `saleKind=counter_sale` and `status=issued`.
+ * The box is the server's search — the sale's number, and the buyer's name for
+ * a reader who may read customers — sent as typed; the server folds
+ * Arabic-Indic digits before it compares. Fewer than two characters are refused
+ * at the box and nothing is asked. Pages are the server's cursor pages; the
+ * branch is the working context's, and a branch change abandons a read in
+ * flight (`useSearchRequest`, keyed on the context's version).
+ */
+function IssuedSales({
+  locale,
+  messages,
+  target,
+  opening,
+  onOpen,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly target: StockTarget;
+  /** The sale being opened, while its detail is read. */
+  readonly opening: string | null;
+  readonly onOpen: (invoiceId: string) => void;
+}) {
+  const context = useWorkingContext();
+  const [term, setTerm] = useState('');
+  const trimmed = term.trim();
+  const tooShort = trimmed.length > 0 && trimmed.length < MIN_INVOICE_SEARCH;
+  const criteria: IssuedCriteria | null = tooShort ? null : trimmed ? { q: trimmed } : {};
+  const { companyId, branchId } = target;
+
+  const load = useCallback(
+    async (
+      asked: IssuedCriteria,
+      cursor: string | null
+    ): Promise<ReadState<CursorPage<InvoiceListEntry>>> =>
+      listInvoices(
+        { companyId, branchId },
+        { saleKind: 'counter_sale', status: 'issued', q: asked.q },
+        cursor
+      ),
+    [companyId, branchId]
+  );
+  const search = useSearchRequest<InvoiceListEntry, IssuedCriteria>({
+    criteria,
+    load,
+    version: context.version,
+    narrows: (asked) => asked.q !== undefined,
+  });
+
+  const columns = useMemo<readonly OperationalColumn<InvoiceListEntry>[]>(
+    () => [
+      {
+        id: 'sale',
+        headerKey: 'inventory.counterSales.issued.column.sale',
+        flex: 1.2,
+        cell: (row) => (
+          <span className="flex flex-col">
+            <bdi className="font-mono" dir="ltr">
+              {row.invoiceNumber ?? translate(messages, 'inventory.counterSales.sale.noNumber')}
+            </bdi>
+            {row.issuedAt === null ? null : (
+              <span className="text-caption text-text-muted">
+                <When value={row.issuedAt} locale={locale} />
+              </span>
+            )}
+          </span>
+        ),
+      },
+      {
+        id: 'buyer',
+        headerKey: 'inventory.counterSales.issued.column.buyer',
+        flex: 1.4,
+        cell: (row) =>
+          row.payer.displayName === null ? (
+            <span className="text-text-muted">
+              {translate(messages, 'inventory.counterSales.issued.buyerNotShown')}
+            </span>
+          ) : (
+            <bdi>{row.payer.displayName}</bdi>
+          ),
+      },
+      {
+        id: 'total',
+        headerKey: 'inventory.counterSales.column.total',
+        numeric: true,
+        cell: (row) => (
+          <span className="font-mono" dir="ltr">
+            {row.totals === null
+              ? translate(messages, 'inventory.counterSales.sale.noAmounts')
+              : formatMoney(row.totals.gross, locale)}
+          </span>
+        ),
+      },
+      {
+        id: 'open',
+        headerKey: 'inventory.counterSales.issued.column.due',
+        numeric: true,
+        cell: (row) => (
+          <span className="font-mono" dir="ltr">
+            {row.outstanding === null
+              ? translate(messages, 'inventory.counterSales.sale.noAmounts')
+              : formatMoney(row.outstanding, locale)}
+          </span>
+        ),
+      },
+    ],
+    [locale, messages]
+  );
+
+  const rowActions = useCallback(
+    (row: InvoiceListEntry): readonly RowAction[] => [
+      {
+        kind: 'button',
+        label: translate(messages, 'inventory.counterSales.issued.open'),
+        about: row.invoiceNumber ?? undefined,
+        disabled: opening !== null,
+        onClick: () => onOpen(row.id),
+      },
+    ],
+    [messages, onOpen, opening]
+  );
+
+  return (
+    <section aria-labelledby="counter-issued-heading" className={PANEL}>
+      <h2 id="counter-issued-heading" className="text-body font-medium text-text-primary">
+        {translate(messages, 'inventory.counterSales.issued.heading')}
+      </h2>
+      <p className="text-caption text-text-muted">
+        {translate(messages, 'inventory.counterSales.issued.explain')}
+      </p>
+      <FilterToolbar
+        messages={messages}
+        label={translate(messages, 'inventory.counterSales.issued.filtersLabel')}
+        testId="counter-issued-toolbar"
+        search={{
+          label: translate(messages, 'inventory.counterSales.issued.search'),
+          example: translate(messages, 'inventory.counterSales.issued.searchExample'),
+          value: term,
+          onChange: setTerm,
+          onSubmit: search.submit,
+          busy: search.phase === 'loading',
+          maxLength: MAX_INVOICE_SEARCH,
+          error: tooShort
+            ? translate(messages, 'inventory.counterSales.issued.tooShort')
+            : undefined,
+          echoDigits: true,
+        }}
+      />
+      {search.phase === 'empty' && search.table.narrowed !== true ? (
+        <p className="text-body text-text-secondary" lang={locale}>
+          {translate(messages, 'inventory.counterSales.issued.none')}
+        </p>
+      ) : (
+        <MuiSearchStates
+          messages={messages}
+          locale={locale}
+          phase={search.phase}
+          correlationId={search.correlationId}
+          emptyReason="search"
+          onRetry={search.submit}
+        />
+      )}
+      {search.phase === 'ready' ? (
+        <OperationalGrid<InvoiceListEntry>
+          messages={messages}
+          locale={locale}
+          label={translate(messages, 'inventory.counterSales.issued.caption')}
+          columns={columns}
+          rowId={(row) => row.id}
+          table={search.table}
+          rowActions={rowActions}
+          suppressEmptyState
+          testId="counter-issued-grid"
+        />
+      ) : null}
+    </section>
+  );
+}
 
 /**
  * The branch's drafted counter sales, each reopenable.
@@ -781,23 +1166,28 @@ function DraftSubmit({
   target,
   buyer,
   lines,
+  attemptKey,
+  outcome,
+  onAttempted,
   onDrafted,
 }: {
   readonly messages: Messages;
   readonly target: StockTarget;
   readonly buyer: CustomerSearchHit | null;
   readonly lines: readonly CounterSaleLine[];
+  /**
+   * The composition's idempotency key, held by the counter (not here) so it
+   * survives this panel unmounting while a sale is shown: pressing Draft again
+   * after a lost answer replays the draft that was already made.
+   */
+  readonly attemptKey: string;
+  /** The last draft attempt's answer, held with the key for the same reason. */
+  readonly outcome: ActionState | null;
+  readonly onAttempted: (state: ActionState) => void;
   readonly onDrafted: (created: CreatedInvoice) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
-  /*
-   * Derived ONCE per confirmation, not per keystroke and not per render: the
-   * whole point of the key is that pressing the button again after a lost answer
-   * replays the draft that was already made.
-   */
-  const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
 
   const submit = async () => {
     if (buyer === null) {
@@ -824,10 +1214,9 @@ function DraftSubmit({
       attemptKey
     );
     setBusy(false);
-    setOutcome(result.state);
+    onAttempted(result.state);
     notifyActionResult(result.state, messages);
     if (result.state.status === 'success' && result.created) {
-      setAttemptKey(crypto.randomUUID());
       onDrafted(result.created);
     }
   };
@@ -862,6 +1251,7 @@ function SalePanel({
   locale,
   messages,
   sale,
+  balance,
   canIssue,
   onChanged,
   onNewSale,
@@ -869,6 +1259,8 @@ function SalePanel({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly sale: CreatedInvoice;
+  /** The issued sale's balance read (`useSaleBalance`), `null` while read or for a draft. */
+  readonly balance: ReadState<Outstanding> | null;
   readonly canIssue: boolean;
   readonly onChanged: (next: CreatedInvoice, noticeKey: string) => void;
   readonly onNewSale: () => void;
@@ -968,6 +1360,9 @@ function SalePanel({
           </dd>
         </div>
       </dl>
+      {invoice.status === 'issued' || invoice.status === 'credited' ? (
+        <SalePosition locale={locale} messages={messages} balance={balance} />
+      ) : null}
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.counterSales.sale.explain')}
       </p>
@@ -1058,5 +1453,65 @@ function SalePanel({
         </button>
       </div>
     </section>
+  );
+}
+
+/**
+ * Where an issued sale stands (DF-2): whether it has been paid, whether it has
+ * been credited, and what is still to pay — the server's own positions and
+ * figure, never worked out here. Said in words while it is read and when it
+ * could not be read; never a zero standing in for "unknown".
+ */
+function SalePosition({
+  locale,
+  messages,
+  balance,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly balance: ReadState<Outstanding> | null;
+}) {
+  if (balance === null) {
+    return (
+      <p className="text-caption text-text-muted" role="status">
+        {translate(messages, 'inventory.counterSales.sale.positionLoading')}
+      </p>
+    );
+  }
+  if (balance.status !== 'ok' || balance.data.settlement === null) {
+    return (
+      <p className="text-caption text-text-muted" data-testid="counter-sale-position-unavailable">
+        {translate(messages, 'inventory.counterSales.sale.positionUnavailable')}
+      </p>
+    );
+  }
+  const { settlement, outstanding } = balance.data;
+  return (
+    <dl className="grid gap-3 sm:grid-cols-3" data-testid="counter-sale-position">
+      <div>
+        <dt className="text-caption text-text-muted">
+          {translate(messages, 'invoices.settlement.payment')}
+        </dt>
+        <dd className="text-body text-text-primary" data-testid="counter-sale-payment-status">
+          {translateDynamic(messages, `invoices.paymentStatus.${settlement.paymentStatus}`)}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-caption text-text-muted">
+          {translate(messages, 'invoices.settlement.credit')}
+        </dt>
+        <dd className="text-body text-text-primary" data-testid="counter-sale-credit-status">
+          {translateDynamic(messages, `invoices.creditStatus.${settlement.creditStatus}`)}
+        </dd>
+      </div>
+      <div>
+        <dt className="text-caption text-text-muted">
+          {translate(messages, 'inventory.counterSales.sale.due')}
+        </dt>
+        <dd className="text-body text-text-primary" dir="ltr" data-testid="counter-sale-due">
+          {formatMoney(outstanding, locale)}
+        </dd>
+      </div>
+    </dl>
   );
 }

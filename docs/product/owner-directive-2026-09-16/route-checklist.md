@@ -3539,3 +3539,75 @@ Residual items from the contract review of this slice (fix round 2), one line ea
 - The fix-round-1 residual items above are carried forward unchanged.
 - The fix-round-2 review re-checked, without a new finding: `FormMoneyField` reports the canonical string upward and resyncs when the caller changes the value; report money stays a string through `formatMoney` / `parseMoneyInput`; the over-allocation token is additive on the existing refusal code; the customer-returns focus uses `useFocusFirstInvalid`.
 - The hosted web-quality job on head 4ac37172 was cancelled at its 30-minute job limit during the browser smoke (no failure before the cancel); that time budget is an infrastructure item outside this pull request.
+
+### Finance checkpoint fixes B — invoice prints with settlement, counter-sale reprint, credit-note traceability (P1-32-PRE-OD-FQB)
+
+The signed-in finance checkpoint at `f130fc06` (result matrix B rows 1–2, 9–14, 35–36; matrix A rows
+20–21) confirmed the defects below; each is fixed at its cause with a test that fails without the
+fix. No migration, no new operation, route, permission code or audit action. Three reads gain
+additive fields or parameters only: `sal.invoice-list` accepts `saleKind`,
+`sal.invoice-outstanding-read` publishes `asOf` (the database clock when the balance was read), and
+`sal.credit-note-detail` publishes what the note is traceable to (`CreditNoteDetailView`).
+
+| DF id | Route                                           | What changed                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ----- | ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DF-B1 | `/inventory/counter-sales`, `/invoices` (print) | The printed copy keeps the issued facts ("As issued": each job line's discount from the matched quotation, the before-discount and discount totals, net, tax, gross) apart from a "Payments and credits as of" section (amount paid, amount credited, balance due, payment and credit position) headed with the server's read time on the branch clock and the clock's name. The counter sale's copy now receives the balance read. No settlement section without `sal.finance.view`. |
+| DF-B2 | `/inventory/counter-sales` (print)              | The screen and the page header are print scopes, so while the copy is open only the document reaches the paper: no page title, explanation, branch panel or notice.                                                                                                                                                                                                                                                                                                                   |
+| DF-B3 | `/inventory/counter-sales`                      | "Issued sales" lists the branch's issued counter sales (`sal.invoice-list` with `saleKind=counter_sale`, `status=issued`): the server's search by sale number or buyer name, Arabic-Indic digits folded by the server, two characters minimum, the server's cursor pages. "Open and print" opens the sale read-only with its copy open; `?invoiceId=` opens a named sale.                                                                                                             |
+| DF-2  | `/inventory/counter-sales`                      | After issue and when reopened, the sale panel shows the payment position (Not paid yet, Partly paid, Paid, Nothing to pay), the credit position and what is still to pay, from the server's balance read; an unreadable balance is said, never a zero.                                                                                                                                                                                                                                |
+| DF-B4 | `/credit-notes` (detail)                        | The detail names the invoice (number, kind, customer; linked with `sal.invoice.manage`), the customer return that raised it (item, quantity, when received; linked with `inv.stock.read`) or that it was raised by hand, the requester and the request date, and the decider; names only, "Name not shown" or "Customer not shown" when withheld.                                                                                                                                     |
+
+Wrapper extensions: none to the shared component folders, and no new component folder.
+`InvoiceDocument` (billing feature) takes the balance read instead of the bare settlement and
+renders the discount and the settlement section; `CounterSalePrintPanel` takes the balance and
+`initiallyOpen`. The issued-sales list uses `FilterToolbar` (search with the digit echo) and
+`OperationalGrid` over `useSearchRequest`, unchanged.
+
+Preserved: discount-approval rules and the credit-note rules (maker ≠ approver, the D13 permission
+and limit, If-Match on rejection and withdrawal) untouched; the finance view still decides every
+amount; tenant and branch isolation of the three reads (backend cases on another tenant and another
+branch); names never ids; money stays a decimal string end to end; tax printed as stored; no print
+route.
+
+Known limitations of this slice, one line each:
+
+- The issued-sales grid is drawn again after each page move (the grid is shown once a page has answered), as the service catalogue does.
+- The return a credit note names links to the customer-returns screen as a whole; that screen has no address for one return.
+- The "as of" moment is the balance read's; the credit position is read in the same request a moment later.
+- Quotation, credit-note and receipt-allocation prints and any tax presentation change are not part of this slice (later D10 work; tax waits on the Owner's accounting questionnaire).
+- Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the builds; they run in hosted CI. Focused backend files ran against a disposable database only.
+
+Fix round 1 of this slice's contract review: the counter declares unsaved work on what it holds (a
+chosen buyer or lines not yet drafted), not on what it shows, so opening an issued sale to print it
+again, or reopening a stored draft, keeps that work protected and the "next sale" button returns to
+it unchanged; drafting lets the composition go, because it is then the stored draft. New DOM cases
+cover that, every refusal of opening a sale (refused, not found, unavailable, an invoice of a job)
+from the issued list and from `?invoiceId=`, the balance-loading state, and the credit-note trace
+for an untraced invoice and a withdrawn note.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- `?invoiceId=` opens any counter sale the server returns, even one of a branch other than the working target, and offers issue and void when it is a draft; the server still enforces scope, and the only link the screens generate (the credit note, same branch) cannot produce this.
+- The printed copy states the settlement time in UTC, labelled "UTC", when the invoice's branch is not among the context's branches: labelled honestly, but not the branch clock.
+- The payer name on the credit-note detail is gated on `crm.customer.read` held in any scope (`callerHoldsPermissionAnywhere`), not in the note's scope, matching the existing `sal.invoice-list` rule.
+- Focus is not moved after opening a reprint: the list unmounts and focus falls to the page body; the `role=status` notice still announces it, as the drafts reopen path already did.
+- The drafts reopen path lost unsaved work before this slice; the fix above covers it too, with its own case.
+- Commit 19e2d4196 has a 73-character subject (limit 72); published history is not rewritten.
+- The database and backend tiers were not run by the reviewer; the DF-B4 and DF-B3 isolation claims (another tenant 404, another branch 403, sale kind 422) rest on `tests/backend/od-finance-credit-decisions.test.ts` and the hosted integration and database jobs.
+- In the reviewer's local root unit run, `tests/ci/tailwind-theme-gate.test.ts` and `tests/ci/p1-28-access-gate.test.ts` reached the 30-second limit; neither touches this slice's files, and they are left to the hosted unit tier as local timeouts under load.
+- The reviewer falsified the DF-B2 contract check: with `data-print-scope` removed from the counter-sales page, the "only the document reaches the paper" case fails.
+
+Fix round 2 of this slice's contract review: the Draft attempt (its idempotency key and its last
+answer) is held by the counter beside the buyer and the lines, not by the Draft panel, which
+unmounts while a sale is shown. A Draft retried after a lost answer, even after opening an issued
+sale or a stored draft and coming back with "next sale", sends the same key, so the server replays
+the draft it may already have made; the lost-answer notice is still shown on return; the key is
+renewed only once a draft has been made. A DOM case covers the detour, and it fails without the fix.
+
+Residual items from the contract review of this slice (fix round 2), one line each:
+
+- Round 1 was falsified by the reviewer: restoring the shown-sale guard, or the clearing on "next sale", fails both mid-sale cases; holding the composition after a draft fails the "where a drafted sale will be" case; the refusal, balance-loading, untraced-note and withdrawn-note cases cover the rest.
+- Carried from round 1 and listed above: cross-branch `?invoiceId=`, the UTC print time, the payer-name scope, focus after a reprint, and the 73-character subject of 19e2d4196.
+- `SalePosition` says the balance "could not be read just now" for a reader whose `sal.finance.view` does not cover the sale's branch (totals hidden); it needs a cross-scope grant, and the wording suggests a passing fault where there is no permission.
+- The reviewer's mutants and probe ran through the vitest Node API from a scratch location and were not written to the worktree.
+- The database and backend tiers were not run by the reviewer for round 2 either; the isolation claims still rest on the backend file and the hosted jobs named above.

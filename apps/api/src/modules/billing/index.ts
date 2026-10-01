@@ -95,6 +95,7 @@ export type {
   CommercialSourceRow,
   CreditNoteRow,
   CreditNoteTotalRow,
+  CreditNoteTraceRow,
   CreditPositionRow,
   InvoiceAmountsRow,
   InvoiceDocumentFilter,
@@ -111,6 +112,9 @@ export type {
 // ---- View types -------------------------------------------------------------
 
 export type {
+  CreditNoteDetailView,
+  CreditNoteInvoiceView,
+  CreditNoteSourceReturnView,
   CreditNoteView,
   InvoiceDetailView,
   InvoiceLineItemView,
@@ -177,6 +181,7 @@ export {
   CREDIT_STATUSES,
   PAYMENT_STATUSES,
   REFUND_STATUSES,
+  SALE_KINDS,
   assertCreditWithinOpenAmount,
   assertCurrencyMatches,
   assertInvoiceIsDraft,
@@ -190,6 +195,7 @@ export {
   type CreditStatus,
   type PaymentStatus,
   type RefundStatus,
+  type SaleKind,
   type FinancialEventSourceType,
   type FinancialEventType,
   type InvoiceHistoryState,

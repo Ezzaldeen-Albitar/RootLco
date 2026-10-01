@@ -52,9 +52,11 @@
  *
  * ## What the backend does not publish, said rather than hidden
  *
- * - No invoice list, and no invoice-for-partner list: an invoice is reached
- *   through its work order (`sal.work-order-invoice-read` answers `null` when
- *   the order has no live invoice).
+ * - No invoice-for-partner list. A branch's invoices are listed by
+ *   `sal.invoice-list` (`sal.finance.view`), which the counter narrows to its
+ *   own issued sales with `saleKind=counter_sale` so a copy can be printed again
+ *   (finance checkpoint, DF-B3); a job's invoice is still reached through its
+ *   work order (`sal.work-order-invoice-read`).
  * - No line description on the detail; the preview is the only read with one.
  * - No print or document route: a printable view is composed on the client
  *   from the detail and, when its revision matches, the preview.
@@ -82,6 +84,12 @@ export const BILLING_PERMISSIONS = {
   creditApprove: 'sal.credit.approve',
   /** A different payer is FOUND among customers, which `crm.customer-search` answers. */
   customerRead: 'crm.customer.read',
+  /**
+   * The customer-returns screen's own gate (`inv.stock.read`). A credit note
+   * raised by a return links to that screen only for a reader it would admit
+   * (DF-B4); stated here so the credit-note page needs no inventory import.
+   */
+  returnsRead: 'inv.stock.read',
 } as const;
 
 /** `ck_invoices_status`, mirrored. `credited` is admitted by the guard and unreachable today. */
@@ -278,6 +286,13 @@ export interface Outstanding {
   readonly isSettled: boolean;
   /** `null` for a draft or voided invoice, which claims nothing yet. */
   readonly settlement: Settlement | null;
+  /**
+   * When the balance and the settlement were read, on the database's clock (an
+   * ISO instant). A printed copy states its settlement figures "as of" this
+   * moment, apart from the issued amounts, which never change (Owner decision
+   * D10, ADR-023).
+   */
+  readonly asOf: string;
 }
 
 /** The echo of `sal.invoice-create` — the detail plus whether the key had already been used. */
@@ -355,6 +370,50 @@ export interface CreditNote {
   /** Why it was rejected, as the person who rejected it wrote it; `null` otherwise. */
   readonly decisionReason: string | null;
   readonly recordVersion: number;
+}
+
+/**
+ * The invoice a credit note reduces, as the note's detail names it — the
+ * `CreditNoteInvoiceView` of `sal.credit-note-detail` (finance checkpoint, DF-B4).
+ * `payerName` is `null` for a reader who may not read customers, or for a payer
+ * who is no longer named; the screen then says the name is not shown.
+ */
+export interface CreditNoteInvoice {
+  readonly invoiceNumber: string | null;
+  readonly saleKind: SaleKind;
+  readonly workOrderId: string | null;
+  readonly payerName: string | null;
+}
+
+/**
+ * The customer return that raised a credit note — `CreditNoteSourceReturnView`.
+ * A return has no number of its own, so it is named by what came back and when.
+ */
+export interface CreditNoteSourceReturn {
+  readonly id: string;
+  readonly itemCode: string | null;
+  readonly itemName: string | null;
+  /** `numeric(12,3)` as a string; not money. */
+  readonly quantity: string;
+  readonly receivedAt: string;
+}
+
+/**
+ * `sal.credit-note-detail` — `CreditNoteDetailView`: the note, and what it is
+ * traceable to (DF-B4). Every person is named, never shown by reference: each
+ * name is `null` for a reader who may not read users, and the screen then says
+ * the name is not shown. The ids above stay for comparing with the signed-in
+ * person and are never printed.
+ */
+export interface CreditNoteDetail extends CreditNote {
+  readonly requestedAt: string;
+  readonly requestedByName: string | null;
+  readonly approvedByName: string | null;
+  readonly decidedByName: string | null;
+  /** `null` only if the invoice could not be read with the note. */
+  readonly invoice: CreditNoteInvoice | null;
+  /** `null` when the note was raised by hand rather than by a customer return. */
+  readonly sourceReturn: CreditNoteSourceReturn | null;
 }
 
 /*

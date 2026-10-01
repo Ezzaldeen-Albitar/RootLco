@@ -327,6 +327,22 @@ export const SAL_FINANCE_NAMES: Principal = {
   permissions: [FINANCE_VIEW, CUSTOMER_READ, VEHICLE_READ],
 };
 
+/**
+ * The credit code and the finance view, with the customer read and the
+ * identity-directory read (finance checkpoint, DF-B4). The credit-note detail read
+ * names the invoice's payer only for a reader holding `crm.customer.read` and the
+ * people on the note only for one holding `iam.user.read`; no other principal
+ * here holds both beside the credit code, so without this one the read's naming
+ * branches could not be reached and its null branches would prove nothing.
+ */
+export const SAL_CREDIT_TRACE: Principal = {
+  roleId: 'f1220000-0000-4000-8000-0000000001c1',
+  userId: 'f1220000-0000-4000-8000-0000000001c2',
+  subject: 'fx_p1_22_credit_trace',
+  tenantId: TENANT_A,
+  permissions: [CREDIT_MANAGE, FINANCE_VIEW, CUSTOMER_READ, 'iam.user.read'],
+};
+
 /** Finance view plus the customer read ONLY. See the file header. */
 export const SAL_FINANCE_CUSTOMERS: Principal = {
   roleId: 'f1220000-0000-4000-8000-000000000191',
@@ -406,6 +422,7 @@ export const P1_22_PRINCIPALS: readonly Principal[] = [
   SAL_FINANCE_NAMES,
   SAL_FINANCE_CUSTOMERS,
   SAL_FINANCE_VEHICLES,
+  SAL_CREDIT_TRACE,
   SAL_READER,
   SAL_SCOPED_A2,
   SAL_PERMISSION_ELSEWHERE,

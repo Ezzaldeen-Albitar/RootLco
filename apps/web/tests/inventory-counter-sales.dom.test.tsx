@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
+import { formatInZone } from '../src/lib/branch-time';
 import type { ReactElement } from 'react';
 import {
   inBranch,
@@ -94,7 +95,10 @@ const listCounterSales = vi.fn();
 const readInvoice = vi.fn();
 const listInvoices = vi.fn();
 const readInvoicePreview = vi.fn();
+// The issued sale's balance (finance checkpoint, DF-2 / DF-B1).
+const readOutstanding = vi.fn();
 vi.mock('@/features/billing/api', () => ({
+  readOutstanding: (...args: unknown[]) => readOutstanding(...args),
   createCounterSale: (...args: unknown[]) => createCounterSale(...args),
   issueInvoice: (...args: unknown[]) => issueInvoice(...args),
   cancelInvoice: (...args: unknown[]) => cancelInvoice(...args),
@@ -252,14 +256,41 @@ beforeEach(() => {
   // are not about the list see exactly what they saw before it existed.
   listCounterSales.mockResolvedValue(okRead({ items: [], nextCursor: null, hasMore: false }));
   readInvoice.mockResolvedValue(okRead(drafted()));
-  listInvoices.mockResolvedValue(
-    okRead({
-      items: [{ id: INVOICE_ID, payer: { displayName: 'Another garage' } }],
-      nextCursor: null,
-      hasMore: false,
-    })
+  // Two callers of the invoice list: the printable copy finds the payer's name
+  // by the sale's number, and the issued-sales list asks for this branch's
+  // counter sales (DF-B3) — empty by default, so the cases that are not about it
+  // see exactly what they saw before it existed.
+  listInvoices.mockImplementation(
+    async (_target: unknown, filter: { readonly saleKind?: string } | undefined) =>
+      filter?.saleKind === 'counter_sale'
+        ? okRead({ items: [], nextCursor: null, hasMore: false })
+        : okRead({
+            items: [{ id: INVOICE_ID, payer: { displayName: 'Another garage' } }],
+            nextCursor: null,
+            hasMore: false,
+          })
   );
+  readOutstanding.mockResolvedValue(okRead(balanceOf()));
 });
+
+/** The balance read of the issued sale: 5.000 paid of 12.500, nothing credited. */
+function balanceOf(over: Record<string, unknown> = {}) {
+  return {
+    invoiceId: INVOICE_ID,
+    status: 'issued',
+    outstanding: { amount: '7.5000', currency: 'JOD' },
+    isSettled: false,
+    settlement: {
+      creditStatus: 'none',
+      paymentStatus: 'partly_paid',
+      refundStatus: 'none',
+      credited: { amount: '0.0000', currency: 'JOD' },
+      paid: { amount: '5.0000', currency: 'JOD' },
+    },
+    asOf: '2026-10-01T07:30:00.000Z',
+    ...over,
+  };
+}
 
 /** A counter-sale line as `sal.invoice-detail` publishes it: it names its item. */
 const soldLine = {
@@ -908,6 +939,540 @@ describe('Arabic', () => {
     );
     expect(document.documentElement.dir).toBe('rtl');
     expect(screen.getByText(AR['inventory.counterSales.explain'] as string)).toBeTruthy();
+  });
+});
+
+/*
+ * Finance checkpoint fixes B (`P1-32-PRE-OD-FQB`). The signed-in checkpoint at
+ * f130fc06 printed a counter sale with no paid, credited or due figure (DF-B1),
+ * put the screen's own text on the paper above the invoice (DF-B2), offered no
+ * way back to an issued sale once the operator left the counter (DF-B3), and
+ * never said how far a counter sale was paid (DF-2).
+ */
+describe('finance checkpoint fixes B', () => {
+  /** Draft one line, then issue it, as the person at the counter does. */
+  async function toIssued(user: ReturnType<typeof userEvent.setup>) {
+    createCounterSale.mockResolvedValue(
+      succeeded('invoices.counterSale.create.success', drafted({ lines: [soldLine] }))
+    );
+    await buildOneLine(user);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.create.submit'] as string })
+    );
+    await screen.findByText(EN['inventory.counterSales.sale.heading'] as string);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.issue.action'] as string })
+    );
+    await screen.findByText(EN['inventory.counterSales.sale.issuedNote'] as string);
+  }
+
+  /*
+   * Whether the print sheet keeps an element on the paper — the rules of
+   * `styles/print/_index.scss`, which `gallery-and-print.dom.test.tsx` holds
+   * against the compiled sheet: a direct child of a print scope that holds an
+   * open document is left off unless it is or holds that document, and `hide`,
+   * navigation and buttons never print.
+   */
+  function onPaper(element: Element): boolean {
+    for (let node: Element | null = element; node !== null; node = node.parentElement) {
+      if (node.matches('[data-print="hide"], nav, button:not([data-print="keep"])')) return false;
+      const parent = node.parentElement;
+      if (
+        parent !== null &&
+        parent.matches('[data-print-scope]') &&
+        parent.querySelector('[data-print="document"]') !== null &&
+        !node.matches('[data-print="document"]') &&
+        node.querySelector('[data-print="document"]') === null
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  const issuedRow = (over: Record<string, unknown> = {}) => ({
+    ...invoice({ status: 'issued', invoiceNumber: 'CS-0007', issuedAt: '2026-10-01T07:00:00Z' }),
+    payer: { displayName: 'Another garage', displayNumber: 'C-0001', partyType: 'company' },
+    outstanding: { amount: '7.5000', currency: 'JOD' },
+    ...over,
+  });
+  const issuedDetail = () => ({
+    invoice: invoice({
+      status: 'issued',
+      invoiceNumber: 'CS-0007',
+      issuedAt: '2026-10-01T07:00:00Z',
+      recordVersion: 2,
+    }),
+    lines: [soldLine],
+    recordVersion: 2,
+  });
+  /** The issued-sales list answers these pages, in order; the payer lookup is answered apart. */
+  function issuedPages(...pages: readonly (readonly unknown[])[]) {
+    let call = 0;
+    listInvoices.mockImplementation(
+      async (_target: unknown, filter: { readonly saleKind?: string } | undefined) => {
+        if (filter?.saleKind !== 'counter_sale') {
+          return okRead({
+            items: [{ id: INVOICE_ID, payer: { displayName: 'Another garage' } }],
+            nextCursor: null,
+            hasMore: false,
+          });
+        }
+        const index = Math.min(call, pages.length - 1);
+        call += 1;
+        const last = index === pages.length - 1;
+        return okRead({
+          items: pages[index] ?? [],
+          nextCursor: last ? null : `cursor-${index + 1}`,
+          hasMore: !last,
+        });
+      }
+    );
+  }
+  const issuedCalls = () =>
+    listInvoices.mock.calls.filter(
+      (call) => (call[1] as { readonly saleKind?: string } | undefined)?.saleKind === 'counter_sale'
+    );
+
+  it('DF-B1: the printed copy carries the settlement as of the read, on the branch clock', async () => {
+    const user = userEvent.setup();
+    renderLtr(screenAt());
+    await toIssued(user);
+    await waitFor(() => expect(readOutstanding).toHaveBeenCalledWith(INVOICE_ID));
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    const settlement = await within(document).findByTestId('invoice-print-settlement');
+    expect(within(settlement).getByTestId('invoice-print-paid')).toHaveTextContent('5.000 JOD');
+    expect(within(settlement).getByTestId('invoice-print-credited')).toHaveTextContent('0.000 JOD');
+    expect(within(settlement).getByTestId('invoice-print-balance-due')).toHaveTextContent(
+      '7.500 JOD'
+    );
+    expect(within(settlement).getByTestId('invoice-print-payment-status')).toHaveTextContent(
+      EN['invoices.paymentStatus.partly_paid'] as string
+    );
+    expect(within(settlement).getByTestId('invoice-print-credit-status')).toHaveTextContent(
+      EN['invoices.creditStatus.none'] as string
+    );
+    // As of the SERVER's moment, on the branch's clock (Asia/Riyadh), named.
+    expect(within(settlement).getByTestId('invoice-print-settlement-as-of')).toHaveTextContent(
+      formatInZone('2026-10-01T07:30:00.000Z', 'en-GB', 'Asia/Riyadh')
+    );
+    expect(within(settlement).getByTestId('invoice-print-settlement-clock')).toHaveTextContent(
+      'GMT+3'
+    );
+    // The issued totals are a section of their own, and the settlement is not in it.
+    const issued = within(document).getByTestId('invoice-print-issued-totals');
+    expect(issued.contains(settlement)).toBe(false);
+    expect(within(issued).getAllByText('12.500 JOD').length).toBeGreaterThan(0);
+    // A counter sale takes no discount, so its copy has no discount column.
+    expect(
+      within(document).queryByRole('columnheader', {
+        name: EN['invoices.print.column.discount'] as string,
+      })
+    ).toBeNull();
+  });
+
+  it('DF-2: the sale panel says how far the issued sale is paid, from the server', async () => {
+    const user = userEvent.setup();
+    renderLtr(screenAt());
+    await toIssued(user);
+    expect(await screen.findByTestId('counter-sale-payment-status')).toHaveTextContent(
+      EN['invoices.paymentStatus.partly_paid'] as string
+    );
+    expect(screen.getByTestId('counter-sale-due')).toHaveTextContent('7.500 JOD');
+    // A draft claims nothing, so its balance was never asked for.
+    expect(readOutstanding).toHaveBeenCalledTimes(1);
+  });
+
+  it('DF-2: a balance that cannot be read is said, never shown as a zero', async () => {
+    const user = userEvent.setup();
+    readOutstanding.mockResolvedValue({ status: 'unavailable', correlationId: 'ref-503' });
+    renderLtr(screenAt());
+    await toIssued(user);
+    expect(await screen.findByTestId('counter-sale-position-unavailable')).toBeTruthy();
+    expect(screen.queryByTestId('counter-sale-payment-status')).toBeNull();
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    expect(within(document).queryByTestId('invoice-print-settlement')).toBeNull();
+  });
+
+  it('DF-B2: only the document reaches the paper — no title, explanation, branch panel or notice', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      (await CounterSalesPage({
+        params: Promise.resolve({ locale: 'en' }),
+      })) as React.ReactElement
+    );
+    await toIssued(user);
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    expect(onPaper(document)).toBe(true);
+    expect(onPaper(within(document).getByText('Brake pad'))).toBe(true);
+    const title = screen.getByRole('heading', {
+      level: 1,
+      name: EN['inventory.counterSales.title'] as string,
+    });
+    expect(onPaper(title)).toBe(false);
+    expect(onPaper(screen.getByText(EN['inventory.counterSales.description'] as string))).toBe(
+      false
+    );
+    expect(onPaper(screen.getByText(EN['inventory.counterSales.explain'] as string))).toBe(false);
+    expect(onPaper(screen.getByText(EN['inventory.counterSales.issue.done'] as string))).toBe(
+      false
+    );
+    expect(
+      onPaper(
+        screen.getByRole('region', { name: EN['inventory.counterSales.targetLabel'] as string })
+      )
+    ).toBe(false);
+    expect(onPaper(screen.getByText(EN['inventory.counterSales.sale.issuedNote'] as string))).toBe(
+      false
+    );
+  });
+
+  it('DF-B2: with no copy open, printing the screen still prints the screen', async () => {
+    renderLtr(
+      (await CounterSalesPage({
+        params: Promise.resolve({ locale: 'en' }),
+      })) as React.ReactElement
+    );
+    const explain = await screen.findByText(EN['inventory.counterSales.explain'] as string);
+    expect(onPaper(explain)).toBe(true);
+  });
+
+  it('DF-B3: lists the branch issued sales by the server search, a page at a time', async () => {
+    const user = userEvent.setup();
+    issuedPages([issuedRow()], [issuedRow({ id: 'second-sale', invoiceNumber: 'CS-0006' })]);
+    renderLtr(screenAt());
+    const grid = await screen.findByTestId('counter-issued-grid');
+    expect((await within(grid).findAllByText('CS-0007')).length).toBeGreaterThan(0);
+    expect(within(grid).getAllByText('Another garage').length).toBeGreaterThan(0);
+    expect(within(grid).getAllByText('7.500 JOD').length).toBeGreaterThan(0);
+    // Issued counter sales of the working branch, asked of the server.
+    expect(issuedCalls()[0]).toEqual([
+      { companyId: COMPANY_ID, branchId: BRANCH_ID },
+      { saleKind: 'counter_sale', status: 'issued', q: undefined },
+      null,
+    ]);
+    // The server's cursor walks to the next page.
+    await user.click(screen.getByRole('button', { name: EN['table.nextPage'] as string }));
+    expect(
+      (await within(await screen.findByTestId('counter-issued-grid')).findAllByText('CS-0006'))
+        .length
+    ).toBeGreaterThan(0);
+    expect(issuedCalls().at(-1)?.[2]).toBe('cursor-1');
+  });
+
+  it('DF-B3: the box is sent as typed — Arabic-Indic digits included — and refuses one character', async () => {
+    const user = userEvent.setup();
+    issuedPages([issuedRow()]);
+    renderLtr(screenAt());
+    await screen.findByTestId('counter-issued-grid');
+    const box = screen.getByLabelText(labelled('inventory.counterSales.issued.search'));
+    await user.type(box, 'C');
+    expect(
+      await screen.findByText(EN['inventory.counterSales.issued.tooShort'] as string)
+    ).toBeTruthy();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(issuedCalls().some((call) => (call[1] as { q?: string }).q === 'C')).toBe(false);
+    await user.clear(box);
+    await user.type(box, '٠٠٧');
+    await waitFor(() =>
+      expect(issuedCalls().some((call) => (call[1] as { q?: string }).q === '٠٠٧')).toBe(true)
+    );
+  });
+
+  it('DF-B3: opening an issued sale shows it read-only with its copy open and its position', async () => {
+    const user = userEvent.setup();
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    issuedPages([issuedRow()]);
+    readInvoice.mockResolvedValue(okRead(issuedDetail()));
+    renderLtr(screenAt());
+    const grid = await screen.findByTestId('counter-issued-grid');
+    await within(grid).findAllByText('CS-0007');
+    await user.click(
+      within(grid).getByRole('button', {
+        name: new RegExp(`^${EN['inventory.counterSales.issued.open'] as string}`),
+      })
+    );
+    await waitFor(() => expect(readInvoice).toHaveBeenCalledWith(INVOICE_ID));
+    expect(
+      await screen.findByText(EN['inventory.counterSales.issued.opened'] as string)
+    ).toBeTruthy();
+    // Read-only: no issue and no void are offered for an issued sale.
+    expect(
+      screen.queryByRole('button', { name: EN['inventory.counterSales.issue.action'] as string })
+    ).toBeNull();
+    expect(
+      screen.queryByRole('button', { name: EN['inventory.counterSales.void.action'] as string })
+    ).toBeNull();
+    // The copy is open without asking, and prints.
+    const document = await screen.findByRole('article');
+    expect(within(document).getByText('CS-0007')).toBeTruthy();
+    expect(await screen.findByTestId('counter-sale-payment-status')).toHaveTextContent(
+      EN['invoices.paymentStatus.partly_paid'] as string
+    );
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.print'] as string }));
+    expect(print).toHaveBeenCalledTimes(1);
+    print.mockRestore();
+    expect(document.textContent).not.toContain(INVOICE_ID);
+  });
+
+  it('DF-B3: the page opens the sale named in the address, and ignores anything else', async () => {
+    readInvoice.mockResolvedValue(okRead(issuedDetail()));
+    renderLtr(
+      (await CounterSalesPage({
+        params: Promise.resolve({ locale: 'en' }),
+        searchParams: Promise.resolve({ invoiceId: INVOICE_ID }),
+      } as never)) as React.ReactElement
+    );
+    await waitFor(() => expect(readInvoice).toHaveBeenCalledWith(INVOICE_ID));
+    expect(await screen.findByRole('article')).toBeTruthy();
+  });
+
+  it('DF-B3: an address that names no sale opens nothing', async () => {
+    renderLtr(
+      (await CounterSalesPage({
+        params: Promise.resolve({ locale: 'en' }),
+        searchParams: Promise.resolve({ invoiceId: 'not-a-sale' }),
+      } as never)) as React.ReactElement
+    );
+    await screen.findByTestId('counter-issued-toolbar');
+    expect(readInvoice).not.toHaveBeenCalled();
+  });
+
+  /** The issued-sales list's Open action on its one row. */
+  async function openFromList(user: ReturnType<typeof userEvent.setup>) {
+    const grid = await screen.findByTestId('counter-issued-grid');
+    await within(grid).findAllByText('CS-0007');
+    await user.click(
+      within(grid).getByRole('button', {
+        name: new RegExp(`^${EN['inventory.counterSales.issued.open'] as string}`),
+      })
+    );
+  }
+  const heldLines = () =>
+    screen.queryByRole('table', { name: EN['inventory.counterSales.draft.caption'] as string });
+
+  it('DF-B3: opening an issued sale mid-sale keeps the unsaved sale protected and kept', async () => {
+    const user = userEvent.setup();
+    issuedPages([issuedRow()]);
+    readInvoice.mockResolvedValue(okRead(issuedDetail()));
+    renderLtr(screenAt());
+    await buildOneLine(user);
+    await waitFor(() => expect(leavingIsQuestioned()).toBe(true));
+    await openFromList(user);
+    expect(await screen.findByRole('article')).toBeTruthy();
+    // The buyer and the line are not saved anywhere, so leaving still asks while
+    // the reprint is on screen.
+    expect(leavingIsQuestioned()).toBe(true);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.sale.next'] as string })
+    );
+    // Back at the counter, what was being built is still there, and still guarded.
+    const lines = heldLines();
+    expect(lines).not.toBeNull();
+    expect(within(lines as HTMLElement).getAllByText('BRK-001').length).toBeGreaterThan(0);
+    expect(within(lines as HTMLElement).getAllByRole('row')).toHaveLength(2);
+    expect(screen.getByLabelText(labelled('inventory.counterSales.buyer.label'))).toHaveValue(
+      BUYER_ID
+    );
+    expect(leavingIsQuestioned()).toBe(true);
+    expect(createCounterSale).not.toHaveBeenCalled();
+  });
+
+  it('reopening a stored draft mid-sale keeps the unsaved sale protected and kept too', async () => {
+    const stranded = invoice({ id: '77777777-7777-4777-8777-777777777777' });
+    listCounterSales.mockResolvedValue(
+      okRead({ items: [stranded], nextCursor: null, hasMore: false })
+    );
+    readInvoice.mockResolvedValue(okRead({ invoice: stranded, lines: [], recordVersion: 1 }));
+    const user = userEvent.setup();
+    renderLtr(screenAt());
+    await buildOneLine(user);
+    await user.click(
+      await screen.findByRole('button', {
+        name: EN['inventory.counterSales.drafts.reopen'] as string,
+      })
+    );
+    expect(
+      await screen.findByText(EN['inventory.counterSales.drafts.reopened'] as string)
+    ).toBeTruthy();
+    expect(leavingIsQuestioned()).toBe(true);
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.sale.next'] as string })
+    );
+    expect(within(heldLines() as HTMLElement).getAllByText('BRK-001').length).toBeGreaterThan(0);
+    expect(leavingIsQuestioned()).toBe(true);
+  });
+
+  it('a Draft retried after a lost answer and a reprint detour replays the same attempt', async () => {
+    const user = userEvent.setup();
+    issuedPages([issuedRow()]);
+    readInvoice.mockResolvedValue(okRead(issuedDetail()));
+    // The answer is lost: the server may already have made the draft.
+    createCounterSale.mockResolvedValueOnce({
+      state: {
+        status: 'unavailable',
+        messageKey: 'state.unavailable.message',
+        attempt: 1,
+        correlationId: 'corr-lost',
+      },
+      created: null,
+    });
+    renderLtr(screenAt());
+    await buildOneLine(user);
+    const draft = () =>
+      user.click(
+        screen.getByRole('button', { name: EN['inventory.counterSales.create.submit'] as string })
+      );
+    await draft();
+    await waitFor(() => expect(createCounterSale).toHaveBeenCalledTimes(1));
+    const lost = EN['state.unavailable.message'] as string;
+    expect(await screen.findByText(lost)).toHaveAttribute('role', 'alert');
+    // A detour: open an issued sale to print it again, then come back.
+    await openFromList(user);
+    expect(await screen.findByRole('article')).toBeTruthy();
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.sale.next'] as string })
+    );
+    // The lost answer is still said beside the composition it belongs to.
+    expect(screen.getByText(lost)).toHaveAttribute('role', 'alert');
+    await draft();
+    await waitFor(() => expect(createCounterSale).toHaveBeenCalledTimes(2));
+    const [firstBody, firstKey] = createCounterSale.mock.calls[0] as [unknown, string];
+    const [secondBody, secondKey] = createCounterSale.mock.calls[1] as [unknown, string];
+    // Same composition, same key: the server replays the draft rather than making a second.
+    expect(secondBody).toEqual(firstBody);
+    expect(secondKey).toBe(firstKey);
+    await screen.findByText(EN['inventory.counterSales.sale.heading'] as string);
+    expect(screen.queryByText(lost)).toBeNull();
+    // Once a draft is made, the next composition is a new attempt with a key of its own.
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.counterSales.sale.next'] as string })
+    );
+    expect(screen.queryByText(lost)).toBeNull();
+    resolveBarcode.mockClear();
+    await buildOneLine(user);
+    await draft();
+    await waitFor(() => expect(createCounterSale).toHaveBeenCalledTimes(3));
+    const [, thirdKey] = createCounterSale.mock.calls[2] as [unknown, string];
+    expect(thirdKey).not.toBe(firstKey);
+  });
+
+  /** What `readInvoice` answers, and the plain-language notice each answer gives. */
+  const refusals: readonly (readonly [string, () => unknown, string])[] = [
+    ['refused', () => ({ status: 'denied', correlationId: 'ref-403' }), 'openRefused'],
+    ['missing', () => ({ status: 'not-found', correlationId: 'ref-404' }), 'openMissing'],
+    ['unavailable', () => ({ status: 'unavailable', correlationId: 'ref-503' }), 'openUnavailable'],
+    [
+      'an invoice of a job',
+      () =>
+        okRead({
+          ...issuedDetail(),
+          invoice: invoice({
+            status: 'issued',
+            invoiceNumber: 'INV-0009',
+            workOrderId: '88888888-8888-4888-8888-888888888888',
+            saleKind: 'work_order',
+          }),
+        }),
+      'notCounterSale',
+    ],
+  ];
+
+  it.each(refusals)(
+    'DF-B3: opening from the list (%s) is said in words and opens nothing',
+    async (_label, answer, noticeKey) => {
+      const user = userEvent.setup();
+      issuedPages([issuedRow()]);
+      readInvoice.mockResolvedValue(answer());
+      renderLtr(screenAt());
+      await openFromList(user);
+      await waitFor(() => expect(readInvoice).toHaveBeenCalledWith(INVOICE_ID));
+      const notice = await screen.findByText(
+        EN[`inventory.counterSales.issued.${noticeKey}`] as string
+      );
+      expect(notice).toHaveAttribute('role', 'status');
+      expect(screen.queryByRole('article')).toBeNull();
+      expect(screen.queryByText(EN['inventory.counterSales.sale.heading'] as string)).toBeNull();
+      // Still at the counter, with the list in place to try another.
+      expect(screen.getByTestId('counter-issued-grid')).toBeTruthy();
+      expect(document.body.textContent).not.toContain('ref-');
+    }
+  );
+
+  it.each(refusals)(
+    'DF-B3: a sale named in the address (%s) is said in words and opens nothing',
+    async (_label, answer, noticeKey) => {
+      readInvoice.mockResolvedValue(answer());
+      renderLtr(
+        (await CounterSalesPage({
+          params: Promise.resolve({ locale: 'en' }),
+          searchParams: Promise.resolve({ invoiceId: INVOICE_ID }),
+        } as never)) as React.ReactElement
+      );
+      await waitFor(() => expect(readInvoice).toHaveBeenCalledWith(INVOICE_ID));
+      expect(
+        await screen.findByText(EN[`inventory.counterSales.issued.${noticeKey}`] as string)
+      ).toHaveAttribute('role', 'status');
+      expect(screen.queryByRole('article')).toBeNull();
+      expect(screen.queryByText(EN['inventory.counterSales.sale.heading'] as string)).toBeNull();
+      // Asked once: the address is consumed, not read again on every render.
+      expect(readInvoice).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('DF-2: while the balance is being read, the panel says so and claims nothing', async () => {
+    const user = userEvent.setup();
+    issuedPages([issuedRow()]);
+    readInvoice.mockResolvedValue(okRead(issuedDetail()));
+    readOutstanding.mockReturnValue(new Promise(() => undefined));
+    renderLtr(screenAt());
+    await openFromList(user);
+    expect(
+      await screen.findByText(EN['inventory.counterSales.sale.positionLoading'] as string)
+    ).toHaveAttribute('role', 'status');
+    expect(screen.queryByTestId('counter-sale-payment-status')).toBeNull();
+    expect(screen.queryByTestId('counter-sale-due')).toBeNull();
+    expect(screen.queryByTestId('counter-sale-position-unavailable')).toBeNull();
+  });
+
+  it('Arabic: the issued sale, its position and its settlement are in Arabic, right to left', async () => {
+    const user = userEvent.setup();
+    issuedPages([issuedRow()]);
+    readInvoice.mockResolvedValue(okRead(issuedDetail()));
+    renderRtl(
+      <CounterSalesScreen
+        locale="ar"
+        messages={ar}
+        canSell
+        canIssue
+        canReadCustomers
+        canReadBranches
+      />
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    const grid = await screen.findByTestId('counter-issued-grid');
+    await within(grid).findAllByText('CS-0007');
+    await user.click(
+      within(grid).getByRole('button', {
+        name: new RegExp(`^${AR['inventory.counterSales.issued.open'] as string}`),
+      })
+    );
+    expect(await screen.findByTestId('counter-sale-payment-status')).toHaveTextContent(
+      AR['invoices.paymentStatus.partly_paid'] as string
+    );
+    const paper = await screen.findByRole('article');
+    const settlement = await within(paper).findByTestId('invoice-print-settlement');
+    expect(settlement.textContent).toContain(AR['invoices.print.settlementAsOf'] as string);
+    expect(within(settlement).getByTestId('invoice-print-payment-status')).toHaveTextContent(
+      AR['invoices.paymentStatus.partly_paid'] as string
+    );
+    expect(within(settlement).getByTestId('invoice-print-settlement-as-of')).toHaveAttribute(
+      'dir',
+      'rtl'
+    );
   });
 });
 

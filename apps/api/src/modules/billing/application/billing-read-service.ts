@@ -50,6 +50,7 @@ import { Decimal, MONEY, moneyView, type MoneyView } from '@/modules/pricing';
 // definition of what may be billed. Importing the surface does not boot the
 // quotation composition root — `quotationModule()` is memoised behind a closure.
 import { rollUpDecisions } from '@/modules/quotation';
+import { iamDirectory } from '@/modules/iam';
 import { inventoryModule, type ItemLabel } from '@/modules/inventory';
 import type { DbHandle } from '@/server/db/transaction';
 import { callerHoldsPermissionAnywhere, type ScopeAuthorizer } from '@/server/auth/authorization';
@@ -219,6 +220,13 @@ export interface OutstandingView {
    * and so has nothing to credit, pay or refund.
    */
   readonly settlement: SettlementView | null;
+  /**
+   * When the balance and the settlement were read, on the database's clock, as an
+   * ISO instant (Owner decision D10, ADR-023): a printed copy states its
+   * settlement figures "as of" this moment, apart from the issued facts, which
+   * never change. Additive; every other field is unchanged.
+   */
+  readonly asOf: string;
 }
 
 /**
@@ -353,6 +361,54 @@ export interface CreditNoteView {
   /** Why the request was rejected; `null` on every other state. */
   readonly decisionReason: string | null;
   readonly recordVersion: number;
+}
+
+/**
+ * The invoice a credit note reduces, as the note's detail names it (finance
+ * checkpoint, DF-B4). `payerName` is the name of who the invoice bills, published
+ * only to a caller holding `crm.customer.read` — the rule `sal.invoice-list`
+ * keeps — and `null` otherwise or when the payer is retired. `workOrderId` is
+ * there so a screen can link a job's invoice; a counter sale has none.
+ */
+export interface CreditNoteInvoiceView {
+  readonly invoiceNumber: string | null;
+  readonly saleKind: string;
+  readonly workOrderId: string | null;
+  readonly payerName: string | null;
+}
+
+/**
+ * The customer return that raised a credit note (DF-B4). A return carries no
+ * number of its own, so it is named by what came back — the item's code and name
+ * and the quantity — and when it was received.
+ */
+export interface CreditNoteSourceReturnView {
+  readonly id: string;
+  readonly itemCode: string | null;
+  readonly itemName: string | null;
+  /** `numeric(12,3)` decimal string. Not money. */
+  readonly quantity: string;
+  readonly receivedAt: string;
+}
+
+/**
+ * `sal.credit-note-detail` — the note, and what it is traceable to (finance
+ * checkpoint, DF-B4): the invoice it reduces, the return that raised it, when it
+ * was requested, and the people on it by NAME. Every field of `CreditNoteView`
+ * is unchanged; these are additive.
+ *
+ * Each name is `null` for a caller who may not read users — resolved through
+ * `iamDirectory().directory`, which checks `iam.user.read` itself, so a billing
+ * read never becomes a staff directory — and for a person who is not named. The
+ * ids stay where they were, so nothing a caller had is taken away.
+ */
+export interface CreditNoteDetailView extends CreditNoteView {
+  readonly requestedAt: string;
+  readonly requestedByName: string | null;
+  readonly approvedByName: string | null;
+  readonly decidedByName: string | null;
+  readonly invoice: CreditNoteInvoiceView | null;
+  readonly sourceReturn: CreditNoteSourceReturnView | null;
 }
 
 /**
@@ -780,6 +836,7 @@ export class BillingReadService {
       outstanding: moneyView(open.amount, open.currencyCode),
       isSettled: !amount.greaterThan(Decimal.zero(MONEY)),
       settlement: await this.settlementOf(db, invoice, open.amount),
+      asOf: open.asOf.toISOString(),
     };
   }
 
@@ -938,12 +995,20 @@ export class BillingReadService {
     return row ? toNumberingConfigView(row) : null;
   }
 
-  /** One credit note, or `ERR-RES-001` when it is absent or not visible. */
+  /**
+   * One credit note and what it is traceable to (DF-B4), or `ERR-RES-001` when it
+   * is absent or not visible.
+   *
+   * The trace is read only after the scope is authorized. It costs a fixed number
+   * of statements whatever the note: the trace, the customer-read answer, the
+   * item label when a return raised the note, and the names — the directory
+   * issues nothing for a caller who may not read users beyond its own check.
+   */
   public async readCreditNote(
     db: DbHandle,
     creditNoteId: string,
     authorizeScope: ScopeAuthorizer
-  ): Promise<CreditNoteView> {
+  ): Promise<CreditNoteDetailView> {
     const note = await this.repository.findCreditNote(db, creditNoteId);
     if (!note) {
       // Indistinguishable from "you do not hold sal.finance.view", because the whole
@@ -955,7 +1020,54 @@ export class BillingReadService {
       });
     }
     await authorizeScope({ companyId: note.companyId, branchId: note.branchId });
-    return toCreditNoteView(note);
+    const trace = await this.repository.findCreditNoteTrace(db, note);
+    /* c8 ignore next 5 -- the note was just read in the same transaction under the
+       same context, so the trace read cannot lose it. */
+    if (!trace) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'billing: credit note vanished between the note read and its trace read',
+      });
+    }
+    const mayReadCustomers =
+      trace.invoice !== null &&
+      (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION));
+    const items =
+      trace.sourceReturn === null
+        ? new Map<string, ItemLabel>()
+        : await inventoryModule().reads.describeItems(db, [trace.sourceReturn.itemId]);
+    const people = [note.requestedBy, note.approvedBy, note.decidedBy].filter(
+      (id): id is string => id !== null
+    );
+    const names = await iamDirectory().directory.resolveDisplayIdentities(db, [...new Set(people)]);
+    const nameOf = (id: string | null): string | null =>
+      id === null ? null : (names.get(id)?.displayName ?? null);
+    const returned = trace.sourceReturn;
+    return {
+      ...toCreditNoteView(note),
+      requestedAt: trace.requestedAt.toISOString(),
+      requestedByName: nameOf(note.requestedBy),
+      approvedByName: nameOf(note.approvedBy),
+      decidedByName: nameOf(note.decidedBy),
+      invoice:
+        trace.invoice === null
+          ? null
+          : {
+              invoiceNumber: trace.invoice.invoiceNumber,
+              saleKind: trace.invoice.saleKind,
+              workOrderId: trace.invoice.workOrderId,
+              payerName: mayReadCustomers ? trace.invoice.payerDisplayName : null,
+            },
+      sourceReturn:
+        returned === null
+          ? null
+          : {
+              id: returned.id,
+              itemCode: items.get(returned.itemId)?.code ?? null,
+              itemName: items.get(returned.itemId)?.name ?? null,
+              quantity: returned.quantity,
+              receivedAt: returned.receivedAt.toISOString(),
+            },
+    };
   }
 
   /**
@@ -1028,6 +1140,8 @@ export class BillingReadService {
       readonly status?: string | undefined;
       /** Only the invoices money can still be applied to (`issued`/`credited`, open above zero). */
       readonly allocatable?: boolean | undefined;
+      /** Only one kind: `counter_sale` or `work_order` (DF-B3). */
+      readonly saleKind?: string | undefined;
       /** The raw free-text box; reduced here, once, by the shared rule. */
       readonly q?: string | undefined;
     },
@@ -1051,6 +1165,7 @@ export class BillingReadService {
         branchId: filter.branchId,
         ...(filter.status === undefined ? {} : { status: filter.status }),
         ...(filter.allocatable === true ? { allocatable: true } : {}),
+        ...(filter.saleKind === undefined ? {} : { saleKind: filter.saleKind }),
         search: terms,
       },
       pageRequest(INVOICE_LIST_ORDER, page)
