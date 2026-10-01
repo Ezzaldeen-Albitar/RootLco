@@ -327,4 +327,25 @@ describe('allocating', () => {
     expect(outcome.state.messageKey).not.toBe('state.conflict.transition.title');
     expect(outcome.created).toBeNull();
   });
+
+  it('files the bound the server names on the amount, and says only that the form was not saved (DF-7)', async () => {
+    for (const [rule, key] of [
+      ['allocation_exceeds_invoice_open', 'form.violation.allocation_exceeds_invoice_open'],
+      [
+        'allocation_exceeds_receipt_remaining',
+        'form.violation.allocation_exceeds_receipt_remaining',
+      ],
+    ] as const) {
+      send.mockResolvedValue({
+        ...failure('conflict'),
+        status: 409,
+        problem: { code: 'ERR-TRN-001', violations: [{ path: 'body.amount', rule }] },
+      });
+      const outcome = await allocatePayment(RECEIPT_ID, body, KEY);
+      expect(outcome.state.status).toBe('conflict');
+      expect(outcome.state.fieldErrors).toEqual({ amount: key });
+      expect(outcome.state.messageKey).toBe('form.formError');
+      expect(outcome.state.correlationId).toBe('corr-1');
+    }
+  });
 });

@@ -500,7 +500,7 @@ describe('number and money stay strings', () => {
     expect(input).toHaveAccessibleDescription('km');
   });
 
-  it('canonicalises money on blur and reports it as a string', async () => {
+  it('reports the canonical amount on blur as a string, and keeps showing what was typed', async () => {
     const reported = vi.fn();
     const user = userEvent.setup();
     function Amount() {
@@ -526,7 +526,9 @@ describe('number and money stay strings', () => {
     expect(input).toHaveAccessibleDescription('JOD');
     await user.type(input, '12.5');
     await user.click(screen.getByRole('button', { name: 'elsewhere' }));
-    expect(input).toHaveValue('12.5000');
+    // The canonical string goes up; the box is not rewritten at the storage scale
+    // (DF-6: a typed 25.000 JOD came back as 25.0000).
+    expect(input).toHaveValue('12.5');
     expect(reported).toHaveBeenLastCalledWith('12.5000', true);
     for (const call of reported.mock.calls) expect(typeof call[0]).toBe('string');
   });
@@ -582,7 +584,7 @@ describe('number and money stay strings', () => {
     const input = screen.getByRole('textbox', { name: 'Amount' });
     await user.type(input, '5');
     await user.tab();
-    expect(input).toHaveValue('5.0000');
+    expect(input).toHaveValue('5');
     expect(screen.getByRole('alert')).toHaveTextContent('This amount is above the limit.');
     await user.click(screen.getByRole('button', { name: 'discard' }));
     expect(input).toHaveValue('');

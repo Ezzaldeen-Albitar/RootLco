@@ -3464,3 +3464,78 @@ Residual items from the contract review of this slice (fix round 1), one line ea
   again; it does not (only a conflict or a decision that landed does). The docblock now says the
   refusal is shown in words and leaves the note pending, and the credit-limit refusal DOM test
   asserts the note is read exactly once.
+
+### Finance checkpoint fixes A — refusal record, conflict reload, report labels and precision (P1-32-PRE-OD-FQA)
+
+The signed-in finance checkpoint at `f130fc06` confirmed the defects below; each is fixed at its
+cause with a test that fails without the fix. No migration, no new operation, route, permission code
+or audit action. One response detail is added: an over-allocation refusal now names the bound it
+broke on the amount (`allocation_exceeds_invoice_open` or `allocation_exceeds_receipt_remaining`),
+never the figures.
+
+| DF id | Route                              | What changed                                                                                                                                                                                                                                                                |
+| ----- | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DF-3  | `POST /invoices/{id}/credit-notes` | A request above what remains creditable is recorded as one `business-rule.refused` event (`credit_note_exceeds_open_amount`, naming the invoice) after the rollback; none on success or on a replayed retry. Same seam as the approval path (`withBusinessRefusal`).        |
+| DF-4  | `/credit-notes`                    | A conflict (the note moved on in another tab) says so and offers **Load the latest version**; Approve, Reject and Withdraw wait until it is pressed. Every conflict and every decision reads the branch list again, so the row stops reading "Waiting for a second person". |
+| DF-4  | `/credit-notes` (reject dialog)    | A server refusal of the reason clears as soon as the reason is edited (shared `ReasonDialog`), and returns if the refused text is typed back.                                                                                                                               |
+| DF-5  | `/reports/invoice_payment_summary` | Kind of document, party role and status are said in words in English and Arabic; a totals group reads "JOD · Receipts".                                                                                                                                                     |
+| DF-B5 | `/reports/<code>`                  | The report is headed by its name only (no code under the title); the time zone reads "Jordan Time (GMT+3)" / "توقيت الأردن (غرينتش+3)" instead of the identifier.                                                                                                           |
+| DF-6  | `/reports/invoice_payment_summary` | Amounts are written with the row's currency at its minor unit (`49.380 JOD`); a digit below it is still shown, never rounded.                                                                                                                                               |
+| DF-6  | `/payments` (apply to an invoice)  | The amount box keeps what was typed (`25.000`) after blur and after a refusal; the canonical string is still what is sent.                                                                                                                                                  |
+| DF-7  | `/payments` (apply to an invoice)  | An over-allocation is said at the amount, with the figure: more than is still open on the invoice (read again at the refusal) or more than is left on the receipt; red, `aria-invalid`, and the cursor moves there.                                                         |
+| DF-B6 | `/administration/approval-limits`  | A person's limit shows the person's name (directory read, one per person, only with `iam.user.read`), never the account reference; provisioned role names are said in the reader's language until renamed. The Roles and Users screens name roles the same way.             |
+| DF-B7 | `/inventory/customer-returns`      | A refused field takes the cursor (the form's own checks and the server's field refusals); the quantity's complaint goes on correction.                                                                                                                                      |
+
+Wrapper extensions, each tested: `ReasonDialog` withdraws a server `reasonError` once the reason
+differs from the refused text (`tests/overlays.dom.test.tsx`); `FormMoneyField` keeps showing the
+typed text on blur and reports the canonical string upward (`tests/mui-form-fields.dom.test.tsx`;
+consumers: payments, credit-note request, pricing, quotations, the design gallery);
+`lib/branch-time.ts` gains `zoneDisplayName` (`tests/reports.dom.test.tsx`). No new component folder.
+
+Preserved: maker ≠ approver and the credit-approval permission and limit (D13); the If-Match version
+on rejection and withdrawal is still the detail read's `recordVersion`; the credit ceiling at request
+and at approval; tenant and branch isolation (the new refusal record is readable in its own tenant
+only); money stays a decimal string end to end; discount-approval rules untouched; no tax change.
+
+Known limitations of this slice, one line each:
+
+- A conflict that names its rule (for example a self-approval refused by the server) still reads the
+  note again by itself, as before; only the "moved on" conflicts offer **Load the latest version**.
+- The receipt figure in the over-allocation message is the receipt as the panel last read it; the
+  invoice figure is read again at the refusal.
+- A retry under the same key whose amount no longer fits (another note approved meanwhile) is refused
+  at the ceiling before the replay lookup, and that refusal is recorded; the order of the two checks
+  is unchanged from before.
+- Other request-time refusals reviewed and left unrecorded because D12 does not name them: the
+  invoice state (a draft or cancelled invoice), the currency, the minor unit, the finance-view
+  permission (an authorization refusal), and a reused idempotency key. The allocation bounds were
+  already recorded (`payment_over_allocation`).
+- Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the
+  builds; they run in hosted CI. Focused backend files ran against a disposable database only.
+
+Fix round 1 of this slice's contract review: the approval-limits screen reads names through
+administration's own directory read (`features/administration/shared/person-name.ts`), no longer
+the receptions read-back hook, so the page does not load a P1-28 feature tree and the P1-28 access
+gate still finds fourteen screens. The signed-in reports case now expects the zone's name and fails
+if the identifier is shown.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- DF-3 order: a retry under the same key sent after an approval is refused at the ceiling before the replay lookup and writes one `business-rule.refused` event for what is really a replay; the order predates this slice and the path is narrow (a delayed retry after an approval).
+- DF-B7: only the form's own quantity complaint clears on correction; a server refusal of the quantity (for example more than remains returnable) stays red until the next submit, which predates this slice.
+- `ReasonDialog`: while a resubmit with different text is in flight, the previous server refusal briefly shows under the new text (the parent clears it only when the answer lands); cosmetic.
+- DF-7: the invoice figure read again at the refusal cannot be cancelled and is not ignored if the working context changes; the receipt figure is the panel's last read.
+- DF-B6: names are read one per distinct person, all at once, so a long approval-limits list (up to 200 rows) can send many reads together; they are dropped on unmount or when the list changes.
+- The reconciliation note written before this slice is outside the repository's tracked files and is not part of the pull request.
+
+Residual items from the contract review of this slice (fix round 2), one line each:
+
+- Both fix-round-1 defects are closed: the approval-limits screen reads names through administration's own hook (`shared/person-name.ts`) and its server read (`shared/person-read.ts`), and the signed-in reports case rebuilds the zone label with the product locale tags (`en-GB`, `ar-JO-u-nu-latn`) and expects the raw identifier zero times.
+- The signed-in reports case builds its expected zone label in the test runner's ICU at the current time, while the screen uses the browser's ICU at the run's generation time; a newer ICU wording in either, or a run across a daylight-saving change in a zone that has one, could make them disagree (Asia/Amman has kept a fixed offset since 2022).
+- `administration/shared/person-name.ts`: the unresolved and unavailable outcomes (a blank name, not found, a failed read) have no test; only the named, denied and Arabic-named outcomes are covered (`user-access.dom.test.tsx`).
+- `administration/shared/person-name.ts` is a copy of the receptions read-back hook (`EvidencePanels` / `support-api.ts`), so a fix to one does not reach the other.
+- The pull request body's DF-B6 row predates fix round 1 and still names the receptions directory read; this checklist records the move to administration's own read.
+- `CreditNotesScreen` **Load the latest version**: the stale flag is cleared even when the detail read fails, so the decision buttons become usable over a detail in its error state; the detail is keyed per note and the next decision still sends the detail read's version as If-Match.
+- The fix-round-1 residual items above are carried forward unchanged.
+- The fix-round-2 review re-checked, without a new finding: `FormMoneyField` reports the canonical string upward and resyncs when the caller changes the value; report money stays a string through `formatMoney` / `parseMoneyInput`; the over-allocation token is additive on the existing refusal code; the customer-returns focus uses `useFocusFirstInvalid`.
+- The hosted web-quality job on head 4ac37172 was cancelled at its 30-minute job limit during the browser smoke (no failure before the cancel); that time budget is an infrastructure item outside this pull request.

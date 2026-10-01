@@ -652,6 +652,15 @@ approval-management permission. The first administrator holds it. **Where** Side
 1. The table shows **Applies to** <!-- approvalLimits.column.subject --> , **Limit type** <!-- approvalLimits.column.type -->
    , **Amount** <!-- approvalLimits.column.amount --> , **Currency** <!-- approvalLimits.column.currency -->
    , **From** <!-- approvalLimits.column.from --> and **To** <!-- approvalLimits.column.to --> .
+   A limit held by a person shows the person's **name**, never an account reference. Without the
+   permission to read users the cell says _"You are not allowed to see who this person
+   is."_ <!-- approvalLimits.person.denied --> , and when the name cannot be read just then _"The
+   person's name could not be read just now."_ <!-- approvalLimits.person.unavailable --> A role
+   is shown by its name; the roles every organisation starts with are named in plain words in your
+   language (the role created as "Tenant Administrator" reads **Organisation
+   administrator** <!-- roles.standard.tenant_administrator --> , and **مسؤول المؤسسة** on the Arabic
+   screens) until an administrator renames them, and a renamed role keeps the name it was given. A role this screen cannot see reads _"A role you cannot
+   see"_ <!-- approvalLimits.subject.roleUnknown --> .
 2. **Add a limit** <!-- approvalLimits.create --> opens **Add an approval limit** <!-- approvalLimits.create.title -->
    . Fill in: **Applies to** _(required)_ — **Role** <!-- approvalLimits.subject.role --> or
    **Person** <!-- approvalLimits.subject.user --> — then **Role reference** <!-- approvalLimits.field.roleId -->

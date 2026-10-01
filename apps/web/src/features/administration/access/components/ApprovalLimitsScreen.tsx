@@ -25,6 +25,8 @@ import {
 } from '../types';
 import { createApprovalLimitAction, endApprovalLimitAction } from '../actions';
 import { useActionRefusal } from '@/lib/forms/use-action-refusal';
+import { usePersonNames, type PersonName } from '../../shared/person-name';
+import { roleDisplayName } from '../role-name';
 
 /**
  * Approval limits.
@@ -48,6 +50,16 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  * default currency, and implies no ordering between types. A credit-note limit
  * must be above zero, and every amount must fit its currency's smallest coin; the
  * server answers the second, on the amount field.
+ *
+ * ## A person and a role are NAMED (finance checkpoint, DF-B6)
+ *
+ * A limit held by a person used to read "Person: 0b3d8c05-…" — the account
+ * reference. The person is now named through administration's own directory
+ * read (`shared/person-name.ts`, one read per distinct person, only with
+ * `iam.user.read`); without that permission, or when the read fails, the cell
+ * says so in words and never prints the reference. A provisioned role is named
+ * in the reader's language (`roleDisplayName`); a role this screen cannot see is
+ * said to be one, never shown as its reference.
  *
  * ## The list is complete, and says so
  *
@@ -83,8 +95,16 @@ export function ApprovalLimitsScreen({
   const [running, start] = useTransition();
 
   const t = (key: string) => translate(messages, key as keyof Messages);
-  const roleName = (id: string | null) =>
-    id ? (roles.find((role) => role.id === id)?.name ?? id) : null;
+  const roleName = (id: string) => {
+    const role = roles.find((candidate) => candidate.id === id);
+    return role ? roleDisplayName(messages, role) : t('approvalLimits.subject.roleUnknown');
+  };
+  const people = usePersonNames(
+    (table.response?.rows ?? []).flatMap((row) => (row.userId ? [row.userId] : [])),
+    canReadUsers
+  );
+  const personName = (id: string) =>
+    personLabel(messages, canReadUsers ? people.get(id) : { status: 'denied' });
 
   const columns: readonly Column<ApprovalLimitRow>[] = [
     {
@@ -99,7 +119,7 @@ export function ApprovalLimitsScreen({
         ) : (
           <span>
             <span className="text-text-muted">{t('approvalLimits.subject.user')}: </span>
-            <code className="font-mono text-caption">{row.userId}</code>
+            {row.userId ? personName(row.userId) : t('approvalLimits.person.unresolved')}
           </span>
         ),
     },
@@ -263,6 +283,22 @@ export function ApprovalLimitsScreen({
     </div>
   );
 }
+
+/**
+ * A person behind a limit, as a name or as the reason there is none — never the
+ * account reference. `undefined` is a read still in flight.
+ */
+function personLabel(messages: Messages, resolved: PersonName | undefined): string {
+  if (resolved === undefined) return translate(messages, 'approvalLimits.person.loading');
+  if (resolved.status === 'named') return resolved.displayName;
+  return translate(messages, PERSON_NOTICE[resolved.status]);
+}
+
+const PERSON_NOTICE = {
+  denied: 'approvalLimits.person.denied',
+  unresolved: 'approvalLimits.person.unresolved',
+  unavailable: 'approvalLimits.person.unavailable',
+} as const satisfies Readonly<Record<Exclude<PersonName['status'], 'named'>, keyof Messages>>;
 
 function CreateDialog({
   open,
@@ -444,7 +480,10 @@ function CreateDialog({
               refusalEdited('roleId');
               setRoleId(event.target.value);
             }}
-            options={roles.map((role) => ({ value: role.id, label: role.name }))}
+            options={roles.map((role) => ({
+              value: role.id,
+              label: roleDisplayName(messages, role),
+            }))}
             error={error('roleId')}
           />
         ) : canReadUsers ? (

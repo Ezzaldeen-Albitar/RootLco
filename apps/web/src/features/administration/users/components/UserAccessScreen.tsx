@@ -31,6 +31,7 @@ import {
 } from '../actions';
 import type { AccessGrant, RoleOption, UserRow } from '../api';
 import { scopeSummaryKey, type GrantScopeView, type ScopeMode, type ScopeRequest } from '../types';
+import { roleDisplayName } from '../../access/role-name';
 import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
@@ -94,7 +95,7 @@ export function UserAccessScreen({
   const [outcome, setOutcome] = useState<ActionState>(IDLE);
   const [running, startRunning] = useTransition();
 
-  const roleName = new Map(roles.map((role) => [role.id, role.name]));
+  const roleName = new Map(roles.map((role) => [role.id, roleDisplayName(messages, role)]));
   const companyName = new Map(companies.map((company) => [company.id, company.legalName]));
   const branchName = new Map(branches.map((branch) => [branch.id, branch.name]));
 
@@ -498,7 +499,10 @@ function ScopeDialog({
               refusalEdited('roleId');
               setRoleId(event.target.value);
             }}
-            options={roles.map((role) => ({ value: role.id, label: role.name }))}
+            options={roles.map((role) => ({
+              value: role.id,
+              label: roleDisplayName(messages, role),
+            }))}
             error={refusalErrorKey('roleId') ? t(refusalErrorKey('roleId') as string) : undefined}
           />
         ) : null}

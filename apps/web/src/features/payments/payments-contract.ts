@@ -209,6 +209,16 @@ export interface RecordedReceipt {
 }
 
 /**
+ * The two bounds an allocation can break, as the amount field's own sentences:
+ * `payment-service` names the bound on `body.amount` (finance checkpoint DF-7),
+ * and the client derives `form.violation.<rule>` from it.
+ */
+export const OVER_ALLOCATION_KEYS = Object.freeze({
+  receipt: 'form.violation.allocation_exceeds_receipt_remaining',
+  invoice: 'form.violation.allocation_exceeds_invoice_open',
+} as const);
+
+/**
  * The echo of `sal.payment-allocate` — `AllocationView`. Carries the receipt's
  * state AFTER the database re-summed it, and NOT the invoice's new balance.
  */

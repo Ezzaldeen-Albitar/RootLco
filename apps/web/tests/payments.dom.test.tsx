@@ -18,7 +18,7 @@ import {
 } from './render';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
-import { getMessages } from '@/i18n/get-messages';
+import { formatMessage, getMessages } from '@/i18n/get-messages';
 import {
   discardAndSwitch,
   forgetRememberedBranch,
@@ -1876,6 +1876,123 @@ describe('applying a receipt to an invoice', () => {
       screen.queryByText(EN['payments.allocate.invoiceOpen'] as string, { exact: false })
     ).toBeNull();
     expect(readOutstanding).not.toHaveBeenCalled();
+  });
+
+  /** The server's over-allocation refusal, naming the bound on the amount (DF-7). */
+  const boundRefusal = (rule: 'invoice_open' | 'receipt_remaining') => ({
+    state: {
+      status: 'conflict',
+      messageKey: 'form.formError',
+      fieldErrors: { amount: `form.violation.allocation_exceeds_${rule}` },
+      attempt: 1,
+      correlationId: 'corr-409',
+    },
+    created: null,
+  });
+
+  it('says an amount over what the invoice still has open AT the amount, with that figure, and moves the cursor there (DF-7)', async () => {
+    allocatePayment.mockResolvedValue(boundRefusal('invoice_open'));
+    readOutstanding.mockResolvedValue(
+      okRead({
+        invoiceId: INVOICE_ID,
+        status: 'issued',
+        outstanding: { amount: '20.8640', currency: 'USD' },
+        isSettled: false,
+      })
+    );
+    const user = userEvent.setup();
+    await openReceipt(user);
+    const form = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    await apply(user, '25.000');
+    const box = within(form).getByLabelText(labelled('payments.allocate.amount'));
+    const sentence = formatMessage(EN['payments.allocate.overInvoiceOpen'] as string, {
+      amount: money('20.8640'),
+    });
+    await waitFor(() => expect(box).toHaveAccessibleDescription(expect.stringContaining(sentence)));
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(readOutstanding).toHaveBeenCalledWith(INVOICE_ID);
+    // What was typed stays, never a server-normalised four-place figure (DF-6).
+    expect(box).toHaveValue('25.000');
+    // The generic "cannot be saved" sentence is not the only thing said.
+    expect(within(form).getByText('corr-409')).toBeVisible();
+
+    // A correction withdraws the complaint.
+    await user.type(box, '{Backspace}');
+    expect(box).not.toHaveAttribute('aria-invalid');
+    expect(within(form).queryByText(sentence)).toBeNull();
+  });
+
+  it('says an amount over what is left on the receipt with the receipt figure, without reading the invoice (DF-7)', async () => {
+    allocatePayment.mockResolvedValue(boundRefusal('receipt_remaining'));
+    const user = userEvent.setup();
+    await openReceipt(user);
+    const form = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    await apply(user, '45');
+    const box = within(form).getByLabelText(labelled('payments.allocate.amount'));
+    const sentence = formatMessage(EN['payments.allocate.overReceiptLeft'] as string, {
+      amount: money('40.0000'),
+    });
+    await waitFor(() => expect(box).toHaveAccessibleDescription(expect.stringContaining(sentence)));
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(readOutstanding).not.toHaveBeenCalled();
+    expect(box).toHaveValue('45');
+  });
+
+  it('says the bound in plain words when the invoice balance cannot be read (DF-7)', async () => {
+    allocatePayment.mockResolvedValue(boundRefusal('invoice_open'));
+    readOutstanding.mockResolvedValue(refusedRead('unavailable', 'corr-503'));
+    const user = userEvent.setup();
+    await openReceipt(user);
+    const form = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    await apply(user, '25');
+    const box = within(form).getByLabelText(labelled('payments.allocate.amount'));
+    await waitFor(() =>
+      expect(box).toHaveAccessibleDescription(
+        expect.stringContaining(EN['form.violation.allocation_exceeds_invoice_open'] as string)
+      )
+    );
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('says the receipt bound in Arabic, at the amount, right to left (DF-7)', async () => {
+    allocatePayment.mockResolvedValue(boundRefusal('receipt_remaining'));
+    const user = userEvent.setup();
+    const arLabel = (key: string) => new RegExp(`^${escape(AR[key] as string)}`);
+    renderRtl(screenFor({ locale: 'ar', messages: ar }));
+    const list = await screen.findByRole('region', { name: AR['payments.list.heading'] as string });
+    await user.click(
+      within(list).getByRole('button', { name: `${AR['payments.list.open']} RCT-000007` })
+    );
+    const form = await screen.findByRole('form', {
+      name: AR['payments.allocate.formLabel'] as string,
+    });
+    await chooseInvoice(user, form, arLabel('payments.allocate.invoice'));
+    const box = within(form).getByLabelText(arLabel('payments.allocate.amount'));
+    await user.type(box, '45.000');
+    await user.click(
+      within(form).getByRole('button', { name: AR['payments.allocate.submit'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog', {
+      name: AR['payments.allocate.confirmTitle'] as string,
+    });
+    await user.click(
+      within(dialog).getByRole('button', { name: AR['payments.allocate.submit'] as string })
+    );
+    const sentence = formatMessage(AR['payments.allocate.overReceiptLeft'] as string, {
+      amount: formatMoney({ amount: '40.0000', currency: 'USD' }, 'ar'),
+    });
+    await waitFor(() => expect(box).toHaveAccessibleDescription(expect.stringContaining(sentence)));
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(box).toHaveValue('45.000');
   });
 });
 

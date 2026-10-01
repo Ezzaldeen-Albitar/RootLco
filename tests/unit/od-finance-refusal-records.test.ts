@@ -24,6 +24,8 @@ import { AppFailure } from '@api/server/errors/app-failure';
 import { __resetCapabilitiesForTests } from '@api/server/db/capabilities';
 import type { DbHandle } from '@api/server/db/transaction';
 import type { RequestContext } from '@api/server/context/request-context';
+import { InvoiceService } from '@api/modules/billing/application/invoice-service';
+import type { BillingRepository } from '@api/modules/billing/data/billing-repository';
 
 const NOTE = '0f000000-0000-4000-8000-00000000c0de';
 const TENANT = '0f000000-0000-4000-8000-00000000a001';
@@ -155,5 +157,72 @@ describe('D12 — the record carries four closed identifiers and nothing else', 
     });
     expect(outcome).toBeNull();
     expect(statements).toEqual([]);
+  });
+});
+
+/**
+ * Finance checkpoint DF-3. A credit-note REQUEST above what remains creditable
+ * was refused with 409 and left no record; only the approval's ceiling refusal
+ * was marked. The request has no note yet, so the mark names the invoice.
+ */
+describe('D12 — a credit-note request above what remains creditable is marked (DF-3)', () => {
+  const INVOICE = '0f000000-0000-4000-8000-00000000b111';
+  const invoiceRow = (status: string) => ({
+    id: INVOICE,
+    companyId: '0f000000-0000-4000-8000-00000000b001',
+    branchId: '0f000000-0000-4000-8000-00000000b002',
+    workOrderId: null,
+    saleKind: 'counter_sale',
+    quotationRevisionId: null,
+    payerPartnerId: '0f000000-0000-4000-8000-00000000b003',
+    currencyCode: 'JOD',
+    status,
+    invoiceNumber: status === 'issued' ? 'INV-000001' : null,
+    issuedAt: null,
+    idempotencyKey: null,
+    recordVersion: 2,
+    money: { netTotal: '49.3800', taxTotal: '0.0000', grossTotal: '49.3800' },
+  });
+  const serviceFor = (status: string) =>
+    new InvoiceService({
+      findInvoiceForUpdate: async () => invoiceRow(status),
+      minorUnitForCurrency: async () => 3,
+      openReceivable: async () => ({
+        invoiceId: INVOICE,
+        amount: '49.3800',
+        currencyCode: 'JOD',
+        status,
+      }),
+    } as unknown as BillingRepository);
+  const refusalOf = async (status: string, amount: string): Promise<unknown> => {
+    const { db } = fakeHandle();
+    try {
+      await serviceFor(status).requestCreditNote(
+        db,
+        { invoiceId: INVOICE, amount, reason: 'checkpoint probe' },
+        async () => undefined
+      );
+    } catch (error) {
+      return error;
+    }
+    throw new Error('the request was not refused');
+  };
+
+  it('marks the over-credit refusal with the invoice and the rule, and leaves the failure as it was', async () => {
+    const error = await refusalOf('issued', '49.381');
+    expect(error).toBeInstanceOf(AppFailure);
+    expect((error as AppFailure).code).toBe('ERR-TRN-001');
+    expect(businessRefusalOf(error)).toEqual({
+      entityType: 'sal.invoice',
+      entityId: INVOICE,
+      rule: 'credit_note_exceeds_open_amount',
+    });
+  });
+
+  it('does not mark a refusal that is not the ceiling', async () => {
+    // A draft has nothing to credit: refused, but not by the business rule D12 records.
+    const error = await refusalOf('draft', '1.000');
+    expect(error).toBeInstanceOf(AppFailure);
+    expect(businessRefusalOf(error)).toBeUndefined();
   });
 });

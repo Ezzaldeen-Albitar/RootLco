@@ -306,6 +306,23 @@ function refuseCreditNote(creditNoteId: string, rule: string, raise: () => never
   }
 }
 
+/**
+ * Throws what `raise` throws, marked as a refusal of a credit-note REQUEST by
+ * business rule (D12). The request has no note yet, so the refused entity is the
+ * invoice it was raised against. Only a controlled `AppFailure` is marked, as in
+ * `refuseCreditNote`.
+ */
+function refuseCreditRequest(invoiceId: string, rule: string, raise: () => never): never {
+  try {
+    raise();
+  } catch (failure) {
+    if (failure instanceof AppFailure) {
+      withBusinessRefusal(failure, { entityType: 'sal.invoice', entityId: invoiceId, rule });
+    }
+    throw failure;
+  }
+}
+
 /** A named `ERR-TRN-001` about the credit note in the path, recorded as a refusal. */
 function decisionConflict(creditNoteId: string, rule: string, message: string): never {
   return refuseCreditNote(creditNoteId, rule, () => {
@@ -1516,10 +1533,16 @@ export class InvoiceService {
         message: 'billing: invoice vanished between the lock and the receivable read',
       });
     }
+    // A request above what is still creditable is a refusal by business rule
+    // (ADR-023, D12), recorded once after the rollback exactly as the approval's
+    // ceiling refusal is. No note exists yet, so the record names the INVOICE —
+    // the stored row's id — and the rule; never the amount.
     try {
       assertCreditWithinOpenAmount(amount, Decimal.fromDatabase(open.amount, MONEY));
     } catch (error) {
-      toDomainFailure(error, 'Credit note request');
+      refuseCreditRequest(invoice.id, CREDIT_NOTE_REFUSAL_RULES.exceedsOpenAmount, () =>
+        toDomainFailure(error, 'Credit note request')
+      );
     }
 
     if (input.idempotencyKey !== undefined) {

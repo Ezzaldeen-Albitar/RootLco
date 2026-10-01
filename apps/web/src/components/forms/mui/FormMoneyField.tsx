@@ -12,10 +12,17 @@ import type { MuiFieldBaseProps } from './field-wiring';
  *
  * What the operator types stays a STRING from the keystroke to the request
  * body: the raw text is held, reported upward while typing (with whether it
- * parses), and canonicalised on blur by padding the fraction with characters
- * (`parseMoneyInput`). No value on this path is ever a JavaScript number — see
- * `src/lib/money.ts`. A problem found on blur is shown in the catalogue's words
- * until the next keystroke; the caller's own error, when given, wins.
+ * parses), and on blur the CANONICAL form is reported — the fraction padded with
+ * characters (`parseMoneyInput`). No value on this path is ever a JavaScript
+ * number — see `src/lib/money.ts`. A problem found on blur is shown in the
+ * catalogue's words until the next keystroke; the caller's own error, when
+ * given, wins.
+ *
+ * The box keeps showing what the operator typed. The canonical form carries the
+ * storage scale (four places), not the currency's: replacing a typed `25.000`
+ * JOD with `25.0000` showed a figure written the way no other screen writes JOD,
+ * and after a refusal it put a number in the box the operator never typed
+ * (finance checkpoint, DF-6). The parent holds and sends the canonical string.
  *
  * The box is text with a decimal keypad, never `type="number"`, and reads left
  * to right in both languages. The currency is its ISO code at the logical end of
@@ -102,7 +109,7 @@ export function FormMoneyField({
         }
         const result = parseMoneyInput(raw);
         if (result.ok && result.canonical) {
-          setRaw(result.canonical);
+          // The typed text stays in the box; the canonical string goes up.
           setLocalProblem(null);
           report(result.canonical, true);
         } else {

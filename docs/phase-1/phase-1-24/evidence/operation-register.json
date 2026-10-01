@@ -12996,6 +12996,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-finance-credit-decisions.test.ts",
         "tests/backend/p1-22-credit-note.test.ts",
         "tests/backend/p1-22-currency-coherence.test.ts",
         "tests/backend/p1-31-provisioning-bundle.test.ts"

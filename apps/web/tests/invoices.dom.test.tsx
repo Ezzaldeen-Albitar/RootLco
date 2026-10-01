@@ -2064,7 +2064,12 @@ describe('raising and approving a credit note', () => {
     ).toBeInTheDocument();
     expect(amountBox(form)).toHaveAttribute('aria-invalid', 'true');
     await waitFor(() => expect(amountBox(form)).toHaveFocus());
-    expect(amountBox(form).value).toBe('90.0000');
+    // What the operator typed stays in the box after the refusal (DF-6), while the
+    // request carried the canonical amount.
+    expect(amountBox(form).value).toBe('90');
+    expect(requestCreditNote.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ amount: '90.0000' })
+    );
     expect(reasonBox(form).value).toBe('Too much');
     expect(within(form).getByText('ref-409')).toBeInTheDocument();
 
@@ -2572,9 +2577,19 @@ describe('raising and approving a credit note', () => {
         expect.stringContaining(EN['form.violation.too_small'] as string)
       );
       expect((reason as HTMLTextAreaElement).value).toBe('x');
+
+      // DF-4 residual: the refusal is about THAT text, so editing it withdraws it.
+      await user.type(reason, 'y');
+      expect(reason).not.toHaveAttribute('aria-invalid', 'true');
+      expect(reason).not.toHaveAccessibleDescription(
+        expect.stringContaining(EN['form.violation.too_small'] as string)
+      );
+      // Typing the refused text back shows the refusal again.
+      await user.type(reason, '{Backspace}');
+      expect(reason).toHaveAttribute('aria-invalid', 'true');
     });
 
-    it('says a conflict in words and reads the note again', async () => {
+    it('says a conflict in words, offers the latest version, and reads the list again (DF-4)', async () => {
       const user = userEvent.setup();
       withdrawCreditNote.mockResolvedValueOnce({
         state: {
@@ -2587,11 +2602,21 @@ describe('raising and approving a credit note', () => {
       });
       renderLtr(notesScreen(RAISED_BY, NOTE_ID));
       const detail = await detailRegion();
-      await user.click(
-        await within(detail).findByRole('button', {
-          name: EN['creditNotes.withdraw.action'] as string,
-        })
-      );
+      const grid = await screen.findByRole('grid', {
+        name: EN['creditNotes.list.caption'] as string,
+      });
+      await within(grid).findByText(EN['creditNotes.state.pending'] as string);
+      const listReads = listCreditNotes.mock.calls.length;
+      // The other tab withdrew it: the list now answers with the note withdrawn.
+      listCreditNotes.mockResolvedValue({
+        status: 'ok',
+        data: { items: [withdrawnNote], nextCursor: null, hasMore: false },
+        correlationId: 'corr',
+      });
+      const withdraw = await within(detail).findByRole('button', {
+        name: EN['creditNotes.withdraw.action'] as string,
+      });
+      await user.click(withdraw);
       const dialog = await screen.findByRole('alertdialog');
       await user.click(
         within(dialog).getByRole('button', { name: EN['creditNotes.withdraw.action'] as string })
@@ -2599,7 +2624,71 @@ describe('raising and approving a credit note', () => {
       const alert = await within(detail).findByRole('alert');
       expect(alert).toHaveTextContent(EN['creditNotes.decision.conflict'] as string);
       expect(alert).toHaveTextContent('ref-409');
+
+      // The list row follows at once: no longer "Waiting for a second person".
+      await waitFor(() => expect(listCreditNotes.mock.calls.length).toBeGreaterThan(listReads));
+      expect(
+        await within(grid).findByText(EN['creditNotes.state.withdrawn'] as string)
+      ).toBeVisible();
+      expect(within(grid).queryByText(EN['creditNotes.state.pending'] as string)).toBeNull();
+
+      // The shared conflict's way out; the stale decisions wait for it.
+      const latest = within(detail).getByRole('button', { name: EN['form.loadLatest'] as string });
+      expect(withdraw).toBeDisabled();
+      expect(readCreditNote).toHaveBeenCalledTimes(1);
+      readCreditNote.mockResolvedValue({
+        status: 'ok',
+        data: withdrawnNote,
+        correlationId: 'corr',
+      });
+      await user.click(latest);
       await waitFor(() => expect(readCreditNote).toHaveBeenCalledTimes(2));
+      expect(
+        await within(detail).findByText(EN['creditNotes.state.withdrawn'] as string)
+      ).toBeVisible();
+      expect(
+        within(detail).queryByRole('button', { name: EN['form.loadLatest'] as string })
+      ).toBeNull();
+      expect(within(detail).queryByRole('alert')).toBeNull();
+      expect(withdrawCreditNote).toHaveBeenCalledTimes(1);
+    });
+
+    it('offers the latest version in Arabic after a conflict (DF-4)', async () => {
+      const user = userEvent.setup();
+      approveCreditNote.mockResolvedValueOnce({
+        state: {
+          status: 'conflict',
+          messageKey: 'creditNotes.approve.conflict',
+          correlationId: 'ref-409',
+          attempt: 1,
+        },
+        created: null,
+      });
+      renderRtl(
+        <CreditNotesScreen
+          locale="ar"
+          messages={ar}
+          initialCreditNoteId={NOTE_ID}
+          currentUserId={SIGNED_IN}
+          canDecide
+        />
+      );
+      const detail = await detailRegion(AR['creditNotes.detail.heading'] as string);
+      await user.click(
+        await within(detail).findByRole('button', {
+          name: AR['creditNotes.approve.action'] as string,
+        })
+      );
+      const dialog = await screen.findByRole('alertdialog');
+      await user.click(
+        within(dialog).getByRole('button', { name: AR['creditNotes.approve.action'] as string })
+      );
+      expect(await within(detail).findByRole('alert')).toHaveTextContent(
+        AR['creditNotes.approve.conflict'] as string
+      );
+      expect(
+        within(detail).getByRole('button', { name: AR['form.loadLatest'] as string })
+      ).toBeVisible();
     });
 
     it('shows a rejected note’s reason and offers nothing on it', async () => {

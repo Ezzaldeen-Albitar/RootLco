@@ -1526,7 +1526,9 @@ over the counter, or that was fitted to a job."_ <!-- inventory.returns.descript
    you chose, each time you choose one, so they are current rather than remembered.
 5. Enter **How many are coming back**, choose **Where it is being received**, and say the
    **Condition**.
-6. **Take it back** <!-- inventory.returns.create.submit --> .
+6. **Take it back** <!-- inventory.returns.create.submit --> . If a field is refused — for example a
+   quantity above what may still come back — the field turns red with the reason beside it and the
+   cursor moves to it; the reason goes as soon as you correct the quantity.
 
 **When the sales cannot be offered, the screen says so and offers the old way rather than
 stopping.** **"You do not have permission to see the sales made at this branch, so the sale cannot

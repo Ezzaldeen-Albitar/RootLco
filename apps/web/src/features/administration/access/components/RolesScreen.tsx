@@ -12,6 +12,7 @@ import { SubmitButton } from '@/features/authentication/components/SubmitButton'
 import { useServerTable } from '../../shared/use-server-table';
 import { listRoles } from '../api';
 import type { RoleRow } from '../types';
+import { roleDisplayName } from '../role-name';
 import { createRoleAction, updateRoleAction } from '../actions';
 import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
@@ -49,7 +50,9 @@ export function RolesScreen({
     {
       id: 'name',
       headerKey: 'roles.column.name',
-      cell: (row) => <span className="font-medium text-text-primary">{row.name}</span>,
+      cell: (row) => (
+        <span className="font-medium text-text-primary">{roleDisplayName(messages, row)}</span>
+      ),
     },
     {
       id: 'roleCode',

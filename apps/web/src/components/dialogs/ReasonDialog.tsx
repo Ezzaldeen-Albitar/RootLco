@@ -22,7 +22,10 @@ import { DecisionActions, DecisionDialog } from './ConfirmDialog';
  *     `FieldFrame` contract) — so `useFocusFirstInvalid` would land on it;
  *   - a refusal the server gave about the reason (`reasonError`) is drawn the
  *     same way, on the same box, rather than as a page-level failure that
- *     teaches nobody which box to fix;
+ *     teaches nobody which box to fix — and it is withdrawn as soon as the
+ *     reason differs from the one that was refused, because it is a complaint
+ *     about THAT text (finance checkpoint, DF-4). Typing the refused text back
+ *     shows it again;
  *   - it stays LOCAL to this dialog until submit: free text about an
  *     operational decision does not belong in a store or a URL. It is dropped
  *     when the dialog closes, because the closed dialog renders nothing.
@@ -71,8 +74,11 @@ function OpenReasonDialog({
 }: ReasonDialogProps) {
   const [reason, setReason] = useState('');
   const [touched, setTouched] = useState(false);
+  // The reason as it was last sent: a server refusal is about that text only.
+  const [sent, setSent] = useState<string | null>(null);
   const empty = reason.trim().length === 0;
-  const fieldError = touched && empty ? translate(messages, 'overlay.reasonRequired') : reasonError;
+  const serverError = sent === null || reason.trim() === sent ? reasonError : undefined;
+  const fieldError = touched && empty ? translate(messages, 'overlay.reasonRequired') : serverError;
 
   return (
     <DecisionDialog
@@ -92,6 +98,7 @@ function OpenReasonDialog({
           onConfirm={() => {
             setTouched(true);
             if (empty) return;
+            setSent(reason.trim());
             onConfirm(reason.trim());
           }}
           confirmDisabled={empty}

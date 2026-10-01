@@ -13,7 +13,7 @@ import {
   renderRtl,
 } from './render';
 import { forgetRememberedBranch } from './support/branch-switch';
-import { addDays, dayIn, isKnownZone } from '../src/lib/branch-time';
+import { addDays, dayIn, isKnownZone, zoneDisplayName } from '../src/lib/branch-time';
 import { formatReportTime } from '../src/features/reports/report-labels';
 
 /**
@@ -697,6 +697,16 @@ describe('the result is rendered from the envelope, column kind by column kind',
     // Intl formatter of its own (P1-27-FE-030).
     expect(isKnownZone('Asia/Amman')).toBe(true);
     expect(isKnownZone('Not/A_Zone')).toBe(false);
+    // The zone itself is named for a reader, in both languages (DF-B5); UTC is
+    // UTC, and a zone the browser does not know is shown as stored.
+    expect(zoneDisplayName('Asia/Amman', 'en-GB', '2026-10-01T07:30:00.000Z')).toBe(
+      'Jordan Time (GMT+3)'
+    );
+    expect(zoneDisplayName('Asia/Amman', 'ar-JO-u-nu-latn', '2026-10-01T07:30:00.000Z')).toBe(
+      'توقيت الأردن (غرينتش+3)'
+    );
+    expect(zoneDisplayName('UTC', 'ar-JO-u-nu-latn', '2026-10-01T07:30:00.000Z')).toBe('UTC');
+    expect(zoneDisplayName('Not/A_Zone', 'en-GB', '2026-10-01T07:30:00.000Z')).toBe('Not/A_Zone');
     expect(isKnownZone('')).toBe(false);
     const utc = new Intl.DateTimeFormat('en-GB', {
       timeZone: 'UTC',
@@ -812,7 +822,8 @@ describe('the result is rendered from the envelope, column kind by column kind',
     );
     const { container } = await showReport();
     // Character for character: not rounded, not re-scaled, not grouped, not
-    // turned into hours, and not given a currency the cell does not carry.
+    // turned into hours, and not given a currency the ROW does not carry — this
+    // row has no currency cell, so the amount is shown exactly as sent.
     const rows = within(rowsTable());
     expect(rows.getByText('12.500')).toBeVisible();
     expect(rows.getByText('5400')).toBeVisible();
@@ -867,6 +878,118 @@ describe('the result is rendered from the envelope, column kind by column kind',
     ).toBeVisible();
   });
 
+  /** The invoice-and-payment report's own row shape: a currency beside every amount. */
+  const paymentEnvelope = {
+    ...NEW_ENVELOPE,
+    groups: [
+      {
+        key: { currency: 'JOD', documentType: 'receipt' },
+        label: 'JOD',
+        measures: { receipts: '123.4520', allocated: '25.0000' },
+      },
+    ],
+    columns: [
+      { key: 'documentType', kind: 'text', drillThrough: null },
+      { key: 'partyRole', kind: 'text', drillThrough: null },
+      { key: 'currency', kind: 'text', drillThrough: null },
+      { key: 'invoicedAmount', kind: 'money', drillThrough: null },
+      { key: 'status', kind: 'text', drillThrough: null },
+    ],
+    rows: {
+      items: [
+        {
+          cells: [
+            { key: 'documentType', label: null, value: 'invoice' },
+            { key: 'partyRole', label: null, value: 'payer' },
+            { key: 'currency', label: null, value: 'JOD' },
+            { key: 'invoicedAmount', label: null, value: '49.3800' },
+            { key: 'status', label: null, value: 'issued' },
+          ],
+        },
+        {
+          cells: [
+            { key: 'documentType', label: null, value: 'receipt' },
+            { key: 'partyRole', label: null, value: 'payer' },
+            { key: 'currency', label: null, value: 'JOD' },
+            { key: 'invoicedAmount', label: null, value: '1.9752' },
+            { key: 'status', label: null, value: 'partially_allocated' },
+          ],
+        },
+        {
+          cells: [
+            { key: 'documentType', label: null, value: 'credit_note' },
+            { key: 'partyRole', label: null, value: 'invoice_payer' },
+            { key: 'currency', label: null, value: 'JOD' },
+            { key: 'invoicedAmount', label: null, value: null },
+            { key: 'status', label: null, value: 'pending' },
+          ],
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+    },
+  };
+  const RAW_CODES = [
+    'invoice',
+    'receipt',
+    'credit_note',
+    'payer',
+    'invoice_payer',
+    'issued',
+    'partially_allocated',
+    'pending',
+  ];
+
+  it('says the kind of document, the party role and the status in words, never as codes (DF-5)', async () => {
+    for (const [locale, messages] of [
+      ['en', EN],
+      ['ar', AR],
+    ] as const) {
+      runReport.mockResolvedValue(runOk(paymentEnvelope));
+      const { unmount } = await showReport(locale);
+      const rows = within(await waitFor(() => rowsTable(locale)));
+      for (const key of [
+        'reports.documentType.invoice',
+        'reports.documentType.receipt',
+        'reports.documentType.credit_note',
+        'reports.partyRole.invoice_payer',
+        'invoices.status.issued',
+        'payments.status.partially_allocated',
+        'creditNotes.state.pending',
+      ]) {
+        expect(rows.getByText(messages[key] as string), `${locale} ${key}`).toBeVisible();
+      }
+      expect(rows.getAllByText(messages['reports.partyRole.payer'] as string)).toHaveLength(2);
+      for (const code of RAW_CODES) {
+        expect(rows.queryByText(code), `${locale} ${code}`).toBeNull();
+      }
+      // The totals name the receipt group in words beside the currency.
+      expect(
+        within(totalsTable(locale)).getByText(
+          `JOD · ${messages['reports.groups.documentType.receipt'] as string}`
+        )
+      ).toBeVisible();
+      unmount();
+    }
+  });
+
+  it('writes a JOD amount at three decimals with its currency, and never rounds a finer digit away (DF-6)', async () => {
+    for (const locale of ['en', 'ar'] as const) {
+      runReport.mockResolvedValue(runOk(paymentEnvelope));
+      const { unmount } = await showReport(locale);
+      const rows = within(await waitFor(() => rowsTable(locale)));
+      expect(rows.getByText('49.380 JOD')).toBeVisible();
+      expect(rows.queryByText('49.3800')).toBeNull();
+      // A residue below the minor unit is a discrepancy to show, not to tidy.
+      expect(rows.getByText('1.9752 JOD')).toBeVisible();
+      const totals = within(totalsTable(locale));
+      expect(totals.getByText('123.452 JOD')).toBeVisible();
+      expect(totals.getByText('25.000 JOD')).toBeVisible();
+      expect(totals.queryByText('25.0000')).toBeNull();
+      unmount();
+    }
+  });
+
   it('says a column with no cell is not reported rather than drawing it empty', async () => {
     runReport.mockResolvedValue(
       runOk({
@@ -915,8 +1038,18 @@ describe('the period, the zone and the filter context travel with the result', (
     const { container } = await showReport();
     expect(await within(container).findByText('2026-09-01')).toBeVisible();
     expect(within(container).getByText('2026-09-08')).toBeVisible();
-    expect(within(container).getByText('Asia/Amman')).toBeVisible();
+    // Named for a reader, with its offset — never the stored identifier (DF-B5).
+    expect(within(container).getByTestId('report-zone')).toHaveTextContent('Jordan Time (GMT+3)');
+    expect(within(container).queryByText('Asia/Amman')).toBeNull();
     expect(within(container).getByText(EN['reports.context.periodNote'] as string)).toBeVisible();
+  });
+
+  it('shows the report by its name and never prints its code under it (DF-B5)', async () => {
+    const { container } = await showReport();
+    expect(
+      within(container).getAllByText(EN['reports.work_orders_by_status.title'] as string).length
+    ).toBeGreaterThan(0);
+    expect(within(container).queryByText(CODE)).toBeNull();
   });
 
   it('states how current the answer is, in the server’s own terms', async () => {
@@ -963,11 +1096,14 @@ describe('the totals are the server’s, over the whole period and never over th
     await showReport();
     const totals = within(totalsTable());
     // Grouped by currency and document kind, each measure in its own column, and
-    // nothing summed, netted or crossed between them.
+    // nothing summed, netted or crossed between them. The kind is said in words
+    // and each measure is written at the currency's minor unit (DF-5, DF-6).
     expect(totals.getByText('JOD')).toBeVisible();
-    expect(totals.getByText('invoice')).toBeVisible();
-    expect(totals.getByText('1234.5600')).toBeVisible();
-    expect(totals.getByText('200.0000')).toBeVisible();
+    expect(totals.getByText(EN['reports.documentType.invoice'] as string)).toBeVisible();
+    expect(totals.queryByText('invoice')).toBeNull();
+    expect(totals.getByText('1,234.560 JOD')).toBeVisible();
+    expect(totals.getByText('200.000 JOD')).toBeVisible();
+    expect(totals.queryByText('200.0000')).toBeNull();
     expect(totals.getByText(EN['reports.field.invoiced'] as string)).toBeVisible();
     expect(totals.getByText(EN['reports.field.outstanding'] as string)).toBeVisible();
   });
@@ -1026,9 +1162,12 @@ describe('the screens read in Arabic as Arabic', () => {
       await within(container).findByText(AR['reports.context.timezone'] as string)
     ).toBeVisible();
     expect(within(container).getByText(AR['reports.run.periodRule'] as string)).toBeVisible();
-    // The two days and the zone are identifiers and stay left to right in both
-    // directions; only the words around them change.
-    expect(within(container).getByText('Asia/Amman')).toBeVisible();
+    // The zone is named in Arabic, with its offset, and never as the identifier.
+    expect(within(container).getByTestId('report-zone')).toHaveTextContent(
+      'توقيت الأردن (غرينتش+3)'
+    );
+    expect(within(container).queryByText('Asia/Amman')).toBeNull();
+    expect(within(container).queryByText(CODE)).toBeNull();
   });
 
   it('keeps the same screen for both languages rather than a second Arabic one', () => {
