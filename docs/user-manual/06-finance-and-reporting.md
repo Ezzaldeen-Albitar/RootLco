@@ -294,7 +294,12 @@ receipt (6.3.5).
      "Work order" <!-- invoices.print.workOrder --> (its number) and "Paying customer" <!-- invoices.print.payer -->
      by name, then the table captioned
      "Invoice lines" <!-- invoices.print.linesCaption --> with columns "Line", "Description",
-     "Type", "Quantity", "Unit price", "Net", "Tax" and "Gross".
+     "Type", "Quantity", "Unit price", "Discount" <!-- invoices.print.column.discount --> (on a
+     work order's invoice), "Net", "Tax" and "Gross". Under the table, "As issued" <!-- invoices.print.issuedTotals -->
+     lists "Before discount" <!-- invoices.print.subtotal --> , "Discount" <!-- invoices.print.discount -->
+     (on a work order's invoice), "Net", "Tax" and "Gross" — the amounts the invoice was issued with.
+     For a reader who may see amounts, a last section headed "Payments and credits as of" <!-- invoices.print.settlementAsOf -->
+     follows (see below).
   3. Press "Print" <!-- invoices.print.print --> to open your browser's own print dialog.
   4. Press "Hide printable copy" <!-- invoices.print.close --> when you are done.
 - **Result:** the browser's print preview. **This is always the browser's own print. No PDF is
@@ -321,11 +326,65 @@ receipt (6.3.5).
   opens on this screen. With the sale open there, press "Show printable copy"; the copy is the same
   document, ready at once, and each line is described by the item it sold, by name and code, under
   the note "Each line is described by the item that was sold." <!-- invoices.print.descriptionsFromItems -->
+  It carries the same "Payments and credits as of" section. To print a counter sale again later,
+  see §6.2.8a.
 - **Amounts are written in their currency's own decimals** — three for JOD, two for USD — on
   screen and on paper. A figure with a digit below that is shown in full rather than rounded, so a
   fraction no payment can settle is visible instead of hidden.
-- **The printed copy states the credit and payment positions** the open balance panel read
-  (§6.2.7), beside the status. A person who may not see amounts gets a copy without them.
+- **What was issued, and what has happened since, are kept apart (Owner decision D10).** The lines,
+  each line's discount and the "As issued" totals never change once the invoice is issued. A job's
+  line discount is the one on the accepted quotation the invoice was made from, and is printed only
+  when the copy could match that quotation; otherwise it reads "Not available", never a zero. A
+  counter sale takes no discount, so its copy has no discount column. The settlement — "Amount
+  paid" <!-- invoices.print.amountPaid --> , "Amount credited" <!-- invoices.print.amountCredited --> ,
+  "Balance due" <!-- invoices.print.balanceDue --> , the payment position ("Not paid yet", "Partly
+  paid", "Paid" or "Nothing to pay") and the credit position — changes with every payment and
+  credit note, so it is printed in its own section headed "Payments and credits as of" with the
+  moment the figures were read, written on the branch's clock with the clock's name beside it (for
+  example GMT+3). The copy says: "These figures were read at the time shown and change as payments
+  and credit notes are recorded. The amounts above are as the invoice was issued and do not change." <!-- invoices.print.settlementExplain -->
+  Every figure is the server's; nothing is worked out on the page.
+- **Without permission to see amounts there is no settlement section at all**, exactly as the open
+  balance panel is not shown: the copy carries no paid, credited or due figure and no position.
+- **Only the document reaches the paper.** While the printable copy is open, printing leaves off the
+  page title, the explanations, the branch panel, notices and the working panels, in English and in
+  Arabic. Long invoices continue on further pages with the column headings repeated, and no line is
+  cut off.
+- **Screenshot:** no screenshot available at this version.
+
+### 6.2.8a Print a counter sale again
+
+**IMPLEMENTED (UI)**
+
+- **Label:** "Issued sales" <!-- inventory.counterSales.issued.heading --> on the Counter sales
+  screen, and "Open and print" <!-- inventory.counterSales.issued.open --> on a sale.
+- **Who:** somebody who can sell over the counter — `sal.invoice.manage` and `sal.finance.view`.
+  The buyer's name appears in the list only for somebody who may read customers; otherwise the row
+  reads "Buyer not shown" <!-- inventory.counterSales.issued.buyerNotShown --> .
+- **Where:** "Inventory" › "Counter sales", in the branch chosen in the header. The list covers one
+  branch; "All my branches" is not offered here.
+- **Steps:**
+  1. Under "Issued sales", find the sale. The newest sales come first. Type part of the sale number,
+     or part of the buyer's name, in "Sale number or buyer’s name" <!-- inventory.counterSales.issued.search --> .
+     Digits typed on an Arabic keyboard are accepted. One character is not enough: the box says
+     "Type at least two characters to search." <!-- inventory.counterSales.issued.tooShort -->
+  2. Use "Next page" and "Previous page" to move through the sales a page at a time.
+  3. Press "Open and print" on the sale. The sale opens read-only — it can no longer be issued or
+     cancelled — with the note "This sale was issued earlier. Its printable copy is open below and
+     can be printed again." <!-- inventory.counterSales.issued.opened -->
+  4. Check the copy and press "Print".
+- **Result:** the same printed copy as at the counter, with the "Payments and credits as of" section
+  read at the moment the sale was opened.
+- **How far a sale is paid.** Wherever a counter sale is shown after it is issued — straight after
+  issuing it, or when it is opened again — the sale panel shows "Payment" (Not paid yet, Partly
+  paid, Paid or Nothing to pay), "Credit" and "Still to pay" <!-- inventory.counterSales.sale.due -->
+  , as the server works them out. If they cannot be read the panel says "What has been paid on this
+  sale could not be read just now." <!-- inventory.counterSales.sale.positionUnavailable -->
+- **From a credit note.** A credit note raised against a counter sale links to the sale; the link
+  opens this screen with the sale already open.
+- **If it goes wrong:** "That sale was not found." <!-- inventory.counterSales.issued.openMissing -->
+  , "You do not have permission to open that sale." <!-- inventory.counterSales.issued.openRefused -->
+  or "The sale could not be opened just now. Try again." <!-- inventory.counterSales.issued.openUnavailable -->
 - **Screenshot:** no screenshot available at this version.
 
 ### 6.2.9 When amounts are hidden from you
@@ -493,6 +552,25 @@ it."**, and a counter-sale return moves the stock but not the money.
    <!-- creditNotes.detail.heading --> , which shows **Amount**, **Approval**, **Approved on** (or
    **Not approved yet** <!-- creditNotes.detail.notApproved --> ) and **Why it was raised**
    <!-- creditNotes.detail.* --> . **Close** <!-- creditNotes.detail.close --> returns to the list.
+4. The note also says what it is traceable to, so whoever decides it can see what the credit
+   reduces:
+   - **Invoice** <!-- creditNotes.detail.invoice --> — the invoice number, whether it is a **Job
+     invoice** <!-- creditNotes.detail.workOrderInvoice --> or a **Counter sale**
+     <!-- creditNotes.detail.counterSale --> , and the customer it bills. The number is a link to
+     the invoice for somebody who may open invoices (`sal.invoice.manage`).
+   - **Where it came from** <!-- creditNotes.detail.source --> — **A customer return**
+     <!-- creditNotes.detail.sourceReturn --> , named by the item returned, the **Quantity
+     returned** <!-- creditNotes.detail.returnedQuantity --> and when it was **Received**
+     <!-- creditNotes.detail.returnReceivedAt --> , with **Open customer returns**
+     <!-- creditNotes.detail.openReturns --> for somebody who may open that screen; or **Requested
+     by hand against the invoice** <!-- creditNotes.detail.sourceByHand --> .
+   - **Requested by** <!-- creditNotes.detail.requestedBy --> and **Requested on**
+     <!-- creditNotes.detail.requestedAt --> ; once decided, **Approved by**, **Rejected by** or
+     **Withdrawn by** <!-- creditNotes.detail.approvedBy --> .
+     People and customers are always named, never shown by a reference. A person's name is shown only
+     to somebody who may read users, and a customer's only to somebody who may read customers;
+     otherwise the note reads **Name not shown** <!-- creditNotes.detail.nameNotShown --> or
+     **Customer not shown** <!-- creditNotes.detail.customerNotShown --> .
 
 **Raising a credit note**
 
