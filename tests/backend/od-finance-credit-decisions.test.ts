@@ -18,6 +18,9 @@
  *  - D12: each refused attempt leaves exactly ONE security event naming the
  *    operation, the entity and the rule, after the rollback; a success and the
  *    replay of a success leave none; the event is readable in its own tenant only.
+ *    A credit-note REQUEST above what remains creditable is one of them (finance
+ *    checkpoint DF-3), and an over-allocation names the bound it broke on the
+ *    amount (DF-7) without the figures.
  *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
  *   sal.credit-note-withdraw: route service authorization success denial audit idempotency stale-version isolation cross-tenant
@@ -745,6 +748,117 @@ describe('D12 — refusals by business rule are recorded after the rollback', ()
       `operation=sal.payment-allocate entity=sal.receipt/${receiptId} ` +
         'rule=payment_over_allocation outcome=refused'
     );
+    // DF-7: the bound is named on the amount, and the figures are not on the answer.
+    expect((await bodyOf<ProblemBody>(refused.clone())).violations).toEqual([
+      { path: 'body.amount', rule: 'allocation_exceeds_invoice_open' },
+    ]);
+  });
+
+  it('names the receipt bound on the amount when the receipt has less left than asked (DF-7)', async () => {
+    const invoice = await seedIssuedInvoice('odfqa_receipt_bound');
+    authAs(SAL_FULL);
+    const receipt = await post(RECORD_PAYMENT, '/api/v1/payments', {
+      companyId: COMPANY_A1,
+      branchId: BRANCH_A1,
+      paymentMethodId: PAYMENT_METHOD_A,
+      payerPartnerId: PARTNER_A,
+      currency: 'USD',
+      amount: '10.00',
+    });
+    expect(receipt.status).toBe(201);
+    const receiptId = (await bodyOf<{ id: string }>(receipt)).id;
+
+    authAs(SAL_FULL);
+    const refused = await (ALLOCATE_PAYMENT as ParamHandler<{ paymentId: string }>)(
+      new Request(`http://localhost/api/v1/payments/${receiptId}/allocations`, {
+        method: 'POST',
+        headers: commandHeaders(randomUUID()),
+        body: JSON.stringify({ invoiceId: invoice.invoiceId, amount: '20.00', currency: 'USD' }),
+      }),
+      { params: Promise.resolve({ paymentId: receiptId }) }
+    );
+    expect(refused.status).toBe(409);
+    const body = await bodyOf<ProblemBody>(refused);
+    expect(body.violations).toEqual([
+      { path: 'body.amount', rule: 'allocation_exceeds_receipt_remaining' },
+    ]);
+    expect(JSON.stringify(body)).not.toContain('10.00');
+    expect(await refusalEvents('sal.receipt', receiptId, 'payment_over_allocation')).toBe(1);
+  });
+
+  it('records a credit-note request above what remains creditable once, naming the invoice and nothing of the money (DF-3)', async () => {
+    const invoice = await seedIssuedInvoice('odfqa_over_credit');
+    const before = await countRowsOf(
+      `SELECT count(*)::text AS n FROM sal.credit_notes WHERE invoice_id = $1`,
+      [invoice.invoiceId]
+    );
+    authAs(SAL_FULL);
+    const refused = await (REQUEST_CREDIT_NOTE as ParamHandler<{ invoiceId: string }>)(
+      new Request(`http://localhost/api/v1/invoices/${invoice.invoiceId}/credit-notes`, {
+        method: 'POST',
+        headers: commandHeaders(randomUUID()),
+        // The invoice is 100.0000: one cent above what remains creditable.
+        body: JSON.stringify({ amount: '100.01', reason: 'over credit probe' }),
+      }),
+      { params: Promise.resolve({ invoiceId: invoice.invoiceId }) }
+    );
+    expect(refused.status).toBe(409);
+    expect(
+      await countRowsOf(`SELECT count(*)::text AS n FROM sal.credit_notes WHERE invoice_id = $1`, [
+        invoice.invoiceId,
+      ])
+    ).toBe(before);
+
+    const events = await admin.query<{ tenant_id: string; actor_id: string; detail: string }>(
+      `SELECT tenant_id, actor_id, detail FROM iam.security_events
+        WHERE event_type = 'business-rule.refused' AND detail LIKE $1`,
+      [`%entity=sal.invoice/${invoice.invoiceId} %`]
+    );
+    expect(events.rows).toEqual([
+      {
+        tenant_id: TENANT_A,
+        actor_id: SAL_FULL.userId,
+        detail:
+          `operation=sal.credit-note-create entity=sal.invoice/${invoice.invoiceId} ` +
+          'rule=credit_note_exceeds_open_amount outcome=refused',
+      },
+    ]);
+    // Nothing but the rule: no amount, no reason text.
+    expect(events.rows[0]?.detail).not.toContain('100.01');
+    expect(events.rows[0]?.detail).not.toContain('over credit probe');
+    // Readable in its own tenant only.
+    const like = `%entity=sal.invoice/${invoice.invoiceId} %`;
+    expect(await visibleRefusals(AUDIT_A, like)).toBe(1);
+    expect(await visibleRefusals(AUDIT_B, like)).toBe(0);
+  });
+
+  it('records nothing for a credit-note request within the open amount, or for its replay (DF-3)', async () => {
+    const invoice = await seedIssuedInvoice('odfqa_credit_success');
+    const key = randomUUID();
+    const raise = () =>
+      (REQUEST_CREDIT_NOTE as ParamHandler<{ invoiceId: string }>)(
+        new Request(`http://localhost/api/v1/invoices/${invoice.invoiceId}/credit-notes`, {
+          method: 'POST',
+          headers: commandHeaders(key),
+          body: JSON.stringify({ amount: '100.00', reason: 'whole credit probe' }),
+        }),
+        { params: Promise.resolve({ invoiceId: invoice.invoiceId }) }
+      );
+    authAs(SAL_FULL);
+    const first = await raise();
+    expect(first.status).toBe(201);
+    const noteId = (await bodyOf<CreditNoteResultBody>(first)).creditNote.id;
+    authAs(SAL_FULL);
+    const replay = await raise();
+    expect(replay.status).toBeLessThan(300);
+    // The same note answers the retry, and no second note exists.
+    expect((await bodyOf<CreditNoteResultBody>(replay)).creditNote.id).toBe(noteId);
+    expect(
+      await countRowsOf(`SELECT count(*)::text AS n FROM sal.credit_notes WHERE invoice_id = $1`, [
+        invoice.invoiceId,
+      ])
+    ).toBe(1);
+    expect(await refusalEvents('sal.invoice', invoice.invoiceId)).toBe(0);
   });
 });
 

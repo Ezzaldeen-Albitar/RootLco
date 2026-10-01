@@ -42,7 +42,8 @@
  * does not offer the approval at all and says it is waiting for another
  * approver. The server remains the guarantee: a refusal that arrives anyway (the
  * same person in another session, or a note decided meanwhile) is said in plain
- * words and the note is read again.
+ * words: a named rule reads the note again, and a note that moved on offers to
+ * load the latest version.
  *
  * ## Deciding needs its own permission and limit (ADR-023, D13)
  *
@@ -52,8 +53,19 @@
  * server to the approver's credit-note limit over every approved credit on the
  * invoice, this note included. Such a refusal (the permission or the limit)
  * says which rule refused it, in words, and leaves the note pending. The note is
- * not read again, because the refusal changed nothing; only a conflict (the note
- * or its invoice moved on) or a decision that landed triggers a second read.
+ * not read again, because the refusal changed nothing; a decision that landed
+ * reads it again, and a conflict (the note or its invoice moved on) offers
+ * "Load the latest version".
+ *
+ * ## A conflict is the shared conflict, and the list follows it (DF-4)
+ *
+ * A note decided in another tab answers the second tab's decision with a
+ * conflict. The detail says so and offers "Load the latest version" — the same
+ * way out every edit screen gives a conflict — and holds its decisions until the
+ * latest version is loaded, because each would only send the version that has
+ * just been refused. The branch list on the same screen is read again at once,
+ * so the row no longer reads "Waiting for a second person" for a note that is no
+ * longer waiting; every decision that lands re-reads it too.
  *
  * ## Rejecting and withdrawing (ADR-023, D3)
  *
@@ -63,7 +75,7 @@
  * sends the note's version as the detail read published it, and each is final:
  * a withdrawn or rejected note credits nothing and can never be approved. The
  * server remains the guarantee, and a refusal that arrives anyway is said in
- * words and the note is read again.
+ * words; a note that moved on offers the latest version.
  */
 
 import { useCallback, useMemo, useState } from 'react';
@@ -109,6 +121,17 @@ import { OutcomeNote, When } from './shared';
 
 /** `''` is every state — the toolbar's own "All" choice. */
 type ListFilter = CreditNoteState | '';
+
+/**
+ * The conflicts that mean "the note moved on since it was shown" — a stale
+ * version, or a note already decided or no longer covered by its invoice. The
+ * adapter gives exactly these two sentences to a conflict that names no rule
+ * (`../api.ts`); a conflict that names its rule keeps its own sentence.
+ */
+const VERSION_CONFLICTS: ReadonlySet<string> = new Set([
+  'creditNotes.decision.conflict',
+  'creditNotes.approve.conflict',
+]);
 
 /** The route's `MAX_REASON` for a rejection reason: two thousand characters. */
 const CREDIT_NOTE_REASON_MAX = 2000;
@@ -171,6 +194,7 @@ export function CreditNotesScreen({
             setNotice(key);
             setEpoch((n) => n + 1);
           }}
+          onListChanged={() => setEpoch((n) => n + 1)}
         />
       )}
 
@@ -412,8 +436,9 @@ function BranchCreditNotes({
  *
  * Rejecting and withdrawing send the note's `recordVersion` exactly as this read
  * published it. A conflict — the note changed or was decided since it was read —
- * is said in words and the note is read again; every decision stays busy until
- * the note has been read again.
+ * is said in words with "Load the latest version" beside it, the branch list is
+ * read again, and the decisions wait until the latest version is loaded. A
+ * decision that landed reads the note again, and stays busy until it has.
  */
 type Decision = 'approve' | 'reject' | 'withdraw';
 
@@ -425,6 +450,7 @@ function CreditNoteDetail({
   canDecide,
   onClose,
   onDecided,
+  onListChanged,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -433,12 +459,16 @@ function CreditNoteDetail({
   readonly canDecide: boolean;
   readonly onClose: () => void;
   readonly onDecided: (noticeKey: string) => void;
+  /** Asks the branch list to read again: a conflict means its row may be stale too. */
+  readonly onListChanged: () => void;
 }) {
   const read = useCallback(() => readCreditNote(creditNoteId), [creditNoteId]);
   const detail = useReread<CreditNote>(read);
   const [asking, setAsking] = useState<Decision | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // The shown version was refused as stale: decisions wait for the latest one.
+  const [stale, setStale] = useState(false);
   // The server's refusal of the rejection reason, drawn on the reason box itself.
   const [reasonError, setReasonError] = useState<string | undefined>(undefined);
 
@@ -450,9 +480,11 @@ function CreditNoteDetail({
 
   /**
    * What a decision's answer does to the screen. Returns true when the note must
-   * be read again — after a decision that landed, and after a conflict, which
-   * means the note or its invoice moved on — so each sender below re-reads in
-   * its own body, right after its own guarded call.
+   * be read again — after a decision that landed, and after a conflict that names
+   * its rule — so each sender below re-reads in its own body, right after its own
+   * guarded call. Every conflict reads the branch list again at once. A conflict
+   * that means the note or its invoice moved on offers the latest version
+   * instead of replacing what the operator is looking at under them.
    */
   const settle = (
     decision: Decision,
@@ -480,7 +512,29 @@ function CreditNoteDetail({
     }
     setAsking(null);
     setOutcome(result.state);
-    return result.state.status === 'conflict';
+    if (result.state.status !== 'conflict') return false;
+    // Either way the list row may be stale: it is read again at once.
+    onListChanged();
+    if (result.state.messageKey !== undefined && VERSION_CONFLICTS.has(result.state.messageKey)) {
+      // The note moved on since it was shown: the shared conflict's way out.
+      setStale(true);
+      return false;
+    }
+    // A conflict that names its rule says why in words; the note is read again.
+    return true;
+  };
+
+  /** The conflict's way out: the note as stored now, and the list with it. */
+  const loadLatest = async () => {
+    setBusy(true);
+    try {
+      await detail.reload();
+      setStale(false);
+      setOutcome(null);
+      onListChanged();
+    } finally {
+      setBusy(false);
+    }
   };
 
   // Each sender stays busy until the note has been read again.
@@ -620,7 +674,7 @@ function CreditNoteDetail({
                   type="button"
                   variant="outlined"
                   color="error"
-                  disabled={busy}
+                  disabled={busy || stale}
                   aria-busy={busy || undefined}
                   onClick={() => open('withdraw')}
                 >
@@ -647,7 +701,7 @@ function CreditNoteDetail({
                 <Button
                   type="button"
                   variant="contained"
-                  disabled={busy}
+                  disabled={busy || stale}
                   aria-busy={busy || undefined}
                   onClick={() => open('approve')}
                 >
@@ -657,7 +711,7 @@ function CreditNoteDetail({
                   type="button"
                   variant="outlined"
                   color="error"
-                  disabled={busy}
+                  disabled={busy || stale}
                   aria-busy={busy || undefined}
                   onClick={() => open('reject')}
                 >
@@ -715,6 +769,21 @@ function CreditNoteDetail({
         </>
       )}
       <OutcomeNote messages={messages} outcome={outcome} />
+      {stale ? (
+        <div>
+          <Button
+            type="button"
+            variant="outlined"
+            size="small"
+            disabled={busy}
+            aria-busy={busy || undefined}
+            onClick={() => void loadLatest()}
+            data-testid="credit-note-load-latest"
+          >
+            {translate(messages, 'form.loadLatest')}
+          </Button>
+        </div>
+      ) : null}
       <div>
         <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'creditNotes.detail.close')}

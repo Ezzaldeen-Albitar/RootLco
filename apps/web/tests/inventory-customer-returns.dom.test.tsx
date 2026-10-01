@@ -333,6 +333,60 @@ describe('the cap on the quantity', () => {
     expect(createSalesReturn).not.toHaveBeenCalled();
   });
 
+  it('moves the cursor to the refused quantity rather than leaving it on the button, and withdraws the complaint on correction (DF-B7)', async () => {
+    const user = userEvent.setup();
+    renderLtr(operable());
+    await openBranch();
+    await lookUpSource(user);
+    const quantity = screen.getByLabelText(labelled('inventory.returns.create.quantity'));
+    await user.type(quantity, '3.001');
+    await user.selectOptions(
+      screen.getByLabelText(labelled('inventory.returns.create.receivedLocation')),
+      LOCATION_ID
+    );
+    const submit = screen.getByRole('button', {
+      name: EN['inventory.returns.create.submit'] as string,
+    });
+    await user.click(submit);
+    expect(quantity).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(quantity).toHaveFocus());
+    expect(submit).not.toHaveFocus();
+    expect(createSalesReturn).not.toHaveBeenCalled();
+
+    await user.type(quantity, '{Backspace}');
+    expect(quantity).not.toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText(EN['inventory.returns.overRemaining'] as string)).toBeNull();
+  });
+
+  it('moves the cursor to a quantity the server refused, too (DF-B7)', async () => {
+    createSalesReturn.mockResolvedValueOnce({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { quantity: 'inventory.returns.overRemaining' },
+        correlationId: 'corr-422',
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderLtr(operable());
+    await openBranch();
+    await lookUpSource(user);
+    const quantity = screen.getByLabelText(labelled('inventory.returns.create.quantity'));
+    await user.type(quantity, '1');
+    await user.selectOptions(
+      screen.getByLabelText(labelled('inventory.returns.create.receivedLocation')),
+      LOCATION_ID
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.returns.create.submit'] as string })
+    );
+    await waitFor(() => expect(createSalesReturn).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(quantity).toHaveAttribute('aria-invalid', 'true'));
+    await waitFor(() => expect(quantity).toHaveFocus());
+  });
+
   it('accepts exactly the remainder', async () => {
     const user = userEvent.setup();
     renderLtr(operable());

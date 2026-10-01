@@ -271,6 +271,29 @@ export function zoneLabelAt(value: string, intlLocale: string, zone: string): st
 }
 
 /**
+ * A zone named for a reader rather than as its identifier: the zone's generic
+ * name in the reader's language with the offset in force at `value` —
+ * `Jordan Time (GMT+3)`, `توقيت الأردن (غرينتش+3)` — where the raw identifier
+ * (`Asia/Amman`) is a configuration value no operator should have to decode
+ * (finance checkpoint, DF-B5).
+ *
+ * UTC is `UTC` in both languages, as `zoneLabelAt` writes it. A zone the browser
+ * has no generic name for is named by its offset alone, and a zone the browser
+ * does not know at all is returned as given, because inventing a name for it
+ * would be worse than showing what the platform stored.
+ */
+export function zoneDisplayName(zone: string, intlLocale: string, value: string): string {
+  if (UTC_ZONES.has(zone)) return 'UTC';
+  if (!isKnownZone(zone)) return zone;
+  const instant = Number.isNaN(new Date(value).getTime()) ? new Date() : new Date(value);
+  const offset = zoneLabelAt(instant.toISOString(), intlLocale, zone);
+  const name = new Intl.DateTimeFormat(intlLocale, { timeZone: zone, timeZoneName: 'longGeneric' })
+    .formatToParts(instant)
+    .find((part) => part.type === 'timeZoneName')?.value;
+  return name && name !== offset && name !== zone ? `${name} (${offset})` : offset;
+}
+
+/**
  * Whether this browser knows a zone by that name.
  *
  * Kept here, beside every other formatter that takes a zone, so no feature file

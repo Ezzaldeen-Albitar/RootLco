@@ -16,6 +16,7 @@ import { fromFailure, success, type ActionState } from '@/lib/forms/action-resul
 import type { PaymentAllocateBody, PaymentRecordBody } from '@/lib/contracts/payments-contract';
 import type { BranchOption } from '@/features/services/services-contract';
 import type { Outstanding } from '@/features/billing/billing-contract';
+import { OVER_ALLOCATION_KEYS } from './payments-contract';
 import type {
   Allocation,
   PaymentMethod,
@@ -108,6 +109,19 @@ function underFormControl(state: ActionState): ActionState {
   if (!published || published['currencyCode'] === undefined) return state;
   const { currencyCode, ...rest } = published;
   return { ...state, fieldErrors: { currency: currencyCode, ...rest } };
+}
+
+/**
+ * An over-allocation is a refusal ABOUT THE AMOUNT: the field carries the reason,
+ * so the line under the form says only that the form could not be saved (with
+ * its reference), rather than a second, vaguer sentence about the same refusal.
+ */
+function overBoundAtForm(state: ActionState): ActionState {
+  const amount = state.fieldErrors?.['amount'];
+  if (amount !== OVER_ALLOCATION_KEYS.receipt && amount !== OVER_ALLOCATION_KEYS.invoice) {
+    return state;
+  }
+  return { ...state, messageKey: 'form.formError' };
 }
 
 /**
@@ -264,7 +278,12 @@ export async function allocatePayment(
     body,
     { idempotencyKey }
   );
-  if (!result.ok) return { state: underFormControl(fromFailure(result, attempt)), created: null };
+  if (!result.ok) {
+    return {
+      state: overBoundAtForm(underFormControl(fromFailure(result, attempt))),
+      created: null,
+    };
+  }
   return {
     state: {
       ...success('payments.allocate.success', attempt),

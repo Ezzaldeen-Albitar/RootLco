@@ -657,6 +657,40 @@ describe('the Material UI reason dialog', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Keep the reason shorter.');
   });
 
+  it("withdraws the server's refusal once the refused reason is edited, and shows it again for the same text", async () => {
+    const user = userEvent.setup();
+    // The host keeps the dialog open after a refusal, as a refusing screen does.
+    function RefusingHost() {
+      const [refusal, setRefusal] = useState<string | undefined>(undefined);
+      return (
+        <ReasonDialog
+          open
+          onCancel={vi.fn()}
+          onConfirm={() => setRefusal('Keep the reason shorter.')}
+          messages={messages}
+          title="Refuse this"
+          reasonLabel="Reason"
+          confirmLabel="Refuse"
+          reasonError={refusal}
+        />
+      );
+    }
+    inFoundation(<RefusingHost />);
+    const box = await screen.findByRole('textbox', { name: /Reason/ });
+    await user.type(box, 'far too long');
+    await user.click(screen.getByRole('button', { name: 'Refuse' }));
+    await waitFor(() => expect(box).toHaveAttribute('aria-invalid', 'true'));
+    expect(screen.getByRole('alert')).toHaveTextContent('Keep the reason shorter.');
+
+    await user.type(box, '!');
+    expect(box).not.toHaveAttribute('aria-invalid');
+    expect(screen.queryByText('Keep the reason shorter.')).toBeNull();
+    expect(box).toHaveValue('far too long!');
+
+    await user.type(box, '{Backspace}');
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+  });
+
   it('sends the reason trimmed', async () => {
     const user = userEvent.setup();
     const onConfirm = vi.fn();

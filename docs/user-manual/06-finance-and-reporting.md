@@ -456,7 +456,8 @@ authority, never borrowed from the permission to raise one or from a discount li
   organisation's audit log.
 - **Refused attempts are recorded too.** When the application refuses a decision by rule — approving
   your own note, rejecting a note you raised, withdrawing somebody else's, deciding a note already
-  decided, crediting more than is open, approving a credit note without the permission in its branch
+  decided, crediting more than is open (when the note is raised as well as when it is approved),
+  approving a credit note without the permission in its branch
   or without a credit note limit that covers it, deciding a discount you asked for or have no limit
   for, or
   allocating more money than a receipt or an invoice has left — the attempt is recorded as a security
@@ -571,23 +572,23 @@ whoever raised a credit note cannot approve it." <!-- creditNotes.detail.approva
 
 **If it goes wrong**
 
-| Message                                                                                                                                                                     | What it means                                                                                                                |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| **"You do not have permission to see the credit notes of this branch. That also needs permission to see amounts."** <!-- creditNotes.list.refused -->                       | One or both permissions are missing.                                                                                         |
-| **"The credit notes could not be read just now. Try again."** <!-- creditNotes.list.unavailable -->                                                                         | The service did not answer.                                                                                                  |
-| **"That credit note was not found."** <!-- creditNotes.detail.missing -->                                                                                                   | The note is not at this branch, or is gone.                                                                                  |
-| **"The invoice cannot be credited by this amount. …"** <!-- creditNotes.request.overOpen -->                                                                                | The amount is more than is still open on the invoice, or the invoice is no longer open for credit. Enter less.               |
-| **"You raised this credit note, so you cannot approve it. Another person who can approve credit notes must approve it."** <!-- form.violation.credit_note_self_approval --> | The person who raised the note tried to approve it (for example from another window). Ask a second person.                   |
-| **"You cannot approve credit notes for this branch. …"** <!-- form.violation.credit_approval_permission_missing -->                                                         | Your credit-approval permission does not cover this note's branch. Ask an administrator, or leave it for another approver.   |
-| **"You have no credit note approval limit for this company, so you cannot approve this credit note. …"** <!-- form.violation.credit_no_approval_limit -->                   | Nobody has set you a credit note limit here (a discount limit does not count). Ask an administrator to set one.              |
-| **"The only credit note approval limits you hold were set by you, …"** <!-- form.violation.credit_limit_self_created -->                                                    | A limit you set yourself never counts. Ask another administrator to set your limit.                                          |
-| **"Your credit note approval limit is in another currency, …"** <!-- form.violation.credit_limit_currency_mismatch -->                                                      | Your limit is not in the note's currency. Leave it for an approver whose limit is.                                           |
-| **"Approving this credit note would take the total approved credit on its invoice above your approval limit. …"** <!-- form.violation.credit_limit_exceeded -->             | The notes already approved on the invoice plus this one are more than your limit. Leave it for a higher limit, or reject it. |
-| **"This credit note could not be approved as it stands. …"** <!-- creditNotes.approve.conflict -->                                                                          | It was decided meanwhile, or its invoice no longer has that much open. The note has been read again; check what it says.     |
-| **"You raised this credit note, so you cannot reject it. You can withdraw it instead."** <!-- form.violation.credit_note_self_rejection -->                                 | The person who raised the note tried to reject it. Withdraw it instead.                                                      |
-| **"Only the person who raised this credit request can withdraw it."** <!-- form.violation.credit_note_withdraw_not_requester -->                                            | Somebody other than the person who raised the note tried to withdraw it.                                                     |
-| **"This credit note has already been decided, so it can no longer be changed."** <!-- form.violation.credit_note_decision_frozen -->                                        | It was approved, rejected or withdrawn meanwhile.                                                                            |
-| **"This credit note changed since it was shown, or it has already been decided. …"** <!-- creditNotes.decision.conflict -->                                                 | Somebody changed or decided it after you opened it. The note has been read again; check it and try again if it still waits.  |
+| Message                                                                                                                                                                     | What it means                                                                                                                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **"You do not have permission to see the credit notes of this branch. That also needs permission to see amounts."** <!-- creditNotes.list.refused -->                       | One or both permissions are missing.                                                                                                                                   |
+| **"The credit notes could not be read just now. Try again."** <!-- creditNotes.list.unavailable -->                                                                         | The service did not answer.                                                                                                                                            |
+| **"That credit note was not found."** <!-- creditNotes.detail.missing -->                                                                                                   | The note is not at this branch, or is gone.                                                                                                                            |
+| **"The invoice cannot be credited by this amount. …"** <!-- creditNotes.request.overOpen -->                                                                                | The amount is more than is still open on the invoice, or the invoice is no longer open for credit. Enter less.                                                         |
+| **"You raised this credit note, so you cannot approve it. Another person who can approve credit notes must approve it."** <!-- form.violation.credit_note_self_approval --> | The person who raised the note tried to approve it (for example from another window). Ask a second person.                                                             |
+| **"You cannot approve credit notes for this branch. …"** <!-- form.violation.credit_approval_permission_missing -->                                                         | Your credit-approval permission does not cover this note's branch. Ask an administrator, or leave it for another approver.                                             |
+| **"You have no credit note approval limit for this company, so you cannot approve this credit note. …"** <!-- form.violation.credit_no_approval_limit -->                   | Nobody has set you a credit note limit here (a discount limit does not count). Ask an administrator to set one.                                                        |
+| **"The only credit note approval limits you hold were set by you, …"** <!-- form.violation.credit_limit_self_created -->                                                    | A limit you set yourself never counts. Ask another administrator to set your limit.                                                                                    |
+| **"Your credit note approval limit is in another currency, …"** <!-- form.violation.credit_limit_currency_mismatch -->                                                      | Your limit is not in the note's currency. Leave it for an approver whose limit is.                                                                                     |
+| **"Approving this credit note would take the total approved credit on its invoice above your approval limit. …"** <!-- form.violation.credit_limit_exceeded -->             | The notes already approved on the invoice plus this one are more than your limit. Leave it for a higher limit, or reject it.                                           |
+| **"This credit note could not be approved as it stands. …"** <!-- creditNotes.approve.conflict -->                                                                          | It was decided meanwhile, or its invoice no longer has that much open. Press **Load the latest version** to see where it stands; the list is read again at once.       |
+| **"You raised this credit note, so you cannot reject it. You can withdraw it instead."** <!-- form.violation.credit_note_self_rejection -->                                 | The person who raised the note tried to reject it. Withdraw it instead.                                                                                                |
+| **"Only the person who raised this credit request can withdraw it."** <!-- form.violation.credit_note_withdraw_not_requester -->                                            | Somebody other than the person who raised the note tried to withdraw it.                                                                                               |
+| **"This credit note has already been decided, so it can no longer be changed."** <!-- form.violation.credit_note_decision_frozen -->                                        | It was approved, rejected or withdrawn meanwhile.                                                                                                                      |
+| **"This credit note changed since it was shown, or it has already been decided. …"** <!-- creditNotes.decision.conflict -->                                                 | Somebody changed or decided it after you opened it. Press **Load the latest version**; Approve, Reject and Withdraw wait until you do. The list is read again at once. |
 
 **Screenshot** — no screenshot available at this version.
 
@@ -810,6 +811,14 @@ filtered to one invoice, `/en/payments?invoiceId=<identifier>`.
   - Without `sal.payment.allocate`: "Applying a receipt needs the allocation permission, which this
     account does not hold." <!-- payments.allocate.needsCode -->
 - **If it goes wrong:**
+  - An amount above a bound is refused **on the amount box**, which turns red, takes the cursor, and
+    says which bound with the figure: "This is more than is still open on the invoice: {amount}.
+    Enter at most that amount." <!-- payments.allocate.overInvoiceOpen --> or "This is more than is
+    left on this receipt: {amount}. Enter at most that amount." <!-- payments.allocate.overReceiptLeft -->
+    The figure is written in the currency (for example 20.864 JOD). When the invoice's balance cannot
+    be read just then, the box says "This is more than is still open on the invoice. Enter at most the
+    amount still open." <!-- form.violation.allocation_exceeds_invoice_open --> What you typed stays in
+    the box as you typed it, and the complaint goes as soon as you change the amount.
   - "Nothing is left on this receipt to apply." <!-- payments.allocate.nothingLeft -->
   - "This receipt was reversed. Nothing can be applied to it, and the amount shown as not applied is
     a consequence of the reversal." <!-- payments.allocate.reversed -->
@@ -1033,7 +1042,8 @@ Three blocks appear, in this order.
 never be read without knowing what produced it:
 
 - "From" <!-- reports.context.from --> and "Up to but not including" <!-- reports.context.to -->
-- "Time zone" <!-- reports.context.timezone -->
+- "Time zone" <!-- reports.context.timezone --> , named in your language with its offset — for
+  example "Jordan Time (GMT+3)" ("توقيت الأردن (غرينتش+3)") — never as a system identifier
 - "Reported company" <!-- reports.context.company --> and "Reported branch" <!-- reports.context.branch -->
 - "How current" <!-- reports.context.freshness --> , which reads "Read from the live records the
   moment you asked" <!-- reports.context.freshness.live -->
@@ -1061,9 +1071,18 @@ Column and measure names are plain words, among them "How many" <!-- reports.fie
 Three things to expect in the cells:
 
 - **Every figure is worked out by the server.** Nothing on the screen is summed, divided, rounded,
-  re-scaled or turned into another unit. An amount appears exactly as the system stored it, so a
-  value may read as `1234.5600`. There is no thousands separator and no currency symbol beside an
-  amount; the currency is its own column <!-- reports.field.currency --> .
+  re-scaled or turned into another unit. An amount is **written in its currency's own decimals with
+  the currency code** — `49.380 JOD`, as every other finance screen writes it — using the currency
+  of its own row <!-- reports.field.currency --> . A digit finer than the currency's smallest coin is
+  still shown (`1.9752 JOD`), never rounded away. The totals of a currency group are written the same
+  way. An amount with no currency beside it is shown exactly as stored.
+- **Codes are said in words.** In "Invoices and payments" the kind of document reads "Invoice",
+  "Receipt" or "Credit note" <!-- reports.documentType.invoice --> , the party's role reads "Payer"
+  <!-- reports.partyRole.payer --> or "The invoice's payer" <!-- reports.partyRole.invoice_payer -->
+  , and the status uses the same words as the invoice, payment and credit-note screens (for example
+  "Issued", "Partly applied", "Waiting for a second person"). A group of totals reads, for example,
+  "JOD · Receipts" <!-- reports.groups.documentType.receipt --> . The report is headed by its name
+  only; its internal code is not printed under the title.
 - An absent value reads "Not reported" <!-- reports.cell.missing --> or, in a group, <!-- reports.groups.noMeasure -->
   the same words. An empty set of values reads "None" <!-- reports.cell.none --> . **An absence is
   never printed as a zero.**

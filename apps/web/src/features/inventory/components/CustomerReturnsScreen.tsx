@@ -61,6 +61,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { formatDateTime } from '@/lib/format';
 import { compareMoney, formatMoney } from '@/lib/money';
 
@@ -319,6 +320,17 @@ function ReceiveForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * Each refused attempt — the form's own checks or the server's field
+   * refusal — moves the cursor to the first field it marked (DF-B7: the
+   * quantity was red beside its box while focus stayed on "Take it back").
+   */
+  const [attempt, setAttempt] = useState(0);
+  const formRef = useFocusFirstInvalid({
+    status: 'invalid',
+    fieldErrors: { ...(outcome?.fieldErrors ?? {}), ...errors },
+    attempt,
+  });
   /* One key per opened form: a repeated scan of the part being handed back, or
    * a retry after a lost answer, replays the first receipt. */
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
@@ -410,7 +422,10 @@ function ReceiveForm({
     const reason = form.reason.trim();
     if (reason.length > MAX_REASON) found['reason'] = 'inventory.stockOps.reasonTooLong';
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0) {
+      setAttempt((n) => n + 1);
+      return;
+    }
 
     setBusy(true);
     const result = await createSalesReturn(
@@ -430,6 +445,7 @@ function ReceiveForm({
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
+    if (Object.keys(result.state.fieldErrors ?? {}).length > 0) setAttempt((n) => n + 1);
     if (result.state.status === 'success' && result.created) {
       const received = result.created;
       setForm({
@@ -457,6 +473,7 @@ function ReceiveForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -640,7 +657,11 @@ function ReceiveForm({
           inputMode="decimal"
           dir="ltr"
           value={form.quantity}
-          onChange={(event) => setForm((f) => ({ ...f, quantity: event.target.value }))}
+          onChange={(event) => {
+            // A corrected quantity stops complaining.
+            setErrors((previous) => withoutError(previous, 'quantity'));
+            setForm((f) => ({ ...f, quantity: event.target.value }));
+          }}
           error={errorFor('quantity')}
         />
         <LocationPicker
@@ -705,6 +726,17 @@ function ReceiveForm({
       </div>
     </form>
   );
+}
+
+/** The form's own complaints without the one about `name`. */
+function withoutError(
+  errors: Readonly<Record<string, string>>,
+  name: string
+): Readonly<Record<string, string>> {
+  if (errors[name] === undefined) return errors;
+  const next: Record<string, string> = { ...errors };
+  delete next[name];
+  return next;
 }
 
 /* ------------------------------------------------------------------ *

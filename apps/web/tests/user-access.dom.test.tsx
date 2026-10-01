@@ -744,6 +744,119 @@ describe('a credit-note approval limit (ADR-023 D13)', () => {
     expect(screen.queryByText('credit_note')).toBeNull();
   });
 
+  /*
+   * DF-B6. A person's limit read "Person: 0b3d8c05-…" and, in Arabic, the
+   * provisioned role read "Tenant Administrator". The person is named through
+   * the user directory; the role is named in the reader's language; neither
+   * reference ever reaches the screen.
+   */
+  const PERSON_ID = '0b3d8c05-228a-406c-8c4c-b9df5b3f8458';
+  const ADMIN_ROLE = {
+    id: '70000000-0000-4000-8000-0000000000ad',
+    roleCode: 'tenant_administrator',
+    name: 'Tenant Administrator',
+    description: null,
+    isSystem: false,
+    recordVersion: 1,
+  };
+  const limitRow = (over: Record<string, unknown>) => ({
+    id: `limit-${String(over['userId'] ?? over['roleId'])}`,
+    companyId: 'company-1',
+    roleId: null,
+    userId: null,
+    limitType: 'credit_note',
+    amount: '500.000',
+    currencyCode: 'JOD',
+    effectiveFrom: '2026-10-01',
+    effectiveTo: null,
+    recordVersion: 1,
+    ...over,
+  });
+  const namedList = (path: string) =>
+    path.startsWith(`/api/v1/iam/users/${PERSON_ID}`)
+      ? {
+          ok: true,
+          status: 200,
+          data: { id: PERSON_ID, displayName: 'Rana Khoury' },
+          correlationId: 'corr-user',
+        }
+      : {
+          ...emptyList,
+          data: {
+            items: [limitRow({ userId: PERSON_ID }), limitRow({ roleId: ADMIN_ROLE.id })],
+            nextCursor: null,
+          },
+        };
+
+  it('names the person behind a limit and never prints the account reference (DF-B6)', async () => {
+    get.mockImplementation(async (path: string) => namedList(path));
+    renderLtr(
+      inBranch(
+        <ApprovalLimitsScreen
+          locale="en"
+          messages={en}
+          roles={[...roles, ADMIN_ROLE]}
+          canManage
+          canReadUsers
+        />
+      )
+    );
+    expect(await screen.findByText('Rana Khoury')).toBeVisible();
+    expect(screen.queryByText(PERSON_ID)).toBeNull();
+    expect(document.body.textContent ?? '').not.toContain(PERSON_ID);
+    // The provisioned name carries a platform word; it is said in plain words.
+    expect(screen.getByText(EN('roles.standard.tenant_administrator'))).toBeVisible();
+    expect(screen.queryByText('Tenant Administrator')).toBeNull();
+  });
+
+  it('says why a person is not named without the user read, still without the reference (DF-B6)', async () => {
+    get.mockImplementation(async (path: string) => namedList(path));
+    renderLtr(inBranch(<ApprovalLimitsScreen locale="en" messages={en} roles={roles} canManage />));
+    expect(await screen.findByText(EN('approvalLimits.person.denied'))).toBeVisible();
+    expect(document.body.textContent ?? '').not.toContain(PERSON_ID);
+    // A role this screen cannot see is said to be one, not shown as its reference.
+    expect(screen.getByText(EN('approvalLimits.subject.roleUnknown'))).toBeVisible();
+    expect(document.body.textContent ?? '').not.toContain(ADMIN_ROLE.id);
+    expect(get.mock.calls.some(([path]) => String(path).includes('/iam/users/'))).toBe(false);
+  });
+
+  it('names the person and the provisioned role in Arabic (DF-B6)', async () => {
+    get.mockImplementation(async (path: string) => namedList(path));
+    renderRtl(
+      inBranch(
+        <ApprovalLimitsScreen
+          locale="ar"
+          messages={ar}
+          roles={[...roles, ADMIN_ROLE]}
+          canManage
+          canReadUsers
+        />,
+        { locale: 'ar' }
+      )
+    );
+    expect(await screen.findByText('Rana Khoury')).toBeVisible();
+    expect(screen.getByText(AR('roles.standard.tenant_administrator'))).toBeVisible();
+    expect(screen.queryByText('Tenant Administrator')).toBeNull();
+    expect(document.body.textContent ?? '').not.toContain(PERSON_ID);
+  });
+
+  it('keeps a renamed standard role in the words the organisation chose (DF-B6)', async () => {
+    get.mockImplementation(async (path: string) => namedList(path));
+    renderRtl(
+      inBranch(
+        <ApprovalLimitsScreen
+          locale="ar"
+          messages={ar}
+          roles={[...roles, { ...ADMIN_ROLE, name: 'Workshop Owner' }]}
+          canManage
+        />,
+        { locale: 'ar' }
+      )
+    );
+    expect(await screen.findByText('Workshop Owner')).toBeVisible();
+    expect(screen.queryByText(AR('roles.standard.tenant_administrator'))).toBeNull();
+  });
+
   it('labels the types and the zero refusal in Arabic', async () => {
     get.mockResolvedValue(emptyList);
     const { user, dialog, field } = await openCreate('ar');

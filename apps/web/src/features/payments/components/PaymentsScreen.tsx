@@ -43,6 +43,7 @@ import {
   type ReceiptCriteria,
 } from '../api';
 import {
+  OVER_ALLOCATION_KEYS,
   PAGE_SIZE,
   RECEIPT_STATUSES,
   type Allocation,
@@ -1293,6 +1294,16 @@ function AllocateForm({
   const [amount, setAmount] = useState('');
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * Which bound a refused amount broke, worded with the figure it broke (DF-7):
+   * what the receipt has left, or what the invoice still has open — formatted in
+   * the currency. A `null` figure when the invoice's balance could not be read,
+   * and the field then says which bound without a figure.
+   */
+  const [overBound, setOverBound] = useState<{
+    readonly key: 'payments.allocate.overReceiptLeft' | 'payments.allocate.overInvoiceOpen';
+    readonly figure: string | null;
+  } | null>(null);
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -1304,6 +1315,7 @@ function AllocateForm({
     setAmount('');
     setErrors({});
     setOutcome(null);
+    setOverBound(null);
   });
   const formRef = useFocusFirstInvalid({
     status: 'invalid',
@@ -1314,12 +1326,16 @@ function AllocateForm({
 
   /** A field's own error, then the server's violation for the same field. */
   const errorFor = (name: string): string | undefined => {
+    if (name === 'amount' && errors[name] === undefined && overBound?.figure != null) {
+      return formatMessage(translate(messages, overBound.key), { amount: overBound.figure });
+    }
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
   /** A corrected field stops complaining, whichever side raised the complaint. */
   const clearError = (name: string) => {
+    if (name === 'amount') setOverBound(null);
     setErrors((previous) => withoutKey(previous, name));
     setOutcome((previous) =>
       previous?.fieldErrors?.[name]
@@ -1398,6 +1414,29 @@ function AllocateForm({
       }
       // A refused allocation is a BOUND — more than the receipt has left or the
       // invoice still owes — or a refusal the server names; never "moved on".
+      // A bound is said on the amount, with the figure it broke (DF-7): the
+      // receipt's remainder as this panel shows it, or the invoice's balance read
+      // now, because the refusal says it is below what was typed.
+      const refusedAmount = result.state.fieldErrors?.['amount'];
+      if (refusedAmount === OVER_ALLOCATION_KEYS.receipt) {
+        setOverBound({
+          key: 'payments.allocate.overReceiptLeft',
+          figure: formatMoney(receipt.unallocated, locale),
+        });
+      } else if (refusedAmount === OVER_ALLOCATION_KEYS.invoice) {
+        let open: ReadState<Outstanding>;
+        try {
+          open = await readOutstanding(invoiceId);
+        } catch {
+          open = { status: 'unavailable', correlationId: null };
+        }
+        setOverBound({
+          key: 'payments.allocate.overInvoiceOpen',
+          figure: open.status === 'ok' ? formatMoney(open.data.outstanding, locale) : null,
+        });
+      } else {
+        setOverBound(null);
+      }
       if (Object.keys(result.state.fieldErrors ?? {}).length > 0) setAttempt((n) => n + 1);
     } finally {
       if (!applied) setBusy(false);

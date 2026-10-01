@@ -257,13 +257,37 @@ export interface AllocatePaymentInput {
  */
 export const OVER_ALLOCATION_RULE = 'payment_over_allocation';
 
+/**
+ * Which bound an over-allocation broke, as the token the screen reads from
+ * `safeDetails.violations[].rule` on the amount field (P1-32-PRE-OD-FQA, DF-7):
+ * more than the receipt has left, or more than the invoice still has open. The
+ * token names the bound and nothing else — the figures stay off the answer and
+ * off the record; the screen words the refusal with the figures it already shows.
+ */
+export const OVER_ALLOCATION_BOUNDS = Object.freeze({
+  receipt: 'allocation_exceeds_receipt_remaining',
+  invoice: 'allocation_exceeds_invoice_open',
+} as const);
+
+export type OverAllocationBound = keyof typeof OVER_ALLOCATION_BOUNDS;
+
 /** An `ERR-TRN-001` for an allocation outside its bounds, marked for the record. */
-function overAllocation(receiptId: string, message: string): AppFailure {
-  return withBusinessRefusal(new AppFailure('ERR-TRN-001', { message }), {
-    entityType: 'sal.receipt',
-    entityId: receiptId,
-    rule: OVER_ALLOCATION_RULE,
-  });
+function overAllocation(
+  receiptId: string,
+  message: string,
+  bound: OverAllocationBound
+): AppFailure {
+  return withBusinessRefusal(
+    new AppFailure('ERR-TRN-001', {
+      message,
+      safeDetails: { violations: [{ path: 'body.amount', rule: OVER_ALLOCATION_BOUNDS[bound] }] },
+    }),
+    {
+      entityType: 'sal.receipt',
+      entityId: receiptId,
+      rule: OVER_ALLOCATION_RULE,
+    }
+  );
 }
 
 /**
@@ -705,15 +729,21 @@ export class PaymentService {
         message: 'Receipt remainder read returned no row for a locked receipt',
       });
     }
+    const receiptRemaining = Decimal.fromDatabase(remaining.unallocated, MONEY);
     try {
       assertAllocationWithinBounds(
         amount,
-        Decimal.fromDatabase(remaining.unallocated, MONEY),
+        receiptRemaining,
         Decimal.fromDatabase(invoice.openReceivable, MONEY)
       );
     } catch (error) {
       if (error instanceof PaymentRuleError) {
-        throw overAllocation(receipt.id, error.message);
+        // The receipt's bound is checked first, as `assertAllocationWithinBounds` does.
+        throw overAllocation(
+          receipt.id,
+          error.message,
+          amount.greaterThan(receiptRemaining) ? 'receipt' : 'invoice'
+        );
       }
       throw error;
     }
@@ -744,14 +774,15 @@ export class PaymentService {
       // The primitive's own bounds, re-checked under its locks: another allocation
       // against the same invoice can land between the pre-check above and this
       // call. The same refusal, recorded the same way.
-      if (
-        isSqlState(error, SQLSTATE.checkViolation) &&
-        error instanceof Error &&
-        /exceeds (receipt unallocated|invoice open receivable)/.test(error.message)
-      ) {
+      const exceeded =
+        isSqlState(error, SQLSTATE.checkViolation) && error instanceof Error
+          ? /exceeds (receipt unallocated|invoice open receivable)/.exec(error.message)
+          : null;
+      if (exceeded) {
         throw overAllocation(
           receipt.id,
-          'Allocating a payment was refused: the amount exceeds what the receipt or the invoice has left'
+          'Allocating a payment was refused: the amount exceeds what the receipt or the invoice has left',
+          exceeded[1] === 'receipt unallocated' ? 'receipt' : 'invoice'
         );
       }
       toDomainFailure(error, 'Allocating a payment');

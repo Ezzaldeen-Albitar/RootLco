@@ -4,6 +4,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translateDynamic } from '@/i18n/get-messages';
 import { formatDayInZone, formatInZone, isCalendarDay, isKnownZone } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
+import { formatMoney, parseMoneyInput } from '@/lib/money';
 import type { ReportDefinition, ReportGroup } from './reports-contract';
 
 /**
@@ -36,6 +37,9 @@ import type { ReportDefinition, ReportGroup } from './reports-contract';
  * what makes branch 3 detectable rather than silently rendering a dotted key
  * into the middle of a table.
  */
+
+/** An ISO 4217 code as the platform publishes it. */
+const CURRENCY_CODE = /^[A-Z]{3}$/;
 
 /** Whether the catalogue actually holds a message for a runtime-built key. */
 function resolves(messages: Messages, key: string): boolean {
@@ -108,18 +112,105 @@ export function reportCreditStatusLabel(messages: Messages, code: string | null)
 }
 
 /**
+ * The kind of document an invoice-and-payment row is (`documentType`), in the
+ * reader's language, or `null` for a kind this build does not word (finance
+ * checkpoint, DF-5). The code — `invoice`, `receipt`, `credit_note` — is the
+ * server's discriminator and is never shown as prose.
+ */
+export function reportDocumentTypeLabel(messages: Messages, code: string | null): string | null {
+  if (code === null) return null;
+  const key = `reports.documentType.${code}`;
+  return resolves(messages, key) ? translateDynamic(messages, key) : null;
+}
+
+/** What the party is to the document (`partyRole`: `payer`, `invoice_payer`), or `null`. */
+export function reportPartyRoleLabel(messages: Messages, code: string | null): string | null {
+  if (code === null) return null;
+  const key = `reports.partyRole.${code}`;
+  return resolves(messages, key) ? translateDynamic(messages, key) : null;
+}
+
+/**
+ * The vocabulary each document kind's `status` is said in: the invoice's own
+ * status, the receipt's, and the credit note's approval state — the same words
+ * the invoice, payment and credit-note screens use, so a status reads the same
+ * on the report as on the record it drills through to.
+ */
+const STATUS_NAMESPACE_BY_DOCUMENT: Readonly<Record<string, string>> = Object.freeze({
+  invoice: 'invoices.status',
+  receipt: 'payments.status',
+  credit_note: 'creditNotes.state',
+});
+
+/**
+ * A document's `status` in the reader's language, chosen by its `documentType`,
+ * or `null` when either code is outside the vocabulary this build words (the
+ * caller then shows the code as a code).
+ */
+export function reportDocumentStatusLabel(
+  messages: Messages,
+  documentType: string | null,
+  code: string | null
+): string | null {
+  if (code === null || documentType === null) return null;
+  const namespace = STATUS_NAMESPACE_BY_DOCUMENT[documentType];
+  if (namespace === undefined) return null;
+  const key = `${namespace}.${code}`;
+  return resolves(messages, key) ? translateDynamic(messages, key) : null;
+}
+
+/**
  * The name a group is shown under.
  *
- * Only a group keyed by `state` alone is re-worded, because `state` is the one
- * group key whose vocabulary this build holds. Every other label is the server's
- * — a stock code, a technician's name — and is not language to translate.
+ * A group keyed by `state` alone is re-worded, because `state` is a group key
+ * whose vocabulary this build holds. A group keyed by a currency AND a document
+ * kind (the invoice-and-payment report) is named by the currency the server
+ * labelled it with and the kind in words — "JOD · Invoices" — because three
+ * groups all called "JOD" would not say which is which (DF-5). Every other label
+ * is the server's — a stock code, a technician's name — and is not language to
+ * translate.
  */
 export function groupDisplayLabel(messages: Messages, group: ReportGroup): string | null {
   const names = Object.keys(group.key);
   if (names.length === 1 && names[0] === 'state') {
     return reportStateLabel(messages, group.key['state'] ?? null) ?? group.label;
   }
+  if (group.label !== null && 'documentType' in group.key) {
+    const code = group.key['documentType'] ?? null;
+    const key = code === null ? null : `reports.groups.documentType.${code}`;
+    if (key !== null && resolves(messages, key)) {
+      return `${group.label} · ${translateDynamic(messages, key)}`;
+    }
+  }
   return group.label;
+}
+
+/**
+ * The currency a group's measures are amounts in, or `null`.
+ *
+ * A group keyed by `currency` is a money group: the invoice-and-payment report
+ * keys every group on the currency precisely because no amount is comparable
+ * across two currencies, and every measure such a group carries is an amount in
+ * it (`report-datasets.ts`). No other registered report keys a group on a
+ * currency, so a count or a duration is never mistaken for money.
+ */
+export function groupCurrency(group: ReportGroup): string | null {
+  const currency = group.key['currency'] ?? null;
+  return currency !== null && CURRENCY_CODE.test(currency) ? currency : null;
+}
+
+/**
+ * A money cell or measure for reading: the server's exact decimal string,
+ * written with its currency's minor unit (`formatMoney` — 3 decimals for JOD,
+ * never rounding a digit below it away) and the currency code (DF-6). A value
+ * that is not a canonical amount, or that arrives with no currency beside it, is
+ * shown exactly as it arrived rather than guessed at.
+ */
+export function formatReportMoney(value: string, currency: string | null, locale: Locale): string {
+  if (currency === null || !CURRENCY_CODE.test(currency) || !parseMoneyInput(value).ok) {
+    return value;
+  }
+  return formatMoney({ amount: value, currency }, intlLocale(locale));
 }
 
 /**

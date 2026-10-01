@@ -11,12 +11,19 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
+import { zoneDisplayName } from '@/lib/branch-time';
+import { intlLocale } from '@/lib/format';
 import { runReport } from '../reports-api';
 import {
   fieldHeading,
+  formatReportMoney,
   formatReportTime,
+  groupCurrency,
   groupDisplayLabel,
   reportCreditStatusLabel,
+  reportDocumentStatusLabel,
+  reportDocumentTypeLabel,
+  reportPartyRoleLabel,
   reportStateLabel,
   reportTitle,
   runTitle,
@@ -61,17 +68,19 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * ## Nothing is computed here. Nothing.
  *
  * Every number on this screen is a string the server sent. No total is summed, no
- * duration is divided into hours, no quantity is re-scaled, no amount is
- * reformatted, no percentage is derived and no two values are compared. The
- * groups are computed over the WHOLE selection by PostgreSQL and are not a
- * summary of the page — a page total presented as a branch's position is the
- * `P1-28` round-two defect exactly.
+ * duration is divided into hours, no quantity is re-scaled, no percentage is
+ * derived and no two values are compared. The groups are computed over the WHOLE
+ * selection by PostgreSQL and are not a summary of the page — a page total
+ * presented as a branch's position is the `P1-28` round-two defect exactly.
  *
- * A measure is rendered as the characters it arrived as. That is deliberate and
- * it is recorded: this application's one sanctioned money helper needs a currency
- * beside the amount and a canonical four-place scale, and a report cell carries
- * neither — the currency is a separate column on the one dataset that has one. A
- * formatter that guessed either would be changing money on the way to the screen.
+ * An amount is WRITTEN, never changed (finance checkpoint, DF-6). A `money` cell
+ * is shown through `formatMoney` with the currency its own row states — the
+ * dataset's `currency` column — so a JOD amount reads at JOD's three decimals as
+ * it does on every other screen, and a digit below the minor unit is still shown
+ * rather than rounded away. A group keyed by a currency writes its measures the
+ * same way. An amount with no currency beside it, or that is not a canonical
+ * decimal, is shown as the characters it arrived as: a formatter that guessed a
+ * currency would be changing money on the way to the screen.
  *
  * ## An instant is shown on the BRANCH's clock, never the browser's
  *
@@ -82,8 +91,9 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * visibly disagree with itself. So every date and instant - the rows and the
  * time the report was read - is formatted in the zone the period was resolved in
  * (`formatReportTime`), in the reader's language, and that zone is displayed
- * beside them. The raw ISO string is not what an operator reads (Browser QA
- * part 7, row 6.7).
+ * beside them by its name and offset (`zoneDisplayName`: "Jordan Time (GMT+3)"),
+ * never as the identifier the platform stores (DF-B5). The raw ISO string is not
+ * what an operator reads (Browser QA part 7, row 6.7).
  *
  * ## The period is half-open, and the screen says so where it is typed
  *
@@ -266,14 +276,18 @@ export function ReportScreen({
   );
 }
 
-/** The report's name, with its code shown as the code it is. */
+/**
+ * The report's name. A report this build has words for is shown by its name
+ * alone: its code is a machine name, and printing it under the title put an
+ * identifier in front of every operator (DF-B5). Only a report with no name to
+ * show is headed by its code, shown as the code it is.
+ */
 function ReportHeading({ title, code }: { readonly title: string | null; readonly code: string }) {
   return (
     <div className="flex flex-wrap items-baseline gap-2">
       <h2 className="text-section-title font-medium text-text-primary">
         {title === null ? <MachineName value={code} /> : <bdi>{title}</bdi>}
       </h2>
-      {title === null ? null : <MachineName value={code} />}
     </div>
   );
 }
@@ -353,7 +367,9 @@ function ReportResults({
           <span dir="ltr">{run.period.to}</span>
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.timezone')}>
-          <MachineName value={run.period.timezone} />
+          <bdi data-testid="report-zone">
+            {zoneDisplayName(run.period.timezone, intlLocale(locale), run.generatedAt)}
+          </bdi>
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.company')}>
           {companyName === null ? (
@@ -543,12 +559,20 @@ function GroupTable({
                           if (!(name in group.key)) return null;
                           const heading = fieldHeading(messages, name);
                           const value = group.key[name] ?? null;
+                          // A document kind is said in words (DF-5); any other
+                          // key value is the server's and is shown as a code.
+                          const worded =
+                            name === 'documentType'
+                              ? reportDocumentTypeLabel(messages, value)
+                              : null;
                           return (
                             <span key={name} className="text-caption text-text-secondary">
                               {heading === null ? <MachineName value={name} /> : heading}
                               {': '}
                               {value === null ? (
                                 translate(messages, 'reports.groups.unnamed')
+                              ) : worded !== null ? (
+                                <bdi>{worded}</bdi>
                               ) : (
                                 <MachineName value={value} />
                               )}
@@ -562,6 +586,7 @@ function GroupTable({
                   </td>
                   {measureNames.map((name) => {
                     const measure = group.measures[name];
+                    const currency = groupCurrency(group);
                     return (
                       <td key={name} className={REPORT_TABLE_CELL}>
                         {measure === undefined ? (
@@ -569,7 +594,7 @@ function GroupTable({
                             {translate(messages, 'reports.groups.noMeasure')}
                           </span>
                         ) : (
-                          <span dir="ltr">{measure}</span>
+                          <span dir="ltr">{formatReportMoney(measure, currency, locale)}</span>
                         )}
                       </td>
                     );
@@ -582,6 +607,27 @@ function GroupTable({
       </div>
     </section>
   );
+}
+
+/**
+ * A text cell whose value is one of the invoice-and-payment report's codes, in
+ * the reader's language, or `null` when the column is not one of them or the
+ * code is outside the vocabulary this build words.
+ */
+function codedLabel(
+  messages: Messages,
+  key: string,
+  row: ReportRow,
+  value: string | null
+): string | null {
+  if (key === 'documentType') return reportDocumentTypeLabel(messages, value);
+  if (key === 'partyRole') return reportPartyRoleLabel(messages, value);
+  if (key === 'status') {
+    const documentType =
+      row.cells.find((candidate) => candidate.key === 'documentType')?.value ?? null;
+    return reportDocumentStatusLabel(messages, documentType, value);
+  }
+  return null;
 }
 
 /**
@@ -655,12 +701,20 @@ function CellValue({
     );
   }
 
-  if (
-    column.kind === 'count' ||
-    column.kind === 'duration' ||
-    column.kind === 'quantity' ||
-    column.kind === 'money'
-  ) {
+  if (column.kind === 'money') {
+    // Written with the currency the row states, never rounded (DF-6). Without a
+    // currency beside it the amount is shown exactly as sent.
+    const currency = row.cells.find((candidate) => candidate.key === 'currency')?.value ?? null;
+    return cell.value === null ? (
+      <span className="text-text-muted" lang={locale}>
+        {translate(messages, 'reports.cell.none')}
+      </span>
+    ) : (
+      <span dir="ltr">{formatReportMoney(cell.value, currency, locale)}</span>
+    );
+  }
+
+  if (column.kind === 'count' || column.kind === 'duration' || column.kind === 'quantity') {
     // Exact, and exactly as sent. Nothing here rounds, scales, divides or adds.
     return cell.value === null ? (
       <span className="text-text-muted" lang={locale}>
@@ -682,6 +736,10 @@ function CellValue({
   const credit =
     column.key === 'creditStatus' ? reportCreditStatusLabel(messages, cell.value) : null;
   if (credit !== null) return <bdi>{credit}</bdi>;
+  // The invoice-and-payment report's own codes (DF-5): the kind of document, the
+  // party's role, and the document's status in the vocabulary of its own kind.
+  const coded = codedLabel(messages, column.key, row, cell.value);
+  if (coded !== null) return <bdi>{coded}</bdi>;
   if (cell.label !== null) return <bdi>{cell.label}</bdi>;
   if (cell.value !== null) return <MachineName value={cell.value} />;
   return (

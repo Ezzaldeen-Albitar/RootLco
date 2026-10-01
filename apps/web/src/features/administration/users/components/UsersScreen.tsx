@@ -14,6 +14,7 @@ import { Dialog, ReasonConfirmDialog } from '@/components/overlays/Overlays';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
+import { roleDisplayName } from '../../access/role-name';
 import { formatDate } from '@/lib/format';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
@@ -548,7 +549,10 @@ function InviteDialog({
             onChange={(event) =>
               setRoleIds(Array.from(event.target.selectedOptions, (option) => option.value))
             }
-            options={roles.map((role) => ({ value: role.id, label: role.name }))}
+            options={roles.map((role) => ({
+              value: role.id,
+              label: roleDisplayName(messages, role),
+            }))}
           />
         ) : null}
 
