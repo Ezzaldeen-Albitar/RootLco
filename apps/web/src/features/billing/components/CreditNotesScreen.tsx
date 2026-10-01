@@ -50,8 +50,10 @@
  * permission who did not raise the note; anybody else who can see the note is
  * told that deciding it needs that permission. An approval is further held by the
  * server to the approver's credit-note limit over every approved credit on the
- * invoice, this note included; a refusal says which rule refused it, in words,
- * and the note is read again.
+ * invoice, this note included. Such a refusal (the permission or the limit)
+ * says which rule refused it, in words, and leaves the note pending. The note is
+ * not read again, because the refusal changed nothing; only a conflict (the note
+ * or its invoice moved on) or a decision that landed triggers a second read.
  *
  * ## Rejecting and withdrawing (ADR-023, D3)
  *

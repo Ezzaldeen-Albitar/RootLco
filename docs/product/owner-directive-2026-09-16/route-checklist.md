@@ -3434,3 +3434,33 @@ Known limitations of this slice, one line each:
   the server's answer, said in words when it refuses.
 - Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the
   builds; they run in hosted CI. Focused DB and backend files ran against a disposable database only.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- The reviewer ran no database or backend tier locally (no disposable PostgreSQL was listening and
+  port 54322 is off limits); that evidence is hosted CI only: `tests/db/sal-credit-approval-limits.test.ts`
+  23/23 in job 110179169705 (1950/1950 database tests) and `tests/backend/od-finance-credit-limits.test.ts`
+  15/15 in integration job 110179242564 (4030/4030). The implementer's 17 database and service
+  falsifications were not re-run by the reviewer.
+- Separation of duties: the list and detail reads still declare `sal.credit.manage`, which also lets
+  a person raise notes, so a person who only approves needs that code to reach a note and can
+  therefore raise notes too. D13 does not prohibit this; it is recorded here as a known trade-off.
+- Anti-splitting counts every approved note on the invoice, including notes approved by other
+  people, so an approver with a small limit is blocked once colleagues have approved credit on that
+  invoice; ADR-023 records this on purpose.
+- Credit-note limits apply per company; the branch is enforced only through
+  `has_permission_in_scope('sal.credit.approve', company, branch)`, so a role grant scoped to any
+  branch of the company reaches the company's limit, as the discount rule does (ADR-023).
+- Lock order is note then invoice in both the primitive and the guard; no code path was found that
+  locks the invoice and then a credit note, so no deadlock path was found, but this was not proven
+  exhaustively.
+- `canDecide` comes from the tenant-wide session permission union, so a person holding the code only
+  in another branch still sees the buttons and the server answers 403 with the named
+  `credit_approval_permission_missing` sentence; the backend test and the web catalogue test cover it.
+- Reviewer probe (scratch only): a mutant `CreditNotesScreen` with `&& canDecide` removed from
+  `decides` made both D13 gate tests in `apps/web/tests/invoices.dom.test.tsx` fail (2 failed), and an
+  unmutated control copy passed 2/2.
+- Fixed in this round: the screen's D13 docblock claimed a limit or permission refusal reads the note
+  again; it does not (only a conflict or a decision that landed does). The docblock now says the
+  refusal is shown in words and leaves the note pending, and the credit-limit refusal DOM test
+  asserts the note is read exactly once.

@@ -2322,6 +2322,9 @@ describe('raising and approving a credit note', () => {
     expect(alert).toHaveTextContent(EN['form.violation.credit_limit_exceeded'] as string);
     expect(alert).toHaveTextContent('ref-403');
     expect(within(detail).getByText(EN['creditNotes.state.pending'] as string)).toBeVisible();
+    // A D13 refusal changed nothing on the server, so the note is not read again:
+    // the one read is the screen opening the note.
+    expect(readCreditNote).toHaveBeenCalledTimes(1);
   });
 
   it('says the same credit-limit refusal in Arabic, right to left', async () => {
