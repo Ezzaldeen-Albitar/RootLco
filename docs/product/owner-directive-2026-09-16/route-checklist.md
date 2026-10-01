@@ -3527,3 +3527,15 @@ Residual items from the contract review of this slice (fix round 1), one line ea
 - DF-7: the invoice figure read again at the refusal cannot be cancelled and is not ignored if the working context changes; the receipt figure is the panel's last read.
 - DF-B6: names are read one per distinct person, all at once, so a long approval-limits list (up to 200 rows) can send many reads together; they are dropped on unmount or when the list changes.
 - The reconciliation note written before this slice is outside the repository's tracked files and is not part of the pull request.
+
+Residual items from the contract review of this slice (fix round 2), one line each:
+
+- Both fix-round-1 defects are closed: the approval-limits screen reads names through administration's own hook (`shared/person-name.ts`) and its server read (`shared/person-read.ts`), and the signed-in reports case rebuilds the zone label with the product locale tags (`en-GB`, `ar-JO-u-nu-latn`) and expects the raw identifier zero times.
+- The signed-in reports case builds its expected zone label in the test runner's ICU at the current time, while the screen uses the browser's ICU at the run's generation time; a newer ICU wording in either, or a run across a daylight-saving change in a zone that has one, could make them disagree (Asia/Amman has kept a fixed offset since 2022).
+- `administration/shared/person-name.ts`: the unresolved and unavailable outcomes (a blank name, not found, a failed read) have no test; only the named, denied and Arabic-named outcomes are covered (`user-access.dom.test.tsx`).
+- `administration/shared/person-name.ts` is a copy of the receptions read-back hook (`EvidencePanels` / `support-api.ts`), so a fix to one does not reach the other.
+- The pull request body's DF-B6 row predates fix round 1 and still names the receptions directory read; this checklist records the move to administration's own read.
+- `CreditNotesScreen` **Load the latest version**: the stale flag is cleared even when the detail read fails, so the decision buttons become usable over a detail in its error state; the detail is keyed per note and the next decision still sends the detail read's version as If-Match.
+- The fix-round-1 residual items above are carried forward unchanged.
+- The fix-round-2 review re-checked, without a new finding: `FormMoneyField` reports the canonical string upward and resyncs when the caller changes the value; report money stays a string through `formatMoney` / `parseMoneyInput`; the over-allocation token is additive on the existing refusal code; the customer-returns focus uses `useFocusFirstInvalid`.
+- The hosted web-quality job on head 4ac37172 was cancelled at its 30-minute job limit during the browser smoke (no failure before the cancel); that time budget is an infrastructure item outside this pull request.
