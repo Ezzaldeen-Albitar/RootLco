@@ -169,6 +169,210 @@ subject and in the `change-control.md` row the commit closes or opens.
 no backend suite prefix, so no suite's cleanup can delete them and they can delete nothing of a
 suite's. Acceptance never wipes the shared database.
 
+## Owner directive of 2026-10-01: the complete operational product
+
+Recorded 2026-10-02 at develop `ec91239b`, under task id P1-32-PRE-207. The Owner's direction of
+2026-10-01 is binding. It consolidates the work already under way and supersedes nothing in ADR-023;
+where the directive puts full accounting in scope, the effect on D16 is stated in the accounting
+section of `capability-status.md` and would be recorded by a new ADR, never by editing ADR-023. The
+binding points are restated below as requirements OD-12 to OD-21, continuing OD-1 to OD-11 above.
+The directive's own section number is given with each.
+
+Nothing in this section is a measurement. What the code does is in
+[`docs/platform/architecture-assessment-2026-10-01.md`](../../platform/architecture-assessment-2026-10-01.md);
+what is verified is in `capability-status.md`; what is open is in `change-control.md`; and what is
+proposed for module entitlements is in
+[ADR-024](../../adr/ADR-024-module-entitlements-and-commercial-packaging.md).
+
+### OD-12 — The complete operational product (directive section 1)
+
+The goal is the complete operational product, not a workshop-only first release: the workshop from
+reception through work orders to delivery and after-sales; administration of companies, branches,
+users, roles and approval authority; sales and finance (quotations, invoices, payments, credit
+notes, refunds and their controls); inventory and purchasing (receipt, costing, movements, issues,
+sales, returns and reconciliation); full accounting and financial reporting, whose scope the pending
+accounting questionnaire will finalise; and configuration, audit, reporting, printing, onboarding
+and documentation. HR and other modules are future expansions, for which only boundaries are
+prepared.
+
+### OD-13 — Continuous development of a live product (directive section 2)
+
+Versioned database and integration contracts; backward-compatible, additive changes; explicit
+transition plans; tested upgrades; backups; application rollback or database forward recovery;
+controlled release of new capabilities, so that an unfinished feature is not switched on for every
+customer; monitoring and diagnostics; and one product with no customer forks. Restoring an earlier
+application version does not reverse a migration. Development and QA data stay apart from live data,
+and an upgrade never silently changes historical amounts, configuration, permissions or behaviour.
+
+### OD-14 — Policies that wait on the accounting questionnaire (directive section 3)
+
+Accounting, costing, pricing and tax policies are in scope and deferred until the questionnaire is
+answered. D1 to D17 continue only where they are independent of it; overlaps are identified;
+financial policy is never invented; and configurable commercial policy is kept apart from
+accounting invariants.
+
+### OD-15 — A modular commercial product (directive section 5)
+
+Validated packages — the complete system, workshop with selected finance, standalone inventory,
+workshop with inventory, and other combinations once verified — with subscription and licence models
+in the design and no invented prices or terms. One maintained product with shared foundations and
+explicit module boundaries, improved incrementally: no rewrite, no forks, no speculative services. A
+bounded assessment records the shared core, each module's responsibility and data, required
+dependencies and optional integrations, existing and planned capabilities, the concrete couplings
+that prevent standalone packages, and the focused changes that remove them — in the existing
+records, with no competing source of truth.
+
+### OD-16 — Shared foundations (directive section 6)
+
+Tenant (the customer organisation), legal entities, branches and warehouses are distinguished.
+Shared identities and records have one owner, so enabling a module never duplicates customers,
+items, documents or balances. Module contracts state transaction boundaries, retries, duplicate
+prevention and recovery, and a retry never duplicates a stock movement, invoice, payment or
+accounting effect. Standalone inventory needs no vehicle, appointment or work order. A workshop
+without inventory records parts and charges without pretending that warehouse balances,
+reservations or FIFO exist. Basic invoicing and payments are distinguished from advanced accounting,
+and the minimum dependencies of each package are stated.
+
+### OD-17 — Entitlements, settings and permissions kept apart (directive section 7)
+
+Three layers stay separate: platform subscription and licence entitlements; authorised company and
+branch settings; and user roles, permissions and approval authority. All are enforced on the server,
+including APIs, background jobs, reports and exports. A tenant administrator cannot grant a module
+that is not licensed, and buying a module does not give every user its permissions. Disclosure is
+progressive. Configuration never switches off accounting correctness, audit, document integrity or
+tenant isolation.
+
+### OD-18 — Adding and removing modules (directive section 8)
+
+A workshop can add inventory later without restarting its records. Activation validates
+dependencies and guides setup: warehouses, permissions, item mapping and duplicate resolution,
+approved opening quantities and values, a cutover date and verification. No opening stock is
+invented, nothing is deducted retroactively and nothing is silently re-posted. Activation, upgrade,
+downgrade, expiry and reactivation are defined; data and relationships are preserved when a module
+is switched off; open transactions and historical viewing and export are addressed. Advanced
+accounting added later uses approved opening balances and a cutover, never silent historical
+entries.
+
+### OD-19 — Tax configuration (directive section 9)
+
+Tax is configured around legal entities and transaction, item or service classifications, with
+authorisation, effective dates and audit. A branch respects its legal entity. No rate is inferred or
+hard-coded, and issued documents are never recalculated. Sales tax stays separate from income tax.
+Whether selling prices include tax waits on the questionnaire.
+
+### OD-20 — What must be demonstrated before modular readiness is claimed (directive section 10)
+
+Workshop without inventory; inventory without workshop; a workshop adding inventory with its history
+preserved and the cutover verified; the full product across module boundaries; server-side
+entitlement and permission enforcement; tenant isolation; safe downgrade, expiry and reactivation;
+and safe updates for existing data.
+
+### OD-21 — A concrete delivery matrix (directive section 12)
+
+Five columns — completed and verified; implemented, awaiting integration or verification; remaining
+in current scope; blocked on accounting answers; future expansion — and, for each new feature, its
+owning module, dependencies, configurable behaviour, integration effects and upgrade impact. Merged
+code is never equated with a verified running product, and configurable navigation is never
+equated with a modular commercial system.
+
+### Coordinator decisions for the 2026-10-01 directive
+
+**D-OD-09 — The assessment.** The architecture assessment is
+`docs/platform/architecture-assessment-2026-10-01.md`. It is a dated reading of the code at
+`ec91239b`, not a decision record, and it decides nothing.
+
+**D-OD-10 — The delivery matrix.** The delivery matrix and the accounting section are new sections
+at the end of `capability-status.md`. The matrix's five columns map onto that file's four states:
+_completed and verified_ is implemented with a dated marker; _implemented, awaiting integration or
+verification_ is implemented or partial without one; _remaining in current scope_ is missing or
+partial; _blocked on accounting answers_ is externally blocked, naming the questionnaire; and
+_future expansion_ is outside current scope. The 97 capability rows keep their count.
+
+**D-OD-11 — Module entitlements.** Entitlements, the module lifecycle, licence options and packaging
+live in ADR-024, which is proposed for the mechanism and open for packages and terms.
+
+**D-OD-12 — No invented financial policy.** No financial policy is invented, and every item that
+waits on the accounting questionnaire stays blocked until it is answered.
+
+**D-OD-13 — Packages are drafts.** The package matrix stays a draft, marked "derived from code, not
+validated", until the Owner answers the package questions below and each package's scenario has
+been demonstrated.
+
+**D-OD-14 — One owner per fact.** The assessment's section 4 owns each coupling's statement and
+evidence. A `change-control.md` row owns its disposition, names the C-id and does not restate the
+evidence. Where an earlier finding already records a coupling, it stays the record and no new row
+is opened: PPD-01 and ADR-023 D6 for C-08, PPD-03 for C-17 (`docs/product/README.md:272,274`).
+ADR-023 owns the D1 to D17 decision text and implementation state (`:197-214`), and other records
+cite it by line. The delivery matrix owns verification state. The accounting section owns the split
+between invariants, policy and configuration, and between independent and blocked. ADR-024 alone
+owns the module lifecycle definitions and the licence options; the assessment states only today's
+state and links to ADR-024.
+
+### Open Owner decisions raised by the 2026-10-01 records
+
+Listed so that each can be answered once. None is answered here.
+
+1. **Package definitions.** Which modules are sold separately, and which package holds which? In
+   particular, are appointments, diagnostics, quality control, warranty and reporting part of every
+   workshop package or licensed separately? Diagnostics and quality are code dependencies of work
+   orders today.
+2. **Standalone inventory.** Does it include basic invoicing (counter sales and receipts)? Today that
+   is the only way stock leaves without a work order. Or must it run with no finance module at all,
+   which needs a new internal-issue capability?
+3. **Workshop packages.** Is basic invoicing and payment recording always included? The delivery
+   check reads the open receivable.
+4. **Licence structure.** Per organisation, legal entity, branch, user seat, per module, or a
+   combination? Are trial and grace periods wanted? ADR-024 lists what the schema supports today.
+   Structure only, no prices.
+5. **Downgrade and expiry.** What may users still do after a module is switched off or expires: view
+   and export history only, and for how long? Must open work (reservations, unpaid invoices, pending
+   credit notes, open work orders) be finished first, or may it continue read-only? Is expiry
+   treated like a downgrade?
+6. **Upgrade.** May a module added by a plan change take effect immediately, or only at a stated
+   effective date once activation checks pass?
+7. **Existing organisations.** When module entitlements are switched on, should every existing
+   organisation keep all the modules it uses today until its plan is explicitly changed? This is
+   ADR-024's default-on proposal.
+8. **D13 transition (CC-OD-50).** Organisations provisioned earlier cannot approve credit notes after
+   upgrade until the code is granted and a limit set, and the backfill covers only the named QA
+   organisations. Should the backfill extend to every existing organisation, or stay limited with
+   the change stated to them?
+9. **D17 transition (CC-OD-50).** Implementing D17 removes finance visibility from users who hold
+   quotation codes without the finance permission. Should existing organisations be told in
+   advance, with a list of affected roles, or should a defined period pass before the change
+   applies? The same question applies to any future print permission (D10).
+10. **Tax permission (CC-OD-50, FC-20).** Once a tax write path exists, who should hold
+    `org.tax.manage` in existing and new organisations? No provisioned administrator holds it today,
+    and it cannot be delegated. Separately: the records hold FC-20 as a design until the
+    questionnaire is answered. Should its structural part (permission, approval, effective-dated
+    insert and audit, setting no rate) go ahead before then, or stay held with the rates?
+11. **A price with no tax class (CC-OD-48).** Once tax is configured, may a price with no tax class
+    still mean untaxed at a zero rate? Or must every sellable price name an explicit class,
+    including an explicit exempt or zero-rated one? This belongs with the questionnaire.
+12. **Accounting activation (S-9).** Who approves opening balances? Is a cutover date mandatory? Are
+    financial events from before the cutover ever posted? (Proposed: never silently.) Do inventory
+    valuations at cutover wait on the costing policy?
+13. **Who activates a module.** Only the platform operator (the owner-recorded commercial flow,
+    D-OD-04), or may an organisation administrator request or purchase one in the product?
+14. **Buying a module.** Should the first administrator automatically receive that module's
+    permission codes, or should every grant be explicit?
+15. **Purchasing scope.** Are suppliers, purchase orders, receipt matching and supplier invoices or
+    payables in current scope under "inventory and purchasing" (PROC-18)? Or are they part of full
+    accounting, awaiting the questionnaire?
+16. **Part prices once inventory exists.** Which price wins, the service price list or the item
+    selling price? This belongs with the questionnaire's pricing-policy questions (CC-OD-47).
+17. **Adding inventory later.** Is an opening value required at activation, or may quantities be
+    approved first and values follow the costing answer? Who approves opening quantities and values?
+18. **QA identities.** The cross-tenant cases need a login for the second tenant, and the
+    new-organisation case on the new interface needs a platform-operator identity. Will the Owner
+    provide both?
+19. **Decisions flagged by the browser checkpoints.** The check-in wizard's step buttons discard
+    typed input without asking (`78602752`), and a concern recorded with no severity is stored as
+    "medium", a value the customer did not give (`78602752`). Should either change?
+20. **Email verification with the mail provider.** Stage 4 waits on the Owner's choice of recipient.
+21. **CI.** The web-quality job runs close to its 30-minute limit. Should the limit be raised, or the
+    job split?
+
 ## Code-scanning result on `2c573a24`, consumed once (section 9)
 
 Observed 2026-09-16, read-only, through the check-runs API.
