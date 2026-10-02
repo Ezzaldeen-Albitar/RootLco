@@ -343,7 +343,9 @@ Listed so that each can be answered once. None is answered here.
    applies? The same question applies to any future print permission (D10).
 10. **Tax permission (CC-OD-50, FC-20).** Once a tax write path exists, who should hold
     `org.tax.manage` in existing and new organisations? No provisioned administrator holds it today,
-    and it cannot be delegated.
+    and it cannot be delegated. Separately: the records hold FC-20 as a design until the
+    questionnaire is answered. Should its structural part (permission, approval, effective-dated
+    insert and audit, setting no rate) go ahead before then, or stay held with the rates?
 11. **A price with no tax class (CC-OD-48).** Once tax is configured, may a price with no tax class
     still mean untaxed at a zero rate? Or must every sellable price name an explicit class,
     including an explicit exempt or zero-rated one? This belongs with the questionnaire.

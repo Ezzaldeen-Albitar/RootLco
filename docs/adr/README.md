@@ -57,7 +57,7 @@ This arrangement is an owner decision about where the canonical documentation li
 ## How to add an ADR
 
 1. **Take the next number.** The highest number in use is ADR-024, so the next record is ADR-025. Numbers are never reused, including for superseded records.
-2. **Name the file** `ADR-0NN-short-kebab-case-title.md` in this directory, matching the convention of the existing eighteen.
+2. **Name the file** `ADR-0NN-short-kebab-case-title.md` in this directory, matching the convention of the existing records ADR-001 to ADR-024.
 3. **Use the mandatory heading template**, in this order, with every heading present:
 
    ```
