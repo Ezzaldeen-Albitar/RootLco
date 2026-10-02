@@ -75,6 +75,13 @@ export interface ReceiptDocumentEntry {
    */
   readonly allocatedAmount: string;
   /**
+   * The part of `allocatedAmount` applied to OTHER customers' invoices as
+   * third-party allocations (ADR-023 D14), as an exact decimal string; `0.0000`
+   * when none. The payer of the receipt and the customers of those invoices are
+   * different parties, and this column is how the report keeps them apart.
+   */
+  readonly thirdPartyAllocatedAmount: string;
+  /**
    * What this receipt has NOT yet been applied to any invoice, as an exact
    * decimal string.
    *
@@ -162,6 +169,7 @@ export class PaymentsReportPort extends ApplicationService {
         status: row.status,
         receiptAmount: row.receiptAmount,
         allocatedAmount: row.allocatedAmount,
+        thirdPartyAllocatedAmount: row.thirdPartyAllocatedAmount,
         unallocatedAmount: row.unallocatedAmount,
         sortValue: row.sortValue,
       })),

@@ -146,6 +146,23 @@
  *   P31-B37 the provisioned administrator effectively holds it and can delegate it
  *           onto a role it creates
  *
+ * ## The Owner decision D14 on `sal.payment.third_party`: a third-party payer
+ *
+ * The Owner decided on 2026-09-30 (ADR-023, D14) that a receipt applied to another
+ * customer's invoice is refused by default and accepted only as an explicit,
+ * authorised, audited third-party payment. `sal.payment.third_party` is MINTED for
+ * that authority, and the standard tenant administrator carries it. It is the one
+ * carried code no operation DECLARES: `sal.payment-allocate` consults it for a
+ * third-party allocation only, and the database checks it for every one — so B1
+ * measures it apart, as consulted and not declared.
+ *
+ *   P31-B38 the code is in the bundle once; NO operation declares it and
+ *           sal.payment-allocate still declares exactly its two codes; the service
+ *           and the database trigger consult it; it is a catalogue row;
+ *           first_owner is untouched
+ *   P31-B39 the provisioned administrator effectively holds it and can delegate it
+ *           onto a role it creates
+ *
  * ## The Owner decision on `org.settings.manage`: the organisation's own settings
  *
  * The Owner decided on 2026-09-27 that the standard tenant administrator edits its
@@ -566,6 +583,18 @@ const ADDED_BY_CREDIT_APPROVAL_DECISION = Object.freeze(['sal.credit.approve']);
  */
 const ADDED_BY_REVERSAL_DECISION = Object.freeze(['sal.reversal.approve']);
 
+/**
+ * The eighth widening after P1-31, on Owner decision D14 of 2026-09-30 (ADR-023):
+ * the MINTED code `sal.payment.third_party`. CONSULTED, not declared:
+ * `sal.payment-allocate` asks for it only when an allocation is a third-party one,
+ * and the trigger `sal.guard_allocation_payer` asks for it on every such insert.
+ * B38–B39 below measure it. 96 + 1 = 97.
+ */
+const ADDED_BY_THIRD_PARTY_DECISION = Object.freeze(['sal.payment.third_party']);
+
+/** Carried codes that are consulted by an operation rather than declared by one. */
+const CONSULTED_NOT_DECLARED: readonly string[] = ADDED_BY_THIRD_PARTY_DECISION;
+
 /** Every code carried after P1-31 closed. */
 const ADDED_AFTER_P1_31 = Object.freeze([
   ...ADDED_BY_P1_32_MATERIAL,
@@ -575,6 +604,7 @@ const ADDED_AFTER_P1_31 = Object.freeze([
   ...ADDED_BY_APPOINTMENT_DECISION,
   ...ADDED_BY_CREDIT_APPROVAL_DECISION,
   ...ADDED_BY_REVERSAL_DECISION,
+  ...ADDED_BY_THIRD_PARTY_DECISION,
 ]);
 
 const IDENTITY_PROVIDER = 'test_harness';
@@ -1047,7 +1077,14 @@ describe('P1-31 P-1 — the derivation', () => {
       register.operations.filter((op) => op.permissions.includes(code)).map((op) => op.id);
 
     for (const code of ADDED_ALL) expect(declarersOf(code).length).toBeGreaterThan(0);
-    for (const code of ADDED_AFTER_P1_31) expect(declarersOf(code).length).toBeGreaterThan(0);
+    for (const code of ADDED_AFTER_P1_31.filter((one) => !CONSULTED_NOT_DECLARED.includes(one))) {
+      expect(declarersOf(code).length).toBeGreaterThan(0);
+    }
+    // The one carried code no operation declares (ADR-023 D14): consulted for a
+    // third-party allocation only. Asserted as ZERO declarers so the day an
+    // operation declares it this case makes somebody look again; B38 proves who
+    // consults it.
+    for (const code of CONSULTED_NOT_DECLARED) expect(declarersOf(code)).toEqual([]);
 
     // CC-01 and CC-02: withheld BECAUSE nothing declared them. Both were released
     // on 2026-09-09 by the slices that published their writers, so the list is
@@ -1239,7 +1276,8 @@ describe('Owner directive 2026-09-17 — the codes the QA campaign found closed'
     // 89 since the Owner's credit-note decision; B16 owns that arithmetic. 90 since
     // the settings decision; B23 owns that one. 94 since the appointment decision;
     // B29 owns that one. 95 since the credit-approval decision (D13); B34 owns it.
-    // 96 since the receipt-reversal decision (D4); B36 owns it.
+    // 96 since the receipt-reversal decision (D4); B36 owns it. 97 since the
+    // third-party payer decision (D14); B38 owns it.
     expect(bundle).toHaveLength(
       before +
         ADDED_BY_OD_QA_CAMPAIGN.length +
@@ -1247,7 +1285,8 @@ describe('Owner directive 2026-09-17 — the codes the QA campaign found closed'
         ADDED_BY_SETTINGS_DECISION.length +
         ADDED_BY_APPOINTMENT_DECISION.length +
         ADDED_BY_CREDIT_APPROVAL_DECISION.length +
-        ADDED_BY_REVERSAL_DECISION.length
+        ADDED_BY_REVERSAL_DECISION.length +
+        ADDED_BY_THIRD_PARTY_DECISION.length
     );
     expect(ADDED_BY_OD_QA_CAMPAIGN).toHaveLength(3);
 
@@ -1797,13 +1836,14 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
     // 89 with this code; 90 since the settings decision, which B23 owns; 94 since
     // the appointment decision, which B29 owns; 95 since the credit-approval
     // decision (D13), which B34 owns; 96 since the receipt-reversal decision (D4),
-    // which B36 owns.
+    // which B36 owns; 97 since the third-party payer decision (D14), which B38 owns.
     expect(bundle).toHaveLength(
       89 +
         ADDED_BY_SETTINGS_DECISION.length +
         ADDED_BY_APPOINTMENT_DECISION.length +
         ADDED_BY_CREDIT_APPROVAL_DECISION.length +
-        ADDED_BY_REVERSAL_DECISION.length
+        ADDED_BY_REVERSAL_DECISION.length +
+        ADDED_BY_THIRD_PARTY_DECISION.length
     );
     for (const code of ADDED_BY_CREDIT_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
@@ -2271,8 +2311,11 @@ describe('Owner decision — org.settings.manage: the organisation edits its own
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
     // 94 since the four appointment codes joined (B29 measures them); 95 since the
     // credit-approval decision (D13; B34 measures it).
-    // 96 since the receipt-reversal decision (ADR-023 D4), which B36 owns.
-    expect(bundle).toHaveLength(95 + ADDED_BY_REVERSAL_DECISION.length);
+    // 96 since the receipt-reversal decision (ADR-023 D4), which B36 owns; 97
+    // since the third-party payer decision (ADR-023 D14), which B38 owns.
+    expect(bundle).toHaveLength(
+      95 + ADDED_BY_REVERSAL_DECISION.length + ADDED_BY_THIRD_PARTY_DECISION.length
+    );
     for (const code of ADDED_BY_SETTINGS_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -2769,8 +2812,11 @@ describe('Owner decision — the four appointment codes: the organisation runs i
   it('P31-B29 the bundle carries the four codes once each; exactly the twenty-one audited reception operations declare them, none of them a platform operation; every write is audited; first_owner is untouched', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
     // 94 with the four codes; 95 since the credit-approval decision (D13, B34).
-    // 96 since the receipt-reversal decision (ADR-023 D4), which B36 owns.
-    expect(bundle).toHaveLength(95 + ADDED_BY_REVERSAL_DECISION.length);
+    // 96 since the receipt-reversal decision (ADR-023 D4), which B36 owns; 97
+    // since the third-party payer decision (ADR-023 D14), which B38 owns.
+    expect(bundle).toHaveLength(
+      95 + ADDED_BY_REVERSAL_DECISION.length + ADDED_BY_THIRD_PARTY_DECISION.length
+    );
     for (const code of ADDED_BY_APPOINTMENT_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -3007,8 +3053,11 @@ describe('Owner decision — the four appointment codes: the organisation runs i
 describe('Owner decision D13 — sal.credit.approve: deciding a credit note', () => {
   it('P31-B34 the bundle carries sal.credit.approve once; exactly the approval and the rejection declare it, branch-scoped with sal.finance.view; it is a catalogue row; first_owner is untouched', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
-    // 96 since the receipt-reversal decision (ADR-023 D4), which B36 owns.
-    expect(bundle).toHaveLength(95 + ADDED_BY_REVERSAL_DECISION.length);
+    // 96 since the receipt-reversal decision (ADR-023 D4), which B36 owns; 97
+    // since the third-party payer decision (ADR-023 D14), which B38 owns.
+    expect(bundle).toHaveLength(
+      95 + ADDED_BY_REVERSAL_DECISION.length + ADDED_BY_THIRD_PARTY_DECISION.length
+    );
     for (const code of ADDED_BY_CREDIT_APPROVAL_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -3066,7 +3115,8 @@ describe('Owner decision D13 — sal.credit.approve: deciding a credit note', ()
 describe('Owner decision D4 — sal.reversal.approve: deciding a receipt reversal', () => {
   it('P31-B36 the bundle carries sal.reversal.approve once; exactly the receipt-reversal approval and rejection declare it, branch-scoped with sal.finance.view; it is a catalogue row; first_owner is untouched', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
-    expect(bundle).toHaveLength(96);
+    // 97 since the third-party payer decision (ADR-023 D14), which B38 owns.
+    expect(bundle).toHaveLength(96 + ADDED_BY_THIRD_PARTY_DECISION.length);
     for (const code of ADDED_BY_REVERSAL_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -3121,5 +3171,77 @@ describe('Owner decision D4 — sal.reversal.approve: deciding a receipt reversa
     const mapped = await mapCode(probe, roleId, 'sal.reversal.approve');
     expect(mapped.status).toBe(201);
     expect(await codesOfRole(roleId)).toEqual(['sal.reversal.approve']);
+  });
+});
+
+describe('Owner decision D14 — sal.payment.third_party: a third-party payer', () => {
+  it('P31-B38 the bundle carries sal.payment.third_party once; no operation declares it and sal.payment-allocate keeps its two codes; the service and the database consult it; it is a catalogue row; first_owner is untouched', () => {
+    const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
+    expect(bundle).toHaveLength(97);
+    for (const code of ADDED_BY_THIRD_PARTY_DECISION) {
+      expect(bundle.filter((c) => c === code)).toHaveLength(1);
+      expect(ADDED_ALL).not.toContain(code);
+      expect(ADDED_BY_REVERSAL_DECISION).not.toContain(code);
+    }
+    // An ordinary allocation still needs only the allocating code, already carried.
+    expect(bundle).toContain('sal.payment.allocate');
+
+    // MINTED by D14 in the catalogue seed, at high risk.
+    const seed = readFileSync(
+      join(REPOSITORY_ROOT, 'supabase/seeds/04_iam_permission_catalog.sql'),
+      'utf8'
+    );
+    expect(seed).toMatch(/\('sal\.payment\.third_party',\s+'sal',[^)]*'high'/);
+
+    // DECLARED by nothing: the allocation keeps exactly its two codes, so an
+    // ordinary allocation is not widened to need the third-party authority.
+    const register = JSON.parse(
+      readFileSync(
+        join(REPOSITORY_ROOT, 'docs/phase-1/phase-1-24/evidence/operation-register.json'),
+        'utf8'
+      )
+    ) as { operations: Array<{ id: string; permissions: string[] }> };
+    expect(
+      register.operations.filter((op) => op.permissions.includes('sal.payment.third_party'))
+    ).toEqual([]);
+    expect(register.operations.find((op) => op.id === 'sal.payment-allocate')?.permissions).toEqual(
+      ['sal.payment.allocate', 'sal.finance.view']
+    );
+
+    // CONSULTED: by the allocation service, in the receipt's company and branch,
+    // and by the database trigger for whoever writes the row.
+    const domain = readFileSync(
+      join(REPOSITORY_ROOT, 'apps/api/src/modules/payments/domain/payments.ts'),
+      'utf8'
+    );
+    expect(domain).toContain("export const THIRD_PARTY_PERMISSION = 'sal.payment.third_party';");
+    const service = readFileSync(
+      join(REPOSITORY_ROOT, 'apps/api/src/modules/payments/application/payment-service.ts'),
+      'utf8'
+    );
+    expect(service).toMatch(/callerHoldsPermission\(db, THIRD_PARTY_PERMISSION,/);
+    const migration = readFileSync(
+      join(REPOSITORY_ROOT, 'supabase/migrations/20261002100000_sal_third_party_allocations.sql'),
+      'utf8'
+    );
+    expect(migration).toContain(
+      "iam.has_permission_in_scope('sal.payment.third_party', NEW.company_id, NEW.branch_id, NULL)"
+    );
+
+    expect([...FIRST_OWNER_ROLE.permissionCodes]).toEqual([
+      'iam.user.manage',
+      'iam.role.manage',
+      'iam.grant.manage',
+    ]);
+  });
+
+  it('P31-B39 the provisioned administrator effectively holds it, and can delegate it onto a role it creates', async () => {
+    expect(await codesOfRole(probe.tenantAdministratorRoleId)).toContain('sal.payment.third_party');
+    expect(await codesHeldBy(probe.ownerAccountId)).toContain('sal.payment.third_party');
+
+    const roleId = await newRole(probe, 'third_party_payment_delegation_probe');
+    const mapped = await mapCode(probe, roleId, 'sal.payment.third_party');
+    expect(mapped.status).toBe(201);
+    expect(await codesOfRole(roleId)).toEqual(['sal.payment.third_party']);
   });
 });

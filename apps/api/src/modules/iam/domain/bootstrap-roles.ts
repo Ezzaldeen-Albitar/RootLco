@@ -481,6 +481,38 @@
  * organisations are left unchanged. The run is an operator act, not performed by
  * this change. The code is already seeded, so no seed run is owed for it.
  *
+ * ## `sal.payment.third_party` — a third-party payer, by Owner decision D14
+ *
+ * The Owner decided on 2026-09-30 (ADR-023, D14) that applying a receipt to an
+ * unrelated customer's invoice is refused by default, and that a payment from an
+ * insurer or an employer is accepted only through explicit, authorised, audited
+ * third-party handling. `sal.payment.third_party` ("Allocate a receipt to another
+ * customer's invoice as a third-party payment") is MINTED for that authority in
+ * `04_iam_permission_catalog.sql`. No operation DECLARES it: `sal.payment-allocate`
+ * keeps `sal.payment.allocate` and `sal.finance.view`, and consults this code only
+ * when the allocation is a third-party one, in the receipt's own company and branch
+ * — the service asks first so the refusal is named, and the BEFORE INSERT trigger
+ * `sal.guard_allocation_payer` asks again, whoever writes the row.
+ *
+ * The standard tenant administrator carries it for the reason it carries the other
+ * finance codes: it is the one standard role that carries them at all, and it can
+ * now delegate the code to the finance person it chooses. Carrying it changes no
+ * control: a third-party allocation still names its relationship, authorisation
+ * reference and reason, records who authorised it, and moves nothing between the
+ * two parties.
+ *
+ * Organisations provisioned before this entry keep the set they were given, so an
+ * allocation across customers that technically worked before is now refused in
+ * them, and nobody there can make a third-party allocation until an administrator
+ * who holds the code grants it — a behaviour change disclosed in ADR-023 D14. The
+ * code is minted by a seed, so `04_iam_permission_catalog.sql` is re-run on an
+ * existing database first; `scripts/platform/backfill-tenant-administrator-bundle.mjs`
+ * then reads this list at run time and, by the Owner's decision, is run only for
+ * the previously authorised QA organisations (`--tenant odqa_alpha --tenant
+ * odqa_beta`), skipping and reporting every administrator role an organisation has
+ * customised. Other existing organisations are left unchanged. Both runs are
+ * operator acts, not performed by this change.
+ *
  * ## `org.settings.manage` — the organisation's own settings, by Owner decision
  *
  * The Owner decided on 2026-09-27 that the standard tenant administrator edits its
@@ -743,6 +775,10 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     // Owner decision D4 (ADR-023): approving and rejecting a receipt reversal that
     // somebody else requested. See the section above.
     'sal.reversal.approve',
+    // Owner decision D14 (ADR-023): a receipt applied to another customer's
+    // invoice as an explicit, authorised third-party payment. Consulted, not
+    // declared, by `sal.payment-allocate`. See the section above.
+    'sal.payment.third_party',
     // The P1-31 delivery, warranty and reporting chain (prerequisite P-1). Held
     // to be exercised and to be delegated to a delivery officer, a warranty
     // clerk and a reporting reader; each is declared by a SHIPPED operation.

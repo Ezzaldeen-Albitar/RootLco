@@ -103,7 +103,14 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   ('sal.invoice.issue',        'sal', 'Issue invoices (allocate numbers)',         'high',   '00000000-0000-4000-8000-000000000001'),
   ('sal.payment.record',       'sal', 'Record receipts',                           'medium', '00000000-0000-4000-8000-000000000001'),
   ('sal.payment.allocate',     'sal', 'Allocate receipts to invoices',             'medium', '00000000-0000-4000-8000-000000000001'),
-  ('sal.credit.manage',        'sal', 'Request and manage credit notes',           'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Owner decision D14 (ADR-023, P1-32-PRE-OD-FD14): applying one party's receipt to
+  -- another customer's invoice is refused unless it is an explicit third-party
+  -- allocation (an insurer, an employer), made by a holder of this code in the
+  -- receipt's company and branch with a relationship, an authorisation reference
+  -- and a reason. sal.payment.allocate alone does not satisfy it, and nothing
+  -- changes hands: the invoice stays the customer's and the receipt the payer's.
+  ('sal.payment.third_party',  'sal', 'Allocate a receipt to another customer''s invoice as a third-party payment', 'high', '00000000-0000-4000-8000-000000000001'),
+  ('sal.credit.manage',       'sal', 'Request and manage credit notes',           'high',   '00000000-0000-4000-8000-000000000001'),
   -- Owner decision D13 (ADR-023, P1-32-PRE-OD-FD2C): deciding a credit note is its
   -- own authority, minted rather than inherited from sal.credit.manage. Approving
   -- and rejecting declare it; requesting and withdrawing keep sal.credit.manage. An

@@ -750,6 +750,9 @@ describe('FE-014 → FE-015 → FE-019 on one work order', () => {
         refundStatus: 'none',
         credited: { amount: '0.0000', currency: 'USD', minorUnit: 2 },
         paid: { amount: '0.0000', currency: 'USD', minorUnit: 2 },
+        // Nothing paid, so nothing paid by anybody else (ADR-023 D14).
+        thirdPartyPayments: [],
+        thirdPartyPaymentsTruncated: false,
       },
       asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
     });

@@ -84,6 +84,12 @@ export const PAYMENT_PERMISSIONS = {
    * D4). Requesting and withdrawing are `record`'s; no credit-note code decides one.
    */
   reversalApprove: 'sal.reversal.approve',
+  /**
+   * Applying a receipt to ANOTHER customer's invoice as a third-party payment — an
+   * insurer, an employer (ADR-023 D14). `sal.payment-allocate` consults it only for
+   * such an allocation; without it the screen blocks with the plain reason.
+   */
+  thirdParty: 'sal.payment.third_party',
   /** Whether a branch list is requested for the target picker. */
   branchRead: 'org.branch.read',
   /** The payer is FOUND among customers, which `crm.customer-search` answers. */
@@ -161,6 +167,37 @@ export interface ReceiptAllocation {
   readonly invoicePayerName: string | null;
   readonly money: MoneyView;
   readonly allocatedAt: string;
+  /**
+   * When this receipt's payer settled another customer's invoice as a third-party
+   * payment (ADR-023 D14), what was recorded; `null` (or absent) otherwise.
+   */
+  readonly thirdParty?: ReceiptAllocationThirdParty | null;
+}
+
+/**
+ * What a third-party payer is to the invoice's customer (ADR-023 D14) — the
+ * server's fixed vocabulary, mirrored. An organisation cannot add to it.
+ */
+export const THIRD_PARTY_RELATIONSHIPS = ['insurer', 'employer', 'other'] as const;
+export type ThirdPartyRelationship = (typeof THIRD_PARTY_RELATIONSHIPS)[number];
+
+/** The server's ceilings for a third-party statement, so the form refuses before the 422. */
+export const THIRD_PARTY_REFERENCE_MAX = 100;
+export const THIRD_PARTY_REASON_MAX = 2000;
+
+/**
+ * The refusal of a receipt applied to somebody else's invoice without third-party
+ * handling, as the invoice field's own sentence (`form.violation.<rule>`).
+ */
+export const PAYER_MISMATCH_KEY = 'form.violation.allocation_payer_mismatch';
+
+/** A third-party allocation's record — `ReceiptAllocationThirdPartyView`. */
+export interface ReceiptAllocationThirdParty {
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
+  /** Who authorised it, by name; `null` when withheld from this reader. */
+  readonly authorisedByName: string | null;
 }
 
 /** The receipt as the list publishes it — `ReceiptListView` (the detail minus its allocations). */
@@ -324,4 +361,10 @@ export interface Allocation {
   readonly allocatedAt: string;
   readonly receiptStatus: ReceiptStatus;
   readonly receiptUnallocated: MoneyView;
+  /** The third-party detail booked with it (ADR-023 D14), or `null`/absent for an ordinary one. */
+  readonly thirdParty?: {
+    readonly relationship: string;
+    readonly authorisationReference: string;
+    readonly reason: string;
+  } | null;
 }

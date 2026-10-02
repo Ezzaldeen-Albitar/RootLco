@@ -19,7 +19,7 @@ import {
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import { unreachable, type ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
@@ -41,6 +41,7 @@ import {
   type InvoicePreview,
   type Outstanding,
   type Settlement,
+  type ThirdPartyPayment,
   type WorkOrderInvoice,
 } from '../billing-contract';
 import { CreditNoteRequestForm } from './CreditNoteRequestForm';
@@ -1094,6 +1095,7 @@ function InvoicePanel({
         invoiceId={invoice.id}
         canViewFinance={canViewFinance}
         onRead={setBalance}
+        customer={payer}
       />
       <ActionsPanel
         messages={messages}
@@ -1321,6 +1323,7 @@ function OutstandingPanel({
   invoiceId,
   canViewFinance,
   onRead,
+  customer = { kind: 'notShown' },
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -1328,6 +1331,8 @@ function OutstandingPanel({
   readonly canViewFinance: boolean;
   /** The balance as read, or `null` when it could not be — never a guessed zero. */
   readonly onRead?: (balance: Outstanding | null) => void;
+  /** Who the invoice bills, as the screen names them — for "Paid by … for …" (D14). */
+  readonly customer?: PayerName;
 }) {
   const [state, setState] = useState<ReadState<Outstanding> | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -1380,6 +1385,7 @@ function OutstandingPanel({
               locale={locale}
               messages={messages}
               settlement={state.data.settlement}
+              customer={customer}
             />
           ) : (
             <Field label={translate(messages, 'invoices.outstanding.settlement')}>
@@ -1416,11 +1422,14 @@ function SettlementFields({
   locale,
   messages,
   settlement,
+  customer,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly settlement: Settlement;
+  readonly customer: PayerName;
 }) {
+  const thirdParty = settlement.thirdPartyPayments ?? [];
   return (
     <>
       <Field label={translate(messages, 'invoices.settlement.credit')}>
@@ -1444,7 +1453,100 @@ function SettlementFields({
           {translateDynamic(messages, `invoices.refundStatus.${settlement.refundStatus}`)}
         </span>
       </Field>
+      {thirdParty.length > 0 ? (
+        <ThirdPartyPayments
+          locale={locale}
+          messages={messages}
+          payments={thirdParty}
+          truncated={settlement.thirdPartyPaymentsTruncated === true}
+          customer={customer}
+        />
+      ) : null}
     </>
+  );
+}
+
+/** The fixed vocabulary of a third-party payer's relationship (ADR-023 D14), mirrored. */
+const THIRD_PARTY_RELATIONSHIP_CODES = ['insurer', 'employer', 'other'] as const;
+
+/**
+ * The part of what was paid that somebody other than the customer paid, as an
+ * explicit third-party payment (Owner decision D14, ADR-023): each reads "Paid by
+ * <payer> (<relationship>) for <customer>", with the authorisation reference, the
+ * receipt by its number and the amount. The invoice stays its customer's; a name
+ * this reader may not see is said as not shown, never replaced by a reference.
+ */
+function ThirdPartyPayments({
+  locale,
+  messages,
+  payments,
+  truncated,
+  customer,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly payments: readonly ThirdPartyPayment[];
+  readonly truncated: boolean;
+  readonly customer: PayerName;
+}) {
+  const customerName =
+    customer.kind === 'named'
+      ? customer.name
+      : translate(messages, 'invoices.thirdParty.customerNotShown');
+  return (
+    <div className="sm:col-span-3" data-testid="invoice-third-party-payments">
+      <dt className="text-caption text-text-muted">
+        {translate(messages, 'invoices.thirdParty.heading')}
+      </dt>
+      <dd className="text-body text-text-primary">
+        <ul className="flex flex-col gap-2">
+          {payments.map((payment) => {
+            const relationship = (THIRD_PARTY_RELATIONSHIP_CODES as readonly string[]).includes(
+              payment.relationship
+            )
+              ? payment.relationship
+              : 'other';
+            return (
+              <li
+                key={`${payment.receipt.id}-${payment.allocatedAt}`}
+                className="flex flex-col gap-0.5 rounded-md border border-border p-2"
+                data-testid="invoice-third-party-payment"
+              >
+                <span>
+                  {formatMessage(translate(messages, 'invoices.thirdParty.paidBy'), {
+                    payer:
+                      payment.payerName ?? translate(messages, 'invoices.thirdParty.payerNotShown'),
+                    relationship: translateDynamic(
+                      messages,
+                      `invoices.thirdParty.relationship.${relationship}`
+                    ),
+                    customer: customerName,
+                  })}
+                </span>
+                <span className="text-caption text-text-secondary">
+                  {translate(messages, 'invoices.thirdParty.authorisation')}{' '}
+                  <bdi className="font-mono" dir="auto">
+                    {payment.authorisationReference}
+                  </bdi>
+                </span>
+                <span className="flex flex-wrap items-center gap-2 text-caption text-text-secondary">
+                  {translate(messages, 'invoices.thirdParty.receipt')}{' '}
+                  <bdi className="font-mono" dir="ltr">
+                    {payment.receipt.reference}
+                  </bdi>
+                  <Money money={payment.money} locale={locale} />
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+        {truncated ? (
+          <p className="mt-1 text-caption text-text-muted">
+            {translate(messages, 'invoices.thirdParty.truncated')}
+          </p>
+        ) : null}
+      </dd>
+    </div>
   );
 }
 

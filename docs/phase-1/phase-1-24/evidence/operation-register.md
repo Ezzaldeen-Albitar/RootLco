@@ -15,8 +15,8 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | OpenAPI operations       | 512   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
-| Permission codes seeded  | 133   |
-| Audit actions catalogued | 296   |
+| Permission codes seeded  | 134   |
+| Audit actions catalogued | 297   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 34    |
 

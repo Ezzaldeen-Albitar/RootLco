@@ -130,6 +130,7 @@ export type {
   OutstandingView,
   PayerSplitView,
   SettlementView,
+  ThirdPartyPaymentView,
   WorkOrderInvoiceView,
   /**
    * The delivery module's financial blocker. Exported because `@/modules/delivery`

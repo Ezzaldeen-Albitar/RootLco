@@ -7,6 +7,7 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 
 import type { ReceiptAllocation, ReceiptDetail } from '../payments-contract';
 import { Money, When } from './shared';
+import { PaidByLine } from './ThirdPartyPayment';
 
 /**
  * Who paid, as the screen could name them: by name, still being found, or not
@@ -67,7 +68,20 @@ export function ReceiptDocument({
     translate(messages, 'payments.print.column.when'),
   ];
   const rows = receipt.allocations.map((allocation) => [
-    <AllocatedInvoice key="i" messages={messages} allocation={allocation} />,
+    <span key="i" className="flex flex-col gap-0.5">
+      <AllocatedInvoice messages={messages} allocation={allocation} />
+      {allocation.thirdParty ? (
+        // A third-party payment (ADR-023 D14): who paid, for whom, on what authority.
+        <PaidByLine
+          messages={messages}
+          payerName={payer.kind === 'named' ? payer.name : null}
+          customerName={allocation.invoicePayerName}
+          relationship={allocation.thirdParty.relationship}
+          authorisationReference={allocation.thirdParty.authorisationReference}
+          testId="receipt-print-third-party"
+        />
+      ) : null}
+    </span>,
     <Money key="a" money={allocation.money} locale={locale} />,
     <When key="w" value={allocation.allocatedAt} locale={locale} />,
   ]);

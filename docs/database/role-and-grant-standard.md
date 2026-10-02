@@ -497,6 +497,17 @@ The three new primitives (`sal.request_receipt_reversal`, `sal.withdraw_receipt_
 `SECURITY INVOKER` with `EXECUTE` for `app_runtime` only. `SELECT` and `INSERT` are
 unchanged, no policy changes, and `app_readonly` keeps `SELECT` only.
 
+### 5.12 Third-party payer allocations (DBCR-P1-32-PRE-OD-FD14-001, migration `20261002100000`)
+
+No table privilege changes. `app_runtime` keeps `SELECT` and `INSERT` on
+`sal.payment_allocations`; the four new third-party columns are written only through that
+`INSERT`, and `sal.guard_allocation_payer` (BEFORE INSERT, `SECURITY INVOKER`, `EXECUTE`
+revoked from PUBLIC) holds every new row to the payer rule of ADR-023 D14: another customer's
+invoice only as a third-party allocation by a holder of `sal.payment.third_party` in the
+receipt's company and branch, the authorising user stamped from the session whatever the
+statement names. `sal.allocate_receipt` is re-created with three more arguments and keeps
+`EXECUTE` for `app_runtime` only. No policy changes, and `app_readonly` keeps `SELECT` only.
+
 ---
 
 ## 6. How later phases attach real logins

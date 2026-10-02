@@ -87,7 +87,7 @@ export const PAYMENT_SQLSTATE = {
  * The exact SQL that creates an allocation — a module-level constant so the
  * structural guard below can be applied to it at import time.
  */
-const ALLOCATE_RECEIPT_SQL = `SELECT sal.allocate_receipt($1, $2, $3::numeric, $4, $5) AS id`;
+const ALLOCATE_RECEIPT_SQL = `SELECT sal.allocate_receipt($1, $2, $3::numeric, $4, $5, $6, $7, $8) AS id`;
 
 /**
  * Refuses to load this module if the allocation statement ever stops being the
@@ -313,6 +313,12 @@ export interface ReceiptDocumentRow {
   /** Sum of this receipt's allocations, as a decimal string. `0.0000` when none. */
   readonly allocatedAmount: string;
   /**
+   * The part of `allocatedAmount` applied to OTHER customers' invoices as
+   * third-party allocations (ADR-023 D14), as a decimal string; `0.0000` when
+   * none. Summed in the same statement over the same rows, never derived here.
+   */
+  readonly thirdPartyAllocatedAmount: string;
+  /**
    * `sal.receipt_unallocated(id)` as a decimal string — the AUTHORITY, called.
    *
    * Not `amount − allocated` computed here. The function is the deployed
@@ -359,6 +365,23 @@ export interface PaymentAllocationRow {
   readonly amount: string;
   readonly allocatedAt: Date;
   readonly correlationId: string | null;
+  /**
+   * The third-party detail (ADR-023 D14): all four `null` on an allocation whose
+   * receipt payer is the invoice's own customer, all four present on a third-party
+   * allocation (`ck_payment_allocations_third_party_shape`). `thirdPartyAuthorisedBy`
+   * was stamped from the session by `sal.guard_allocation_payer`.
+   */
+  readonly thirdPartyRelationship: string | null;
+  readonly thirdPartyAuthorisationReference: string | null;
+  readonly thirdPartyReason: string | null;
+  readonly thirdPartyAuthorisedBy: string | null;
+}
+
+/** What a third-party allocation states (ADR-023 D14), as the primitive takes it. */
+export interface ThirdPartyStatement {
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
 }
 
 /**
@@ -442,7 +465,17 @@ interface PaymentAllocationSql {
   amount: string;
   allocated_at: Date;
   correlation_id: string | null;
+  third_party_relationship: string | null;
+  third_party_authorisation_reference: string | null;
+  third_party_reason: string | null;
+  third_party_authorised_by: string | null;
 }
+
+/** The allocation columns every single-row read selects, so none omits the D14 detail. */
+const ALLOCATION_COLUMNS = `id, seq::text AS seq, company_id, branch_id, receipt_id, invoice_id,
+              currency_code, amount, allocated_at, correlation_id,
+              third_party_relationship, third_party_authorisation_reference,
+              third_party_reason, third_party_authorised_by`;
 
 const toPaymentMethod = (r: PaymentMethodSql): PaymentMethodRow => ({
   id: r.id,
@@ -531,6 +564,10 @@ const toAllocation = (r: PaymentAllocationSql): PaymentAllocationRow => ({
   amount: r.amount,
   allocatedAt: r.allocated_at,
   correlationId: r.correlation_id,
+  thirdPartyRelationship: r.third_party_relationship,
+  thirdPartyAuthorisationReference: r.third_party_authorisation_reference,
+  thirdPartyReason: r.third_party_reason,
+  thirdPartyAuthorisedBy: r.third_party_authorised_by,
 });
 
 /** The scope pair a receipt was found in, passed back as predicates on derived reads. */
@@ -972,6 +1009,8 @@ export class PaymentsRepository extends Repository {
       // payer by the invoice list's rule: a live partner, `deleted_at IS NULL`.
       `SELECT a.id, a.seq::text AS seq, a.company_id, a.branch_id, a.receipt_id, a.invoice_id,
               a.currency_code, a.amount, a.allocated_at, a.correlation_id,
+              a.third_party_relationship, a.third_party_authorisation_reference,
+              a.third_party_reason, a.third_party_authorised_by,
               named.invoice_number, named.invoice_payer_display_name
          FROM sal.payment_allocations a
          LEFT JOIN LATERAL (
@@ -1053,7 +1092,9 @@ export class PaymentsRepository extends Repository {
     // `coalesce` then renders as an exact zero rather than an absence.
     const scope = `FROM sal.receipts r
          LEFT JOIN LATERAL (
-           SELECT sum(pa.amount) AS allocated
+           SELECT sum(pa.amount) AS allocated,
+                  sum(pa.amount) FILTER (WHERE pa.third_party_relationship IS NOT NULL)
+                    AS third_party_allocated
              FROM sal.payment_allocations pa
             WHERE pa.tenant_id = r.tenant_id AND pa.company_id = r.company_id
               AND pa.branch_id = r.branch_id AND pa.receipt_id = r.id
@@ -1103,6 +1144,7 @@ export class PaymentsRepository extends Repository {
       status: string;
       receipt_amount: string;
       allocated_amount: string;
+      third_party_allocated_amount: string;
       unallocated_amount: string;
       sort_value: string;
     }>(
@@ -1111,6 +1153,8 @@ export class PaymentsRepository extends Repository {
               r.received_at AS document_date, r.payer_partner_id, r.currency_code,
               r.status, r.amount::text AS receipt_amount,
               coalesce(al.allocated, 0::numeric(18, 4))::text AS allocated_amount,
+              coalesce(al.third_party_allocated, 0::numeric(18, 4))::text
+                AS third_party_allocated_amount,
               sal.receipt_unallocated(r.id)::text AS unallocated_amount,
               ${cursorTimestamp('r.received_at')} AS sort_value
          ${scope}
@@ -1141,6 +1185,7 @@ export class PaymentsRepository extends Repository {
         // represent, and one conversion is all it takes to lose the fourth place.
         receiptAmount: row.receipt_amount,
         allocatedAmount: row.allocated_amount,
+        thirdPartyAllocatedAmount: row.third_party_allocated_amount,
         unallocatedAmount: row.unallocated_amount,
         sortValue: row.sort_value,
       })),
@@ -1231,6 +1276,12 @@ export class PaymentsRepository extends Repository {
    *
    * `idempotencyKey` is stored on the allocation (M-09). The primitive resolves a
    * repeated key under the receipt lock and returns the allocation it already made.
+   *
+   * `thirdParty` makes the allocation a third-party one (ADR-023 D14): its three
+   * statements travel as the primitive's trailing arguments, and
+   * `sal.guard_allocation_payer` holds them to their rules, checks
+   * `sal.payment.third_party` and stamps the authorising user. `null` for an
+   * ordinary allocation, which the same guard refuses when the payers differ.
    */
   public async allocateReceipt(
     db: DbHandle,
@@ -1238,7 +1289,8 @@ export class PaymentsRepository extends Repository {
     invoiceId: string,
     amount: string,
     correlationId: string | null,
-    idempotencyKey: string | null
+    idempotencyKey: string | null,
+    thirdParty: ThirdPartyStatement | null = null
   ): Promise<{ readonly id: string }> {
     const row = await this.runOne<{ id: string }>(db, ALLOCATE_RECEIPT_SQL, [
       receiptId,
@@ -1246,6 +1298,9 @@ export class PaymentsRepository extends Repository {
       amount,
       correlationId,
       idempotencyKey,
+      thirdParty?.relationship ?? null,
+      thirdParty?.authorisationReference ?? null,
+      thirdParty?.reason ?? null,
     ]);
     if (!row?.id) throw new Error('payments: sal.allocate_receipt returned no id');
     return { id: row.id };
@@ -1276,8 +1331,7 @@ export class PaymentsRepository extends Repository {
     const context = this.assertContext(db);
     const row = await this.runOne<PaymentAllocationSql>(
       db,
-      `SELECT id, seq::text AS seq, company_id, branch_id, receipt_id, invoice_id,
-              currency_code, amount, allocated_at, correlation_id
+      `SELECT ${ALLOCATION_COLUMNS}
          FROM sal.payment_allocations
         WHERE tenant_id = $1 AND idempotency_key = $2`,
       [context.principal.tenantId, idempotencyKey]
@@ -1293,8 +1347,7 @@ export class PaymentsRepository extends Repository {
     const context = this.assertContext(db);
     const row = await this.runOne<PaymentAllocationSql>(
       db,
-      `SELECT id, seq::text AS seq, company_id, branch_id, receipt_id, invoice_id,
-              currency_code, amount, allocated_at, correlation_id
+      `SELECT ${ALLOCATION_COLUMNS}
          FROM sal.payment_allocations
         WHERE tenant_id = $1 AND id = $2 AND company_id = $3 AND branch_id = $4`,
       [context.principal.tenantId, allocationId, scope.companyId, scope.branchId]

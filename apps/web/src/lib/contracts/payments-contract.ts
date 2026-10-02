@@ -56,6 +56,22 @@ export interface PaymentAllocateBody {
   readonly amount: string;
   /** ISO-4217 alphabetic, upper case. */
   readonly currency: string;
+  /**
+   * Only to apply the receipt to ANOTHER customer's invoice as a third-party
+   * payment (ADR-023 D14); needs `sal.payment.third_party`. Without it such an
+   * allocation is refused.
+   */
+  readonly thirdParty?: PaymentAllocateThirdPartyBody;
+}
+
+/** A third-party payer's statement (ADR-023 D14). */
+export interface PaymentAllocateThirdPartyBody {
+  /** `insurer`, `employer` or `other`. */
+  readonly relationship: string;
+  /** Not blank, at most 100 characters — the insurer's claim or approval number, say. */
+  readonly authorisationReference: string;
+  /** Not blank, at most 2000 characters; for `other`, what the payer is to the customer. */
+  readonly reason: string;
 }
 
 /* ------------------------------------------------------------------ *

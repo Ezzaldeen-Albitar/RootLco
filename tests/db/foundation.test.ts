@@ -536,6 +536,8 @@ const ALLOWED_ROUTINES = new Set([
   'sal.approve_receipt_reversal',
   'sal.complete_delivery',
   'sal.create_counter_sale_invoice',
+  // P1-32-PRE-OD-FD14 (ADR-023, D14): the payer rule on every new allocation.
+  'sal.guard_allocation_payer',
   // P1-32-PRE-OD-FD4 (ADR-023, D4): the allocation freeze behind a live reversal.
   'sal.guard_allocation_receipt_open',
   'sal.guard_authorized_receiver',
@@ -1142,6 +1144,7 @@ describe('database foundation', () => {
       'tg_partner_status_history_stamp',
       'tg_partner_status_history_timeline',
       'tg_payment_allocations_event_completeness',
+      'tg_payment_allocations_payer',
       'tg_payment_allocations_receipt_open',
       'tg_payment_methods_immutable',
       'tg_payment_methods_touch_metadata',

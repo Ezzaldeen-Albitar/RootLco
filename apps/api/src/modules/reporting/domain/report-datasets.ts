@@ -507,11 +507,14 @@ export const REPORT_DATASETS = Object.freeze({
       // is no rate anywhere in this platform, so no amount is ever comparable
       // across two of these without one being invented.
       Object.freeze({ key: 'currency', kind: 'text' }),
-      // Exact decimal strings, all six. Null where the document type has no such
+      // Exact decimal strings, all seven. Null where the document type has no such
       // amount — never zero.
       Object.freeze({ key: 'invoicedAmount', kind: 'money' }),
       Object.freeze({ key: 'receiptAmount', kind: 'money' }),
       Object.freeze({ key: 'allocatedAmount', kind: 'money' }),
+      // The part of a receipt's allocations that paid OTHER customers' invoices as
+      // third-party payments (ADR-023 D14). Null on an invoice and a credit note.
+      Object.freeze({ key: 'thirdPartyAllocatedAmount', kind: 'money' }),
       Object.freeze({ key: 'unallocatedAmount', kind: 'money' }),
       Object.freeze({ key: 'creditNoteAmount', kind: 'money' }),
       Object.freeze({ key: 'outstanding', kind: 'money' }),

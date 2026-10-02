@@ -45,6 +45,7 @@ import {
 import {
   OVER_ALLOCATION_KEYS,
   PAGE_SIZE,
+  PAYER_MISMATCH_KEY,
   RECEIPT_STATUSES,
   type Allocation,
   type PaymentMethod,
@@ -55,6 +56,16 @@ import {
 } from '../payments-contract';
 import { AllocatedInvoice, ReceiptDocument, type ReceiptPayerName } from './ReceiptDocument';
 import { ReplacementLinks, ReplacementPanel, ReversalSection } from './ReceiptReversal';
+import {
+  EMPTY_THIRD_PARTY,
+  OtherCustomerNotice,
+  PaidByLine,
+  ThirdPartyFields,
+  thirdPartyBody,
+  thirdPartyDraftTouched,
+  thirdPartyFieldErrors,
+  type ThirdPartyDraft,
+} from './ThirdPartyPayment';
 import {
   CURRENCY,
   Identifier,
@@ -104,6 +115,17 @@ import {
  * reversal, a different person holding the reversal-approval code approves or
  * rejects it, and the replacement receipt is recorded and linked. While a
  * reversal waits, the allocate form is closed with the reason.
+ *
+ * ## Someone else's invoice is a third-party payment, or it is refused
+ *
+ * A receipt is applied to its payer's own invoices (Owner decision D14, ADR-023).
+ * When the chosen invoice bills a different customer the form says so at once;
+ * a holder of `sal.payment.third_party` may mark it as a third-party payment —
+ * who the payer is to the customer, the authorisation reference and the reason
+ * (`ThirdPartyPayment.tsx`) — and everyone else is told plainly why it cannot
+ * take this money. An invoice named in the address carries no payer to compare,
+ * so there the server's refusal is what opens the same explanation. The receipt
+ * and the invoice then read "Paid by <payer> (<relationship>) for <customer>".
  *
  * ## Names, not references
  *
@@ -181,6 +203,7 @@ export function PaymentsScreen({
   canReadCustomers = false,
   canListInvoices = false,
   canDecideReversals = false,
+  canAllocateThirdParty = false,
   currentUserId = null,
 }: {
   readonly locale: Locale;
@@ -204,6 +227,11 @@ export function PaymentsScreen({
   readonly canListInvoices?: boolean;
   /** `sal.reversal.approve` — approving or rejecting somebody else's reversal request. */
   readonly canDecideReversals?: boolean;
+  /**
+   * `sal.payment.third_party` — applying a receipt to another customer's invoice
+   * as a third-party payment (ADR-023 D14).
+   */
+  readonly canAllocateThirdParty?: boolean;
   /** The signed-in person, to know whose reversal request is whose. */
   readonly currentUserId?: string | null;
 }) {
@@ -340,6 +368,7 @@ export function PaymentsScreen({
           canReadCustomers={canReadCustomers}
           canRecord={canRecord}
           canDecideReversals={canDecideReversals}
+          canAllocateThirdParty={canAllocateThirdParty}
           currentUserId={currentUserId}
           onReversalChanged={(key) => changed({ key })}
           onOpenReceipt={(id) => {
@@ -1087,6 +1116,7 @@ function ReceiptPanel({
   canReadCustomers,
   canRecord,
   canDecideReversals,
+  canAllocateThirdParty,
   currentUserId,
   onReversalChanged,
   onOpenReceipt,
@@ -1103,6 +1133,7 @@ function ReceiptPanel({
   /** `sal.payment.record` — asking for a reversal, and recording a replacement. */
   readonly canRecord: boolean;
   readonly canDecideReversals: boolean;
+  readonly canAllocateThirdParty: boolean;
   readonly currentUserId: string | null;
   readonly onReversalChanged: (noticeKey: string) => void;
   readonly onOpenReceipt: (receiptId: string) => void;
@@ -1221,6 +1252,15 @@ function ReceiptPanel({
                 <span className="text-caption text-text-muted">
                   <When value={allocation.allocatedAt} locale={locale} />
                 </span>
+                {allocation.thirdParty ? (
+                  <PaidByLine
+                    messages={messages}
+                    payerName={payer.kind === 'named' ? payer.name : null}
+                    customerName={allocation.invoicePayerName}
+                    relationship={allocation.thirdParty.relationship}
+                    authorisationReference={allocation.thirdParty.authorisationReference}
+                  />
+                ) : null}
               </li>
             ))}
           </ul>
@@ -1263,6 +1303,7 @@ function ReceiptPanel({
             receipt={receipt}
             initialInvoiceId={initialInvoiceId}
             canListInvoices={canListInvoices}
+            canAllocateThirdParty={canAllocateThirdParty}
             onAllocated={onAllocated}
           />
         ) : (
@@ -1307,7 +1348,13 @@ function Row({ label, children }: { readonly label: string; readonly children: R
  */
 const uncertainAllocations = new Map<
   string,
-  { readonly key: string; readonly invoiceId: string; readonly amount: string }
+  {
+    readonly key: string;
+    readonly invoiceId: string;
+    readonly amount: string;
+    /** The third-party statement sent with it, or '' for an ordinary allocation. */
+    readonly thirdParty: string;
+  }
 >();
 
 /**
@@ -1331,6 +1378,7 @@ function AllocateForm({
   receipt,
   initialInvoiceId,
   canListInvoices,
+  canAllocateThirdParty,
   onAllocated,
 }: {
   readonly locale: Locale;
@@ -1338,6 +1386,8 @@ function AllocateForm({
   readonly receipt: ReceiptDetail;
   readonly initialInvoiceId: string | null;
   readonly canListInvoices: boolean;
+  /** `sal.payment.third_party` — whether a third-party payment is offered (ADR-023 D14). */
+  readonly canAllocateThirdParty: boolean;
   readonly onAllocated: (
     allocation: Allocation,
     open: ReadState<Outstanding>,
@@ -1371,12 +1421,21 @@ function AllocateForm({
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
+  /*
+   * A third-party payment (ADR-023 D14): what was entered for it, and whether the
+   * server said the invoice named in the address is another customer's — the one
+   * case where the screen has no payer of its own to compare.
+   */
+  const [thirdParty, setThirdParty] = useState<ThirdPartyDraft>(EMPTY_THIRD_PARTY);
+  const [addressedToOther, setAddressedToOther] = useState(false);
   // A branch switch closes the previous branch's receipt, and this form with it.
   // The picker declares a chosen invoice itself. A receipt named in the address
   // is not closed by the FIRST choice of a branch, so a confirmed discard also
-  // empties the amount here rather than relying on the receipt closing.
-  useUnsavedGuard(amount.trim().length > 0, () => {
+  // empties the amount and the third-party fields here rather than relying on the
+  // receipt closing.
+  useUnsavedGuard(amount.trim().length > 0 || thirdPartyDraftTouched(thirdParty), () => {
     setAmount('');
+    setThirdParty(EMPTY_THIRD_PARTY);
     setErrors({});
     setOutcome(null);
     setOverBound(null);
@@ -1387,6 +1446,16 @@ function AllocateForm({
     attempt,
   });
   const invoiceId = invoice?.id ?? fromAddress;
+  /*
+   * Whether the invoice bills somebody other than the receipt's payer: compared
+   * with the chosen invoice's own payer, or — for an invoice named in the address,
+   * which arrives without one — learned from the server's refusal.
+   */
+  const otherCustomer =
+    invoice !== null
+      ? invoice.payerPartnerId !== receipt.payerPartnerId
+      : fromAddress !== null && addressedToOther;
+  const sendsThirdParty = otherCustomer && canAllocateThirdParty && thirdParty.chosen;
 
   /** A field's own error, then the server's violation for the same field. */
   const errorFor = (name: string): string | undefined => {
@@ -1411,6 +1480,10 @@ function AllocateForm({
   const ask = () => {
     const found: Record<string, string> = {};
     if (invoiceId === null) found['invoiceId'] = 'payments.allocate.invoiceRequired';
+    // Someone else's invoice takes this money only as a third-party payment, by a
+    // person allowed to record one (ADR-023 D14); the server refuses it otherwise.
+    else if (otherCustomer && !sendsThirdParty) found['invoiceId'] = PAYER_MISMATCH_KEY;
+    if (sendsThirdParty) Object.assign(found, thirdPartyFieldErrors(thirdParty));
     if (!isPayableAmount(amount)) found['amount'] = 'payments.common.amountFormat';
     // No finer than the receipt's currency is written: the minor unit is the one
     // the server published for it (`shared.currencies`, Owner decision D1), so the
@@ -1431,13 +1504,24 @@ function AllocateForm({
     setBusy(true);
     let applied = false;
     const typed = amount.trim();
+    const statement = sendsThirdParty ? thirdPartyBody(thirdParty) : null;
+    const signature = statement === null ? '' : JSON.stringify(statement);
     // The same request as an attempt whose answer was lost goes under ITS key.
     const pending = uncertainAllocations.get(receipt.id);
     const key =
-      pending !== undefined && pending.invoiceId === invoiceId && pending.amount === typed
+      pending !== undefined &&
+      pending.invoiceId === invoiceId &&
+      pending.amount === typed &&
+      pending.thirdParty === signature
         ? pending.key
         : attemptKey;
-    const remember = () => uncertainAllocations.set(receipt.id, { key, invoiceId, amount: typed });
+    const remember = () =>
+      uncertainAllocations.set(receipt.id, {
+        key,
+        invoiceId,
+        amount: typed,
+        thirdParty: signature,
+      });
     try {
       let result: Awaited<ReturnType<typeof allocatePayment>>;
       try {
@@ -1449,6 +1533,7 @@ function AllocateForm({
             // The receipt's own currency: the route compares the declared code
             // against the receipt AND the invoice, and refuses any disagreement.
             currency: receipt.money.currency,
+            ...(statement === null ? {} : { thirdParty: statement }),
           },
           key
         );
@@ -1505,6 +1590,11 @@ function AllocateForm({
         });
       } else {
         setOverBound(null);
+      }
+      // The server says the invoice is another customer's (ADR-023 D14): for an
+      // invoice named in the address that is how the screen learns it.
+      if (result.state.fieldErrors?.['invoiceId'] === PAYER_MISMATCH_KEY) {
+        setAddressedToOther(true);
       }
       if (Object.keys(result.state.fieldErrors ?? {}).length > 0) setAttempt((n) => n + 1);
     } finally {
@@ -1581,6 +1671,14 @@ function AllocateForm({
                 onChange={(next) => {
                   setInvoice(next);
                   if (next !== null) clearError('invoiceId');
+                  // Another invoice is another comparison: what was learned about
+                  // the addressed one no longer applies.
+                  setAddressedToOther(false);
+                  // A third-party statement is made for ONE invoice. The choice
+                  // is withdrawn so the next invoice is never booked on it
+                  // unseen; what was typed is kept, and shown again for review
+                  // when the box is ticked once more.
+                  setThirdParty((draft) => (draft.chosen ? { ...draft, chosen: false } : draft));
                 }}
                 canSearch={canListInvoices}
                 error={errorFor('invoiceId')}
@@ -1592,6 +1690,23 @@ function AllocateForm({
               {translate(messages, 'payments.allocate.invoiceHelp')}
             </p>
           </div>
+          {otherCustomer ? (
+            <div className="sm:col-span-2 flex flex-col gap-3">
+              <OtherCustomerNotice messages={messages} canMakeThirdParty={canAllocateThirdParty} />
+              {canAllocateThirdParty ? (
+                <ThirdPartyFields
+                  messages={messages}
+                  draft={thirdParty}
+                  onChange={(next) => {
+                    setThirdParty(next);
+                    if (next.chosen) clearError('invoiceId');
+                  }}
+                  errorFor={errorFor}
+                  onEdit={clearError}
+                />
+              ) : null}
+            </div>
+          ) : null}
           <FormMoneyField
             messages={messages}
             label={translate(messages, 'payments.allocate.amount')}
@@ -1621,9 +1736,13 @@ function AllocateForm({
             ? formatMessage(
                 translate(
                   messages,
-                  invoice?.invoiceNumber
-                    ? 'payments.allocate.confirmExplain'
-                    : 'payments.allocate.confirmExplainUnnumbered'
+                  sendsThirdParty
+                    ? invoice?.invoiceNumber
+                      ? 'payments.allocate.confirmThirdParty'
+                      : 'payments.allocate.confirmThirdPartyUnnumbered'
+                    : invoice?.invoiceNumber
+                      ? 'payments.allocate.confirmExplain'
+                      : 'payments.allocate.confirmExplainUnnumbered'
                 ),
                 {
                   amount: formatMoney(

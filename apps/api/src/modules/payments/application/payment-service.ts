@@ -56,26 +56,32 @@ import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, SQLSTATE, sqlState } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
-import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { billingModule } from '@/modules/billing';
 import { Decimal, DecimalError, MONEY, assertCurrencyCode, moneyView } from '@/modules/pricing';
 import type { MoneyView } from '@/modules/pricing';
 import {
   PAYMENT_SQLSTATE,
+  type PaymentAllocationRow,
   type PaymentsRepository,
   type ReceiptRow,
   type ReceiptScope,
+  type ThirdPartyStatement,
 } from '../data/payments-repository';
 import { reversalRefusalToken } from './receipt-reversal-service';
 import {
   PaymentRuleError,
   RECEIPT_REVERSAL_RULES,
+  THIRD_PARTY_PERMISSION,
+  THIRD_PARTY_RULES,
   assertAllocatable,
   assertAllocationCurrencyCoherent,
   assertAllocationWithinBounds,
   assertPaymentMethodIsTenantScoped,
   assertPaymentMethodUsable,
   parsePaymentAmount,
+  thirdPartyViolations,
+  type ThirdPartyDeclaration,
 } from '../domain/payments';
 
 /**
@@ -95,6 +101,12 @@ export interface AllocationInvoiceHeader {
   /** One of the four `ck_invoices_status` values. */
   readonly status: string;
   readonly currencyCode: string;
+  /**
+   * The party the invoice bills — its customer (`sal.invoices.payer_partner_id`).
+   * Compared with the receipt's payer (ADR-023 D14): a different party is refused
+   * unless the allocation is an explicit third-party one.
+   */
+  readonly payerPartnerId: string;
   /** `sal.invoice_open_receivable` as an exact decimal STRING, never a number. */
   readonly openReceivable: string;
 }
@@ -129,6 +141,7 @@ interface BillingInvoicePort {
       readonly branchId: string;
       readonly status: string;
       readonly currency: string;
+      readonly payerPartnerId: string;
     };
   }>;
   readOutstanding(
@@ -206,6 +219,20 @@ export interface AllocationView {
   readonly receiptStatus: string;
   /** What remains on the receipt after this allocation, derived by the database. */
   readonly receiptUnallocated: MoneyView;
+  /**
+   * The third-party detail (ADR-023 D14) when the receipt's payer settled another
+   * customer's invoice, else `null`. The payer and the customer are unchanged
+   * either way; what is left on the receipt stays the payer's.
+   */
+  readonly thirdParty: AllocationThirdPartyView | null;
+}
+
+/** What a third-party allocation recorded (ADR-023 D14). */
+export interface AllocationThirdPartyView {
+  /** `insurer`, `employer` or `other` — a fixed vocabulary. */
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
 }
 
 export interface RecordPaymentInput {
@@ -265,6 +292,106 @@ export interface AllocatePaymentInput {
    * already made; a key reused for another receipt, invoice or amount is refused.
    */
   readonly idempotencyKey?: string | undefined;
+  /**
+   * Present only to make a THIRD-PARTY allocation (ADR-023 D14): the receipt's
+   * payer settles an invoice whose customer is somebody else — an insurer, an
+   * employer. Without it such an allocation is refused; with it, it needs
+   * `sal.payment.third_party` in the receipt's company and branch.
+   */
+  readonly thirdParty?: ThirdPartyDeclaration | undefined;
+}
+
+/**
+ * The third-party statement as it is stored and compared: the relationship as
+ * sent, the reference and the reason without surrounding spaces. One form, so a
+ * repeated key compares the very values the first request booked.
+ */
+function normaliseThirdParty(declaration: ThirdPartyDeclaration): ThirdPartyStatement {
+  return {
+    relationship: declaration.relationship,
+    authorisationReference: declaration.authorisationReference.trim(),
+    reason: declaration.reason.trim(),
+  };
+}
+
+/** The view of an allocation's stored third-party detail, or `null` for an ordinary one. */
+function thirdPartyViewOf(row: PaymentAllocationRow): AllocationThirdPartyView | null {
+  if (
+    typeof row.thirdPartyRelationship !== 'string' ||
+    typeof row.thirdPartyAuthorisationReference !== 'string' ||
+    typeof row.thirdPartyReason !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    relationship: row.thirdPartyRelationship,
+    authorisationReference: row.thirdPartyAuthorisationReference,
+    reason: row.thirdPartyReason,
+  };
+}
+
+/**
+ * The refusal of an allocation to another customer's invoice that is not a
+ * third-party allocation (ADR-023 D14), named on the invoice the request chose and
+ * recorded once (D12). The invoice stays its customer's; nothing was booked.
+ */
+function payerMismatch(receiptId: string, cause?: unknown): AppFailure {
+  return withBusinessRefusal(
+    new AppFailure('ERR-TRN-001', {
+      message:
+        'That invoice belongs to a different customer from the one who paid this receipt. ' +
+        'It can be paid from this receipt only as a third-party payment.',
+      safeDetails: {
+        violations: [{ path: 'body.invoiceId', rule: THIRD_PARTY_RULES.payerMismatch }],
+      },
+      ...(cause === undefined ? {} : { cause }),
+    }),
+    { entityType: 'sal.receipt', entityId: receiptId, rule: THIRD_PARTY_RULES.payerMismatch }
+  );
+}
+
+/**
+ * The refusal of a third-party allocation by a caller who does not hold
+ * `sal.payment.third_party` in the receipt's company and branch (ADR-023 D14),
+ * recorded once (D12). The same uniform authorization answer as any other.
+ */
+function thirdPartyPermissionMissing(receiptId: string, cause?: unknown): AppFailure {
+  return withBusinessRefusal(
+    new AppFailure('ERR-IAM-001', {
+      message: 'Denied sal.payment-allocate: a third-party allocation needs its own authority',
+      safeDetails: { requiredPermissions: [THIRD_PARTY_PERMISSION] },
+      ...(cause === undefined ? {} : { cause }),
+    }),
+    { entityType: 'sal.receipt', entityId: receiptId, rule: THIRD_PARTY_RULES.permissionMissing }
+  );
+}
+
+/** The field a payer-rule token from the database names, for the ones a caller can fix. */
+const THIRD_PARTY_FIELD_OF_TOKEN: Readonly<Record<string, string>> = Object.freeze({
+  [THIRD_PARTY_RULES.samePayer]: 'body.thirdParty',
+  [THIRD_PARTY_RULES.relationshipInvalid]: 'body.thirdParty.relationship',
+  [THIRD_PARTY_RULES.referenceRequired]: 'body.thirdParty.authorisationReference',
+  [THIRD_PARTY_RULES.otherUnexplained]: 'body.thirdParty.reason',
+  [THIRD_PARTY_RULES.reasonRequired]: 'body.thirdParty.reason',
+  [THIRD_PARTY_RULES.currencyMismatch]: 'body.currencyCode',
+});
+
+/** The token before the first colon of a payer-rule refusal, or `null` for anything else. */
+function payerRuleToken(error: unknown): string | null {
+  if (
+    !isSqlState(error, SQLSTATE.checkViolation) &&
+    !isSqlState(error, SQLSTATE.insufficientPrivilege)
+  ) {
+    return null;
+  }
+  const message =
+    typeof error === 'object' && error !== null && 'message' in error
+      ? (error as { message?: unknown }).message
+      : undefined;
+  const token = /^([a-z_]+):/.exec(typeof message === 'string' ? message : '')?.[1] ?? null;
+  return token !== null && (Object.values(THIRD_PARTY_RULES) as string[]).includes(token)
+    ? token
+    : null;
 }
 
 /**
@@ -823,11 +950,17 @@ export class PaymentService {
     if (input.idempotencyKey !== undefined) {
       const prior = await this.repository.findAllocationByIdempotencyKey(db, input.idempotencyKey);
       if (prior) {
+        const stated =
+          input.thirdParty === undefined ? null : normaliseThirdParty(input.thirdParty);
         if (
           prior.receiptId !== receipt.id ||
           prior.invoiceId !== input.invoiceId ||
           !Decimal.fromDatabase(prior.amount, MONEY).equals(amount) ||
-          prior.currencyCode !== declaredCurrency
+          prior.currencyCode !== declaredCurrency ||
+          (prior.thirdPartyRelationship ?? null) !== (stated?.relationship ?? null) ||
+          (prior.thirdPartyAuthorisationReference ?? null) !==
+            (stated?.authorisationReference ?? null) ||
+          (prior.thirdPartyReason ?? null) !== (stated?.reason ?? null)
         ) {
           throw new AppFailure('ERR-INT-001', {
             message:
@@ -899,6 +1032,14 @@ export class PaymentService {
       throw error;
     }
 
+    // 6a. The payer (ADR-023 D14). The receipt's payer and the invoice's customer
+    //     are the same party, or the allocation is an explicit third-party one: by
+    //     a holder of `sal.payment.third_party` in the receipt's company and branch,
+    //     naming the relationship, the authorisation and the reason. Refused by
+    //     default, and recorded. `sal.guard_allocation_payer` holds the same rules
+    //     in the database for whoever writes the row; this names each refusal.
+    const thirdParty = await this.resolveThirdParty(db, receipt, invoice, input.thirdParty);
+
     // 7. Bounds, by exact decimal comparison. Never `Number`, never a subtraction in
     //    TypeScript: both remainders were computed by PostgreSQL in `numeric` and are
     //    only ever compared here.
@@ -936,10 +1077,29 @@ export class PaymentService {
         invoice.id,
         amount.toString(),
         db.context.correlationId,
-        input.idempotencyKey ?? null
+        input.idempotencyKey ?? null,
+        thirdParty
       );
       allocationId = created.id;
     } catch (error) {
+      const payerToken = payerRuleToken(error);
+      if (payerToken === THIRD_PARTY_RULES.payerMismatch) throw payerMismatch(receipt.id, error);
+      if (payerToken === THIRD_PARTY_RULES.permissionMissing) {
+        throw thirdPartyPermissionMissing(receipt.id, error);
+      }
+      if (payerToken !== null) {
+        // The rows were read under the receipt lock, so only a change between the
+        // checks above and the insert reaches here: named on its field, as above.
+        throw new AppFailure('ERR-VAL-001', {
+          message: 'The third-party detail of this allocation does not hold',
+          safeDetails: {
+            violations: [
+              { path: THIRD_PARTY_FIELD_OF_TOKEN[payerToken] ?? 'body', rule: payerToken },
+            ],
+          },
+          cause: error,
+        });
+      }
       if (sqlState(error) === PAYMENT_SQLSTATE.noDataFound) {
         // The primitive's own scope refusals for the receipt and the invoice. The
         // pre-checks above should have caught both, so reaching here means the row
@@ -1004,6 +1164,45 @@ export class PaymentService {
       ],
     });
 
+    // A third-party allocation is audited as such, in the same transaction (ADR-023
+    // D14): who paid, whose invoice it is, what the payer is to the customer, the
+    // authorisation and the reason. The authorising user is the actor of this record
+    // and was stamped on the row from the session by `sal.guard_allocation_payer`.
+    const recorded = thirdPartyViewOf(allocation);
+    if (recorded !== null) {
+      await appendAudit(db, {
+        action: 'sal.payment.third_party_allocated',
+        entityType: 'sal.payment_allocation',
+        entityId: allocation.id,
+        companyId: allocation.companyId,
+        branchId: allocation.branchId,
+        requestRef: 'sal.payment-allocate',
+        details: [
+          { field: 'amount', classification: 'restricted', value: allocation.amount },
+          { field: 'currency', classification: 'public', value: allocation.currencyCode },
+          { field: 'receiptId', classification: 'internal', value: allocation.receiptId },
+          { field: 'invoiceId', classification: 'internal', value: allocation.invoiceId },
+          {
+            field: 'receiptPayerPartnerId',
+            classification: 'internal',
+            value: receipt.payerPartnerId,
+          },
+          {
+            field: 'invoicePayerPartnerId',
+            classification: 'internal',
+            value: invoice.payerPartnerId,
+          },
+          { field: 'relationship', classification: 'internal', value: recorded.relationship },
+          {
+            field: 'authorisationReference',
+            classification: 'internal',
+            value: recorded.authorisationReference,
+          },
+          { field: 'reason', classification: 'internal', value: recorded.reason },
+        ],
+      });
+    }
+
     await publishEvent(db, {
       eventType: 'payment.allocated',
       aggregateId: allocation.id,
@@ -1053,7 +1252,61 @@ export class PaymentService {
       allocatedAt: allocation.allocatedAt.toISOString(),
       receiptStatus: after.status,
       receiptUnallocated: moneyView(remainder.unallocated, remainder.currencyCode, units),
+      thirdParty: thirdPartyViewOf(allocation),
     };
+  }
+
+  /**
+   * The payer rule of an allocation (ADR-023 D14), and the third-party statement it
+   * books, or `null` for an ordinary allocation.
+   *
+   * Same party: nothing to state, and a statement is refused on its field — an
+   * allocation to the customer's own invoice is not a third-party payment. A
+   * different party without a statement: refused and recorded
+   * (`allocation_payer_mismatch`). With a statement: the caller must hold
+   * `sal.payment.third_party` in the RECEIPT's company and branch — the scope the
+   * receipt was taken in, which the invoice shares (step 4) — refused and recorded
+   * otherwise; then every field that does not hold is named at once, so the screen
+   * can mark each.
+   */
+  private async resolveThirdParty(
+    db: DbHandle,
+    receipt: ReceiptRow,
+    invoice: AllocationInvoiceHeader,
+    declaration: ThirdPartyDeclaration | undefined
+  ): Promise<ThirdPartyStatement | null> {
+    if (receipt.payerPartnerId === invoice.payerPartnerId) {
+      if (declaration !== undefined) {
+        throw new AppFailure('ERR-VAL-001', {
+          message:
+            'This invoice belongs to the customer who paid the receipt, so it is not a ' +
+            'third-party payment.',
+          safeDetails: {
+            violations: [{ path: 'body.thirdParty', rule: THIRD_PARTY_RULES.samePayer }],
+          },
+        });
+      }
+      return null;
+    }
+    if (declaration === undefined) throw payerMismatch(receipt.id);
+    const allowed = await callerHoldsPermission(db, THIRD_PARTY_PERMISSION, {
+      companyId: receipt.companyId,
+      branchId: receipt.branchId,
+    });
+    if (!allowed) throw thirdPartyPermissionMissing(receipt.id);
+    const violations = thirdPartyViolations(declaration);
+    if (violations.length > 0) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'The third-party detail of this allocation is incomplete',
+        safeDetails: {
+          violations: violations.map((violation) => ({
+            path: `body.thirdParty.${violation.field}`,
+            rule: violation.rule,
+          })),
+        },
+      });
+    }
+    return normaliseThirdParty(declaration);
   }
 
   /**
@@ -1093,6 +1346,7 @@ export class PaymentService {
       allocatedAt: allocation.allocatedAt.toISOString(),
       receiptStatus: after.status,
       receiptUnallocated: moneyView(remainder.unallocated, remainder.currencyCode, units),
+      thirdParty: thirdPartyViewOf(allocation),
     };
   }
 
@@ -1202,6 +1456,7 @@ export class PaymentService {
       branchId: detail.invoice.branchId,
       status: detail.invoice.status,
       currencyCode: detail.invoice.currency,
+      payerPartnerId: detail.invoice.payerPartnerId,
       openReceivable: outstanding.outstanding.amount,
     };
   }

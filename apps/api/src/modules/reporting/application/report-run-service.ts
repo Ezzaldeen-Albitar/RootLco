@@ -656,6 +656,8 @@ interface InvoicePaymentDocument {
   readonly invoicedAmount: string | null;
   readonly receiptAmount: string | null;
   readonly allocatedAmount: string | null;
+  /** A receipt's third-party share of `allocatedAmount` (ADR-023 D14); null otherwise. */
+  readonly thirdPartyAllocatedAmount: string | null;
   readonly unallocatedAmount: string | null;
   readonly creditNoteAmount: string | null;
   readonly outstanding: string | null;
@@ -785,6 +787,7 @@ const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
         // rather than a zero, which would be a claim that money moved.
         receiptAmount: null,
         allocatedAmount: null,
+        thirdPartyAllocatedAmount: null,
         unallocatedAmount: null,
         creditNoteAmount: document.creditNoteAmount,
         outstanding: document.outstanding,
@@ -806,6 +809,7 @@ const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
         invoicedAmount: null,
         receiptAmount: document.receiptAmount,
         allocatedAmount: document.allocatedAmount,
+        thirdPartyAllocatedAmount: document.thirdPartyAllocatedAmount,
         unallocatedAmount: document.unallocatedAmount,
         creditNoteAmount: null,
         // A receipt has no outstanding balance of its own. What it has NOT yet
@@ -890,6 +894,9 @@ const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
           cell('invoicedAmount', null, document.invoicedAmount),
           cell('receiptAmount', null, document.receiptAmount),
           cell('allocatedAmount', null, document.allocatedAmount),
+          // What of it paid other customers' invoices as third-party payments
+          // (ADR-023 D14). Null - never zero - on an invoice and a credit note.
+          cell('thirdPartyAllocatedAmount', null, document.thirdPartyAllocatedAmount),
           cell('unallocatedAmount', null, document.unallocatedAmount),
           cell('creditNoteAmount', null, document.creditNoteAmount),
           cell('outstanding', null, document.outstanding),
