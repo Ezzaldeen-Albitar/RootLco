@@ -3767,3 +3767,20 @@ Known limitations of this slice, one line each:
 - An invoice named in the address carries no payer the screen can compare, so there the option appears after the server's refusal.
 - No outbox event field marks a third-party allocation; consumers read the receipt again.
 - Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the builds; they run in hosted CI. Focused database and backend files ran against a disposable database only.
+
+Fix round 1 of the contract review: the notice that the chosen invoice belongs to another customer
+(`OtherCustomerNotice`) is now a status region, so a screen reader announces it, with the "blocked"
+or "may record" sentence under it, while focus stays in the invoice picker; the web case for a
+caller without the code and the one for a holder each find it by its role.
+
+Residual items from the contract review of fix round 1, one line each:
+
+- The reviewer did not run the database and backend tiers locally (no database or container on the review machine); the evidence on `f0ac66cc` is hosted: job 110976037648 (database) ran `tests/db/sal-third-party-allocations.test.ts` 13/13 of 1988, and PR CI job 110976198763 (integration) ran `tests/backend/od-finance-third-party.test.ts` 10/10 of 4068; "refusal recorded once" rests on those hosted runs only.
+- The unit coverage floor was not evaluated on `f0ac66cc`: in job 110976198519 `coverage-gate.mjs` found no `coverage/unit/coverage-summary.json` because the unit tier stopped at the expected P1-27 doc-counts staleness; the floors can be confirmed only after the records step.
+- Switching from one other-customer invoice to another resets the "third-party payment" choice but keeps the typed statement (`PaymentsScreen.tsx`), and the question shows the invoice number but not the authorisation reference, so a reference typed for one invoice could be booked against another; it is preserved input and nothing is booked without confirmation.
+- After switching to the payer's own invoice, the hidden third-party statement keeps the unsaved-work guard armed (`thirdPartyDraftTouched`); it is not sent, and confirming the discard clears it.
+- The offer of the option follows the session's permission set as a whole (`payments/page.tsx`), so a holder whose code covers only another branch is offered it and the server refuses with 403; the server enforcement is tested (database test and the backend "another branch" case), and the existing allocate gate follows the same pattern.
+- An idempotent replay of an existing third-party allocation is answered before `sal.payment.third_party` is checked (service and migration), so a caller without the code who repeats the key with the identical body gets the existing allocation back; nothing new is booked or audited.
+- The settlement names the payer when the reader holds `crm.customer.read` in any branch (`callerHoldsPermissionAnywhere`), following the existing invoice-payer naming pattern, not scoped to the invoice's branch.
+- Seed 04 realigns the whitespace of the existing `sal.credit.manage` row; its code, description and risk level are unchanged.
+- The database trigger's `btrim()` strips spaces only while the service and the screen use JavaScript `trim()`; the service rule is stricter and trims before insert, so no value blank under `trim()` reaches the database; a scratch probe of ten edge values (Arabic, emoji, whitespace, over-length, casing) found the screen's pre-check and the service in agreement.

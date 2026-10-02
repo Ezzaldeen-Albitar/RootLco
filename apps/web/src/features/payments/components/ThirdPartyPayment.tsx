@@ -110,6 +110,8 @@ export function relationshipLabel(messages: Messages, code: string): string {
 /**
  * The plain explanation when the chosen invoice is someone else's, and — for a
  * caller who may not make a third-party payment — why it cannot take this money.
+ * A status region, so a screen reader announces it the moment the invoice is
+ * picked while focus stays in the picker.
  */
 export function OtherCustomerNotice({
   messages,
@@ -120,6 +122,7 @@ export function OtherCustomerNotice({
 }) {
   return (
     <div
+      role="status"
       className="flex flex-col gap-1 rounded-md border border-border bg-surface-subtle p-3"
       data-testid="payments-third-party-notice"
     >

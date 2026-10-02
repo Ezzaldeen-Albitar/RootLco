@@ -58,6 +58,21 @@ const renderRtl = (ui: ReactElement) =>
 
 const EN = en as Record<string, string>;
 const AR = ar as Record<string, string>;
+
+/**
+ * The status region announcing that the invoice is someone else's, with the
+ * sentence under it — found by its role, so the notice is announced to a screen
+ * reader while focus stays in the invoice picker.
+ */
+function announcedStatus(form: HTMLElement, sentence: string): HTMLElement | undefined {
+  return within(form)
+    .getAllByRole('status')
+    .find(
+      (region) =>
+        region.textContent?.includes(EN['payments.thirdParty.otherCustomer'] as string) &&
+        region.textContent.includes(EN[sentence] as string)
+    );
+}
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
 
@@ -230,6 +245,7 @@ describe('someone else’s invoice, without the third-party code', () => {
     const notice = await within(form).findByTestId('payments-third-party-notice');
     expect(notice).toHaveTextContent(EN['payments.thirdParty.otherCustomer'] as string);
     expect(notice).toHaveTextContent(EN['payments.thirdParty.blocked'] as string);
+    expect(announcedStatus(form, 'payments.thirdParty.blocked')).toBe(notice);
     expect(within(form).queryByTestId('payments-third-party-option')).toBeNull();
     await user.type(within(form).getByLabelText(labelled('payments.allocate.amount')), '10.00');
     await submit(user, form);
@@ -247,9 +263,9 @@ describe('someone else’s invoice, for a holder of the third-party code', () =>
     const user = userEvent.setup();
     const form = await openForm({ canAllocateThirdParty: true });
     await chooseOtherInvoice(user, form);
-    expect(await within(form).findByTestId('payments-third-party-notice')).toHaveTextContent(
-      EN['payments.thirdParty.mayRecord'] as string
-    );
+    const notice = await within(form).findByTestId('payments-third-party-notice');
+    expect(notice).toHaveTextContent(EN['payments.thirdParty.mayRecord'] as string);
+    expect(announcedStatus(form, 'payments.thirdParty.mayRecord')).toBe(notice);
     await user.click(within(form).getByLabelText(EN['payments.thirdParty.option'] as string));
     const relationship = within(form).getByLabelText(labelled('payments.thirdParty.relationship'));
     const reference = within(form).getByLabelText(labelled('payments.thirdParty.reference'));
