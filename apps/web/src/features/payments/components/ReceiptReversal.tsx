@@ -11,7 +11,10 @@ import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
 import { MuiReadFailureState } from '@/components/states/MuiStates';
-import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContextChange,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
@@ -711,9 +714,41 @@ function ReplacementForm({
       : null;
   const [chosen, setChosen] = useState<ChosenCustomer | null>(prefilled);
   const payerPartnerId = canReadCustomers ? (chosen?.id ?? null) : receipt.payerPartnerId;
-  useUnsavedGuard(amount.trim().length > 0 || currency !== receipt.money.currency);
+  const pristineMethodId = receipt.method?.id ?? '';
+  const pristinePayerId = prefilled?.id ?? null;
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * Unsaved work, declared to the shell: anything that differs from the
+   * prefilled form — a typed amount, another currency, another method or
+   * another payer (the usual reasons to replace a receipt). The picker's own
+   * guard is off because the payer is counted here, against the PREFILLED
+   * payer rather than an empty box. A confirmed discard puts the prefilled
+   * form back, since a receipt named in the address survives the FIRST choice
+   * of a branch and this form with it.
+   */
+  useUnsavedGuard(
+    amount.trim().length > 0 ||
+      currency !== receipt.money.currency ||
+      methodId !== pristineMethodId ||
+      (canReadCustomers && (chosen?.id ?? null) !== pristinePayerId),
+    () => {
+      setAmount('');
+      setCurrency(receipt.money.currency);
+      setMethodId(pristineMethodId);
+      setChosen(prefilled);
+      setErrors({});
+      setOutcome(null);
+    }
+  );
+  /*
+   * The picker empties itself on every change of the working context. The
+   * payer here is the reversed receipt's, not one found under the branch, so
+   * it is put back — otherwise the form would read as changed (and ask on the
+   * next switch) with nothing the operator did. The picker is a child, and a
+   * child's effects run first, so this one has the last word.
+   */
+  useWorkingContextChange(() => setChosen(prefilled));
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const formRef = useFocusFirstInvalid({

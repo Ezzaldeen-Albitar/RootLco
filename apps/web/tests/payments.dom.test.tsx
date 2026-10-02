@@ -2900,4 +2900,112 @@ describe('the receipt reversal (ADR-023 D4)', () => {
       AR['payments.allocate.reversalPending'] as string
     );
   });
+
+  describe('the replacement form and a branch switch', () => {
+    afterEach(forgetRememberedBranch);
+    /*
+     * Another payer or another method is the usual reason to replace a
+     * receipt, so each is unsaved work against the PREFILLED form, as a typed
+     * amount is. A receipt named in the address survives the first choice of
+     * a branch, which is what lets these cases switch with the form open.
+     */
+    const SECOND_METHOD_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1';
+    const OTHER_PAYER_ID = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc2';
+
+    async function openReplacement(user: ReturnType<typeof userEvent.setup>) {
+      listPaymentMethods.mockResolvedValue(
+        okRead({
+          items: [
+            tenantMethod,
+            { ...tenantMethod, id: SECOND_METHOD_ID, kind: 'card', displayName: 'Counter card' },
+            platformMethod,
+          ],
+        })
+      );
+      readReceipt.mockResolvedValue(
+        okRead(
+          detail({
+            status: 'reversed',
+            reversal: pendingReversal({
+              state: 'approved',
+              decidedBy: APPROVER,
+              decidedAt: '2026-10-02T09:00:00.000Z',
+              reversedAt: '2026-10-02T09:00:00.000Z',
+            }),
+          })
+        )
+      );
+      renderLtr(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            {screenFor({ initialReceiptId: RECEIPT_ID, currentUserId: APPROVER })}
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        )
+      );
+      const panel = await screen.findByTestId('payments-replacement');
+      await user.click(
+        within(panel).getByRole('button', { name: EN['payments.replacement.open'] as string })
+      );
+      const form = await within(panel).findByRole('form', {
+        name: EN['payments.replacement.heading'] as string,
+      });
+      await waitFor(() => expect(payerBox(form)).toHaveValue('Layla Haddad'));
+      return form;
+    }
+
+    const payerBox = (form: HTMLElement) =>
+      within(form).getByLabelText(labelled('payments.record.payer'));
+    const methodBox = (form: HTMLElement) =>
+      within(form).getByLabelText(labelled('payments.record.method'));
+
+    it('the untouched prefilled form switches without asking, and keeps its payer', async () => {
+      const user = userEvent.setup();
+      const form = await openReplacement(user);
+      await switchWithoutQuestion(user, 'first');
+      await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+      // The receipt's payer is put back after the switch, so nothing reads as changed.
+      await waitFor(() => expect(payerBox(form)).toHaveValue('Layla Haddad'));
+      await switchWithoutQuestion(user, 'second');
+    });
+
+    it('another method asks first; staying keeps it, discarding puts the prefilled one back', async () => {
+      const user = userEvent.setup();
+      const form = await openReplacement(user);
+      await user.selectOptions(methodBox(form), SECOND_METHOD_ID);
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+      expect(methodBox(form)).toHaveValue(SECOND_METHOD_ID);
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'first'));
+      await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+      await waitFor(() => expect(methodBox(form)).toHaveValue(METHOD_ID));
+      expect(payerBox(form)).toHaveValue('Layla Haddad');
+      await switchWithoutQuestion(user, 'second');
+      expect(recordReplacementReceipt).not.toHaveBeenCalled();
+    });
+
+    it('another payer asks first, and staying keeps the payer chosen', async () => {
+      const user = userEvent.setup();
+      searchCustomerDirectory.mockResolvedValue({
+        status: 'ok',
+        rows: [{ ...customerHit, id: OTHER_PAYER_ID, displayName: 'Sami Khoury' }],
+        nextCursor: null,
+        hasMore: false,
+        correlationId: 'corr-c',
+      });
+      const form = await openReplacement(user);
+      await user.click(
+        within(form).getByRole('button', { name: EN['customerSelector.change'] as string })
+      );
+      await user.type(payerBox(form), 'Sami');
+      await user.click(await findSearchedOption(searchCustomerDirectory, 'Sami', /Sami Khoury/));
+      await waitFor(() => expect(valueOf(payerBox(form))).toContain('Sami Khoury'));
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+      expect(heldBranch()).not.toBe(TEST_BRANCH.id);
+      expect(valueOf(payerBox(form))).toContain('Sami Khoury');
+      expect(recordReplacementReceipt).not.toHaveBeenCalled();
+    });
+  });
 });

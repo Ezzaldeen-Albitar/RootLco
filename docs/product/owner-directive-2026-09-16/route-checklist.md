@@ -3695,7 +3695,8 @@ added.
 Preserved: the credit-note and discount-approval rules untouched; tenant and branch isolation
 (another tenant 404, the code in another branch only 403 and recorded); names instead of ids; plain
 refusal sentences in English and Arabic, right to left; money stays a decimal string end to end;
-unsaved work on the replacement form is guarded; refunds (D2) are not created; historical reports are
+unsaved work on the replacement form is guarded (a typed amount, another currency, another method
+or another payer than the prefilled ones; covered by DOM cases since fix round 1); refunds (D2) are not created; historical reports are
 not restated (D16 open).
 
 Known limitations of this slice, one line each:
@@ -3705,3 +3706,15 @@ Known limitations of this slice, one line each:
 - The receipt list shows a reversed receipt's state, not a pending reversal; the pending state is shown on the receipt itself.
 - No outbox event is published for a reversal; consumers read the receipt and the invoice again, and the `receipt_reversed` financial event is written in the database.
 - Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the builds; they run in hosted CI. Focused database and backend files ran against a disposable database only.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- `sal.withdraw_receipt_reversal` (migration `20261002090000`, lines 490-509) checks only that the caller is the requester, never `sal.payment.record`; the route requires `sal.payment.record` and `sal.finance.view`, so a requester who has since lost the recording code can still withdraw through a raw call; this matches the "requester only" rule and widens nothing beyond RLS (`sal.finance.view`).
+- `sal.approve_receipt_reversal` returns silently on an already-approved reversal before any actor or permission check (migration line 459); the API authorizes first, so there is no live leak, only a no-op for a raw caller.
+- Approval takes no `If-Match` by design: a reversal's reason, amount and requester are frozen, so the approver cannot act on a stale picture; request, rejection and withdrawal are version-guarded.
+- `guard_allocation_receipt_open` relies on READ COMMITTED taking a new snapshot per PL/pgSQL statement after the `FOR SHARE` wait; under REPEATABLE READ or SERIALIZABLE the `EXISTS` check would miss a request committed during the wait; the application runs READ COMMITTED and the API also checks under the receipt lock.
+- A withdrawal refused for missing `sal.payment.record` in scope is not marked as a D12 business refusal, while a refused request, approval or rejection is; this is parity with how authorization denials roll back elsewhere.
+- Reversal rows rejected before this migration keep `approved_by` and `approved_at` from the old guard; `toReversalView` reads `decidedBy` and `decidedAt` for them, which are NULL, so the panel hides the decider of such a rejection; no route could create those rows before D4.
+- There is no Playwright journey for request, approval, rejection, withdrawal or replacement; coverage is the DOM, adapter, backend and database tiers only, and the account manifest only gains the code.
+- The reviewer did not run the database or backend tiers locally; their evidence is the hosted "Database migrations and RLS tests", integration-tests and migration-replay jobs on `8bfc23b0`, and the executor's falsification of the five database guards was not re-run by the reviewer.
+- The legacy-data note in the migration's rollback section is correct, but the inverse migration there is documentation only (commented out).
