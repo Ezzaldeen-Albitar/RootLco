@@ -20,7 +20,7 @@ import {
 } from './render';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
-import { getMessages } from '@/i18n/get-messages';
+import { formatMessage, getMessages } from '@/i18n/get-messages';
 import {
   discardAndSwitch,
   forgetRememberedBranch,
@@ -1238,6 +1238,85 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
     expect(within(balance).getByTestId('invoice-payment-status')).toHaveTextContent(
       AR['invoices.paymentStatus.open'] as string
     );
+  });
+
+  /** A settlement of which 70 was paid by an insurer for this invoice's customer (D14). */
+  const paidByInsurer = {
+    ...outstanding,
+    outstanding: { amount: '30.0000', currency: 'USD' },
+    settlement: {
+      ...outstanding.settlement,
+      paid: { amount: '70.0000', currency: 'USD' },
+      thirdPartyPayments: [
+        {
+          receipt: { id: 'r-1', reference: 'RCT-000031' },
+          payerName: 'Gulf Mutual Insurance',
+          relationship: 'insurer',
+          authorisationReference: 'CLM-2026-0042',
+          reason: 'Covered under the policy',
+          money: { amount: '70.0000', currency: 'USD' },
+          allocatedAt: '2026-10-02T09:00:00.000Z',
+        },
+      ],
+      thirdPartyPaymentsTruncated: false,
+    },
+  };
+
+  it('says who paid for whom when somebody else paid part of the invoice, with the authorisation (D14)', async () => {
+    readOutstanding.mockImplementation(async () => okRead(paidByInsurer));
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    const payment = await within(balance).findByTestId('invoice-third-party-payment');
+    expect(payment).toHaveTextContent(
+      formatMessage(EN['invoices.thirdParty.paidBy'] as string, {
+        payer: 'Gulf Mutual Insurance',
+        relationship: EN['invoices.thirdParty.relationship.insurer'] as string,
+        customer: 'Layla Haddad',
+      })
+    );
+    expect(payment).toHaveTextContent('CLM-2026-0042');
+    expect(payment).toHaveTextContent('RCT-000031');
+    expect(payment).toHaveTextContent(money('70.0000'));
+  });
+
+  it('says who paid for whom in Arabic, a withheld payer said as withheld (D14)', async () => {
+    readOutstanding.mockImplementation(async () =>
+      okRead({
+        ...paidByInsurer,
+        settlement: {
+          ...paidByInsurer.settlement,
+          thirdPartyPayments: [
+            { ...paidByInsurer.settlement.thirdPartyPayments[0], payerName: null },
+          ],
+        },
+      })
+    );
+    renderRtl(
+      <InvoiceScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        workOrderRefused={null}
+        initialInvoice={live().initialInvoice as never}
+        canViewFinance={true}
+        canIssue={false}
+      />
+    );
+    const balance = await screen.findByRole('region', {
+      name: AR['invoices.outstanding.heading'] as string,
+    });
+    const payment = await within(balance).findByTestId('invoice-third-party-payment');
+    expect(payment).toHaveTextContent(
+      formatMessage(AR['invoices.thirdParty.paidBy'] as string, {
+        payer: AR['invoices.thirdParty.payerNotShown'] as string,
+        relationship: AR['invoices.thirdParty.relationship.insurer'] as string,
+        customer: 'Layla Haddad',
+      })
+    );
+    expect(payment).toHaveTextContent('CLM-2026-0042');
   });
 
   it('without finance view every amount area says not available, no zero appears, and the balance is not read', async () => {

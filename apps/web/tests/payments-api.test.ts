@@ -353,6 +353,50 @@ describe('allocating', () => {
       expect(outcome.state.correlationId).toBe('corr-1');
     }
   });
+
+  it('sends a third-party statement as given and files each D14 refusal on the control it names', async () => {
+    const thirdParty = {
+      relationship: 'insurer',
+      authorisationReference: 'CLM-2026-0042',
+      reason: 'Covered by the policy',
+    };
+    send.mockResolvedValue({
+      ...failure('invalid'),
+      status: 422,
+      problem: {
+        code: 'ERR-VAL-001',
+        violations: [
+          { path: 'body.thirdParty.relationship', rule: 'third_party_relationship_invalid' },
+          {
+            path: 'body.thirdParty.authorisationReference',
+            rule: 'third_party_authorisation_reference_required',
+          },
+          { path: 'body.thirdParty.reason', rule: 'third_party_other_unexplained' },
+        ],
+      },
+    });
+    const outcome = await allocatePayment(RECEIPT_ID, { ...body, thirdParty }, KEY);
+    expect((send.mock.calls[0] as unknown[])[2]).toEqual({ ...body, thirdParty });
+    expect(outcome.state.fieldErrors).toEqual({
+      relationship: 'form.violation.third_party_relationship_invalid',
+      authorisationReference: 'form.violation.third_party_authorisation_reference_required',
+      reason: 'form.violation.third_party_other_unexplained',
+    });
+    // Someone else's invoice, refused by default: said on the invoice box.
+    send.mockResolvedValue({
+      ...failure('conflict'),
+      status: 409,
+      problem: {
+        code: 'ERR-TRN-001',
+        violations: [{ path: 'body.invoiceId', rule: 'allocation_payer_mismatch' }],
+      },
+    });
+    const refused = await allocatePayment(RECEIPT_ID, body, KEY);
+    expect(refused.state.fieldErrors).toEqual({
+      invoiceId: 'form.violation.allocation_payer_mismatch',
+    });
+    expect(refused.created).toBeNull();
+  });
 });
 
 describe('the receipt reversal and its replacement (ADR-023 D4)', () => {

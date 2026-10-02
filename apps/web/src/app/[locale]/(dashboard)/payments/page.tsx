@@ -23,7 +23,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * records); `sal.payment.allocate` the act of applying a receipt to an invoice;
  * `org.branch.read` whether a branch list is requested for the target picker;
  * `sal.reversal.approve` whether a reversal somebody else requested may be
- * approved or rejected here (ADR-023 D4). The signed-in person is passed so the
+ * approved or rejected here (ADR-023 D4); `sal.payment.third_party` whether a
+ * receipt may be applied to another customer's invoice as a third-party payment
+ * (ADR-023 D14) — the server checks it again in the receipt's own company and
+ * branch. The signed-in person is passed so the
  * screen knows whose reversal request is whose; it is never shown.
  *
  * This is where the cashier shape reaches the open balance (FE-019): the
@@ -92,6 +95,7 @@ export default async function PaymentsPage({
           canReadCustomers={holds(session.permissions, PAYMENT_PERMISSIONS.customerRead)}
           canListInvoices={holds(session.permissions, PAYMENT_PERMISSIONS.invoiceList)}
           canDecideReversals={holds(session.permissions, PAYMENT_PERMISSIONS.reversalApprove)}
+          canAllocateThirdParty={holds(session.permissions, PAYMENT_PERMISSIONS.thirdParty)}
           currentUserId={session.userId}
         />
       </PageBody>

@@ -132,6 +132,7 @@
     "sal.invoice.manage",
     "sal.payment.allocate",
     "sal.payment.record",
+    "sal.payment.third_party",
     "sal.reversal.approve",
     "shared.document.manage",
     "shared.document.read",

@@ -119,6 +119,26 @@ export interface Settlement {
   readonly refundStatus: RefundStatus;
   readonly credited: MoneyView;
   readonly paid: MoneyView;
+  /**
+   * The part of `paid` somebody other than the customer paid as a third-party
+   * payment (ADR-023 D14), oldest first; absent from a server before D14.
+   */
+  readonly thirdPartyPayments?: readonly ThirdPartyPayment[];
+  /** True when the invoice has more third-party payments than are listed. */
+  readonly thirdPartyPaymentsTruncated?: boolean;
+}
+
+/** One third-party payment of an invoice — `ThirdPartyPaymentView` (ADR-023 D14). */
+export interface ThirdPartyPayment {
+  readonly receipt: { readonly id: string; readonly reference: string };
+  /** Who paid, by name; `null` when withheld from this reader. */
+  readonly payerName: string | null;
+  /** `insurer`, `employer` or `other`. */
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
+  readonly money: MoneyView;
+  readonly allocatedAt: string;
 }
 
 /** `ck_invoice_lines_line_type`, mirrored. The preview carries `service` and `part` only. */
