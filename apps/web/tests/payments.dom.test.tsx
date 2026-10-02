@@ -2650,9 +2650,8 @@ describe('the receipt reversal (ADR-023 D4)', () => {
     expect(await screen.findByText(EN['payments.reversal.withdrawn'] as string)).toBeVisible();
   });
 
-  it('lets another holder of the decision code approve, or reject with a reason and the reversal version', async () => {
+  it('lets another holder of the decision code reject, with a reason and the REVERSAL version', async () => {
     const user = userEvent.setup();
-    approveReceiptReversal.mockResolvedValue(echo('approved', 'payments.reversal.approved'));
     rejectReceiptReversal.mockResolvedValue(echo('rejected', 'payments.reversal.rejected'));
     const section = await openOn(
       { reversal: pendingReversal() },
@@ -2664,39 +2663,38 @@ describe('the receipt reversal (ADR-023 D4)', () => {
     const reject = await screen.findByRole('alertdialog', {
       name: EN['payments.reversal.rejectTitle'] as string,
     });
-    await user.type(
-      within(reject).getByLabelText(labelled('payments.reversal.reason')),
-      'Correct as recorded'
-    );
+    await user.type(within(reject).getByLabelText(labelled('payments.reversal.reason')), 'Correct');
     await user.click(
       within(reject).getByRole('button', { name: EN['payments.reversal.reject'] as string })
     );
     await waitFor(() =>
-      expect(rejectReceiptReversal).toHaveBeenCalledWith(
-        REVERSAL_ID,
-        { reason: 'Correct as recorded' },
-        4
-      )
+      expect(rejectReceiptReversal).toHaveBeenCalledWith(REVERSAL_ID, { reason: 'Correct' }, 4)
     );
     expect(approveReceiptReversal).not.toHaveBeenCalled();
-    cleanup();
+    expect(await screen.findByText(EN['payments.reversal.rejected'] as string)).toBeVisible();
+  });
 
-    const again = await openOn(
+  it('lets another holder of the decision code approve, naming the whole amount first', async () => {
+    const user = userEvent.setup();
+    approveReceiptReversal.mockResolvedValue(echo('approved', 'payments.reversal.approved'));
+    const section = await openOn(
       { reversal: pendingReversal() },
       { currentUserId: APPROVER, canDecideReversals: true }
     );
     await user.click(
-      within(again).getByRole('button', { name: EN['payments.reversal.approve'] as string })
+      within(section).getByRole('button', { name: EN['payments.reversal.approve'] as string })
     );
     const approve = await screen.findByRole('alertdialog', {
       name: EN['payments.reversal.approveTitle'] as string,
     });
     // The whole receipt's amount is named before anything is sent.
     expect(approve).toHaveTextContent(money('100.0000'));
+    expect(approveReceiptReversal).not.toHaveBeenCalled();
     await user.click(
       within(approve).getByRole('button', { name: EN['payments.reversal.approve'] as string })
     );
     await waitFor(() => expect(approveReceiptReversal).toHaveBeenCalledWith(REVERSAL_ID));
+    expect(rejectReceiptReversal).not.toHaveBeenCalled();
   });
 
   it('states a refused self-approval in plain words, never the rule name', async () => {
