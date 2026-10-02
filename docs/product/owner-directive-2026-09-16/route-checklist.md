@@ -3648,3 +3648,19 @@ Known limitations of this slice, one line each:
 - The minor unit is published per amount, not per currency list; an amount from a read that did not look it up falls back to the browser's locale data, as before.
 - Tax presentation, new prints (D10) and D4/D14 are not part of this slice.
 - Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the builds; they run in hosted CI. Focused backend files ran against a disposable database only.
+
+Fix round 1 of this slice's contract review: `fitsMinorUnit`, the new `lib/money.ts` export, is
+registered in `SANCTIONED_CALLS` (`scripts/ci/check-p1-30-server-arithmetic.mjs`), which is pinned to
+that module's export surface; the pinned case failed without it and passes with it.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- Coverage floors were unmeasured on `d613061a`: `coverage-gate.mjs` exited 2 because the failing unit tier wrote no summary; re-checked on the fix head by the hosted unit-coverage job.
+- The credit-note request amount box (`CreditNoteRequestForm.tsx`) and the record-receipt amount box do not check the amount against the server's minor unit before sending, although invoice totals now carry `minorUnit`; the server still refuses with `minor_unit_scale` (`apps/api/src/server/http/validation.ts`); the slice claimed only the allocation box.
+- There is no timeout on the payer lookup: if `listInvoices` (invoice and counter-sale print) or `readReceiptPayer` (receipt print) never settles, the copy and Print stay in the loading state; a rejected request does settle to "Not shown here".
+- The payer-name wait on the counter-sale print path is covered only through the shared `PrintPanel`; no counter-sales test drives a pending lookup.
+- The `usePayerName` "found" state is not keyed by invoice id (`InvoiceScreen.tsx`); this predates the slice and is unchanged, but the copy now waits on that state.
+- Commit subject "P1-32-PRE-OD-FQC-02: print scope, allocations by number, server minor units" is 75 characters (limit 72); published history is not rewritten.
+- Money outside the billing and payments reads still takes its decimals from the browser's locale data, as listed above.
+- The database and backend tiers were not run by the reviewer locally; the hosted database and integration jobs passed on `d613061a`.
+- Checked by the reviewer: the DF-R2-1 print scope (replacing the scoped element with a fragment fails both DF-R2-1 cases); RLS on `sal.invoices` is scope-only, so allocation invoice numbers stay visible within the receipt's branch; the customer name is gated on `crm.customer.read` as in `sal.receipt-list`; every billing and payments money view passes the minor unit; OpenAPI is unchanged; no browser-test selector refers to a removed message key; the result matrix and fixture corrections are held outside the repository with the retest evidence.
