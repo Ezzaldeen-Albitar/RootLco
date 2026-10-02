@@ -561,7 +561,11 @@ describe('the coverage include lists are pinned, because they are the denominato
     // by business rule after its command rolls back. The two credit-note decision
     // routes live under `src/app`, which this include list does not admit. The
     // floors are untouched for the reason above.
-    expect(files.length).toBe(323);
+    // 324 with the receipt reversal (P1-32-PRE-OD-FD4, ADR-023 D4), which adds ONE:
+    // `modules/payments/application/receipt-reversal-service.ts`. Its five routes
+    // live under `src/app`, which this include list does not admit. The floors are
+    // untouched for the reason above.
+    expect(files.length).toBe(324);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -672,6 +676,8 @@ describe('the coverage include lists are pinned, because they are the denominato
     // same reason again. 322 with the business-refusal record's one
     // (`server/audit/business-refusals.ts`, P1-32-PRE-OD-FD2A), which is not under
     // `server/openapi/` either, so the two numbers move by one together.
-    expect(instrumented.length).toBe(322);
+    // 323 with the receipt reversal service (P1-32-PRE-OD-FD4), which is not under
+    // `server/openapi/` either, so the two numbers move by one together.
+    expect(instrumented.length).toBe(323);
   });
 });

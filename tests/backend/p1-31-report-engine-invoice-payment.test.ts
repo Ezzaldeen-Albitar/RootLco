@@ -290,6 +290,16 @@ const REACH_GRANT = 'f1340000-0000-4000-8000-000000000152';
 const CREDIT_APPROVER_ROLE = 'f1340000-0000-4000-8000-0000000001c1';
 
 /**
+ * The requester's authority to ask for a receipt reversal (ADR-023, D4): a role of
+ * its own holding `sal.payment.record`, granted to USER_A in this suite's branch
+ * only, so no other suite's view of USER_A changes. The approver decides on
+ * `CREDIT_APPROVER_ROLE`, which carries `sal.reversal.approve` beside
+ * `sal.credit.approve`.
+ */
+const REVERSAL_REQUESTER_ROLE = 'f1340000-0000-4000-8000-0000000001c2';
+const REVERSAL_REQUESTER_GRANT = 'f1340000-0000-4000-8000-0000000001c3';
+
+/**
  * The APPROVER of every dual-control decision below.
  *
  * `sal.stamp_dual_control_maker` stamps the requester from the session, and
@@ -860,7 +870,7 @@ beforeAll(async () => {
   await admin.query(
     `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
      SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
-      WHERE p.permission_code = 'sal.credit.approve'
+      WHERE p.permission_code IN ('sal.credit.approve', 'sal.reversal.approve')
      ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
     [TENANT_A, CREDIT_APPROVER_ROLE, USER_A]
   );
@@ -881,6 +891,46 @@ beforeAll(async () => {
            AND limit_type = 'credit_note' AND currency_code = $4)`,
     [TENANT_A, COMPANY_S, APPROVER, USD, USER_A]
   );
+
+  // ADR-023 D4: requesting the fixture receipt reversal needs `sal.payment.record`
+  // in the receipt's company and branch (`sal.guard_receipt_reversal_request`).
+  // USER_A gets it on a role of its own, scoped to BRANCH_S1, where that receipt is.
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$2,'fx_p1_31_reversal_requester','P1-31 reversal requester',$3)
+     ON CONFLICT (id) DO NOTHING`,
+    [REVERSAL_REQUESTER_ROLE, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+      WHERE p.permission_code = 'sal.payment.record'
+     ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+    [TENANT_A, REVERSAL_REQUESTER_ROLE, USER_A]
+  );
+  const requester = await admin.connect();
+  try {
+    // A scoped active grant must carry a scope, which is a DEFERRABLE constraint
+    // trigger, so the grant and its scope land in one transaction.
+    await requester.query('BEGIN');
+    await requester.query(
+      `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'scoped',$5,$5) ON CONFLICT (id) DO NOTHING`,
+      [REVERSAL_REQUESTER_GRANT, TENANT_A, USER_A, REVERSAL_REQUESTER_ROLE, APPROVER]
+    );
+    await requester.query(
+      `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+       SELECT $1,$2,'branch',$3,$4,$5
+        WHERE NOT EXISTS (SELECT 1 FROM iam.grant_scopes WHERE tenant_id = $1 AND grant_id = $2)`,
+      [TENANT_A, REVERSAL_REQUESTER_GRANT, COMPANY_S, BRANCH_S1, APPROVER]
+    );
+    await requester.query('COMMIT');
+  } catch (error) {
+    await requester.query('ROLLBACK');
+    throw error;
+  } finally {
+    requester.release();
+  }
 
   runtime = runtimeAppPool(6);
   __setPrimaryPoolForTests(runtime);

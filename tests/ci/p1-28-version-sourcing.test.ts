@@ -1053,7 +1053,7 @@ function withExtra(adapter: string, screen: string = SEAL_SCREEN) {
 }
 
 describe('an adapter the contract places outside apt/rec is excluded from the count, and only it', () => {
-  it('on the live tree, excludes exactly the six billing, inventory and pricing adapters by their guarded operations', () => {
+  it('on the live tree, excludes exactly the nine billing, inventory, payment and pricing adapters by their guarded operations', () => {
     const live = run() as Report & {
       outsideByContract: { name: string; operations: string[] }[];
     };
@@ -1067,13 +1067,19 @@ describe('an adapter the contract places outside apt/rec is excluded from the co
     // discount threshold (P1-32-PRE-OD-DISC-01), a pricing operation reached from
     // the administration screen. The fifth and sixth are the credit-note
     // withdrawal and rejection (P1-32-PRE-OD-FD2A, ADR-023 D3), sal operations
-    // reached from the credit-notes screen with the note's own version.
+    // reached from the credit-notes screen with the note's own version. The
+    // seventh, eighth and ninth are the receipt-reversal request, rejection and
+    // withdrawal (P1-32-PRE-OD-FD4, ADR-023 D4), sal operations reached from the
+    // payments screen with the receipt's and the reversal's own versions.
     expect(live.outsideByContract.map((one) => one.name)).toEqual([
       'withdrawCreditNote',
       'rejectCreditNote',
       'postGoodsReceipt',
       'recordStockCountLine',
       'retireReorderLevel',
+      'requestReceiptReversal',
+      'rejectReceiptReversal',
+      'withdrawReceiptReversal',
       'setDiscountThreshold',
     ]);
     for (const entry of live.outsideByContract) {
@@ -1086,6 +1092,9 @@ describe('an adapter the contract places outside apt/rec is excluded from the co
     expect(live.accountedFor).not.toContain('recordStockCountLine');
     expect(live.accountedFor).not.toContain('retireReorderLevel');
     expect(live.accountedFor).not.toContain('setDiscountThreshold');
+    expect(live.accountedFor).not.toContain('requestReceiptReversal');
+    expect(live.accountedFor).not.toContain('rejectReceiptReversal');
+    expect(live.accountedFor).not.toContain('withdrawReceiptReversal');
   });
 
   it('does not count an adapter whose every versioned send reaches a guarded wo operation', () => {
@@ -1253,12 +1262,18 @@ describe('a version held by the edit-baseline hook is traced, not trusted by nam
       'createQuotationRevision',
       'issueQuotation',
       'publishPriceListVersion',
+      // The receipt panel's reversal (P1-32-PRE-OD-FD4, ADR-023 D4): the request
+      // holds the RECEIPT's version through the hook, fed the receipt read's
+      // version; the rejection and the withdrawal hold the REVERSAL's, fed the
+      // reversal the same read publishes.
+      'rejectReceiptReversal',
       // The rename dialog of the appointment setup screen (Owner decision
       // 2026-09-29): the stored name and its version held through the hook, fed
       // the management list's version, once per catalogue.
       'renameAppointmentType',
       'renameCancellationReason',
       'renameSourceChannel',
+      'requestReceiptReversal',
       // The appointment reschedule form, since the appointments slice: its
       // confirmed times are held through the hook, fed the detail's version.
       'rescheduleAppointment',
@@ -1268,6 +1283,7 @@ describe('a version held by the edit-baseline hook is traced, not trusted by nam
       // UI slice 4: both hold their stored values and version through the hook,
       // fed the job's and the template's read version.
       'updateTemplate',
+      'withdrawReceiptReversal',
     ]);
     expect(editBaselineHookProblems(HOOK_SOURCE)).toEqual([]);
   });

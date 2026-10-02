@@ -66,8 +66,10 @@ import {
   type ReceiptRow,
   type ReceiptScope,
 } from '../data/payments-repository';
+import { reversalRefusalToken } from './receipt-reversal-service';
 import {
   PaymentRuleError,
+  RECEIPT_REVERSAL_RULES,
   assertAllocatable,
   assertAllocationCurrencyCoherent,
   assertAllocationWithinBounds,
@@ -181,6 +183,11 @@ export interface ReceiptView {
   readonly status: string;
   readonly receivedAt: string;
   readonly recordVersion: number;
+  /**
+   * The reversed receipt this one replaces (ADR-023 D4), or `null` for an
+   * ordinary receipt. Set only by `sal.receipt-replacement-record`.
+   */
+  readonly replacesReceiptId: string | null;
   /** True when an idempotent replay returned the receipt that already existed. */
   readonly replayed: boolean;
 }
@@ -224,6 +231,18 @@ export interface RecordPaymentInput {
    * receipt itself single-instance for the life of the row.
    */
   readonly idempotencyKey?: string;
+}
+
+/**
+ * What a replacement receipt is recorded from (ADR-023 D4): everything an ordinary
+ * receipt is, except the company and branch, which are the reversed receipt's own.
+ */
+export type RecordReplacementInput = Omit<RecordPaymentInput, 'companyId' | 'branchId'>;
+
+/** The reversed receipt a replacement names, as the write path holds it. */
+interface Replacing {
+  readonly receiptId: string;
+  readonly receiptNumber: string;
 }
 
 export interface AllocatePaymentInput {
@@ -286,6 +305,31 @@ function overAllocation(
       entityType: 'sal.receipt',
       entityId: receiptId,
       rule: OVER_ALLOCATION_RULE,
+    }
+  );
+}
+
+/**
+ * The refusal of an allocation while a reversal of the receipt waits for a
+ * decision (ADR-023 D4), named on the receipt in the path and recorded (D12).
+ */
+function pendingReversalBlocks(receiptId: string, cause?: unknown): AppFailure {
+  return withBusinessRefusal(
+    new AppFailure('ERR-TRN-001', {
+      message:
+        'This receipt has a reversal waiting for a decision, so no new allocation can be made ' +
+        'until the reversal is decided or withdrawn.',
+      safeDetails: {
+        violations: [
+          { path: 'path.paymentId', rule: RECEIPT_REVERSAL_RULES.pendingBlocksAllocation },
+        ],
+      },
+      ...(cause === undefined ? {} : { cause }),
+    }),
+    {
+      entityType: 'sal.receipt',
+      entityId: receiptId,
+      rule: RECEIPT_REVERSAL_RULES.pendingBlocksAllocation,
     }
   );
 }
@@ -422,6 +466,92 @@ export class PaymentService {
     input: RecordPaymentInput,
     authorizeScope: ScopeAuthorizer
   ): Promise<ReceiptView> {
+    return this.record(db, input, authorizeScope, null);
+  }
+
+  // -------------------------------------------------------------------------
+  // `sal.receipt-replacement-record`
+  // -------------------------------------------------------------------------
+
+  /**
+   * Records the receipt that replaces a REVERSED one (ADR-023 D4).
+   *
+   * Every rule of an ordinary receipt applies — the method, the currency, the
+   * amount's minor unit, the number sequence — and two more: the receipt it names
+   * was reversed by an approved reversal (`receipt_replacement_not_reversed`), and
+   * has no replacement yet (`receipt_replacement_exists`). The new receipt is in
+   * the reversed receipt's own company and branch, which is why the body names
+   * neither. The reversed receipt is locked first, so two replacements of it
+   * serialise and the second is refused; `sal.guard_receipt_replacement` and
+   * `uq_receipts_replaces` hold both rules in the database too.
+   *
+   * A repeated key answers the replacement it already recorded, checked BEFORE
+   * the "already replaced" rule, which would otherwise refuse the retry of the
+   * very replacement it made.
+   */
+  public async recordReplacement(
+    db: DbHandle,
+    replacedReceiptId: string,
+    input: RecordReplacementInput,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<ReceiptView> {
+    const replaced = await this.repository.findReceiptForUpdate(db, replacedReceiptId);
+    if (!replaced || replaced.deletedAt !== null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Receipt ${replacedReceiptId} was not found`,
+      });
+    }
+    const scope = { companyId: replaced.companyId, branchId: replaced.branchId };
+    await authorizeScope(scope);
+    const replacing: Replacing = { receiptId: replaced.id, receiptNumber: replaced.receiptNumber };
+    const full: RecordPaymentInput = { ...input, ...scope };
+
+    if (input.idempotencyKey !== undefined) {
+      const existing = await this.repository.findReceiptByIdempotencyKey(db, input.idempotencyKey);
+      if (existing) return this.record(db, full, authorizeScope, replacing);
+    }
+
+    const entity = { entityType: 'sal.receipt', entityId: replaced.id } as const;
+    const reversal = await this.repository.findCurrentReversal(db, replaced.id, scope);
+    if (replaced.status !== 'reversed' || reversal?.approvalState !== 'approved') {
+      throw withBusinessRefusal(
+        new AppFailure('ERR-TRN-001', {
+          message: `Receipt ${replaced.id} has no approved reversal, so nothing can replace it.`,
+          safeDetails: {
+            violations: [
+              { path: 'path.paymentId', rule: RECEIPT_REVERSAL_RULES.replacementNotReversed },
+            ],
+          },
+        }),
+        { ...entity, rule: RECEIPT_REVERSAL_RULES.replacementNotReversed }
+      );
+    }
+    if (await this.repository.findReplacementOf(db, replaced.id, scope)) {
+      throw withBusinessRefusal(
+        new AppFailure('ERR-TRN-001', {
+          message: `Receipt ${replaced.id} already has a replacement.`,
+          safeDetails: {
+            violations: [
+              { path: 'path.paymentId', rule: RECEIPT_REVERSAL_RULES.replacementExists },
+            ],
+          },
+        }),
+        { ...entity, rule: RECEIPT_REVERSAL_RULES.replacementExists }
+      );
+    }
+    return this.record(db, full, authorizeScope, replacing);
+  }
+
+  /**
+   * The one recording path, for an ordinary receipt (`replacing` null) and for the
+   * replacement of a reversed one. See `recordPayment`.
+   */
+  private async record(
+    db: DbHandle,
+    input: RecordPaymentInput,
+    authorizeScope: ScopeAuthorizer,
+    replacing: Replacing | null
+  ): Promise<ReceiptView> {
     const amount = parseAmount(input.amount, 'amount');
     const currencyCode = parseCurrency(input.currencyCode, 'currencyCode');
     await this.assertAmountFitsCurrency(db, input.amount, currencyCode, 'body.amount');
@@ -449,6 +579,13 @@ export class PaymentService {
       const existing = await this.repository.findReceiptByIdempotencyKey(db, input.idempotencyKey);
       if (existing) {
         this.assertReplayMatches(existing, input, amount, currencyCode);
+        if (existing.replacesReceiptId !== (replacing?.receiptId ?? null)) {
+          throw new AppFailure('ERR-INT-001', {
+            message:
+              'That idempotency key already recorded a receipt that replaces a different ' +
+              'receipt, or none. Reuse a key only for an identical request.',
+          });
+        }
         return this.toReceiptView(existing, true, await this.unitsOf(db, existing.currencyCode));
       }
     }
@@ -490,9 +627,27 @@ export class PaymentService {
         evidenceDocumentVersionId: null,
         idempotencyKey: input.idempotencyKey ?? null,
         correlationId: db.context.correlationId,
+        replacesReceiptId: replacing?.receiptId ?? null,
       });
       receiptId = created.id;
     } catch (error) {
+      const token = reversalRefusalToken(error);
+      if (
+        replacing !== null &&
+        (token === RECEIPT_REVERSAL_RULES.replacementNotReversed ||
+          token === RECEIPT_REVERSAL_RULES.replacementExists)
+      ) {
+        // The reversed receipt is locked, so only a row that moved between the
+        // checks above and the insert reaches here; refused and recorded the same way.
+        throw withBusinessRefusal(
+          new AppFailure('ERR-TRN-001', {
+            message: `Receipt ${replacing.receiptId} cannot take this replacement.`,
+            safeDetails: { violations: [{ path: 'path.paymentId', rule: token }] },
+            cause: error,
+          }),
+          { entityType: 'sal.receipt', entityId: replacing.receiptId, rule: token }
+        );
+      }
       if (sqlState(error) === PAYMENT_SQLSTATE.noDataFound) {
         // SB3 / `P1-22-L-03`. `sal.record_receipt` hard-codes the sequence code
         // `'receipt'` — unlike the invoice path, which resolves a configurable
@@ -524,13 +679,27 @@ export class PaymentService {
     }
 
     await appendAudit(db, {
-      action: 'sal.receipt.recorded',
+      action: replacing === null ? 'sal.receipt.recorded' : 'sal.receipt.replacement_recorded',
       entityType: 'sal.receipt',
       entityId: receipt.id,
       companyId: receipt.companyId,
       branchId: receipt.branchId,
-      requestRef: 'sal.payment-record',
+      requestRef: replacing === null ? 'sal.payment-record' : 'sal.receipt-replacement-record',
       details: [
+        ...(replacing === null
+          ? []
+          : [
+              {
+                field: 'replacesReceiptId',
+                classification: 'internal' as const,
+                value: replacing.receiptId,
+              },
+              {
+                field: 'replacesReceiptNumber',
+                classification: 'internal' as const,
+                value: replacing.receiptNumber,
+              },
+            ]),
         // The amount is `restricted` in
         // docs/database/sal-wty-rpt-personal-data-classification.json, so
         // `iam.audit_mask` collapses it to a fixed marker before storage. The audit
@@ -670,6 +839,16 @@ export class PaymentService {
       }
     }
 
+    // 2b. A receipt with a reversal waiting for a decision takes no new allocation
+    //     (ADR-023 D4): an approval must never reverse an allocation it did not see.
+    //     Under the receipt lock just taken, which a reversal request also takes, so
+    //     the answer cannot race a request. `sal.guard_allocation_receipt_open`
+    //     refuses the insert in the database as well.
+    const reversal = await this.repository.findCurrentReversal(db, receipt.id, scope);
+    if (reversal?.approvalState === 'pending') {
+      throw pendingReversalBlocks(receipt.id);
+    }
+
     // Checked against the RECEIPT's currency, which is the stored record rather than the
     // request's claim about it. A half-cent allocation is refused here rather than
     // leaving a residue on the invoice that no tenderable payment can ever settle.
@@ -770,6 +949,9 @@ export class PaymentService {
           message: 'The receipt or the invoice is no longer in scope for this allocation',
           cause: error,
         });
+      }
+      if (reversalRefusalToken(error) === RECEIPT_REVERSAL_RULES.pendingBlocksAllocation) {
+        throw pendingReversalBlocks(receipt.id, error);
       }
       // The primitive's own bounds, re-checked under its locks: another allocation
       // against the same invoice can land between the pre-check above and this
@@ -1107,6 +1289,7 @@ export class PaymentService {
       status: receipt.status,
       receivedAt: receipt.receivedAt.toISOString(),
       recordVersion: receipt.recordVersion,
+      replacesReceiptId: receipt.replacesReceiptId,
       replayed,
     };
   }

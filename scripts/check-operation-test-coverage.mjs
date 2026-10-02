@@ -2774,7 +2774,33 @@ export const MANIFEST = {
   'sal.payment-allocate': {
     files: ['tests/backend/p1-22-payments.test.ts', 'tests/backend/p1-22-concurrency.test.ts'],
     required: ['outbox', 'denial'],
-    note: 'THE ONE INVARIANT THE DATABASE DOES NOT DEFEND: Σ allocations ≤ receipt.amount and ≤ invoice.open are enforced ONLY inside sal.allocate_receipt — no constraint, trigger or exclusion bounds the sum, and app_runtime holds raw INSERT on sal.payment_allocations, which tests/db/p1-22-protected-residuals.test.ts reproduces by driving both derivations to −400.0000 with one raw insert of 500 against a receipt of 100; so the service calls the primitive, the repository contains no INSERT path, and a test asserts that absence textually (change-control candidate CC-4, because a future module with the same grant could still bypass it); currency is REQUIRED even though the server knows it, because the primitive compares receipt against invoice and never sees what the caller believed — without it a client allocating what it thinks are USD against a JOD receipt succeeds in a currency it did not intend; allocations are append-only with no UPDATE or DELETE grant and no reversal record, so a misallocated line is correctable only by reversing the whole receipt, which this phase does not expose',
+    note: 'THE ONE INVARIANT THE DATABASE DOES NOT DEFEND: Σ allocations ≤ receipt.amount and ≤ invoice.open are enforced ONLY inside sal.allocate_receipt — no constraint, trigger or exclusion bounds the sum, and app_runtime holds raw INSERT on sal.payment_allocations, which tests/db/p1-22-protected-residuals.test.ts reproduces by driving both derivations to −400.0000 with one raw insert of 500 against a receipt of 100; so the service calls the primitive, the repository contains no INSERT path, and a test asserts that absence textually (change-control candidate CC-4, because a future module with the same grant could still bypass it); currency is REQUIRED even though the server knows it, because the primitive compares receipt against invoice and never sees what the caller believed — without it a client allocating what it thinks are USD against a JOD receipt succeeds in a currency it did not intend; allocations are append-only with no UPDATE or DELETE grant and no reversal record, so a misallocated line is correctable only by reversing the whole receipt (sal.receipt-reversal-request, ADR-023 D4), and while such a reversal is pending the receipt takes no allocation',
+  },
+  // ADR-023 D4 (P1-32-PRE-OD-FD4): the full reversal of a receipt and its replacement.
+  'sal.receipt-reversal-request': {
+    files: ['tests/backend/od-finance-receipt-reversal.test.ts'],
+    required: ['denial', 'stale-version'],
+    note: 'a payment recorder asks for the WHOLE receipt to be reversed: the body is the reason only, so a body naming an amount is a 422 and the stored amount is the receipt own; If-Match is the RECEIPT version compared with the locked row (stale 409, missing 428); a replay under the same key raises one reversal and one audit record; a caller without sal.payment.record is a 403, one holding it in another branch only is a 403 recorded once as receipt_reversal_request_permission_missing; a second live request is refused by name and recorded once; sal.guard_receipt_reversal_request holds the same rules for a raw insert',
+  },
+  'sal.receipt-reversal-approve': {
+    files: ['tests/backend/od-finance-receipt-reversal.test.ts'],
+    required: ['denial'],
+    note: 'a DIFFERENT holder of sal.reversal.approve approves: the requester is refused by name (receipt_reversal_self_approval), a holder of sal.credit.manage and sal.credit.approve only is a 403, the code held in another branch only is a 403 recorded once; the approval reverses the receipt, restores the invoice open amount exactly, keeps the allocation recorded, writes one receipt_reversed financial event and one audit record, and a replay writes neither again; an approval racing a rejection has exactly one winner behind a held row lock; another tenant is a 404',
+  },
+  'sal.receipt-reversal-reject': {
+    files: ['tests/backend/od-finance-receipt-reversal.test.ts'],
+    required: ['denial', 'stale-version'],
+    note: 'another holder of sal.reversal.approve rejects with a reason; the requester is refused by name and withdraws instead; a blank reason is a 422 on body.reason and not a refusal of the reversal; If-Match is the REVERSAL version; a replay records once; the receipt keeps counting and a later approval is refused (terminal); another tenant is a 404',
+  },
+  'sal.receipt-reversal-withdraw': {
+    files: ['tests/backend/od-finance-receipt-reversal.test.ts'],
+    required: ['denial', 'stale-version'],
+    note: 'the requester alone withdraws (receipt_reversal_withdraw_not_requester for anyone else); If-Match is the REVERSAL version, missing is 428; a replay records once; after a withdrawal the receipt takes allocations again and a corrected request is accepted; another tenant is a 404',
+  },
+  'sal.receipt-replacement-record': {
+    files: ['tests/backend/od-finance-receipt-reversal.test.ts'],
+    required: ['denial'],
+    note: 'records the receipt that replaces one an approved reversal reversed: refused by name while the reversal is pending and for a receipt nobody reversed (receipt_replacement_not_reversed, recorded once), refused for a second replacement (receipt_replacement_exists); a replay answers the same replacement with one audit record; the link shows both ways on the receipt detail, which names the people on the reversal only for a reader holding iam.user.read; another tenant is a 404 and a caller without sal.payment.record a 403',
   },
   'sal.receipt-detail': {
     files: ['tests/backend/p1-22-payments.test.ts', 'tests/backend/p1-22-isolation.test.ts'],

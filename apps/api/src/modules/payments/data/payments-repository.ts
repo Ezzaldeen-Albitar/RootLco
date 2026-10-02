@@ -172,6 +172,49 @@ export interface ReceiptRow {
    */
   readonly deletedAt: Date | null;
   readonly recordVersion: number;
+  /**
+   * The reversed receipt this one replaces (ADR-023 D4), or `null`. Frozen once
+   * recorded by `sal.guard_receipt_freeze`; only a receipt an approved reversal
+   * reversed may be named (`sal.guard_receipt_replacement`).
+   */
+  readonly replacesReceiptId: string | null;
+}
+
+/**
+ * One request to reverse a whole receipt (ADR-023 D4, P1-32-PRE-OD-FD4).
+ *
+ * `amount` and `currencyCode` are the receipt's own, bound by
+ * `sal.guard_receipt_reversal_request`; `requestedBy` and every decider and date
+ * are stamped by the database from the session. `requestedAt` is the row's
+ * creation stamp. The approver of an approved reversal is `approvedBy`; the
+ * decider of a rejected or withdrawn one is `decidedBy`.
+ */
+export interface ReceiptReversalRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly originalReceiptId: string;
+  readonly currencyCode: string;
+  /** `numeric(18,4)` as an exact decimal STRING. */
+  readonly amount: string;
+  readonly reason: string;
+  readonly approvalState: string;
+  readonly requestedBy: string;
+  readonly requestedAt: Date;
+  readonly approvedBy: string | null;
+  readonly approvedAt: Date | null;
+  readonly reversedAt: Date | null;
+  readonly decidedBy: string | null;
+  readonly decidedAt: Date | null;
+  readonly decisionReason: string | null;
+  readonly idempotencyKey: string | null;
+  readonly recordVersion: number;
+}
+
+/** A receipt named by its id and its branch's receipt number, for a link. */
+export interface ReceiptReferenceRow {
+  readonly id: string;
+  readonly receiptNumber: string;
 }
 
 /**
@@ -356,7 +399,7 @@ export const RECEIPT_ORDER: OrderingContract = Object.freeze({
 
 const RECEIPT_COLUMNS = `id, company_id, branch_id, receipt_number, payment_method_id,
   payer_partner_id, currency_code, amount, received_at, evidence_document_version_id, status,
-  idempotency_key, deleted_at, record_version`;
+  idempotency_key, deleted_at, record_version, replaces_receipt_id`;
 
 interface PaymentMethodSql {
   id: string;
@@ -385,6 +428,7 @@ interface ReceiptSql {
   idempotency_key: string | null;
   deleted_at: Date | null;
   record_version: number;
+  replaces_receipt_id: string | null;
 }
 
 interface PaymentAllocationSql {
@@ -426,6 +470,53 @@ const toReceipt = (r: ReceiptSql): ReceiptRow => ({
   status: r.status,
   idempotencyKey: r.idempotency_key,
   deletedAt: r.deleted_at,
+  recordVersion: r.record_version,
+  replacesReceiptId: r.replaces_receipt_id,
+});
+
+const REVERSAL_COLUMNS = `id, company_id, branch_id, original_receipt_id, currency_code, amount,
+  reason, approval_state, requested_by, created_at, approved_by, approved_at, reversed_at,
+  decided_by, decided_at, decision_reason, idempotency_key, record_version`;
+
+interface ReceiptReversalSql {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  original_receipt_id: string;
+  currency_code: string;
+  amount: string;
+  reason: string;
+  approval_state: string;
+  requested_by: string;
+  created_at: Date;
+  approved_by: string | null;
+  approved_at: Date | null;
+  reversed_at: Date | null;
+  decided_by: string | null;
+  decided_at: Date | null;
+  decision_reason: string | null;
+  idempotency_key: string | null;
+  record_version: number;
+}
+
+const toReversal = (r: ReceiptReversalSql): ReceiptReversalRow => ({
+  id: r.id,
+  companyId: r.company_id,
+  branchId: r.branch_id,
+  originalReceiptId: r.original_receipt_id,
+  currencyCode: r.currency_code,
+  amount: r.amount,
+  reason: r.reason,
+  approvalState: r.approval_state,
+  requestedBy: r.requested_by,
+  requestedAt: r.created_at,
+  approvedBy: r.approved_by,
+  approvedAt: r.approved_at,
+  reversedAt: r.reversed_at,
+  decidedBy: r.decided_by,
+  decidedAt: r.decided_at,
+  decisionReason: r.decision_reason,
+  idempotencyKey: r.idempotency_key,
   recordVersion: r.record_version,
 });
 
@@ -1092,11 +1183,16 @@ export class PaymentsRepository extends Repository {
       readonly evidenceDocumentVersionId: string | null;
       readonly idempotencyKey: string | null;
       readonly correlationId: string | null;
+      /**
+       * The reversed receipt this one replaces (ADR-023 D4), or `null`.
+       * `sal.guard_receipt_replacement` refuses any other target.
+       */
+      readonly replacesReceiptId?: string | null;
     }
   ): Promise<{ readonly id: string }> {
     const row = await this.runOne<{ id: string }>(
       db,
-      `SELECT sal.record_receipt($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9) AS id`,
+      `SELECT sal.record_receipt($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, $10) AS id`,
       [
         input.companyId,
         input.branchId,
@@ -1107,6 +1203,7 @@ export class PaymentsRepository extends Repository {
         input.evidenceDocumentVersionId,
         input.idempotencyKey,
         input.correlationId,
+        input.replacesReceiptId ?? null,
       ]
     );
     if (!row?.id) throw new Error('payments: sal.record_receipt returned no id');
@@ -1203,5 +1300,162 @@ export class PaymentsRepository extends Repository {
       [context.principal.tenantId, allocationId, scope.companyId, scope.branchId]
     );
     return row ? toAllocation(row) : null;
+  }
+  // -------------------------------------------------------------------------
+  // Receipt reversals (ADR-023 D4, P1-32-PRE-OD-FD4).
+  // -------------------------------------------------------------------------
+
+  /**
+   * One reversal by id, tenant-scoped. Like `findReceipt`, the anchor that
+   * DISCOVERS the company and branch the caller is then authorized against.
+   */
+  public async findReversal(db: DbHandle, reversalId: string): Promise<ReceiptReversalRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ReceiptReversalSql>(
+      db,
+      `SELECT ${REVERSAL_COLUMNS}
+         FROM sal.receipt_reversals
+        WHERE tenant_id = $1 AND id = $2`,
+      [context.principal.tenantId, reversalId]
+    );
+    return row ? toReversal(row) : null;
+  }
+
+  /**
+   * One reversal, LOCKED. A decision takes the receipt lock first and this one
+   * second — the order `sal.request_receipt_reversal` and
+   * `sal.approve_receipt_reversal` take — so two decisions, or a decision and a
+   * request, serialise instead of deadlocking.
+   */
+  public async findReversalForUpdate(
+    db: DbHandle,
+    reversalId: string
+  ): Promise<ReceiptReversalRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ReceiptReversalSql>(
+      db,
+      `SELECT ${REVERSAL_COLUMNS}
+         FROM sal.receipt_reversals
+        WHERE tenant_id = $1 AND id = $2
+          FOR UPDATE`,
+      [context.principal.tenantId, reversalId]
+    );
+    return row ? toReversal(row) : null;
+  }
+
+  /**
+   * The reversal a request's idempotency key already raised, tenant-wide like
+   * `uq_receipt_reversals_idempotency`. The caller compares its receipt.
+   */
+  public async findReversalByIdempotencyKey(
+    db: DbHandle,
+    idempotencyKey: string
+  ): Promise<ReceiptReversalRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ReceiptReversalSql>(
+      db,
+      `SELECT ${REVERSAL_COLUMNS}
+         FROM sal.receipt_reversals
+        WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [context.principal.tenantId, idempotencyKey]
+    );
+    return row ? toReversal(row) : null;
+  }
+
+  /**
+   * The reversal a receipt's detail shows: its LIVE one (pending or approved —
+   * there is at most one, `uq_receipt_reversals_receipt_live`) or else its most
+   * recent declined one. `null` when nobody ever asked to reverse it.
+   */
+  public async findCurrentReversal(
+    db: DbHandle,
+    receiptId: string,
+    scope: ReceiptScope
+  ): Promise<ReceiptReversalRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ReceiptReversalSql>(
+      db,
+      `SELECT ${REVERSAL_COLUMNS}
+         FROM sal.receipt_reversals
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND original_receipt_id = $4
+        ORDER BY (approval_state IN ('pending', 'approved')) DESC, created_at DESC, id DESC
+        LIMIT 1`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, receiptId]
+    );
+    return row ? toReversal(row) : null;
+  }
+
+  /** Raises the full reversal of a receipt through `sal.request_receipt_reversal`. */
+  public async requestReversal(
+    db: DbHandle,
+    receiptId: string,
+    reason: string,
+    idempotencyKey: string | null
+  ): Promise<{ readonly id: string }> {
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT sal.request_receipt_reversal($1, $2, $3) AS id`,
+      [receiptId, reason, idempotencyKey]
+    );
+    if (!row?.id) throw new Error('payments: sal.request_receipt_reversal returned no id');
+    return { id: row.id };
+  }
+
+  /** Approves a pending reversal through `sal.approve_receipt_reversal`. */
+  public async approveReversal(
+    db: DbHandle,
+    reversalId: string,
+    correlationId: string | null
+  ): Promise<void> {
+    await this.run(db, `SELECT sal.approve_receipt_reversal($1, $2)`, [reversalId, correlationId]);
+  }
+
+  /** Rejects a pending reversal through `sal.reject_receipt_reversal`. */
+  public async rejectReversal(db: DbHandle, reversalId: string, reason: string): Promise<void> {
+    await this.run(db, `SELECT sal.reject_receipt_reversal($1, $2)`, [reversalId, reason]);
+  }
+
+  /** Withdraws the caller's own pending reversal through `sal.withdraw_receipt_reversal`. */
+  public async withdrawReversal(db: DbHandle, reversalId: string): Promise<void> {
+    await this.run(db, `SELECT sal.withdraw_receipt_reversal($1)`, [reversalId]);
+  }
+
+  /** A receipt's id and number in an authorized scope, for the replacement link. */
+  public async findReceiptReference(
+    db: DbHandle,
+    receiptId: string,
+    scope: ReceiptScope
+  ): Promise<ReceiptReferenceRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string; receipt_number: string }>(
+      db,
+      `SELECT id, receipt_number
+         FROM sal.receipts
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3 AND id = $4`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, receiptId]
+    );
+    return row ? { id: row.id, receiptNumber: row.receipt_number } : null;
+  }
+
+  /**
+   * The receipt that replaces a reversed one (`uq_receipts_replaces` allows one),
+   * or `null`.
+   */
+  public async findReplacementOf(
+    db: DbHandle,
+    receiptId: string,
+    scope: ReceiptScope
+  ): Promise<ReceiptReferenceRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string; receipt_number: string }>(
+      db,
+      `SELECT id, receipt_number
+         FROM sal.receipts
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND replaces_receipt_id = $4`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, receiptId]
+    );
+    return row ? { id: row.id, receiptNumber: row.receipt_number } : null;
   }
 }

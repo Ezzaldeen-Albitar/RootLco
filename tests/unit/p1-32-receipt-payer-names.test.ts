@@ -42,6 +42,7 @@ function receiptRow(over: Record<string, unknown> = {}) {
     idempotencyKey: null,
     deletedAt: null,
     recordVersion: 1,
+    replacesReceiptId: null,
     unallocated: '35.0000',
     payerDisplayName: 'Layla Haddad',
     payerDisplayNumber: '000006',
@@ -209,6 +210,8 @@ describe('sal.receipt-detail names each allocation by invoice number (DF-R2-2)',
         return options.allocations ?? [allocation()];
       }),
       findPaymentMethod: vi.fn(async () => null),
+      // ADR-023 D4: nobody asked to reverse this receipt, and it replaces none.
+      findCurrentReversal: vi.fn(async () => null),
       minorUnitsFor: vi.fn(
         async (_db: unknown, codes: readonly string[]) =>
           new Map(codes.filter((code) => code === 'JOD').map((code) => [code, 3]))
