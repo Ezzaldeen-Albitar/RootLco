@@ -127,6 +127,12 @@ export const DATABASE_ENFORCED = Object.freeze({
   'rec.reception.receiving_employee.assign_any':
     'iam.has_permission_in_scope inside the rec.stamp_receiving_employee_identity() BEFORE ' +
     'INSERT trigger — supabase/migrations/20260815093000_rec_receiving_employee_identity.sql:184',
+  // ADR-023 D14: no operation declares it, because an ordinary allocation never needs
+  // it; sal.payment-allocate consults it (callerHoldsPermission) for a third-party
+  // allocation only, and the database checks it for every one.
+  'sal.payment.third_party':
+    'iam.has_permission_in_scope inside the sal.guard_allocation_payer() BEFORE INSERT ' +
+    'trigger — supabase/migrations/20261002100000_sal_third_party_allocations.sql:161',
 });
 
 /**
