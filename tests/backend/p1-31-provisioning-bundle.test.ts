@@ -1875,7 +1875,7 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
     expect(note.approvalState).toBe('pending');
     expect(note.requestedBy).toBe(probe.ownerAccountId);
     expect(note.approvedBy).toBeNull();
-    expect(note.amount).toEqual({ amount: '40.0000', currency: 'JOD' });
+    expect(note.amount).toEqual({ amount: '40.0000', currency: 'JOD', minorUnit: 3 });
     // Audited once, in this organisation's own trail.
     expect(await auditRecordsFor(probe.tenantId, 'sal.credit_note.requested', note.id)).toBe(1);
     // A request credits nothing.

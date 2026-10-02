@@ -612,13 +612,17 @@ describe('FE-014 → FE-015 → FE-019 on one work order', () => {
     });
     expect(body.recordVersion).toBe(body.invoice.recordVersion);
     expect(body.invoice.totals).toEqual({
-      net: { amount: '150.0000', currency: 'USD' },
-      tax: { amount: '15.0000', currency: 'USD' },
-      gross: { amount: '165.0000', currency: 'USD' },
+      net: { amount: '150.0000', currency: 'USD', minorUnit: 2 },
+      tax: { amount: '15.0000', currency: 'USD', minorUnit: 2 },
+      gross: { amount: '165.0000', currency: 'USD', minorUnit: 2 },
     });
     expect(body.lines).toHaveLength(1);
     expect(body.lines[0]).toMatchObject({ lineNumber: 1, lineType: 'service', quantity: '2.000' });
-    expect(body.lines[0]?.money?.unitPrice).toEqual({ amount: '100.0000', currency: 'USD' });
+    expect(body.lines[0]?.money?.unitPrice).toEqual({
+      amount: '100.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
   });
 
   it('the SAME key replays the stored answer (200, the same invoice, replayed false); a NEW key is a conflict', async () => {
@@ -639,7 +643,11 @@ describe('FE-014 → FE-015 → FE-019 on one work order', () => {
     const now = await workOrderInvoice(billable.workOrderId);
     const envelope = await bodyOf<{ invoice: InvoiceBody | null }>(now);
     expect(envelope.invoice?.id).toBe(invoiceId);
-    expect(envelope.invoice?.totals?.gross).toEqual({ amount: '165.0000', currency: 'USD' });
+    expect(envelope.invoice?.totals?.gross).toEqual({
+      amount: '165.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
   });
 
   it('the finance split: without the code the header stands and every amount is null, never zero', async () => {
@@ -664,7 +672,11 @@ describe('FE-014 → FE-015 → FE-019 on one work order', () => {
     const full = await detail(invoiceId);
     expect(full.headers.get('ETag')).toBe(`"${draftVersion}"`);
     const visible = await bodyOf<DetailBody>(full);
-    expect(visible.invoice.totals?.gross).toEqual({ amount: '165.0000', currency: 'USD' });
+    expect(visible.invoice.totals?.gross).toEqual({
+      amount: '165.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
     expect(visible.recordVersion).toBe(draftVersion);
 
     authAs(SAL_READER);
@@ -678,7 +690,7 @@ describe('FE-014 → FE-015 → FE-019 on one work order', () => {
     expect(await bodyOf<OutstandingBody>(response)).toEqual({
       invoiceId,
       status: 'draft',
-      outstanding: { amount: '0.0000', currency: 'USD' },
+      outstanding: { amount: '0.0000', currency: 'USD', minorUnit: 2 },
       isSettled: true,
       // A draft claims nothing, so it has no credit, payment or refund position.
       settlement: null,
@@ -730,14 +742,14 @@ describe('FE-014 → FE-015 → FE-019 on one work order', () => {
     expect(await bodyOf<OutstandingBody>(await outstanding(invoiceId))).toEqual({
       invoiceId,
       status: 'issued',
-      outstanding: { amount: '165.0000', currency: 'USD' },
+      outstanding: { amount: '165.0000', currency: 'USD', minorUnit: 2 },
       isSettled: false,
       settlement: {
         creditStatus: 'none',
         paymentStatus: 'open',
         refundStatus: 'none',
-        credited: { amount: '0.0000', currency: 'USD' },
-        paid: { amount: '0.0000', currency: 'USD' },
+        credited: { amount: '0.0000', currency: 'USD', minorUnit: 2 },
+        paid: { amount: '0.0000', currency: 'USD', minorUnit: 2 },
       },
       asOf: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
     });
@@ -983,9 +995,9 @@ describe('sal.invoice-list', () => {
       payerPartnerId: PARTNER_A,
       currency: 'USD',
       payer: { displayName: 'Reception Requester' },
-      outstanding: { amount: first.gross, currency: 'USD' },
+      outstanding: { amount: first.gross, currency: 'USD', minorUnit: 2 },
     });
-    expect(row?.totals?.gross).toEqual({ amount: first.gross, currency: 'USD' });
+    expect(row?.totals?.gross).toEqual({ amount: first.gross, currency: 'USD', minorUnit: 2 });
     expect(typeof row?.outstanding?.amount).toBe('string');
     // The other two invoices do not carry that number.
     expect(page.items.some((item) => item.id === second.invoiceId)).toBe(false);
@@ -1015,7 +1027,7 @@ describe('sal.invoice-list', () => {
     const row = (await bodyOf<ListPage>(read)).items.find((item) => item.id === first.invoiceId);
     expect(row).toMatchObject({
       status: 'issued',
-      outstanding: { amount: first.gross, currency: 'USD' },
+      outstanding: { amount: first.gross, currency: 'USD', minorUnit: 2 },
     });
 
     authAs(SAL_FULL);
@@ -1321,7 +1333,7 @@ describe('sal.invoice-list — the cash desk, the balance and the payer', () => 
     expect(found).toMatchObject({
       status: 'issued',
       invoiceNumber: open.invoiceNumber,
-      outstanding: { amount: open.gross, currency: 'USD' },
+      outstanding: { amount: open.gross, currency: 'USD', minorUnit: 2 },
     });
 
     const applied = await allocateReceipt(receiptId, {
@@ -1347,7 +1359,7 @@ describe('sal.invoice-list — the cash desk, the balance and the payer', () => 
     const creditedRow = await rowFor(credited.invoiceId, 'allocatable=true&status=credited');
     expect(creditedRow).toMatchObject({
       status: 'credited',
-      outstanding: { amount: credited.gross, currency: 'USD' },
+      outstanding: { amount: credited.gross, currency: 'USD', minorUnit: 2 },
     });
     // Without the parameter nothing is narrowed; `allocatable=false` is refused
     // rather than accepted and ignored.
@@ -1355,7 +1367,7 @@ describe('sal.invoice-list — the cash desk, the balance and the payer', () => 
     expect(
       await rowFor(settled.invoiceId, `q=${encodeURIComponent(settled.invoiceNumber)}`)
     ).toMatchObject({
-      outstanding: { amount: '0.0000', currency: 'USD' },
+      outstanding: { amount: '0.0000', currency: 'USD', minorUnit: 2 },
     });
     const refused = await listInvoices(`${pair}&allocatable=false&limit=100`);
     expect(refused.status).toBe(422);
@@ -1369,7 +1381,7 @@ describe('sal.invoice-list — the cash desk, the balance and the payer', () => 
     // `sal.invoice_open_receivable` short-circuits a draft to zero before it
     // reads anything, so the zero is believable; the header amounts are written
     // at issue, so there are none to show yet.
-    expect(row?.outstanding).toEqual({ amount: '0.0000', currency: 'USD' });
+    expect(row?.outstanding).toEqual({ amount: '0.0000', currency: 'USD', minorUnit: 2 });
     expect(row?.totals).toBeNull();
   });
 
@@ -1480,7 +1492,7 @@ describe('sal.invoice-list — the payer and the vehicle need their own reads', 
       expect(row).toMatchObject({
         status: 'issued',
         invoiceNumber: named.invoiceNumber,
-        outstanding: { amount: named.gross, currency: 'USD' },
+        outstanding: { amount: named.gross, currency: 'USD', minorUnit: 2 },
       });
       // …and the payer block keeps its shape with nothing in it.
       expect(row?.payer).toEqual({ displayName: null, displayNumber: null, partyType: null });

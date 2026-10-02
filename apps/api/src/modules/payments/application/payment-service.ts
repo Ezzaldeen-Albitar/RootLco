@@ -449,7 +449,7 @@ export class PaymentService {
       const existing = await this.repository.findReceiptByIdempotencyKey(db, input.idempotencyKey);
       if (existing) {
         this.assertReplayMatches(existing, input, amount, currencyCode);
-        return this.toReceiptView(existing, true);
+        return this.toReceiptView(existing, true, await this.unitsOf(db, existing.currencyCode));
       }
     }
 
@@ -585,7 +585,7 @@ export class PaymentService {
       },
     });
 
-    return this.toReceiptView(receipt, false);
+    return this.toReceiptView(receipt, false, await this.unitsOf(db, receipt.currencyCode));
   }
 
   // -------------------------------------------------------------------------
@@ -856,6 +856,10 @@ export class PaymentService {
       },
     });
 
+    const units = await this.repository.minorUnitsFor(db, [
+      allocation.currencyCode,
+      remainder.currencyCode,
+    ]);
     return {
       id: allocation.id,
       sequence: allocation.seq,
@@ -863,10 +867,10 @@ export class PaymentService {
       invoiceId: allocation.invoiceId,
       companyId: allocation.companyId,
       branchId: allocation.branchId,
-      money: moneyView(allocation.amount, allocation.currencyCode),
+      money: moneyView(allocation.amount, allocation.currencyCode, units),
       allocatedAt: allocation.allocatedAt.toISOString(),
       receiptStatus: after.status,
-      receiptUnallocated: moneyView(remainder.unallocated, remainder.currencyCode),
+      receiptUnallocated: moneyView(remainder.unallocated, remainder.currencyCode, units),
     };
   }
 
@@ -892,6 +896,10 @@ export class PaymentService {
         message: 'An allocation or its receipt vanished while answering a repeated key',
       });
     }
+    const units = await this.repository.minorUnitsFor(db, [
+      allocation.currencyCode,
+      remainder.currencyCode,
+    ]);
     return {
       id: allocation.id,
       sequence: allocation.seq,
@@ -899,10 +907,10 @@ export class PaymentService {
       invoiceId: allocation.invoiceId,
       companyId: allocation.companyId,
       branchId: allocation.branchId,
-      money: moneyView(allocation.amount, allocation.currencyCode),
+      money: moneyView(allocation.amount, allocation.currencyCode, units),
       allocatedAt: allocation.allocatedAt.toISOString(),
       receiptStatus: after.status,
-      receiptUnallocated: moneyView(remainder.unallocated, remainder.currencyCode),
+      receiptUnallocated: moneyView(remainder.unallocated, remainder.currencyCode, units),
     };
   }
 
@@ -1075,7 +1083,19 @@ export class PaymentService {
     }
   }
 
-  private toReceiptView(receipt: ReceiptRow, replayed: boolean): ReceiptView {
+  /**
+   * The minor unit of a currency, so an echo states how many decimals its amounts
+   * are written with, as the reads do (Owner decision D1).
+   */
+  private unitsOf(db: DbHandle, currencyCode: string): Promise<ReadonlyMap<string, number>> {
+    return this.repository.minorUnitsFor(db, [currencyCode]);
+  }
+
+  private toReceiptView(
+    receipt: ReceiptRow,
+    replayed: boolean,
+    units: ReadonlyMap<string, number>
+  ): ReceiptView {
     return {
       id: receipt.id,
       reference: receipt.receiptNumber,
@@ -1083,7 +1103,7 @@ export class PaymentService {
       branchId: receipt.branchId,
       paymentMethodId: receipt.paymentMethodId,
       payerPartnerId: receipt.payerPartnerId,
-      money: moneyView(receipt.amount, receipt.currencyCode),
+      money: moneyView(receipt.amount, receipt.currencyCode, units),
       status: receipt.status,
       receivedAt: receipt.receivedAt.toISOString(),
       recordVersion: receipt.recordVersion,

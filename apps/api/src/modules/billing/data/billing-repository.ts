@@ -796,6 +796,29 @@ export class BillingRepository extends Repository {
     return row ? row.minor_unit : null;
   }
 
+  /**
+   * The minor units of several currencies at once, by code (Owner decision D1).
+   *
+   * A read stamps each amount it publishes with its currency's minor unit, so a
+   * client writes the amount the way the platform records the currency instead of
+   * the way its own locale data does. One statement per read, whatever the number
+   * of amounts. Reference data, so no permission and no scope, as above; a code the
+   * platform does not hold is simply absent from the map.
+   */
+  public async minorUnitsFor(
+    db: DbHandle,
+    codes: readonly string[]
+  ): Promise<ReadonlyMap<string, number>> {
+    const wanted = [...new Set(codes)];
+    if (wanted.length === 0) return new Map();
+    const rows = await this.run<{ code: string; minor_unit: number }>(
+      db,
+      `SELECT code, minor_unit FROM shared.currencies WHERE code = ANY($1::text[])`,
+      [wanted]
+    );
+    return new Map(rows.rows.map((row) => [row.code, row.minor_unit]));
+  }
+
   public async findWorkOrderScope(
     db: DbHandle,
     workOrderId: string
