@@ -308,7 +308,10 @@ receipt (6.3.5).
 - **Names, and dates in order.** The paying customer is named — the work order's customer when that
   customer pays, otherwise the name the branch's invoice list gives this invoice, which it gives only
   to somebody who may read customers. Where no name can be given the copy reads "Not shown here" <!-- invoices.detail.payerNotShown -->
-  ; it never prints the customer's reference. The same holds on the "Invoice" panel on screen. The
+  ; it never prints the customer's reference. While the name is still being found, the copy is not
+  shown yet and there is no "Print" button: the panel shows that it is loading, and the copy appears
+  once the name is found or is known not to be shown (finance retest). The same holds on the
+  "Invoice" panel on screen. The
   issue date is written in your language's reading order, so an Arabic copy prints the day, month
   and year in order on paper.
 - **Restrictions:** the descriptions on the copy do not come from the invoice. The document says so:
@@ -329,7 +332,9 @@ receipt (6.3.5).
   It carries the same "Payments and credits as of" section. To print a counter sale again later,
   see §6.2.8a.
 - **Amounts are written in their currency's own decimals** — three for JOD, two for USD — on
-  screen and on paper. A figure with a digit below that is shown in full rather than rounded, so a
+  screen and on paper. The number of decimals is the one the platform records for the currency, not
+  the one your browser assumes; the two can differ for some currencies (finance retest, Owner
+  decision D1). A figure with a digit below that is shown in full rather than rounded, so a
   fraction no payment can settle is visible instead of hidden.
 - **What was issued, and what has happened since, are kept apart (Owner decision D10).** The lines,
   each line's discount and the "As issued" totals never change once the invoice is issued. A job's
@@ -347,9 +352,11 @@ receipt (6.3.5).
 - **Without permission to see amounts there is no settlement section at all**, exactly as the open
   balance panel is not shown: the copy carries no paid, credited or due figure and no position.
 - **Only the document reaches the paper.** While the printable copy is open, printing leaves off the
-  page title, the explanations, the branch panel, notices and the working panels, in English and in
-  Arabic. Long invoices continue on further pages with the column headings repeated, and no line is
-  cut off.
+  page title and its description, the explanations, the branch panel, notices and the working
+  panels, in English and in Arabic — on a work order's invoice as on a counter sale (finance retest
+  DF-R2-1: the work order's invoice used to print the page title "Invoice" and its description above
+  the document). Long invoices continue on further pages with the column headings repeated, and no
+  line is cut off.
 - **Screenshot:** no screenshot available at this version.
 
 ### 6.2.8a Print a counter sale again
@@ -843,9 +850,11 @@ When nothing matches: "No receipt in this branch matches." <!-- payments.list.em
 
 Press **Open** <!-- payments.list.open --> on a row (shown pressed on the receipt that is open) to
 see "Receipt" <!-- payments.receipt.heading --> with its "State", "Received", "Payer" (by name),
-"Method", "Received" and "Not yet applied". The panel states its own honesty limit: **"Applied
-invoices are named by reference: the receipt read publishes no invoice number, and no record of who
-took the payment."** <!-- payments.receipt.noNames -->
+"Method", "Received" and "Not yet applied". Under "Applied to" each entry names the invoice by its
+number, then the customer that invoice bills when your account may read customers, the amount and
+when it was applied — never an invoice reference (finance retest DF-R2-2). An invoice your account
+cannot see in this branch reads "An invoice not shown here" <!-- payments.allocations.invoiceNotShown -->
+. The panel states its own honesty limit: **"The receipt does not record who took the payment."** <!-- payments.receipt.noCashier -->
 
 Failures on the detail: "That receipt was not found in this scope." <!-- payments.receipt.notFound -->
 ; "This account may not read that receipt." <!-- payments.receipt.denied --> ; "The receipt could
@@ -868,7 +877,11 @@ filtered to one invoice, `/en/payments?invoiceId=<identifier>`.
      in the same branch and currency as this receipt." <!-- payments.allocate.invoiceHelp -->
   2. **Required** — "Amount to apply" <!-- payments.allocate.amount --> , in the receipt's currency,
      which stands beside the box. Help text: "At most what is left on this receipt, and at most what
-     is still open on the invoice." <!-- payments.allocate.amountHelp -->
+     is still open on the invoice." <!-- payments.allocate.amountHelp --> An amount with more decimals
+     than the currency allows is refused on the box before anything is sent: "This amount has more
+     decimal places than the currency allows. Use no more decimal places than the currency's smallest
+     coin, then try again." <!-- form.violation.minor_unit_scale --> The number of decimals is the one
+     the platform records for the receipt's currency.
   3. Press "Apply". The screen asks first — **Apply this amount?** <!-- payments.allocate.confirmTitle -->
      — naming the amount and the invoice and repeating that an entry cannot be undone. Press
      **Apply** again to go ahead, or **Cancel** <!-- overlay.cancel --> .
@@ -922,14 +935,16 @@ shown are the oldest." <!-- payments.allocations.truncated -->
   "Received", "Payer" (by name, as on screen), "Method", "Received" and "Not yet applied", then the
   table captioned "What
   this receipt has been applied to" <!-- payments.print.allocationsCaption --> with the columns
-  "Invoice" <!-- payments.print.column.invoice --> , "Applied" <!-- payments.print.column.applied -->
-  and "When" <!-- payments.print.column.when --> .
+  "Invoice" <!-- payments.print.column.invoice --> (the invoice number, and the customer it bills
+  when your account may read customers), "Applied" <!-- payments.print.column.applied -->
+  and "When" <!-- payments.print.column.when --> . While the payer's name is still being found the
+  copy is not shown yet and there is no "Print" button; the panel shows that it is loading.
 - **Restrictions — say these to a customer before you hand the copy over:**
   - "There is no document route: this copy is composed from the receipt as it was read." <!-- payments.print.explain -->
-  - **"Invoices are named by reference: the receipt read publishes no invoice number, and no record
-    of who took the payment."** <!-- payments.print.identifiersOnly --> The printed copy carries the
-    customer's name, but no invoice number and no cashier name. Dates are written in your
-    language's reading order, so an Arabic copy prints them in order on paper.
+  - **"This copy does not say who took the payment: the receipt does not record it."** <!-- payments.print.noCashier -->
+    The printed copy carries the customer's name and each invoice's number, but no cashier name and
+    no invoice reference (finance retest DF-R2-2). Dates are written in your language's reading
+    order, so an Arabic copy prints them in order on paper.
 - **If it goes wrong:** "More entries exist than this copy shows." <!-- payments.print.truncated -->
   — the copy is not the whole allocation history. Read the receipt on screen for the rest. Where
   nothing has been applied: "This receipt has not been applied to anything." <!-- payments.print.noAllocations -->
