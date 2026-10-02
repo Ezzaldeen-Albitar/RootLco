@@ -17,7 +17,7 @@ import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
-import { MuiReadFailureState } from '@/components/states/MuiStates';
+import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import { InvoicePicker } from '@/features/billing/components/InvoicePicker';
 import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
@@ -30,7 +30,7 @@ import type { ReadState } from '@/lib/api/read-operation';
 import { useReread } from '@/lib/api/use-reread';
 import { unreachable, type ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
-import { formatMoney } from '@/lib/money';
+import { fitsMinorUnit, formatMoney } from '@/lib/money';
 
 import {
   allocatePayment,
@@ -53,7 +53,7 @@ import {
   type ReceiptStatus,
   type RecordedReceipt,
 } from '../payments-contract';
-import { ReceiptDocument, type ReceiptPayerName } from './ReceiptDocument';
+import { AllocatedInvoice, ReceiptDocument, type ReceiptPayerName } from './ReceiptDocument';
 import {
   CURRENCY,
   Identifier,
@@ -106,8 +106,10 @@ import {
  * for a caller who may read customers (browser QA row 5.6b), and the open
  * receipt asks the list for its own payer. Without the customer read the name
  * is withheld by the server and the screen says it is not shown — it never
- * prints the payer's reference. An allocation still names its invoice by
- * reference: no receipt read publishes an invoice number.
+ * prints the payer's reference. An allocation names its invoice by number, and
+ * the customer that invoice bills where the reader may read customers: the
+ * receipt read publishes both beside each allocation (finance retest DF-R2-2),
+ * so no invoice reference reaches the screen or the paper.
  *
  * ## What the operator ENTERS is found by name
  *
@@ -1160,7 +1162,7 @@ function ReceiptPanel({
           </Row>
         </dl>
         <p className="mt-2 text-caption text-text-muted">
-          {translate(messages, 'payments.receipt.noNames')}
+          {translate(messages, 'payments.receipt.noCashier')}
         </p>
 
         <h3 className="mt-4 text-section-title">
@@ -1177,7 +1179,7 @@ function ReceiptPanel({
                 key={allocation.id}
                 className="flex flex-wrap items-center gap-3 rounded-md border border-border p-2"
               >
-                <Identifier value={allocation.invoiceId} />
+                <AllocatedInvoice messages={messages} allocation={allocation} />
                 <Money money={allocation.money} locale={locale} />
                 <span className="text-caption text-text-muted">
                   <When value={allocation.allocatedAt} locale={locale} />
@@ -1348,6 +1350,11 @@ function AllocateForm({
     const found: Record<string, string> = {};
     if (invoiceId === null) found['invoiceId'] = 'payments.allocate.invoiceRequired';
     if (!isPayableAmount(amount)) found['amount'] = 'payments.common.amountFormat';
+    // No finer than the receipt's currency is written: the minor unit is the one
+    // the server published for it (`shared.currencies`, Owner decision D1), so the
+    // field says so before anything is sent, in the server's own words.
+    else if (!fitsMinorUnit(amount, receipt.money.minorUnit))
+      found['amount'] = 'form.violation.minor_unit_scale';
     setErrors(found);
     if (Object.keys(found).length > 0 || invoiceId === null) {
       setAttempt((n) => n + 1);
@@ -1549,7 +1556,11 @@ function AllocateForm({
                 ),
                 {
                   amount: formatMoney(
-                    { amount: amount.trim(), currency: receipt.money.currency },
+                    {
+                      amount: amount.trim(),
+                      currency: receipt.money.currency,
+                      minorUnit: receipt.money.minorUnit,
+                    },
                     locale
                   ),
                   invoice: invoice?.invoiceNumber ?? '',
@@ -1583,6 +1594,11 @@ function PrintPanel({
   readonly payer: ReceiptPayerName;
 }) {
   const [open, setOpen] = useState(false);
+  // The copy waits for the payer's name: while the lookup is out it would print
+  // "not shown" for a payer the screen is about to name. So it shows that it is
+  // loading and offers no Print until the lookup settles, with the name or with
+  // the honest "not shown".
+  const ready = payer.kind !== 'loading';
   return (
     <section
       aria-label={translate(messages, 'payments.print.heading')}
@@ -1603,7 +1619,7 @@ function PrintPanel({
           >
             {translate(messages, open ? 'payments.print.close' : 'payments.print.open')}
           </Button>
-          {open ? (
+          {open && ready ? (
             <Button type="button" variant="contained" onClick={() => window.print()}>
               {translate(messages, 'payments.print.print')}
             </Button>
@@ -1612,7 +1628,11 @@ function PrintPanel({
       </div>
       {open ? (
         <div className="mt-4" id="payments-print">
-          <ReceiptDocument locale={locale} messages={messages} receipt={receipt} payer={payer} />
+          {ready ? (
+            <ReceiptDocument locale={locale} messages={messages} receipt={receipt} payer={payer} />
+          ) : (
+            <MuiLoadingState messages={messages} variant="inline" />
+          )}
         </div>
       ) : null}
     </section>

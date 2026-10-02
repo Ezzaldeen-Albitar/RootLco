@@ -117,13 +117,15 @@ export function InvoiceDocument({
   const discounted = invoice.workOrderId !== null;
   const matched = descriptions.kind === 'matched' ? descriptions.preview : null;
   const previewMoney = (amount: string): MoneyView | null =>
-    matched === null ? null : { amount, currency: matched.currency };
+    matched === null ? null : { amount, currency: matched.currency, minorUnit: matched.minorUnit };
   const lineDiscount = (line: InvoiceDetail['lines'][number]): MoneyView | null => {
     if (matched === null || line.sourceQuotationItemId === null) return null;
     const found = matched.lines.find(
       (row) => row.sourceQuotationItemId === line.sourceQuotationItemId
     );
-    return found ? { amount: found.discount, currency: matched.currency } : null;
+    return found
+      ? { amount: found.discount, currency: matched.currency, minorUnit: matched.minorUnit }
+      : null;
   };
   const describe = (line: InvoiceDetail['lines'][number]): ReactNode | null => {
     if (descriptions.kind === 'items') {
@@ -251,7 +253,12 @@ export function InvoiceDocument({
               {payer.kind === 'named' ? (
                 <bdi>{payer.name}</bdi>
               ) : (
-                translate(messages, 'invoices.detail.payerNotShown')
+                translate(
+                  messages,
+                  payer.kind === 'loading'
+                    ? 'invoices.detail.payerLoading'
+                    : 'invoices.detail.payerNotShown'
+                )
               )}
             </dd>
           </div>

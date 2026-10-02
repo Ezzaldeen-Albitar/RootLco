@@ -141,6 +141,7 @@ const RECEIPT_ID = '33333333-3333-4333-8333-333333333333';
 const INVOICE_ID = '44444444-4444-4444-8444-444444444444';
 const PARTNER_ID = '55555555-5555-4555-8555-555555555555';
 const METHOD_ID = '66666666-6666-4666-8666-666666666666';
+const ALLOCATION_ID = '88888888-8888-4888-8888-888888888888';
 const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const tenantMethod = {
@@ -189,9 +190,12 @@ const detail = (over: Record<string, unknown> = {}) => ({
   ...receipt,
   allocations: [
     {
-      id: 'alloc-1',
+      id: ALLOCATION_ID,
       sequence: '1',
       invoiceId: INVOICE_ID,
+      // The receipt read names the invoice beside its id (finance retest DF-R2-2).
+      invoiceNumber: 'INV-000123',
+      invoicePayerName: 'Layla Haddad',
       money: { amount: '60.0000', currency: 'USD' },
       allocatedAt: '2026-09-05T09:05:00.000Z',
     },
@@ -1352,19 +1356,27 @@ describe('the receipt and its allocations', () => {
     expect(within(region).getByText(money('100.0000'))).toBeVisible();
     expect(within(region).getByText(money('40.0000'))).toBeVisible();
     expect(within(region).getByText(money('60.0000'))).toBeVisible();
-    expect(within(region).getAllByText(INVOICE_ID).length).toBeGreaterThan(0);
+    // Named by its number and the customer it bills — never by a reference.
+    const named = within(region).getByTestId('receipt-allocation-invoice');
+    expect(named).toHaveTextContent('INV-000123');
+    expect(named).toHaveTextContent('Layla Haddad');
+    expect(region.textContent).not.toContain(INVOICE_ID);
+    expect(region.textContent).not.toContain(ALLOCATION_ID);
   });
 
-  it('names the payer, asked of the receipt list in the receipt’s own branch, and says there is no invoice number or cashier', async () => {
+  it('names the payer, asked of the receipt list in the receipt’s own branch, and says there is no cashier', async () => {
     const user = userEvent.setup();
     const region = await openReceipt(user);
-    expect(await within(region).findByText('Layla Haddad')).toBeVisible();
+    // The payer's own row (the allocation below names the customer it billed too).
+    const payerRow = within(region).getByText(EN['payments.receipt.payer'] as string)
+      .parentElement as HTMLElement;
+    expect(await within(payerRow).findByText('Layla Haddad')).toBeVisible();
     expect(readReceiptPayer).toHaveBeenCalledWith(
       { companyId: COMPANY_ID, branchId: BRANCH_ID },
       PARTNER_ID
     );
     expect(region.textContent).not.toContain(PARTNER_ID);
-    expect(within(region).getByText(EN['payments.receipt.noNames'] as string)).toBeVisible();
+    expect(within(region).getByText(EN['payments.receipt.noCashier'] as string)).toBeVisible();
   });
 
   it('without the customer read asks for no name, and says the payer is not shown', async () => {
@@ -2009,14 +2021,18 @@ describe('the printable receipt (FE-021)', () => {
     return screen.findByRole('article');
   }
 
-  it('names the payer by name, each invoice by reference, and says why', async () => {
+  it('names the payer by name and each invoice by its number, never by a reference', async () => {
     const user = userEvent.setup();
     const document = await openPrint(user);
     expect(within(document).getByTestId('receipt-print-payer')).toHaveTextContent('Layla Haddad');
     expect(document.textContent).not.toContain(PARTNER_ID);
-    expect(within(document).getByText(INVOICE_ID)).toBeVisible();
+    const named = within(document).getByTestId('receipt-allocation-invoice');
+    expect(named).toHaveTextContent('INV-000123');
+    expect(named).toHaveTextContent('Layla Haddad');
+    expect(document.textContent).not.toContain(INVOICE_ID);
+    expect(document.textContent).not.toContain(ALLOCATION_ID);
     expect(
-      within(document).getByText(EN['payments.print.identifiersOnly'] as string, { exact: false })
+      within(document).getByText(EN['payments.print.noCashier'] as string, { exact: false })
     ).toBeVisible();
   });
 
@@ -2204,6 +2220,228 @@ describe('Arabic', () => {
     );
     expect(
       await within(form).findByText(AR['form.violation.invalid_string'] as string)
+    ).toBeVisible();
+  });
+});
+
+/*
+ * Finance retest fixes C (`P1-32-PRE-OD-FQC`). The signed-in retest at 9bd21460
+ * found the receipt's "applied to" list printing a raw reference (DF-R2-2), a
+ * printable copy that could say "not shown" while the payer's name was still
+ * being found, and amounts written with the browser's locale data instead of
+ * the minor unit the platform records for their currency (Owner decision D1).
+ */
+describe('finance retest fixes C', () => {
+  async function openReceipt(user: ReturnType<typeof userEvent.setup>, over = {}) {
+    renderScreen(over);
+    await chooseBranch();
+    const list = await screen.findByRole('region', {
+      name: EN['payments.list.heading'] as string,
+    });
+    await user.click(within(list).getByRole('button', { name: OPEN_RECEIPT }));
+    return screen.findByRole('region', { name: EN['payments.receipt.heading'] as string });
+  }
+
+  it('DF-R2-2: an invoice this scope cannot see is said to be not shown, never referenced', async () => {
+    readReceipt.mockResolvedValue(
+      okRead(
+        detail({
+          allocations: [
+            {
+              id: ALLOCATION_ID,
+              sequence: '1',
+              invoiceId: INVOICE_ID,
+              invoiceNumber: null,
+              invoicePayerName: null,
+              money: { amount: '60.0000', currency: 'USD' },
+              allocatedAt: '2026-09-05T09:05:00.000Z',
+            },
+          ],
+        })
+      )
+    );
+    const user = userEvent.setup();
+    const region = await openReceipt(user);
+    expect(
+      within(region).getByText(EN['payments.allocations.invoiceNotShown'] as string)
+    ).toBeVisible();
+    expect(region.textContent).not.toContain(INVOICE_ID);
+    await user.click(screen.getByRole('button', { name: EN['payments.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    expect(
+      within(document).getByText(EN['payments.allocations.invoiceNotShown'] as string)
+    ).toBeVisible();
+    expect(document.textContent).not.toContain(INVOICE_ID);
+  });
+
+  it('DF-R2-2: a withheld customer leaves the invoice number alone, with no stand-in', async () => {
+    readReceipt.mockResolvedValue(
+      okRead(
+        detail({
+          allocations: [
+            {
+              id: ALLOCATION_ID,
+              sequence: '1',
+              invoiceId: INVOICE_ID,
+              invoiceNumber: 'INV-000123',
+              invoicePayerName: null,
+              money: { amount: '60.0000', currency: 'USD' },
+              allocatedAt: '2026-09-05T09:05:00.000Z',
+            },
+          ],
+        })
+      )
+    );
+    const user = userEvent.setup();
+    const region = await openReceipt(user);
+    expect(within(region).getByTestId('receipt-allocation-invoice').textContent).toBe('INV-000123');
+  });
+
+  it('DF-R2-2: the Arabic receipt and its copy name the invoice by number, never by reference', async () => {
+    const user = userEvent.setup();
+    renderRtl(
+      <PaymentsScreen
+        locale="ar"
+        messages={ar}
+        initialReceiptId={RECEIPT_ID}
+        initialInvoiceId={null}
+        canRecord={false}
+        canAllocate={false}
+        canReadCustomers={true}
+      />
+    );
+    const region = await screen.findByRole('region', {
+      name: AR['payments.receipt.heading'] as string,
+    });
+    const named = within(region).getByTestId('receipt-allocation-invoice');
+    expect(named).toHaveTextContent('INV-000123');
+    expect(named).toHaveTextContent('Layla Haddad');
+    // The number is isolated left to right, so its digits keep their order.
+    expect(named.querySelector('bdi')).toHaveAttribute('dir', 'ltr');
+    expect(region.textContent).not.toContain(INVOICE_ID);
+    expect(within(region).getByText(AR['payments.receipt.noCashier'] as string)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: AR['payments.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    expect(within(document).getByTestId('receipt-allocation-invoice')).toHaveTextContent(
+      'INV-000123'
+    );
+    expect(document.textContent).not.toContain(INVOICE_ID);
+    expect(document.textContent).not.toContain(ALLOCATION_ID);
+  });
+
+  it('the printable receipt waits for the payer name: loading and no Print until the lookup settles', async () => {
+    let answer: (payer: unknown) => void = () => undefined;
+    readReceiptPayer.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    await openReceipt(user);
+    await user.click(screen.getByRole('button', { name: EN['payments.print.open'] as string }));
+    const panel = screen.getByRole('region', { name: EN['payments.print.heading'] as string });
+    // Still finding the name: a loading state, no copy, and nothing to print.
+    expect(within(panel).getByRole('status')).toBeVisible();
+    expect(screen.queryByRole('article')).toBeNull();
+    expect(
+      within(panel).queryByRole('button', { name: EN['payments.print.print'] as string })
+    ).toBeNull();
+    expect(panel.textContent).not.toContain(EN['payments.list.payerNotShown'] as string);
+    answer({ displayName: 'Layla Haddad', displayNumber: 'C-000482', partyType: 'individual' });
+    const document = await screen.findByRole('article');
+    expect(within(document).getByTestId('receipt-print-payer')).toHaveTextContent('Layla Haddad');
+    await user.click(
+      within(panel).getByRole('button', { name: EN['payments.print.print'] as string })
+    );
+    expect(print).toHaveBeenCalledTimes(1);
+    print.mockRestore();
+  });
+
+  it('a payer lookup that settles without a name prints the honest not-shown text', async () => {
+    readReceiptPayer.mockResolvedValue(null);
+    const user = userEvent.setup();
+    await openReceipt(user);
+    await user.click(screen.getByRole('button', { name: EN['payments.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    expect(within(document).getByTestId('receipt-print-payer')).toHaveTextContent(
+      EN['payments.list.payerNotShown'] as string
+    );
+  });
+
+  /*
+   * The browser's locale data writes the Iraqi dinar with no decimals; the
+   * platform's register (`shared.currencies`) may record three. The server's
+   * figure is the one written and the one the amount box checks against.
+   */
+  const iqd = (amount: string) => ({ amount, currency: 'IQD', minorUnit: 3 });
+
+  it('writes the receipt with the minor unit the server published, where the locale data disagrees', async () => {
+    readReceipt.mockResolvedValue(
+      okRead(
+        detail({
+          money: iqd('100.0000'),
+          unallocated: iqd('40.5000'),
+          allocations: [
+            {
+              id: ALLOCATION_ID,
+              sequence: '1',
+              invoiceId: INVOICE_ID,
+              invoiceNumber: 'INV-000123',
+              invoicePayerName: 'Layla Haddad',
+              money: iqd('59.5000'),
+              allocatedAt: '2026-09-05T09:05:00.000Z',
+            },
+          ],
+        })
+      )
+    );
+    const user = userEvent.setup();
+    const region = await openReceipt(user);
+    expect(within(region).getByText('100.000 IQD')).toBeVisible();
+    expect(within(region).getByText('40.500 IQD')).toBeVisible();
+    expect(within(region).getByText('59.500 IQD')).toBeVisible();
+    // The locale data alone would have written these differently.
+    expect(formatMoney({ amount: '100.0000', currency: 'IQD' }, 'en')).not.toBe('100.000 IQD');
+  });
+
+  it('refuses an amount finer than the minor unit the server published, at the box, before sending', async () => {
+    readReceipt.mockResolvedValue(
+      okRead(detail({ money: iqd('100.0000'), unallocated: iqd('40.0000') }))
+    );
+    const user = userEvent.setup();
+    await openReceipt(user);
+    const form = await screen.findByRole('form', {
+      name: EN['payments.allocate.formLabel'] as string,
+    });
+    await chooseInvoice(user, form);
+    const box = within(form).getByLabelText(
+      new RegExp(escape(EN['payments.allocate.amount'] as string))
+    );
+    await user.type(box, '1.0005');
+    await user.click(
+      within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['form.violation.minor_unit_scale'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(box).toHaveValue('1.0005');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(allocatePayment).not.toHaveBeenCalled();
+    // Corrected to the currency's three decimals, the complaint goes and the question is asked.
+    await user.clear(box);
+    await user.type(box, '1.500');
+    expect(within(form).queryByText(EN['form.violation.minor_unit_scale'] as string)).toBeNull();
+    await user.click(
+      within(form).getByRole('button', { name: EN['payments.allocate.submit'] as string })
+    );
+    expect(
+      await screen.findByRole('alertdialog', {
+        name: EN['payments.allocate.confirmTitle'] as string,
+      })
     ).toBeVisible();
   });
 });

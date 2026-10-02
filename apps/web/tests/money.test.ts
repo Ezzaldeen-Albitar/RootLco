@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   compareMoney,
+  fitsMinorUnit,
   formatMoney,
   isCanonicalMoney,
   isNegativeMoney,
@@ -151,6 +152,53 @@ describe('formatting is display only', () => {
     expect(arabic.endsWith(' JOD')).toBe(true);
     // Whatever digits the locale writes, three of them follow the separator.
     expect(arabic.replace(' JOD', '')).toMatch(/[.,٫]\p{Nd}{3}$/u);
+  });
+
+  it('writes the minor unit the server published where the locale data disagrees (D1)', () => {
+    // The browser's locale data writes the Iraqi dinar and the Lebanese pound
+    // with no decimals; the platform's register may record three and two. The
+    // server's figure (`shared.currencies.minor_unit`) is the one written.
+    expect(formatMoney({ amount: '12.5000', currency: 'IQD' }, 'en')).toBe('12.5 IQD');
+    expect(formatMoney({ amount: '12.5000', currency: 'IQD', minorUnit: 3 }, 'en')).toBe(
+      '12.500 IQD'
+    );
+    expect(formatMoney({ amount: '1250.0000', currency: 'LBP' }, 'en')).toBe('1,250 LBP');
+    expect(formatMoney({ amount: '1250.0000', currency: 'LBP', minorUnit: 2 }, 'en')).toBe(
+      '1,250.00 LBP'
+    );
+    // It still never rounds a digit away below the unit, and it wins over the
+    // locale data in the other direction as well.
+    expect(formatMoney({ amount: '1.9752', currency: 'IQD', minorUnit: 3 }, 'en')).toBe(
+      '1.9752 IQD'
+    );
+    expect(formatMoney({ amount: '12.5000', currency: 'JOD', minorUnit: 2 }, 'en')).toBe(
+      '12.50 JOD'
+    );
+  });
+
+  it('does not trust a published minor unit it cannot use', () => {
+    expect(formatMoney({ amount: '12.5000', currency: 'JOD', minorUnit: 7 }, 'en')).toBe(
+      '12.500 JOD'
+    );
+    expect(formatMoney({ amount: '12.5000', currency: 'JOD', minorUnit: 1.5 }, 'en')).toBe(
+      '12.500 JOD'
+    );
+    expect(formatMoney({ amount: '12.5000', currency: 'JOD', minorUnit: -1 }, 'en')).toBe(
+      '12.500 JOD'
+    );
+  });
+
+  it('checks a typed amount against the published minor unit on its digits', () => {
+    expect(fitsMinorUnit('1.500', 3)).toBe(true);
+    expect(fitsMinorUnit('1.5000', 3)).toBe(true);
+    expect(fitsMinorUnit('1.0005', 3)).toBe(false);
+    expect(fitsMinorUnit('10.01', 0)).toBe(false);
+    expect(fitsMinorUnit('10.00', 0)).toBe(true);
+    expect(fitsMinorUnit('10', 2)).toBe(true);
+    // An unknown unit, or text that is not a decimal, is left to the server and
+    // to `parseMoneyInput`.
+    expect(fitsMinorUnit('1.0005', undefined)).toBe(true);
+    expect(fitsMinorUnit('abc', 3)).toBe(true);
   });
 
   it('falls back to two decimals for a code the platform cannot describe', () => {

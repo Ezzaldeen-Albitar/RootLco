@@ -71,7 +71,7 @@ export function When({ value, locale }: { readonly value: string; readonly local
 export function Money({ money, locale }: { readonly money: MoneyView; readonly locale: Locale }) {
   return (
     <span className="font-mono" dir="ltr">
-      {formatMoney({ amount: money.amount, currency: money.currency }, locale)}
+      {formatMoney(money, locale)}
     </span>
   );
 }
