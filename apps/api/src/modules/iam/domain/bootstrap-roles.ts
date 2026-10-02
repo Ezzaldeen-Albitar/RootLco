@@ -453,6 +453,34 @@
  * organisations are left unchanged. The run is an operator act, not performed by
  * this change.
  *
+ * ## `sal.reversal.approve` — deciding a receipt reversal, by Owner decision D4
+ *
+ * The Owner decided on 2026-09-30 (ADR-023, D4) that a mis-recorded receipt is
+ * corrected by a full reversal REQUESTED by an authorised payment recorder and
+ * APPROVED by a different authorised person, and that no credit-note code grants
+ * that power. `sal.reversal.approve` ("Approve receipt reversals (dual control)")
+ * has been seeded in `04_iam_permission_catalog.sql` since Phase 1-11 for exactly
+ * this decision and bound to no operation until now; `sal.receipt-reversal-approve`
+ * and `sal.receipt-reversal-reject` declare it, while requesting and withdrawing
+ * declare `sal.payment.record`, which this role already carries.
+ *
+ * The standard tenant administrator carries it because it is the one standard role
+ * that carries the finance codes at all — there is no standard finance-manager
+ * role, so no other role is widened. Carrying it changes no control: the approver
+ * is never the requester and holds the code in the receipt's own company and
+ * branch, and an administrator can now delegate the code to the finance approver
+ * it chooses.
+ *
+ * Organisations provisioned before this entry keep the set they were given, so
+ * nobody in them can approve or reject a receipt reversal until an administrator
+ * who holds the code grants it — a behaviour change disclosed in ADR-023 D4.
+ * `scripts/platform/backfill-tenant-administrator-bundle.mjs` reads this list at
+ * run time; by the Owner's decision it is run only for the previously authorised
+ * QA organisations (`--tenant odqa_alpha --tenant odqa_beta`), and it skips and
+ * reports every administrator role an organisation has customised. Other existing
+ * organisations are left unchanged. The run is an operator act, not performed by
+ * this change. The code is already seeded, so no seed run is owed for it.
+ *
  * ## `org.settings.manage` — the organisation's own settings, by Owner decision
  *
  * The Owner decided on 2026-09-27 that the standard tenant administrator edits its
@@ -712,6 +740,9 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     'sal.credit.approve',
     'sal.payment.record',
     'sal.payment.allocate',
+    // Owner decision D4 (ADR-023): approving and rejecting a receipt reversal that
+    // somebody else requested. See the section above.
+    'sal.reversal.approve',
     // The P1-31 delivery, warranty and reporting chain (prerequisite P-1). Held
     // to be exercised and to be delegated to a delivery officer, a warranty
     // clerk and a reporting reader; each is declared by a SHIPPED operation.

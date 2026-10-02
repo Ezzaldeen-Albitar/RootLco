@@ -30,8 +30,9 @@
  *             CLOSED for credit notes by `20260930090000_sal_finance_controls.sql`
  *             (GAP-13): the case below now proves the refusal, exactly as this
  *             header said a closing migration would require. The reversal half
- *             (a reversal in another currency than its receipt) is still a
- *             residual and is still pinned as one.
+ *             (a reversal in another currency than its receipt) is CLOSED by
+ *             `20261002090000_sal_receipt_reversal_requests.sql` (ADR-023 D4):
+ *             its BEFORE INSERT guard refuses it, and the case below proves it.
  *   2. BR-SAL-002 — a raw INSERT into `sal.payment_allocations` is unbounded, so
  *             `Σ allocations` may exceed both the receipt and the invoice.
  *             Compensated by routing every allocation through
@@ -150,29 +151,41 @@ describe('P1-22 residual 1 (SB1) — credit-note currency equality, closed by GA
     });
   });
 
-  it('accepts a reversal whose currency differs from its receipt', async () => {
+  it('refuses a reversal whose currency differs from its receipt, closed by ADR-023 D4', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const receipt = await seedReceipt(c, { amount: 75, payer: P9.SR, currency: 'USD' });
 
-      // Same absence on the reversal side. The row is stored; only its approval is
-      // bounded, and only by amount.
-      const reversal = (
-        await c.query<{ id: string }>(
+      // The same raw insert on the app_runtime login that used to be stored. The
+      // BEFORE INSERT guard sal.guard_receipt_reversal_request (P1-32-PRE-OD-FD4)
+      // now reads the receipt and refuses a currency other than its own.
+      await c.query('SAVEPOINT sp_currency');
+      let error: { code?: string; message?: string } | undefined;
+      try {
+        await c.query(
           `INSERT INTO sal.receipt_reversals
              (tenant_id, company_id, branch_id, original_receipt_id, currency_code, amount, reason, requested_by, created_by)
-           VALUES ($1,$2,$3,$4,'JOD',75,'residual proof',$5,$5) RETURNING id`,
+           VALUES ($1,$2,$3,$4,'JOD',75,'residual proof',$5,$5)`,
           [TENANT_A, COMPANY_A1, BRANCH_A1, receipt, USER_A]
-        )
-      ).rows[0]!.id;
+        );
+      } catch (e) {
+        error = e as { code?: string; message?: string };
+      }
+      await c.query('ROLLBACK TO SAVEPOINT sp_currency');
+      expect(error?.code).toBe('23514');
+      expect(error?.message).toContain('receipt_reversal_currency_mismatch');
 
+      // The receipt's own currency is still accepted, so the refusal is about the
+      // code and not about reversals in general; the row is born pending.
       const row = (
         await c.query<{ cc: string; st: string }>(
-          `SELECT currency_code AS cc, approval_state AS st FROM sal.receipt_reversals WHERE id=$1`,
-          [reversal]
+          `INSERT INTO sal.receipt_reversals
+             (tenant_id, company_id, branch_id, original_receipt_id, currency_code, amount, reason, requested_by, created_by)
+           VALUES ($1,$2,$3,$4,'USD',75,'currency matches',$5,$5)
+           RETURNING currency_code AS cc, approval_state AS st`,
+          [TENANT_A, COMPANY_A1, BRANCH_A1, receipt, USER_A]
         )
       ).rows[0]!;
-      expect(row.cc).toBe('JOD');
-      expect(row.st).toBe('pending');
+      expect(row).toEqual({ cc: 'USD', st: 'pending' });
     });
   });
 });

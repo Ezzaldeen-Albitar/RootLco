@@ -54,6 +54,7 @@ import {
   type RecordedReceipt,
 } from '../payments-contract';
 import { AllocatedInvoice, ReceiptDocument, type ReceiptPayerName } from './ReceiptDocument';
+import { ReplacementLinks, ReplacementPanel, ReversalSection } from './ReceiptReversal';
 import {
   CURRENCY,
   Identifier,
@@ -94,11 +95,15 @@ import {
  * a version conflict: neither write is version-guarded, and the screen never
  * tells the operator the record "moved on" for it.
  *
- * ## Nothing here is reversible, and the screen says so first
+ * ## One allocation is not reversible, and the screen says so first
  *
  * The allocation table takes inserts only and no route undoes a row, so the
  * allocate form states that before it is used, and asks once more — naming the
- * amount and the invoice — before it sends.
+ * amount and the invoice — before it sends. A mis-recorded receipt is corrected
+ * as a WHOLE (ADR-023 D4, `ReceiptReversal.tsx`): a payment recorder asks for its
+ * reversal, a different person holding the reversal-approval code approves or
+ * rejects it, and the replacement receipt is recorded and linked. While a
+ * reversal waits, the allocate form is closed with the reason.
  *
  * ## Names, not references
  *
@@ -175,6 +180,8 @@ export function PaymentsScreen({
   canAllocate,
   canReadCustomers = false,
   canListInvoices = false,
+  canDecideReversals = false,
+  currentUserId = null,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -195,6 +202,10 @@ export function PaymentsScreen({
   readonly canReadCustomers?: boolean;
   /** `sal.finance.view` — whether the branch's invoices can be searched. */
   readonly canListInvoices?: boolean;
+  /** `sal.reversal.approve` — approving or rejecting somebody else's reversal request. */
+  readonly canDecideReversals?: boolean;
+  /** The signed-in person, to know whose reversal request is whose. */
+  readonly currentUserId?: string | null;
 }) {
   const [target, setTarget] = useState<Target | null>(null);
   const [receiptId, setReceiptId] = useState<string | null>(initialReceiptId);
@@ -327,6 +338,18 @@ export function PaymentsScreen({
           canAllocate={canAllocate}
           canListInvoices={canListInvoices}
           canReadCustomers={canReadCustomers}
+          canRecord={canRecord}
+          canDecideReversals={canDecideReversals}
+          currentUserId={currentUserId}
+          onReversalChanged={(key) => changed({ key })}
+          onOpenReceipt={(id) => {
+            setReceiptId(id);
+            setNotice(null);
+          }}
+          onReplacementRecorded={(replacement) => {
+            setReceiptId(replacement.id);
+            changed({ key: 'payments.replacement.recorded', reference: replacement.reference });
+          }}
           onAllocated={(allocation, open, invoiceNumber) => {
             setBalance({ invoiceId: allocation.invoiceId, state: open });
             changed(
@@ -1062,6 +1085,12 @@ function ReceiptPanel({
   canAllocate,
   canListInvoices,
   canReadCustomers,
+  canRecord,
+  canDecideReversals,
+  currentUserId,
+  onReversalChanged,
+  onOpenReceipt,
+  onReplacementRecorded,
   onAllocated,
 }: {
   readonly locale: Locale;
@@ -1071,6 +1100,13 @@ function ReceiptPanel({
   readonly canAllocate: boolean;
   readonly canListInvoices: boolean;
   readonly canReadCustomers: boolean;
+  /** `sal.payment.record` — asking for a reversal, and recording a replacement. */
+  readonly canRecord: boolean;
+  readonly canDecideReversals: boolean;
+  readonly currentUserId: string | null;
+  readonly onReversalChanged: (noticeKey: string) => void;
+  readonly onOpenReceipt: (receiptId: string) => void;
+  readonly onReplacementRecorded: (receipt: RecordedReceipt) => void;
   readonly onAllocated: (
     allocation: Allocation,
     open: ReadState<Outstanding>,
@@ -1164,6 +1200,7 @@ function ReceiptPanel({
         <p className="mt-2 text-caption text-text-muted">
           {translate(messages, 'payments.receipt.noCashier')}
         </p>
+        <ReplacementLinks messages={messages} receipt={receipt} onOpen={onOpenReceipt} />
 
         <h3 className="mt-4 text-section-title">
           {translate(messages, 'payments.allocations.heading')}
@@ -1192,6 +1229,31 @@ function ReceiptPanel({
           <p className="mt-2 text-body text-text-secondary">
             {translate(messages, 'payments.allocations.truncated')}
           </p>
+        ) : null}
+
+        <ReversalSection
+          locale={locale}
+          messages={messages}
+          receipt={receipt}
+          currentUserId={currentUserId}
+          canRequest={canRecord}
+          canDecide={canDecideReversals}
+          onChanged={onReversalChanged}
+          onReload={() => receiptRead.reload()}
+        />
+
+        {canRecord &&
+        receipt.status === 'reversed' &&
+        receipt.reversal?.state === 'approved' &&
+        (receipt.replacedBy ?? null) === null ? (
+          <ReplacementPanel
+            locale={locale}
+            messages={messages}
+            receipt={receipt}
+            payer={payer}
+            canReadCustomers={canReadCustomers}
+            onRecorded={onReplacementRecorded}
+          />
         ) : null}
 
         {canAllocate ? (
@@ -1470,6 +1532,15 @@ function AllocateForm({
       {receipt.status === 'reversed' ? (
         <p className="sm:col-span-2 text-body text-text-secondary">
           {translate(messages, 'payments.allocate.reversed')}
+        </p>
+      ) : receipt.reversal?.state === 'pending' ? (
+        // ADR-023 D4: a receipt with a reversal waiting takes no new allocation, and
+        // the server refuses one; the form says why instead of offering it.
+        <p
+          className="sm:col-span-2 text-body text-text-secondary"
+          data-testid="payments-allocate-reversal-pending"
+        >
+          {translate(messages, 'payments.allocate.reversalPending')}
         </p>
       ) : receipt.status === 'allocated' ? (
         <p className="sm:col-span-2 text-body text-text-secondary">

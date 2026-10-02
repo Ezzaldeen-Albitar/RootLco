@@ -131,6 +131,21 @@
  *   P31-B35 the provisioned administrator effectively holds it and can delegate it
  *           onto a role it creates
  *
+ * ## The Owner decision D4 on `sal.reversal.approve`: deciding a receipt reversal
+ *
+ * The Owner decided on 2026-09-30 (ADR-023, D4) that a receipt reversal is
+ * requested by a payment recorder and approved by a different authorised person,
+ * and that no credit-note code grants that power. `sal.reversal.approve`, seeded
+ * since Phase 1-11 for exactly that decision, is what the approval and the
+ * rejection declare, and the standard tenant administrator carries it.
+ *
+ *   P31-B36 the code is in the bundle once; exactly the receipt-reversal approval
+ *           and rejection declare it, each with sal.finance.view and branch-scoped;
+ *           it is a catalogue row; no credit-note operation declares it;
+ *           first_owner is untouched
+ *   P31-B37 the provisioned administrator effectively holds it and can delegate it
+ *           onto a role it creates
+ *
  * ## The Owner decision on `org.settings.manage`: the organisation's own settings
  *
  * The Owner decided on 2026-09-27 that the standard tenant administrator edits its
@@ -543,6 +558,14 @@ const ADDED_BY_APPOINTMENT_DECISION = Object.freeze([
  */
 const ADDED_BY_CREDIT_APPROVAL_DECISION = Object.freeze(['sal.credit.approve']);
 
+/**
+ * The seventh widening after P1-31, on Owner decision D4 of 2026-09-30 (ADR-023):
+ * `sal.reversal.approve`, seeded since Phase 1-11 and bound to no operation until
+ * the receipt-reversal approval and rejection declared it. B36–B37 below measure
+ * it. 95 + 1 = 96.
+ */
+const ADDED_BY_REVERSAL_DECISION = Object.freeze(['sal.reversal.approve']);
+
 /** Every code carried after P1-31 closed. */
 const ADDED_AFTER_P1_31 = Object.freeze([
   ...ADDED_BY_P1_32_MATERIAL,
@@ -551,6 +574,7 @@ const ADDED_AFTER_P1_31 = Object.freeze([
   ...ADDED_BY_SETTINGS_DECISION,
   ...ADDED_BY_APPOINTMENT_DECISION,
   ...ADDED_BY_CREDIT_APPROVAL_DECISION,
+  ...ADDED_BY_REVERSAL_DECISION,
 ]);
 
 const IDENTITY_PROVIDER = 'test_harness';
@@ -1215,13 +1239,15 @@ describe('Owner directive 2026-09-17 — the codes the QA campaign found closed'
     // 89 since the Owner's credit-note decision; B16 owns that arithmetic. 90 since
     // the settings decision; B23 owns that one. 94 since the appointment decision;
     // B29 owns that one. 95 since the credit-approval decision (D13); B34 owns it.
+    // 96 since the receipt-reversal decision (D4); B36 owns it.
     expect(bundle).toHaveLength(
       before +
         ADDED_BY_OD_QA_CAMPAIGN.length +
         ADDED_BY_CREDIT_DECISION.length +
         ADDED_BY_SETTINGS_DECISION.length +
         ADDED_BY_APPOINTMENT_DECISION.length +
-        ADDED_BY_CREDIT_APPROVAL_DECISION.length
+        ADDED_BY_CREDIT_APPROVAL_DECISION.length +
+        ADDED_BY_REVERSAL_DECISION.length
     );
     expect(ADDED_BY_OD_QA_CAMPAIGN).toHaveLength(3);
 
@@ -1770,12 +1796,14 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
     // 89 with this code; 90 since the settings decision, which B23 owns; 94 since
     // the appointment decision, which B29 owns; 95 since the credit-approval
-    // decision (D13), which B34 owns.
+    // decision (D13), which B34 owns; 96 since the receipt-reversal decision (D4),
+    // which B36 owns.
     expect(bundle).toHaveLength(
       89 +
         ADDED_BY_SETTINGS_DECISION.length +
         ADDED_BY_APPOINTMENT_DECISION.length +
-        ADDED_BY_CREDIT_APPROVAL_DECISION.length
+        ADDED_BY_CREDIT_APPROVAL_DECISION.length +
+        ADDED_BY_REVERSAL_DECISION.length
     );
     for (const code of ADDED_BY_CREDIT_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
@@ -2243,7 +2271,8 @@ describe('Owner decision — org.settings.manage: the organisation edits its own
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
     // 94 since the four appointment codes joined (B29 measures them); 95 since the
     // credit-approval decision (D13; B34 measures it).
-    expect(bundle).toHaveLength(95);
+    // 96 since the receipt-reversal decision (ADR-023 D4), which B36 owns.
+    expect(bundle).toHaveLength(95 + ADDED_BY_REVERSAL_DECISION.length);
     for (const code of ADDED_BY_SETTINGS_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -2740,7 +2769,8 @@ describe('Owner decision — the four appointment codes: the organisation runs i
   it('P31-B29 the bundle carries the four codes once each; exactly the twenty-one audited reception operations declare them, none of them a platform operation; every write is audited; first_owner is untouched', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
     // 94 with the four codes; 95 since the credit-approval decision (D13, B34).
-    expect(bundle).toHaveLength(95);
+    // 96 since the receipt-reversal decision (ADR-023 D4), which B36 owns.
+    expect(bundle).toHaveLength(95 + ADDED_BY_REVERSAL_DECISION.length);
     for (const code of ADDED_BY_APPOINTMENT_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -2977,7 +3007,8 @@ describe('Owner decision — the four appointment codes: the organisation runs i
 describe('Owner decision D13 — sal.credit.approve: deciding a credit note', () => {
   it('P31-B34 the bundle carries sal.credit.approve once; exactly the approval and the rejection declare it, branch-scoped with sal.finance.view; it is a catalogue row; first_owner is untouched', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
-    expect(bundle).toHaveLength(95);
+    // 96 since the receipt-reversal decision (ADR-023 D4), which B36 owns.
+    expect(bundle).toHaveLength(95 + ADDED_BY_REVERSAL_DECISION.length);
     for (const code of ADDED_BY_CREDIT_APPROVAL_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -3029,5 +3060,66 @@ describe('Owner decision D13 — sal.credit.approve: deciding a credit note', ()
     const mapped = await mapCode(probe, roleId, 'sal.credit.approve');
     expect(mapped.status).toBe(201);
     expect(await codesOfRole(roleId)).toEqual(['sal.credit.approve']);
+  });
+});
+
+describe('Owner decision D4 — sal.reversal.approve: deciding a receipt reversal', () => {
+  it('P31-B36 the bundle carries sal.reversal.approve once; exactly the receipt-reversal approval and rejection declare it, branch-scoped with sal.finance.view; it is a catalogue row; first_owner is untouched', () => {
+    const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
+    expect(bundle).toHaveLength(96);
+    for (const code of ADDED_BY_REVERSAL_DECISION) {
+      expect(bundle.filter((c) => c === code)).toHaveLength(1);
+      expect(ADDED_ALL).not.toContain(code);
+      expect(ADDED_BY_CREDIT_DECISION).not.toContain(code);
+      expect(ADDED_BY_CREDIT_APPROVAL_DECISION).not.toContain(code);
+    }
+    // Requesting and withdrawing stay with the recording code, already carried.
+    expect(bundle).toContain('sal.payment.record');
+
+    // Seeded since Phase 1-11 for exactly this decision: a catalogue row already.
+    const seed = readFileSync(
+      join(REPOSITORY_ROOT, 'supabase/seeds/04_iam_permission_catalog.sql'),
+      'utf8'
+    );
+    expect(seed).toContain("('sal.reversal.approve'");
+
+    // DECLARED by exactly the receipt-reversal approval and rejection, read from the
+    // register; no credit-note operation declares it, and neither of the two
+    // declares a credit-note code.
+    const register = JSON.parse(
+      readFileSync(
+        join(REPOSITORY_ROOT, 'docs/phase-1/phase-1-24/evidence/operation-register.json'),
+        'utf8'
+      )
+    ) as { operations: Array<{ id: string; permissions: string[] }> };
+    const declaring = register.operations.filter((op) =>
+      op.permissions.includes('sal.reversal.approve')
+    );
+    expect(declaring.map((op) => op.id).sort()).toEqual([
+      'sal.receipt-reversal-approve',
+      'sal.receipt-reversal-reject',
+    ]);
+    for (const op of declaring) {
+      expect(op.permissions).toEqual(['sal.reversal.approve', 'sal.finance.view']);
+    }
+    for (const op of register.operations.filter((one) => one.id.startsWith('sal.credit-note-'))) {
+      expect(op.permissions).not.toContain('sal.reversal.approve');
+    }
+
+    expect([...FIRST_OWNER_ROLE.permissionCodes]).toEqual([
+      'iam.user.manage',
+      'iam.role.manage',
+      'iam.grant.manage',
+    ]);
+  });
+
+  it('P31-B37 the provisioned administrator effectively holds it, and can delegate it onto a role it creates', async () => {
+    expect(await codesOfRole(probe.tenantAdministratorRoleId)).toContain('sal.reversal.approve');
+    expect(await codesHeldBy(probe.ownerAccountId)).toContain('sal.reversal.approve');
+
+    const roleId = await newRole(probe, 'reversal_approval_delegation_probe');
+    const mapped = await mapCode(probe, roleId, 'sal.reversal.approve');
+    expect(mapped.status).toBe(201);
+    expect(await codesOfRole(roleId)).toEqual(['sal.reversal.approve']);
   });
 });

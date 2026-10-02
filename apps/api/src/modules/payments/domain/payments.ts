@@ -57,9 +57,9 @@ export type PaymentMethodStatus = (typeof PAYMENT_METHOD_STATUSES)[number];
  * `recorded → partially_allocated → allocated` is driven by
  * `sal.allocate_receipt`, which re-sums after each allocation and sets the status
  * itself. `reversed` is terminal and reachable only when an approved
- * `sal.receipt_reversals` row already exists (`sal.guard_receipt_freeze`), which is
- * why this phase exposes no reversal route: the state is reachable but the
- * approval path that reaches it is out of scope (`P1-22-L-05`).
+ * `sal.receipt_reversals` row already exists (`sal.guard_receipt_freeze`) — that is,
+ * only through `sal.approve_receipt_reversal`, which `sal.receipt-reversal-approve`
+ * reaches since ADR-023 D4 (P1-32-PRE-OD-FD4).
  */
 export const RECEIPT_STATUSES = Object.freeze([
   'recorded',
@@ -68,6 +68,60 @@ export const RECEIPT_STATUSES = Object.freeze([
   'reversed',
 ] as const);
 export type ReceiptStatus = (typeof RECEIPT_STATUSES)[number];
+
+/**
+ * `ck_receipt_reversals_approval_state` (ADR-023 D4, P1-32-PRE-OD-FD4).
+ *
+ * `pending` until decided; `approved` reverses the receipt; `rejected` and
+ * `withdrawn` reverse nothing. Every state but `pending` is terminal, which
+ * `sal.guard_receipt_reversal_decision` enforces for every role that can write
+ * the row.
+ */
+export const RECEIPT_REVERSAL_STATES = Object.freeze([
+  'pending',
+  'approved',
+  'rejected',
+  'withdrawn',
+] as const);
+export type ReceiptReversalState = (typeof RECEIPT_REVERSAL_STATES)[number];
+
+/**
+ * Who may do what with a receipt reversal (ADR-023 D4).
+ *
+ * Requesting and withdrawing are the payment recorder's acts, under the code that
+ * records a receipt. Approving and rejecting are a different person's, under a
+ * code of their own that no credit-note code satisfies — `sal.reversal.approve`,
+ * seeded since Phase 1-11 for exactly this decision and bound to no operation
+ * until D4.
+ */
+export const RECEIPT_REVERSAL_PERMISSIONS = Object.freeze({
+  request: 'sal.payment.record',
+  decide: 'sal.reversal.approve',
+} as const);
+
+/** A reversal request's and a rejection's reason: required, at most this many characters. */
+export const MAX_REVERSAL_REASON = 2000;
+
+/**
+ * The stable rule tokens a refused reversal, decision, allocation or replacement
+ * names (ADR-023 D4, D12). Each is the token the database guard raises before the
+ * first colon of its message for the same rule, the token the screen reads from
+ * `safeDetails.violations[].rule`, and the rule a business-refusal record carries.
+ */
+export const RECEIPT_REVERSAL_RULES = Object.freeze({
+  exists: 'receipt_reversal_exists',
+  receiptReversed: 'receipt_reversal_receipt_reversed',
+  selfApproval: 'receipt_reversal_self_approval',
+  selfRejection: 'receipt_reversal_self_rejection',
+  notRequester: 'receipt_reversal_withdraw_not_requester',
+  decided: 'receipt_reversal_decision_frozen',
+  requestPermissionMissing: 'receipt_reversal_request_permission_missing',
+  approvePermissionMissing: 'receipt_reversal_approve_permission_missing',
+  rejectPermissionMissing: 'receipt_reversal_reject_permission_missing',
+  pendingBlocksAllocation: 'receipt_reversal_pending_blocks_allocation',
+  replacementNotReversed: 'receipt_replacement_not_reversed',
+  replacementExists: 'receipt_replacement_exists',
+} as const);
 
 /** `ck_payment_methods_code` and `ck_invoice_numbering_configs_sequence_code`. */
 export const PLATFORM_CODE_FORMAT = /^[a-z][a-z0-9_]{1,62}$/;

@@ -105,7 +105,10 @@ describe('every operation publishes the success status it returns', () => {
     // route modules, both answering 200.
     // 507 with the credit-note decisions (P1-32-PRE-OD-FD2A): withdrawal and
     // rejection over two new route modules, both answering 200.
-    expect(actual.size).toBe(507);
+    // 512 with the receipt reversal (P1-32-PRE-OD-FD4): five operations over five new
+    // route modules — the request and the replacement answer 201, the approval, the
+    // rejection and the withdrawal 200.
+    expect(actual.size).toBe(512);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -177,7 +180,9 @@ describe('every operation publishes the success status it returns', () => {
     // seven 201s and this branch's fourteen land on disjoint route modules.
     // 139 with the discount approval record: the threshold write records a new
     // version and answers a literal 201; the approval decision answers 200.
-    expect(counts[201]).toBe(139);
+    // 139 -> 141 with the receipt-reversal request and the replacement receipt
+    // (P1-32-PRE-OD-FD4), both creates answering 201.
+    expect(counts[201]).toBe(141);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -252,7 +257,9 @@ describe('every operation publishes the success status it returns', () => {
     // answering 200, so the 201 count does not move.
     // 365 -> 367 with the credit-note withdrawal and rejection, both answering
     // 200 as the approval does, so the 201 count does not move.
-    expect(counts[200]).toBe(367);
+    // 367 -> 370 with the receipt-reversal approval, rejection and withdrawal
+    // (P1-32-PRE-OD-FD4), each answering 200.
+    expect(counts[200]).toBe(370);
   });
 
   it('reads the handler, not the declaration', () => {

@@ -36,7 +36,9 @@ import type { DbHandle } from '@/server/db/transaction';
 import { callerHoldsPermissionAnywhere, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { CUSTOMER_SEARCH_PERMISSION } from '@/shared/text/search-terms';
 import { moneyView, type MinorUnits, type MoneyView } from '@/modules/pricing';
+import { iamDirectory } from '@/modules/iam';
 import { RECEIPT_ORDER } from '../data/payments-repository';
+import { toReversalView, type ReceiptReversalView } from './receipt-reversal-service';
 import type {
   PaymentMethodRow,
   PaymentsRepository,
@@ -97,6 +99,27 @@ export interface ReceiptAllocationView {
 }
 
 /**
+ * A receipt's reversal as its detail shows it (ADR-023 D4): the reversal, and the
+ * people on it by NAME.
+ *
+ * Each name is `null` for a caller who may not read users — resolved through
+ * `iamDirectory().directory`, which checks `iam.user.read` itself, so a payment
+ * read never becomes a staff directory — and for a person who is not named. The
+ * ids stay beside them: a screen compares `requestedBy` with the signed-in person
+ * to know whose request it is, and never prints an id.
+ */
+export interface ReceiptReversalDetailView extends ReceiptReversalView {
+  readonly requestedByName: string | null;
+  readonly decidedByName: string | null;
+}
+
+/** A receipt named by its id and its branch's receipt number. */
+export interface ReceiptLinkView {
+  readonly id: string;
+  readonly reference: string;
+}
+
+/**
  * A receipt in full.
  *
  * Carries no `receivedBy` and no `allocatedBy`. `sal.record_receipt` and
@@ -151,6 +174,16 @@ export interface ReceiptDetailView {
    * between a bounded read and a silently incomplete one.
    */
   readonly allocationsTruncated: boolean;
+  /**
+   * The receipt's reversal (ADR-023 D4): its pending or approved one, else its most
+   * recent declined one; `null` when nobody asked to reverse it. While it is
+   * `pending` the receipt takes no new allocation.
+   */
+  readonly reversal: ReceiptReversalDetailView | null;
+  /** The reversed receipt this one replaces, or `null`. */
+  readonly replaces: ReceiptLinkView | null;
+  /** The receipt that replaces this reversed one, or `null`. */
+  readonly replacedBy: ReceiptLinkView | null;
 }
 
 const toPaymentMethodView = (row: PaymentMethodRow): PaymentMethodView => ({
@@ -439,6 +472,34 @@ export class PaymentReadService {
       ...allocations.map((row) => row.currencyCode),
     ]);
 
+    // The reversal and the two replacement links (ADR-023 D4), in the receipt's own
+    // scope. The people on the reversal are named only to a caller who may read users.
+    const reversal = await this.repository.findCurrentReversal(db, receipt.id, scope);
+    const replaces =
+      receipt.replacesReceiptId === null
+        ? null
+        : await this.repository.findReceiptReference(db, receipt.replacesReceiptId, scope);
+    const replacedBy =
+      receipt.status === 'reversed'
+        ? await this.repository.findReplacementOf(db, receipt.id, scope)
+        : null;
+    let reversalView: ReceiptReversalDetailView | null = null;
+    if (reversal !== null) {
+      const decider =
+        reversal.approvalState === 'approved' ? reversal.approvedBy : reversal.decidedBy;
+      const people = [reversal.requestedBy, decider].filter((id): id is string => id !== null);
+      const names = await iamDirectory().directory.resolveDisplayIdentities(db, [
+        ...new Set(people),
+      ]);
+      const nameOf = (id: string | null): string | null =>
+        id === null ? null : (names.get(id)?.displayName ?? null);
+      reversalView = {
+        ...toReversalView(reversal, units),
+        requestedByName: nameOf(reversal.requestedBy),
+        decidedByName: nameOf(decider),
+      };
+    }
+
     return {
       id: receipt.id,
       reference: receipt.receiptNumber,
@@ -467,6 +528,10 @@ export class PaymentReadService {
       recordVersion: receipt.recordVersion,
       allocations: allocations.map((row) => toAllocationView(row, mayNamePayer, units)),
       allocationsTruncated: truncated,
+      reversal: reversalView,
+      replaces: replaces === null ? null : { id: replaces.id, reference: replaces.receiptNumber },
+      replacedBy:
+        replacedBy === null ? null : { id: replacedBy.id, reference: replacedBy.receiptNumber },
     };
   }
 }

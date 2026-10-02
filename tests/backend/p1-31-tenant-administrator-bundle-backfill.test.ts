@@ -100,6 +100,14 @@
  *         and then gains it, and a finance clerk role it built gains nothing; the
  *         customised one is skipped whole with the code withheld; an organisation
  *         that is NOT named is untouched row for row; a second run is a no-op
+ *   BF-21 the receipt-reversal widening (Owner decision D4, ADR-023), run the same
+ *         selective way — in production `--tenant odqa_alpha --tenant odqa_beta`:
+ *         two named organisations whose standard role lacks only
+ *         `sal.reversal.approve`; the standard one is offered EXACTLY that code by a
+ *         dry run that writes nothing and then gains it, and a cashier role it built
+ *         (recording and viewing payments) gains nothing; the customised one is
+ *         skipped whole with the code withheld; an organisation that is NOT named is
+ *         untouched row for row; a second run is a no-op
  *
  * ## Where it runs
  *
@@ -295,6 +303,17 @@ const APPOINTMENT_ADDED = Object.freeze([
  */
 const CREDIT_APPROVAL_ADDED = Object.freeze(['sal.credit.approve']);
 
+/**
+ * Owner decision D4 of 2026-09-30 (ADR-023): `sal.reversal.approve`, which approving
+ * and rejecting a receipt reversal declare, for the standard tenant administrator.
+ * Seeded since Phase 1-11, so no seed run is owed. The backfill owes it an ELEVENTH
+ * operator run, by the same decision a SELECTIVE one — only `--tenant odqa_alpha
+ * --tenant odqa_beta`, customised roles preserved, every other existing organisation
+ * left unchanged, so nobody there can decide a receipt reversal until an
+ * administrator grants the code. BF-21 measures that shape.
+ */
+const REVERSAL_APPROVAL_ADDED = Object.freeze(['sal.reversal.approve']);
+
 /** Every code widened onto the 67-code bundle since: what a stale organisation lacks. */
 const WIDENED = Object.freeze([
   ...BACKFILLED,
@@ -304,6 +323,7 @@ const WIDENED = Object.freeze([
   ...SETTINGS_ADDED,
   ...APPOINTMENT_ADDED,
   ...CREDIT_APPROVAL_ADDED,
+  ...REVERSAL_APPROVAL_ADDED,
 ]);
 
 /** A real catalogue code the bundle deliberately does NOT carry (P1-31 CC-04). */
@@ -1089,21 +1109,23 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(rows[0]?.n).toBe(0);
   });
 
-  it('BF-10 an organisation on the 85-code bundle is offered exactly the codes widened since (the three of the 2026-09-17 directive, sal.credit.manage, org.settings.manage, the four appointment codes and sal.credit.approve), and a dry run offers them without writing', async () => {
+  it('BF-10 an organisation on the 85-code bundle is offered exactly the codes widened since (the three of the 2026-09-17 directive, sal.credit.manage, org.settings.manage, the four appointment codes, sal.credit.approve and sal.reversal.approve), and a dry run offers them without writing', async () => {
     // The script parses `bootstrap-roles.ts` at run time rather than carrying a
     // copy of the list, so a widening needs no edit to it — which is a claim, and
     // this is the measurement of it for THIS widening. The organisation is put on
     // the 85-code bundle the shipped operation wrote the day before, not on the
     // 67-code one BF-1 uses, so the difference the script computes can only be
     // the three codes the directive added, the one the credit-note decision added,
-    // the one the settings decision added, the four the appointment decision added
-    // and the one the credit-approval decision (D13) added.
+    // the one the settings decision added, the four the appointment decision added,
+    // the one the credit-approval decision (D13) added and the one the
+    // receipt-reversal decision (D4) added.
     const since85 = [
       ...OD_QA_ADDED,
       ...CREDIT_ADDED,
       ...SETTINGS_ADDED,
       ...APPOINTMENT_ADDED,
       ...CREDIT_APPROVAL_ADDED,
+      ...REVERSAL_APPROVAL_ADDED,
     ];
     const organisation = await provision('odqa');
     await admin.query(
@@ -1772,9 +1794,10 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(await backfillAuditCount(standard.tenantId)).toBe(1);
   });
   it('BF-20 the credit-approval widening runs selectively: a named standard organisation gains exactly sal.credit.approve, a finance clerk role it built gains nothing, a named customised one and an unnamed one are untouched, and a second run is a no-op', async () => {
-    // The 94-code bundle: every organisation provisioned after the appointment
-    // decision and before D13 holds exactly this — which is what the two QA
-    // organisations hold once the appointment run has been made for them.
+    // A standard role lacking only sal.credit.approve. (Before the receipt-reversal
+    // decision that was the 94-code bundle every organisation provisioned after the
+    // appointment decision held; BF-21 measures the D4 widening on its own, so here
+    // the role keeps sal.reversal.approve.)
     const onThe94CodeBundle = async (label: string): Promise<Provisioned> => {
       const organisation = await provision(label);
       await admin.query(
@@ -1783,7 +1806,9 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
             AND permission_id IN (SELECT id FROM iam.permissions WHERE permission_code = ANY($2::text[]))`,
         [organisation.tenantAdministratorRoleId, [...CREDIT_APPROVAL_ADDED]]
       );
-      expect(await codesOfRole(organisation.tenantAdministratorRoleId)).toHaveLength(94);
+      expect(await codesOfRole(organisation.tenantAdministratorRoleId)).toHaveLength(
+        parsedBundle.length - CREDIT_APPROVAL_ADDED.length
+      );
       return organisation;
     };
     const standard = await onThe94CodeBundle('crastd');
@@ -1837,7 +1862,7 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(offered).toMatchObject({
       tenantId: standard.tenantId,
       outcome: 'widened',
-      heldBefore: 94,
+      heldBefore: parsedBundle.length - CREDIT_APPROVAL_ADDED.length,
       heldAfter: parsedBundle.length,
       customisations: [],
     });
@@ -1882,6 +1907,133 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(await mappingRows(unnamed.tenantAdministratorRoleId)).toEqual(unnamedBefore);
     expect(await codesOfRole(unnamed.tenantAdministratorRoleId)).not.toContain(
       'sal.credit.approve'
+    );
+    expect(await backfillAuditCount(unnamed.tenantId)).toBe(0);
+
+    // Idempotent: a second run writes nothing and records nothing.
+    const again = await backfill({ tenants: named });
+    expect(again.organisations.map((o) => o.outcome)).toEqual(['unchanged', 'customised']);
+    expect(await mappingRows(standard.tenantAdministratorRoleId)).toEqual(standardAfter);
+    expect(await backfillAuditCount(standard.tenantId)).toBe(1);
+  });
+
+  it('BF-21 the receipt-reversal widening runs selectively: a named standard organisation gains exactly sal.reversal.approve, a cashier role it built gains nothing, a named customised one and an unnamed one are untouched, and a second run is a no-op', async () => {
+    // A standard role lacking only sal.reversal.approve: what every organisation
+    // provisioned after D13 and before D4 holds — which is what the two QA
+    // organisations hold once the credit-approval run has been made for them.
+    const withoutReversalCode = async (label: string): Promise<Provisioned> => {
+      const organisation = await provision(label);
+      await admin.query(
+        `DELETE FROM iam.role_permissions
+          WHERE role_id = $1
+            AND permission_id IN (SELECT id FROM iam.permissions WHERE permission_code = ANY($2::text[]))`,
+        [organisation.tenantAdministratorRoleId, [...REVERSAL_APPROVAL_ADDED]]
+      );
+      expect(await codesOfRole(organisation.tenantAdministratorRoleId)).toHaveLength(
+        parsedBundle.length - REVERSAL_APPROVAL_ADDED.length
+      );
+      return organisation;
+    };
+    const standard = await withoutReversalCode('rvastd');
+    const tailored = await withoutReversalCode('rvacus');
+    const unnamed = await withoutReversalCode('rvaoth');
+
+    // The standard organisation builds a cashier role of its own that records and
+    // views payments — the codes that REQUEST a reversal. It must gain nothing:
+    // deciding one is a separate authority.
+    asOwnerOf(standard);
+    const cashier = await call<{ id: string }>(roleCreateRoute, {
+      path: '/iam/roles',
+      body: {
+        roleCode: `cashier_${RUN}`,
+        name: 'Cashier',
+        description: 'Records payments',
+      },
+      idempotencyKey: randomUUID(),
+    });
+    expect(cashier.status).toBe(201);
+    const cashierRoleId = cashier.body.id;
+    for (const permissionCode of ['sal.payment.record', 'sal.finance.view']) {
+      asOwnerOf(standard);
+      const mapped = await call(rolePermissionAddRoute, {
+        path: `/iam/roles/${cashierRoleId}/permissions`,
+        params: { roleId: cashierRoleId },
+        body: { permissionCode, effect: 'allow' },
+        idempotencyKey: randomUUID(),
+      });
+      expect(mapped.status).toBe(201);
+    }
+    const cashierBefore = await mappingRows(cashierRoleId);
+
+    // The customised organisation's own decision about its administrator role: one
+    // allow beyond the bundle.
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1, $2, p.id, 'allow', $4 FROM iam.permissions p WHERE p.permission_code = $3`,
+      [tailored.tenantId, tailored.tenantAdministratorRoleId, CUSTOMISATION_CODE, SYSTEM_ACTOR]
+    );
+
+    const standardBefore = await mappingRows(standard.tenantAdministratorRoleId);
+    const tailoredBefore = await mappingRows(tailored.tenantAdministratorRoleId);
+    const unnamedBefore = await mappingRows(unnamed.tenantAdministratorRoleId);
+
+    // Named by tenant CODE, the form the operator types — and ONLY these two.
+    const named = [standard.tenantCode, tailored.tenantCode];
+    const dryRun = await backfill({ tenants: named, dryRun: true });
+    expect(dryRun.outcome).toBe('dry-run');
+    expect(dryRun.organisations.map((o) => o.tenantCode)).toEqual(named);
+    const [offered, skipped] = dryRun.organisations;
+    expect(offered).toMatchObject({
+      tenantId: standard.tenantId,
+      outcome: 'widened',
+      heldBefore: parsedBundle.length - REVERSAL_APPROVAL_ADDED.length,
+      heldAfter: parsedBundle.length,
+      customisations: [],
+    });
+    // EXACTLY the one code: no withheld code and no code of any other widening.
+    expect(offered?.added).toEqual([...REVERSAL_APPROVAL_ADDED]);
+    expect(skipped).toMatchObject({
+      tenantId: tailored.tenantId,
+      outcome: 'customised',
+      added: [],
+      customisations: [`beyond-bundle:${CUSTOMISATION_CODE}`],
+      withheld: [...REVERSAL_APPROVAL_ADDED],
+    });
+    // A dry run writes nothing anywhere.
+    expect(await mappingRows(standard.tenantAdministratorRoleId)).toEqual(standardBefore);
+    expect(await mappingRows(tailored.tenantAdministratorRoleId)).toEqual(tailoredBefore);
+    expect(await backfillAuditCount(standard.tenantId)).toBe(0);
+
+    const applied = await backfill({ tenants: named });
+    expect(applied.widened).toBe(1);
+    expect(applied.customised).toBe(1);
+    expect(only(applied)).toMatchObject({
+      outcome: 'widened',
+      added: [...REVERSAL_APPROVAL_ADDED],
+    });
+    expect(await codesOfRole(standard.tenantAdministratorRoleId)).toEqual(
+      [...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort()
+    );
+    const standardAfter = await mappingRows(standard.tenantAdministratorRoleId);
+    for (const row of standardBefore) expect(standardAfter).toContain(row);
+    expect(standardAfter).toHaveLength(standardBefore.length + 1);
+    expect(await backfillAuditCount(standard.tenantId)).toBe(1);
+
+    // The cashier role gained nothing.
+    expect(await mappingRows(cashierRoleId)).toEqual(cashierBefore);
+    expect(await codesOfRole(cashierRoleId)).not.toContain('sal.reversal.approve');
+
+    // The customised role kept every row and gained nothing, with no audit record.
+    expect(await mappingRows(tailored.tenantAdministratorRoleId)).toEqual(tailoredBefore);
+    expect(await codesOfRole(tailored.tenantAdministratorRoleId)).not.toContain(
+      'sal.reversal.approve'
+    );
+    expect(await backfillAuditCount(tailored.tenantId)).toBe(0);
+
+    // The organisation nobody named is untouched, row for row.
+    expect(await mappingRows(unnamed.tenantAdministratorRoleId)).toEqual(unnamedBefore);
+    expect(await codesOfRole(unnamed.tenantAdministratorRoleId)).not.toContain(
+      'sal.reversal.approve'
     );
     expect(await backfillAuditCount(unnamed.tenantId)).toBe(0);
 

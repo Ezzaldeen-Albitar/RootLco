@@ -408,7 +408,8 @@ your work requires the figures.
 
 ### 6.2.10 Credit notes, reversals and cancelling after issue
 
-**Credit notes — IMPLEMENTED (UI). Reversals and cancelling after issue — NOT AVAILABLE.**
+**Credit notes — IMPLEMENTED (UI). Receipt reversals — IMPLEMENTED (UI), §6.3.7. Cancelling after
+issue — NOT AVAILABLE.**
 
 **A credit note can be raised in three ways:**
 
@@ -429,8 +430,9 @@ person who raised it may withdraw it** (§6.2a). Approved, rejected and withdraw
 
 **What is still NOT AVAILABLE:**
 
-- **There is no payment-reversal screen.** A receipt can appear as "Reversed" <!-- payments.status.reversed -->
-  , and no screen reverses one.
+- **A receipt is reversed on the Payments screen, never here** (§6.3.7): a payment recorder asks
+  for the whole receipt to be reversed and a different authorised person approves it. A reversal
+  corrects the records only; it is not a refund.
 - An **issued** invoice still cannot be cancelled from any screen. Only a draft can be cancelled
   (6.2.6). After issue, the way to give money back on an invoice is a credit note.
 
@@ -901,6 +903,8 @@ filtered to one invoice, `/en/payments?invoiceId=<identifier>`.
     new allocation.
   - Without `sal.payment.allocate`: "Applying a receipt needs the allocation permission, which this
     account does not hold." <!-- payments.allocate.needsCode -->
+  - **While a reversal of the receipt waits for a decision, nothing can be applied from it** (§6.3.7).
+    The panel says so in place of the form: "A reversal of this receipt is waiting for a decision, so no money can be applied from it right now." <!-- payments.allocate.reversalPending -->
 - **If it goes wrong:**
   - An amount above a bound is refused **on the amount box**, which turns red, takes the cursor, and
     says which bound with the figure: "This is more than is still open on the invoice: {amount}.
@@ -950,14 +954,100 @@ shown are the oldest." <!-- payments.allocations.truncated -->
   nothing has been applied: "This receipt has not been applied to anything." <!-- payments.print.noAllocations -->
 - **Screenshot:** no screenshot available at this version.
 
-### 6.3.7 Refunds and reversals
+### 6.3.7 Reversing a receipt, and refunds
 
-**NOT AVAILABLE**
+**Reversing a receipt — IMPLEMENTED (UI). Refunds — NOT AVAILABLE.**
 
-There is no screen that reverses a receipt or undoes an allocation. `sal.reversal.approve` exists in
-the permission catalogue and no page calls it; the code is not in the tenant-administrator bundle. A
-receipt can be _shown_ as "Reversed", and nothing in this release puts it into that state from a
-screen.
+A receipt recorded wrongly — the wrong amount typed, the wrong payer chosen, or money applied to
+the wrong invoice — is corrected by reversing the **whole** receipt and recording the right one. A
+receipt is never edited or deleted, and one entry under "Applied to" cannot be undone on its own;
+the whole receipt is reversed instead.
+
+**A reversal is not a refund.** It corrects the records only. No money is paid back, and nothing on
+this screen creates a refund or a promise to pay one.
+
+**Who may do what:**
+
+| Step                           | Who                                                                                     |
+| ------------------------------ | --------------------------------------------------------------------------------------- |
+| Ask for a reversal             | A person holding `sal.payment.record` (the payment recorder's permission) in the branch |
+| Withdraw the request           | The person who asked, and nobody else                                                   |
+| Approve or reject the request  | A **different** person holding `sal.reversal.approve` in the receipt's branch           |
+| Record the replacement receipt | A person holding `sal.payment.record`, once the reversal is approved                    |
+
+The credit-note permissions (`sal.credit.manage`, `sal.credit.approve`) never approve a receipt
+reversal. The person who asked can never approve or reject their own request.
+
+**Ask for a reversal**
+
+- **Label:** "Request reversal" <!-- payments.reversal.request --> under "Reversal" <!-- payments.reversal.heading -->
+- **Where:** "Commerce" › "Payments", on an open receipt that is not reversed.
+- **Steps:**
+  1. Read the panel: "If this receipt was recorded wrongly, ask for the whole receipt to be reversed. Another person who can approve reversals must approve it. A reversal corrects the records only; it does not pay any money back." <!-- payments.reversal.explain -->
+  2. Press **Request reversal**. The window "Request a reversal of this receipt?" <!-- payments.reversal.requestTitle --> names the whole
+     receipt's amount.
+  3. Write the reason in "Reason" <!-- payments.reversal.reason -->. The button stays unavailable until there
+     is one.
+  4. Press **Request reversal** in the window.
+- **Result:** "Reversal requested. It now waits for another person to approve it." <!-- payments.reversal.requested --> The receipt shows "A reversal of this receipt is waiting for approval. No money can be applied from it until the request is decided." <!-- payments.reversal.pendingBanner -->
+  with the person who asked and the reason, **by name** — or "Name not shown" <!-- payments.reversal.nameNotShown -->
+  when your account may not read users.
+- **If it goes wrong:**
+  - A blank or too long reason turns the reason box red and keeps what you typed.
+  - "This receipt changed since you opened it. Load the latest version and try again." <!-- payments.reversal.conflict --> Press "Load the latest version" <!-- form.loadLatest --> and ask again.
+  - "This receipt already has a reversal waiting for approval or approved." <!-- form.violation.receipt_reversal_exists -->
+  - "This receipt is already reversed." <!-- form.violation.receipt_reversal_receipt_reversed -->
+
+**While the request waits**
+
+- Nothing can be applied from the receipt: "A reversal of this receipt is waiting for a decision, so no money can be applied from it right now." <!-- payments.allocate.reversalPending -->
+- The person who asked sees "You asked for this reversal. Another person must approve or reject it. You can withdraw your request." <!-- payments.reversal.ownRequest --> and may press
+  "Withdraw request" <!-- payments.reversal.withdraw -->. The receipt then stays as it is and takes money again:
+  "The receipt stays as it is and money can be applied from it again." <!-- payments.reversal.withdrawExplain -->
+- Anyone else who may not decide sees "This request is waiting for a person who can approve receipt reversals." <!-- payments.reversal.cannotDecide -->
+
+**Approve or reject**
+
+- **Labels:** "Approve reversal" <!-- payments.reversal.approve --> and "Reject" <!-- payments.reversal.reject -->
+- **Who:** a person other than the one who asked, holding `sal.reversal.approve` in the receipt's
+  branch.
+- **Approve:** the window "Approve this reversal?" <!-- payments.reversal.approveTitle --> names the amount and says:
+  "The whole receipt of {amount} will be reversed. Every invoice it paid will show that amount as owed again. This cannot be undone." <!-- payments.reversal.approveExplain --> After approval: "Reversal approved. The receipt is reversed." <!-- payments.reversal.approved --> The
+  receipt reads "Reversed" <!-- payments.status.reversed --> and
+  "This receipt was reversed. It is kept for the record and no longer counts as money received." <!-- payments.reversal.reversedNote --> Every invoice the receipt paid shows that amount as owed
+  again, exactly; the entries under "Applied to" stay in the record and stop counting.
+- **Reject:** the window "Reject this reversal request?" <!-- payments.reversal.rejectTitle --> asks for a reason; the receipt stays as
+  it is and keeps counting. After rejection: "Reversal request rejected." <!-- payments.reversal.rejected -->
+- Approved, rejected and withdrawn are final. A rejected or withdrawn request can be followed by a
+  new, corrected one.
+- **If it goes wrong:** "You asked for this reversal, so you cannot approve it. Another person who can approve reversals must approve it." <!-- form.violation.receipt_reversal_self_approval --> ·
+  "You asked for this reversal, so you cannot reject it. You can withdraw your request instead." <!-- form.violation.receipt_reversal_self_rejection --> ·
+  "Only the person who asked for this reversal can withdraw it." <!-- form.violation.receipt_reversal_withdraw_not_requester --> ·
+  "This reversal request has already been decided, so it can no longer be changed." <!-- form.violation.receipt_reversal_decision_frozen -->
+
+**Record the replacement receipt**
+
+- **Label:** "Record replacement receipt" <!-- payments.replacement.open --> under "Replacement receipt" <!-- payments.replacement.heading -->
+- **Where:** on a reversed receipt whose reversal was approved and that nothing replaces yet.
+- **Steps:** press the button, check the method, the payer and the currency — the payer and the
+  currency are filled in from the reversed receipt and may be changed — enter the amount, and press
+  "Record replacement" <!-- payments.replacement.submit -->.
+- **Result:** "Replacement receipt recorded." <!-- payments.replacement.success --> The new receipt opens. Each receipt names the
+  other by number: "Replaces receipt" <!-- payments.replacement.replaces --> on the new one and
+  "Replaced by receipt" <!-- payments.replacement.replacedBy --> on the reversed one, each with "Open" <!-- payments.replacement.openLinked -->.
+- **Restrictions:** one replacement per reversed receipt, in the same branch. Every rule of
+  recording a payment (§6.3.3) applies.
+- **If it goes wrong:** "Only a receipt whose reversal was approved can be replaced." <!-- form.violation.receipt_replacement_not_reversed --> ·
+  "This reversed receipt already has a replacement." <!-- form.violation.receipt_replacement_exists -->
+
+**What the reversal does not do**
+
+- It is not a refund (refunds are not available in this release).
+- Reports keep leaving reversed receipts out of the money received, as before. A report run for a
+  past period is not restated as of that period: end-of-period reporting is a separate decision
+  still open.
+- Organisations set up before this release: nobody can approve or reject a reversal until an
+  administrator who holds `sal.reversal.approve` grants it (Part 3).
 
 ### 6.3.8 Adding a payment method for your organisation
 
@@ -1500,7 +1590,8 @@ stated where you meet it.
    it.
 4. **`sal.finance.view` is separate from `sal.invoice.manage`.** Without it the invoice exists on
    screen with its status and dates, and every amount is withheld.
-5. **An allocation cannot be undone.** Allocations are append-only and no route reverses one.
+5. **An allocation cannot be undone on its own.** Allocations are append-only; a wrongly recorded
+   receipt is corrected by reversing the whole receipt under two people (§6.3.7).
 6. **A printed receipt carries identifiers only** — no payer name, no invoice number, and no record
    of who took the payment.
 7. **Payments are single-branch.** So are every report run and the operational overview. There is no

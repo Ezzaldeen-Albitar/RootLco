@@ -494,7 +494,11 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // credit-note approval limit somebody else sets. Declared by the approval and the
     // rejection; the standard administrator is the one role that decided credit notes
     // before, through sal.credit.manage.
-    expect(expected).toHaveLength(95);
+    // 96 with `sal.reversal.approve` (Owner decision D4 of 2026-09-30, ADR-023):
+    // approving and rejecting a receipt reversal somebody else requested. Seeded
+    // since Phase 1-11 and declared by those two operations only.
+    expect(expected).toHaveLength(96);
+    expect(expected).toContain('sal.reversal.approve');
     expect(expected).toContain('sal.credit.approve');
     expect(expected).toContain('sal.credit.manage');
     expect(expected).toContain('org.settings.manage');

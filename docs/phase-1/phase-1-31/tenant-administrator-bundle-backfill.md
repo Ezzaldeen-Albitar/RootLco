@@ -358,3 +358,39 @@ appointment widening on a role lacking only the four appointment codes.
 
 The run is an operator act taken after this change merges, never against a database without a
 backup and a rehearsal. This addendum does not claim it was performed anywhere.
+
+---
+
+## 12. Addendum — `sal.reversal.approve`, run selectively (Owner decision D4 of 2026-09-30)
+
+The Owner decided (ADR-023, D4) that a receipt reversal is requested by an authorised payment
+recorder and approved by a different authorised person, and that no credit-note code grants that
+power. `sal.reversal.approve` ("Approve receipt reversals (dual control)") has been in the
+permission catalogue seed since Phase 1-11 and bound to no operation; the receipt-reversal approval
+and rejection now declare it, and `TENANT_ADMINISTRATOR_ROLE` carries it, so the bundle is now 96
+codes and new organisations receive it at provisioning. No seed run is owed for it: an existing
+database already holds the catalogue row. Requesting and withdrawing a reversal declare
+`sal.payment.record`, which the bundle already carried. No other role gains anything.
+
+The shape of the run for existing organisations is the one sections 9 to 11 set:
+
+- **Selective.** Only the previously authorised QA organisations are named:
+  `--tenant odqa_alpha --tenant odqa_beta`. `--all` is not used, and every other existing
+  organisation is left unchanged. In those organisations nobody can approve or reject a receipt
+  reversal until an administrator who holds the code grants it; a payment recorder can still request
+  one, and the receipt then takes no new allocation until the request is decided or withdrawn.
+- **Customised roles are preserved.** An administrator role showing any sign of customisation is
+  skipped whole and reported with `sal.reversal.approve` under `withheld`.
+- **Dry run first.** For an organisation already current with the credit-approval widening the dry
+  run lists exactly `sal.reversal.approve` and nothing else.
+
+The script needed no change: it reads the bundle from `bootstrap-roles.ts` at run time. **BF-21**
+proves the shape on real rows — two named organisations whose standard role lacks only this code,
+the standard one offered exactly `sal.reversal.approve` by a dry run that writes nothing and then
+widened (a cashier role it built gains nothing), the customised one skipped with the code withheld,
+an organisation nobody named untouched row for row, and a second run a no-op. **BF-10** now counts
+the code among the eleven an 85-code organisation is offered, and **BF-20** measures the
+credit-approval widening on a role lacking only that code.
+
+The run is an operator act taken after this change merges, never against a database without a
+backup and a rehearsal. This addendum does not claim it was performed anywhere.

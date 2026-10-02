@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 507   |
+| Public operations        | 512   |
 | Domains (modules)        | 21    |
-| OpenAPI paths            | 397   |
-| OpenAPI operations       | 507   |
+| OpenAPI paths            | 402   |
+| OpenAPI operations       | 512   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 133   |
-| Audit actions catalogued | 291   |
+| Audit actions catalogued | 296   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 34    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 507        |
+| Covered           | 512        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -42,7 +42,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | inventory       | 82         | 82      | 46     | 47      | 42         | 3               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | overview        | 1          | 1       | 0      | 0       | 0          | 0               |
-| payments        | 5          | 5       | 2      | 2       | 2          | 0               |
+| payments        | 10         | 10      | 7      | 7       | 7          | 3               |
 | platform        | 20         | 20      | 12     | 12      | 11         | 1               |
 | pricing         | 11         | 11      | 6      | 6       | 6          | 3               |
 | quality         | 15         | 15      | 7      | 8       | 7          | 2               |
@@ -423,6 +423,11 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `sal.payment-record`                                | POST   | `/api/v1/payments`                                                                      | branch  | `sal.payment.record`<br>`sal.finance.view`                           | sal.receipt.recorded                           | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox route service success                                    | Covered |
 | `sal.receipt-detail`                                | GET    | `/api/v1/payments/{paymentId}`                                                          | branch  | `sal.finance.view`                                                   | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `sal.receipt-list`                                  | GET    | `/api/v1/payments`                                                                      | branch  | `sal.finance.view`                                                   | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
+| `sal.receipt-replacement-record`                    | POST   | `/api/v1/payments/{paymentId}/replacement`                                              | branch  | `sal.payment.record`<br>`sal.finance.view`                           | sal.receipt.replacement_recorded               | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `sal.receipt-reversal-approve`                      | POST   | `/api/v1/receipt-reversals/{reversalId}/approval`                                       | branch  | `sal.reversal.approve`<br>`sal.finance.view`                         | sal.receipt_reversal.approved                  | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `sal.receipt-reversal-reject`                       | POST   | `/api/v1/receipt-reversals/{reversalId}/rejection`                                      | branch  | `sal.reversal.approve`<br>`sal.finance.view`                         | sal.receipt_reversal.rejected                  | yes  | yes | audit authorization cross-tenant denial idempotency isolation route service stale-version success                             | Covered |
+| `sal.receipt-reversal-request`                      | POST   | `/api/v1/payments/{paymentId}/reversals`                                                | branch  | `sal.payment.record`<br>`sal.finance.view`                           | sal.receipt_reversal.requested                 | yes  | yes | audit authorization cross-tenant denial idempotency isolation route service stale-version success                             | Covered |
+| `sal.receipt-reversal-withdraw`                     | POST   | `/api/v1/receipt-reversals/{reversalId}/withdrawal`                                     | branch  | `sal.payment.record`<br>`sal.finance.view`                           | sal.receipt_reversal.withdrawn                 | yes  | yes | audit authorization cross-tenant denial idempotency isolation route service stale-version success                             | Covered |
 | `sal.work-order-delivery-read`                      | GET    | `/api/v1/work-orders/{workOrderId}/delivery`                                            | branch  | `sal.delivery.view`                                                  | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `sal.work-order-invoice-read`                       | GET    | `/api/v1/work-orders/{workOrderId}/invoice`                                             | branch  | `sal.invoice.manage`                                                 | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `shared.attachment-download-authorize`              | POST   | `/api/v1/attachments/documents/{documentId}/download-authorizations`                    | tenant  | `shared.document.manage`                                             | shared.document.download_authorized            | —    | —   | audit authorization cross-tenant denial provider route service success                                                        | Covered |

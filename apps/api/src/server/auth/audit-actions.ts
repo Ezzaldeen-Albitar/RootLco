@@ -1960,6 +1960,44 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A receipt amount was applied against a specific invoice. Written only by sal.allocate_receipt, which takes the receipt lock before the invoice lock and is the ONLY path that bounds the allocation sum — no constraint, trigger or exclusion limits it, and app_runtime holds raw INSERT on the table, so a direct insert would be accepted with no bound at all (BR-SAL-002).',
   },
+  // ADR-023 D4 (P1-32-PRE-OD-FD4): the full reversal of a receipt, requested by a
+  // payment recorder and decided by a different holder of sal.reversal.approve,
+  // and the receipt that replaces a reversed one.
+  {
+    code: 'sal.receipt_reversal.requested',
+    class: 'financial',
+    entityType: 'sal.receipt_reversal',
+    description:
+      'A payment recorder asked for a whole receipt to be reversed, stating why (ADR-023, D4). sal.guard_receipt_reversal_request requires sal.payment.record in the receipt’s company and branch, binds the amount and currency to the receipt’s own and refuses a receipt that is reversed or already has a pending or approved reversal; the requester is stamped from the session. A pending reversal reverses nothing, and the receipt takes no new allocation until it is decided.',
+  },
+  {
+    code: 'sal.receipt_reversal.approved',
+    class: 'approval',
+    entityType: 'sal.receipt_reversal',
+    description:
+      'A pending receipt reversal was approved by someone other than its requester (ADR-023, D4). sal.guard_receipt_reversal_decision requires sal.reversal.approve in the receipt’s company and branch — no credit-note code satisfies it — and stamps the approver and the reversal time; sal.approve_receipt_reversal reversed the receipt and wrote the receipt_reversed financial event in the same transaction. The original receipt and its allocations are retained; the allocations stop counting, so every invoice it paid opens again by exactly what it applied. Not a refund.',
+  },
+  {
+    code: 'sal.receipt_reversal.rejected',
+    class: 'approval',
+    entityType: 'sal.receipt_reversal',
+    description:
+      'A pending receipt reversal was rejected by someone other than its requester, with a stated reason (ADR-023, D4). sal.guard_receipt_reversal_decision requires sal.reversal.approve in the receipt’s company and branch and a reason that is not blank, and stamps the decider and the time. The receipt is untouched and the rejection is terminal.',
+  },
+  {
+    code: 'sal.receipt_reversal.withdrawn',
+    class: 'financial',
+    entityType: 'sal.receipt_reversal',
+    description:
+      'The requester withdrew their own pending receipt reversal (ADR-023, D4). Only the person who raised it may withdraw it, which sal.guard_receipt_reversal_decision enforces from the session. The receipt is untouched, takes allocations again, and a corrected reversal may be requested.',
+  },
+  {
+    code: 'sal.receipt.replacement_recorded',
+    class: 'financial',
+    entityType: 'sal.receipt',
+    description:
+      'A receipt was recorded as the replacement of a receipt an approved reversal reversed (ADR-023, D4). Every rule of an ordinary receipt applies; sal.guard_receipt_replacement and uq_receipts_replaces allow one replacement per reversed receipt, in its own company and branch, and the link is frozen once recorded. Like every receipt it records no settlement claim and no payment credential.',
+  },
 
   // ---- Phase 1-22 — Delivery and custody (sal) ----
   //

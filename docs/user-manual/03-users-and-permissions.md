@@ -796,6 +796,15 @@ covers every credit already approved on the same invoice plus the one being appr
 limit never counts. An organisation created before this decision keeps the set it was given until
 an administrator grants the new permission and sets a limit. Part 2, §2.10.3; Part 6, §6.2a.
 
+**Deciding a receipt reversal is its own permission (Owner decision D4).** A payment recorder
+(`sal.payment.record`) may ask for a wrongly recorded receipt to be reversed as a whole and may
+withdraw their own request. Approving or rejecting the request needs the reversal-approval
+permission (`sal.reversal.approve`) in the receipt's branch, held by somebody other than the person
+who asked; the credit-note permissions never grant it. The standard administrator bundle carries it,
+and an administrator can give it to the finance approver it chooses. An organisation created before
+this decision keeps the set it was given: nobody in it can approve or reject a receipt reversal until
+an administrator who holds the permission grants it. Part 6, §6.3.7.
+
 ---
 
 ## 3.16 Maker and checker: one administrator is not enough — IMPLEMENTED (UI)
