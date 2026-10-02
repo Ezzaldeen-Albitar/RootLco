@@ -3777,10 +3777,30 @@ Residual items from the contract review of fix round 1, one line each:
 
 - The reviewer did not run the database and backend tiers locally (no database or container on the review machine); the evidence on `f0ac66cc` is hosted: job 110976037648 (database) ran `tests/db/sal-third-party-allocations.test.ts` 13/13 of 1988, and PR CI job 110976198763 (integration) ran `tests/backend/od-finance-third-party.test.ts` 10/10 of 4068; "refusal recorded once" rests on those hosted runs only.
 - The unit coverage floor was not evaluated on `f0ac66cc`: in job 110976198519 `coverage-gate.mjs` found no `coverage/unit/coverage-summary.json` because the unit tier stopped at the expected P1-27 doc-counts staleness; the floors can be confirmed only after the records step.
-- Switching from one other-customer invoice to another resets the "third-party payment" choice but keeps the typed statement (`PaymentsScreen.tsx`), and the question shows the invoice number but not the authorisation reference, so a reference typed for one invoice could be booked against another; it is preserved input and nothing is booked without confirmation.
+- Choosing another invoice withdraws the "third-party payment" choice (`PaymentsScreen.tsx`, the invoice picker's change handler) but keeps the typed statement as preserved input; ticking the box again shows that statement for review, and the question still shows the invoice number but not the authorisation reference.
 - After switching to the payer's own invoice, the hidden third-party statement keeps the unsaved-work guard armed (`thirdPartyDraftTouched`); it is not sent, and confirming the discard clears it.
 - The offer of the option follows the session's permission set as a whole (`payments/page.tsx`), so a holder whose code covers only another branch is offered it and the server refuses with 403; the server enforcement is tested (database test and the backend "another branch" case), and the existing allocate gate follows the same pattern.
 - An idempotent replay of an existing third-party allocation is answered before `sal.payment.third_party` is checked (service and migration), so a caller without the code who repeats the key with the identical body gets the existing allocation back; nothing new is booked or audited.
 - The settlement names the payer when the reader holds `crm.customer.read` in any branch (`callerHoldsPermissionAnywhere`), following the existing invoice-payer naming pattern, not scoped to the invoice's branch.
 - Seed 04 realigns the whitespace of the existing `sal.credit.manage` row; its code, description and risk level are unchanged.
 - The database trigger's `btrim()` strips spaces only while the service and the screen use JavaScript `trim()`; the service rule is stricter and trims before insert, so no value blank under `trim()` reaches the database; a scratch probe of ten edge values (Arabic, emoji, whitespace, over-length, casing) found the screen's pre-check and the service in agreement.
+
+Fix round 2 of the contract review: choosing another invoice now withdraws the "third-party payment"
+choice, so a statement made for one invoice is never carried unseen onto the next; until the box is
+ticked again the allocation is refused on the invoice box before anything is sent. Before this fix
+the box stayed ticked and the previous invoice's relationship, reference and reason went with the
+new invoice, and the earlier record of this residual misstated that. The web case "withdraws the
+choice when another invoice is chosen" (`payments-third-party.dom.test.tsx`) fails with the change
+handler line removed.
+
+Residual items from the contract review of fix round 2, one line each:
+
+- The other-customer notice carries `role="status"` and two web cases find it by that role; the region is mounted with its text already inside, which some screen readers do not announce, the same pattern as the screen's other status notices.
+- The database and backend tiers were not run locally; the evidence on `2e67c140` is hosted: job 110988926570 ran `tests/db/sal-third-party-allocations.test.ts` 13/13 of 1988, and PR CI job 110989045429 ran `tests/backend/od-finance-third-party.test.ts` 10/10, including the refusal recorded once, with BF-22 for the selective backfill.
+- The unit coverage floor was not evaluated on `2e67c140`: in job 110989045406 `coverage-gate.mjs` found no `coverage/unit/coverage-summary.json` because the unit tier stopped at the expected P1-27 doc-counts staleness.
+- A raw insert cannot slip past `sal.guard_allocation_payer` by hiding the receipt or the invoice: the insert policy needs the same tenant, company and branch scope the invoice read policy needs, and the composite keys keep both in one branch; `third_party_authorised_by` is always taken from `iam.current_user_id()`, so it rests on the session setting model.
+- The service measures the authorisation reference's length before trimming, so a direct caller sending 100 characters wrapped in spaces is refused although the trimmed value fits; the screen sends trimmed values and never meets this, and values blank after trimming are refused before the database.
+- The invoice settlement lists at most 50 third-party payments (`THIRD_PARTY_PAYMENTS_SHOWN`) with a truncation notice, a display cap only; the row key (receipt and allocation time) could repeat for two allocations from one receipt at the same instant, which would only raise a key warning.
+- `tests/ci/tailwind-theme-gate.test.ts` timed out once at 30 seconds locally under parallel load; it passed alone, `validate:web-theme` passed and it passed hosted.
+- The round 1 items above on the whole-session offer of the option, the idempotent replay, the payer naming and `btrim()` still hold.
+- `schema-baseline.json` moves functions 645 to 646, triggers 638 to 639 and migrations 166 to 167 (one trigger function, `allocate_receipt` dropped and created again), and `DATABASE_ENFORCED` in `check-permission-parity.mjs` gains one entry citing the migration's `has_permission_in_scope` line; that registers the rule and widens no check.

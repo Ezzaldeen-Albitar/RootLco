@@ -330,6 +330,72 @@ describe('someone else’s invoice, for a holder of the third-party code', () =>
     });
   });
 
+  it('withdraws the choice when another invoice is chosen, so its statement is never booked unseen', async () => {
+    listInvoices.mockResolvedValue(
+      okRead({
+        items: [
+          otherInvoice,
+          {
+            ...otherInvoice,
+            id: '66666666-6666-4666-8666-666666666666',
+            payerPartnerId: '77777777-7777-4777-8777-777777777777',
+            invoiceNumber: 'INV-000125',
+            payer: {
+              displayName: 'Sami Nasser',
+              displayNumber: 'C-000502',
+              partyType: 'individual',
+            },
+          },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+    const user = userEvent.setup();
+    const form = await openForm({ canAllocateThirdParty: true });
+    await chooseOtherInvoice(user, form);
+    await user.click(
+      await within(form).findByLabelText(EN['payments.thirdParty.option'] as string)
+    );
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('payments.thirdParty.relationship')),
+      'insurer'
+    );
+    await user.type(
+      within(form).getByLabelText(labelled('payments.thirdParty.reference')),
+      'CLM-FOR-124'
+    );
+    await user.type(
+      within(form).getByLabelText(labelled('payments.thirdParty.reason')),
+      'Covered by the policy'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['invoices.picker.change'] as string })
+    );
+    await user.type(within(form).getByLabelText(labelled('payments.allocate.invoice')), 'INV-0002');
+    await user.click(await findSearchedOption(listInvoices, 'INV-0002', /INV-000125/));
+    await within(form).findByTestId('payments-third-party-notice');
+    const option = within(form).getByLabelText(EN['payments.thirdParty.option'] as string);
+    expect(option).not.toBeChecked();
+    expect(within(form).queryByLabelText(labelled('payments.thirdParty.reference'))).toBeNull();
+    // Unticked, the allocation is refused before anything is sent.
+    await user.type(within(form).getByLabelText(labelled('payments.allocate.amount')), '70.0000');
+    await submit(user, form);
+    await waitFor(() =>
+      expect(within(form).getByLabelText(labelled('payments.allocate.invoice'))).toHaveAttribute(
+        'aria-invalid',
+        'true'
+      )
+    );
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(allocatePayment).not.toHaveBeenCalled();
+    // Ticked again, the statement typed earlier is shown for review, not lost.
+    await user.click(option);
+    expect(within(form).getByLabelText(labelled('payments.thirdParty.reference'))).toHaveValue(
+      'CLM-FOR-124'
+    );
+  });
+
   it('offers nothing for the payer’s own invoice', async () => {
     listInvoices.mockResolvedValue(
       okRead({

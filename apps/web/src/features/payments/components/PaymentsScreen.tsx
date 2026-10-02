@@ -1674,6 +1674,11 @@ function AllocateForm({
                   // Another invoice is another comparison: what was learned about
                   // the addressed one no longer applies.
                   setAddressedToOther(false);
+                  // A third-party statement is made for ONE invoice. The choice
+                  // is withdrawn so the next invoice is never booked on it
+                  // unseen; what was typed is kept, and shown again for review
+                  // when the box is ticked once more.
+                  setThirdParty((draft) => (draft.chosen ? { ...draft, chosen: false } : draft));
                 }}
                 canSearch={canListInvoices}
                 error={errorFor('invoiceId')}
