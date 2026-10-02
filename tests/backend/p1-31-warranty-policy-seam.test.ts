@@ -1489,8 +1489,9 @@ describe('P-10 the provisioning bundle', () => {
     // 90 since it carries org.settings.manage (Owner decision 2026-09-27), and 94
     // since it carries the four appointment codes (Owner decision 2026-09-29), and 95
     // since it carries sal.credit.approve (Owner decision D13, ADR-023), and 96 since
-    // it carries sal.reversal.approve (Owner decision D4, ADR-023).
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(96);
+    // it carries sal.reversal.approve (Owner decision D4, ADR-023), and 97 since it
+    // carries sal.payment.third_party (Owner decision D14, ADR-023).
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(97);
     expect(new Set(TENANT_ADMINISTRATOR_ROLE.permissionCodes).size).toBe(
       TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
     );

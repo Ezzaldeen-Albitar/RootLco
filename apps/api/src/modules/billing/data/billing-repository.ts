@@ -310,6 +310,25 @@ export interface CreditPositionRow {
 }
 
 /**
+ * One third-party payment of an invoice (ADR-023 D14): an allocation of a receipt
+ * whose payer is not the invoice's customer, made as an explicit third-party
+ * allocation. `payerDisplayName` is the live partner's name, `null` when retired
+ * or not visible; whether the caller may be TOLD it is the read service's call.
+ */
+export interface ThirdPartyPaymentRow {
+  readonly allocationId: string;
+  readonly receiptId: string;
+  readonly receiptNumber: string;
+  readonly payerDisplayName: string | null;
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
+  readonly amount: string;
+  readonly currencyCode: string;
+  readonly allocatedAt: Date;
+}
+
+/**
  * One invoice as the branch list returns it (Owner directive, P1-32-PRE-OD-UX).
  *
  * The header exactly as `findInvoice` reads it — money folded to `null` where
@@ -1123,6 +1142,68 @@ export class BillingRepository extends Repository {
       [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId]
     );
     return row ? { gross: row.gross, credited: row.credited, paid: row.paid } : null;
+  }
+
+  /**
+   * The third-party payments of one invoice (ADR-023 D14), oldest first.
+   *
+   * Only allocations of receipts that are not reversed — the predicate `paid`
+   * above and `sal.invoice_open_receivable` use, so every payment listed here is
+   * inside `paid` and none is outside it. The receipt names its payer and the
+   * invoice keeps its customer: this read joins the two to say who paid for whom,
+   * and changes neither. Fetched with one row of headroom so the caller can say
+   * the list was cut short. Every input is gated by `sal.finance.view`.
+   */
+  public async thirdPartyPayments(
+    db: DbHandle,
+    scope: { readonly invoiceId: string; readonly companyId: string; readonly branchId: string },
+    limit: number
+  ): Promise<readonly ThirdPartyPaymentRow[]> {
+    const context = this.assertContext(db);
+    const rows = await this.run<{
+      allocation_id: string;
+      receipt_id: string;
+      receipt_number: string;
+      payer_display_name: string | null;
+      third_party_relationship: string;
+      third_party_authorisation_reference: string;
+      third_party_reason: string;
+      amount: string;
+      currency_code: string;
+      allocated_at: Date;
+    }>(
+      db,
+      `SELECT pa.id AS allocation_id, pa.receipt_id, r.receipt_number,
+              pp.display_name AS payer_display_name,
+              pa.third_party_relationship, pa.third_party_authorisation_reference,
+              pa.third_party_reason, pa.amount::text AS amount, pa.currency_code,
+              pa.allocated_at
+         FROM sal.payment_allocations pa
+         JOIN sal.receipts r
+           ON r.tenant_id = pa.tenant_id AND r.company_id = pa.company_id
+          AND r.branch_id = pa.branch_id AND r.id = pa.receipt_id
+         LEFT JOIN crm.business_partners pp
+           ON pp.tenant_id = r.tenant_id AND pp.id = r.payer_partner_id
+          AND pp.deleted_at IS NULL
+        WHERE pa.tenant_id = $1 AND pa.company_id = $2 AND pa.branch_id = $3
+          AND pa.invoice_id = $4 AND pa.third_party_relationship IS NOT NULL
+          AND r.status <> 'reversed'
+        ORDER BY pa.seq ASC
+        LIMIT $5`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId, limit + 1]
+    );
+    return rows.rows.map((row) => ({
+      allocationId: row.allocation_id,
+      receiptId: row.receipt_id,
+      receiptNumber: row.receipt_number,
+      payerDisplayName: row.payer_display_name,
+      relationship: row.third_party_relationship,
+      authorisationReference: row.third_party_authorisation_reference,
+      reason: row.third_party_reason,
+      amount: row.amount,
+      currencyCode: row.currency_code,
+      allocatedAt: row.allocated_at,
+    }));
   }
 
   /**

@@ -1210,6 +1210,8 @@ describe('the dataset is registered as the Owner approved it', () => {
       'invoicedAmount',
       'receiptAmount',
       'allocatedAmount',
+      // D14 (ADR-023): what of a receipt paid other customers' invoices.
+      'thirdPartyAllocatedAmount',
       'unallocatedAmount',
       'creditNoteAmount',
       'outstanding',
@@ -1223,6 +1225,7 @@ describe('the dataset is registered as the Owner approved it', () => {
       'invoicedAmount',
       'receiptAmount',
       'allocatedAmount',
+      'thirdPartyAllocatedAmount',
       'unallocatedAmount',
       'creditNoteAmount',
       'outstanding',
@@ -1345,6 +1348,7 @@ describe('the rows are the documents of the period, and only those', () => {
     // is not a credit note either.
     expect(cellValue(row, 'receiptAmount')).toBeNull();
     expect(cellValue(row, 'allocatedAmount')).toBeNull();
+    expect(cellValue(row, 'thirdPartyAllocatedAmount')).toBeNull();
     expect(cellValue(row, 'unallocatedAmount')).toBeNull();
     expect(cellValue(row, 'creditNoteAmount')).toBeNull();
     // 165.0000 less the 65.0000 and the 4.0000 allocated — and it is the DATABASE
@@ -1416,6 +1420,9 @@ describe('the rows are the documents of the period, and only those', () => {
     expect(cellValue(row, 'documentType')).toBe('receipt');
     expect(cellValue(row, 'receiptAmount')).toBe('65.0000');
     expect(cellValue(row, 'allocatedAmount')).toBe('65.0000');
+    // Applied to the payer's own invoices only: an EXACT ZERO paid for anybody else
+    // (ADR-023 D14), the same statement's sum over the same rows.
+    expect(cellValue(row, 'thirdPartyAllocatedAmount')).toBe('0.0000');
     expect(cellValue(row, 'invoicedAmount')).toBeNull();
     expect(cellValue(row, 'creditNoteAmount')).toBeNull();
     // Applied in full, so an EXACT ZERO is left — and it is the function's zero,

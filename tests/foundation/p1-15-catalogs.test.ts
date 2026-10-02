@@ -444,6 +444,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'sal.invoice.issued',
   'sal.invoice.voided',
   'sal.payment.allocated',
+  'sal.payment.third_party_allocated',
   'sal.receipt.recorded',
   'sal.receipt.replacement_recorded',
   'sal.receipt_reversal.approved',

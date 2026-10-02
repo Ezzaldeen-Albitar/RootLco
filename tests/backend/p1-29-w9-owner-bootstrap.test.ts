@@ -497,7 +497,11 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // 96 with `sal.reversal.approve` (Owner decision D4 of 2026-09-30, ADR-023):
     // approving and rejecting a receipt reversal somebody else requested. Seeded
     // since Phase 1-11 and declared by those two operations only.
-    expect(expected).toHaveLength(96);
+    // 97 with `sal.payment.third_party`, MINTED by Owner decision D14 of 2026-09-30
+    // (ADR-023): a receipt applied to another customer's invoice as an explicit,
+    // authorised third-party payment. Consulted, not declared, by the allocation.
+    expect(expected).toHaveLength(97);
+    expect(expected).toContain('sal.payment.third_party');
     expect(expected).toContain('sal.reversal.approve');
     expect(expected).toContain('sal.credit.approve');
     expect(expected).toContain('sal.credit.manage');

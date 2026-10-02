@@ -245,7 +245,37 @@ export interface SettlementView {
   readonly refundStatus: RefundStatus;
   readonly credited: MoneyView;
   readonly paid: MoneyView;
+  /**
+   * The part of `paid` that somebody other than the invoice's customer paid, as an
+   * explicit third-party payment (ADR-023 D14) — an insurer, an employer — oldest
+   * first, at most `THIRD_PARTY_PAYMENTS_SHOWN`. Additive; empty when the customer
+   * paid it all. The invoice stays its customer's either way.
+   */
+  readonly thirdPartyPayments: readonly ThirdPartyPaymentView[];
+  /** True when the invoice has more third-party payments than are listed. */
+  readonly thirdPartyPaymentsTruncated: boolean;
 }
+
+/**
+ * One third-party payment of an invoice, as its settlement shows it (ADR-023 D14):
+ * who paid, named only to a caller holding `crm.customer.read` as everywhere else,
+ * what they are to the customer, the authorisation and the reason, the receipt by
+ * its number, and the amount applied.
+ */
+export interface ThirdPartyPaymentView {
+  readonly receipt: { readonly id: string; readonly reference: string };
+  /** `null` when the caller may not read customers, or the payer is not a live partner. */
+  readonly payerName: string | null;
+  /** `insurer`, `employer` or `other` — a fixed vocabulary. */
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
+  readonly money: MoneyView;
+  readonly allocatedAt: string;
+}
+
+/** How many third-party payments one settlement lists. */
+export const THIRD_PARTY_PAYMENTS_SHOWN = 50;
 
 /**
  * The delivery module's financial blocker, and the whole reason this port exists.
@@ -899,12 +929,33 @@ export class BillingReadService {
     }
     const credited = Decimal.fromDatabase(position.credited, MONEY);
     const paid = Decimal.fromDatabase(position.paid, MONEY);
+    // Who paid for whom (ADR-023 D14). The payer is named only to a caller who may
+    // read customers — asked once, and only when there is a payment to name.
+    const thirdPartyRows = await this.repository.thirdPartyPayments(
+      db,
+      { invoiceId: invoice.id, companyId: invoice.companyId, branchId: invoice.branchId },
+      THIRD_PARTY_PAYMENTS_SHOWN
+    );
+    const truncated = thirdPartyRows.length > THIRD_PARTY_PAYMENTS_SHOWN;
+    const shown = truncated ? thirdPartyRows.slice(0, THIRD_PARTY_PAYMENTS_SHOWN) : thirdPartyRows;
+    const mayNamePayer =
+      shown.length > 0 && (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION));
     return {
       creditStatus: deriveCreditStatus(credited, Decimal.fromDatabase(position.gross, MONEY)),
       paymentStatus: derivePaymentStatus(paid, Decimal.fromDatabase(openAmount, MONEY)),
       refundStatus: 'none',
       credited: moneyView(position.credited, invoice.currencyCode, units),
       paid: moneyView(position.paid, invoice.currencyCode, units),
+      thirdPartyPayments: shown.map((row) => ({
+        receipt: { id: row.receiptId, reference: row.receiptNumber },
+        payerName: mayNamePayer ? row.payerDisplayName : null,
+        relationship: row.relationship,
+        authorisationReference: row.authorisationReference,
+        reason: row.reason,
+        money: moneyView(row.amount, row.currencyCode, units),
+        allocatedAt: row.allocatedAt.toISOString(),
+      })),
+      thirdPartyPaymentsTruncated: truncated,
     };
   }
 

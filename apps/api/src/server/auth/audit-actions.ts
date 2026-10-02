@@ -1960,6 +1960,16 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A receipt amount was applied against a specific invoice. Written only by sal.allocate_receipt, which takes the receipt lock before the invoice lock and is the ONLY path that bounds the allocation sum — no constraint, trigger or exclusion limits it, and app_runtime holds raw INSERT on the table, so a direct insert would be accepted with no bound at all (BR-SAL-002).',
   },
+  // ADR-023 D14 (P1-32-PRE-OD-FD14): a receipt applied to another customer's invoice
+  // as an explicit, authorised third-party payment, written beside the allocation's
+  // own record in the same transaction.
+  {
+    code: 'sal.payment.third_party_allocated',
+    class: 'financial',
+    entityType: 'sal.payment_allocation',
+    description:
+      'A receipt was applied to an invoice whose customer is not the party who paid it, as a third-party payment (ADR-023, D14) — an insurer, an employer or another named relationship. sal.guard_allocation_payer refuses such an allocation unless it names the relationship, an authorisation reference and a reason, and unless the actor holds sal.payment.third_party in the receipt’s company and branch; it stamps the authorising user from the session. Records who paid, whose invoice it is, the relationship, the authorisation and the reason. Nothing changes hands: the invoice stays its customer’s, the receipt stays its payer’s, and what is left on the receipt stays the payer’s.',
+  },
   // ADR-023 D4 (P1-32-PRE-OD-FD4): the full reversal of a receipt, requested by a
   // payment recorder and decided by a different holder of sal.reversal.approve,
   // and the receipt that replaces a reversed one.

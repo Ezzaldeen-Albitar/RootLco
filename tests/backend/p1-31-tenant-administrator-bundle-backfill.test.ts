@@ -108,6 +108,14 @@
  *         (recording and viewing payments) gains nothing; the customised one is
  *         skipped whole with the code withheld; an organisation that is NOT named is
  *         untouched row for row; a second run is a no-op
+ *   BF-22 the third-party payer widening (Owner decision D14, ADR-023), run the same
+ *         selective way — in production, after seed 04 has been re-run, `--tenant
+ *         odqa_alpha --tenant odqa_beta`: two named organisations whose standard role
+ *         lacks only `sal.payment.third_party`; the standard one is offered EXACTLY
+ *         that code by a dry run that writes nothing and then gains it, and an
+ *         allocating clerk role it built gains nothing; the customised one is skipped
+ *         whole with the code withheld; an organisation that is NOT named is
+ *         untouched row for row; a second run is a no-op
  *
  * ## Where it runs
  *
@@ -138,6 +146,7 @@ import {
   runtimeAppPool,
 } from './helpers';
 import { __resetBackendConfigForTests } from '@/server/config/backend-config';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import { __setPlatformPoolForTests, __setPrimaryPoolForTests } from '@/server/db/pool';
 import {
   StaticClaimsAuthenticator,
@@ -314,6 +323,18 @@ const CREDIT_APPROVAL_ADDED = Object.freeze(['sal.credit.approve']);
  */
 const REVERSAL_APPROVAL_ADDED = Object.freeze(['sal.reversal.approve']);
 
+/**
+ * Owner decision D14 of 2026-09-30 (ADR-023): `sal.payment.third_party`, which a
+ * third-party allocation needs, for the standard tenant administrator. MINTED in
+ * `04_iam_permission_catalog.sql`, so on an existing database that seed is re-run
+ * FIRST; the backfill then owes a TWELFTH operator run, by the same decision a
+ * SELECTIVE one — only `--tenant odqa_alpha --tenant odqa_beta`, customised roles
+ * preserved, every other existing organisation left unchanged, so nobody there can
+ * make a third-party allocation until an administrator grants the code. BF-22
+ * measures that shape.
+ */
+const THIRD_PARTY_ADDED = Object.freeze(['sal.payment.third_party']);
+
 /** Every code widened onto the 67-code bundle since: what a stale organisation lacks. */
 const WIDENED = Object.freeze([
   ...BACKFILLED,
@@ -324,6 +345,7 @@ const WIDENED = Object.freeze([
   ...APPOINTMENT_ADDED,
   ...CREDIT_APPROVAL_ADDED,
   ...REVERSAL_APPROVAL_ADDED,
+  ...THIRD_PARTY_ADDED,
 ]);
 
 /** A real catalogue code the bundle deliberately does NOT carry (P1-31 CC-04). */
@@ -1109,7 +1131,7 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(rows[0]?.n).toBe(0);
   });
 
-  it('BF-10 an organisation on the 85-code bundle is offered exactly the codes widened since (the three of the 2026-09-17 directive, sal.credit.manage, org.settings.manage, the four appointment codes, sal.credit.approve and sal.reversal.approve), and a dry run offers them without writing', async () => {
+  it('BF-10 an organisation on the 85-code bundle is offered exactly the codes widened since (the three of the 2026-09-17 directive, sal.credit.manage, org.settings.manage, the four appointment codes, sal.credit.approve, sal.reversal.approve and sal.payment.third_party), and a dry run offers them without writing', async () => {
     // The script parses `bootstrap-roles.ts` at run time rather than carrying a
     // copy of the list, so a widening needs no edit to it — which is a claim, and
     // this is the measurement of it for THIS widening. The organisation is put on
@@ -1117,8 +1139,9 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     // 67-code one BF-1 uses, so the difference the script computes can only be
     // the three codes the directive added, the one the credit-note decision added,
     // the one the settings decision added, the four the appointment decision added,
-    // the one the credit-approval decision (D13) added and the one the
-    // receipt-reversal decision (D4) added.
+    // the one the credit-approval decision (D13) added, the one the
+    // receipt-reversal decision (D4) added and the one the third-party payer
+    // decision (D14) added.
     const since85 = [
       ...OD_QA_ADDED,
       ...CREDIT_ADDED,
@@ -1126,6 +1149,7 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
       ...APPOINTMENT_ADDED,
       ...CREDIT_APPROVAL_ADDED,
       ...REVERSAL_APPROVAL_ADDED,
+      ...THIRD_PARTY_ADDED,
     ];
     const organisation = await provision('odqa');
     await admin.query(
@@ -2034,6 +2058,137 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(await mappingRows(unnamed.tenantAdministratorRoleId)).toEqual(unnamedBefore);
     expect(await codesOfRole(unnamed.tenantAdministratorRoleId)).not.toContain(
       'sal.reversal.approve'
+    );
+    expect(await backfillAuditCount(unnamed.tenantId)).toBe(0);
+
+    // Idempotent: a second run writes nothing and records nothing.
+    const again = await backfill({ tenants: named });
+    expect(again.organisations.map((o) => o.outcome)).toEqual(['unchanged', 'customised']);
+    expect(await mappingRows(standard.tenantAdministratorRoleId)).toEqual(standardAfter);
+    expect(await backfillAuditCount(standard.tenantId)).toBe(1);
+  });
+
+  it('BF-22 the third-party payer widening runs selectively: a named standard organisation gains exactly sal.payment.third_party, an allocating clerk role it built gains nothing, a named customised one and an unnamed one are untouched, and a second run is a no-op', async () => {
+    // The twelfth widening provisions three more organisations in this file, and
+    // the provisioning command's per-window limit counts every one before it; the
+    // window is reset so this case measures the backfill, not the throttle.
+    __resetRateLimitForTests();
+    // A standard role lacking only sal.payment.third_party: what every organisation
+    // provisioned after D4 and before D14 holds — which is what the two QA
+    // organisations hold once the receipt-reversal run has been made for them.
+    const withoutThirdPartyCode = async (label: string): Promise<Provisioned> => {
+      const organisation = await provision(label);
+      await admin.query(
+        `DELETE FROM iam.role_permissions
+          WHERE role_id = $1
+            AND permission_id IN (SELECT id FROM iam.permissions WHERE permission_code = ANY($2::text[]))`,
+        [organisation.tenantAdministratorRoleId, [...THIRD_PARTY_ADDED]]
+      );
+      expect(await codesOfRole(organisation.tenantAdministratorRoleId)).toHaveLength(
+        parsedBundle.length - THIRD_PARTY_ADDED.length
+      );
+      return organisation;
+    };
+    const standard = await withoutThirdPartyCode('tpastd');
+    const tailored = await withoutThirdPartyCode('tpacus');
+    const unnamed = await withoutThirdPartyCode('tpaoth');
+
+    // The standard organisation builds an allocating clerk role of its own that
+    // applies receipts to invoices — the code an ORDINARY allocation needs. It must
+    // gain nothing: a third-party allocation is a separate authority.
+    asOwnerOf(standard);
+    const clerk = await call<{ id: string }>(roleCreateRoute, {
+      path: '/iam/roles',
+      body: {
+        roleCode: `allocator_${RUN}`,
+        name: 'Allocating clerk',
+        description: 'Applies receipts to invoices',
+      },
+      idempotencyKey: randomUUID(),
+    });
+    expect(clerk.status).toBe(201);
+    const clerkRoleId = clerk.body.id;
+    for (const permissionCode of ['sal.payment.allocate', 'sal.finance.view']) {
+      asOwnerOf(standard);
+      const mapped = await call(rolePermissionAddRoute, {
+        path: `/iam/roles/${clerkRoleId}/permissions`,
+        params: { roleId: clerkRoleId },
+        body: { permissionCode, effect: 'allow' },
+        idempotencyKey: randomUUID(),
+      });
+      expect(mapped.status).toBe(201);
+    }
+    const clerkBefore = await mappingRows(clerkRoleId);
+
+    // The customised organisation's own decision about its administrator role: one
+    // allow beyond the bundle.
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1, $2, p.id, 'allow', $4 FROM iam.permissions p WHERE p.permission_code = $3`,
+      [tailored.tenantId, tailored.tenantAdministratorRoleId, CUSTOMISATION_CODE, SYSTEM_ACTOR]
+    );
+
+    const standardBefore = await mappingRows(standard.tenantAdministratorRoleId);
+    const tailoredBefore = await mappingRows(tailored.tenantAdministratorRoleId);
+    const unnamedBefore = await mappingRows(unnamed.tenantAdministratorRoleId);
+
+    // Named by tenant CODE, the form the operator types — and ONLY these two.
+    const named = [standard.tenantCode, tailored.tenantCode];
+    const dryRun = await backfill({ tenants: named, dryRun: true });
+    expect(dryRun.outcome).toBe('dry-run');
+    expect(dryRun.organisations.map((o) => o.tenantCode)).toEqual(named);
+    const [offered, skipped] = dryRun.organisations;
+    expect(offered).toMatchObject({
+      tenantId: standard.tenantId,
+      outcome: 'widened',
+      heldBefore: parsedBundle.length - THIRD_PARTY_ADDED.length,
+      heldAfter: parsedBundle.length,
+      customisations: [],
+    });
+    // EXACTLY the one code: no withheld code and no code of any other widening.
+    expect(offered?.added).toEqual([...THIRD_PARTY_ADDED]);
+    expect(skipped).toMatchObject({
+      tenantId: tailored.tenantId,
+      outcome: 'customised',
+      added: [],
+      customisations: [`beyond-bundle:${CUSTOMISATION_CODE}`],
+      withheld: [...THIRD_PARTY_ADDED],
+    });
+    // A dry run writes nothing anywhere.
+    expect(await mappingRows(standard.tenantAdministratorRoleId)).toEqual(standardBefore);
+    expect(await mappingRows(tailored.tenantAdministratorRoleId)).toEqual(tailoredBefore);
+    expect(await backfillAuditCount(standard.tenantId)).toBe(0);
+
+    const applied = await backfill({ tenants: named });
+    expect(applied.widened).toBe(1);
+    expect(applied.customised).toBe(1);
+    expect(only(applied)).toMatchObject({
+      outcome: 'widened',
+      added: [...THIRD_PARTY_ADDED],
+    });
+    expect(await codesOfRole(standard.tenantAdministratorRoleId)).toEqual(
+      [...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort()
+    );
+    const standardAfter = await mappingRows(standard.tenantAdministratorRoleId);
+    for (const row of standardBefore) expect(standardAfter).toContain(row);
+    expect(standardAfter).toHaveLength(standardBefore.length + 1);
+    expect(await backfillAuditCount(standard.tenantId)).toBe(1);
+
+    // The allocating clerk role gained nothing.
+    expect(await mappingRows(clerkRoleId)).toEqual(clerkBefore);
+    expect(await codesOfRole(clerkRoleId)).not.toContain('sal.payment.third_party');
+
+    // The customised role kept every row and gained nothing, with no audit record.
+    expect(await mappingRows(tailored.tenantAdministratorRoleId)).toEqual(tailoredBefore);
+    expect(await codesOfRole(tailored.tenantAdministratorRoleId)).not.toContain(
+      'sal.payment.third_party'
+    );
+    expect(await backfillAuditCount(tailored.tenantId)).toBe(0);
+
+    // The organisation nobody named is untouched, row for row.
+    expect(await mappingRows(unnamed.tenantAdministratorRoleId)).toEqual(unnamedBefore);
+    expect(await codesOfRole(unnamed.tenantAdministratorRoleId)).not.toContain(
+      'sal.payment.third_party'
     );
     expect(await backfillAuditCount(unnamed.tenantId)).toBe(0);
 

@@ -78,11 +78,13 @@ export type {
   ReceiptScope,
   ReceiptUnallocatedRow,
   ReportDocumentPage,
+  ThirdPartyStatement,
 } from './data/payments-repository';
 
 export type {
   AllocatePaymentInput,
   AllocationInvoiceHeader,
+  AllocationThirdPartyView,
   AllocationView,
   ReceiptView,
   RecordPaymentInput,
@@ -96,6 +98,7 @@ export type {
 
 export type {
   PaymentMethodView,
+  ReceiptAllocationThirdPartyView,
   ReceiptAllocationView,
   ReceiptDetailView,
   ReceiptLinkView,
@@ -124,6 +127,15 @@ export {
   RECEIPT_STATUSES,
   TENANT_BOOTSTRAP_METHOD_CODES,
   type TenantBootstrapMethodCode,
+  MAX_THIRD_PARTY_AUTHORISATION_REFERENCE,
+  MAX_THIRD_PARTY_REASON,
+  THIRD_PARTY_PERMISSION,
+  THIRD_PARTY_RELATIONSHIPS,
+  THIRD_PARTY_RULES,
+  thirdPartyViolations,
+  type ThirdPartyDeclaration,
+  type ThirdPartyRelationship,
+  type ThirdPartyViolation,
   assertAllocatable,
   assertAllocationCurrencyCoherent,
   assertAllocationUsesPrimitive,

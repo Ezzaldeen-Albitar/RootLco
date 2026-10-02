@@ -38,6 +38,20 @@
  * booking a second one. So a retry after an uncertain outcome cannot book money
  * twice even where the transport record is gone, and a key reused for a
  * different receipt, invoice or amount is refused rather than replayed.
+ *
+ * ## Someone else's invoice is refused unless it is a third-party payment
+ *
+ * Owner decision D14 (ADR-023): a receipt is applied to an invoice of the party
+ * who paid it. An invoice whose customer is somebody else is refused
+ * (`allocation_payer_mismatch`, recorded once), unless the body carries the
+ * optional `thirdParty` block — the relationship (`insurer`, `employer` or
+ * `other`, a fixed vocabulary), the authorisation reference and the reason — AND
+ * the caller holds `sal.payment.third_party` in the receipt's company and branch,
+ * which this operation consults rather than declares: an ordinary allocation never
+ * needs it. Without the code the attempt is refused and recorded once. The block's
+ * text bounds here only cap the request; the service names each rule on its field.
+ * Nothing changes hands: the invoice stays its customer's and the receipt its
+ * payer's, and `sal.guard_allocation_payer` holds every rule in the database too.
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
@@ -59,11 +73,26 @@ const MoneyAmount = z
     'must be an unsigned decimal string of at most 14 integer digits and 4 decimal places'
   );
 
+/**
+ * A third-party payer's statement (ADR-023 D14). Each text is capped well above
+ * its rule — 100 characters for the reference, 2000 for the reason — so a blank,
+ * an over-long value or a relationship outside the vocabulary reaches the service
+ * and is refused there with the rule's own name on the field.
+ */
+export const ThirdPartyBody = z
+  .object({
+    relationship: z.string().max(40),
+    authorisationReference: z.string().max(400),
+    reason: z.string().max(8000),
+  })
+  .strict();
+
 export const AllocateBody = z
   .object({
     invoiceId: schemas.uuid,
     amount: MoneyAmount,
     currency: z.string().regex(/^[A-Z]{3}$/, 'must be an ISO-4217 alphabetic code'),
+    thirdParty: ThirdPartyBody.optional(),
   })
   .strict();
 
@@ -109,6 +138,7 @@ export async function POST(
           amount: parsed.amount,
           currencyCode: parsed.currency,
           ...(key === null ? {} : { idempotencyKey: key }),
+          ...(parsed.thirdParty === undefined ? {} : { thirdParty: parsed.thirdParty }),
         },
         authorizeScope
       );

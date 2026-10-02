@@ -96,6 +96,28 @@ export interface ReceiptAllocationView {
   readonly invoicePayerName: string | null;
   readonly money: MoneyView;
   readonly allocatedAt: string;
+  /**
+   * When the receipt's payer settled ANOTHER customer's invoice as a third-party
+   * payment (ADR-023 D14): the relationship, the authorisation and the reason, and
+   * who authorised it by name. `null` on an allocation to the payer's own invoice.
+   * The receipt still names its payer and the invoice its customer — nothing here
+   * moves either.
+   */
+  readonly thirdParty: ReceiptAllocationThirdPartyView | null;
+}
+
+/** A third-party allocation's record, as the receipt shows it (ADR-023 D14). */
+export interface ReceiptAllocationThirdPartyView {
+  /** `insurer`, `employer` or `other` — a fixed vocabulary. */
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
+  /**
+   * Who authorised it, by NAME — `null` for a caller who may not read users
+   * (resolved through `iamDirectory().directory`, which checks `iam.user.read`
+   * itself) and for a person who is not named. The id is never published.
+   */
+  readonly authorisedByName: string | null;
 }
 
 /**
@@ -200,7 +222,8 @@ const toPaymentMethodView = (row: PaymentMethodRow): PaymentMethodView => ({
 const toAllocationView = (
   row: ReceiptAllocationRow,
   mayNamePayer: boolean,
-  units: MinorUnits
+  units: MinorUnits,
+  nameOf: (userId: string | null) => string | null
 ): ReceiptAllocationView => ({
   id: row.id,
   sequence: row.seq,
@@ -209,6 +232,17 @@ const toAllocationView = (
   invoicePayerName: mayNamePayer ? row.invoicePayerDisplayName : null,
   money: moneyView(row.amount, row.currencyCode, units),
   allocatedAt: row.allocatedAt.toISOString(),
+  thirdParty:
+    typeof row.thirdPartyRelationship !== 'string' ||
+    typeof row.thirdPartyAuthorisationReference !== 'string' ||
+    typeof row.thirdPartyReason !== 'string'
+      ? null
+      : {
+          relationship: row.thirdPartyRelationship,
+          authorisationReference: row.thirdPartyAuthorisationReference,
+          reason: row.thirdPartyReason,
+          authorisedByName: nameOf(row.thirdPartyAuthorisedBy),
+        },
 });
 
 /**
@@ -483,16 +517,27 @@ export class PaymentReadService {
       receipt.status === 'reversed'
         ? await this.repository.findReplacementOf(db, receipt.id, scope)
         : null;
+    // The people on the reversal and on each third-party allocation (ADR-023 D14),
+    // named in ONE directory read, and only to a caller who may read users.
+    const decider =
+      reversal === null
+        ? null
+        : reversal.approvalState === 'approved'
+          ? reversal.approvedBy
+          : reversal.decidedBy;
+    const people = [
+      reversal?.requestedBy ?? null,
+      decider,
+      ...allocations.map((row) => row.thirdPartyAuthorisedBy),
+    ].filter((id): id is string => typeof id === 'string');
+    const names =
+      people.length === 0
+        ? new Map<string, { readonly displayName: string | null }>()
+        : await iamDirectory().directory.resolveDisplayIdentities(db, [...new Set(people)]);
+    const nameOf = (id: string | null): string | null =>
+      id === null ? null : (names.get(id)?.displayName ?? null);
     let reversalView: ReceiptReversalDetailView | null = null;
     if (reversal !== null) {
-      const decider =
-        reversal.approvalState === 'approved' ? reversal.approvedBy : reversal.decidedBy;
-      const people = [reversal.requestedBy, decider].filter((id): id is string => id !== null);
-      const names = await iamDirectory().directory.resolveDisplayIdentities(db, [
-        ...new Set(people),
-      ]);
-      const nameOf = (id: string | null): string | null =>
-        id === null ? null : (names.get(id)?.displayName ?? null);
       reversalView = {
         ...toReversalView(reversal, units),
         requestedByName: nameOf(reversal.requestedBy),
@@ -526,7 +571,7 @@ export class PaymentReadService {
       receivedAt: receipt.receivedAt.toISOString(),
       evidenceDocumentVersionId: receipt.evidenceDocumentVersionId,
       recordVersion: receipt.recordVersion,
-      allocations: allocations.map((row) => toAllocationView(row, mayNamePayer, units)),
+      allocations: allocations.map((row) => toAllocationView(row, mayNamePayer, units, nameOf)),
       allocationsTruncated: truncated,
       reversal: reversalView,
       replaces: replaces === null ? null : { id: replaces.id, reference: replaces.receiptNumber },
