@@ -5,7 +5,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 
-import type { ReceiptDetail } from '../payments-contract';
+import type { ReceiptAllocation, ReceiptDetail } from '../payments-contract';
 import { Money, When } from './shared';
 
 /**
@@ -25,17 +25,18 @@ export type ReceiptPayerName =
  * which carries the reference, the method, the amount, the remainder and the
  * allocation history. No PDF is generated: this is HTML that prints well.
  *
- * ## The payer is named; the invoices are not, because no read numbers them
+ * ## The payer and the invoices are named, never referenced
  *
  * The payer is printed by name when the screen could name them — the receipt
  * list names the payer for a caller who may read customers — and otherwise the
- * copy says the name is not shown; the payer's reference is never printed. No
- * receipt read carries the cashier who took the money — `received_by` is stored
- * and deliberately never selected. Each allocation names its invoice by
- * reference and never by number: reading a number would take one
- * `sal.invoice-detail` call per allocation, and that operation requires
- * `sal.invoice.manage`, a code the cashier printing this receipt does not hold.
- * The document says so rather than leaving blanks that look like a fault.
+ * copy says the name is not shown; the payer's reference is never printed. The
+ * screen hands this copy over only once the name lookup has settled, so it never
+ * says "not shown" for a payer about to be named. Each allocation names its
+ * invoice by number, with the customer that invoice bills where the reader may
+ * read customers: `sal.receipt-detail` publishes both beside each allocation
+ * (finance retest DF-R2-2), so no invoice reference is printed. No receipt read
+ * carries the cashier who took the money — `received_by` is stored and
+ * deliberately never selected — and the document says so.
  *
  * ## Dates read in order in both languages
  *
@@ -66,9 +67,7 @@ export function ReceiptDocument({
     translate(messages, 'payments.print.column.when'),
   ];
   const rows = receipt.allocations.map((allocation) => [
-    <span key="i" className="font-mono" dir="ltr">
-      {allocation.invoiceId}
-    </span>,
+    <AllocatedInvoice key="i" messages={messages} allocation={allocation} />,
     <Money key="a" money={allocation.money} locale={locale} />,
     <When key="w" value={allocation.allocatedAt} locale={locale} />,
   ]);
@@ -110,7 +109,12 @@ export function ReceiptDocument({
               {payer.kind === 'named' ? (
                 <bdi>{payer.name}</bdi>
               ) : (
-                translate(messages, 'payments.list.payerNotShown')
+                translate(
+                  messages,
+                  payer.kind === 'loading'
+                    ? 'payments.receipt.payerLoading'
+                    : 'payments.list.payerNotShown'
+                )
               )}
             </dd>
           </div>
@@ -128,7 +132,7 @@ export function ReceiptDocument({
       }
       footer={
         <p>
-          {translate(messages, 'payments.print.identifiersOnly')}
+          {translate(messages, 'payments.print.noCashier')}
           {receipt.allocationsTruncated ? (
             <> {translate(messages, 'payments.print.truncated')}</>
           ) : null}
@@ -160,5 +164,43 @@ export function ReceiptDocument({
         )}
       </div>
     </PrintDocument>
+  );
+}
+
+/**
+ * The invoice an allocation went to, as a reader names it (finance retest
+ * DF-R2-2): its number, isolated left to right so an Arabic line keeps its
+ * digits in order, and the customer it bills where the server named them. An
+ * invoice this scope cannot see says so; its reference is never shown. Shared by
+ * the receipt panel and this copy, so the screen and the paper name it alike.
+ */
+export function AllocatedInvoice({
+  messages,
+  allocation,
+}: {
+  readonly messages: Messages;
+  readonly allocation: ReceiptAllocation;
+}) {
+  if (allocation.invoiceNumber === null) {
+    return (
+      <span className="text-text-muted">
+        {translate(messages, 'payments.allocations.invoiceNotShown')}
+      </span>
+    );
+  }
+  return (
+    <span data-testid="receipt-allocation-invoice">
+      <bdi className="font-mono" dir="ltr">
+        {allocation.invoiceNumber}
+      </bdi>
+      {allocation.invoicePayerName === null ? null : (
+        <>
+          {' '}
+          <span className="text-text-muted">
+            <bdi>{allocation.invoicePayerName}</bdi>
+          </span>
+        </>
+      )}
+    </span>
   );
 }

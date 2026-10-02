@@ -3387,3 +3387,175 @@ describe('Arabic, right to left', () => {
     expect(screen.getByText(AR['invoices.preview.heading'] as string)).toBeVisible();
   });
 });
+
+/*
+ * Finance retest fixes C (`P1-32-PRE-OD-FQC`). The signed-in retest at 9bd21460
+ * printed the work-order invoice with the page title and its description above
+ * the document (DF-R2-1, result matrix R2 rows 11 and 12), and a printable copy
+ * could say "not shown" while the payer's name was still being found.
+ */
+describe('finance retest fixes C', () => {
+  /*
+   * Whether the print sheet keeps an element on the paper — the rules of
+   * `styles/print/_index.scss`, which `gallery-and-print.dom.test.tsx` holds
+   * against the compiled sheet: a direct child of a print scope that holds an
+   * open document is left off unless it is or holds that document, and `hide`,
+   * navigation and buttons never print. The counter-sales DF-B2 case reads the
+   * paper the same way.
+   */
+  function onPaper(element: Element): boolean {
+    for (let node: Element | null = element; node !== null; node = node.parentElement) {
+      if (node.matches('[data-print="hide"], nav, button:not([data-print="keep"])')) return false;
+      const parent = node.parentElement;
+      if (
+        parent !== null &&
+        parent.matches('[data-print-scope]') &&
+        parent.querySelector('[data-print="document"]') !== null &&
+        !node.matches('[data-print="document"]') &&
+        node.querySelector('[data-print="document"]') === null
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  const issuedForWorkOrder = () =>
+    invoice({ status: 'issued', invoiceNumber: 'INV-000001', issuedAt: '2026-10-01T07:00:00Z' });
+
+  async function pageWithInvoice(locale: 'en' | 'ar') {
+    PERMISSIONS = ['sal.invoice.manage', 'sal.finance.view', 'wo.work_order.read'];
+    readWorkOrderInvoice.mockImplementation(async () =>
+      okRead({ workOrderId: WORK_ORDER_ID, invoice: issuedForWorkOrder() })
+    );
+    readInvoice.mockImplementation(async () =>
+      okRead(detail({ status: 'issued', invoiceNumber: 'INV-000001' }))
+    );
+    const tree = (await InvoicesPage({
+      params: Promise.resolve({ locale }),
+      searchParams: Promise.resolve({ workOrderId: WORK_ORDER_ID }),
+    })) as React.ReactElement;
+    return locale === 'en' ? renderLtr(tree) : renderRtl(tree);
+  }
+
+  it('DF-R2-1: only the document reaches the paper — no page title or description', async () => {
+    const user = userEvent.setup();
+    await pageWithInvoice('en');
+    await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    expect(onPaper(document)).toBe(true);
+    expect(onPaper(within(document).getByText('WO-000042'))).toBe(true);
+    // The page's own title, not the copy's heading of the same word.
+    const title = screen
+      .getAllByRole('heading', { level: 1, name: EN['invoices.page.title'] as string })
+      .find((heading) => !document.contains(heading));
+    expect(title).toBeDefined();
+    expect(onPaper(title as HTMLElement)).toBe(false);
+    expect(onPaper(screen.getByText(EN['invoices.page.description'] as string))).toBe(false);
+    // The working panels stay off as before: the detail and the balance.
+    expect(
+      onPaper(screen.getByRole('region', { name: EN['invoices.detail.heading'] as string }))
+    ).toBe(false);
+  });
+
+  it('DF-R2-1: the Arabic page prints the document alone too', async () => {
+    const user = userEvent.setup();
+    await pageWithInvoice('ar');
+    await screen.findByRole('region', { name: AR['invoices.detail.heading'] as string });
+    await user.click(screen.getByRole('button', { name: AR['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    expect(onPaper(document)).toBe(true);
+    const title = screen
+      .getAllByRole('heading', { level: 1, name: AR['invoices.page.title'] as string })
+      .find((heading) => !document.contains(heading));
+    expect(title).toBeDefined();
+    expect(onPaper(title as HTMLElement)).toBe(false);
+    expect(onPaper(screen.getByText(AR['invoices.page.description'] as string))).toBe(false);
+  });
+
+  it('DF-R2-1: with no copy open, printing the page still prints the page', async () => {
+    await pageWithInvoice('en');
+    await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
+    expect(onPaper(screen.getByText(EN['invoices.page.description'] as string))).toBe(true);
+    expect(
+      onPaper(screen.getByRole('heading', { level: 1, name: EN['invoices.page.title'] as string }))
+    ).toBe(true);
+  });
+
+  it('the printable copy waits for the payer name: loading and no Print until the lookup settles', async () => {
+    // The payer is not the job's customer, so the name is found through the list.
+    const billed = invoice({
+      status: 'issued',
+      invoiceNumber: 'INV-000001',
+      issuedAt: '2026-10-01T07:00:00Z',
+      payerPartnerId: OTHER_PAYER,
+    });
+    readWorkOrderInvoice.mockImplementation(async () =>
+      okRead({ workOrderId: WORK_ORDER_ID, invoice: billed })
+    );
+    readInvoice.mockImplementation(async () =>
+      okRead(detail({ status: 'issued', invoiceNumber: 'INV-000001', payerPartnerId: OTHER_PAYER }))
+    );
+    let answer: (page: unknown) => void = () => undefined;
+    listInvoices.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
+    const user = userEvent.setup();
+    renderScreen({ initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: billed }) });
+    await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const panel = document.getElementById('invoice-print-heading')?.closest('section');
+    expect(panel).not.toBeNull();
+    const section = panel as HTMLElement;
+    // Still finding the name: a loading state, no copy, and nothing to print.
+    await waitFor(() => expect(readInvoicePreview).toHaveBeenCalled());
+    expect(within(section).getByRole('status')).toBeVisible();
+    expect(screen.queryByRole('article')).toBeNull();
+    expect(
+      within(section).queryByRole('button', { name: EN['invoices.print.print'] as string })
+    ).toBeNull();
+    answer(
+      okRead({
+        items: [{ id: INVOICE_ID, payer: { displayName: 'Omar Khalil' } }],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+    const copy = await screen.findByRole('article');
+    expect(within(copy).getByTestId('invoice-print-payer')).toHaveTextContent('Omar Khalil');
+    await user.click(
+      within(section).getByRole('button', { name: EN['invoices.print.print'] as string })
+    );
+    expect(print).toHaveBeenCalledTimes(1);
+    print.mockRestore();
+  });
+
+  it('writes the balance with the minor unit the server published, where the locale data disagrees', async () => {
+    readWorkOrderInvoice.mockImplementation(async () =>
+      okRead({ workOrderId: WORK_ORDER_ID, invoice: issuedForWorkOrder() })
+    );
+    readInvoice.mockImplementation(async () =>
+      okRead(detail({ status: 'issued', invoiceNumber: 'INV-000001' }))
+    );
+    readOutstanding.mockImplementation(async () =>
+      okRead({
+        ...outstanding,
+        outstanding: { amount: '100.5000', currency: 'IQD', minorUnit: 3 },
+      })
+    );
+    renderScreen({
+      initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: issuedForWorkOrder() }),
+    });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    expect(await within(balance).findByText('100.500 IQD')).toBeVisible();
+    // The browser's locale data alone writes the Iraqi dinar without decimals.
+    expect(formatMoney({ amount: '100.5000', currency: 'IQD' }, 'en')).toBe('100.5 IQD');
+  });
+});

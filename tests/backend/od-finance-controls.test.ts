@@ -454,7 +454,7 @@ describe('M-09 — an allocation is booked once per key', () => {
     expect(retried.status).toBe(201);
     const again = await bodyOf<AllocationBody>(retried);
     expect(again.id).toBe(booked.id);
-    expect(again.money).toEqual({ amount: '60.0000', currency: 'USD' });
+    expect(again.money).toEqual({ amount: '60.0000', currency: 'USD', minorUnit: 2 });
 
     expect(
       await countRowsOf(

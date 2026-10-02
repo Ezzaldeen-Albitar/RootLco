@@ -42,7 +42,7 @@
  * read would withhold facts a reception clerk is entitled to.
  */
 import { AppFailure } from '@/server/errors/app-failure';
-import { Decimal, MONEY, moneyView, type MoneyView } from '@/modules/pricing';
+import { Decimal, MONEY, moneyView, type MinorUnits, type MoneyView } from '@/modules/pricing';
 // `rollUpDecisions` is imported rather than reimplemented so there is exactly ONE
 // definition of "the customer accepted this revision" in the codebase. It is the
 // quotation module's rule (BR-QUO-001: a revision is accepted only when EVERY item
@@ -330,6 +330,12 @@ export interface InvoicePreview {
   readonly quotationId: string;
   readonly quotationRevisionId: string;
   readonly currency: string;
+  /**
+   * The minor unit of `currency`, as `shared.currencies` records it (Owner decision
+   * D1), so a client writes the preview's figures the way the platform does.
+   * Absent only for a currency the register does not hold.
+   */
+  readonly minorUnit?: number;
   readonly subtotal: string;
   readonly discountTotal: string;
   readonly taxTotal: string;
@@ -433,9 +439,19 @@ export interface NumberingConfigView {
 // ---------------------------------------------------------------------------
 // View mappers. Module-level and exported, because the mutation service returns
 // the same shapes and two mappers would be two wire contracts.
+//
+// Each takes the minor units of the currencies it renders (`minorUnitsFor`), so
+// every amount it publishes says how many decimals its currency is written with
+// (Owner decision D1). Without them the amounts are the same, unstamped.
 // ---------------------------------------------------------------------------
 
-export const toInvoiceView = (row: InvoiceRow): InvoiceView => ({
+/** No minor units looked up: every amount is published unstamped. */
+const NO_MINOR_UNITS: MinorUnits = new Map();
+
+export const toInvoiceView = (
+  row: InvoiceRow,
+  units: MinorUnits = NO_MINOR_UNITS
+): InvoiceView => ({
   id: row.id,
   companyId: row.companyId,
   branchId: row.branchId,
@@ -450,9 +466,9 @@ export const toInvoiceView = (row: InvoiceRow): InvoiceView => ({
   recordVersion: row.recordVersion,
   totals: row.money
     ? {
-        net: moneyView(row.money.netTotal, row.currencyCode),
-        tax: moneyView(row.money.taxTotal, row.currencyCode),
-        gross: moneyView(row.money.grossTotal, row.currencyCode),
+        net: moneyView(row.money.netTotal, row.currencyCode, units),
+        tax: moneyView(row.money.taxTotal, row.currencyCode, units),
+        gross: moneyView(row.money.grossTotal, row.currencyCode, units),
       }
     : null,
 });
@@ -470,9 +486,10 @@ const WITHHELD_PAYER: InvoicePayerView = Object.freeze({
  */
 export const toInvoiceListEntryView = (
   row: InvoiceListRow,
-  mayNamePayer: boolean
+  mayNamePayer: boolean,
+  units: MinorUnits = NO_MINOR_UNITS
 ): InvoiceListEntryView => ({
-  ...toInvoiceView(row),
+  ...toInvoiceView(row, units),
   payer: mayNamePayer
     ? {
         displayName: row.payerDisplayName,
@@ -480,7 +497,9 @@ export const toInvoiceListEntryView = (
         partyType: row.payerPartyType,
       }
     : WITHHELD_PAYER,
-  outstanding: balanceIsTrustworthy(row) ? moneyView(row.openAmount, row.currencyCode) : null,
+  outstanding: balanceIsTrustworthy(row)
+    ? moneyView(row.openAmount, row.currencyCode, units)
+    : null,
 });
 
 /**
@@ -498,7 +517,8 @@ function withoutVehicleArms(terms: EntitySearchTerms): EntitySearchTerms {
 
 export const toInvoiceLineView = (
   row: InvoiceLineRow,
-  items: ReadonlyMap<string, ItemLabel> = new Map()
+  items: ReadonlyMap<string, ItemLabel> = new Map(),
+  units: MinorUnits = NO_MINOR_UNITS
 ): InvoiceLineView => ({
   id: row.id,
   lineNumber: row.lineNumber,
@@ -510,24 +530,27 @@ export const toInvoiceLineView = (
   recordVersion: row.recordVersion,
   money: row.money
     ? {
-        unitPrice: moneyView(row.money.unitPrice, row.currencyCode),
-        net: moneyView(row.money.netAmount, row.currencyCode),
-        tax: moneyView(row.money.taxAmount, row.currencyCode),
-        gross: moneyView(row.money.grossAmount, row.currencyCode),
+        unitPrice: moneyView(row.money.unitPrice, row.currencyCode, units),
+        net: moneyView(row.money.netAmount, row.currencyCode, units),
+        tax: moneyView(row.money.taxAmount, row.currencyCode, units),
+        gross: moneyView(row.money.grossAmount, row.currencyCode, units),
         payerSplit: {
-          customer: moneyView(row.money.customerPayAmount, row.currencyCode),
-          warranty: moneyView(row.money.warrantyPayAmount, row.currencyCode),
+          customer: moneyView(row.money.customerPayAmount, row.currencyCode, units),
+          warranty: moneyView(row.money.warrantyPayAmount, row.currencyCode, units),
         },
       }
     : null,
 });
 
-export const toCreditNoteView = (row: CreditNoteRow): CreditNoteView => ({
+export const toCreditNoteView = (
+  row: CreditNoteRow,
+  units: MinorUnits = NO_MINOR_UNITS
+): CreditNoteView => ({
   id: row.id,
   invoiceId: row.invoiceId,
   companyId: row.companyId,
   branchId: row.branchId,
-  amount: moneyView(row.amount, row.currencyCode),
+  amount: moneyView(row.amount, row.currencyCode, units),
   reason: row.reason,
   approvalState: row.approvalState,
   requestedBy: row.requestedBy,
@@ -728,9 +751,10 @@ export class BillingReadService {
       branchId: invoice.branchId,
     });
     const items = await describeLineItems(db, lines);
+    const units = await this.repository.minorUnitsFor(db, [invoice.currencyCode]);
     return {
-      invoice: toInvoiceView(invoice),
-      lines: lines.map((line) => toInvoiceLineView(line, items)),
+      invoice: toInvoiceView(invoice, units),
+      lines: lines.map((line) => toInvoiceLineView(line, items, units)),
       recordVersion: invoice.recordVersion,
     };
   }
@@ -777,7 +801,9 @@ export class BillingReadService {
     // them, so a caller without `sal.finance.view` gets the header with the money
     // OMITTED rather than zeroed. Reused deliberately: a second mapper would be a
     // second wire contract for one row.
-    return { workOrderId: scope.workOrderId, invoice: invoice ? toInvoiceView(invoice) : null };
+    if (!invoice) return { workOrderId: scope.workOrderId, invoice: null };
+    const units = await this.repository.minorUnitsFor(db, [invoice.currencyCode]);
+    return { workOrderId: scope.workOrderId, invoice: toInvoiceView(invoice, units) };
   }
 
   /**
@@ -830,12 +856,16 @@ export class BillingReadService {
     }
 
     const amount = Decimal.fromDatabase(open.amount, MONEY);
+    const units = await this.repository.minorUnitsFor(db, [
+      open.currencyCode,
+      invoice.currencyCode,
+    ]);
     return {
       invoiceId: open.invoiceId,
       status: open.status,
-      outstanding: moneyView(open.amount, open.currencyCode),
+      outstanding: moneyView(open.amount, open.currencyCode, units),
       isSettled: !amount.greaterThan(Decimal.zero(MONEY)),
-      settlement: await this.settlementOf(db, invoice, open.amount),
+      settlement: await this.settlementOf(db, invoice, open.amount, units),
       asOf: open.asOf.toISOString(),
     };
   }
@@ -851,7 +881,8 @@ export class BillingReadService {
   private async settlementOf(
     db: DbHandle,
     invoice: InvoiceRow,
-    openAmount: string
+    openAmount: string,
+    units: MinorUnits
   ): Promise<SettlementView | null> {
     if (invoice.status !== 'issued' && invoice.status !== 'credited') return null;
     const position = await this.repository.creditPosition(db, {
@@ -872,8 +903,8 @@ export class BillingReadService {
       creditStatus: deriveCreditStatus(credited, Decimal.fromDatabase(position.gross, MONEY)),
       paymentStatus: derivePaymentStatus(paid, Decimal.fromDatabase(openAmount, MONEY)),
       refundStatus: 'none',
-      credited: moneyView(position.credited, invoice.currencyCode),
-      paid: moneyView(position.paid, invoice.currencyCode),
+      credited: moneyView(position.credited, invoice.currencyCode, units),
+      paid: moneyView(position.paid, invoice.currencyCode, units),
     };
   }
 
@@ -937,12 +968,16 @@ export class BillingReadService {
      * input the invoice fails on.
      */
     const exact = (value: string): string => Decimal.fromDatabase(value, MONEY).toString();
+    const minorUnit = (await this.repository.minorUnitsFor(db, [source.currencyCode])).get(
+      source.currencyCode
+    );
 
     return {
       workOrderId: scope.workOrderId,
       quotationId: source.quotationId,
       quotationRevisionId: source.revisionId,
       currency: source.currencyCode,
+      ...(minorUnit === undefined ? {} : { minorUnit }),
       subtotal: exact(source.subtotal),
       discountTotal: exact(source.discountTotal),
       taxTotal: exact(source.taxTotal),
@@ -1042,8 +1077,9 @@ export class BillingReadService {
     const nameOf = (id: string | null): string | null =>
       id === null ? null : (names.get(id)?.displayName ?? null);
     const returned = trace.sourceReturn;
+    const units = await this.repository.minorUnitsFor(db, [note.currencyCode]);
     return {
-      ...toCreditNoteView(note),
+      ...toCreditNoteView(note, units),
       requestedAt: trace.requestedAt.toISOString(),
       requestedByName: nameOf(note.requestedBy),
       approvedByName: nameOf(note.approvedBy),
@@ -1103,7 +1139,11 @@ export class BillingReadService {
       filter,
       pageRequest(CREDIT_NOTE_ORDER, page)
     );
-    return { ...result, items: result.items.map(toCreditNoteView) };
+    const units = await this.repository.minorUnitsFor(
+      db,
+      result.items.map((row) => row.currencyCode)
+    );
+    return { ...result, items: result.items.map((row) => toCreditNoteView(row, units)) };
   }
 
   /**
@@ -1170,9 +1210,13 @@ export class BillingReadService {
       },
       pageRequest(INVOICE_LIST_ORDER, page)
     );
+    const units = await this.repository.minorUnitsFor(
+      db,
+      result.items.map((row) => row.currencyCode)
+    );
     return {
       ...result,
-      items: result.items.map((row) => toInvoiceListEntryView(row, mayReadCustomers)),
+      items: result.items.map((row) => toInvoiceListEntryView(row, mayReadCustomers, units)),
     };
   }
 

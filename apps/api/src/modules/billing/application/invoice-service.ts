@@ -1083,7 +1083,11 @@ export class InvoiceService {
       filter,
       pageRequest(COUNTER_SALE_ORDER, page)
     );
-    return { ...result, items: result.items.map(toInvoiceView) };
+    const units = await this.repository.minorUnitsFor(
+      db,
+      result.items.map((row) => row.currencyCode)
+    );
+    return { ...result, items: result.items.map((row) => toInvoiceView(row, units)) };
   }
 
   // -------------------------------------------------------------------------
@@ -1169,7 +1173,7 @@ export class InvoiceService {
         });
       }
       return {
-        invoice: toInvoiceView(before),
+        invoice: toInvoiceView(before, await this.unitsOf(db, before)),
         invoiceNumber: before.invoiceNumber,
         replayed: true,
         recordVersion: before.recordVersion,
@@ -1272,7 +1276,7 @@ export class InvoiceService {
     });
 
     return {
-      invoice: toInvoiceView(after),
+      invoice: toInvoiceView(after, await this.unitsOf(db, after)),
       invoiceNumber,
       replayed: false,
       recordVersion: after.recordVersion,
@@ -1338,7 +1342,7 @@ export class InvoiceService {
 
     if (before.status === 'void_before_issue') {
       return {
-        invoice: toInvoiceView(before),
+        invoice: toInvoiceView(before, await this.unitsOf(db, before)),
         replayed: true,
         recordVersion: before.recordVersion,
       };
@@ -1412,7 +1416,7 @@ export class InvoiceService {
 
     const after = await this.repository.findInvoice(db, invoiceId);
     return {
-      invoice: toInvoiceView(after ?? before),
+      invoice: toInvoiceView(after ?? before, await this.unitsOf(db, after ?? before)),
       replayed: false,
       // From the UPDATE's own RETURNING clause, not from the re-read: it is the
       // version the void produced, and `shared.touch_row_metadata` advanced it by
@@ -1566,7 +1570,10 @@ export class InvoiceService {
           });
         }
         await authorizeScope({ companyId: existing.companyId, branchId: existing.branchId });
-        return { creditNote: toCreditNoteView(existing), replayed: true };
+        return {
+          creditNote: toCreditNoteView(existing, await this.unitsOf(db, existing)),
+          replayed: true,
+        };
       }
     }
 
@@ -1605,7 +1612,7 @@ export class InvoiceService {
       ],
     });
 
-    return { creditNote: toCreditNoteView(note), replayed: false };
+    return { creditNote: toCreditNoteView(note, await this.unitsOf(db, note)), replayed: false };
   }
 
   /**
@@ -1673,7 +1680,7 @@ export class InvoiceService {
     await this.authorizeApprovalScope(db, note, authorizeScope);
 
     if (note.approvalState === 'approved') {
-      return { creditNote: toCreditNoteView(note), replayed: true };
+      return { creditNote: toCreditNoteView(note, await this.unitsOf(db, note)), replayed: true };
     }
     if (note.approvalState !== 'pending') {
       refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.decided, () => {
@@ -1804,7 +1811,10 @@ export class InvoiceService {
       },
     });
 
-    return { creditNote: toCreditNoteView(approved), replayed: false };
+    return {
+      creditNote: toCreditNoteView(approved, await this.unitsOf(db, approved)),
+      replayed: false,
+    };
   }
 
   /**
@@ -1850,7 +1860,7 @@ export class InvoiceService {
       );
     }
     if (note.approvalState === 'withdrawn') {
-      return { creditNote: toCreditNoteView(note), replayed: true };
+      return { creditNote: toCreditNoteView(note, await this.unitsOf(db, note)), replayed: true };
     }
     if (note.approvalState !== 'pending') {
       decisionConflict(
@@ -1892,7 +1902,10 @@ export class InvoiceService {
       ],
     });
 
-    return { creditNote: toCreditNoteView(withdrawn), replayed: false };
+    return {
+      creditNote: toCreditNoteView(withdrawn, await this.unitsOf(db, withdrawn)),
+      replayed: false,
+    };
   }
 
   /**
@@ -1936,7 +1949,7 @@ export class InvoiceService {
       );
     }
     if (note.approvalState === 'rejected') {
-      return { creditNote: toCreditNoteView(note), replayed: true };
+      return { creditNote: toCreditNoteView(note, await this.unitsOf(db, note)), replayed: true };
     }
     if (note.approvalState !== 'pending') {
       decisionConflict(
@@ -1979,12 +1992,26 @@ export class InvoiceService {
       ],
     });
 
-    return { creditNote: toCreditNoteView(rejected), replayed: false };
+    return {
+      creditNote: toCreditNoteView(rejected, await this.unitsOf(db, rejected)),
+      replayed: false,
+    };
   }
 
   // -------------------------------------------------------------------------
   // Internals.
   // -------------------------------------------------------------------------
+
+  /**
+   * The minor unit of a row's currency, so an echo states how many decimals its
+   * amounts are written with, as the reads do (Owner decision D1).
+   */
+  private unitsOf(
+    db: DbHandle,
+    row: { readonly currencyCode: string }
+  ): Promise<ReadonlyMap<string, number>> {
+    return this.repository.minorUnitsFor(db, [row.currencyCode]);
+  }
 
   /**
    * Authorizes the note's own company and branch for an approval, and records a
@@ -2203,9 +2230,10 @@ export class InvoiceService {
       branchId: fresh.branchId,
     });
     const items = await describeLineItems(db, lines);
+    const units = await this.unitsOf(db, fresh);
     return {
-      invoice: toInvoiceView(fresh),
-      lines: lines.map((line) => toInvoiceLineView(line, items)),
+      invoice: toInvoiceView(fresh, units),
+      lines: lines.map((line) => toInvoiceLineView(line, items, units)),
       recordVersion: fresh.recordVersion,
     };
   }

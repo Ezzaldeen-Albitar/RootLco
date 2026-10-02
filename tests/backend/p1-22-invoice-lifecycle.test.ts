@@ -988,9 +988,21 @@ describe('sal.invoice-create', () => {
     expect(created.invoice.currency).toBe('USD');
 
     // Header totals, each as an exact decimal STRING with its currency beside it.
-    expect(created.invoice.totals?.net).toEqual({ amount: '150.0000', currency: 'USD' });
-    expect(created.invoice.totals?.tax).toEqual({ amount: '15.0000', currency: 'USD' });
-    expect(created.invoice.totals?.gross).toEqual({ amount: '165.0000', currency: 'USD' });
+    expect(created.invoice.totals?.net).toEqual({
+      amount: '150.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(created.invoice.totals?.tax).toEqual({
+      amount: '15.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(created.invoice.totals?.gross).toEqual({
+      amount: '165.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
 
     expect(created.lines).toHaveLength(1);
     const line = created.lines[0];
@@ -1001,15 +1013,23 @@ describe('sal.invoice-create', () => {
     expect(line?.quantity).toBe('2.000');
     expect(line?.currency).toBe('USD');
     expect(line?.sourceQuotationItemId).toBe(billable.itemIds[0]);
-    expect(line?.money?.unitPrice).toEqual({ amount: '100.0000', currency: 'USD' });
-    expect(line?.money?.net).toEqual({ amount: '150.0000', currency: 'USD' });
-    expect(line?.money?.tax).toEqual({ amount: '15.0000', currency: 'USD' });
-    expect(line?.money?.gross).toEqual({ amount: '165.0000', currency: 'USD' });
+    expect(line?.money?.unitPrice).toEqual({ amount: '100.0000', currency: 'USD', minorUnit: 2 });
+    expect(line?.money?.net).toEqual({ amount: '150.0000', currency: 'USD', minorUnit: 2 });
+    expect(line?.money?.tax).toEqual({ amount: '15.0000', currency: 'USD', minorUnit: 2 });
+    expect(line?.money?.gross).toEqual({ amount: '165.0000', currency: 'USD', minorUnit: 2 });
     // FR-WTY-004: the payer split always sums to gross, and the whole gross is the
     // customer's because no protected configuration determines a warranty share at
     // invoice time. A non-zero warranty share here could only have come from a client.
-    expect(line?.money?.payerSplit.customer).toEqual({ amount: '165.0000', currency: 'USD' });
-    expect(line?.money?.payerSplit.warranty).toEqual({ amount: '0.0000', currency: 'USD' });
+    expect(line?.money?.payerSplit.customer).toEqual({
+      amount: '165.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(line?.money?.payerSplit.warranty).toEqual({
+      amount: '0.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
 
     // The ROW carries it too, in the same exact form, and the preview's own gross agreed.
     const row = await invoiceRowOf(created.invoice.id);
@@ -1107,7 +1127,11 @@ describe('sal.invoice-create', () => {
     expect(replay.status).toBe(200);
     const replayed = await bodyOf<CreatedInvoiceBody>(replay);
     expect(replayed.invoice.id).toBe(original.invoice.id);
-    expect(replayed.invoice.totals?.gross).toEqual({ amount: '165.0000', currency: 'USD' });
+    expect(replayed.invoice.totals?.gross).toEqual({
+      amount: '165.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
 
     expect(await invoiceRowsForWorkOrder(billable.workOrderId)).toBe(1);
     expect((await auditTotalFor('sal.invoice.created')) - auditBefore).toBe(1);
@@ -1566,22 +1590,52 @@ describe('sal.invoice-detail', () => {
     const detail = await bodyOf<InvoiceDetailBody>(response);
 
     expect(detail.invoice.invoiceNumber).toBe(issued.invoiceNumber);
-    expect(detail.invoice.totals?.net).toEqual({ amount: '150.0000', currency: 'USD' });
-    expect(detail.invoice.totals?.tax).toEqual({ amount: '15.0000', currency: 'USD' });
-    expect(detail.invoice.totals?.gross).toEqual({ amount: '165.0000', currency: 'USD' });
+    expect(detail.invoice.totals?.net).toEqual({
+      amount: '150.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(detail.invoice.totals?.tax).toEqual({
+      amount: '15.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(detail.invoice.totals?.gross).toEqual({
+      amount: '165.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
 
     expect(detail.lines).toHaveLength(1);
-    expect(detail.lines[0]?.money?.unitPrice).toEqual({ amount: '100.0000', currency: 'USD' });
-    expect(detail.lines[0]?.money?.net).toEqual({ amount: '150.0000', currency: 'USD' });
-    expect(detail.lines[0]?.money?.tax).toEqual({ amount: '15.0000', currency: 'USD' });
-    expect(detail.lines[0]?.money?.gross).toEqual({ amount: '165.0000', currency: 'USD' });
+    expect(detail.lines[0]?.money?.unitPrice).toEqual({
+      amount: '100.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(detail.lines[0]?.money?.net).toEqual({
+      amount: '150.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(detail.lines[0]?.money?.tax).toEqual({
+      amount: '15.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
+    expect(detail.lines[0]?.money?.gross).toEqual({
+      amount: '165.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
     expect(detail.lines[0]?.money?.payerSplit.customer).toEqual({
       amount: '165.0000',
       currency: 'USD',
+      minorUnit: 2,
     });
     expect(detail.lines[0]?.money?.payerSplit.warranty).toEqual({
       amount: '0.0000',
       currency: 'USD',
+      minorUnit: 2,
     });
 
     // The ETag the version-guarded commands consume, and it describes the INVOICE.
@@ -1690,7 +1744,7 @@ describe('sal.invoice-outstanding-read', () => {
     // all, so the invoice's own `currency_code` is the only thing that labels it — and
     // this operation always returns the pair, never the scalar. Compared as an exact
     // decimal STRING: `Number` appears nowhere in this assertion.
-    expect(outstanding.outstanding).toEqual({ amount: '100.0000', currency: 'USD' });
+    expect(outstanding.outstanding).toEqual({ amount: '100.0000', currency: 'USD', minorUnit: 2 });
     expect(outstanding.outstanding.currency).toBe(
       (await invoiceRowOf(draft.invoice.id))?.currencyCode
     );
@@ -1710,7 +1764,7 @@ describe('sal.invoice-outstanding-read', () => {
     expect(response.status).toBe(200);
     const outstanding = await bodyOf<OutstandingBody>(response);
     expect(outstanding.status).toBe('draft');
-    expect(outstanding.outstanding).toEqual({ amount: '0.0000', currency: 'USD' });
+    expect(outstanding.outstanding).toEqual({ amount: '0.0000', currency: 'USD', minorUnit: 2 });
     expect(outstanding.isSettled).toBe(true);
   });
 

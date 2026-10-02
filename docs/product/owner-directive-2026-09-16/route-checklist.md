@@ -3611,3 +3611,56 @@ Residual items from the contract review of this slice (fix round 2), one line ea
 - `SalePosition` says the balance "could not be read just now" for a reader whose `sal.finance.view` does not cover the sale's branch (totals hidden); it needs a cross-scope grant, and the wording suggests a passing fault where there is no permission.
 - The reviewer's mutants and probe ran through the vitest Node API from a scratch location and were not written to the worktree.
 - The database and backend tiers were not run by the reviewer for round 2 either; the isolation claims still rest on the backend file and the hosted jobs named above.
+
+### Finance retest fixes C — work-order invoice print scope, receipt allocations by name, payer name while loading, server minor units (P1-32-PRE-OD-FQC)
+
+The signed-in finance retest at `9bd21460` (result matrix R2 rows 11–12; the R1.9 Arabic screenshot
+read by the independent verifier) confirmed the defects below; each is fixed at its cause with a
+test that fails without the fix. No migration, no new operation, route, permission code or audit
+action. Reads gain additive fields only: `sal.receipt-detail` publishes, beside each allocation's
+invoice id, the invoice number (`invoiceNumber`) and the customer it bills (`invoicePayerName`,
+filled only for a caller holding `crm.customer.read`); every `MoneyView` the billing and payments
+reads and echoes publish carries `minorUnit` from `shared.currencies.minor_unit`; and
+`sal.invoice-preview` publishes `minorUnit` for its currency.
+
+| DF id      | Route                                                        | What changed                                                                                                                                                                                                                                                                                |
+| ---------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| DF-R2-1    | `/invoices?workOrderId=` (print)                             | The page header and the body share one print scope, as the counter-sales page does (DF-B2), so while the copy is open only the document reaches the paper: no page title "Invoice" / "الفاتورة" and no page description, in English and in Arabic.                                          |
+| DF-R2-2    | `/payments` (receipt panel and print)                        | Each "Applied to" entry, on screen and on the printed receipt, names the invoice by its number and the customer it bills where the reader may read customers; an invoice outside the reader's scope reads "An invoice not shown here"; no invoice or allocation reference is shown.         |
+| Payer name | `/invoices`, `/inventory/counter-sales`, `/payments` (print) | While the payer's name is still being found, the printable copy is not shown and Print is not offered: the panel shows a loading state, then the copy with the name or the honest "Not shown here".                                                                                         |
+| Minor unit | every money figure on the billing and payments screens       | Amounts are written with the minor unit the server published for their currency (`shared.currencies`, D1) instead of the browser's locale data, which disagrees for some currencies (for example IQD, LBP); the allocation amount box refuses a figure finer than that unit before sending. |
+
+Wrapper extensions: none to the shared component folders, and no new component folder.
+`AllocatedInvoice` (payments feature, beside `ReceiptDocument`) names an allocation's invoice for both
+the receipt panel and the printed copy; the receipt print panel uses `MuiLoadingState` while the payer
+name is found; `lib/money.ts` gains `fitsMinorUnit` and takes `minorUnit` on `Money`.
+
+Preserved: discount-approval rules and the credit-note rules untouched; the finance view still
+decides every amount, and the customer read still decides every name (the invoice's customer on a
+receipt is withheld without `crm.customer.read`, as the receipt list's payer is); tenant and branch
+isolation of the receipt read (backend cases: another branch 404, another tenant 404, no finance view
+403); money stays a decimal string end to end — the minor unit is a count of digits and nothing is
+rounded with it; a digit below the minor unit is still shown, never rounded away; no print route.
+
+Known limitations of this slice, one line each:
+
+- Money outside the billing and payments reads (pricing, quotations, inventory costs, approval limits, reports, the platform console) still takes its decimals from the browser's locale data; those reads publish no minor unit yet.
+- The minor unit is published per amount, not per currency list; an amount from a read that did not look it up falls back to the browser's locale data, as before.
+- Tax presentation, new prints (D10) and D4/D14 are not part of this slice.
+- Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the builds; they run in hosted CI. Focused backend files ran against a disposable database only.
+
+Fix round 1 of this slice's contract review: `fitsMinorUnit`, the new `lib/money.ts` export, is
+registered in `SANCTIONED_CALLS` (`scripts/ci/check-p1-30-server-arithmetic.mjs`), which is pinned to
+that module's export surface; the pinned case failed without it and passes with it.
+
+Residual items from the contract review of this slice (fix round 1), one line each:
+
+- Coverage floors were unmeasured on `d613061a`: `coverage-gate.mjs` exited 2 because the failing unit tier wrote no summary; re-checked on the fix head by the hosted unit-coverage job.
+- The credit-note request amount box (`CreditNoteRequestForm.tsx`) and the record-receipt amount box do not check the amount against the server's minor unit before sending, although invoice totals now carry `minorUnit`; the server still refuses with `minor_unit_scale` (`apps/api/src/server/http/validation.ts`); the slice claimed only the allocation box.
+- There is no timeout on the payer lookup: if `listInvoices` (invoice and counter-sale print) or `readReceiptPayer` (receipt print) never settles, the copy and Print stay in the loading state; a rejected request does settle to "Not shown here".
+- The payer-name wait on the counter-sale print path is covered only through the shared `PrintPanel`; no counter-sales test drives a pending lookup.
+- The `usePayerName` "found" state is not keyed by invoice id (`InvoiceScreen.tsx`); this predates the slice and is unchanged, but the copy now waits on that state.
+- Commit subject "P1-32-PRE-OD-FQC-02: print scope, allocations by number, server minor units" is 75 characters (limit 72); published history is not rewritten.
+- Money outside the billing and payments reads still takes its decimals from the browser's locale data, as listed above.
+- The database and backend tiers were not run by the reviewer locally; the hosted database and integration jobs passed on `d613061a`.
+- Checked by the reviewer: the DF-R2-1 print scope (replacing the scoped element with a fragment fails both DF-R2-1 cases); RLS on `sal.invoices` is scope-only, so allocation invoice numbers stay visible within the receipt's branch; the customer name is gated on `crm.customer.read` as in `sal.receipt-list`; every billing and payments money view passes the minor unit; OpenAPI is unchanged; no browser-test selector refers to a removed message key; the result matrix and fixture corrections are held outside the repository with the retest evidence.

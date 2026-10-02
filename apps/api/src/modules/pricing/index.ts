@@ -99,6 +99,7 @@ export {
   Money,
   assertCurrencyCode,
   moneyView,
+  type MinorUnits,
   type MoneyView,
 } from './domain/money';
 

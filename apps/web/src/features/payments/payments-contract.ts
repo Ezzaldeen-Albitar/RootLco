@@ -108,6 +108,12 @@ export const PAGE_SIZE = 25;
 export interface MoneyView {
   readonly amount: string;
   readonly currency: string;
+  /**
+   * How many decimals the currency is written with — `shared.currencies.minor_unit`,
+   * as the server published it (Owner decision D1). `formatMoney` writes the amount
+   * with it; absent only where the read did not look the currency up.
+   */
+  readonly minorUnit?: number | undefined;
 }
 
 /**
@@ -127,12 +133,20 @@ export interface PaymentMethod {
   readonly recordable: boolean;
 }
 
-/** One allocation of a receipt — `ReceiptAllocationView`. Immutable; carries no invoice number. */
+/**
+ * One allocation of a receipt — `ReceiptAllocationView`. Immutable. Names its
+ * invoice by number (finance retest DF-R2-2); the id is for addressing only and is
+ * never shown.
+ */
 export interface ReceiptAllocation {
   readonly id: string;
   /** `seq` as a string; an ordering token, never arithmetic. */
   readonly sequence: string;
   readonly invoiceId: string;
+  /** The invoice's number; `null` only when the invoice is not visible in this scope. */
+  readonly invoiceNumber: string | null;
+  /** The customer the invoice bills, by name; `null` when withheld from this reader. */
+  readonly invoicePayerName: string | null;
   readonly money: MoneyView;
   readonly allocatedAt: string;
 }

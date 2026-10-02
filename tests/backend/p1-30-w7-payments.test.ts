@@ -48,6 +48,14 @@
  * tenant's partner is never named on this tenant's receipts. The mocked unit
  * suite (`tests/unit/p1-32-receipt-payer-names.test.ts`) proves only what the
  * service asks and hands back.
+ *
+ * ## The invoice each allocation names (finance retest DF-R2-2)
+ *
+ * `sal.receipt-detail` names each allocation's invoice by its number, and the
+ * customer that invoice bills only to a caller holding `crm.customer.read` — the
+ * receipt list's rule. Both are read beside the allocation in the receipt's own
+ * scope, so a reader in another branch or another tenant is told nothing, and
+ * every amount carries its currency's minor unit from `shared.currencies`.
  */
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool, PoolClient } from 'pg';
@@ -72,6 +80,7 @@ import {
   SAL_FULL,
   SAL_NO_FINANCE,
   SAL_READER,
+  SAL_SCOPED_A2,
   SAL_TENANT_B,
   authAs,
   cleanP1_22Fixtures,
@@ -93,6 +102,7 @@ let admin: Pool;
 interface MoneyBody {
   readonly amount: string;
   readonly currency: string;
+  readonly minorUnit?: number;
 }
 interface ReceiptBody {
   readonly id: string;
@@ -126,6 +136,8 @@ interface DetailBody extends ReceiptBody {
     readonly id: string;
     readonly sequence: string;
     readonly invoiceId: string;
+    readonly invoiceNumber: string | null;
+    readonly invoicePayerName: string | null;
     readonly money: MoneyBody;
     readonly allocatedAt: string;
   }[];
@@ -638,7 +650,7 @@ describe('applying a receipt to an invoice', () => {
 });
 
 describe('the receipt the screen and its printed copy render', () => {
-  it('carries the reference, the method, both figures and the history — and no name, cashier or note', async () => {
+  it('carries the reference, the method, both figures and the history — and no cashier or note', async () => {
     const invoice = await seedIssuedInvoice('w7_detail');
     const receipt = await recordedReceipt('100.0000');
     authAs(SAL_FULL);
@@ -666,12 +678,78 @@ describe('the receipt the screen and its printed copy render', () => {
     expect(detail.allocations[0]?.invoiceId).toBe(invoice.invoiceId);
     expect(detail.allocations[0]?.money.amount).toBe('60.0000');
     expect(detail.allocationsTruncated).toBe(false);
+    // Named by its number (DF-R2-2); SAL_FULL holds no customer read, so no name.
+    expect(detail.allocations[0]?.invoiceNumber).toBe(invoice.invoiceNumber);
+    expect(detail.allocations[0]?.invoicePayerName).toBeNull();
+    // Every amount carries the minor unit `shared.currencies` records for USD.
+    expect(detail.money).toEqual({ amount: '100.0000', currency: 'USD', minorUnit: 2 });
+    expect(detail.unallocated).toEqual({ amount: '40.0000', currency: 'USD', minorUnit: 2 });
+    expect(detail.allocations[0]?.money).toEqual({
+      amount: '60.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
     // What the printed copy may NOT show, because it is not published.
     const raw = JSON.stringify(detail);
     expect(raw).not.toContain('receivedBy');
-    expect(raw).not.toContain('payerName');
-    expect(raw).not.toContain('invoiceNumber');
+    expect(raw).not.toContain('allocatedBy');
     expect(detail.payerPartnerId).toBe(PARTNER_A);
+  }, 90_000);
+
+  it('names the allocated invoice by number to every reader, its customer only to one who may read customers, and nothing outside the scope (DF-R2-2)', async () => {
+    const invoice = await seedIssuedInvoice('w7_named_allocation');
+    const receipt = await recordedReceipt('30.0000');
+    authAs(SAL_FULL);
+    expect(
+      (
+        await allocate(receipt.id, {
+          invoiceId: invoice.invoiceId,
+          amount: '10.0000',
+          currency: 'USD',
+        })
+      ).status
+    ).toBe(201);
+    const partner = await admin.query<{ display_name: string }>(
+      `SELECT display_name FROM crm.business_partners WHERE id = $1`,
+      [invoice.payerPartnerId]
+    );
+    const payerName = partner.rows[0]?.display_name;
+    expect(payerName).toBeDefined();
+
+    // A finance reader who may read customers: number and name.
+    authAs(SAL_FINANCE_CUSTOMERS);
+    const named = await readReceipt(receipt.id);
+    expect(named.status).toBe(200);
+    const [entry] = (await bodyOf<DetailBody>(named)).allocations;
+    expect(entry?.invoiceId).toBe(invoice.invoiceId);
+    expect(entry?.invoiceNumber).toBe(invoice.invoiceNumber);
+    expect(entry?.invoicePayerName).toBe(payerName);
+
+    // A finance reader without the customer read: the number, never the name.
+    authAs(SAL_READER);
+    const withheld = await readReceipt(receipt.id);
+    expect(withheld.status).toBe(200);
+    const withheldBody = await bodyOf<DetailBody>(withheld);
+    expect(withheldBody.allocations[0]?.invoiceNumber).toBe(invoice.invoiceNumber);
+    expect(withheldBody.allocations[0]?.invoicePayerName).toBeNull();
+    expect(JSON.stringify(withheldBody)).not.toContain(String(payerName));
+
+    // Another branch of the same tenant, holding every sales code there: the
+    // receipt is not visible, so neither is the invoice it names.
+    authAs(SAL_SCOPED_A2);
+    const elsewhere = await readReceipt(receipt.id);
+    expect(elsewhere.status).toBe(404);
+    expect(JSON.stringify(await elsewhere.json())).not.toContain(invoice.invoiceNumber);
+
+    // Another tenant, holding every sales code: told nothing.
+    authAs(SAL_TENANT_B);
+    const foreign = await readReceipt(receipt.id);
+    expect(foreign.status).toBe(404);
+    expect(JSON.stringify(await foreign.json())).not.toContain(invoice.invoiceNumber);
+
+    // Without finance view the receipt read is refused outright, as before.
+    authAs(SAL_NO_FINANCE);
+    expect((await readReceipt(receipt.id)).status).toBe(403);
   }, 90_000);
 
   it('refuses a malformed identifier before anything is looked up, and finance view is required', async () => {

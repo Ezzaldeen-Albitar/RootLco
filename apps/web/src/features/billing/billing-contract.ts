@@ -132,6 +132,12 @@ export const MAX_REASON = 2000;
 export interface MoneyView {
   readonly amount: string;
   readonly currency: string;
+  /**
+   * How many decimals the currency is written with — `shared.currencies.minor_unit`,
+   * as the server published it (Owner decision D1). `formatMoney` writes the amount
+   * with it; absent only where the read did not look the currency up.
+   */
+  readonly minorUnit?: number | undefined;
 }
 
 /** The three header totals — `InvoiceTotalsView`; `null` on the header when the amounts are not the caller's to see. */
@@ -270,6 +276,8 @@ export interface InvoicePreview {
   readonly quotationId: string;
   readonly quotationRevisionId: string;
   readonly currency: string;
+  /** The minor unit of `currency`, as `shared.currencies` records it (Owner decision D1). */
+  readonly minorUnit?: number | undefined;
   readonly subtotal: string;
   readonly discountTotal: string;
   readonly taxTotal: string;

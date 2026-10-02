@@ -407,18 +407,22 @@ describe('D1 — a JOD 16% line, quoted, invoiced and paid to the fils', () => {
     expect(detail.lines[0]?.money?.tax.amount).toBe('1.9750');
     expect(detail.lines[0]?.money?.gross.amount).toBe('14.3200');
     // Reconciliation: the header is the sum of the rounded lines.
-    expect(detail.invoice.totals?.gross).toEqual({ amount: '14.3200', currency: 'JOD' });
+    expect(detail.invoice.totals?.gross).toEqual({
+      amount: '14.3200',
+      currency: 'JOD',
+      minorUnit: 3,
+    });
 
     await payInFull(invoice.invoice.id, '14.320', 'JOD');
     const balance = await readOutstanding(invoice.invoice.id);
-    expect(balance.outstanding).toEqual({ amount: '0.0000', currency: 'JOD' });
+    expect(balance.outstanding).toEqual({ amount: '0.0000', currency: 'JOD', minorUnit: 3 });
     expect(balance.isSettled).toBe(true);
     expect(balance.settlement).toEqual({
       creditStatus: 'none',
       paymentStatus: 'paid',
       refundStatus: 'none',
-      credited: { amount: '0.0000', currency: 'JOD' },
-      paid: { amount: '14.3200', currency: 'JOD' },
+      credited: { amount: '0.0000', currency: 'JOD', minorUnit: 3 },
+      paid: { amount: '14.3200', currency: 'JOD', minorUnit: 3 },
     });
 
     // The delivery module's financial blocker reads the same port: nothing is
@@ -579,7 +583,11 @@ describe('D7 — the credit status is derived, and kept apart from payment', () 
     authAs(SAL_FULL);
     balance = await readOutstanding(invoice.invoiceId);
     expect(balance.settlement?.creditStatus).toBe('partly_credited');
-    expect(balance.settlement?.credited).toEqual({ amount: '40.0000', currency: 'USD' });
+    expect(balance.settlement?.credited).toEqual({
+      amount: '40.0000',
+      currency: 'USD',
+      minorUnit: 2,
+    });
     expect(balance.settlement?.paymentStatus).toBe('open');
 
     await approveCredit(await requestCredit(invoice.invoiceId, '60.0000'));
@@ -589,7 +597,7 @@ describe('D7 — the credit status is derived, and kept apart from payment', () 
     expect(balance.status).toBe('issued');
     expect(balance.settlement?.creditStatus).toBe('credited');
     expect(balance.settlement?.paymentStatus).toBe('nothing_due');
-    expect(balance.settlement?.paid).toEqual({ amount: '0.0000', currency: 'USD' });
+    expect(balance.settlement?.paid).toEqual({ amount: '0.0000', currency: 'USD', minorUnit: 2 });
   });
 
   it('reads a paid invoice as paid with no credit, and a draft as having no settlement yet', async () => {

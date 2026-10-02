@@ -613,6 +613,7 @@ function PreviewFigures({
   readonly preview: InvoicePreview;
 }) {
   const currency = preview.currency;
+  const minorUnit = preview.minorUnit;
   return (
     <div className="flex min-h-0 flex-col gap-3">
       <div className="overflow-x-auto">
@@ -674,22 +675,47 @@ function PreviewFigures({
                   {line.quantity}
                 </td>
                 <td className="px-3 py-2 text-end">
-                  <Figure amount={line.unitPrice} currency={currency} locale={locale} />
+                  <Figure
+                    amount={line.unitPrice}
+                    currency={currency}
+                    minorUnit={minorUnit}
+                    locale={locale}
+                  />
                 </td>
                 <td className="px-3 py-2 text-end">
-                  <Figure amount={line.discount} currency={currency} locale={locale} />
+                  <Figure
+                    amount={line.discount}
+                    currency={currency}
+                    minorUnit={minorUnit}
+                    locale={locale}
+                  />
                 </td>
                 <td className="px-3 py-2 text-end font-mono" dir="ltr">
                   {line.taxRate}
                 </td>
                 <td className="px-3 py-2 text-end">
-                  <Figure amount={line.netAmount} currency={currency} locale={locale} />
+                  <Figure
+                    amount={line.netAmount}
+                    currency={currency}
+                    minorUnit={minorUnit}
+                    locale={locale}
+                  />
                 </td>
                 <td className="px-3 py-2 text-end">
-                  <Figure amount={line.taxAmount} currency={currency} locale={locale} />
+                  <Figure
+                    amount={line.taxAmount}
+                    currency={currency}
+                    minorUnit={minorUnit}
+                    locale={locale}
+                  />
                 </td>
                 <td className="px-3 py-2 text-end">
-                  <Figure amount={line.grossAmount} currency={currency} locale={locale} />
+                  <Figure
+                    amount={line.grossAmount}
+                    currency={currency}
+                    minorUnit={minorUnit}
+                    locale={locale}
+                  />
                 </td>
               </tr>
             ))}
@@ -699,23 +725,48 @@ function PreviewFigures({
       <dl className="ms-auto grid max-w-sm grid-cols-2 gap-1 text-body">
         <dt className="text-text-muted">{translate(messages, 'invoices.preview.subtotal')}</dt>
         <dd className="text-end">
-          <Figure amount={preview.subtotal} currency={currency} locale={locale} />
+          <Figure
+            amount={preview.subtotal}
+            currency={currency}
+            minorUnit={minorUnit}
+            locale={locale}
+          />
         </dd>
         <dt className="text-text-muted">{translate(messages, 'invoices.preview.discountTotal')}</dt>
         <dd className="text-end">
-          <Figure amount={preview.discountTotal} currency={currency} locale={locale} />
+          <Figure
+            amount={preview.discountTotal}
+            currency={currency}
+            minorUnit={minorUnit}
+            locale={locale}
+          />
         </dd>
         <dt className="text-text-muted">{translate(messages, 'invoices.preview.netTotal')}</dt>
         <dd className="text-end">
-          <Figure amount={preview.netTotal} currency={currency} locale={locale} />
+          <Figure
+            amount={preview.netTotal}
+            currency={currency}
+            minorUnit={minorUnit}
+            locale={locale}
+          />
         </dd>
         <dt className="text-text-muted">{translate(messages, 'invoices.preview.taxTotal')}</dt>
         <dd className="text-end">
-          <Figure amount={preview.taxTotal} currency={currency} locale={locale} />
+          <Figure
+            amount={preview.taxTotal}
+            currency={currency}
+            minorUnit={minorUnit}
+            locale={locale}
+          />
         </dd>
         <dt className="font-medium">{translate(messages, 'invoices.preview.grossTotal')}</dt>
         <dd className="text-end font-medium">
-          <Figure amount={preview.grossTotal} currency={currency} locale={locale} />
+          <Figure
+            amount={preview.grossTotal}
+            currency={currency}
+            minorUnit={minorUnit}
+            locale={locale}
+          />
         </dd>
       </dl>
       <p className="text-caption text-text-muted">
@@ -1703,8 +1754,13 @@ function PrintPanel({
   // A counter sale has no preview to wait for: its lines name their items on the
   // detail itself (GAP-09). Waiting for a preview that is never requested left the
   // panel loading forever and offered no Print button.
+  //
+  // The payer's name is waited for too: while its lookup is still out, the copy
+  // would print "name not shown" for a customer the screen is about to name. So the
+  // copy and the Print button wait until the lookup settles — with the name, or
+  // with the honest "not shown" when it is withheld or could not be found.
   const counterSale = workOrderId === null;
-  const ready = counterSale || !canViewFinance || preview !== null;
+  const ready = (counterSale || !canViewFinance || preview !== null) && payer.kind !== 'loading';
 
   return (
     <section

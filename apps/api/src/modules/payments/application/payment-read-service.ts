@@ -35,12 +35,12 @@ import { MAX_PAGE_SIZE, pageRequest, type Page } from '@/server/db/pagination';
 import type { DbHandle } from '@/server/db/transaction';
 import { callerHoldsPermissionAnywhere, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { CUSTOMER_SEARCH_PERMISSION } from '@/shared/text/search-terms';
-import { moneyView, type MoneyView } from '@/modules/pricing';
+import { moneyView, type MinorUnits, type MoneyView } from '@/modules/pricing';
 import { RECEIPT_ORDER } from '../data/payments-repository';
 import type {
-  PaymentAllocationRow,
   PaymentMethodRow,
   PaymentsRepository,
+  ReceiptAllocationRow,
   ReceiptListRow,
 } from '../data/payments-repository';
 
@@ -80,6 +80,18 @@ export interface ReceiptAllocationView {
   /** `seq`, as a string — a `bigint` does not fit a JavaScript number. */
   readonly sequence: string;
   readonly invoiceId: string;
+  /**
+   * The invoice's number, so a screen names the invoice instead of printing its id
+   * (finance retest DF-R2-2). `null` only when the invoice is not visible in this
+   * scope; an allocation is only ever made to an issued invoice, which has one.
+   */
+  readonly invoiceNumber: string | null;
+  /**
+   * Who the invoice bills, by name — only for a caller holding `crm.customer.read`,
+   * asked the way `sal.receipt-list` asks it, and `null` otherwise or when the
+   * partner is not a live one. `sal.finance.view` reaches money, never a name.
+   */
+  readonly invoicePayerName: string | null;
   readonly money: MoneyView;
   readonly allocatedAt: string;
 }
@@ -152,11 +164,17 @@ const toPaymentMethodView = (row: PaymentMethodRow): PaymentMethodView => ({
   recordable: row.scope === 'tenant',
 });
 
-const toAllocationView = (row: PaymentAllocationRow): ReceiptAllocationView => ({
+const toAllocationView = (
+  row: ReceiptAllocationRow,
+  mayNamePayer: boolean,
+  units: MinorUnits
+): ReceiptAllocationView => ({
   id: row.id,
   sequence: row.seq,
   invoiceId: row.invoiceId,
-  money: moneyView(row.amount, row.currencyCode),
+  invoiceNumber: row.invoiceNumber,
+  invoicePayerName: mayNamePayer ? row.invoicePayerDisplayName : null,
+  money: moneyView(row.amount, row.currencyCode, units),
   allocatedAt: row.allocatedAt.toISOString(),
 });
 
@@ -292,16 +310,21 @@ export class PaymentReadService {
       (await this.repository.listPaymentMethods(db)).map((row) => [row.id, row])
     );
     const mayNamePayer = await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION);
+    const units = await this.repository.minorUnitsFor(
+      db,
+      result.items.map((row) => row.currencyCode)
+    );
     return {
       ...result,
-      items: result.items.map((row) => this.toReceiptListView(row, methods, mayNamePayer)),
+      items: result.items.map((row) => this.toReceiptListView(row, methods, mayNamePayer, units)),
     };
   }
 
   private toReceiptListView(
     row: ReceiptListRow,
     methods: ReadonlyMap<string, PaymentMethodRow>,
-    mayNamePayer: boolean
+    mayNamePayer: boolean,
+    units: MinorUnits
   ): ReceiptListView {
     const method = methods.get(row.paymentMethodId);
     return {
@@ -329,10 +352,10 @@ export class PaymentReadService {
               displayName: method.displayName,
               status: method.status,
             },
-      money: moneyView(row.amount, row.currencyCode),
+      money: moneyView(row.amount, row.currencyCode, units),
       // Labelled with the receipt's OWN currency. A receipt has exactly one, so
       // no amount on this page is unlabelled and no two currencies are mixed.
-      unallocated: moneyView(row.unallocated, row.currencyCode),
+      unallocated: moneyView(row.unallocated, row.currencyCode, units),
       status: row.status,
       receivedAt: row.receivedAt.toISOString(),
       evidenceDocumentVersionId: row.evidenceDocumentVersionId,
@@ -404,6 +427,18 @@ export class PaymentReadService {
     // predicate in a second place.
     const method = await this.repository.findPaymentMethod(db, receipt.paymentMethodId);
 
+    // Each allocation names its invoice by number (finance retest DF-R2-2), and the
+    // customer that invoice bills only for a caller who may read customers — the
+    // question `sal.receipt-list` asks, asked once and only when there is a row.
+    const mayNamePayer =
+      allocations.length > 0 &&
+      (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION));
+    const units = await this.repository.minorUnitsFor(db, [
+      receipt.currencyCode,
+      remainder.currencyCode,
+      ...allocations.map((row) => row.currencyCode),
+    ]);
+
     return {
       id: receipt.id,
       reference: receipt.receiptNumber,
@@ -420,17 +455,17 @@ export class PaymentReadService {
               displayName: method.displayName,
               status: method.status,
             },
-      money: moneyView(receipt.amount, receipt.currencyCode),
+      money: moneyView(receipt.amount, receipt.currencyCode, units),
       // Both amounts are labelled with the receipt's own currency. `sal.receipts`
       // carries `currency_code` on the row, so no aggregate here is ever unlabelled
       // and no two currencies are ever mixed — there is nothing to mix, because a
       // receipt has exactly one.
-      unallocated: moneyView(remainder.unallocated, remainder.currencyCode),
+      unallocated: moneyView(remainder.unallocated, remainder.currencyCode, units),
       status: receipt.status,
       receivedAt: receipt.receivedAt.toISOString(),
       evidenceDocumentVersionId: receipt.evidenceDocumentVersionId,
       recordVersion: receipt.recordVersion,
-      allocations: allocations.map(toAllocationView),
+      allocations: allocations.map((row) => toAllocationView(row, mayNamePayer, units)),
       allocationsTruncated: truncated,
     };
   }

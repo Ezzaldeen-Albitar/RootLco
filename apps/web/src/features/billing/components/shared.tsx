@@ -43,28 +43,36 @@ export function When({ value, locale }: { readonly value: string; readonly local
   return <bdi dir={directionOf(locale)}>{formatDateTime(value, locale)}</bdi>;
 }
 
-/** A money figure, as the server stated it, with its ISO code. */
+/**
+ * A money figure, as the server stated it, with its ISO code — written with the
+ * minor unit the server published for its currency, never re-derived here.
+ */
 export function Money({ money, locale }: { readonly money: MoneyView; readonly locale: Locale }) {
   return (
     <span className="font-mono" dir="ltr">
-      {formatMoney({ amount: money.amount, currency: money.currency }, locale)}
+      {formatMoney(money, locale)}
     </span>
   );
 }
 
-/** A bare preview figure labelled by the document's currency. */
+/**
+ * A bare preview figure labelled by the document's currency, written with the
+ * minor unit the preview published for that currency (Owner decision D1).
+ */
 export function Figure({
   amount,
   currency,
+  minorUnit,
   locale,
 }: {
   readonly amount: string;
   readonly currency: string;
+  readonly minorUnit?: number | undefined;
   readonly locale: Locale;
 }) {
   return (
     <span className="font-mono" dir="ltr">
-      {formatMoney({ amount, currency }, locale)}
+      {formatMoney({ amount, currency, minorUnit }, locale)}
     </span>
   );
 }

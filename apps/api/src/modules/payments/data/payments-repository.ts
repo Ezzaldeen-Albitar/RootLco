@@ -318,6 +318,22 @@ export interface PaymentAllocationRow {
   readonly correlationId: string | null;
 }
 
+/**
+ * One entry of a receipt's allocation history, with what names its invoice
+ * (finance retest DF-R2-2): the invoice's number, and the name of the customer it
+ * bills. Both are read beside the row, never instead of it.
+ *
+ * `invoiceNumber` is `null` only when the invoice row is not visible in this scope;
+ * an allocation is only ever made to an issued invoice, which always has a number.
+ * `invoicePayerDisplayName` is the live partner's name, `null` when the partner is
+ * retired or not visible. Whether the caller may be TOLD that name is the read
+ * service's decision, not this row's.
+ */
+export interface ReceiptAllocationRow extends PaymentAllocationRow {
+  readonly invoiceNumber: string | null;
+  readonly invoicePayerDisplayName: string | null;
+}
+
 const PAYMENT_METHOD_COLUMNS = `id, scope, tenant_id, method_code, kind, display_name, status,
   deleted_at, record_version`;
 
@@ -581,6 +597,29 @@ export class PaymentsRepository extends Repository {
     return row ? row.minor_unit : null;
   }
 
+  /**
+   * The minor units of several currencies at once, by code (Owner decision D1).
+   *
+   * A read stamps each amount it publishes with its currency's minor unit, so a
+   * client writes the amount the way the platform records the currency instead of
+   * the way its own locale data does. One statement per read, whatever the number
+   * of amounts. Reference data, so no permission and no scope, as above; a code the
+   * platform does not hold is simply absent from the map.
+   */
+  public async minorUnitsFor(
+    db: DbHandle,
+    codes: readonly string[]
+  ): Promise<ReadonlyMap<string, number>> {
+    const wanted = [...new Set(codes)];
+    if (wanted.length === 0) return new Map();
+    const rows = await this.run<{ code: string; minor_unit: number }>(
+      db,
+      `SELECT code, minor_unit FROM shared.currencies WHERE code = ANY($1::text[])`,
+      [wanted]
+    );
+    return new Map(rows.rows.map((row) => [row.code, row.minor_unit]));
+  }
+
   public async findReceiptForUpdate(db: DbHandle, receiptId: string): Promise<ReceiptRow | null> {
     const context = this.assertContext(db);
     const row = await this.runOne<ReceiptSql>(
@@ -826,19 +865,44 @@ export class PaymentsRepository extends Repository {
     receiptId: string,
     scope: ReceiptScope,
     limit: number
-  ): Promise<readonly PaymentAllocationRow[]> {
+  ): Promise<readonly ReceiptAllocationRow[]> {
     const context = this.assertContext(db);
-    const rows = await this.run<PaymentAllocationSql>(
+    const rows = await this.run<
+      PaymentAllocationSql & {
+        invoice_number: string | null;
+        invoice_payer_display_name: string | null;
+      }
+    >(
       db,
-      `SELECT id, seq::text AS seq, company_id, branch_id, receipt_id, invoice_id,
-              currency_code, amount, allocated_at, correlation_id
-         FROM sal.payment_allocations
-        WHERE tenant_id = $1 AND receipt_id = $2 AND company_id = $3 AND branch_id = $4
-        ORDER BY seq ASC
+      // The invoice and its payer are read through a LATERAL of their own rows, one
+      // row or none per allocation, so the history is never widened or reordered.
+      // The invoice is matched in the allocation's own company and branch (an
+      // allocation is made only to an invoice of the receipt's branch), and the
+      // payer by the invoice list's rule: a live partner, `deleted_at IS NULL`.
+      `SELECT a.id, a.seq::text AS seq, a.company_id, a.branch_id, a.receipt_id, a.invoice_id,
+              a.currency_code, a.amount, a.allocated_at, a.correlation_id,
+              named.invoice_number, named.invoice_payer_display_name
+         FROM sal.payment_allocations a
+         LEFT JOIN LATERAL (
+               SELECT i.invoice_number,
+                      pp.display_name AS invoice_payer_display_name
+                 FROM sal.invoices i
+                 LEFT JOIN crm.business_partners pp
+                   ON pp.tenant_id = i.tenant_id AND pp.id = i.payer_partner_id
+                  AND pp.deleted_at IS NULL
+                WHERE i.tenant_id = a.tenant_id AND i.company_id = a.company_id
+                  AND i.branch_id = a.branch_id AND i.id = a.invoice_id
+              ) named ON true
+        WHERE a.tenant_id = $1 AND a.receipt_id = $2 AND a.company_id = $3 AND a.branch_id = $4
+        ORDER BY a.seq ASC
         LIMIT $5`,
       [context.principal.tenantId, receiptId, scope.companyId, scope.branchId, limit + 1]
     );
-    return rows.rows.map(toAllocation);
+    return rows.rows.map((row) => ({
+      ...toAllocation(row),
+      invoiceNumber: row.invoice_number,
+      invoicePayerDisplayName: row.invoice_payer_display_name,
+    }));
   }
 
   /**
