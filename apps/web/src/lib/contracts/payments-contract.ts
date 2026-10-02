@@ -57,3 +57,44 @@ export interface PaymentAllocateBody {
   /** ISO-4217 alphabetic, upper case. */
   readonly currency: string;
 }
+
+/* ------------------------------------------------------------------ *
+ * ADR-023 D4 — the receipt reversal and its replacement. Sent by the
+ * receipt panel on `app/[locale]/(dashboard)/payments`.
+ * ------------------------------------------------------------------ */
+
+/**
+ * `sal.receipt-reversal-request` — `POST /payments/{paymentId}/reversals`.
+ * Idempotent; `If-Match` is the RECEIPT's `recordVersion`, required.
+ *
+ * The reason and nothing else: a reversal reverses the whole receipt, so its
+ * amount and currency are the receipt's own and the route has no field for one.
+ */
+export interface ReceiptReversalRequestBody {
+  /** One to two thousand characters, not blank. */
+  readonly reason: string;
+}
+
+/**
+ * `sal.receipt-reversal-reject` — `POST /receipt-reversals/{reversalId}/rejection`.
+ * Idempotent; `If-Match` is the REVERSAL's `recordVersion`, required. The
+ * approval and the withdrawal are bodyless.
+ */
+export interface ReceiptReversalRejectBody {
+  /** One to two thousand characters, not blank. */
+  readonly reason: string;
+}
+
+/**
+ * `sal.receipt-replacement-record` — `POST /payments/{paymentId}/replacement`.
+ * Idempotent through the transport key, not version-guarded. `PaymentRecordBody`
+ * minus the company and branch, which are the reversed receipt's own.
+ */
+export interface ReceiptReplacementRecordBody {
+  readonly paymentMethodId: string;
+  readonly payerPartnerId: string;
+  /** ISO-4217 alphabetic, upper case. */
+  readonly currency: string;
+  /** Unsigned decimal string, at most 14 integer digits and 4 decimals. */
+  readonly amount: string;
+}

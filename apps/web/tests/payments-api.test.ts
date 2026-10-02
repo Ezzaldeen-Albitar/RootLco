@@ -25,12 +25,17 @@ vi.mock('@/lib/api/server-client', () => ({
 
 const {
   allocatePayment,
+  approveReceiptReversal,
   listBranches,
   listPaymentMethods,
   listReceipts,
   readOutstanding,
   readReceipt,
   recordPayment,
+  recordReplacementReceipt,
+  rejectReceiptReversal,
+  requestReceiptReversal,
+  withdrawReceiptReversal,
 } = await import('@/features/payments/api');
 const { requiresIdempotencyKey, resolveOperation } = await import('@/lib/api/operation-contract');
 
@@ -347,5 +352,98 @@ describe('allocating', () => {
       expect(outcome.state.messageKey).toBe('form.formError');
       expect(outcome.state.correlationId).toBe('corr-1');
     }
+  });
+});
+
+describe('the receipt reversal and its replacement (ADR-023 D4)', () => {
+  const REVERSAL_ID = '99999999-9999-4999-8999-999999999999';
+  const reversalEcho = { reversal: { id: REVERSAL_ID, state: 'pending' }, replayed: false };
+  const conflict = (violations: readonly unknown[] = []) => ({
+    ok: false as const,
+    kind: 'conflict',
+    correlationId: 'corr-409',
+    problem: { code: 'ERR-CON-001', status: 409, violations },
+  });
+
+  it('asks for the reversal with the reason alone and the RECEIPT version as If-Match', async () => {
+    send.mockResolvedValue(ok(reversalEcho));
+    const outcome = await requestReceiptReversal(RECEIPT_ID, { reason: 'Wrong payer' }, 7);
+    expect(send).toHaveBeenCalledWith(
+      'POST',
+      `/api/v1/payments/${RECEIPT_ID}/reversals`,
+      { reason: 'Wrong payer' },
+      { ifMatch: 7 }
+    );
+    expect(outcome.state.status).toBe('success');
+    expect(outcome.created).toEqual(reversalEcho);
+  });
+
+  it('says a version conflict as the receipt having changed, and keeps a named rule its own sentence', async () => {
+    send.mockResolvedValueOnce(conflict());
+    const stale = await requestReceiptReversal(RECEIPT_ID, { reason: 'x' }, 7);
+    expect(stale.state.messageKey).toBe('payments.reversal.conflict');
+    send.mockResolvedValueOnce(
+      conflict([{ path: 'path.paymentId', rule: 'receipt_reversal_exists' }])
+    );
+    const named = await requestReceiptReversal(RECEIPT_ID, { reason: 'x' }, 7);
+    expect(named.state.messageKey).toBe('form.violation.receipt_reversal_exists');
+    expect(named.created).toBeNull();
+  });
+
+  it('decides at the reversal’s own path: approval bodyless, rejection with its reason, both versions the REVERSAL’s', async () => {
+    send.mockResolvedValue(ok(reversalEcho));
+    await approveReceiptReversal(REVERSAL_ID);
+    expect(send).toHaveBeenLastCalledWith(
+      'POST',
+      `/api/v1/receipt-reversals/${REVERSAL_ID}/approval`
+    );
+    await rejectReceiptReversal(REVERSAL_ID, { reason: 'Correct as recorded' }, 4);
+    expect(send).toHaveBeenLastCalledWith(
+      'POST',
+      `/api/v1/receipt-reversals/${REVERSAL_ID}/rejection`,
+      { reason: 'Correct as recorded' },
+      { ifMatch: 4 }
+    );
+    await withdrawReceiptReversal(REVERSAL_ID, 4);
+    expect(send).toHaveBeenLastCalledWith(
+      'POST',
+      `/api/v1/receipt-reversals/${REVERSAL_ID}/withdrawal`,
+      undefined,
+      { ifMatch: 4 }
+    );
+  });
+
+  it('records the replacement under the reversed receipt with the form’s own key and no version', async () => {
+    send.mockResolvedValue(ok({ ...receipt, replacesReceiptId: RECEIPT_ID, replayed: false }));
+    const body = {
+      paymentMethodId: METHOD_ID,
+      payerPartnerId: PARTNER_ID,
+      currency: 'USD',
+      amount: '90.0000',
+    };
+    const outcome = await recordReplacementReceipt(RECEIPT_ID, body, KEY);
+    expect(send).toHaveBeenCalledWith('POST', `/api/v1/payments/${RECEIPT_ID}/replacement`, body, {
+      idempotencyKey: KEY,
+    });
+    expect(outcome.state.status).toBe('success');
+  });
+
+  it('marks every reversal write idempotent in the published contract', () => {
+    for (const [method, path] of [
+      ['POST', `/api/v1/payments/${RECEIPT_ID}/reversals`],
+      ['POST', `/api/v1/payments/${RECEIPT_ID}/replacement`],
+      ['POST', `/api/v1/receipt-reversals/${'99999999-9999-4999-8999-999999999999'}/approval`],
+      ['POST', `/api/v1/receipt-reversals/${'99999999-9999-4999-8999-999999999999'}/rejection`],
+      ['POST', `/api/v1/receipt-reversals/${'99999999-9999-4999-8999-999999999999'}/withdrawal`],
+    ] as const) {
+      expect(requiresIdempotencyKey(method, path)).toBe(true);
+    }
+  });
+
+  it('an ended session is reported before any reversal is sent', async () => {
+    authorizedClient.mockResolvedValue(null);
+    const outcome = await requestReceiptReversal(RECEIPT_ID, { reason: 'x' }, 7);
+    expect(outcome.state.status).toBe('expired');
+    expect(send).not.toHaveBeenCalled();
   });
 });

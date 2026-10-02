@@ -87,7 +87,17 @@ const readOutstanding = vi.fn();
 const recordPayment = vi.fn();
 const allocatePayment = vi.fn();
 const readReceiptPayer = vi.fn();
+const requestReceiptReversal = vi.fn();
+const approveReceiptReversal = vi.fn();
+const rejectReceiptReversal = vi.fn();
+const withdrawReceiptReversal = vi.fn();
+const recordReplacementReceipt = vi.fn();
 vi.mock('@/features/payments/api', () => ({
+  requestReceiptReversal: (...args: unknown[]) => requestReceiptReversal(...args),
+  approveReceiptReversal: (...args: unknown[]) => approveReceiptReversal(...args),
+  rejectReceiptReversal: (...args: unknown[]) => rejectReceiptReversal(...args),
+  withdrawReceiptReversal: (...args: unknown[]) => withdrawReceiptReversal(...args),
+  recordReplacementReceipt: (...args: unknown[]) => recordReplacementReceipt(...args),
   readReceiptPayer: (...args: unknown[]) => readReceiptPayer(...args),
   listReceipts: (...args: unknown[]) => listReceipts(...args),
   readReceipt: (...args: unknown[]) => readReceipt(...args),
@@ -201,6 +211,10 @@ const detail = (over: Record<string, unknown> = {}) => ({
     },
   ],
   allocationsTruncated: false,
+  // ADR-023 D4: nobody asked to reverse it, and it replaces none.
+  reversal: null,
+  replaces: null,
+  replacedBy: null,
   ...over,
 });
 
@@ -2443,5 +2457,449 @@ describe('finance retest fixes C', () => {
         name: EN['payments.allocate.confirmTitle'] as string,
       })
     ).toBeVisible();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * ADR-023 D4 — the receipt reversal and its replacement
+ * ------------------------------------------------------------------ */
+
+describe('the receipt reversal (ADR-023 D4)', () => {
+  const REQUESTER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1';
+  const APPROVER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa2';
+  const REVERSAL_ID = '99999999-9999-4999-8999-999999999999';
+  const REPLACEMENT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
+
+  const pendingReversal = (over: Record<string, unknown> = {}) => ({
+    id: REVERSAL_ID,
+    receiptId: RECEIPT_ID,
+    companyId: COMPANY_ID,
+    branchId: BRANCH_ID,
+    state: 'pending',
+    amount: { amount: '100.0000', currency: 'USD' },
+    reason: 'Recorded against the wrong payer',
+    requestedBy: REQUESTER,
+    requestedAt: '2026-10-02T08:00:00.000Z',
+    decidedBy: null,
+    decidedAt: null,
+    decisionReason: null,
+    reversedAt: null,
+    recordVersion: 4,
+    requestedByName: 'Rana Saleh',
+    decidedByName: null,
+    ...over,
+  });
+
+  const echo = (state: string, messageKey: string) => ({
+    state: { status: 'success', messageKey, attempt: 1 },
+    created: { reversal: pendingReversal({ state }), replayed: false },
+  });
+
+  function openOn(over: Record<string, unknown>, screenOver: Record<string, unknown> = {}) {
+    readReceipt.mockResolvedValue(okRead(detail(over)));
+    renderScreen({ initialReceiptId: RECEIPT_ID, currentUserId: APPROVER, ...screenOver });
+    return screen.findByRole('region', { name: EN['payments.reversal.heading'] as string });
+  }
+
+  it('offers the request to a payment recorder, with the reason asked and the RECEIPT version sent', async () => {
+    const user = userEvent.setup();
+    requestReceiptReversal.mockResolvedValue(echo('pending', 'payments.reversal.requested'));
+    const section = await openOn({ recordVersion: 7 });
+    expect(within(section).getByText(EN['payments.reversal.explain'] as string)).toBeVisible();
+    await user.click(
+      within(section).getByRole('button', { name: EN['payments.reversal.request'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog', {
+      name: EN['payments.reversal.requestTitle'] as string,
+    });
+    const confirm = within(dialog).getByRole('button', {
+      name: EN['payments.reversal.request'] as string,
+    });
+    // No reason, nothing to send.
+    expect(confirm).toBeDisabled();
+    await user.type(
+      within(dialog).getByLabelText(labelled('payments.reversal.reason')),
+      '  Wrong payer '
+    );
+    await user.click(confirm);
+    await waitFor(() =>
+      expect(requestReceiptReversal).toHaveBeenCalledWith(RECEIPT_ID, { reason: 'Wrong payer' }, 7)
+    );
+    // The amount is never the screen's: the body is the reason alone.
+    expect(Object.keys(requestReceiptReversal.mock.calls[0]?.[1] as object)).toEqual(['reason']);
+    // A landed request re-reads the receipt and says so above it.
+    expect(await screen.findByText(EN['payments.reversal.requested'] as string)).toBeVisible();
+    await waitFor(() => expect(readReceipt.mock.calls.length).toBeGreaterThan(1));
+  });
+
+  it('offers no request without the recording code, and none for a reversed receipt', async () => {
+    const section = await openOn({}, { canRecord: false });
+    expect(
+      within(section).queryByRole('button', { name: EN['payments.reversal.request'] as string })
+    ).toBeNull();
+    cleanup();
+    const reversed = await openOn({
+      status: 'reversed',
+      reversal: pendingReversal({
+        state: 'approved',
+        decidedBy: APPROVER,
+        decidedAt: '2026-10-02T09:00:00.000Z',
+        reversedAt: '2026-10-02T09:00:00.000Z',
+        decidedByName: 'Omar Nasser',
+      }),
+    });
+    expect(
+      within(reversed).queryByRole('button', { name: EN['payments.reversal.request'] as string })
+    ).toBeNull();
+  });
+
+  it('keeps a refused reason on the reason box, and offers the latest version after a conflict', async () => {
+    const user = userEvent.setup();
+    requestReceiptReversal.mockResolvedValueOnce({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { reason: 'form.violation.too_small' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const section = await openOn({});
+    await user.click(
+      within(section).getByRole('button', { name: EN['payments.reversal.request'] as string })
+    );
+    let dialog = await screen.findByRole('alertdialog', {
+      name: EN['payments.reversal.requestTitle'] as string,
+    });
+    const box = within(dialog).getByLabelText(labelled('payments.reversal.reason'));
+    await user.type(box, 'x');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['payments.reversal.request'] as string })
+    );
+    await waitFor(() => expect(box).toHaveAttribute('aria-invalid', 'true'));
+    expect(box).toHaveValue('x');
+
+    // The receipt moved on: said in words, and the latest version offered.
+    requestReceiptReversal.mockResolvedValueOnce({
+      state: { status: 'conflict', messageKey: 'payments.reversal.conflict', attempt: 1 },
+      created: null,
+    });
+    await user.type(box, 'y');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['payments.reversal.request'] as string })
+    );
+    expect(await screen.findByText(EN['payments.reversal.conflict'] as string)).toBeVisible();
+    const latest = await screen.findByTestId('payments-reversal-load-latest');
+    expect(
+      within(section).getByRole('button', { name: EN['payments.reversal.request'] as string })
+    ).toBeDisabled();
+    const reads = readReceipt.mock.calls.length;
+    await user.click(latest);
+    await waitFor(() => expect(readReceipt.mock.calls.length).toBe(reads + 1));
+    dialog = screen.queryByRole('alertdialog') as HTMLElement;
+    expect(dialog).toBeNull();
+  });
+
+  it('shows a pending reversal, closes the allocation form with the reason, and names people instead of ids', async () => {
+    const section = await openOn({ reversal: pendingReversal() });
+    expect(within(section).getByTestId('payments-reversal-pending')).toHaveTextContent(
+      EN['payments.reversal.pendingBanner'] as string
+    );
+    expect(within(section).getByText('Rana Saleh')).toBeVisible();
+    expect(within(section).getByText('Recorded against the wrong payer')).toBeVisible();
+    expect(screen.queryByText(REQUESTER)).toBeNull();
+    // Allocation is closed, with the explanation in its place.
+    expect(await screen.findByTestId('payments-allocate-reversal-pending')).toHaveTextContent(
+      EN['payments.allocate.reversalPending'] as string
+    );
+    expect(screen.queryByLabelText(labelled('payments.allocate.amount'))).toBeNull();
+    // Without the decision code and not the requester: it waits for someone who may decide.
+    expect(within(section).getByTestId('payments-reversal-cannot-decide')).toBeVisible();
+    expect(
+      within(section).queryByRole('button', { name: EN['payments.reversal.approve'] as string })
+    ).toBeNull();
+  });
+
+  it('says a name is not shown rather than printing an id', async () => {
+    const section = await openOn({ reversal: pendingReversal({ requestedByName: null }) });
+    expect(within(section).getByText(EN['payments.reversal.nameNotShown'] as string)).toBeVisible();
+    expect(screen.queryByText(REQUESTER)).toBeNull();
+  });
+
+  it('lets the requester withdraw, sending the REVERSAL version, and offers them no decision', async () => {
+    const user = userEvent.setup();
+    withdrawReceiptReversal.mockResolvedValue(echo('withdrawn', 'payments.reversal.withdrawn'));
+    const section = await openOn(
+      { reversal: pendingReversal() },
+      { currentUserId: REQUESTER, canDecideReversals: true }
+    );
+    expect(within(section).getByText(EN['payments.reversal.ownRequest'] as string)).toBeVisible();
+    expect(
+      within(section).queryByRole('button', { name: EN['payments.reversal.approve'] as string })
+    ).toBeNull();
+    await user.click(
+      within(section).getByRole('button', { name: EN['payments.reversal.withdraw'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog', {
+      name: EN['payments.reversal.withdrawTitle'] as string,
+    });
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['payments.reversal.withdraw'] as string })
+    );
+    await waitFor(() => expect(withdrawReceiptReversal).toHaveBeenCalledWith(REVERSAL_ID, 4));
+    expect(await screen.findByText(EN['payments.reversal.withdrawn'] as string)).toBeVisible();
+  });
+
+  it('lets another holder of the decision code approve, or reject with a reason and the reversal version', async () => {
+    const user = userEvent.setup();
+    approveReceiptReversal.mockResolvedValue(echo('approved', 'payments.reversal.approved'));
+    rejectReceiptReversal.mockResolvedValue(echo('rejected', 'payments.reversal.rejected'));
+    const section = await openOn(
+      { reversal: pendingReversal() },
+      { currentUserId: APPROVER, canDecideReversals: true }
+    );
+    await user.click(
+      within(section).getByRole('button', { name: EN['payments.reversal.reject'] as string })
+    );
+    const reject = await screen.findByRole('alertdialog', {
+      name: EN['payments.reversal.rejectTitle'] as string,
+    });
+    await user.type(
+      within(reject).getByLabelText(labelled('payments.reversal.reason')),
+      'Correct as recorded'
+    );
+    await user.click(
+      within(reject).getByRole('button', { name: EN['payments.reversal.reject'] as string })
+    );
+    await waitFor(() =>
+      expect(rejectReceiptReversal).toHaveBeenCalledWith(
+        REVERSAL_ID,
+        { reason: 'Correct as recorded' },
+        4
+      )
+    );
+    expect(approveReceiptReversal).not.toHaveBeenCalled();
+    cleanup();
+
+    const again = await openOn(
+      { reversal: pendingReversal() },
+      { currentUserId: APPROVER, canDecideReversals: true }
+    );
+    await user.click(
+      within(again).getByRole('button', { name: EN['payments.reversal.approve'] as string })
+    );
+    const approve = await screen.findByRole('alertdialog', {
+      name: EN['payments.reversal.approveTitle'] as string,
+    });
+    // The whole receipt's amount is named before anything is sent.
+    expect(approve).toHaveTextContent(money('100.0000'));
+    await user.click(
+      within(approve).getByRole('button', { name: EN['payments.reversal.approve'] as string })
+    );
+    await waitFor(() => expect(approveReceiptReversal).toHaveBeenCalledWith(REVERSAL_ID));
+  });
+
+  it('states a refused self-approval in plain words, never the rule name', async () => {
+    const user = userEvent.setup();
+    approveReceiptReversal.mockResolvedValue({
+      state: {
+        status: 'conflict',
+        messageKey: 'form.violation.receipt_reversal_self_approval',
+        attempt: 1,
+      },
+      created: null,
+    });
+    const section = await openOn(
+      { reversal: pendingReversal() },
+      { currentUserId: APPROVER, canDecideReversals: true }
+    );
+    await user.click(
+      within(section).getByRole('button', { name: EN['payments.reversal.approve'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog', {
+      name: EN['payments.reversal.approveTitle'] as string,
+    });
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['payments.reversal.approve'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.receipt_reversal_self_approval'] as string)
+    ).toBeVisible();
+    expect(document.body.textContent).not.toContain('receipt_reversal_self_approval');
+  });
+
+  it('links a reversed receipt to its replacement both ways, and opens the linked receipt', async () => {
+    const user = userEvent.setup();
+    const approved = pendingReversal({
+      state: 'approved',
+      decidedBy: APPROVER,
+      decidedAt: '2026-10-02T09:00:00.000Z',
+      reversedAt: '2026-10-02T09:00:00.000Z',
+      decidedByName: 'Omar Nasser',
+    });
+    readReceipt.mockImplementation(async (id: string) =>
+      id === RECEIPT_ID
+        ? okRead(
+            detail({
+              status: 'reversed',
+              reversal: approved,
+              replacedBy: { id: REPLACEMENT_ID, reference: 'RCT-000009' },
+            })
+          )
+        : okRead(
+            detail({
+              id: REPLACEMENT_ID,
+              reference: 'RCT-000009',
+              replaces: { id: RECEIPT_ID, reference: 'RCT-000007' },
+            })
+          )
+    );
+    renderScreen({ initialReceiptId: RECEIPT_ID, currentUserId: APPROVER });
+    const links = await screen.findByTestId('payments-replacement-links');
+    expect(links).toHaveTextContent(EN['payments.replacement.replacedBy'] as string);
+    expect(links).toHaveTextContent('RCT-000009');
+    expect(links).not.toHaveTextContent(REPLACEMENT_ID);
+    // Already replaced: no second replacement is offered.
+    expect(screen.queryByTestId('payments-replacement')).toBeNull();
+    await user.click(
+      within(links).getByRole('button', { name: EN['payments.replacement.openLinked'] as string })
+    );
+    await waitFor(() => expect(readReceipt).toHaveBeenCalledWith(REPLACEMENT_ID));
+    const back = await screen.findByTestId('payments-replacement-links');
+    await waitFor(() =>
+      expect(back).toHaveTextContent(EN['payments.replacement.replaces'] as string)
+    );
+    expect(back).toHaveTextContent('RCT-000007');
+  });
+
+  it('records the replacement with the payer and currency prefilled, linked to the reversed receipt', async () => {
+    const user = userEvent.setup();
+    recordReplacementReceipt.mockResolvedValue({
+      state: { status: 'success', messageKey: 'payments.replacement.success', attempt: 1 },
+      created: {
+        id: REPLACEMENT_ID,
+        reference: 'RCT-000009',
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        paymentMethodId: METHOD_ID,
+        payerPartnerId: PARTNER_ID,
+        money: { amount: '90.0000', currency: 'USD' },
+        status: 'recorded',
+        receivedAt: '2026-10-02T10:00:00.000Z',
+        recordVersion: 1,
+        replacesReceiptId: RECEIPT_ID,
+        replayed: false,
+      },
+    });
+    readReceipt.mockResolvedValue(
+      okRead(
+        detail({
+          status: 'reversed',
+          reversal: pendingReversal({
+            state: 'approved',
+            decidedBy: APPROVER,
+            decidedAt: '2026-10-02T09:00:00.000Z',
+            reversedAt: '2026-10-02T09:00:00.000Z',
+          }),
+        })
+      )
+    );
+    renderScreen({ initialReceiptId: RECEIPT_ID, currentUserId: APPROVER });
+    const panel = await screen.findByTestId('payments-replacement');
+    await user.click(
+      within(panel).getByRole('button', { name: EN['payments.replacement.open'] as string })
+    );
+    const form = await within(panel).findByRole('form', {
+      name: EN['payments.replacement.heading'] as string,
+    });
+    await waitFor(() =>
+      expect(valueOf(within(form).getByLabelText(labelled('payments.record.payer')))).toContain(
+        'Layla Haddad'
+      )
+    );
+    expect(within(form).getByLabelText(labelled('payments.record.currency'))).toHaveValue('USD');
+    await user.type(within(form).getByLabelText(labelled('payments.record.amount')), '90.00');
+    await user.click(
+      within(form).getByRole('button', { name: EN['payments.replacement.submit'] as string })
+    );
+    await waitFor(() =>
+      expect(recordReplacementReceipt).toHaveBeenCalledWith(
+        RECEIPT_ID,
+        {
+          paymentMethodId: METHOD_ID,
+          payerPartnerId: PARTNER_ID,
+          currency: 'USD',
+          // The money field writes the amount at the column's scale.
+          amount: '90.0000',
+        },
+        expect.stringMatching(UUID_SHAPE)
+      )
+    );
+    // The new receipt opens, and the notice names it by number.
+    await waitFor(() => expect(readReceipt).toHaveBeenCalledWith(REPLACEMENT_ID));
+    expect(await screen.findByText(EN['payments.replacement.recorded'] as string)).toBeVisible();
+  });
+
+  it('refuses an empty amount on the field, before anything is sent', async () => {
+    const user = userEvent.setup();
+    readReceipt.mockResolvedValue(
+      okRead(
+        detail({
+          status: 'reversed',
+          reversal: pendingReversal({
+            state: 'approved',
+            decidedBy: APPROVER,
+            decidedAt: '2026-10-02T09:00:00.000Z',
+            reversedAt: '2026-10-02T09:00:00.000Z',
+          }),
+        })
+      )
+    );
+    renderScreen({ initialReceiptId: RECEIPT_ID, currentUserId: APPROVER });
+    const panel = await screen.findByTestId('payments-replacement');
+    await user.click(
+      within(panel).getByRole('button', { name: EN['payments.replacement.open'] as string })
+    );
+    const form = await within(panel).findByRole('form', {
+      name: EN['payments.replacement.heading'] as string,
+    });
+    await user.click(
+      within(form).getByRole('button', { name: EN['payments.replacement.submit'] as string })
+    );
+    const amount = within(form).getByLabelText(labelled('payments.record.amount'));
+    await waitFor(() => expect(amount).toHaveAttribute('aria-invalid', 'true'));
+    expect(recordReplacementReceipt).not.toHaveBeenCalled();
+  });
+
+  it('renders the pending reversal in Arabic, right to left', async () => {
+    readReceipt.mockResolvedValue(okRead(detail({ reversal: pendingReversal() })));
+    renderRtl(
+      <PaymentsScreen
+        locale="ar"
+        messages={ar}
+        initialReceiptId={RECEIPT_ID}
+        initialInvoiceId={null}
+        canRecord={true}
+        canAllocate={true}
+        canReadCustomers={true}
+        canDecideReversals={true}
+        currentUserId={APPROVER}
+      />
+    );
+    const section = await screen.findByRole('region', {
+      name: AR['payments.reversal.heading'] as string,
+    });
+    expect(within(section).getByTestId('payments-reversal-pending')).toHaveTextContent(
+      AR['payments.reversal.pendingBanner'] as string
+    );
+    expect(
+      within(section).getByRole('button', { name: AR['payments.reversal.approve'] as string })
+    ).toBeVisible();
+    expect(
+      within(section).getByRole('button', { name: AR['payments.reversal.reject'] as string })
+    ).toBeVisible();
+    expect(await screen.findByTestId('payments-allocate-reversal-pending')).toHaveTextContent(
+      AR['payments.allocate.reversalPending'] as string
+    );
   });
 });
