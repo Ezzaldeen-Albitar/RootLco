@@ -926,6 +926,54 @@ Where a receipt has not been applied yet: "This receipt has not been applied to 
 Where it has very many entries: "This receipt has more entries than the read publishes; the hundred
 shown are the oldest." <!-- payments.allocations.truncated -->
 
+### 6.3.5a Third-party payments — an insurer or an employer paying for a customer
+
+**IMPLEMENTED (UI)** — Owner decision D14.
+
+A receipt belongs to the party who paid it, and it is applied to that party's own invoices. When the
+invoice you choose belongs to a **different customer**, the form says so at once: "This invoice
+belongs to a different customer from the one who paid this receipt." <!-- payments.thirdParty.otherCustomer -->
+
+- **Who:** an account holding `sal.finance.view`, `sal.payment.allocate` and the third-party payment
+  permission `sal.payment.third_party` in the receipt's branch.
+- **Without the third-party permission** the form offers no way round it: "This receipt can be applied
+  only to the payer's own invoices. A payment for someone else's invoice, such as from an insurer or
+  an employer, must be recorded by a person allowed to record third-party payments. Choose one of the
+  payer's invoices instead." <!-- payments.thirdParty.blocked --> Pressing **Apply** turns the invoice
+  box red with: "This invoice belongs to a different customer. Choose one of the payer's own invoices,
+  or record it as a third-party payment if you are allowed to." <!-- form.violation.allocation_payer_mismatch -->
+- **Steps, with the permission:**
+  1. Choose the invoice and enter the amount as in §6.3.5.
+  2. Tick "This is a third-party payment" <!-- payments.thirdParty.option --> . Under it: "The invoice
+     stays this customer's, the receipt stays the payer's, and anything left on the receipt stays with
+     the payer." <!-- payments.thirdParty.optionHelp -->
+  3. **Required** — "Who is the payer to the customer?" <!-- payments.thirdParty.relationship --> :
+     "Insurer" <!-- payments.thirdParty.relationship.insurer --> , "Employer" <!-- payments.thirdParty.relationship.employer -->
+     or "Other" <!-- payments.thirdParty.relationship.other --> . The list is fixed; an organisation
+     cannot add to it.
+  4. **Required** — "Authorisation reference" <!-- payments.thirdParty.reference --> : "For example, the
+     insurer's claim or approval number. Up to 100 characters." <!-- payments.thirdParty.referenceHelp -->
+  5. **Required** — "Reason" <!-- payments.thirdParty.reason --> : why this payer is paying this
+     customer's invoice, up to 2000 characters. With "Other", say who the payer is to the customer.
+  6. Press **Apply**. The question names the amount and the invoice and says it is a third-party
+     payment for another customer; press **Apply** again to go ahead.
+- **Result:** the allocation is booked and recorded in the audit log with who paid, whose invoice it
+  is, the relationship, the authorisation and the reason, and who authorised it. The receipt lists the
+  entry with "Paid by {payer} ({relationship}) for {customer}" <!-- payments.thirdParty.paidBy --> and
+  the authorisation reference; the invoice's open balance shows it under "Paid by someone else"
+  <!-- invoices.thirdParty.heading --> ; the invoice-and-payment report shows, on the receipt's row,
+  how much of it paid other customers' invoices ("Paid for other customers" <!-- reports.field.thirdPartyAllocatedAmount -->).
+- **Nothing changes hands.** The invoice stays its customer's, the receipt stays the payer's, and
+  anything left on the receipt stays with the payer.
+- **If it goes wrong:** each missing field turns red with its sentence, the cursor moves to the first,
+  and what you typed stays: "Choose who the payer is to the customer." <!-- form.violation.third_party_relationship_invalid -->
+  , "Enter the authorisation reference, up to 100 characters." <!-- form.violation.third_party_authorisation_reference_required -->
+  , "Enter the reason, up to 2000 characters." <!-- form.violation.third_party_reason_required --> ,
+  or, with "Other": "Say who the payer is to the customer, and why they are paying." <!-- form.violation.third_party_other_unexplained -->
+- **Not covered:** billing an insurer separately, a separate insurer balance or any accounting
+  treatment of it; refunding a third party's overpayment; limits on third-party payments.
+- **Screenshot:** no screenshot available at this version.
+
 ### 6.3.6 Print a receipt
 
 **IMPLEMENTED (UI)**

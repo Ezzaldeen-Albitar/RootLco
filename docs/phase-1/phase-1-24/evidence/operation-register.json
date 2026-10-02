@@ -10,8 +10,8 @@
     "eventsDeliveryTested": 50,
     "outboxForeignWriters": 0,
     "errorCodes": 34,
-    "permissionCodes": 133,
-    "auditActions": 296
+    "permissionCodes": 134,
+    "auditActions": 297
   },
   "counts": {
     "Covered": 512
@@ -14487,10 +14487,13 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/od-finance-credit-decisions.test.ts",
+        "tests/backend/od-finance-third-party.test.ts",
         "tests/backend/p1-22-concurrency.test.ts",
         "tests/backend/p1-22-currency-coherence.test.ts",
         "tests/backend/p1-22-payments.test.ts",
-        "tests/backend/p1-30-w7-payments.test.ts"
+        "tests/backend/p1-30-w7-payments.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
+        "tests/unit/od-finance-third-party.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/payments/[paymentId]/allocations/route.ts"

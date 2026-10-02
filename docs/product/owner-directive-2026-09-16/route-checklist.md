@@ -3728,3 +3728,42 @@ Residual items from the contract review of fix round 2, one line each:
 - The round-1 residual items above (withdrawal without the recording-code check, the early return on an already-approved reversal, approval without `If-Match`, the READ COMMITTED reliance of the allocation freeze, the unmarked refused withdrawal, legacy rejected rows hiding their decider, no Playwright journey, the documentation-only inverse migration) are carried unchanged.
 - Not re-run by the reviewer in round 2: the database and backend tiers; their evidence on `cf132684` is the hosted "Database migrations and RLS tests", integration-tests, migration-replay and security-matrix jobs; the executor's falsification of the five database guards was not re-run by the reviewer; round 2 changed only `ReceiptReversal.tsx`, `payments.dom.test.tsx` and this checklist, so the API, the migration and the wrappers are unchanged since round 1's review.
 - The method case was split in two (stay; discard) after the single case, with three branch switches, exceeded the 30-second per-case budget under hosted coverage; the budget was not raised.
+
+### Third-party payer allocations, refused by default (P1-32-PRE-OD-FD14)
+
+Owner decision D14 (ADR-023): a receipt applied to an unrelated customer's invoice is refused by
+default; an insurer's or an employer's payment is accepted only through explicit, authorised,
+audited third-party handling; the payer stays distinct from the invoice customer and nothing changes
+hands. One forward migration (`20261002100000_sal_third_party_allocations.sql`), one minted
+permission code (`sal.payment.third_party`), one audit action (`sal.payment.third_party_allocated`),
+no new operation and no new route; the standard administrator bundle grows to 97 codes.
+
+| Route                                       | Operation                       | Who                                                                                                                         | What changed                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------- | ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /payments/{paymentId}/allocations`    | `sal.payment-allocate`          | `sal.payment.allocate`, `sal.finance.view`; a third-party allocation also `sal.payment.third_party` in the receipt's branch | Refuses an invoice whose customer is not the receipt's payer (`allocation_payer_mismatch` on `body.invoiceId`, recorded once) unless the optional `thirdParty` block names the relationship (insurer, employer, other), the authorisation reference and the reason; each missing or invalid field is named on its own path; a caller without the code is refused and recorded once. |
+| `GET /payments/{paymentId}`                 | `sal.receipt-detail`            | unchanged                                                                                                                   | Each allocation gains `thirdParty` (relationship, authorisation reference, reason, the authoriser by NAME for a reader holding `iam.user.read`), additive.                                                                                                                                                                                                                          |
+| `GET /invoices/{invoiceId}/outstanding`     | `sal.invoice-outstanding-read`  | unchanged                                                                                                                   | The settlement gains `thirdPartyPayments` (receipt by number, payer by NAME for a reader holding `crm.customer.read`, relationship, authorisation, reason, amount) and `thirdPartyPaymentsTruncated`, additive.                                                                                                                                                                     |
+| `GET /reports/invoice_payment_summary/rows` | `rpt.report-run`                | unchanged                                                                                                                   | A receipt row gains `thirdPartyAllocatedAmount`: what of it paid other customers' invoices; null on an invoice and a credit note.                                                                                                                                                                                                                                                   |
+| `/payments` (allocate form, receipt panel)  | the reads and the command above | as above                                                                                                                    | Another customer's invoice is explained at once; "This is a third-party payment" with who the payer is, the authorisation reference and the reason only for holders; everyone else is blocked with the plain reason; the receipt and its printed copy read "Paid by … (…) for …" with the authorisation.                                                                            |
+| `/invoices` (open balance)                  | `sal.invoice-outstanding-read`  | unchanged                                                                                                                   | "Paid by someone else": each third-party payment reads "Paid by … (…) for …" with the authorisation, the receipt and the amount.                                                                                                                                                                                                                                                    |
+
+Wrapper extensions: none. The third-party fields (`ThirdPartyPayment.tsx`, payments feature) use the
+shared `FormCheckboxField`, `FormSelectField` and `FormTextField` as they are; the confirmation stays
+on `ConfirmDialog`. No component folder was added.
+
+Preserved: an allocation to the payer's own invoice is unchanged, and so are its idempotent replay,
+its bounds, its currency rule and its reversal freeze; tenant and branch isolation (another tenant
+404, the code held in another branch only 403); names instead of ids; plain sentences in English and
+Arabic, right to left; field errors on the field with the first one focused, input kept and the
+complaint cleared on correction; the new fields are unsaved work; money stays a decimal string end
+to end; the credit-note and discount-approval rules untouched.
+
+Known limitations of this slice, one line each:
+
+- Organisations provisioned earlier cannot make a third-party allocation until an administrator grants `sal.payment.third_party`; seed 04 is re-run first and the operator backfill is for `odqa_alpha` and `odqa_beta` only; neither is performed by the pull request (CC-OD-54).
+- The relationship vocabulary is fixed in code (insurer, employer, other); an organisation cannot add its own.
+- No split billing to an insurer, no separate insurer receivable and no accounting treatment of a third-party receivable (accounting questionnaire); a third party's overpayment is not refunded (D2); no limit on third-party allocations (D14 sets none).
+- Allocations booked across payers before this change are not re-checked or rewritten; the migration reports their count read-only.
+- An invoice named in the address carries no payer the screen can compare, so there the option appears after the server's refusal.
+- No outbox event field marks a third-party allocation; consumers read the receipt again.
+- Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the builds; they run in hosted CI. Focused database and backend files ran against a disposable database only.

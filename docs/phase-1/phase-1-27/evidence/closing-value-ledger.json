@@ -22,8 +22,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "The live web suite holds **188 web test files**",
-      "value": "188",
+      "locator": "The live web suite holds **189 web test files**",
+      "value": "189",
       "binding": {
         "kind": "derived",
         "table": "counts",
@@ -64,8 +64,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Web test files under `apps/web/tests`       | 188    | a walk of the tree                                                 |",
-      "value": "188",
+      "locator": "| Web test files under `apps/web/tests`       | 189    | a walk of the tree                                                 |",
+      "value": "189",
       "binding": {
         "kind": "derived",
         "table": "counts",
@@ -157,8 +157,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Migrations on disk                          | 166   | a walk of `supabase/migrations`                                    |",
-      "value": "166",
+      "locator": "| Migrations on disk                          | 167   | a walk of `supabase/migrations`                                    |",
+      "value": "167",
       "binding": {
         "kind": "derived",
         "table": "counts",
@@ -212,8 +212,8 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Migrations tracked by git at `HEAD`                  | 166                                         |",
-      "value": "166",
+      "locator": "| Migrations tracked by git at `HEAD`                  | 167                                         |",
+      "value": "167",
       "binding": {
         "kind": "git",
         "op": "lsTree",

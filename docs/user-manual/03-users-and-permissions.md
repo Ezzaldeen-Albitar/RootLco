@@ -805,6 +805,16 @@ and an administrator can give it to the finance approver it chooses. An organisa
 this decision keeps the set it was given: nobody in it can approve or reject a receipt reversal until
 an administrator who holds the permission grants it. Part 6, §6.3.7.
 
+**A payment from someone else is its own permission (Owner decision D14).** Applying a receipt to an
+invoice needs the allocation permission (`sal.payment.allocate`), and only to the payer's own
+invoices. Applying it to another customer's invoice — an insurer or an employer paying for the
+customer — is a third-party payment and needs the third-party payment permission
+(`sal.payment.third_party`) in the receipt's branch; the allocation permission alone never grants it.
+The standard administrator bundle carries it, and an administrator can give it to the finance person
+it chooses. An organisation created before this decision keeps the set it was given: nobody in it can
+record a third-party payment until an administrator who holds the permission grants it. Part 6,
+§6.3.5a.
+
 ---
 
 ## 3.16 Maker and checker: one administrator is not enough — IMPLEMENTED (UI)

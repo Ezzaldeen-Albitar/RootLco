@@ -394,3 +394,42 @@ credit-approval widening on a role lacking only that code.
 
 The run is an operator act taken after this change merges, never against a database without a
 backup and a rehearsal. This addendum does not claim it was performed anywhere.
+
+---
+
+## 13. Addendum — `sal.payment.third_party`, seed first, then run selectively (Owner decision D14 of 2026-09-30)
+
+The Owner decided (ADR-023, D14) that a receipt applied to an unrelated customer's invoice is refused
+by default, and that an insurer's or an employer's payment is accepted only through explicit,
+authorised, audited third-party handling. `sal.payment.third_party` ("Allocate a receipt to another
+customer's invoice as a third-party payment") is MINTED for that authority in
+`supabase/seeds/04_iam_permission_catalog.sql`. No operation declares it: `sal.payment-allocate`
+consults it for a third-party allocation only, and the database trigger `sal.guard_allocation_payer`
+checks it for every one. `TENANT_ADMINISTRATOR_ROLE` carries it, so the bundle is now 97 codes and
+new organisations receive it at provisioning. No other role gains anything.
+
+The shape of the run for existing organisations:
+
+- **Seed first.** The code is a new catalogue row, so on an existing database the permission seed
+  (`04_iam_permission_catalog.sql`, idempotent) is re-run BEFORE the backfill; without the row the
+  backfill has nothing to grant.
+- **Selective.** Only the previously authorised QA organisations are named:
+  `--tenant odqa_alpha --tenant odqa_beta`. `--all` is not used, and every other existing
+  organisation is left unchanged. In those organisations an allocation to another customer's invoice
+  is refused, and nobody can make a third-party allocation until an administrator who holds the code
+  grants it; allocations to the payer's own invoices are unchanged.
+- **Customised roles are preserved.** An administrator role showing any sign of customisation is
+  skipped whole and reported with `sal.payment.third_party` under `withheld`.
+- **Dry run first.** For an organisation already current with the receipt-reversal widening the dry
+  run lists exactly `sal.payment.third_party` and nothing else.
+
+The script needed no change: it reads the bundle from `bootstrap-roles.ts` at run time. **BF-22**
+proves the shape on real rows — two named organisations whose standard role lacks only this code,
+the standard one offered exactly `sal.payment.third_party` by a dry run that writes nothing and then
+widened (an allocating clerk role it built gains nothing), the customised one skipped with the code
+withheld, an organisation nobody named untouched row for row, and a second run a no-op. **BF-10** now
+counts the code among the twelve an 85-code organisation is offered.
+
+The seed run and the backfill are operator acts taken after this change merges, never against a
+database without a backup and a rehearsal. This addendum does not claim either was performed
+anywhere.
