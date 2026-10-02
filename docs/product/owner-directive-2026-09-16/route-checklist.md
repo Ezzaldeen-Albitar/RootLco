@@ -3664,3 +3664,44 @@ Residual items from the contract review of this slice (fix round 1), one line ea
 - Money outside the billing and payments reads still takes its decimals from the browser's locale data, as listed above.
 - The database and backend tiers were not run by the reviewer locally; the hosted database and integration jobs passed on `d613061a`.
 - Checked by the reviewer: the DF-R2-1 print scope (replacing the scoped element with a fragment fails both DF-R2-1 cases); RLS on `sal.invoices` is scope-only, so allocation invoice numbers stay visible within the receipt's branch; the customer name is gated on `crm.customer.read` as in `sal.receipt-list`; every billing and payments money view passes the minor unit; OpenAPI is unchanged; no browser-test selector refers to a removed message key; the result matrix and fixture corrections are held outside the repository with the retest evidence.
+
+### Receipt reversal with a second approver, and the replacement receipt (P1-32-PRE-OD-FD4)
+
+Owner decision D4 (ADR-023): a wrongly recorded receipt is corrected by a FULL reversal requested by
+an authorised payment recorder and approved by a different authorised person; the original receipt
+is retained; a replacement receipt is linked to it; a reversal is not a refund. One forward
+migration (`20261002090000_sal_receipt_reversal_requests.sql`), five operations, five audit actions,
+no new permission code (`sal.reversal.approve` was already seeded), and the standard administrator
+bundle grows to 96 codes.
+
+| Route                                     | Operation                            | Who                                                              | What changed                                                                                                                                                                                                                                                                                                 |
+| ----------------------------------------- | ------------------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST /payments/{paymentId}/reversals`    | `sal.receipt-reversal-request`       | `sal.payment.record`, `sal.finance.view` in the receipt's branch | Asks for the whole receipt to be reversed, with a reason only; the amount and currency are the receipt's. `If-Match` = the receipt's version. A second live request and a reversed receipt are refused by name. While pending, the receipt takes no new allocation (database-enforced, race-tested).         |
+| `POST /receipt-reversals/{id}/approval`   | `sal.receipt-reversal-approve`       | `sal.reversal.approve`, `sal.finance.view`, not the requester    | Reverses the receipt atomically: the receipt reads Reversed, its allocations stay recorded and stop counting, each invoice's open amount is restored exactly, one `receipt_reversed` financial event. Credit-note codes never satisfy it.                                                                    |
+| `POST /receipt-reversals/{id}/rejection`  | `sal.receipt-reversal-reject`        | `sal.reversal.approve`, `sal.finance.view`, not the requester    | Rejects with a reason (`If-Match` = the reversal's version); the receipt is untouched.                                                                                                                                                                                                                       |
+| `POST /receipt-reversals/{id}/withdrawal` | `sal.receipt-reversal-withdraw`      | the requester (`sal.payment.record`, `sal.finance.view`)         | Withdraws the requester's own pending request (`If-Match` = the reversal's version); the receipt takes allocations again and a corrected request may follow.                                                                                                                                                 |
+| `POST /payments/{paymentId}/replacement`  | `sal.receipt-replacement-record`     | `sal.payment.record`, `sal.finance.view` in the receipt's branch | Records the receipt that replaces an approved-reversed one, every rule of recording a payment applying; one per reversed receipt, same branch, frozen link.                                                                                                                                                  |
+| `/payments` (receipt panel)               | the five above, `sal.receipt-detail` | as above                                                         | "Request reversal" (ReasonDialog), a pending-reversal banner, "Withdraw request" for the requester, "Approve reversal" / "Reject" for others holding the decision code, the allocation form closed with the reason while pending, "Record replacement receipt" after approval, and the link shown both ways. |
+
+`sal.receipt-detail` gains additive fields: `reversal` (state, reason, requester and decider by id and
+by NAME — names only for a reader holding `iam.user.read` — dates, version), `replaces` and
+`replacedBy` (id and receipt number). No new web route; the payments page keeps its branch scope.
+
+Wrapper extensions: none. The reversal and replacement UI (`ReceiptReversal.tsx`, payments feature)
+uses the shared `ReasonDialog`, `ConfirmDialog`, `FormSelectField`, `FormTextField`, `FormMoneyField`,
+`CustomerPicker`, `MuiReadFailureState` and `useEditBaseline` as they are; no component folder was
+added.
+
+Preserved: the credit-note and discount-approval rules untouched; tenant and branch isolation
+(another tenant 404, the code in another branch only 403 and recorded); names instead of ids; plain
+refusal sentences in English and Arabic, right to left; money stays a decimal string end to end;
+unsaved work on the replacement form is guarded; refunds (D2) are not created; historical reports are
+not restated (D16 open).
+
+Known limitations of this slice, one line each:
+
+- Organisations provisioned earlier cannot approve or reject a reversal until an administrator grants `sal.reversal.approve`; the operator backfill is for `odqa_alpha` and `odqa_beta` only and is not performed by the pull request (CC-OD-53).
+- A reversal reverses a whole receipt; correcting one allocation alone is not offered, by D4.
+- The receipt list shows a reversed receipt's state, not a pending reversal; the pending state is shown on the receipt itself.
+- No outbox event is published for a reversal; consumers read the receipt and the invoice again, and the `receipt_reversed` financial event is written in the database.
+- Not run locally (machine memory): the full unit, web and backend tiers, the browser tiers and the builds; they run in hosted CI. Focused database and backend files ran against a disposable database only.
