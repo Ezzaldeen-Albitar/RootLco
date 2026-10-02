@@ -2972,12 +2972,24 @@ describe('the receipt reversal (ADR-023 D4)', () => {
       await switchWithoutQuestion(user, 'second');
     });
 
-    it('another method asks first; staying keeps it, discarding puts the prefilled one back', async () => {
+    /*
+     * The method cases are two, not one: a single case making three switches
+     * with the form open outran the per-case budget under hosted coverage.
+     */
+    it('another method asks first, and staying keeps the method chosen', async () => {
       const user = userEvent.setup();
       const form = await openReplacement(user);
       await user.selectOptions(methodBox(form), SECOND_METHOD_ID);
       await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+      expect(heldBranch()).not.toBe(TEST_BRANCH.id);
       expect(methodBox(form)).toHaveValue(SECOND_METHOD_ID);
+      expect(recordReplacementReceipt).not.toHaveBeenCalled();
+    });
+
+    it('another method asks first, and discarding puts the prefilled method and payer back', async () => {
+      const user = userEvent.setup();
+      const form = await openReplacement(user);
+      await user.selectOptions(methodBox(form), SECOND_METHOD_ID);
       await discardAndSwitch(user, await switchExpectingQuestion(user, 'first'));
       await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
       await waitFor(() => expect(methodBox(form)).toHaveValue(METHOD_ID));
