@@ -479,6 +479,24 @@ states its reason, so `decision_reason` is the one column the runtime role gains
 `SELECT` and `INSERT` are unchanged, no policy changes, and `app_readonly` keeps
 `SELECT` only.
 
+### 5.11 Receipt-reversal decisions (DBCR-P1-32-PRE-OD-FD4-001, migration `20261002090000`)
+
+A receipt reversal can now be rejected with a reason and withdrawn by its requester
+(ADR-023 D4), so the runtime role gains `UPDATE (decision_reason)` on
+`sal.receipt_reversals`, as it already holds on `sal.credit_notes`. Every decider
+and every date is stamped by `sal.guard_receipt_reversal_decision`, and a raw
+`INSERT` is born pending and undecided (`sal.stamp_dual_control_maker`) and held to
+the request rules (`sal.guard_receipt_reversal_request`).
+
+| Object                  | `app_runtime` UPDATE (now)          | Stamped and frozen by the trigger                                       |
+| ----------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
+| `sal.receipt_reversals` | `approval_state`, `decision_reason` | `approved_by`, `approved_at`, `reversed_at`, `decided_by`, `decided_at` |
+
+The three new primitives (`sal.request_receipt_reversal`, `sal.withdraw_receipt_reversal`,
+`sal.reject_receipt_reversal`) and the re-created `sal.record_receipt` are
+`SECURITY INVOKER` with `EXECUTE` for `app_runtime` only. `SELECT` and `INSERT` are
+unchanged, no policy changes, and `app_readonly` keeps `SELECT` only.
+
 ---
 
 ## 6. How later phases attach real logins
