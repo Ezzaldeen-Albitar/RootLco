@@ -1017,6 +1017,10 @@ describe('iam.working-context-read', () => {
   const U_WCTX_NONE = 'c1400000-0000-4000-8000-0000000000c3';
   const ROLE_WCTX = 'd1400000-0000-4000-8000-0000000000c1';
   const GRANT_WCTX_BRANCH = 'e1400000-0000-4000-8000-0000000000c1';
+  // Finance QA fixes D: a role carrying ONE branch-gated action code, granted to
+  // the branch-scoped caller in BRANCH_W1 only.
+  const ROLE_WCTX_CREDIT = 'd1400000-0000-4000-8000-0000000000c2';
+  const GRANT_WCTX_CREDIT = 'e1400000-0000-4000-8000-0000000000c2';
   const WCTX_SUBJECTS: Readonly<Record<string, string>> = {
     [U_WCTX_BRANCH]: 'fx_wctx_branch',
     [U_WCTX_ALL]: 'fx_wctx_all',
@@ -1128,6 +1132,28 @@ describe('iam.working-context-read', () => {
           [TENANT_A, GRANT_WCTX_BRANCH, COMPANY_A1, branchId, USER_A]
         );
       }
+      await client.query(
+        `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+         VALUES ($1,$2,'fx_wctx_credit','Working context credit approver',$3)
+         ON CONFLICT (id) DO NOTHING`,
+        [ROLE_WCTX_CREDIT, TENANT_A, USER_A]
+      );
+      await client.query(
+        `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+         SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'sal.credit.approve'
+         ON CONFLICT DO NOTHING`,
+        [TENANT_A, ROLE_WCTX_CREDIT, USER_A]
+      );
+      await client.query(
+        `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+         VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+        [GRANT_WCTX_CREDIT, TENANT_A, U_WCTX_BRANCH, ROLE_WCTX_CREDIT, USER_A]
+      );
+      await client.query(
+        `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+         VALUES ($1,$2,'branch',$3,$4,$5)`,
+        [TENANT_A, GRANT_WCTX_CREDIT, COMPANY_A1, BRANCH_W1, USER_A]
+      );
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -1146,8 +1172,12 @@ describe('iam.working-context-read', () => {
     await admin.query('DELETE FROM iam.role_grants WHERE user_id = ANY($1::uuid[])', [
       [U_WCTX_BRANCH, U_WCTX_ALL, U_WCTX_NONE],
     ]);
-    await admin.query('DELETE FROM iam.role_permissions WHERE role_id = $1', [ROLE_WCTX]);
-    await admin.query('DELETE FROM iam.roles WHERE id = $1', [ROLE_WCTX]);
+    await admin.query('DELETE FROM iam.role_permissions WHERE role_id = ANY($1::uuid[])', [
+      [ROLE_WCTX, ROLE_WCTX_CREDIT],
+    ]);
+    await admin.query('DELETE FROM iam.roles WHERE id = ANY($1::uuid[])', [
+      [ROLE_WCTX, ROLE_WCTX_CREDIT],
+    ]);
     await admin.query('DELETE FROM iam.user_accounts WHERE id = ANY($1::uuid[])', [
       [U_WCTX_BRANCH, U_WCTX_ALL, U_WCTX_NONE],
     ]);
@@ -1213,5 +1243,39 @@ describe('iam.working-context-read', () => {
       expect.arrayContaining([COMPANY_A1, COMPANY_W2])
     );
     expect((await readAs(U_WCTX_NONE)).companySettingsReadableIds).toEqual([]);
+  });
+
+  it('answers each branch-gated action code per branch, from the grants, never across tenants (finance QA fixes D)', async () => {
+    // The branch-scoped caller holds `sal.credit.approve` through a grant scoped
+    // to BRANCH_W1 alone: the session union carries the code, but only W1 may
+    // offer the decision, which is what the approval route enforces.
+    const branchScoped = await readAs(U_WCTX_BRANCH);
+    expect(branchScoped.branchPermissions.codes).toEqual(
+      expect.arrayContaining([
+        'sal.credit.approve',
+        'sal.reversal.approve',
+        'sal.payment.third_party',
+      ])
+    );
+    const held = Object.fromEntries(
+      branchScoped.branchPermissions.branches.map((entry) => [entry.branchId, entry.permissions])
+    );
+    expect(Object.keys(held).sort()).toEqual([BRANCH_W1, BRANCH_W2].sort());
+    expect(held[BRANCH_W1]).toEqual(['sal.credit.approve']);
+    expect(held[BRANCH_W2]).toEqual([]);
+    // The tenant-wide reader's role carries none of the codes, anywhere.
+    const all = await readAs(U_WCTX_ALL);
+    expect(all.branchPermissions.branches.every((entry) => entry.permissions.length === 0)).toBe(
+      true
+    );
+    // Nobody is answered for a branch of another tenant, and a grant-less caller
+    // for no branch at all.
+    for (const userId of [U_WCTX_BRANCH, U_WCTX_ALL, U_WCTX_NONE]) {
+      const view = await readAs(userId);
+      expect(view.branchPermissions.branches.map((entry) => entry.branchId)).not.toContain(
+        BRANCH_WB
+      );
+    }
+    expect((await readAs(U_WCTX_NONE)).branchPermissions.branches).toEqual([]);
   });
 });

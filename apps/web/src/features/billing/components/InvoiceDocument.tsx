@@ -11,17 +11,27 @@ import { formatInZone, zoneLabelAt } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
 
 import type { InvoiceDetail, InvoicePreview, MoneyView, Outstanding } from '../billing-contract';
-import { Money, Unavailable, When } from './shared';
+import { Money, ThirdPartyPaymentItems, Unavailable, When } from './shared';
 
 /**
  * Who the invoice bills, as the screen could name them: by name, still being
- * found, or not shown to this reader. Never the payer's reference (browser QA
- * OBS-4: the printed copy used to carry it).
+ * found, not shown to this reader, or not available because the lookup did not
+ * answer in time (finance QA fixes D: a lookup that never settled held the copy
+ * and its Print button in the loading state for good). Never the payer's
+ * reference (browser QA OBS-4: the printed copy used to carry it).
  */
 export type PayerName =
   | { readonly kind: 'named'; readonly name: string }
   | { readonly kind: 'loading' }
-  | { readonly kind: 'notShown' };
+  | { readonly kind: 'notShown' }
+  | { readonly kind: 'unavailable' };
+
+/** The words for a payer the screen could not name, by why it could not. */
+export function payerNameKey(kind: Exclude<PayerName['kind'], 'named'>): keyof Messages {
+  if (kind === 'loading') return 'invoices.detail.payerLoading';
+  if (kind === 'unavailable') return 'invoices.detail.payerUnavailable';
+  return 'invoices.detail.payerNotShown';
+}
 
 /**
  * Where the line descriptions come from, as the screen established it:
@@ -66,7 +76,9 @@ export type DescriptionSource =
  * still due, and the payment and credit positions — moves with every payment
  * and credit note, so it is printed in a section of its own headed with the
  * moment it was read, on the branch's clock with the clock's name beside it
- * (finance checkpoint, DF-B1).
+ * (finance checkpoint, DF-B1). What a third party paid for the customer (D14) is
+ * printed inside it, "Paid by <payer> (<relationship>) for <customer>" with the
+ * authorisation reference, exactly as the screen shows it.
  *
  * Every figure is the server's. A job's line discount comes from the accepted
  * quotation revision the invoice was copied from — the preview, used only when
@@ -253,12 +265,7 @@ export function InvoiceDocument({
               {payer.kind === 'named' ? (
                 <bdi>{payer.name}</bdi>
               ) : (
-                translate(
-                  messages,
-                  payer.kind === 'loading'
-                    ? 'invoices.detail.payerLoading'
-                    : 'invoices.detail.payerNotShown'
-                )
+                translate(messages, payerNameKey(payer.kind))
               )}
             </dd>
           </div>
@@ -352,6 +359,7 @@ export function InvoiceDocument({
           messages={messages}
           balance={balance}
           settlement={settlement}
+          customer={payer}
           zone={context.branches.find((entry) => entry.id === invoice.branchId)?.timezone || 'UTC'}
         />
       ) : null}
@@ -406,15 +414,19 @@ function SettlementSection({
   messages,
   balance,
   settlement,
+  customer,
   zone,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly balance: Outstanding;
   readonly settlement: NonNullable<Outstanding['settlement']>;
+  /** Who the invoice bills, as the copy names them — for "Paid by … for …" (D14). */
+  readonly customer: PayerName;
   readonly zone: string;
 }) {
   const language = intlLocale(locale);
+  const thirdParty = settlement.thirdPartyPayments ?? [];
   return (
     <section
       className="mt-6 border-t border-border pt-4"
@@ -455,6 +467,23 @@ function SettlementSection({
           <Money money={balance.outstanding} locale={locale} />
         </dd>
       </dl>
+      {thirdParty.length > 0 ? (
+        // What a third party paid for the customer is part of the settlement as
+        // read (D14): the paper carries it as the screen does, so a copy handed
+        // over says who paid, for whom, and on what authorisation.
+        <div className="mt-3" data-testid="invoice-print-third-party-payments">
+          <h4 className="text-body font-medium">
+            {translate(messages, 'invoices.thirdParty.heading')}
+          </h4>
+          <ThirdPartyPaymentItems
+            locale={locale}
+            messages={messages}
+            payments={thirdParty}
+            truncated={settlement.thirdPartyPaymentsTruncated === true}
+            customer={customer}
+          />
+        </div>
+      ) : null}
     </section>
   );
 }

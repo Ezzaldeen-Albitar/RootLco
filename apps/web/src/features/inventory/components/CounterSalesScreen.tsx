@@ -53,7 +53,9 @@
  * Wherever an issued sale is shown, its payment position is shown with it — Not
  * paid yet, Partly paid, Paid or Nothing to pay — from the server's balance read
  * (DF-2), and the printed copy carries the same read as its "settlement as of"
- * section (DF-B1). The whole screen is one print scope, so while the copy is
+ * section (DF-B1). A part paid by a third party for the buyer (ADR-023 D14) reads
+ * "Paid by <payer> (<relationship>) for <buyer>" with its authorisation reference,
+ * on the panel and on the copy alike (finance QA fixes D). The whole screen is one print scope, so while the copy is
  * open the paper carries the copy alone and not the screen's text, the branch
  * panel or a notice (DF-B2).
  *
@@ -101,8 +103,9 @@ import {
   type InvoiceListEntry,
   type Outstanding,
 } from '@/features/billing/billing-contract';
-import { CounterSalePrintPanel } from '@/features/billing/components/InvoiceScreen';
-import { When } from '@/features/billing/components/shared';
+import type { PayerName } from '@/features/billing/components/InvoiceDocument';
+import { CounterSalePrintPanel, usePayerName } from '@/features/billing/components/InvoiceScreen';
+import { ThirdPartyPaymentItems, When } from '@/features/billing/components/shared';
 import { searchCustomerDirectoryCancellable } from '@/lib/customers/directory-read';
 import type { CustomerSearchHit } from '@/lib/customers/directory-contract';
 import type { Locale } from '@/i18n/config';
@@ -405,39 +408,85 @@ function BranchCounter({
       ) : (
         // The sale and its printable copy side by side in one print scope: while
         // the copy is open, paper carries it and not the working panel (GAP-09).
-        <div data-print-scope="document" className="flex min-h-0 flex-col gap-4">
-          <SalePanel
-            locale={locale}
-            messages={messages}
-            sale={sale}
-            balance={balance}
-            canIssue={canIssue}
-            onChanged={(next, noticeKey) => {
-              setSale(next);
-              drafts.reload();
-              setNotice(noticeKey);
-            }}
-            onNewSale={() => {
-              // Back to the counter. A composition set aside to open this sale is
-              // kept as it was; one that became this sale was let go when drafted.
-              setSale(null);
-              setOrigin('counter');
-              setNotice(null);
-              drafts.reload();
-            }}
-          />
-          <CounterSalePrintPanel
-            key={`${sale.invoice.id}:${origin}`}
-            locale={locale}
-            messages={messages}
-            detail={sale}
-            canViewFinance={sale.invoice.totals !== null}
-            balance={balance !== null && balance.status === 'ok' ? balance.data : null}
-            initiallyOpen={origin === 'reprint'}
-          />
-        </div>
+        <SaleView
+          key={`${sale.invoice.id}:${origin}`}
+          locale={locale}
+          messages={messages}
+          sale={sale}
+          balance={balance}
+          canIssue={canIssue}
+          initiallyOpen={origin === 'reprint'}
+          onChanged={(next, noticeKey) => {
+            setSale(next);
+            drafts.reload();
+            setNotice(noticeKey);
+          }}
+          onNewSale={() => {
+            // Back to the counter. A composition set aside to open this sale is
+            // kept as it was; one that became this sale was let go when drafted.
+            setSale(null);
+            setOrigin('counter');
+            setNotice(null);
+            drafts.reload();
+          }}
+        />
       )}
     </>
+  );
+}
+
+/**
+ * One open sale: its panel and its printable copy, in one print scope.
+ *
+ * The buyer is named ONCE, here (`usePayerName`, the invoice screen's own
+ * lookup), and handed to both: the panel needs the name for a third-party
+ * payment's "Paid by … for <customer>" (finance QA fixes D) and the copy prints
+ * it, so the two can never name different people or ask twice. Keyed by the
+ * sale and how it was reached, so another sale starts from a fresh lookup.
+ */
+function SaleView({
+  locale,
+  messages,
+  sale,
+  balance,
+  canIssue,
+  initiallyOpen,
+  onChanged,
+  onNewSale,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly sale: CreatedInvoice;
+  readonly balance: ReadState<Outstanding> | null;
+  readonly canIssue: boolean;
+  readonly initiallyOpen: boolean;
+  readonly onChanged: (next: CreatedInvoice, noticeKey: string) => void;
+  readonly onNewSale: () => void;
+}) {
+  const canViewFinance = sale.invoice.totals !== null;
+  const payer = usePayerName(sale.invoice, null, canViewFinance);
+  return (
+    <div data-print-scope="document" className="flex min-h-0 flex-col gap-4">
+      <SalePanel
+        locale={locale}
+        messages={messages}
+        sale={sale}
+        balance={balance}
+        customer={payer.payer}
+        canIssue={canIssue}
+        onChanged={onChanged}
+        onNewSale={onNewSale}
+      />
+      <CounterSalePrintPanel
+        locale={locale}
+        messages={messages}
+        detail={sale}
+        canViewFinance={canViewFinance}
+        balance={balance !== null && balance.status === 'ok' ? balance.data : null}
+        initiallyOpen={initiallyOpen}
+        payer={payer}
+      />
+    </div>
   );
 }
 
@@ -1252,6 +1301,7 @@ function SalePanel({
   messages,
   sale,
   balance,
+  customer,
   canIssue,
   onChanged,
   onNewSale,
@@ -1261,6 +1311,8 @@ function SalePanel({
   readonly sale: CreatedInvoice;
   /** The issued sale's balance read (`useSaleBalance`), `null` while read or for a draft. */
   readonly balance: ReadState<Outstanding> | null;
+  /** Who the sale bills, as the screen could name them. */
+  readonly customer: PayerName;
   readonly canIssue: boolean;
   readonly onChanged: (next: CreatedInvoice, noticeKey: string) => void;
   readonly onNewSale: () => void;
@@ -1361,7 +1413,7 @@ function SalePanel({
         </div>
       </dl>
       {invoice.status === 'issued' || invoice.status === 'credited' ? (
-        <SalePosition locale={locale} messages={messages} balance={balance} />
+        <SalePosition locale={locale} messages={messages} balance={balance} customer={customer} />
       ) : null}
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.counterSales.sale.explain')}
@@ -1466,10 +1518,13 @@ function SalePosition({
   locale,
   messages,
   balance,
+  customer,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly balance: ReadState<Outstanding> | null;
+  /** Who the sale bills, for a third-party payment's "Paid by … for …". */
+  readonly customer: PayerName;
 }) {
   if (balance === null) {
     return (
@@ -1486,6 +1541,7 @@ function SalePosition({
     );
   }
   const { settlement, outstanding } = balance.data;
+  const thirdParty = settlement.thirdPartyPayments ?? [];
   return (
     <dl className="grid gap-3 sm:grid-cols-3" data-testid="counter-sale-position">
       <div>
@@ -1512,6 +1568,25 @@ function SalePosition({
           {formatMoney(outstanding, locale)}
         </dd>
       </div>
+      {thirdParty.length > 0 ? (
+        // Somebody other than the buyer paid part of this sale as a third-party
+        // payment (ADR-023 D14): said here as on the invoice screen and the copy,
+        // from the balance read's own values (finance QA fixes D).
+        <div className="sm:col-span-3" data-testid="counter-sale-third-party-payments">
+          <dt className="text-caption text-text-muted">
+            {translate(messages, 'invoices.thirdParty.heading')}
+          </dt>
+          <dd className="text-body text-text-primary">
+            <ThirdPartyPaymentItems
+              locale={locale}
+              messages={messages}
+              payments={thirdParty}
+              truncated={settlement.thirdPartyPaymentsTruncated === true}
+              customer={customer}
+            />
+          </dd>
+        </div>
+      ) : null}
     </dl>
   );
 }

@@ -10,13 +10,22 @@ import { Money, When } from './shared';
 import { PaidByLine } from './ThirdPartyPayment';
 
 /**
- * Who paid, as the screen could name them: by name, still being found, or not
- * shown to this reader. Never the payer's reference (browser QA row 5.6b).
+ * Who paid, as the screen could name them: by name, still being found, not
+ * shown to this reader, or not available because the lookup did not answer in
+ * time (finance QA fixes D). Never the payer's reference (browser QA row 5.6b).
  */
 export type ReceiptPayerName =
   | { readonly kind: 'named'; readonly name: string }
   | { readonly kind: 'loading' }
-  | { readonly kind: 'notShown' };
+  | { readonly kind: 'notShown' }
+  | { readonly kind: 'unavailable' };
+
+/** The words for a payer the screen could not name, by why it could not. */
+export function receiptPayerKey(kind: Exclude<ReceiptPayerName['kind'], 'named'>): keyof Messages {
+  if (kind === 'loading') return 'payments.receipt.payerLoading';
+  if (kind === 'unavailable') return 'payments.receipt.payerUnavailable';
+  return 'payments.list.payerNotShown';
+}
 
 /**
  * The printable receipt (P1-30, `W7`, FE-021).
@@ -123,12 +132,7 @@ export function ReceiptDocument({
               {payer.kind === 'named' ? (
                 <bdi>{payer.name}</bdi>
               ) : (
-                translate(
-                  messages,
-                  payer.kind === 'loading'
-                    ? 'payments.receipt.payerLoading'
-                    : 'payments.list.payerNotShown'
-                )
+                translate(messages, receiptPayerKey(payer.kind))
               )}
             </dd>
           </div>

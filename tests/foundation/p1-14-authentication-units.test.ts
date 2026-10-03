@@ -32,18 +32,30 @@ import {
   requireAuditAction,
 } from '@/server/auth/audit-actions';
 import { isAppFailure } from '@/server/errors/app-failure';
-import { requirePermissions, requireScopeTargetInTenant } from '@/server/auth/authorization';
+import {
+  callerHoldsPermission,
+  requirePermissions,
+  requireScopeTargetInTenant,
+} from '@/server/auth/authorization';
 import type { DbHandle } from '@/server/db/transaction';
 import type { RequestContext } from '@/server/context/request-context';
 import {
   COMPANY_SETTINGS_READ_PERMISSIONS,
   OrganizationSettingsService,
 } from '@/modules/iam/application/organization-settings-service';
-import { WorkingContextService } from '@/modules/iam/application/working-context-service';
+import {
+  BRANCH_GATED_PERMISSION_CODES,
+  WorkingContextService,
+} from '@/modules/iam/application/working-context-service';
 import { OrganizationRepository } from '@/modules/iam/data/organization-repository';
 import { AuthorizationRepository } from '@/modules/iam/data/authorization-repository';
-import type { WorkingContextRepository } from '@/modules/iam/data/working-context-repository';
+import { WorkingContextRepository } from '@/modules/iam/data/working-context-repository';
 import { COMPANY_SETTINGS_READ_OPERATION } from '@/app/api/v1/org/companies/[companyId]/settings/route';
+import { CREDIT_NOTE_APPROVE_OPERATION } from '@/app/api/v1/credit-notes/[creditNoteId]/approval/route';
+import { CREDIT_NOTE_REJECT_OPERATION } from '@/app/api/v1/credit-notes/[creditNoteId]/rejection/route';
+import { RECEIPT_REVERSAL_APPROVE_OPERATION } from '@/app/api/v1/receipt-reversals/[reversalId]/approval/route';
+import { RECEIPT_REVERSAL_REJECT_OPERATION } from '@/app/api/v1/receipt-reversals/[reversalId]/rejection/route';
+import { THIRD_PARTY_PERMISSION } from '@/modules/payments';
 
 const SECRET = 'unit-test-signing-secret-not-a-real-key';
 const ISSUER = 'https://auth.local.test/auth/v1';
@@ -852,5 +864,187 @@ describe('the company-settings reach published with the working context', () => 
     expect(published).toEqual([...entry.expected].sort());
     expect(published).toEqual((await w.enforced()).sort());
     expect(published).not.toContain(FOREIGN);
+  });
+});
+
+/**
+ * The branch-scoped action codes published with the working context (finance QA
+ * fixes D).
+ *
+ * The session's codes are the tenant-wide union, so a holder of an approval code
+ * in one branch was offered the decision on another branch's document and the
+ * route refused it. The working-context read now answers a short list of codes
+ * per branch. What must hold: the published answer for every branch equals the
+ * route's own check in that branch — `iam.has_permission_in_scope` with the
+ * document's company and branch — and every published code is the code the
+ * branch-scoped route it gates actually declares, so neither side can move alone.
+ *
+ * The repository runs for real against a modelled database: its one statement
+ * pairs every branch with every code, and the model answers each pair as the
+ * deployed function does (an unrestricted grant anywhere, a company-typed scope
+ * row for its company, a branch-typed row only for its branch).
+ */
+describe('the branch-scoped action codes published with the working context', () => {
+  const TENANT = '99999999-9999-4999-8999-999999999999';
+  const C1 = '91000000-0000-4000-8000-000000000001';
+  const B1 = '92000000-0000-4000-8000-000000000001';
+  const B2 = '92000000-0000-4000-8000-000000000002';
+  const CREDIT = 'sal.credit.approve';
+  const REVERSAL = 'sal.reversal.approve';
+
+  type Place =
+    | { readonly type: 'unrestricted' }
+    | { readonly type: 'company'; readonly companyId: string }
+    | { readonly type: 'branch'; readonly companyId: string; readonly branchId: string };
+  interface Grant {
+    readonly codes: readonly string[];
+    readonly places: readonly Place[];
+  }
+
+  function world(grants: readonly Grant[]) {
+    const inScope = (code: string, company: unknown, branch: unknown): boolean =>
+      grants.some(
+        (g) =>
+          g.codes.includes(code) &&
+          g.places.some(
+            (p) =>
+              p.type === 'unrestricted' ||
+              (p.type === 'company' && p.companyId === company) ||
+              (p.type === 'branch' && branch !== null && p.branchId === branch)
+          )
+      );
+    const statements: string[] = [];
+    const db = {
+      context: {
+        correlationId: 'f0000000-0000-4000-8000-000000000010',
+        causationId: null,
+        principal: { tenantId: TENANT, userId: 'a0000000-0000-4000-8000-000000000010' },
+        companyIds: [],
+        branchIds: [],
+        operation: 'iam.working-context-read',
+        module: 'iam',
+        startedAtMs: 0,
+        startedAt: new Date(0),
+      } as unknown as RequestContext,
+      depth: 0,
+      query: (text: string, values: readonly unknown[] = []) => {
+        statements.push(text);
+        let rows: unknown[] = [];
+        if (text.includes('unnest($1::uuid[], $2::uuid[])')) {
+          const branchIds = values[0] as readonly string[];
+          const companyIds = values[1] as readonly string[];
+          const codes = values[2] as readonly string[];
+          rows = branchIds.flatMap((branchId, index) =>
+            codes
+              .filter((code) => inScope(code, companyIds[index], branchId))
+              .map((code) => ({ branch_id: branchId, code }))
+          );
+        } else if (text.includes('has_permission_in_scope')) {
+          rows = [{ allowed: inScope(String(values[0]), values[1], values[2]) }];
+        }
+        return Promise.resolve({ rows, rowCount: rows.length });
+      },
+    } as unknown as DbHandle;
+
+    const real = new WorkingContextRepository();
+    const repository = {
+      readGrantShape: async () => ({
+        anyGrant: grants.length > 0,
+        unrestricted: grants.some((g) => g.places.some((p) => p.type === 'unrestricted')),
+      }),
+      listCompanies: async () => [{ id: C1, name: 'Company one', code: null }],
+      listBranches: async () =>
+        [B1, B2].map((id) => ({
+          id,
+          companyId: C1,
+          code: id.slice(-1),
+          name: `Branch ${id.slice(-1)}`,
+          city: null,
+          timezone: 'Asia/Amman',
+          status: 'active',
+        })),
+      heldInBranches: real.heldInBranches.bind(real),
+    } as unknown as WorkingContextRepository;
+    const settings = { readableCompanySettingIds: async () => [] };
+
+    return {
+      statements,
+      describe: () => new WorkingContextService(repository, settings).describe(db),
+      /** The route's own check of one code in one branch. */
+      enforced: (code: string, branchId: string) =>
+        callerHoldsPermission(db, code, { companyId: C1, branchId }),
+    };
+  }
+
+  it('covers exactly the codes the branch-scoped routes it gates declare', () => {
+    for (const operation of [CREDIT_NOTE_APPROVE_OPERATION, CREDIT_NOTE_REJECT_OPERATION]) {
+      expect(operation.scope).toBe('branch');
+      expect(operation.permissions).toContain(CREDIT);
+    }
+    for (const operation of [
+      RECEIPT_REVERSAL_APPROVE_OPERATION,
+      RECEIPT_REVERSAL_REJECT_OPERATION,
+    ]) {
+      expect(operation.scope).toBe('branch');
+      expect(operation.permissions).toContain(REVERSAL);
+    }
+    expect([...BRANCH_GATED_PERMISSION_CODES].sort()).toEqual(
+      [CREDIT, REVERSAL, THIRD_PARTY_PERMISSION].sort()
+    );
+  });
+
+  const CASES: readonly { readonly who: string; readonly grants: readonly Grant[] }[] = [
+    {
+      who: 'a holder of the codes in one branch only',
+      grants: [
+        {
+          codes: [CREDIT, REVERSAL, THIRD_PARTY_PERMISSION],
+          places: [{ type: 'branch', companyId: C1, branchId: B2 }],
+        },
+      ],
+    },
+    {
+      who: 'a holder of different codes in different branches',
+      grants: [
+        { codes: [CREDIT], places: [{ type: 'branch', companyId: C1, branchId: B1 }] },
+        { codes: [REVERSAL], places: [{ type: 'branch', companyId: C1, branchId: B2 }] },
+      ],
+    },
+    {
+      who: 'a company-scoped holder',
+      grants: [
+        { codes: [CREDIT, THIRD_PARTY_PERMISSION], places: [{ type: 'company', companyId: C1 }] },
+      ],
+    },
+    {
+      who: 'a tenant-wide holder',
+      grants: [{ codes: [REVERSAL], places: [{ type: 'unrestricted' }] }],
+    },
+  ];
+
+  for (const { who, grants } of CASES) {
+    it(`publishes, for ${who}, exactly what the routes enforce in each branch`, async () => {
+      const w = world(grants);
+      const view = await w.describe();
+      expect(view.branchPermissions.codes).toEqual([...BRANCH_GATED_PERMISSION_CODES]);
+      expect(view.branchPermissions.branches.map((entry) => entry.branchId)).toEqual([B1, B2]);
+      for (const entry of view.branchPermissions.branches) {
+        for (const code of BRANCH_GATED_PERMISSION_CODES) {
+          expect(entry.permissions.includes(code), `${who}: ${code} in ${entry.branchId}`).toBe(
+            await w.enforced(code, entry.branchId)
+          );
+        }
+      }
+    });
+  }
+
+  it('asks every branch and code in one statement, and nothing for a caller with no branch', async () => {
+    const w = world([{ codes: [CREDIT], places: [{ type: 'unrestricted' }] }]);
+    await w.describe();
+    expect(w.statements.filter((text) => text.includes('has_permission_in_scope'))).toHaveLength(1);
+    const none = world([]);
+    const view = await none.describe();
+    expect(view.branchPermissions.branches).toEqual([]);
+    expect(none.statements).toHaveLength(0);
   });
 });

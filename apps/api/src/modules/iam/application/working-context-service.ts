@@ -42,6 +42,53 @@ export interface WorkingContextView {
    * Additive: a client that does not know the field loses nothing.
    */
   readonly companySettingsReadableIds: readonly string[];
+  /**
+   * Which of a few branch-scoped ACTION codes the caller holds in each published
+   * branch (finance QA fixes D). See `BranchPermissionsView`. Additive: a client
+   * that does not know the field loses nothing.
+   */
+  readonly branchPermissions: BranchPermissionsView;
+}
+
+/**
+ * The codes a screen offers an action on per branch, published per branch.
+ *
+ * The session's `permissions` are the tenant-wide UNION: a holder of
+ * `sal.credit.approve` in one branch only carries the code, so a screen gated on
+ * the union offered Approve on another branch's credit note and the route
+ * answered 403. These are the branch-scoped actions a screen offers on a
+ * document of a particular branch; each is answered for every published branch
+ * by `iam.has_permission_in_scope`, the function the action's own route asks, so
+ * the published answer and the refusal cannot disagree. No new permission and no
+ * new rule: the server stays the authority and still refuses on its own.
+ *
+ * A short declared list rather than every code the caller holds: the read runs
+ * on every page, and codes times branches function calls for an administrator
+ * holding every code would make each page pay for answers no screen asks.
+ * `codes` travels on the wire so a client knows which codes are covered and
+ * keeps its tenant-wide check for any other.
+ */
+export const BRANCH_GATED_PERMISSION_CODES = Object.freeze([
+  // Approving or rejecting a credit note (`sal.credit-note-approve` / `-reject`).
+  'sal.credit.approve',
+  // Approving or rejecting a receipt reversal (`sal.receipt-reversal-approve` / `-reject`).
+  'sal.reversal.approve',
+  // Applying a receipt as a third-party payment (`sal.payment-allocate`, ADR-023 D14).
+  'sal.payment.third_party',
+] as const);
+
+/** The per-branch answer for `BRANCH_GATED_PERMISSION_CODES`. */
+export interface BranchPermissionsView {
+  /** The codes answered below; any other code is not covered by this field. */
+  readonly codes: readonly string[];
+  /** Every published branch, each with the covered codes the caller holds there. */
+  readonly branches: readonly BranchPermissionEntry[];
+}
+
+/** One branch's covered codes. */
+export interface BranchPermissionEntry {
+  readonly branchId: string;
+  readonly permissions: readonly string[];
 }
 
 /** The one question the working context asks of the settings service. */
@@ -88,22 +135,41 @@ export class WorkingContextService {
         companies: [],
         branches: [],
         companySettingsReadableIds: [],
+        branchPermissions: { codes: [...BRANCH_GATED_PERMISSION_CODES], branches: [] },
       };
     }
 
     const companies = await this.workingContext.listCompanies(db);
     const branches = await this.workingContext.listBranches(db);
     const reachable = new Set(companies.map((company) => company.id));
+    // A branch whose company is inactive is dropped rather than published with a
+    // `companyId` the same response does not name. A selector that offered one
+    // would be a two-level choice whose first level is missing.
+    const published = branches.filter((branch: WorkingContextBranchRow) =>
+      reachable.has(branch.companyId)
+    );
+    const held =
+      published.length === 0
+        ? []
+        : await this.workingContext.heldInBranches(
+            db,
+            BRANCH_GATED_PERMISSION_CODES,
+            published.map((branch) => ({ companyId: branch.companyId, branchId: branch.id }))
+          );
     return {
       tenantId: context.principal.tenantId,
       unrestricted: shape.unrestricted,
       companies,
-      // A branch whose company is inactive is dropped rather than published with a
-      // `companyId` the same response does not name. A selector that offered one
-      // would be a two-level choice whose first level is missing.
-      branches: branches.filter((branch: WorkingContextBranchRow) =>
-        reachable.has(branch.companyId)
-      ),
+      branches: published,
+      branchPermissions: {
+        codes: [...BRANCH_GATED_PERMISSION_CODES],
+        branches: published.map((branch) => ({
+          branchId: branch.id,
+          permissions: held
+            .filter((entry) => entry.branchId === branch.id)
+            .map((entry) => entry.code),
+        })),
+      },
       companySettingsReadableIds: await this.companySettings.readableCompanySettingIds(
         db,
         companies.map((company) => company.id)

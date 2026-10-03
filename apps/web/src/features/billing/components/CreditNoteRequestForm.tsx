@@ -19,7 +19,10 @@
  *
  * The amount is checked for shape before it is sent — a decimal string, more
  * than zero, at most four decimals — because that is what the route accepts and
- * a refusal the form can predict should not cost a round trip. It is also
+ * a refusal the form can predict should not cost a round trip. It is checked
+ * against the minor unit the server published for the invoice's currency
+ * (`fitsMinorUnit`), so an amount finer than the currency's smallest coin is
+ * refused on the box rather than by the route. It is also
  * compared, digit by digit (`compareMoney`), with the open receivable the server
  * published, and an amount above it is refused here: no credit can exceed it.
  *
@@ -59,7 +62,7 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import { unreachable, type ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 
-import { compareMoney } from '@/lib/money';
+import { compareMoney, fitsMinorUnit } from '@/lib/money';
 
 import { requestCreditNote } from '../api';
 import {
@@ -160,6 +163,11 @@ export function CreditNoteRequestForm({
     if (typed.length === 0) found['amount'] = 'field.required';
     else if (!CREDIT_AMOUNT.test(typed) || !/[1-9]/.test(typed)) {
       found['amount'] = 'creditNotes.request.amountFormat';
+    } else if (open !== null && !fitsMinorUnit(typed, open.minorUnit)) {
+      // No finer than the invoice's currency is written: the minor unit is the one
+      // the balance read published for it (`shared.currencies`, Owner decision D1),
+      // so the box says so before anything is sent, in the server's own words.
+      found['amount'] = 'form.violation.minor_unit_scale';
     } else if (open !== null && compareMoney(typed, open.amount) > 0) {
       // Never above what the server says is still open. Pending notes can lower the
       // ceiling further; that is the server's answer at approval, not a sum made here.

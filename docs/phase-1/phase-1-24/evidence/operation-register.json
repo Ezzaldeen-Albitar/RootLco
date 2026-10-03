@@ -4487,7 +4487,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-auth-provider.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/foundation/p1-14-authentication-units.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/auth/working-context/route.ts"
