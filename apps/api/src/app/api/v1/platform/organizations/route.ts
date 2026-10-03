@@ -189,18 +189,17 @@ export const ORGANIZATION_PROVISION_OPERATION = defineOperation({
 });
 
 export async function GET(request: Request): Promise<Response> {
-  const query = parseOrFail(
-    Query,
-    searchParamsToObject(new URL(request.url).searchParams),
-    'query'
-  );
-  return handleOperation(ORGANIZATION_READ_OPERATION, request, async ({ db }) => ({
-    body: await platformModule().organizations.read(
-      db,
-      { tenantId: query.tenantId, q: query.q, status: query.status },
-      { cursor: query.cursor, limit: query.limit }
-    ),
-  }));
+  const raw = searchParamsToObject(new URL(request.url).searchParams);
+  return handleOperation(ORGANIZATION_READ_OPERATION, request, async ({ db }) => {
+    const query = parseOrFail(Query, raw, 'query');
+    return {
+      body: await platformModule().organizations.read(
+        db,
+        { tenantId: query.tenantId, q: query.q, status: query.status },
+        { cursor: query.cursor, limit: query.limit }
+      ),
+    };
+  });
 }
 
 export async function POST(request: Request): Promise<Response> {

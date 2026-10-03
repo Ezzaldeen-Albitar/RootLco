@@ -40,7 +40,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ versionId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -49,6 +49,7 @@ export async function POST(
     TEMPLATE_VERSION_PREVIEW_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const input = await parseJsonBody(raw, Body);
       return {
         body: await sharedServicesModule().templates.previewVersion(
@@ -58,6 +59,6 @@ export async function POST(
         ),
       };
     },
-    { params, body }
+    { params: rawParams, body }
   );
 }

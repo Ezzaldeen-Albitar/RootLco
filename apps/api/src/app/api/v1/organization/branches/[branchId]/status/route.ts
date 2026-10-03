@@ -15,7 +15,7 @@
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseJsonBody, parseOrFail, schemas } from '@/server/http/validation';
+import { parseJsonBody, parseOrFail, pathScopeTarget, schemas } from '@/server/http/validation';
 import { AppFailure } from '@/server/errors/app-failure';
 import { MAX_TRANSITION_REASON, sharedServicesModule } from '@/modules/shared-services';
 
@@ -62,11 +62,12 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ branchId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     BRANCH_STATUS_READ_OPERATION,
     request,
     async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
       const view = await sharedServicesModule().transitions.describe(
         db,
         'org.branch',
@@ -74,7 +75,7 @@ export async function GET(
       );
       return { body: view, recordVersion: view.recordVersion };
     },
-    { params, authorizationTarget: { branchId: params.branchId } }
+    { params: raw, authorizationTarget: pathScopeTarget(raw, 'branchId') }
   );
 }
 
@@ -82,11 +83,12 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ branchId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     BRANCH_STATUS_CHANGE_OPERATION,
     request,
     async ({ db, request: raw, expectedVersion }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const input = await parseJsonBody(raw, Body);
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
@@ -100,6 +102,6 @@ export async function POST(
       });
       return { body: result, recordVersion: result.recordVersion };
     },
-    { params, authorizationTarget: { branchId: params.branchId } }
+    { params: rawParams, authorizationTarget: pathScopeTarget(rawParams, 'branchId') }
   );
 }

@@ -355,23 +355,29 @@ describe('the parent is resolved first, on every read', () => {
   });
 
   /**
-   * A malformed id never reaches the database.
+   * A malformed id never reaches the database, and is answered as a validation
+   * failure.
    *
-   * Asserted as a THROW, not as a 422, and that is not a concession — it is the
-   * shape all 141 route modules in this platform have carried since P1-13:
-   * `parseOrFail` on the path runs BEFORE `handleOperation`, so it rejects
-   * outside the block that turns an `AppFailure` into a problem document.
-   *
-   * Whether the framework converts that into an RFC 9457 response or a bare 500
-   * is a foundation question this remediation does not answer and must not
-   * silently change (`P1-16-A-02`). What is in scope, and is what this asserts,
-   * is that no non-uuid ever becomes a query parameter.
+   * This used to be asserted as a THROW: `parseOrFail` on the path ran BEFORE
+   * `handleOperation`, outside the block that turns an `AppFailure` into a
+   * problem document, so the framework answered HTTP 500 with no correlation id
+   * (`P1-16-A-02`). The parse now runs inside the operation (DX-4, finance QA
+   * fixes E; `tests/unit/route-operation-boundary.test.ts` holds the shape for
+   * every route), so the same request is a 422 `ERR-VAL-001` naming the path
+   * parameter, with the correlation id every answer carries. What it asserted
+   * before still holds: no non-uuid ever becomes a query parameter.
    */
-  it('rejects a malformed id before it reaches the database', async () => {
+  it('answers a malformed id with 422 before it reaches the database', async () => {
     authenticateAs(SUBJECT_READER);
-    await expect(READ_CUSTOMER(get('not-a-uuid'), route('not-a-uuid'))).rejects.toMatchObject({
-      code: 'ERR-VAL-001',
-    });
+    const response = await READ_CUSTOMER(get('not-a-uuid'), route('not-a-uuid'));
+    expect(response.status).toBe(422);
+    expect(response.headers.get('x-correlation-id')).toMatch(/^[0-9a-f-]{36}$/);
+    const problem = (await response.json()) as {
+      readonly code?: string;
+      readonly violations?: readonly { readonly path: string; readonly rule: string }[];
+    };
+    expect(problem.code).toBe('ERR-VAL-001');
+    expect(problem.violations?.map((v) => v.path)).toEqual(['path.customerId']);
   });
 });
 

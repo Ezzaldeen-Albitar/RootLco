@@ -39,11 +39,14 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ recordId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     AUDIT_EVENT_DETAIL_OPERATION,
     request,
-    async ({ db }) => ({ body: await iamModule().auditView.detail(db, params.recordId) }),
-    { params }
+    async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return { body: await iamModule().auditView.detail(db, params.recordId) };
+    },
+    { params: raw }
   );
 }

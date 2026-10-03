@@ -44,14 +44,15 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ customerId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     CUSTOMER_READ_OPERATION,
     request,
     async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
       const customer = await crmModule().customerRead.readCustomer(db, params.customerId);
       return { body: customer, recordVersion: customer.recordVersion };
     },
-    { params }
+    { params: raw }
   );
 }

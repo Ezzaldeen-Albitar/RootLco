@@ -37,7 +37,7 @@ import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { AppFailure } from '@/server/errors/app-failure';
 import { handleOperation } from '@/server/http/route-handler';
-import { parseOrFail, schemas } from '@/server/http/validation';
+import { parseOrFail, pathScopeTarget, schemas } from '@/server/http/validation';
 import { THRESHOLD_KINDS, pricingModule } from '@/modules/pricing';
 
 export const runtime = 'nodejs';
@@ -97,17 +97,18 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ companyId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     DISCOUNT_THRESHOLD_READ_OPERATION,
     request,
     async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
       const view = await pricingModule().thresholds.read(db, params.companyId);
       return { body: view, recordVersion: view.recordVersion };
     },
     // The company is a CLAIM checked against the caller's grants, never the scope
     // itself: `narrowScope()` rejects one the caller does not hold.
-    { params, authorizationTarget: { companyId: params.companyId } }
+    { params: raw, authorizationTarget: pathScopeTarget(raw, 'companyId') }
   );
 }
 
@@ -115,7 +116,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ companyId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   const body = await request
     .clone()
     .json()
@@ -124,6 +125,7 @@ export async function POST(
     DISCOUNT_THRESHOLD_SET_OPERATION,
     request,
     async ({ db, expectedVersion }) => {
+      const params = parseOrFail(Params, raw, 'path');
       const parsed = parseOrFail(Body, body, 'body');
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
@@ -140,6 +142,6 @@ export async function POST(
       );
       return { status: 201, body: view, recordVersion: view.recordVersion };
     },
-    { params, body, authorizationTarget: { companyId: params.companyId } }
+    { params: raw, body, authorizationTarget: pathScopeTarget(raw, 'companyId') }
   );
 }

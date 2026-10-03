@@ -79,18 +79,21 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ customerId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     PREFERENCE_LIST_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
-      body: await crmModule().customerRead.listPreferences(
-        db,
-        params.customerId,
-        parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
-      ),
-    }),
-    { params }
+    async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        body: await crmModule().customerRead.listPreferences(
+          db,
+          params.customerId,
+          parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
+        ),
+      };
+    },
+    { params: rawParams }
   );
 }
 
@@ -98,7 +101,7 @@ export async function PUT(
   request: Request,
   route: { params: Promise<{ customerId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -107,6 +110,7 @@ export async function PUT(
     PREFERENCE_SET_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const input = await parseJsonBody(raw, Body);
       return {
         status: 200,
@@ -118,6 +122,6 @@ export async function PUT(
         }),
       };
     },
-    { params, body }
+    { params: rawParams, body }
   );
 }
