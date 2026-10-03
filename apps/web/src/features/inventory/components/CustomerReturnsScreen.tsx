@@ -663,11 +663,15 @@ function ReceiveForm({
             // a refusal such as more than remains stayed red until the next
             // submit).
             setErrors((previous) => withoutError(previous, 'quantity'));
-            setOutcome((previous) =>
-              previous?.fieldErrors?.['quantity'] === undefined
-                ? previous
-                : { ...previous, fieldErrors: withoutError(previous.fieldErrors, 'quantity') }
-            );
+            setOutcome((previous) => {
+              if (previous?.fieldErrors?.['quantity'] === undefined) return previous;
+              const rest = withoutError(previous.fieldErrors, 'quantity');
+              // DX-1 (finance QA fixes E): when the server refused the quantity
+              // and nothing else, the form-level sentence was about this box
+              // alone, so correcting it clears that sentence too. A refusal that
+              // also named another box keeps its sentence until that one is fixed.
+              return Object.keys(rest).length === 0 ? null : { ...previous, fieldErrors: rest };
+            });
             setForm((f) => ({ ...f, quantity: event.target.value }));
           }}
           error={errorFor('quantity')}

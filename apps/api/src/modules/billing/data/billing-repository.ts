@@ -546,6 +546,14 @@ export interface WorkOrderScopeRow {
   readonly companyId: string;
   readonly branchId: string;
   readonly state: string;
+  /**
+   * The visit the work order came from and the instant it was opened: the two
+   * facts the reception module dates the work order's customer by
+   * (`PartyContextRepository.partiesForWorkOrders`). An invoice whose quotation
+   * and request name no payer bills that customer (DX-3, finance QA fixes E).
+   */
+  readonly receptionVisitId: string;
+  readonly openedAt: Date;
 }
 
 /**
@@ -848,9 +856,12 @@ export class BillingRepository extends Repository {
       company_id: string;
       branch_id: string;
       state: string;
+      reception_visit_id: string;
+      opened_at: Date;
     }>(
       db,
-      `SELECT w.id AS work_order_id, w.company_id, w.branch_id, w.state
+      `SELECT w.id AS work_order_id, w.company_id, w.branch_id, w.state,
+              w.reception_visit_id, w.opened_at
          FROM wo.work_orders w
         WHERE w.tenant_id = $1 AND w.id = $2 AND w.deleted_at IS NULL`,
       [context.principal.tenantId, workOrderId]
@@ -861,6 +872,8 @@ export class BillingRepository extends Repository {
           companyId: row.company_id,
           branchId: row.branch_id,
           state: row.state,
+          receptionVisitId: row.reception_visit_id,
+          openedAt: row.opened_at,
         }
       : null;
   }

@@ -464,6 +464,120 @@ describe('the cap on the quantity', () => {
     expect(await screen.findByText(EN['inventory.returns.create.explain'] as string)).toBeTruthy();
   });
 
+  /**
+   * DX-1 (finance QA fixes E). The server's own "more than remains" refusal —
+   * met when another return was recorded after this screen read the figure —
+   * was a bare conflict, so the form could only print its form-level sentence:
+   * the box was not marked, the cursor stayed on the button, and the sentence
+   * outlived the correction. It now names its rule against `body.quantity`, and
+   * `createSalesReturn` hands the screen this state (the adapter half is pinned
+   * in `inventory-api.test.ts`).
+   */
+  const overRemainingRefusal = {
+    state: {
+      status: 'conflict' as const,
+      messageKey: 'inventory.returns.create.refused',
+      fieldErrors: { quantity: 'form.violation.stock_return_exceeds_remaining' },
+      correlationId: 'corr-409',
+      attempt: 1,
+    },
+    created: null,
+  };
+
+  async function refuseOnTheServer(
+    user: ReturnType<typeof userEvent.setup>,
+    typed: string
+  ): Promise<HTMLElement> {
+    await openBranch();
+    await lookUpSource(user);
+    const quantity = screen.getByLabelText(labelled('inventory.returns.create.quantity'));
+    await user.type(quantity, typed);
+    await user.selectOptions(
+      screen.getByLabelText(labelled('inventory.returns.create.receivedLocation')),
+      LOCATION_ID
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.returns.create.submit'] as string })
+    );
+    return quantity;
+  }
+
+  it('puts the server refusal of more than remains on the quantity box, and clears all of it on correction (DX-1)', async () => {
+    createSalesReturn.mockResolvedValueOnce(overRemainingRefusal);
+    const user = userEvent.setup();
+    renderLtr(operable());
+    const quantity = await refuseOnTheServer(user, '2');
+    const sentence = EN['form.violation.stock_return_exceeds_remaining'] as string;
+
+    await waitFor(() => expect(quantity).toHaveAttribute('aria-invalid', 'true'));
+    await waitFor(() => expect(quantity).toHaveFocus());
+    // The sentence is beside the box and is the box's own description.
+    expect(quantity).toHaveAccessibleDescription(expect.stringContaining(sentence));
+    expect(screen.getByText(EN['inventory.returns.create.refused'] as string)).toBeTruthy();
+
+    await user.type(quantity, '{Backspace}1');
+    expect(quantity).toHaveValue('1');
+    expect(quantity).not.toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText(sentence)).toBeNull();
+    // The form-level sentence was about this box alone, so it goes with it.
+    expect(screen.queryByText(EN['inventory.returns.create.refused'] as string)).toBeNull();
+    expect(createSalesReturn).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the form-level sentence of a refusal that names no box when the quantity changes (DX-1)', async () => {
+    createSalesReturn.mockResolvedValueOnce(refusedWith('inventory.returns.create.refused'));
+    const user = userEvent.setup();
+    renderLtr(operable());
+    const quantity = await refuseOnTheServer(user, '2');
+    await waitFor(() =>
+      expect(screen.getByText(EN['inventory.returns.create.refused'] as string)).toBeTruthy()
+    );
+    expect(quantity).not.toHaveAttribute('aria-invalid', 'true');
+    await user.type(quantity, '{Backspace}1');
+    expect(screen.getByText(EN['inventory.returns.create.refused'] as string)).toBeTruthy();
+  });
+
+  it('says the same on the quantity box in Arabic, right to left (DX-1)', async () => {
+    createSalesReturn.mockResolvedValueOnce(overRemainingRefusal);
+    const user = userEvent.setup();
+    renderRtl(<CustomerReturnsScreen locale="ar" messages={ar} canOperate canReadBranches />);
+    await screen.findByRole('region', { name: AR['inventory.returns.targetLabel'] as string });
+    await user.selectOptions(
+      await screen.findByLabelText(
+        new RegExp(('^' + AR['inventory.returns.sale.label']) as string)
+      ),
+      SALE_ID
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(
+        new RegExp(('^' + AR['inventory.returns.sale.lineLabel']) as string)
+      ),
+      SOURCE_ID
+    );
+    await waitFor(() => expect(readReturnable).toHaveBeenCalledTimes(1));
+    const quantity = screen.getByLabelText(
+      new RegExp(('^' + AR['inventory.returns.create.quantity']) as string)
+    );
+    await user.type(quantity, '2');
+    await user.selectOptions(
+      screen.getByLabelText(
+        new RegExp(('^' + AR['inventory.returns.create.receivedLocation']) as string)
+      ),
+      LOCATION_ID
+    );
+    await user.click(
+      screen.getByRole('button', { name: AR['inventory.returns.create.submit'] as string })
+    );
+    const sentence = AR['form.violation.stock_return_exceeds_remaining'] as string;
+    await waitFor(() => expect(quantity).toHaveAttribute('aria-invalid', 'true'));
+    await waitFor(() => expect(quantity).toHaveFocus());
+    expect(quantity).toHaveAccessibleDescription(expect.stringContaining(sentence));
+    expect(document.documentElement.dir).toBe('rtl');
+    await user.type(quantity, '{Backspace}1');
+    expect(screen.queryByText(sentence)).toBeNull();
+    expect(screen.queryByText(AR['inventory.returns.create.refused'] as string)).toBeNull();
+  });
+
   it('says in words that the server refused a return the ceiling no longer allows', async () => {
     const user = userEvent.setup();
     createSalesReturn.mockResolvedValue(refusedWith('inventory.returns.create.refused'));

@@ -54,6 +54,7 @@ import { isSqlState, sqlState, SQLSTATE, violatedConstraint } from '@/server/db/
 import { Decimal, MONEY } from '@/modules/pricing';
 import { findSequenceDefinition, sharedServicesModule } from '@/modules/shared-services';
 import { inventoryModule } from '@/modules/inventory';
+import { receptionModule } from '@/modules/reception';
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import {
@@ -371,6 +372,11 @@ export interface CreateInvoiceInput {
    * necessary. The quotation's value always wins when present: it is the protected
    * commercial record of who agreed to pay, and letting a request override it would
    * let an invoice be addressed to someone the quotation never named.
+   *
+   * When neither names a payer, the work order's own customer is billed (DX-3,
+   * finance QA fixes E) — the behaviour the invoice screen describes for an empty
+   * box. A work order with no single customer is refused with
+   * `invoice_payer_required` on this field.
    */
   readonly payerPartnerId?: string | undefined;
   readonly idempotencyKey?: string | undefined;
@@ -682,6 +688,31 @@ export class InvoiceService {
   // -------------------------------------------------------------------------
 
   /**
+   * The customer of a work order, as the reception module dates it: the party
+   * who brought the car (`service_requester`) as at the work order's
+   * `opened_at` — the customer the work order screens show (BR-05). Read through
+   * the reception module's own port rather than with `rec` SQL here.
+   *
+   * `undefined` when there is no such customer, or when more than one party held
+   * the role at that instant: billing one of two would be a guess, so the caller
+   * is asked to name the payer instead.
+   */
+  private async workOrderCustomer(
+    db: DbHandle,
+    scope: {
+      readonly workOrderId: string;
+      readonly receptionVisitId: string;
+      readonly openedAt: Date;
+    }
+  ): Promise<string | undefined> {
+    const [party] = await receptionModule().partyContext.partiesForWorkOrders(db, [
+      { id: scope.workOrderId, receptionVisitId: scope.receptionVisitId, openedAt: scope.openedAt },
+    ]);
+    if (party === undefined || party.hasAdditionalParties) return undefined;
+    return party.partnerId;
+  }
+
+  /**
    * Creates a draft invoice from approved commercial data, in ONE transaction.
    *
    * The whole document — header, restricted header totals, every line, every line's
@@ -778,17 +809,33 @@ export class InvoiceService {
     });
     this.assertSourceLinesAreBillable(source.currencyCode, sourceLines, source.revisionId);
 
-    const payerPartnerId = source.payerPartnerRef ?? input.payerPartnerId;
+    // Who pays, in this order (DX-3, finance QA fixes E): the payer the accepted
+    // quotation names, because it is the protected record of who agreed to pay;
+    // then a payer the request names; then the work order's own customer — which
+    // is what the invoice screen promises when its "different paying customer"
+    // box is left empty. The fallback used to be missing, so a quotation that
+    // named no payer and an empty box were refused as a malformed request.
+    //
+    // The resolved customer is written through the same insert as an explicit
+    // payer, so it meets the same checks: `fk_invoices_payer` holds it to this
+    // tenant's partners exactly as it holds a payer the request names.
+    const payerPartnerId =
+      source.payerPartnerRef ?? input.payerPartnerId ?? (await this.workOrderCustomer(db, scope));
     if (payerPartnerId === undefined) {
       // `sal.invoices.payer_partner_id` is NOT NULL and `quo.quotations.payer_partner_ref`
       // is nullable, so this gap is in the schema rather than in the request. It is a
-      // validation failure because the caller CAN fix it, by naming the payer.
+      // validation failure because the caller CAN fix it, by naming the payer — and
+      // it is reached only when the work order has no single customer to bill
+      // either, so the rule says that rather than calling the empty box malformed.
       throw new AppFailure('ERR-VAL-001', {
         message:
-          `The accepted quotation ${source.quotationId} names no payer, and none was ` +
-          'supplied. sal.invoices.payer_partner_id is NOT NULL, so an invoice cannot be ' +
-          'created without one.',
-        safeDetails: { violations: [{ path: 'body.payerPartnerId', rule: 'invalid_type' }] },
+          `The accepted quotation ${source.quotationId} names no payer, none was supplied, ` +
+          `and work order ${scope.workOrderId} has no single customer to bill. ` +
+          'sal.invoices.payer_partner_id is NOT NULL, so an invoice cannot be created ' +
+          'without one.',
+        safeDetails: {
+          violations: [{ path: 'body.payerPartnerId', rule: 'invoice_payer_required' }],
+        },
       });
     }
 

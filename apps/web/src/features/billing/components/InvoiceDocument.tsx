@@ -99,6 +99,7 @@ export function InvoiceDocument({
   workOrderNumber,
   payer,
   balance = null,
+  settlementUnavailable = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -116,6 +117,12 @@ export function InvoiceDocument({
    * amounts or the invoice claims nothing yet.
    */
   readonly balance?: Outstanding | null;
+  /**
+   * The balance read was refused, failed or did not answer in time (DX-2). The
+   * copy then says that what was paid could not be read, rather than printing as
+   * if nothing had been.
+   */
+  readonly settlementUnavailable?: boolean;
 }) {
   const invoice = detail.invoice;
   const context = useWorkingContext();
@@ -362,6 +369,13 @@ export function InvoiceDocument({
           customer={payer}
           zone={context.branches.find((entry) => entry.id === invoice.branchId)?.timezone || 'UTC'}
         />
+      ) : settlementUnavailable ? (
+        <p
+          className="mt-6 border-t border-border pt-4 text-body"
+          data-testid="invoice-print-settlement-unavailable"
+        >
+          {translate(messages, 'invoices.print.settlementUnavailable')}
+        </p>
       ) : null}
     </PrintDocument>
   );

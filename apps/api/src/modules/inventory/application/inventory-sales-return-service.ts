@@ -57,7 +57,8 @@ import {
   salesReturnDisplayState,
   type SalesReturnDisplayState,
 } from '../domain/inventory';
-import { parseQuantity, toDomainFailure } from './inventory-failures';
+import { parseQuantity, refuseInventoryState, toDomainFailure } from './inventory-failures';
+import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import type { InventoryStockService } from './inventory-stock-service';
 
 export interface SalesReturnView {
@@ -127,6 +128,24 @@ function toSalesReturnView(row: SalesReturnRow, replayed: boolean): SalesReturnV
 function toSalesReturnListView(row: SalesReturnListRow): SalesReturnListView {
   const { replayed: _replayed, ...view } = toSalesReturnView(row, false);
   return { ...view, sku: row.sku };
+}
+
+/**
+ * Whether a database refusal is the return ceiling's own.
+ *
+ * `inv.guard_sales_return_ceiling` raises three check violations; only the one
+ * about the quantity is the operator's to fix in the quantity box, and its text is
+ * the guard's own (`returning … would exceed …`). The item and branch refusals keep
+ * the shared mapping, because the box cannot fix them.
+ */
+export function exceedsReturnCeiling(error: unknown): boolean {
+  if (!isSqlState(error, SQLSTATE.checkViolation)) return false;
+  const message = (error as { readonly message?: unknown }).message;
+  return (
+    typeof message === 'string' &&
+    message.startsWith('inv.sales_returns: returning ') &&
+    message.includes(' would exceed ')
+  );
 }
 
 export class InventorySalesReturnService {
@@ -206,16 +225,26 @@ export class InventorySalesReturnService {
       return toSalesReturnView(existing, true);
     }
 
-    // Checked here so the counter is told the remaining figure rather than a bare
-    // invariant refusal. The binding check is still the ceiling trigger, under the
-    // source lock, which is what makes two tills racing the last unit safe.
+    // Checked here so the counter is told which box to change rather than met with
+    // a bare invariant refusal. The binding check is still the ceiling trigger,
+    // under the source lock, which is what makes two tills racing the last unit
+    // safe — and its refusal is named the same way below.
+    //
+    // DX-1 (finance QA fixes E): this used to be a bare ERR-TRN-001 with no safe
+    // details, so the return form could show it only as a form-level sentence that
+    // stayed after the quantity was corrected. It now names its rule against
+    // `body.quantity`, the convention every field-addressable inventory refusal
+    // follows (`refuseInventoryState`), so the sentence lands on the quantity box.
+    // The token names a rule and never a figure: the remainder is the caller's to
+    // read through `inv.returnable-quantity-read`.
     const remaining = Quantity.fromDatabase(source.remainingQuantity, 'remainingQuantity');
     if (quantity.isGreaterThan(remaining)) {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Only ${remaining.toString()} of the ${source.sourceQuantity} that left may still be ` +
+      refuseInventoryState(
+        'stock_return_exceeds_remaining',
+        `Only ${remaining.toString()} of the ${source.sourceQuantity} that left may still be ` +
           `returned; ${quantity.toString()} was offered`,
-      });
+        { path: 'body.quantity' }
+      );
     }
 
     // Both ends of the posting are checked before the call, so a wrong location is
@@ -238,6 +267,16 @@ export class InventorySalesReturnService {
         idempotencyKey: input.idempotencyKey ?? null,
       });
     } catch (error) {
+      // Two tills racing the last unit: the pre-check above passed for both, and
+      // `inv.guard_sales_return_ceiling` refused the second under the source lock.
+      // That is the same refusal, so it carries the same rule on the same box.
+      if (exceedsReturnCeiling(error)) {
+        refuseInventoryState(
+          'stock_return_exceeds_remaining',
+          'The return would exceed what left, counting returns recorded meanwhile',
+          { path: 'body.quantity' }
+        );
+      }
       toDomainFailure(error, 'Sales return');
     }
 

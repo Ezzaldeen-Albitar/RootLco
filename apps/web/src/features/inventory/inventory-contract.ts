@@ -743,6 +743,10 @@ export const STOCK_REFUSAL_RULES = [
   'stock_work_order_other_branch',
   'stock_issue_exceeds_reservation',
   'stock_return_exceeds_issue',
+  // DX-1 (finance QA fixes E): a customer return of more than may still come
+  // back, against the quantity box — before, a bare ERR-TRN-001 the screen could
+  // only show as a form-level sentence that outlived the correction.
+  'stock_return_exceeds_remaining',
   'stock_damage_other_branch',
   'stock_damage_releases_reservations',
   'stock_opening_batch_frozen',

@@ -196,6 +196,28 @@ describe('create carries the attempt key and no version', () => {
     expect(Object.keys(body).sort()).toEqual(['workOrderId']);
   });
 
+  it('files "no customer to bill" on the payer box, in words (DX-3, finance QA fixes E)', async () => {
+    // An empty box bills the work order's customer; only a work order with no
+    // single customer is refused, and that refusal names the box and says why.
+    send.mockResolvedValue({
+      ok: false as const,
+      kind: 'validation',
+      status: 422,
+      correlationId: 'corr-422',
+      problem: {
+        status: 422,
+        code: 'ERR-VAL-001',
+        correlationId: 'corr-422',
+        violations: [{ path: 'body.payerPartnerId', rule: 'invoice_payer_required' }],
+      },
+    });
+    const outcome = await createInvoice({ workOrderId: WORK_ORDER_ID }, KEY);
+    expect(outcome.created).toBeNull();
+    expect(outcome.state.fieldErrors?.['payerPartnerId']).toBe(
+      'form.violation.invoice_payer_required'
+    );
+  });
+
   it('passes a replay through as a replay', async () => {
     send.mockResolvedValue(ok({ invoice, lines: [], recordVersion: 3, replayed: true }));
     const outcome = await createInvoice({ workOrderId: WORK_ORDER_ID }, KEY);
