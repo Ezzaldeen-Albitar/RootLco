@@ -164,11 +164,22 @@ const cyclicAst = () => {
   brace.nodes.push(brace);
   return { type: 'root', nodes: [brace] };
 };
-const arrayAst = () => {
+const deepArray = () => {
   let value = 'x';
   for (let i = 0; i < 200000; i++) value = [value];
-  return { type: 'root', nodes: [{ type: 'text', value }] };
+  return value;
 };
+const arrayAst = () => ({ type: 'root', nodes: [{ type: 'text', value: deepArray() }] });
+const cyclicArray = () => {
+  const array = [];
+  array.push(array);
+  return array;
+};
+// expand() takes the queue of a non-brace node from its caller-supplied
+// parent chain. A nested array placed there reaches utils.flatten (the
+// returned queue) or append (a text child) without passing node.value.
+const parentQueueAst = (queued, nodes = []) => ({ type: 'x', nodes, parent: { type: 'brace', queue: [queued] } });
+const TEXT_CHILD = () => [{ type: 'text', value: 'y' }];
 const ATTACKS = {
   'braces(pattern)': () => braces(PATTERN),
   'braces(pattern, { expand: true })': () => braces(PATTERN, { expand: true }),
@@ -195,6 +206,12 @@ const ATTACKS = {
   'braces.compile(nested array value)': () => braces.compile(arrayAst()),
   'braces.expand(nested array value)': () => braces.expand(arrayAst()),
   'braces.stringify(nested array value)': () => braces.stringify(arrayAst()),
+  'braces.expand(nested parent queue AST)': () => braces.expand(parentQueueAst(deepArray())),
+  'braces.expand(nested parent queue, text child AST)': () => braces.expand(parentQueueAst(deepArray(), TEXT_CHILD())),
+  'braces.expand(cyclic parent queue AST)': () => braces.expand(parentQueueAst(cyclicArray())),
+  'braces.expand(cyclic parent queue, text child AST)': () => braces.expand(parentQueueAst(cyclicArray(), TEXT_CHILD())),
+  'lib/expand(nested parent queue AST)': () => lib('expand')(parentQueueAst(deepArray())),
+  'lib/utils.flatten(nested array)': () => lib('utils').flatten(deepArray()),
 };
 const settle = (fn) => {
   try {
@@ -439,7 +456,7 @@ describe('braces patched copy — every dependency path resolves to it', () => {
 describe('braces patched copy — regression (GHSA-vfj7-8cjw-p6xm)', () => {
   it('exhausts the stack in the original 3.0.3 and refuses the input in the patched copy, at every entry point', () => {
     const names = runDriver(['names', patchedDir]).data as string[];
-    expect(names.length).toBe(25);
+    expect(names.length).toBe(31);
     const original = runDriver(['attack', pristineDir], { stackSize: 500 });
     const patched = runDriver(['attack', patchedDir], { stackSize: 500 });
     expect(original.status).toBe(0);
@@ -451,7 +468,7 @@ describe('braces patched copy — regression (GHSA-vfj7-8cjw-p6xm)', () => {
       expect(before[name]?.message, `original ${name}`).toMatch(STACK_EXHAUSTED);
       const expected = name.includes('array value')
         ? { name: 'TypeError', message: ARRAY_REFUSED }
-        : name.includes('AST)')
+        : name.includes('AST)') || name.startsWith('lib/utils.flatten')
           ? { name: 'RangeError', message: DEPTH_REFUSED }
           : { name: 'SyntaxError', message: DEPTH_REFUSED };
       expect(after[name], `patched ${name}`).toEqual(expected);
@@ -459,17 +476,23 @@ describe('braces patched copy — regression (GHSA-vfj7-8cjw-p6xm)', () => {
   });
 
   it('terminates the original process with an uncaught RangeError and the patched one with the controlled error', () => {
-    const original = runDriver(['uncaught', pristineDir, 'braces.expand(pattern)'], {
-      stackSize: 500,
-    });
-    expect(original.status).not.toBe(0);
-    expect(original.stderr).toMatch(/RangeError: Maximum call stack size exceeded/);
-    const patched = runDriver(['uncaught', patchedDir, 'braces.expand(pattern)'], {
-      stackSize: 500,
-    });
-    expect(patched.status).not.toBe(0);
-    expect(patched.stderr).toContain(`SyntaxError: ${DEPTH_REFUSED}`);
-    expect(patched.stderr).not.toMatch(STACK_EXHAUSTED);
+    const cases: Array<[string, string]> = [
+      ['braces.expand(pattern)', `SyntaxError: ${DEPTH_REFUSED}`],
+      // The flatten route and the append route of a caller-built parent queue.
+      ['braces.expand(nested parent queue AST)', `RangeError: ${DEPTH_REFUSED}`],
+      ['braces.expand(nested parent queue, text child AST)', `RangeError: ${DEPTH_REFUSED}`],
+    ];
+    for (const [caseName, controlled] of cases) {
+      const original = runDriver(['uncaught', pristineDir, caseName], { stackSize: 500 });
+      expect(original.status, `original ${caseName}`).not.toBe(0);
+      expect(original.stderr, `original ${caseName}`).toMatch(
+        /RangeError: Maximum call stack size exceeded/
+      );
+      const patched = runDriver(['uncaught', patchedDir, caseName], { stackSize: 500 });
+      expect(patched.status, `patched ${caseName}`).not.toBe(0);
+      expect(patched.stderr, `patched ${caseName}`).toContain(controlled);
+      expect(patched.stderr, `patched ${caseName}`).not.toMatch(STACK_EXHAUSTED);
+    }
   });
 
   it('refuses the payload through the installed dependents in-process', () => {
@@ -527,6 +550,27 @@ describe('braces patched copy — regression (GHSA-vfj7-8cjw-p6xm)', () => {
     expect(braces.compile(ast(100))).toBe('x');
     expect(() => braces.stringify(ast(101))).toThrow(RangeError);
     expect(() => braces.compile(ast(101))).toThrow(DEPTH_REFUSED);
+    // utils.flatten is iterative and refuses arrays nested past the same limit.
+    const utils = requireFromRoot('braces/lib/utils') as {
+      flatten: (...args: unknown[]) => unknown[];
+    };
+    const nestedArray = (depth: number): unknown => {
+      let value: unknown = 'x';
+      for (let i = 0; i < depth; i++) value = [value];
+      return value;
+    };
+    expect(utils.flatten(nestedArray(100))).toEqual(['x']);
+    expect(utils.flatten(['a', ['b', ['c']], undefined, 'd'])).toEqual(['a', 'b', 'c', 'd']);
+    expect(() => utils.flatten(nestedArray(101))).toThrow(DEPTH_REFUSED);
+    // A shallow caller-supplied parent queue still expands as in 3.0.3.
+    const parentQueue = (queued: unknown): object => ({
+      type: 'x',
+      nodes: [{ type: 'text', value: 'y' }],
+      parent: { type: 'brace', queue: [queued] },
+    });
+    expect(braces.expand(parentQueue(['a', ['b']]))).toEqual(['ay', 'by']);
+    // append unwraps two array levels per call, so 300 levels pass its limit.
+    expect(() => braces.expand(parentQueue(nestedArray(300)))).toThrow(DEPTH_REFUSED);
   });
 });
 

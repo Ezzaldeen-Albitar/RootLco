@@ -37,10 +37,37 @@ index 2bb3b88..de35512 100644
    // Digits
    CHAR_0: '0', /* 0 */
 diff --git a/package/lib/expand.js b/package/lib/expand.js
-index 35b2c41..1b68c7e 100644
+index 35b2c41..c87ee1b 100644
 --- a/package/lib/expand.js
 +++ b/package/lib/expand.js
-@@ -32,8 +32,10 @@ const append = (queue = '', stash = '', enclose = false) => {
+@@ -3,8 +3,10 @@
+ const fill = require('fill-range');
+ const stringify = require('./stringify');
+ const utils = require('./utils');
++const { MAX_DEPTH } = require('./constants');
+ 
+-const append = (queue = '', stash = '', enclose = false) => {
++const append = (queue = '', stash = '', enclose = false, depth = 0) => {
++  utils.assertDepth(depth, MAX_DEPTH);
+   const result = [];
+ 
+   queue = [].concat(queue);
+@@ -18,12 +20,12 @@ const append = (queue = '', stash = '', enclose = false) => {
+   for (const item of queue) {
+     if (Array.isArray(item)) {
+       for (const value of item) {
+-        result.push(append(value, stash, enclose));
++        result.push(append(value, stash, enclose, depth + 1));
+       }
+     } else {
+       for (let ele of stash) {
+         if (enclose === true && typeof ele === 'string') ele = `{${ele}}`;
+-        result.push(Array.isArray(ele) ? append(item, ele, enclose) : item + ele);
++        result.push(Array.isArray(ele) ? append(item, ele, enclose, depth + 1) : item + ele);
+       }
+     }
+   }
+@@ -32,8 +34,10 @@ const append = (queue = '', stash = '', enclose = false) => {
  
  const expand = (ast, options = {}) => {
    const rangeLimit = options.rangeLimit === undefined ? 1000 : options.rangeLimit;
@@ -52,7 +79,7 @@ index 35b2c41..1b68c7e 100644
      node.queue = [];
  
      let p = parent;
-@@ -82,6 +84,7 @@ const expand = (ast, options = {}) => {
+@@ -82,6 +86,7 @@ const expand = (ast, options = {}) => {
  
      for (let i = 0; i < node.nodes.length; i++) {
        const child = node.nodes[i];
@@ -60,7 +87,7 @@ index 35b2c41..1b68c7e 100644
  
        if (child.type === 'comma' && node.type === 'brace') {
          if (i === 1) queue.push('');
-@@ -100,7 +103,7 @@ const expand = (ast, options = {}) => {
+@@ -100,7 +105,7 @@ const expand = (ast, options = {}) => {
        }
  
        if (child.nodes) {
@@ -136,7 +163,7 @@ index 8bcf872..2ae1b99 100644
      }
      return output;
 diff --git a/package/lib/utils.js b/package/lib/utils.js
-index d19311f..6b9f017 100644
+index d19311f..954789e 100644
 --- a/package/lib/utils.js
 +++ b/package/lib/utils.js
 @@ -1,5 +1,7 @@
@@ -184,7 +211,7 @@ index d19311f..6b9f017 100644
  /**
   * Find a node of the given type
   */
-@@ -89,6 +121,7 @@ exports.isOpenOrClose = node => {
+@@ -89,34 +121,41 @@ exports.isOpenOrClose = node => {
   */
  
  exports.reduce = nodes => nodes.reduce((acc, node) => {
@@ -192,6 +219,54 @@ index d19311f..6b9f017 100644
    if (node.type === 'text') acc.push(node.value);
    if (node.type === 'range') node.type = 'text';
    return acc;
+ }, []);
+ 
+ /**
+- * Flatten an array
++ * Flatten an array. Iterative, so nesting cannot exhaust the call stack;
++ * nesting deeper than MAX_DEPTH (or a cyclic array) is refused.
+  */
+ 
+ exports.flatten = (...args) => {
+   const result = [];
++  const stack = [{ arr: args, i: 0 }];
+ 
+-  const flat = arr => {
+-    for (let i = 0; i < arr.length; i++) {
+-      const ele = arr[i];
++  while (stack.length > 0) {
++    const frame = stack[stack.length - 1];
+ 
+-      if (Array.isArray(ele)) {
+-        flat(ele);
+-        continue;
+-      }
++    if (frame.i >= frame.arr.length) {
++      stack.pop();
++      continue;
++    }
++
++    const ele = frame.arr[frame.i++];
+ 
+-      if (ele !== undefined) {
+-        result.push(ele);
+-      }
++    if (Array.isArray(ele)) {
++      exports.assertDepth(stack.length, MAX_DEPTH);
++      stack.push({ arr: ele, i: 0 });
++      continue;
+     }
+-    return result;
+-  };
+ 
+-  flat(args);
++    if (ele !== undefined) {
++      result.push(ele);
++    }
++  }
++
+   return result;
+ };
 diff --git a/package/package.json b/package/package.json
 index c3c056e..96e956c 100644
 --- a/package/package.json
