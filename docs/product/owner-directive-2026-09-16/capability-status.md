@@ -295,7 +295,7 @@ running it is CC-OD-30.
 
 - Develop CI is green at `ec91239b`, as reported by the coordinator.
 - The clean-room limit was raised from 60 to 90 minutes (#493, Owner-authorised).
-- The web-quality job runs near its 30-minute limit (Owner decision pending).
+- The web-quality job limit is raised from 30 to 45 minutes (Owner-authorised 2026-10-03).
 - The coordinator reports that the four finance migrations (`20260930090000`, `20260930100000`, `20260930110000`, `20261001090000`) were backed up, rehearsed on a restored copy and applied forward on 2026-10-01. ADR-023 requires that step (`:289-299`); its execution has no record in the repository, so it is not counted as verified.
 
 ### Checkpoints this matrix relies on

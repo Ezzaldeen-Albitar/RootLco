@@ -163,8 +163,8 @@ what marks it hosted.
 | Web test files under `apps/web/tests`       | 189    | a walk of the tree                                                 |
 | Web tier — tests executed                   | 7302  | `--record web`, from the `vitest` JSON report                      |
 | Web tier — files the run reported           | 189    | the same report, cross-checked against the walk above              |
-| Root unit tier — tests executed             | 3878  | `--record unit`, from the `vitest` JSON report                     |
-| Root unit tier — files the run reported     | 149   | the same report, cross-checked against the tier's include rule      |
+| Root unit tier — tests executed             | 3891  | `--record unit`, from the `vitest` JSON report                     |
+| Root unit tier — files the run reported     | 150   | the same report, cross-checked against the tier's include rule      |
 | Committed web floor (`minTests`)            | 6850  | `.github/ci-baselines/test-count-baseline.json`                    |
 | Committed unit floor (`minTests`)           | 1050  | the same baseline                                                  |
 | Migrations on disk                          | 167   | a walk of `supabase/migrations`                                    |
