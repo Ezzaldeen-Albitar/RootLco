@@ -158,6 +158,12 @@ does not include." <!-- invoices.preview.needsFinance --> and no figures appear.
      explains the rule: "The draft is
      written from the accepted quotation revision exactly as previewed. The quotation's payer is
      used; a payer named here counts only when the quotation names none." <!-- invoices.create.explain -->
+     Left empty, the invoice bills the customer on the work order — the party who brought the car,
+     as the work order shows them — when the quotation names no payer either (finance QA fixes E:
+     that case used to be refused with "This field did not receive a value it can use."). Only a
+     work order with no single customer is refused, on this field: "This job has no single customer
+     to bill. Choose who pays for this invoice, then create it again."
+     <!-- form.violation.invoice_payer_required -->
   3. Press "Create invoice". It stays busy until the screen has read the new invoice.
 - **Result:** "The invoice was created." <!-- invoices.create.success --> and "The draft invoice was
   created." <!-- invoices.create.recorded --> — a draft has no number yet, and no reference is
@@ -316,7 +322,15 @@ receipt (6.3.5).
   and "Print" is offered; the panel says "The name could not be found in time, so the copy says it
   is not available. Find it again to print the copy with the name." <!-- invoices.print.payerTimedOut -->
   and offers "Find the name again" <!-- invoices.print.retryPayer --> . Leaving the invoice stops the
-  wait. The
+  wait. The copy waits for what has been paid in the same way (finance QA fixes E): while the
+  payments and credits are still being read there is no copy and no "Print", and that read no longer
+  waits behind the name. If it is refused or has not answered after about a minute, the copy appears
+  saying "Payments and credits could not be read when this copy was made, so they are not shown
+  here. Ask for the current balance before relying on this copy."
+  <!-- invoices.print.settlementUnavailable --> , "Print" is offered, and the panel says "What has
+  been paid could not be read in time, so the copy says it is not shown. Read it again to print the
+  copy with the payments and credits." <!-- invoices.print.settlementTimedOut --> with "Read the
+  payments again" <!-- invoices.print.retrySettlement --> . The
   issue date is written in your language's reading order, so an Arabic copy prints the day, month
   and year in order on paper.
 - **Restrictions:** the descriptions on the copy do not come from the invoice. The document says so:
@@ -499,10 +513,11 @@ authority, never borrowed from the permission to raise one or from a discount li
 
 - **The permission.** Approve and Reject are offered only to somebody holding `sal.credit.approve`
   who did not raise the note. Anybody else who can see a note is told "You can see this request, but
-  you cannot approve or reject credit notes. Someone who can approve credit notes must decide it."
-  <!-- creditNotes.detail.cannotDecide --> The permission must cover the note's own branch: somebody
-  who holds it only in another branch is not offered Approve or Reject on this note, and is told the
-  same sentence (finance QA fixes D). The server still decides on its own.
+  you cannot approve or reject credit notes in this branch. Someone who can approve credit notes in
+  this branch must decide it." <!-- creditNotes.detail.cannotDecide --> The permission must cover the
+  note's own branch: somebody who holds it only in another branch is not offered Approve or Reject on
+  this note, and is told the same sentence (finance QA fixes D; finance QA fixes E names the branch,
+  because the holder may approve elsewhere). The server still decides on its own.
 - **The limit.** An approver also needs a **credit note approval limit** in the note's currency,
   set by somebody else on the **Approval limits** screen. A discount limit never counts, a limit in
   another currency never counts, and a limit you set yourself — for your own account or for a role
