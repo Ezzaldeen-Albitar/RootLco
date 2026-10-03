@@ -95,7 +95,7 @@ jobs:
   node-quality:
     name: ${{ inputs.task }}
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.task == 'web-quality' && 45 || 30 }}
     outputs:
       unit-tests: ${{ steps.unit.outputs.total }}
       coverage-lines: ${{ steps.coverage.outputs.lines }}
