@@ -1,0 +1,215 @@
+diff --git a/package/lib/compile.js b/package/lib/compile.js
+index dce69be..905d52e 100644
+--- a/package/lib/compile.js
++++ b/package/lib/compile.js
+@@ -4,7 +4,11 @@ const fill = require('fill-range');
+ const utils = require('./utils');
+ 
+ const compile = (ast, options = {}) => {
+-  const walk = (node, parent = {}) => {
++  const max = utils.maxDepth(options);
++
++  const walk = (node, parent = {}, depth = 0) => {
++    utils.assertValue(node);
++    if (node.nodes) utils.assertDepth(depth, max);
+     const invalidBlock = utils.isInvalidBrace(parent);
+     const invalidNode = node.invalid === true && options.escapeInvalid === true;
+     const invalid = invalidBlock === true || invalidNode === true;
+@@ -47,7 +51,7 @@ const compile = (ast, options = {}) => {
+ 
+     if (node.nodes) {
+       for (const child of node.nodes) {
+-        output += walk(child, node);
++        output += walk(child, node, depth + 1);
+       }
+     }
+ 
+diff --git a/package/lib/constants.js b/package/lib/constants.js
+index 2bb3b88..de35512 100644
+--- a/package/lib/constants.js
++++ b/package/lib/constants.js
+@@ -2,6 +2,7 @@
+ 
+ module.exports = {
+   MAX_LENGTH: 10000,
++  MAX_DEPTH: 100,
+ 
+   // Digits
+   CHAR_0: '0', /* 0 */
+diff --git a/package/lib/expand.js b/package/lib/expand.js
+index 35b2c41..1b68c7e 100644
+--- a/package/lib/expand.js
++++ b/package/lib/expand.js
+@@ -32,8 +32,10 @@ const append = (queue = '', stash = '', enclose = false) => {
+ 
+ const expand = (ast, options = {}) => {
+   const rangeLimit = options.rangeLimit === undefined ? 1000 : options.rangeLimit;
++  const max = utils.maxDepth(options);
+ 
+-  const walk = (node, parent = {}) => {
++  const walk = (node, parent = {}, depth = 0) => {
++    utils.assertDepth(depth, max);
+     node.queue = [];
+ 
+     let p = parent;
+@@ -82,6 +84,7 @@ const expand = (ast, options = {}) => {
+ 
+     for (let i = 0; i < node.nodes.length; i++) {
+       const child = node.nodes[i];
++      utils.assertValue(child);
+ 
+       if (child.type === 'comma' && node.type === 'brace') {
+         if (i === 1) queue.push('');
+@@ -100,7 +103,7 @@ const expand = (ast, options = {}) => {
+       }
+ 
+       if (child.nodes) {
+-        walk(child, node);
++        walk(child, node, depth + 1);
+       }
+     }
+ 
+diff --git a/package/lib/parse.js b/package/lib/parse.js
+index 3a6988e..0dc87e9 100644
+--- a/package/lib/parse.js
++++ b/package/lib/parse.js
+@@ -1,6 +1,7 @@
+ 'use strict';
+ 
+ const stringify = require('./stringify');
++const utils = require('./utils');
+ 
+ /**
+  * Constants
+@@ -38,6 +39,7 @@ const parse = (input, options = {}) => {
+   if (input.length > max) {
+     throw new SyntaxError(`Input length (${input.length}), exceeds max characters (${max})`);
+   }
++  const maxDepth = utils.maxDepth(opts);
+ 
+   const ast = { type: 'root', input, nodes: [] };
+   const stack = [ast];
+@@ -143,6 +145,9 @@ const parse = (input, options = {}) => {
+      */
+ 
+     if (value === CHAR_LEFT_PARENTHESES) {
++      if (stack.length > maxDepth) {
++        throw new SyntaxError(`Input nesting depth exceeds max depth (${maxDepth})`);
++      }
+       block = push({ type: 'paren', nodes: [] });
+       stack.push(block);
+       push({ type: 'text', value });
+@@ -195,6 +200,9 @@ const parse = (input, options = {}) => {
+      */
+ 
+     if (value === CHAR_LEFT_CURLY_BRACE) {
++      if (stack.length > maxDepth) {
++        throw new SyntaxError(`Input nesting depth exceeds max depth (${maxDepth})`);
++      }
+       depth++;
+ 
+       const dollar = prev.value && prev.value.slice(-1) === '$' || block.dollar === true;
+diff --git a/package/lib/stringify.js b/package/lib/stringify.js
+index 8bcf872..2ae1b99 100644
+--- a/package/lib/stringify.js
++++ b/package/lib/stringify.js
+@@ -3,7 +3,11 @@
+ const utils = require('./utils');
+ 
+ module.exports = (ast, options = {}) => {
+-  const stringify = (node, parent = {}) => {
++  const max = utils.maxDepth(options);
++
++  const stringify = (node, parent = {}, depth = 0) => {
++    utils.assertValue(node);
++    if (node.nodes) utils.assertDepth(depth, max);
+     const invalidBlock = options.escapeInvalid && utils.isInvalidBrace(parent);
+     const invalidNode = node.invalid === true && options.escapeInvalid === true;
+     let output = '';
+@@ -21,7 +25,7 @@ module.exports = (ast, options = {}) => {
+ 
+     if (node.nodes) {
+       for (const child of node.nodes) {
+-        output += stringify(child);
++        output += stringify(child, undefined, depth + 1);
+       }
+     }
+     return output;
+diff --git a/package/lib/utils.js b/package/lib/utils.js
+index d19311f..6b9f017 100644
+--- a/package/lib/utils.js
++++ b/package/lib/utils.js
+@@ -1,5 +1,7 @@
+ 'use strict';
+ 
++const { MAX_DEPTH } = require('./constants');
++
+ exports.isInteger = num => {
+   if (typeof num === 'number') {
+     return Number.isInteger(num);
+@@ -10,6 +12,36 @@ exports.isInteger = num => {
+   return false;
+ };
+ 
++/**
++ * Resolve the maximum nesting depth. `options.maxDepth` can only lower it.
++ */
++
++exports.maxDepth = options => {
++  const limit = options && options.maxDepth;
++  if (typeof limit !== 'number' || !(limit >= 0)) return MAX_DEPTH;
++  return Math.min(MAX_DEPTH, Math.floor(limit));
++};
++
++/**
++ * Throw before a recursive walk goes deeper than the maximum depth
++ */
++
++exports.assertDepth = (depth, max) => {
++  if (depth > max) {
++    throw new RangeError(`Input nesting depth exceeds max depth (${max})`);
++  }
++};
++
++/**
++ * Throw when a node value is an array (node values are strings)
++ */
++
++exports.assertValue = node => {
++  if (Array.isArray(node.value)) {
++    throw new TypeError('Expected node.value to be a string');
++  }
++};
++
+ /**
+  * Find a node of the given type
+  */
+@@ -89,6 +121,7 @@ exports.isOpenOrClose = node => {
+  */
+ 
+ exports.reduce = nodes => nodes.reduce((acc, node) => {
++  exports.assertValue(node);
+   if (node.type === 'text') acc.push(node.value);
+   if (node.type === 'range') node.type = 'text';
+   return acc;
+diff --git a/package/package.json b/package/package.json
+index c3c056e..96e956c 100644
+--- a/package/package.json
++++ b/package/package.json
+@@ -1,7 +1,15 @@
+ {
+   "name": "braces",
+   "description": "Bash-like brace expansion, implemented in JavaScript. Safer than other brace expansion libs, with complete support for the Bash 4.3 braces specification, without sacrificing speed.",
+-  "version": "3.0.3",
++  "version": "3.0.3-rootlco.1",
++  "rootlcoLocalPatch": {
++    "upstreamVersion": "3.0.3",
++    "upstreamTarball": "https://registry.npmjs.org/braces/-/braces-3.0.3.tgz",
++    "upstreamIntegrity": "sha512-yQbXgO/OSZVD2IsiLlro+7Hf6Q18EJrKSEsdoMzKePKXct3gvD8oLcOQdIzGupr5Fj+EDe8gO/lxc1BzfMpxvA==",
++    "advisory": "GHSA-vfj7-8cjw-p6xm",
++    "patch": "scripts/vendor/braces/GHSA-vfj7-8cjw-p6xm.patch",
++    "owner": "RootLco"
++  },
+   "homepage": "https://github.com/micromatch/braces",
+   "author": "Jon Schlinkert (https://github.com/jonschlinkert)",
+   "contributors": [
