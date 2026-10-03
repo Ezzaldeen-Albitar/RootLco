@@ -311,7 +311,12 @@ receipt (6.3.5).
   ; it never prints the customer's reference. While the name is still being found, the copy is not
   shown yet and there is no "Print" button: the panel shows that it is loading, and the copy appears
   once the name is found or is known not to be shown (finance retest). The same holds on the
-  "Invoice" panel on screen. The
+  "Invoice" panel on screen. The wait is bounded (finance QA fixes D): if the name has not been
+  found after about a minute, the copy appears with "Name not available right now" <!-- invoices.detail.payerUnavailable -->
+  and "Print" is offered; the panel says "The name could not be found in time, so the copy says it
+  is not available. Find it again to print the copy with the name." <!-- invoices.print.payerTimedOut -->
+  and offers "Find the name again" <!-- invoices.print.retryPayer --> . Leaving the invoice stops the
+  wait. The
   issue date is written in your language's reading order, so an Arabic copy prints the day, month
   and year in order on paper.
 - **Restrictions:** the descriptions on the copy do not come from the invoice. The document says so:
@@ -349,6 +354,13 @@ receipt (6.3.5).
   example GMT+3). The copy says: "These figures were read at the time shown and change as payments
   and credit notes are recorded. The amounts above are as the invoice was issued and do not change." <!-- invoices.print.settlementExplain -->
   Every figure is the server's; nothing is worked out on the page.
+- **A payment somebody else made for the customer is printed too** (Owner decision D14, finance QA
+  fixes D). When part of what was paid came as a third-party payment — an insurer or an employer
+  paying for the customer — the settlement section lists it under "Paid by someone else" <!-- invoices.thirdParty.heading -->
+  exactly as the open balance shows it: "Paid by {payer} ({relationship}) for {customer}" <!-- invoices.thirdParty.paidBy -->
+  , the authorisation reference, the receipt number and the amount. This holds on a work order's
+  invoice and on a counter sale. The payer and the customer are named only for somebody who may read
+  customers; otherwise the copy says the name is not shown.
 - **Without permission to see amounts there is no settlement section at all**, exactly as the open
   balance panel is not shown: the copy carries no paid, credited or due figure and no position.
 - **Only the document reaches the paper.** While the printable copy is open, printing leaves off the
@@ -387,6 +399,9 @@ receipt (6.3.5).
   paid, Paid or Nothing to pay), "Credit" and "Still to pay" <!-- inventory.counterSales.sale.due -->
   , as the server works them out. If they cannot be read the panel says "What has been paid on this
   sale could not be read just now." <!-- inventory.counterSales.sale.positionUnavailable -->
+  When somebody other than the buyer paid part of the sale as a third-party payment, the panel and
+  the printed copy also list it under "Paid by someone else" with "Paid by {payer} ({relationship})
+  for {customer}" and the authorisation reference (finance QA fixes D).
 - **From a credit note.** A credit note raised against a counter sale links to the sale; the link
   opens this screen with the sale already open.
 - **If it goes wrong:** "That sale was not found." <!-- inventory.counterSales.issued.openMissing -->
@@ -485,7 +500,9 @@ authority, never borrowed from the permission to raise one or from a discount li
 - **The permission.** Approve and Reject are offered only to somebody holding `sal.credit.approve`
   who did not raise the note. Anybody else who can see a note is told "You can see this request, but
   you cannot approve or reject credit notes. Someone who can approve credit notes must decide it."
-  <!-- creditNotes.detail.cannotDecide --> The permission must cover the note's own branch.
+  <!-- creditNotes.detail.cannotDecide --> The permission must cover the note's own branch: somebody
+  who holds it only in another branch is not offered Approve or Reject on this note, and is told the
+  same sentence (finance QA fixes D). The server still decides on its own.
 - **The limit.** An approver also needs a **credit note approval limit** in the note's currency,
   set by somebody else on the **Approval limits** screen. A discount limit never counts, a limit in
   another currency never counts, and a limit you set yourself — for your own account or for a role
@@ -590,8 +607,11 @@ it."**, and a counter-sale return moves the stock but not the money.
    <!-- creditNotes.request.open --> is shown beside the amount. On an invoice's own screen the
    invoice is already chosen and this step is skipped.
 2. Enter **Amount to credit** <!-- creditNotes.request.amount --> — in the invoice's currency, more
-   than zero, with at most four digits after the point — and **Why it is being credited**
-   <!-- creditNotes.request.reason --> .
+   than zero, with at most four digits after the point and no finer than the currency's smallest
+   coin — and **Why it is being credited** <!-- creditNotes.request.reason --> . An amount finer than
+   the currency allows is refused on the box before anything is sent: "This amount has more decimal
+   places than the currency allows. Use no more decimal places than the currency's smallest coin,
+   then try again." <!-- form.violation.minor_unit_scale -->
 3. Press **Raise the credit note** <!-- creditNotes.request.submit --> . The screen says "The credit
    note was raised. It is waiting for a second person to approve it, and nothing is credited until
    then." <!-- creditNotes.request.recorded --> and opens the new note, marked as waiting for
@@ -803,6 +823,10 @@ anything is read.
   4. **Required** — "Amount received" <!-- payments.record.amount --> . Help text: "As received.
      Applying it to an invoice is a separate step." <!-- payments.record.amountHelp --> The rule is
      "A positive amount with at most four decimal places." <!-- payments.common.amountFormat -->
+     When the branch's receipts already show how the currency is written, an amount finer than its
+     smallest coin is refused on the box before anything is sent, with the same sentence the server
+     uses (finance QA fixes D). For a currency none of the listed receipts uses, the server checks
+     it when you record.
   5. Press "Record the payment". It stays busy until the answer arrives, and a lost answer is
      replayed, never recorded twice.
 - **Result:** "The payment was recorded." <!-- payments.record.success --> and "Payment recorded.
@@ -935,7 +959,9 @@ invoice you choose belongs to a **different customer**, the form says so at once
 belongs to a different customer from the one who paid this receipt." <!-- payments.thirdParty.otherCustomer -->
 
 - **Who:** an account holding `sal.finance.view`, `sal.payment.allocate` and the third-party payment
-  permission `sal.payment.third_party` in the receipt's branch.
+  permission `sal.payment.third_party` in the receipt's branch. Somebody who holds it only in another
+  branch is not offered the option on this receipt and is told why, as somebody without it is
+  (finance QA fixes D).
 - **Without the third-party permission** the form offers no way round it: "This receipt can be applied
   only to the payer's own invoices. A payment for someone else's invoice, such as from an insurer or
   an employer, must be recorded by a person allowed to record third-party payments. Choose one of the
@@ -955,8 +981,17 @@ belongs to a different customer from the one who paid this receipt." <!-- paymen
      insurer's claim or approval number. Up to 100 characters." <!-- payments.thirdParty.referenceHelp -->
   5. **Required** — "Reason" <!-- payments.thirdParty.reason --> : why this payer is paying this
      customer's invoice, up to 2000 characters. With "Other", say who the payer is to the customer.
-  6. Press **Apply**. The question names the amount and the invoice and says it is a third-party
-     payment for another customer; press **Apply** again to go ahead.
+  6. Press **Apply**. The question names the amount and the invoice, says it is a third-party
+     payment for another customer, and states what it will be recorded under: "Payer's relationship
+     to the customer: {relationship}. Authorisation reference: {reference}." <!-- payments.allocate.confirmThirdPartyDetails -->
+     Press **Apply** again to go ahead.
+- **Choosing another invoice clears the third-party details** (finance QA fixes D). They are made for
+  one invoice. If you have typed any, the screen asks first: "Clear the third-party details?" <!-- payments.allocate.changeInvoiceTitle -->
+  — "The relationship, authorisation reference and reason you entered were for the invoice you chose
+  before. Choosing another invoice clears them." <!-- payments.allocate.changeInvoiceExplain -->
+  "Clear them and choose this invoice" <!-- payments.allocate.changeInvoiceConfirm --> changes the
+  invoice and starts the details again empty; "Cancel" keeps the first invoice with everything you
+  typed.
 - **Result:** the allocation is booked and recorded in the audit log with who paid, whose invoice it
   is, the relationship, the authorisation and the reason, and who authorised it. The receipt lists the
   entry with "Paid by {payer} ({relationship}) for {customer}" <!-- payments.thirdParty.paidBy --> and
@@ -990,7 +1025,11 @@ belongs to a different customer from the one who paid this receipt." <!-- paymen
   "Invoice" <!-- payments.print.column.invoice --> (the invoice number, and the customer it bills
   when your account may read customers), "Applied" <!-- payments.print.column.applied -->
   and "When" <!-- payments.print.column.when --> . While the payer's name is still being found the
-  copy is not shown yet and there is no "Print" button; the panel shows that it is loading.
+  copy is not shown yet and there is no "Print" button; the panel shows that it is loading. The wait
+  is bounded (finance QA fixes D): after about a minute the copy appears with "Name not available
+  right now" <!-- payments.receipt.payerUnavailable --> , "Print" is offered, and the panel says "The
+  name could not be found in time, so the copy says it is not available. Find it again to print the
+  copy with the name." <!-- payments.print.payerTimedOut --> with "Find the name again" <!-- payments.print.retryPayer --> .
 - **Restrictions — say these to a customer before you hand the copy over:**
   - "There is no document route: this copy is composed from the receipt as it was read." <!-- payments.print.explain -->
   - **"This copy does not say who took the payment: the receipt does not record it."** <!-- payments.print.noCashier -->
@@ -1058,7 +1097,8 @@ reversal. The person who asked can never approve or reject their own request.
 
 - **Labels:** "Approve reversal" <!-- payments.reversal.approve --> and "Reject" <!-- payments.reversal.reject -->
 - **Who:** a person other than the one who asked, holding `sal.reversal.approve` in the receipt's
-  branch.
+  branch. Somebody who holds it only in another branch is not offered the buttons on this receipt and
+  sees the waiting sentence above (finance QA fixes D).
 - **Approve:** the window "Approve this reversal?" <!-- payments.reversal.approveTitle --> names the amount and says:
   "The whole receipt of {amount} will be reversed. Every invoice it paid will show that amount as owed again. This cannot be undone." <!-- payments.reversal.approveExplain --> After approval: "Reversal approved. The receipt is reversed." <!-- payments.reversal.approved --> The
   receipt reads "Reversed" <!-- payments.status.reversed --> and
