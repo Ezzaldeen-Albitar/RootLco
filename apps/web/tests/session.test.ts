@@ -63,7 +63,7 @@ vi.mock('next/navigation', () => ({
 
 const { requireSession, readSession } = await import('@/features/authentication/api/session');
 const { loadWorkingContext } = await import('@/features/working-context/api');
-const { WORKING_CONTEXT_PATH, isWorkingContextShape, preferenceKeyFor } =
+const { WORKING_CONTEXT_PATH, isWorkingContextShape, permitsInBranch, preferenceKeyFor } =
   await import('@/features/working-context/working-context-contract');
 const { GET } = await import('@/app/[locale]/(auth)/session-ended/route');
 
@@ -387,6 +387,49 @@ describe('the working-context read', () => {
       false
     );
     expect(isWorkingContextShape({ ...CONTEXT_BODY, companySettingsReadableIds: [1] })).toBe(false);
+  });
+
+  it('carries the per-branch answer for the branch-scoped action codes, and nothing when absent (finance QA fixes D)', async () => {
+    const answer = {
+      codes: ['sal.credit.approve'],
+      branches: [
+        { branchId: 'b-1', permissions: [] },
+        { branchId: 'b-2', permissions: ['sal.credit.approve'] },
+      ],
+    };
+    answerSessionWith(200, { ...CONTEXT_BODY, branchPermissions: answer });
+    const carried = await loadWorkingContext('user-1');
+    expect(carried.branchPermissions).toEqual(answer);
+    answerSessionWith(200, CONTEXT_BODY);
+    expect((await loadWorkingContext('user-1')).branchPermissions).toBeUndefined();
+    // A present value of the wrong shape fails closed like the rest of the body.
+    for (const broken of [
+      'all',
+      { codes: 'sal.credit.approve', branches: [] },
+      { codes: [], branches: [{ branchId: 'b-1' }] },
+      { codes: [], branches: [{ branchId: 1, permissions: [] }] },
+    ]) {
+      expect(isWorkingContextShape({ ...CONTEXT_BODY, branchPermissions: broken })).toBe(false);
+    }
+  });
+
+  it('offers a covered code only in a branch the answer names it under; any other code is left to the session check', () => {
+    const answer = {
+      codes: ['sal.credit.approve'],
+      branches: [
+        { branchId: 'b-1', permissions: [] },
+        { branchId: 'b-2', permissions: ['sal.credit.approve'] },
+      ],
+    };
+    expect(permitsInBranch(answer, 'sal.credit.approve', 'b-2')).toBe(true);
+    // Held in another branch only: not offered here.
+    expect(permitsInBranch(answer, 'sal.credit.approve', 'b-1')).toBe(false);
+    // A branch outside the answer, or none at all, fails closed.
+    expect(permitsInBranch(answer, 'sal.credit.approve', 'b-9')).toBe(false);
+    expect(permitsInBranch(answer, 'sal.credit.approve', null)).toBe(false);
+    // A code the answer does not cover, or no answer, keeps the tenant-wide check.
+    expect(permitsInBranch(answer, 'sal.payment.record', 'b-1')).toBe(true);
+    expect(permitsInBranch(undefined, 'sal.credit.approve', 'b-1')).toBe(true);
   });
 
   it('keys the remembered choice to the workspace AND the account', () => {

@@ -19,6 +19,7 @@ import { readPreference, usePersistedPreference } from '@/lib/use-persisted-flag
 import { UnsavedNavigationGuard } from './components/UnsavedNavigationGuard';
 import {
   ALL_BRANCHES,
+  permitsInBranch as answerPermitsInBranch,
   preferenceKeyFor,
   type WorkingContextBranch,
   type WorkingContextCompany,
@@ -95,6 +96,15 @@ export interface WorkingContext {
   readonly branches: readonly WorkingContextBranch[];
   /** The companies whose settings the server would let this operator read. */
   readonly companySettingsReadableIds: readonly string[];
+  /**
+   * Whether an action gated on `code` may be OFFERED for a document of `branchId`
+   * (finance QA fixes D). The working-context read answers a few branch-scoped
+   * action codes per branch; for those, this is that answer, and a branch outside
+   * it is `false`. For any other code — or when the read published no answer, or
+   * outside a provider — it is `true`, and the caller's tenant-wide check decides
+   * exactly as before. Usability only: the server refuses on its own.
+   */
+  readonly permitsInBranch: (code: string, branchId: string | null | undefined) => boolean;
   /** Null means "not chosen yet" — the header asks. */
   readonly selection: WorkingContextSelection | null;
   /** Increments on every change. Mount a list under it and stale rows cannot show. */
@@ -168,6 +178,7 @@ const FALLBACK_CONTEXT: WorkingContext = {
   companies: [],
   branches: [],
   companySettingsReadableIds: [],
+  permitsInBranch: () => true,
   selection: null,
   version: 0,
   signal: new AbortController().signal,
@@ -368,6 +379,7 @@ export function WorkingContextProvider({
     companies,
     branches,
     companySettingsReadableIds,
+    branchPermissions,
   } = snapshot;
 
   /*
@@ -624,6 +636,7 @@ export function WorkingContextProvider({
       companies,
       branches,
       companySettingsReadableIds,
+      permitsInBranch: (code, branchId) => answerPermitsInBranch(branchPermissions, code, branchId),
       selection,
       version: epoch.version,
       signal: epoch.controller.signal,
@@ -643,6 +656,7 @@ export function WorkingContextProvider({
     companies,
     branches,
     companySettingsReadableIds,
+    branchPermissions,
     selection,
     epoch,
     select,

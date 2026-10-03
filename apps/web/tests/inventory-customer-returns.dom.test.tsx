@@ -387,6 +387,41 @@ describe('the cap on the quantity', () => {
     await waitFor(() => expect(quantity).toHaveFocus());
   });
 
+  it('withdraws the server refusal of the quantity once it is corrected, as its own complaint is (DF-B7 residual)', async () => {
+    createSalesReturn.mockResolvedValueOnce({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { quantity: 'inventory.returns.overRemaining' },
+        correlationId: 'corr-422',
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderLtr(operable());
+    await openBranch();
+    await lookUpSource(user);
+    const quantity = screen.getByLabelText(labelled('inventory.returns.create.quantity'));
+    await user.type(quantity, '2');
+    await user.selectOptions(
+      screen.getByLabelText(labelled('inventory.returns.create.receivedLocation')),
+      LOCATION_ID
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.returns.create.submit'] as string })
+    );
+    await waitFor(() => expect(quantity).toHaveAttribute('aria-invalid', 'true'));
+    expect(screen.getByText(EN['inventory.returns.overRemaining'] as string)).toBeTruthy();
+    // Corrected, the refusal goes at once — not at the next submit — and what
+    // was typed is kept as the correction made it.
+    await user.type(quantity, '{Backspace}1');
+    expect(quantity).not.toHaveAttribute('aria-invalid', 'true');
+    expect(screen.queryByText(EN['inventory.returns.overRemaining'] as string)).toBeNull();
+    expect(quantity).toHaveValue('1');
+    expect(createSalesReturn).toHaveBeenCalledTimes(1);
+  });
+
   it('accepts exactly the remainder', async () => {
     const user = userEvent.setup();
     renderLtr(operable());

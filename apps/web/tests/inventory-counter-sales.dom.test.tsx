@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import { formatInZone } from '../src/lib/branch-time';
+import { formatMessage } from '../src/i18n/get-messages';
 import type { ReactElement } from 'react';
 import {
   inBranch,
@@ -1473,6 +1474,94 @@ describe('finance checkpoint fixes B', () => {
       'dir',
       'rtl'
     );
+  });
+
+  /** What an insurer paid for the buyer (ADR-023 D14), as the balance read states it. */
+  const insurerPayment = {
+    receipt: { id: 'r-31', reference: 'RCT-000031' },
+    payerName: 'Gulf Mutual Insurance' as string | null,
+    relationship: 'insurer',
+    authorisationReference: 'CLM-2026-0042',
+    reason: 'Covered under the policy',
+    money: { amount: '5.0000', currency: 'JOD' },
+    allocatedAt: '2026-10-01T07:20:00.000Z',
+  };
+  /** The balance read of a sale a third party paid part of for the buyer. */
+  const paidByInsurer = (payment = insurerPayment) =>
+    balanceOf({
+      settlement: {
+        ...balanceOf().settlement,
+        thirdPartyPayments: [payment],
+        thirdPartyPaymentsTruncated: false,
+      },
+    });
+
+  it('finance QA fixes D: the sale panel and the copy say who paid for whom, with the authorisation', async () => {
+    const user = userEvent.setup();
+    issuedPages([issuedRow()]);
+    readInvoice.mockResolvedValue(okRead(issuedDetail()));
+    readOutstanding.mockResolvedValue(okRead(paidByInsurer()));
+    renderLtr(screenAt());
+    await openFromList(user);
+    const expected = formatMessage(EN['invoices.thirdParty.paidBy'] as string, {
+      payer: 'Gulf Mutual Insurance',
+      relationship: EN['invoices.thirdParty.relationship.insurer'] as string,
+      customer: 'Another garage',
+    });
+    const panel = await screen.findByTestId('counter-sale-third-party-payments');
+    await waitFor(() => expect(panel).toHaveTextContent(expected));
+    expect(panel).toHaveTextContent('CLM-2026-0042');
+    expect(panel).toHaveTextContent('RCT-000031');
+    const paper = await screen.findByRole('article');
+    const printed = within(paper).getByTestId('invoice-print-third-party-payments');
+    expect(within(paper).getByTestId('invoice-print-settlement')).toContainElement(printed);
+    expect(printed).toHaveTextContent(expected);
+    expect(printed).toHaveTextContent('CLM-2026-0042');
+    // One lookup names the buyer for the panel and the copy alike.
+    expect(
+      listInvoices.mock.calls.filter(
+        (call) =>
+          (call[1] as { readonly saleKind?: string } | undefined)?.saleKind !== 'counter_sale'
+      )
+    ).toHaveLength(1);
+  });
+
+  it('finance QA fixes D: in Arabic, right to left, a payer the reader may not see said as not shown', async () => {
+    const user = userEvent.setup();
+    issuedPages([issuedRow()]);
+    readInvoice.mockResolvedValue(okRead(issuedDetail()));
+    readOutstanding.mockResolvedValue(
+      okRead(paidByInsurer({ ...insurerPayment, payerName: null }))
+    );
+    renderRtl(
+      <CounterSalesScreen
+        locale="ar"
+        messages={ar}
+        canSell
+        canIssue
+        canReadCustomers
+        canReadBranches
+      />
+    );
+    const grid = await screen.findByTestId('counter-issued-grid');
+    await within(grid).findAllByText('CS-0007');
+    await user.click(
+      within(grid).getByRole('button', {
+        name: new RegExp(`^${AR['inventory.counterSales.issued.open'] as string}`),
+      })
+    );
+    const expected = formatMessage(AR['invoices.thirdParty.paidBy'] as string, {
+      payer: AR['invoices.thirdParty.payerNotShown'] as string,
+      relationship: AR['invoices.thirdParty.relationship.insurer'] as string,
+      customer: 'Another garage',
+    });
+    const panel = await screen.findByTestId('counter-sale-third-party-payments');
+    await waitFor(() => expect(panel).toHaveTextContent(expected));
+    expect(panel).toHaveTextContent(AR['invoices.thirdParty.heading'] as string);
+    const paper = await screen.findByRole('article');
+    const printed = within(paper).getByTestId('invoice-print-third-party-payments');
+    expect(printed).toHaveTextContent(expected);
+    expect(printed.closest('[dir="rtl"]')).not.toBeNull();
   });
 });
 

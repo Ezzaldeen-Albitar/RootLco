@@ -20,13 +20,17 @@ import { CustomerPicker, type ChosenCustomer } from '@/components/party/Customer
 import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import { InvoicePicker } from '@/features/billing/components/InvoicePicker';
 import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
-import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import type { InvoiceListEntry, Outstanding } from '@/features/billing/billing-contract';
 import type { ReadState } from '@/lib/api/read-operation';
+import { CLIENT_READ_TIMEOUT_MS } from '@/lib/api/read-budget';
 import { useReread } from '@/lib/api/use-reread';
 import { unreachable, type ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
@@ -46,6 +50,7 @@ import {
   OVER_ALLOCATION_KEYS,
   PAGE_SIZE,
   PAYER_MISMATCH_KEY,
+  PAYMENT_PERMISSIONS,
   RECEIPT_STATUSES,
   type Allocation,
   type PaymentMethod,
@@ -54,13 +59,19 @@ import {
   type ReceiptStatus,
   type RecordedReceipt,
 } from '../payments-contract';
-import { AllocatedInvoice, ReceiptDocument, type ReceiptPayerName } from './ReceiptDocument';
+import {
+  AllocatedInvoice,
+  ReceiptDocument,
+  receiptPayerKey,
+  type ReceiptPayerName,
+} from './ReceiptDocument';
 import { ReplacementLinks, ReplacementPanel, ReversalSection } from './ReceiptReversal';
 import {
   EMPTY_THIRD_PARTY,
   OtherCustomerNotice,
   PaidByLine,
   ThirdPartyFields,
+  relationshipLabel,
   thirdPartyBody,
   thirdPartyDraftTouched,
   thirdPartyFieldErrors,
@@ -244,6 +255,25 @@ export function PaymentsScreen({
   // re-read it causes.
   const [notice, setNotice] = useState<WriteNotice | null>(null);
   const [balance, setBalance] = useState<InvoiceBalance | null>(null);
+  /*
+   * The minor unit of every currency this screen's reads have published, by
+   * code (`shared.currencies.minor_unit`, Owner decision D1): the receipt list
+   * states it on every row. The record form checks a typed amount against it
+   * before anything is sent (finance QA fixes D); a currency no read has named is
+   * left to the server, which refuses it in the same words.
+   */
+  const [minorUnits, setMinorUnits] = useState<ReadonlyMap<string, number>>(() => new Map());
+  const learnMinorUnits = useCallback((units: ReadonlyMap<string, number>) => {
+    setMinorUnits((known) => {
+      let next: Map<string, number> | null = null;
+      for (const [code, unit] of units) {
+        if (known.get(code) === unit) continue;
+        next ??= new Map(known);
+        next.set(code, unit);
+      }
+      return next ?? known;
+    });
+  }, []);
 
   const changed = useCallback((next: WriteNotice | null) => {
     setNotice(next);
@@ -314,6 +344,7 @@ export function PaymentsScreen({
               messages={messages}
               target={target}
               canReadCustomers={canReadCustomers}
+              minorUnits={minorUnits}
               onRecorded={(receipt, replayed) => {
                 setReceiptId(receipt.id);
                 changed({
@@ -350,6 +381,7 @@ export function PaymentsScreen({
               setReceiptId(id);
               setNotice(null);
             }}
+            onMinorUnits={learnMinorUnits}
           />
         </>
       ) : null}
@@ -472,12 +504,15 @@ function RecordPanel({
   messages,
   target,
   canReadCustomers,
+  minorUnits,
   onRecorded,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly target: Target;
   readonly canReadCustomers: boolean;
+  /** Each currency's minor unit as this screen's reads published it. */
+  readonly minorUnits: ReadonlyMap<string, number>;
   readonly onRecorded: (receipt: RecordedReceipt, replayed: boolean) => void;
 }) {
   const methods = useReread<{ items: readonly PaymentMethod[] }>(listPaymentMethods);
@@ -521,6 +556,7 @@ function RecordPanel({
           target={target}
           methods={recordable}
           canReadCustomers={canReadCustomers}
+          minorUnits={minorUnits}
           onRecorded={onRecorded}
         />
       )}
@@ -534,6 +570,7 @@ function RecordForm({
   target,
   methods,
   canReadCustomers,
+  minorUnits,
   onRecorded,
 }: {
   readonly locale: Locale;
@@ -541,6 +578,7 @@ function RecordForm({
   readonly target: Target;
   readonly methods: readonly PaymentMethod[];
   readonly canReadCustomers: boolean;
+  readonly minorUnits: ReadonlyMap<string, number>;
   readonly onRecorded: (receipt: RecordedReceipt, replayed: boolean) => void;
 }) {
   // ONE transport key for this opened form: a retry after a lost answer replays
@@ -612,6 +650,12 @@ function RecordForm({
       found['payerPartnerId'] = 'payments.record.payerReferenceFormat';
     if (!CURRENCY.test(currencyCode)) found['currency'] = 'payments.common.currencyFormat';
     if (!isPayableAmount(draft.amount)) found['amount'] = 'payments.common.amountFormat';
+    // No finer than the currency is written: the minor unit is the one the
+    // server published for it (`shared.currencies`, Owner decision D1), so the
+    // field says so before anything is sent, in the server's own words. A
+    // currency no read has named here is left to the server.
+    else if (!fitsMinorUnit(draft.amount, minorUnits.get(currencyCode)))
+      found['amount'] = 'form.violation.minor_unit_scale';
     setErrors(found);
     if (Object.keys(found).length > 0 || payerPartnerId === null) {
       setAttempt((n) => n + 1);
@@ -781,6 +825,7 @@ function ReceiptsPanel({
   epoch,
   selected,
   onSelect,
+  onMinorUnits,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -788,6 +833,8 @@ function ReceiptsPanel({
   readonly initialInvoiceId: string | null;
   readonly canReadCustomers: boolean;
   readonly canListInvoices: boolean;
+  /** Told each currency's minor unit as the rows read publish it. */
+  readonly onMinorUnits?: (units: ReadonlyMap<string, number>) => void;
   /** Bumped by every write. The list re-reads; it is NOT remounted, because a
    *  remount would throw away the filters and page the operator had chosen. */
   readonly epoch: number;
@@ -831,6 +878,15 @@ function ReceiptsPanel({
     // (`P1-26-F-019`). The target is in the panel's key, not in this string.
     loadKey: `${criteria.payerPartnerId ?? ''}:${criteria.status ?? ''}:${criteria.invoiceId ?? ''}:${epoch}`,
   });
+  const rows = table.response?.rows;
+  useEffect(() => {
+    if (onMinorUnits === undefined || rows === undefined) return;
+    const units = new Map<string, number>();
+    for (const row of rows) {
+      if (row.money.minorUnit !== undefined) units.set(row.money.currency, row.money.minorUnit);
+    }
+    if (units.size > 0) onMinorUnits(units);
+  }, [rows, onMinorUnits]);
 
   const columns = useMemo<readonly OperationalColumn<ReceiptListEntry>[]>(
     () => [
@@ -1054,7 +1110,7 @@ function ReceiptsPanel({
 function useReceiptPayer(
   receipt: ReceiptDetail | null,
   canReadCustomers: boolean
-): ReceiptPayerName {
+): { readonly payer: ReceiptPayerName; readonly retry: () => void } {
   const companyId = receipt?.companyId ?? null;
   const branchId = receipt?.branchId ?? null;
   const payerPartnerId = receipt?.payerPartnerId ?? null;
@@ -1062,13 +1118,27 @@ function useReceiptPayer(
     readonly payerPartnerId: string;
     readonly name: ReceiptPayerName;
   } | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!canReadCustomers || companyId === null || branchId === null || payerPartnerId === null)
       return;
     let live = true;
+    /*
+     * A bounded wait (finance QA fixes D): a lookup that never settled kept the
+     * copy and its Print button loading for good. After the browser's ceiling
+     * for one read the name is said to be not available right now and the print
+     * panel offers to find it again; a late answer to the abandoned lookup is
+     * dropped. Another receipt, or leaving, cancels the wait and the answer.
+     */
+    const timer = setTimeout(() => {
+      if (!live) return;
+      live = false;
+      setFound({ payerPartnerId, name: { kind: 'unavailable' } });
+    }, CLIENT_READ_TIMEOUT_MS);
     void readReceiptPayer({ companyId, branchId }, payerPartnerId)
       .then((payer) => {
         if (!live) return;
+        clearTimeout(timer);
         const name = payer?.displayName ?? null;
         setFound({
           payerPartnerId,
@@ -1076,16 +1146,25 @@ function useReceiptPayer(
         });
       })
       .catch(() => {
-        if (live) setFound({ payerPartnerId, name: { kind: 'notShown' } });
+        if (!live) return;
+        clearTimeout(timer);
+        setFound({ payerPartnerId, name: { kind: 'notShown' } });
       });
     return () => {
       live = false;
+      clearTimeout(timer);
     };
-  }, [canReadCustomers, companyId, branchId, payerPartnerId]);
-  if (!canReadCustomers || payerPartnerId === null) return { kind: 'notShown' };
-  return found !== null && found.payerPartnerId === payerPartnerId
-    ? found.name
-    : { kind: 'loading' };
+  }, [canReadCustomers, companyId, branchId, payerPartnerId, attempt]);
+  const retry = useCallback(() => {
+    setFound(null);
+    setAttempt((n) => n + 1);
+  }, []);
+  if (!canReadCustomers || payerPartnerId === null) return { payer: { kind: 'notShown' }, retry };
+  return {
+    payer:
+      found !== null && found.payerPartnerId === payerPartnerId ? found.name : { kind: 'loading' },
+    retry,
+  };
 }
 
 function PayerText({
@@ -1097,12 +1176,7 @@ function PayerText({
 }) {
   if (payer.kind === 'named') return <bdi>{payer.name}</bdi>;
   return (
-    <span className="text-text-muted">
-      {translate(
-        messages,
-        payer.kind === 'loading' ? 'payments.receipt.payerLoading' : 'payments.list.payerNotShown'
-      )}
-    </span>
+    <span className="text-text-muted">{translate(messages, receiptPayerKey(payer.kind))}</span>
   );
 }
 
@@ -1147,7 +1221,23 @@ function ReceiptPanel({
   const read = useCallback(() => readReceipt(receiptId), [receiptId]);
   const receiptRead = useReread<ReceiptDetail>(read);
   const state = receiptRead.value;
-  const payer = useReceiptPayer(state?.status === 'ok' ? state.data : null, canReadCustomers);
+  const { payer, retry: retryPayer } = useReceiptPayer(
+    state?.status === 'ok' ? state.data : null,
+    canReadCustomers
+  );
+  /*
+   * The session's codes are the tenant-wide union, so a holder of the reversal
+   * approval or the third-party code in another branch only used to be offered
+   * the action here and refused by the route (finance QA fixes D). Both are
+   * offered only where the working context says the code is held in the
+   * RECEIPT's branch — the branch the routes check.
+   */
+  const { permitsInBranch } = useWorkingContext();
+  const receiptBranch = state?.status === 'ok' ? state.data.branchId : null;
+  const decidesReversals =
+    canDecideReversals && permitsInBranch(PAYMENT_PERMISSIONS.reversalApprove, receiptBranch);
+  const allocatesThirdParty =
+    canAllocateThirdParty && permitsInBranch(PAYMENT_PERMISSIONS.thirdParty, receiptBranch);
 
   if (state === null) {
     return (
@@ -1277,7 +1367,7 @@ function ReceiptPanel({
           receipt={receipt}
           currentUserId={currentUserId}
           canRequest={canRecord}
-          canDecide={canDecideReversals}
+          canDecide={decidesReversals}
           onChanged={onReversalChanged}
           onReload={() => receiptRead.reload()}
         />
@@ -1303,7 +1393,7 @@ function ReceiptPanel({
             receipt={receipt}
             initialInvoiceId={initialInvoiceId}
             canListInvoices={canListInvoices}
-            canAllocateThirdParty={canAllocateThirdParty}
+            canAllocateThirdParty={allocatesThirdParty}
             onAllocated={onAllocated}
           />
         ) : (
@@ -1313,7 +1403,13 @@ function ReceiptPanel({
         )}
       </section>
 
-      <PrintPanel locale={locale} messages={messages} receipt={receipt} payer={payer} />
+      <PrintPanel
+        locale={locale}
+        messages={messages}
+        receipt={receipt}
+        payer={payer}
+        onRetryPayer={retryPayer}
+      />
     </>
   );
 }
@@ -1372,6 +1468,14 @@ const UNCERTAIN_OUTCOMES: ReadonlySet<ActionState['status']> = new Set<ActionSta
   'cancelled',
 ]);
 
+/** The fields of a third-party statement, as their errors are keyed. */
+const THIRD_PARTY_FIELDS = [
+  'thirdParty',
+  'relationship',
+  'authorisationReference',
+  'reason',
+] as const;
+
 function AllocateForm({
   locale,
   messages,
@@ -1428,6 +1532,15 @@ function AllocateForm({
    */
   const [thirdParty, setThirdParty] = useState<ThirdPartyDraft>(EMPTY_THIRD_PARTY);
   const [addressedToOther, setAddressedToOther] = useState(false);
+  /*
+   * Another invoice chosen while a third-party statement was being typed: held
+   * here until the operator says the statement may go. A relationship and an
+   * authorisation reference are made for ONE invoice, so they are never carried
+   * to the next one (finance QA fixes D); nor are they thrown away unasked.
+   */
+  const [pendingInvoice, setPendingInvoice] = useState<{
+    readonly next: InvoiceListEntry | null;
+  } | null>(null);
   // A branch switch closes the previous branch's receipt, and this form with it.
   // The picker declares a chosen invoice itself. A receipt named in the address
   // is not closed by the FIRST choice of a branch, so a confirmed discard also
@@ -1475,6 +1588,21 @@ function AllocateForm({
         ? { ...previous, fieldErrors: withoutKey(previous.fieldErrors, name) }
         : previous
     );
+  };
+
+  /**
+   * The invoice is changed. A third-party statement belongs to the invoice it was
+   * typed for, so it starts again empty with the new invoice, and whatever its
+   * fields complained about goes with it.
+   */
+  const chooseInvoice = (next: InvoiceListEntry | null) => {
+    setInvoice(next);
+    if (next !== null) clearError('invoiceId');
+    // Another invoice is another comparison: what was learned about the addressed
+    // one no longer applies.
+    setAddressedToOther(false);
+    setThirdParty(EMPTY_THIRD_PARTY);
+    for (const field of THIRD_PARTY_FIELDS) clearError(field);
   };
 
   const ask = () => {
@@ -1669,16 +1797,14 @@ function AllocateForm({
                 allocatable
                 value={invoice}
                 onChange={(next) => {
-                  setInvoice(next);
-                  if (next !== null) clearError('invoiceId');
-                  // Another invoice is another comparison: what was learned about
-                  // the addressed one no longer applies.
-                  setAddressedToOther(false);
-                  // A third-party statement is made for ONE invoice. The choice
-                  // is withdrawn so the next invoice is never booked on it
-                  // unseen; what was typed is kept, and shown again for review
-                  // when the box is ticked once more.
-                  setThirdParty((draft) => (draft.chosen ? { ...draft, chosen: false } : draft));
+                  // The same invoice again changes nothing. Another one, with a
+                  // third-party statement typed, asks before the statement goes.
+                  if ((next?.id ?? null) === (invoice?.id ?? null)) return;
+                  if (thirdPartyDraftTouched(thirdParty)) {
+                    setPendingInvoice({ next });
+                    return;
+                  }
+                  chooseInvoice(next);
                 }}
                 canSearch={canListInvoices}
                 error={errorFor('invoiceId')}
@@ -1732,30 +1858,47 @@ function AllocateForm({
         title={translate(messages, 'payments.allocate.confirmTitle')}
         description={
           // Asked only once the amount was checked, so it is a figure to format.
+          // A third-party payment is confirmed with what it will be recorded
+          // under: who the payer is to the customer, and the authorisation
+          // reference, as the request will carry them. The two sentences are
+          // joined as text.
           asking
-            ? formatMessage(
-                translate(
-                  messages,
-                  sendsThirdParty
-                    ? invoice?.invoiceNumber
-                      ? 'payments.allocate.confirmThirdParty'
-                      : 'payments.allocate.confirmThirdPartyUnnumbered'
-                    : invoice?.invoiceNumber
-                      ? 'payments.allocate.confirmExplain'
-                      : 'payments.allocate.confirmExplainUnnumbered'
-                ),
-                {
-                  amount: formatMoney(
-                    {
-                      amount: amount.trim(),
-                      currency: receipt.money.currency,
-                      minorUnit: receipt.money.minorUnit,
-                    },
-                    locale
+            ? [
+                formatMessage(
+                  translate(
+                    messages,
+                    sendsThirdParty
+                      ? invoice?.invoiceNumber
+                        ? 'payments.allocate.confirmThirdParty'
+                        : 'payments.allocate.confirmThirdPartyUnnumbered'
+                      : invoice?.invoiceNumber
+                        ? 'payments.allocate.confirmExplain'
+                        : 'payments.allocate.confirmExplainUnnumbered'
                   ),
-                  invoice: invoice?.invoiceNumber ?? '',
-                }
-              )
+                  {
+                    amount: formatMoney(
+                      {
+                        amount: amount.trim(),
+                        currency: receipt.money.currency,
+                        minorUnit: receipt.money.minorUnit,
+                      },
+                      locale
+                    ),
+                    invoice: invoice?.invoiceNumber ?? '',
+                  }
+                ),
+                sendsThirdParty
+                  ? formatMessage(
+                      translate(messages, 'payments.allocate.confirmThirdPartyDetails'),
+                      {
+                        relationship: relationshipLabel(messages, thirdParty.relationship),
+                        reference: thirdParty.authorisationReference.trim(),
+                      }
+                    )
+                  : null,
+              ]
+                .filter((sentence): sentence is string => sentence !== null)
+                .join(' ')
             : undefined
         }
         confirmLabel={translate(messages, 'payments.allocate.submit')}
@@ -1763,6 +1906,21 @@ function AllocateForm({
         onCancel={() => setAsking(false)}
         onConfirm={() => void allocate()}
         testId="payments-allocate-dialog"
+      />
+      <ConfirmDialog
+        open={pendingInvoice !== null}
+        messages={messages}
+        title={translate(messages, 'payments.allocate.changeInvoiceTitle')}
+        description={translate(messages, 'payments.allocate.changeInvoiceExplain')}
+        confirmLabel={translate(messages, 'payments.allocate.changeInvoiceConfirm')}
+        destructive
+        onCancel={() => setPendingInvoice(null)}
+        onConfirm={() => {
+          const waiting = pendingInvoice;
+          setPendingInvoice(null);
+          if (waiting !== null) chooseInvoice(waiting.next);
+        }}
+        testId="payments-change-invoice-dialog"
       />
     </form>
   );
@@ -1777,17 +1935,21 @@ function PrintPanel({
   messages,
   receipt,
   payer,
+  onRetryPayer,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly receipt: ReceiptDetail;
   readonly payer: ReceiptPayerName;
+  /** Looks the payer's name up again, after a lookup that did not answer in time. */
+  readonly onRetryPayer: () => void;
 }) {
   const [open, setOpen] = useState(false);
   // The copy waits for the payer's name: while the lookup is out it would print
   // "not shown" for a payer the screen is about to name. So it shows that it is
   // loading and offers no Print until the lookup settles, with the name or with
-  // the honest "not shown".
+  // the honest "not shown" — or, when it does not answer in time, with "not
+  // available right now" and an offer to find the name again.
   const ready = payer.kind !== 'loading';
   return (
     <section
@@ -1815,6 +1977,16 @@ function PrintPanel({
             </Button>
           ) : null}
         </div>
+        {open && payer.kind === 'unavailable' ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-body text-text-secondary" role="status">
+              {translate(messages, 'payments.print.payerTimedOut')}
+            </p>
+            <Button type="button" variant="outlined" onClick={onRetryPayer}>
+              {translate(messages, 'payments.print.retryPayer')}
+            </Button>
+          </div>
+        ) : null}
       </div>
       {open ? (
         <div className="mt-4" id="payments-print">

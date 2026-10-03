@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -30,6 +30,8 @@ import {
   switchWithoutQuestion,
 } from './support/branch-switch';
 import { findSearchedOption } from './support/picker-option';
+import { CLIENT_READ_TIMEOUT_MS } from '@/lib/api/read-budget';
+import type { BranchPermissions } from '@/features/working-context/working-context-contract';
 
 /*
  * On the shared Material UI wrappers since the sales and finance slice
@@ -3329,6 +3331,86 @@ describe('raising and approving a credit note', () => {
       expect(await requestForm()).toBeInTheDocument();
     });
   });
+
+  describe('finance QA fixes D — the decision is offered only where the code is held', () => {
+    /** The working context's per-branch answer for the credit-approval code. */
+    const answer = (heldInNoteBranch: boolean): BranchPermissions => ({
+      codes: ['sal.credit.approve', 'sal.reversal.approve', 'sal.payment.third_party'],
+      branches: [
+        {
+          branchId: TEST_BRANCH.id,
+          permissions: heldInNoteBranch ? ['sal.credit.approve'] : [],
+        },
+        { branchId: OTHER_BRANCH.id, permissions: ['sal.credit.approve'] },
+      ],
+    });
+    const renderWith = (branchPermissions: BranchPermissions) =>
+      renderInLtr(
+        inBranch(notesScreen(SIGNED_IN, NOTE_ID), {
+          snapshot: { ...branchSnapshot([TEST_BRANCH]), branchPermissions },
+        })
+      );
+
+    it('a holder of the code in another branch only is told it waits, and offers neither decision', async () => {
+      renderWith(answer(false));
+      const detail = await screen.findByRole('region', {
+        name: EN['creditNotes.detail.heading'] as string,
+      });
+      expect(await within(detail).findByTestId('credit-note-cannot-decide')).toHaveTextContent(
+        EN['creditNotes.detail.cannotDecide'] as string
+      );
+      for (const key of ['creditNotes.approve.action', 'creditNotes.reject.action']) {
+        expect(within(detail).queryByRole('button', { name: EN[key] as string })).toBeNull();
+      }
+    });
+
+    it('a holder of the code in the note branch is offered both decisions', async () => {
+      renderWith(answer(true));
+      const detail = await screen.findByRole('region', {
+        name: EN['creditNotes.detail.heading'] as string,
+      });
+      for (const key of ['creditNotes.approve.action', 'creditNotes.reject.action']) {
+        expect(
+          await within(detail).findByRole('button', { name: EN[key] as string })
+        ).toBeVisible();
+      }
+      expect(within(detail).queryByTestId('credit-note-cannot-decide')).toBeNull();
+    });
+  });
+
+  it('finance QA fixes D: refuses an amount finer than the currency minor unit on the box, before sending', async () => {
+    listInvoices.mockResolvedValue(
+      okRead({
+        items: [
+          { ...invoiceEntry, outstanding: { amount: '100.0000', currency: 'USD', minorUnit: 2 } },
+        ],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+    const user = userEvent.setup();
+    renderLtr(notesScreen(SIGNED_IN));
+    const form = await requestForm();
+    await chooseInvoice(user, form);
+    await user.type(amountBox(form), '10.005');
+    await user.type(reasonBox(form), 'Wrong part fitted');
+    await user.click(submitIn(form));
+    await waitFor(() => expect(amountBox(form)).toHaveAttribute('aria-invalid', 'true'));
+    expect(form).toHaveTextContent(EN['form.violation.minor_unit_scale'] as string);
+    await waitFor(() => expect(amountBox(form)).toHaveFocus());
+    expect(amountBox(form)).toHaveValue('10.005');
+    expect(requestCreditNote).not.toHaveBeenCalled();
+    // Corrected, the complaint goes, and a whole number of cents is sent.
+    await user.clear(amountBox(form));
+    expect(amountBox(form)).not.toHaveAttribute('aria-invalid', 'true');
+    await user.type(amountBox(form), '10.01');
+    await user.click(submitIn(form));
+    await waitFor(() => expect(requestCreditNote).toHaveBeenCalledTimes(1));
+    expect(requestCreditNote.mock.calls[0]?.[1]).toEqual({
+      amount: '10.0100',
+      reason: 'Wrong part fitted',
+    });
+  });
 });
 
 describe('names, not references, and dates that read in order (browser QA 5.1b, OBS-3, OBS-4)', () => {
@@ -3636,5 +3718,128 @@ describe('finance retest fixes C', () => {
     expect(await within(balance).findByText('100.500 IQD')).toBeVisible();
     // The browser's locale data alone writes the Iraqi dinar without decimals.
     expect(formatMoney({ amount: '100.5000', currency: 'IQD' }, 'en')).toBe('100.5 IQD');
+  });
+});
+
+describe('finance QA fixes D — the printed copy', () => {
+  const issued = (over: Record<string, unknown> = {}) =>
+    invoice({
+      status: 'issued',
+      invoiceNumber: 'INV-000001',
+      issuedAt: '2026-10-01T07:00:00Z',
+      ...over,
+    });
+  const paidByInsurer = {
+    ...outstanding,
+    outstanding: { amount: '30.0000', currency: 'USD' },
+    settlement: {
+      ...outstanding.settlement,
+      paid: { amount: '70.0000', currency: 'USD' },
+      thirdPartyPayments: [
+        {
+          receipt: { id: 'r-1', reference: 'RCT-000031' },
+          payerName: 'Gulf Mutual Insurance',
+          relationship: 'insurer',
+          authorisationReference: 'CLM-2026-0042',
+          reason: 'Covered under the policy',
+          money: { amount: '70.0000', currency: 'USD' },
+          allocatedAt: '2026-10-02T09:00:00.000Z',
+        },
+      ],
+      thirdPartyPaymentsTruncated: false,
+    },
+  };
+
+  it('prints who paid for whom, with the authorisation, inside the settlement (D14)', async () => {
+    readWorkOrderInvoice.mockImplementation(async () =>
+      okRead({ workOrderId: WORK_ORDER_ID, invoice: issued() })
+    );
+    readInvoice.mockImplementation(async () =>
+      okRead(detail({ status: 'issued', invoiceNumber: 'INV-000001' }))
+    );
+    readOutstanding.mockImplementation(async () => okRead(paidByInsurer));
+    const user = userEvent.setup();
+    renderScreen({ initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: issued() }) });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    await within(balance).findByTestId('invoice-third-party-payment');
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const copy = await screen.findByRole('article');
+    const block = within(copy).getByTestId('invoice-print-third-party-payments');
+    expect(within(copy).getByTestId('invoice-print-settlement')).toContainElement(block);
+    expect(block).toHaveTextContent(EN['invoices.thirdParty.heading'] as string);
+    expect(block).toHaveTextContent(
+      formatMessage(EN['invoices.thirdParty.paidBy'] as string, {
+        payer: 'Gulf Mutual Insurance',
+        relationship: EN['invoices.thirdParty.relationship.insurer'] as string,
+        customer: 'Layla Haddad',
+      })
+    );
+    expect(block).toHaveTextContent('CLM-2026-0042');
+    expect(block).toHaveTextContent('RCT-000031');
+  });
+
+  it('a payer lookup that never answers settles as not available after the bounded wait, and finding it again names the payer', async () => {
+    const billed = issued({ payerPartnerId: OTHER_PAYER });
+    readWorkOrderInvoice.mockImplementation(async () =>
+      okRead({ workOrderId: WORK_ORDER_ID, invoice: billed })
+    );
+    readInvoice.mockImplementation(async () =>
+      okRead(detail({ status: 'issued', invoiceNumber: 'INV-000001', payerPartnerId: OTHER_PAYER }))
+    );
+    // The first lookup never answers; the one asked again does.
+    listInvoices.mockImplementationOnce(() => new Promise<never>(() => undefined));
+    listInvoices.mockResolvedValue(
+      okRead({
+        items: [{ id: INVOICE_ID, payer: { displayName: 'Omar Khalil' } }],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      renderScreen({ initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: billed }) });
+      await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
+      fireEvent.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+      const section = document.getElementById('invoice-print-heading')?.closest('section');
+      expect(section).not.toBeNull();
+      const panel = section as HTMLElement;
+      await waitFor(() => expect(listInvoices).toHaveBeenCalledTimes(1));
+      expect(screen.queryByRole('article')).toBeNull();
+      expect(
+        within(panel).queryByRole('button', { name: EN['invoices.print.print'] as string })
+      ).toBeNull();
+      // Just short of the ceiling it is still waiting.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(CLIENT_READ_TIMEOUT_MS - 1_000);
+      });
+      expect(screen.queryByRole('article')).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1_000);
+      });
+      const copy = await screen.findByRole('article');
+      expect(within(copy).getByTestId('invoice-print-payer')).toHaveTextContent(
+        EN['invoices.detail.payerUnavailable'] as string
+      );
+      expect(
+        within(panel).getByRole('button', { name: EN['invoices.print.print'] as string })
+      ).toBeVisible();
+      expect(panel).toHaveTextContent(EN['invoices.print.payerTimedOut'] as string);
+      fireEvent.click(
+        within(panel).getByRole('button', { name: EN['invoices.print.retryPayer'] as string })
+      );
+      await waitFor(() => expect(listInvoices).toHaveBeenCalledTimes(2));
+      await waitFor(() =>
+        expect(
+          within(screen.getByRole('article')).getByTestId('invoice-print-payer')
+        ).toHaveTextContent('Omar Khalil')
+      );
+      expect(
+        within(panel).queryByRole('button', { name: EN['invoices.print.retryPayer'] as string })
+      ).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

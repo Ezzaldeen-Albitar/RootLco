@@ -185,4 +185,40 @@ export class WorkingContextRepository extends Repository {
       status: row.status,
     }));
   }
+
+  /**
+   * Which of `codes` the caller holds in each of `branches`, answered by the
+   * deployed `iam.has_permission_in_scope` — the very function a branch-scoped
+   * operation's permission check asks, with the same company and branch target
+   * (finance QA fixes D, branch-scoped action gating).
+   *
+   * Nothing is decided here: deny precedence, grant validity windows and scope
+   * matching all stay in the database function, so this answer and the route's
+   * refusal cannot disagree. One statement for every pair, so a selector with
+   * several branches costs one round trip rather than one per branch and code.
+   * The function answers only about the caller (`iam.current_user_id()`), so this
+   * is not a probe of anybody else's authority.
+   */
+  async heldInBranches(
+    db: DbHandle,
+    codes: readonly string[],
+    branches: readonly { readonly companyId: string; readonly branchId: string }[]
+  ): Promise<readonly { readonly branchId: string; readonly code: string }[]> {
+    this.assertContext(db);
+    if (codes.length === 0 || branches.length === 0) return [];
+    const result = await this.run<{ branch_id: string; code: string }>(
+      db,
+      `SELECT b.branch_id::text AS branch_id, c.code
+         FROM unnest($1::uuid[], $2::uuid[]) AS b(branch_id, company_id)
+        CROSS JOIN unnest($3::text[]) AS c(code)
+        WHERE iam.has_permission_in_scope(c.code, b.company_id, b.branch_id, NULL)
+        ORDER BY b.branch_id, c.code`,
+      [
+        branches.map((branch) => branch.branchId),
+        branches.map((branch) => branch.companyId),
+        [...codes],
+      ]
+    );
+    return result.rows.map((row) => ({ branchId: row.branch_id, code: row.code }));
+  }
 }

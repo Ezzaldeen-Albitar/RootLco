@@ -75,6 +75,69 @@ export interface WorkingContextResponse {
    * and makes no read the server would refuse.
    */
   readonly companySettingsReadableIds?: readonly string[];
+  /**
+   * Which of a few branch-scoped action codes the caller holds in each branch
+   * (finance QA fixes D). Optional on the wire, because it was added to a published
+   * read; absent means the screens keep their tenant-wide check, as before.
+   */
+  readonly branchPermissions?: BranchPermissions;
+}
+
+/**
+ * The server's per-branch answer for a short list of action codes.
+ *
+ * The session's codes are the tenant-wide union: a holder of an approval code in
+ * one branch carries it everywhere, so a screen gated on the union offered the
+ * action on another branch's document and the server refused it. `codes` names
+ * the codes the server answered; each branch lists the ones the caller holds
+ * there, decided by the same database function the action's route asks. The
+ * server stays the authority: this only stops offering a door the server would
+ * not open.
+ */
+export interface BranchPermissions {
+  readonly codes: readonly string[];
+  readonly branches: readonly {
+    readonly branchId: string;
+    readonly permissions: readonly string[];
+  }[];
+}
+
+/**
+ * Whether a code may be offered for a document of `branchId`, as far as the
+ * per-branch answer can say. A code the answer does not cover — or no answer at
+ * all, from a server that does not publish one — is left to the caller's
+ * tenant-wide check (`true` here). A covered code is offered only in a branch the
+ * answer lists AND names it under: a branch outside the answer fails closed.
+ */
+export function permitsInBranch(
+  answer: BranchPermissions | undefined,
+  code: string,
+  branchId: string | null | undefined
+): boolean {
+  if (answer === undefined || !answer.codes.includes(code)) return true;
+  if (branchId === null || branchId === undefined) return false;
+  const entry = answer.branches.find((candidate) => candidate.branchId === branchId);
+  return entry !== undefined && entry.permissions.includes(code);
+}
+
+function isStringList(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === 'string');
+}
+
+function isBranchPermissions(value: unknown): value is BranchPermissions {
+  if (typeof value !== 'object' || value === null) return false;
+  const body = value as Record<string, unknown>;
+  return (
+    isStringList(body['codes']) &&
+    Array.isArray(body['branches']) &&
+    body['branches'].every(
+      (entry: unknown) =>
+        typeof entry === 'object' &&
+        entry !== null &&
+        typeof (entry as Record<string, unknown>)['branchId'] === 'string' &&
+        isStringList((entry as Record<string, unknown>)['permissions'])
+    )
+  );
 }
 
 /**
@@ -102,6 +165,8 @@ export interface WorkingContextSnapshot {
    * reader holding the code through a branch grant is not sent a refusal.
    */
   readonly companySettingsReadableIds: readonly string[];
+  /** The per-branch answer for the branch-scoped action codes, when published. */
+  readonly branchPermissions?: BranchPermissions;
 }
 
 /** The snapshot a failed read produces. Never a crash, never an empty workshop. */
@@ -156,7 +221,9 @@ export function isWorkingContextShape(value: unknown): value is WorkingContextRe
     // references; anything else fails closed like the rest of the body.
     (body['companySettingsReadableIds'] === undefined ||
       (Array.isArray(body['companySettingsReadableIds']) &&
-        body['companySettingsReadableIds'].every((id) => typeof id === 'string')))
+        body['companySettingsReadableIds'].every((id) => typeof id === 'string'))) &&
+    // Optional too, and a value that is present must be the published shape.
+    (body['branchPermissions'] === undefined || isBranchPermissions(body['branchPermissions']))
   );
 }
 
@@ -180,6 +247,7 @@ export function snapshotOf(
     companies: body.companies,
     branches: body.branches,
     companySettingsReadableIds: body.companySettingsReadableIds ?? [],
+    ...(body.branchPermissions === undefined ? {} : { branchPermissions: body.branchPermissions }),
   };
 }
 

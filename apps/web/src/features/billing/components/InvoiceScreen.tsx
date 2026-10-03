@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useEffect, useId, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
 
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
@@ -19,8 +19,9 @@ import {
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
+import { CLIENT_READ_TIMEOUT_MS } from '@/lib/api/read-budget';
 import { unreachable, type ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 
@@ -45,8 +46,17 @@ import {
   type WorkOrderInvoice,
 } from '../billing-contract';
 import { CreditNoteRequestForm } from './CreditNoteRequestForm';
-import { InvoiceDocument, type PayerName } from './InvoiceDocument';
-import { Figure, InvoiceStatusBadge, Money, OutcomeNote, Unavailable, UUID, When } from './shared';
+import { InvoiceDocument, payerNameKey, type PayerName } from './InvoiceDocument';
+import {
+  Figure,
+  InvoiceStatusBadge,
+  Money,
+  OutcomeNote,
+  ThirdPartyPaymentItems,
+  Unavailable,
+  UUID,
+  When,
+} from './shared';
 
 /**
  * The invoice of one work order (P1-30, `W6`, FE-014 preview, FE-015 issue
@@ -966,11 +976,11 @@ function CreateForm({
  * draft has no number to find it by; then, as when nothing names the payer, the
  * screen says the name is not shown here, and never prints the reference.
  */
-function usePayerName(
+export function usePayerName(
   invoice: Invoice,
   workOrder: WorkOrderListEntry | null,
   canLookUp: boolean
-): PayerName {
+): PayerLookup {
   const fromJob =
     workOrder?.customer && workOrder.customer.partnerId === invoice.payerPartnerId
       ? workOrder.customer.displayName
@@ -978,9 +988,24 @@ function usePayerName(
   const number = invoice.invoiceNumber;
   const lookUp = fromJob === null && canLookUp && number !== null;
   const [found, setFound] = useState<PayerName | null>(null);
+  const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!lookUp || number === null) return;
     let live = true;
+    /*
+     * A bounded wait (finance QA fixes D). A lookup that never settled kept the
+     * copy and its Print button loading for good. After the browser's ceiling
+     * for one read (`CLIENT_READ_TIMEOUT_MS`, derived from the server client's
+     * own timeouts) the name is said to be not available right now, and the
+     * print panel offers to find it again. A late answer to the abandoned
+     * lookup is dropped; the retry asks afresh. Leaving the screen, or another
+     * invoice, cancels both the wait and the answer.
+     */
+    const timer = setTimeout(() => {
+      if (!live) return;
+      live = false;
+      setFound({ kind: 'unavailable' });
+    }, CLIENT_READ_TIMEOUT_MS);
     void listInvoices(
       { companyId: invoice.companyId, branchId: invoice.branchId },
       { q: number },
@@ -988,6 +1013,7 @@ function usePayerName(
     )
       .then((page) => {
         if (!live) return;
+        clearTimeout(timer);
         const name =
           page.status === 'ok'
             ? (page.data.items.find((row) => row.id === invoice.id)?.payer.displayName ?? null)
@@ -995,16 +1021,31 @@ function usePayerName(
         setFound(name === null ? { kind: 'notShown' } : { kind: 'named', name });
       })
       .catch(() => {
-        if (live) setFound({ kind: 'notShown' });
+        if (!live) return;
+        clearTimeout(timer);
+        setFound({ kind: 'notShown' });
       });
     return () => {
       live = false;
+      clearTimeout(timer);
     };
-  }, [lookUp, number, invoice.companyId, invoice.branchId, invoice.id]);
+  }, [lookUp, number, invoice.companyId, invoice.branchId, invoice.id, attempt]);
 
-  if (fromJob !== null) return { kind: 'named', name: fromJob };
-  if (!lookUp) return { kind: 'notShown' };
-  return found ?? { kind: 'loading' };
+  const retry = useCallback(() => {
+    setFound(null);
+    setAttempt((n) => n + 1);
+  }, []);
+
+  if (fromJob !== null) return { payer: { kind: 'named', name: fromJob }, retry };
+  if (!lookUp) return { payer: { kind: 'notShown' }, retry };
+  return { payer: found ?? { kind: 'loading' }, retry };
+}
+
+/** Who the invoice bills, as found, and the way to look again after a timeout. */
+export interface PayerLookup {
+  readonly payer: PayerName;
+  /** Asks again — offered when the lookup did not answer in time. */
+  readonly retry: () => void;
 }
 
 function PayerText({
@@ -1015,14 +1056,7 @@ function PayerText({
   readonly payer: PayerName;
 }) {
   if (payer.kind === 'named') return <bdi>{payer.name}</bdi>;
-  return (
-    <span className="text-text-muted">
-      {translate(
-        messages,
-        payer.kind === 'loading' ? 'invoices.detail.payerLoading' : 'invoices.detail.payerNotShown'
-      )}
-    </span>
-  );
+  return <span className="text-text-muted">{translate(messages, payerNameKey(payer.kind))}</span>;
 }
 
 /* ------------------------------------------------------------------ *
@@ -1054,7 +1088,7 @@ function InvoicePanel({
   // The balance panel's own read, reported up so the credit form is offered
   // only while money is still open — one read, not two.
   const [balance, setBalance] = useState<Outstanding | null>(null);
-  const payer = usePayerName(invoice, workOrder, canViewFinance);
+  const { payer, retry: retryPayer } = usePayerName(invoice, workOrder, canViewFinance);
   useEffect(() => {
     let live = true;
     void readInvoice(invoice.id).then((state) => {
@@ -1137,6 +1171,7 @@ function InvoicePanel({
         detail={detail.data}
         workOrderNumber={workOrder?.displayNumber ?? null}
         payer={payer}
+        onRetryPayer={retryPayer}
         canViewFinance={canViewFinance}
         balance={balance}
       />
@@ -1466,15 +1501,10 @@ function SettlementFields({
   );
 }
 
-/** The fixed vocabulary of a third-party payer's relationship (ADR-023 D14), mirrored. */
-const THIRD_PARTY_RELATIONSHIP_CODES = ['insurer', 'employer', 'other'] as const;
-
 /**
- * The part of what was paid that somebody other than the customer paid, as an
- * explicit third-party payment (Owner decision D14, ADR-023): each reads "Paid by
- * <payer> (<relationship>) for <customer>", with the authorisation reference, the
- * receipt by its number and the amount. The invoice stays its customer's; a name
- * this reader may not see is said as not shown, never replaced by a reference.
+ * The third-party payments of the invoice, inside the balance panel's list
+ * (`ThirdPartyPaymentItems` renders them, as the counter sale and both printed
+ * copies do).
  */
 function ThirdPartyPayments({
   locale,
@@ -1489,62 +1519,19 @@ function ThirdPartyPayments({
   readonly truncated: boolean;
   readonly customer: PayerName;
 }) {
-  const customerName =
-    customer.kind === 'named'
-      ? customer.name
-      : translate(messages, 'invoices.thirdParty.customerNotShown');
   return (
     <div className="sm:col-span-3" data-testid="invoice-third-party-payments">
       <dt className="text-caption text-text-muted">
         {translate(messages, 'invoices.thirdParty.heading')}
       </dt>
       <dd className="text-body text-text-primary">
-        <ul className="flex flex-col gap-2">
-          {payments.map((payment) => {
-            const relationship = (THIRD_PARTY_RELATIONSHIP_CODES as readonly string[]).includes(
-              payment.relationship
-            )
-              ? payment.relationship
-              : 'other';
-            return (
-              <li
-                key={`${payment.receipt.id}-${payment.allocatedAt}`}
-                className="flex flex-col gap-0.5 rounded-md border border-border p-2"
-                data-testid="invoice-third-party-payment"
-              >
-                <span>
-                  {formatMessage(translate(messages, 'invoices.thirdParty.paidBy'), {
-                    payer:
-                      payment.payerName ?? translate(messages, 'invoices.thirdParty.payerNotShown'),
-                    relationship: translateDynamic(
-                      messages,
-                      `invoices.thirdParty.relationship.${relationship}`
-                    ),
-                    customer: customerName,
-                  })}
-                </span>
-                <span className="text-caption text-text-secondary">
-                  {translate(messages, 'invoices.thirdParty.authorisation')}{' '}
-                  <bdi className="font-mono" dir="auto">
-                    {payment.authorisationReference}
-                  </bdi>
-                </span>
-                <span className="flex flex-wrap items-center gap-2 text-caption text-text-secondary">
-                  {translate(messages, 'invoices.thirdParty.receipt')}{' '}
-                  <bdi className="font-mono" dir="ltr">
-                    {payment.receipt.reference}
-                  </bdi>
-                  <Money money={payment.money} locale={locale} />
-                </span>
-              </li>
-            );
-          })}
-        </ul>
-        {truncated ? (
-          <p className="mt-1 text-caption text-text-muted">
-            {translate(messages, 'invoices.thirdParty.truncated')}
-          </p>
-        ) : null}
+        <ThirdPartyPaymentItems
+          locale={locale}
+          messages={messages}
+          payments={payments}
+          truncated={truncated}
+          customer={customer}
+        />
       </dd>
     </div>
   );
@@ -1784,6 +1771,7 @@ export function CounterSalePrintPanel({
   canViewFinance,
   balance = null,
   initiallyOpen = false,
+  payer: lifted,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -1792,15 +1780,23 @@ export function CounterSalePrintPanel({
   /** The sale's balance read, or `null` while it is unread or not the reader's to see. */
   readonly balance?: Outstanding | null;
   readonly initiallyOpen?: boolean;
+  /**
+   * The buyer's name as the counter screen already looks it up (`usePayerName`),
+   * so the sale panel and the copy name the same person from one lookup. Absent,
+   * the panel looks the name up itself.
+   */
+  readonly payer?: PayerLookup;
 }) {
-  const payer = usePayerName(detail.invoice, null, canViewFinance);
+  const own = usePayerName(detail.invoice, null, canViewFinance && lifted === undefined);
+  const lookup = lifted ?? own;
   return (
     <PrintPanel
       locale={locale}
       messages={messages}
       detail={detail}
       workOrderNumber={null}
-      payer={payer}
+      payer={lookup.payer}
+      onRetryPayer={lookup.retry}
       canViewFinance={canViewFinance}
       balance={canViewFinance ? balance : null}
       initiallyOpen={initiallyOpen}
@@ -1814,6 +1810,7 @@ function PrintPanel({
   detail,
   workOrderNumber,
   payer,
+  onRetryPayer,
   canViewFinance,
   balance,
   initiallyOpen = false,
@@ -1823,6 +1820,8 @@ function PrintPanel({
   readonly detail: InvoiceDetail;
   readonly workOrderNumber: string | null;
   readonly payer: PayerName;
+  /** Looks the payer's name up again, after a lookup that did not answer in time. */
+  readonly onRetryPayer?: () => void;
   readonly canViewFinance: boolean;
   /**
    * The balance as the balance panel read it — what is due, the credit and
@@ -1860,7 +1859,9 @@ function PrintPanel({
   // The payer's name is waited for too: while its lookup is still out, the copy
   // would print "name not shown" for a customer the screen is about to name. So the
   // copy and the Print button wait until the lookup settles — with the name, or
-  // with the honest "not shown" when it is withheld or could not be found.
+  // with the honest "not shown" when it is withheld or could not be found. The
+  // wait is bounded: a lookup that does not answer in time settles as "not
+  // available right now", and the panel offers to find the name again.
   const counterSale = workOrderId === null;
   const ready = (counterSale || !canViewFinance || preview !== null) && payer.kind !== 'loading';
 
@@ -1888,6 +1889,16 @@ function PrintPanel({
           </Button>
         ) : null}
       </div>
+      {open && payer.kind === 'unavailable' && onRetryPayer !== undefined ? (
+        <div className="flex flex-wrap items-center gap-3" data-print="hide">
+          <p className="text-body text-text-secondary" role="status">
+            {translate(messages, 'invoices.print.payerTimedOut')}
+          </p>
+          <Button type="button" variant="outlined" onClick={onRetryPayer}>
+            {translate(messages, 'invoices.print.retryPayer')}
+          </Button>
+        </div>
+      ) : null}
       {open ? (
         !ready ? (
           <MuiLoadingState messages={messages} variant="inline" />

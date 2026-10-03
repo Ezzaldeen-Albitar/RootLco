@@ -109,6 +109,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import { BranchTargetForm, PANEL } from '@/features/inventory/components/stock-operations';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { StockTarget } from '@/features/inventory/inventory-contract';
 import { useReread } from '@/lib/api/use-reread';
 import { unreachable, type ActionState } from '@/lib/forms/action-result';
@@ -123,6 +124,7 @@ import {
   type CreateOutcome,
 } from '../api';
 import {
+  BILLING_PERMISSIONS,
   CREDIT_NOTE_STATES,
   type CreditNote,
   type CreditNoteDetail as CreditNoteRecord,
@@ -503,8 +505,16 @@ function CreditNoteDetail({
   const state = detail.value;
   const note = state?.status === 'ok' ? state.data : null;
   const own = note !== null && note.requestedBy === currentUserId;
-  // Somebody else's note, and the caller holds the credit-approval permission (D13).
-  const decides = note !== null && !own && canDecide;
+  // Somebody else's note, and the caller holds the credit-approval permission (D13)
+  // in the NOTE's branch: the session's codes are the tenant-wide union, so a
+  // holder of the code in another branch only used to be offered a decision the
+  // route refuses (finance QA fixes D). The working context answers it per branch.
+  const { permitsInBranch } = useWorkingContext();
+  const decides =
+    note !== null &&
+    !own &&
+    canDecide &&
+    permitsInBranch(BILLING_PERMISSIONS.creditApprove, note.branchId);
 
   /**
    * What a decision's answer does to the screen. Returns true when the note must

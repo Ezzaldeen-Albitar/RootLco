@@ -658,8 +658,16 @@ function ReceiveForm({
           dir="ltr"
           value={form.quantity}
           onChange={(event) => {
-            // A corrected quantity stops complaining.
+            // A corrected quantity stops complaining — the form's own complaint
+            // and the server's refusal of the quantity alike (DF-B7 residual:
+            // a refusal such as more than remains stayed red until the next
+            // submit).
             setErrors((previous) => withoutError(previous, 'quantity'));
+            setOutcome((previous) =>
+              previous?.fieldErrors?.['quantity'] === undefined
+                ? previous
+                : { ...previous, fieldErrors: withoutError(previous.fieldErrors, 'quantity') }
+            );
             setForm((f) => ({ ...f, quantity: event.target.value }));
           }}
           error={errorFor('quantity')}
