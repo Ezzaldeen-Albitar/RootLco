@@ -592,10 +592,13 @@ describe('the contact is offered only where it reaches the acceptance record', (
     expect(within(form).queryByTestId('quotation-decide-contact-name')).toBeNull();
   });
 
-  it('shows the server’s refusal of a contact that no longer completes the acceptance beside its box', async () => {
+  it('shows the server’s refusal of a contact on a line decided meanwhile beside its box', async () => {
     const user = userEvent.setup();
-    // Read as the last open line; another operator decided meanwhile, and the
-    // server refuses the contact rather than storing it nowhere.
+    // Read as the last open line. Every other line is approved, and those decisions
+    // are final, so the only change possible meanwhile is that another operator
+    // decided THIS line, completing the acceptance without this contact. The
+    // server then settles on that decision and refuses the contact
+    // (acceptance_contact_already_recorded) rather than answering 201 and dropping it.
     readRevisionDecisions.mockResolvedValue(
       okRead(decisions({ itemCount: 2, decidedCount: 1, decisions: [approvedLine(LINE_1, 1)] }))
     );
@@ -603,7 +606,7 @@ describe('the contact is offered only where it reaches the acceptance record', (
       state: {
         status: 'invalid',
         messageKey: 'form.formError',
-        fieldErrors: { contactName: 'form.violation.acceptance_contact_not_completing' },
+        fieldErrors: { contactName: 'form.violation.acceptance_contact_already_recorded' },
         attempt: 1,
       },
     });
@@ -616,12 +619,12 @@ describe('the contact is offered only where it reaches the acceptance record', (
     );
     expect(
       await within(form).findByText(
-        EN['form.violation.acceptance_contact_not_completing'] as string
+        EN['form.violation.acceptance_contact_already_recorded'] as string
       )
     ).toBeVisible();
     expect(name).toHaveAttribute('aria-invalid', 'true');
     expect(name).toHaveValue('Second Caller');
-    expect(AR['form.violation.acceptance_contact_not_completing']).toBeTruthy();
+    expect(AR['form.violation.acceptance_contact_already_recorded']).toBeTruthy();
   });
 });
 

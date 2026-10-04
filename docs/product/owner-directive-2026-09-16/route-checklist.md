@@ -3971,6 +3971,9 @@ decision: the whole revision, or the last open line while every other line is ap
 (`apps/web/tests/quotation-acceptance-record.dom.test.tsx`); the service refuses a contact on any
 other line approval with `acceptance_contact_not_completing` before anything is written
 (`tests/backend/od-quotation-acceptance-record.test.ts`, `tests/unit/od-quotation-acceptance-contact.test.ts`).
+A contact sent with a decision already recorded (a line another call decided meanwhile, or a
+whole-revision call that finds every line decided) is refused with `acceptance_contact_already_recorded`
+before anything is written, and the earlier record stands (same two test files).
 
 Known limitations of this slice, one line each:
 
@@ -3978,7 +3981,11 @@ Known limitations of this slice, one line each:
 - The contact is a typed name and number and is not validated against the customer, because CRM holds contact channels, not persons (`crm.contact_points`); ADR-023 D11 says "customer or contact", which this meets, but it differs from the brief's "validated against the customer". Only `customer_partner_id` is validated against the payer (service `assertParty` and the database guard).
 - The phone normaliser takes the digits out of free text, so a probe showed "no phone 12 then 3" stored as "123"; a name made only of a zero-width space (U+200B) passes both the JS trim and `ck_acceptance_records_contact_name`. The normaliser already behaved this way, and the web and api copies are identical.
 - No database or backend test covers a caller in the same tenant restricted to another branch; isolation is tested only across tenants (`tests/db/quo-acceptance-records.test.ts:274`, on the `app_runtime` role, no BYPASSRLS), although `sel_acceptance_records_scope` does carry `allowed_branch_ids`.
-- The coverage gate was not evaluated on head 666f8913: in unit-coverage the `coverage-summary.json` read failed (exit 2) because the unit run failed first in the P1-27 doc-counts cascade, so the coverage floor is unverified until the records step re-runs.
+- The coverage gate was not evaluated on head 666f8913 nor on head a135b96d (unit-coverage job 111545933195): the `coverage-summary.json` read failed (exit 2) because the unit run failed first in the P1-27 doc-counts cascade, so the coverage floor is unverified until the records step re-runs.
 - The new `AcceptanceRecordNote` uses plain HTML with utility classes, not the Material UI wrappers, matching the rest of the not-yet-migrated `QuotationDetailScreen` (the tailwind theme gate passed); it is a departure from ADR-022 to track.
 - The record card shows the document version as a raw id, as the existing decisions body already does.
 - A behaviour change beyond the brief: a reference note with no evidence kind is now refused on the client (`quotations.decide.kindForNote`) where it was silently dropped before; it is tested and an improvement, but it is an extra change in behaviour.
+- The idempotency-key replay (same key) returns the stored response and writes nothing (`tests/backend/od-quotation-acceptance-record.test.ts`, "the same idempotency key answers as before"); that is correct and is not the dropped-contact defect closed above.
+- On the web, a contact typed and then hidden by switching to a line target that does not complete the acceptance is kept in state and silently not sent; the boxes visibly disappear and the form still counts as unsaved work, so the risk is low, but nothing announces that the hidden value will not be sent.
+- `contactReachesRecord` in `QuotationDetailScreen.tsx` returns true for the whole-revision target even when the decisions read shows a rejected line; the server then answers with a conflict (ERR-CON-001), not a loss, so nothing is silently dropped.
+- Not run by the implementer: the database tier (`tests/db/quo-acceptance-records.test.ts`) and the backend tier locally, because no throwaway database was listening and the shared local port is off-limits; they are covered only by the hosted integration-tests and "Database migrations and RLS tests" jobs of the PR run.

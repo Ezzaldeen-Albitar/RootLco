@@ -887,8 +887,12 @@ acceptance records were kept." <!-- quotations.acceptance.notRecorded -->
   / "The name is limited to 200 characters." <!-- quotations.decide.contactNameTooLong -->
 - "A contact is kept only with the decision that completes the customer's acceptance. Clear the
   name and telephone number, or record the remaining lines first." <!-- form.violation.acceptance_contact_not_completing -->
-  — another line was still open when the decision reached the service, so the contact could not be
-  kept; nothing was recorded.
+  — the line approval did not complete the acceptance, so the contact could not be kept; nothing
+  was recorded.
+- "This decision had already been recorded, so the name and telephone number could not be kept with
+  it. Clear them and check the acceptance shown on the quotation." <!-- form.violation.acceptance_contact_already_recorded -->
+  — someone else decided the same line, or the whole quotation, while the form was open. Their
+  decision stands, and the acceptance shows what they recorded; nothing new was recorded.
 - "The decisions could not be loaded right now." <!-- quotations.decisions.unavailable --> — a read
   failure. "No decision has been recorded yet." <!-- quotations.decisions.none --> is the message
   that means empty.

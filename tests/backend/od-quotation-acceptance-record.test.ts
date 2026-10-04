@@ -7,7 +7,10 @@
  * taken from the server, never the request; the contact is validated and
  * normalised before anything is written, and refused on a rejection; a replay —
  * the same idempotency key, or the same decision sent again — never writes a
- * second record; a rejection writes none; a per-line acceptance records the
+ * second record, and a contact sent with a decision already recorded (a replay
+ * with a new key, or a line another call decided meanwhile) is refused rather
+ * than answered 201 and dropped; the same idempotency key returns the stored
+ * response and writes nothing, which is correct; a rejection writes none; a per-line acceptance records the
  * contact of the decision that completed it, and a contact on a line approval
  * that does not complete the acceptance is refused with nothing written, rather
  * than accepted and stored nowhere; the record cannot be changed by the
@@ -510,7 +513,7 @@ describe('a replay never writes a second record', () => {
     expect(await recordsFor(q.revisionId)).toHaveLength(1);
   });
 
-  it('the same decision sent again with a new key settles, and the first record stands unchanged', async () => {
+  it('the same decision sent again with a new key and a different contact is refused, and the first record stands', async () => {
     const q = await issuedQuotation();
     authAs(SVC_FULL);
     const first = await decideRevision(q.revisionId, {
@@ -521,15 +524,71 @@ describe('a replay never writes a second record', () => {
     });
     expect(first.status).toBe(201);
     const [before] = await recordsFor(q.revisionId);
+    const decisionsBefore = await decisionCount(q.revisionId);
+    // Every line is already decided, so this call writes no line and no record: the
+    // contact would be answered 201 and kept nowhere. It is refused instead.
     const again = await decideRevision(q.revisionId, {
       decision: 'approved',
       channel: 'email',
       contactName: 'Someone Else',
       presentedRevisionId: q.revisionId,
     });
-    expect(again.status).toBe(201);
-    const after = await recordsFor(q.revisionId);
-    expect(after).toEqual([before]);
+    expect(again.status).toBe(422);
+    expect(
+      (await json<{ violations?: { path: string; rule: string }[] }>(again)).violations
+    ).toEqual([{ path: 'body.contactName', rule: 'acceptance_contact_already_recorded' }]);
+    expect(await decisionCount(q.revisionId)).toBe(decisionsBefore);
+    expect(await recordsFor(q.revisionId)).toEqual([before]);
+    // The same replay with no contact still settles as before.
+    const settled = await decideRevision(q.revisionId, {
+      decision: 'approved',
+      channel: 'email',
+      presentedRevisionId: q.revisionId,
+    });
+    expect(settled.status).toBe(201);
+    expect(await recordsFor(q.revisionId)).toEqual([before]);
+  });
+
+  it('a contact on a line another call decided meanwhile is refused, and that call’s record stands', async () => {
+    const q = await issuedQuotation(2);
+    authAs(SVC_FULL);
+    const [first, second] = q.itemIds as [string, string];
+    expect(
+      (
+        await decideItem(first, {
+          decision: 'approved',
+          channel: 'phone',
+          presentedRevisionId: q.revisionId,
+        })
+      ).status
+    ).toBe(201);
+    // Another operator approves the last open line with no contact, which completes
+    // the acceptance and writes the record.
+    expect(
+      (
+        await decideItem(second, {
+          decision: 'approved',
+          channel: 'phone',
+          presentedRevisionId: q.revisionId,
+        })
+      ).status
+    ).toBe(201);
+    const [before] = await recordsFor(q.revisionId);
+    expect(before).toMatchObject({ contact_name: null, contact_phone: null });
+    // The first operator's screen still showed that line open and sends its contact.
+    const refused = await decideItem(second, {
+      decision: 'approved',
+      channel: 'phone',
+      contactName: 'Late Caller',
+      contactPhone: '0791234567',
+      presentedRevisionId: q.revisionId,
+    });
+    expect(refused.status).toBe(422);
+    expect(
+      (await json<{ violations?: { path: string; rule: string }[] }>(refused)).violations
+    ).toEqual([{ path: 'body.contactName', rule: 'acceptance_contact_already_recorded' }]);
+    expect(await decisionCount(q.revisionId)).toBe(2);
+    expect(await recordsFor(q.revisionId)).toEqual([before]);
   });
 });
 

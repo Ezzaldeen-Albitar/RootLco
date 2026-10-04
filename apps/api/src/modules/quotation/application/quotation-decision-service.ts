@@ -51,6 +51,7 @@ import {
   DECISIONS,
   EVIDENCE_KINDS,
   QuotationRuleError,
+  assertContactNotOnReplay,
   assertContactReachesRecord,
   assertEvidenceShape,
   hasExpired,
@@ -371,7 +372,12 @@ export class QuotationDecisionService {
 
     const existing = await this.repository.findDecisionForItem(db, item.id);
     if (existing !== null) {
-      return this.settleExisting(existing, input);
+      // Settling writes nothing: another call decided this line meanwhile and, when
+      // it completed the acceptance, wrote the record without this contact. A
+      // contact here would be answered 201 and kept nowhere, so it is refused.
+      const settled = this.settleExisting(existing, input);
+      this.refuseContact(() => assertContactNotOnReplay(input, false));
+      return settled;
     }
 
     // A contact is kept only on the acceptance record, which only the decision
@@ -469,18 +475,31 @@ export class QuotationDecisionService {
     }
 
     const evidenceRef = await this.resolveEvidenceRef(db, quotation, input.evidence);
-    const decisions: DecisionView[] = [];
 
+    // Every line's stored decision, read under the revision lock before anything is
+    // written, so a conflict or a refused contact leaves nothing behind.
+    const settled = new Map<string, DecisionRow>();
     for (const item of items) {
       const existing = await this.repository.findDecisionForItem(db, item.id);
-      if (existing !== null) {
-        if (existing.decision !== input.decision) {
-          throw new AppFailure('ERR-CON-001', {
-            message:
-              `Line ${item.lineNumber} was already ${existing.decision}; a conflicting ` +
-              'revision-wide decision would discard a recorded customer choice',
-          });
-        }
+      if (existing === null) continue;
+      if (existing.decision !== input.decision) {
+        throw new AppFailure('ERR-CON-001', {
+          message:
+            `Line ${item.lineNumber} was already ${existing.decision}; a conflicting ` +
+            'revision-wide decision would discard a recorded customer choice',
+        });
+      }
+      settled.set(item.id, existing);
+    }
+    // Every line already decided: this call is a pure replay and writes no line,
+    // and the acceptance it repeats was recorded by an earlier call. A contact
+    // sent with it would be answered 201 and kept nowhere, so it is refused.
+    this.refuseContact(() => assertContactNotOnReplay(input, settled.size < items.length));
+
+    const decisions: DecisionView[] = [];
+    for (const item of items) {
+      const existing = settled.get(item.id);
+      if (existing !== undefined) {
         decisions.push({
           decisionId: existing.id,
           quotationItemId: item.id,

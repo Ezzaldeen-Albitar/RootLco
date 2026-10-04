@@ -73,7 +73,11 @@ writes nothing; the unique constraint refuses a second row regardless. A rejecti
 contact sent with a rejection is refused rather than lost. A contact sent with a line approval that
 does not complete the acceptance (another line still open, counted under the revision lock before
 anything is written) is refused the same way — `acceptance_contact_not_completing` on the field that
-carries it — because no record would be written to keep it. The decisions read publishes the record
+carries it — because no record would be written to keep it. A contact sent with a decision already
+recorded (a line another call decided meanwhile, or a whole-revision call that finds every line
+decided and so writes no line) is refused as `acceptance_contact_already_recorded` before anything is
+written, because the acceptance it repeats was completed, and its record written, by the earlier
+call. The decisions read publishes the record
 with the recorder named through the identity directory (which names nobody to a caller without
 `iam.user.read`).
 

@@ -186,7 +186,8 @@ export class AcceptanceContactError extends QuotationRuleError {
       | 'too_big'
       | 'invalid_phone'
       | 'acceptance_contact_on_rejection'
-      | 'acceptance_contact_not_completing',
+      | 'acceptance_contact_not_completing'
+      | 'acceptance_contact_already_recorded',
     message: string
   ) {
     super(message);
@@ -298,5 +299,26 @@ export function assertContactReachesRecord(
     input.contactName !== undefined ? 'contactName' : 'contactPhone',
     'acceptance_contact_not_completing',
     'A contact is recorded only with the decision that completes the acceptance'
+  );
+}
+
+/**
+ * A decision already recorded is answered as it stands — a per-line replay
+ * settles on the stored row, a whole-revision call that finds every line decided
+ * writes no line — so a contact sent with it reaches no record: the acceptance,
+ * if there is one, was completed by an earlier call and its record is permanent.
+ * Such a contact is refused, naming the box, rather than answered as recorded and
+ * dropped. `writesDecision` is whether this call records at least one new line.
+ */
+export function assertContactNotOnReplay(
+  input: { readonly contactName?: string | undefined; readonly contactPhone?: string | undefined },
+  writesDecision: boolean
+): void {
+  if (writesDecision) return;
+  if (input.contactName === undefined && input.contactPhone === undefined) return;
+  throw new AcceptanceContactError(
+    input.contactName !== undefined ? 'contactName' : 'contactPhone',
+    'acceptance_contact_already_recorded',
+    'This decision was already recorded, so a contact sent with it cannot be kept'
   );
 }

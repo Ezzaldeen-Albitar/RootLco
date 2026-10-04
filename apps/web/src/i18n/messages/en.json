@@ -1420,6 +1420,7 @@
   "form.submit": "Save",
   "form.unsavedBody": "This form has changes that have not been saved.",
   "form.unsavedTitle": "Discard your changes?",
+  "form.violation.acceptance_contact_already_recorded": "This decision had already been recorded, so the name and telephone number could not be kept with it. Clear them and check the acceptance shown on the quotation.",
   "form.violation.acceptance_contact_not_completing": "A contact is kept only with the decision that completes the customer's acceptance. Clear the name and telephone number, or record the remaining lines first.",
   "form.violation.acceptance_contact_on_rejection": "A contact is kept only when the customer accepts. Clear the name and telephone number, or record an approval instead.",
   "form.violation.after_start": "A work session has to finish after it starts. Choose a finishing time later than the starting time.",
