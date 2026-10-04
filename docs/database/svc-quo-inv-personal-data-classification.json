@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-10-SEC — Service Catalog / Pricing / Quotation / Inventory personal-and-financial-data classification registry. Restricted = cost/margin fields gated by inv.cost.view. Prices and quotation totals are operational (internal). No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 946,
+  "columnCount": 963,
   "columns": {
     "inv.customer_supplied_parts.branch_id": {
       "classification": "internal",
@@ -3135,6 +3135,91 @@
       "dataType": "timestamp with time zone"
     },
     "inv.vehicle_fluid_specifications.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.acceptance_records.accepted_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.acceptance_records.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.acceptance_records.channel": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.acceptance_records.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.acceptance_records.contact_name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.acceptance_records.contact_phone": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.acceptance_records.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.acceptance_records.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.acceptance_records.customer_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.acceptance_records.evidence_document_version_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.acceptance_records.evidence_kind": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.acceptance_records.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.acceptance_records.quotation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.acceptance_records.quotation_revision_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.acceptance_records.recorded_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.acceptance_records.reference_note": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.acceptance_records.tenant_id": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"

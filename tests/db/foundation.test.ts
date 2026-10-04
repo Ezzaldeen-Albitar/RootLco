@@ -139,6 +139,7 @@ const ALLOWED_TABLES = new Set([
   'qms.reopen_attempts',
   'qms.rework_link_details',
   'qms.rework_links',
+  'quo.acceptance_records',
   'quo.approval_decisions',
   'quo.approval_evidence',
   'quo.discount_approvals',
@@ -495,6 +496,7 @@ const ALLOWED_ROUTINES = new Set([
   'quo.guard_quotation_revision_freeze',
   'quo.guard_revision_totals',
   'quo.issue_revision',
+  'quo.guard_acceptance_record',
   'quo.guard_discount_approval',
   'quo.guard_revision_discount_approval',
   'quo.revision_discount_assessment',
@@ -819,6 +821,7 @@ describe('database foundation', () => {
        ORDER BY 1`
     );
     expect(triggers.rows.map((r) => r.tgname)).toEqual([
+      'tg_acceptance_records_guard',
       'tg_additional_work_request_details_immutable',
       'tg_additional_work_request_details_touch_metadata',
       'tg_additional_work_requests_immutable',
@@ -1472,6 +1475,7 @@ describe('database foundation', () => {
     expect(policies.rows.map((r) => r.polname)).toEqual([
       'del_grant_scopes_admin',
       'del_role_permissions_admin',
+      'ins_acceptance_records_scope',
       'ins_additional_work_request_details_gated',
       'ins_additional_work_requests_scope',
       'ins_addresses_tenant',
@@ -1763,6 +1767,7 @@ describe('database foundation', () => {
       'ins_work_order_transitions_tenant',
       'ins_work_orders_scope',
       'lck_template_versions_reference',
+      'sel_acceptance_records_scope',
       'sel_additional_work_request_details_gated',
       'sel_additional_work_requests_scope',
       'sel_addresses_tenant',

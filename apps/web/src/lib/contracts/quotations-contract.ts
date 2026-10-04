@@ -39,12 +39,17 @@ export interface DecisionEvidenceBody {
  *
  * `presentedRevisionId` is required: the decision is about the revision the
  * customer was shown, and the server refuses one that is no longer current.
+ * `contactName` and `contactPhone` name who spoke for the customer; the server
+ * keeps them on the acceptance record when this decision completes the
+ * acceptance (ADR-023 D11) and refuses them on a rejection.
  */
 export interface QuotationItemDecideBody {
   readonly decision: 'approved' | 'rejected';
   readonly channel: 'in_person' | 'phone' | 'portal' | 'email' | 'system';
   readonly decidingPartyRef?: string;
   readonly evidence?: DecisionEvidenceBody;
+  readonly contactName?: string;
+  readonly contactPhone?: string;
   readonly presentedRevisionId: string;
 }
 
@@ -57,6 +62,8 @@ export interface QuotationRevisionDecideBody {
   readonly channel: 'in_person' | 'phone' | 'portal' | 'email' | 'system';
   readonly decidingPartyRef?: string;
   readonly evidence?: DecisionEvidenceBody;
+  readonly contactName?: string;
+  readonly contactPhone?: string;
   readonly presentedRevisionId: string;
 }
 

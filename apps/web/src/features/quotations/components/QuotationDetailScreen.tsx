@@ -33,6 +33,7 @@ import { useReread } from '@/lib/api/use-reread';
 import { unreachable, type ActionState } from '@/lib/forms/action-result';
 import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
 import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
+import { normalizePhoneDigits } from '@/lib/text/normalization';
 
 import type { DecisionEvidenceBody } from '@/lib/contracts/quotations-contract';
 import {
@@ -50,6 +51,8 @@ import {
   DECISION_CHANNELS,
   EVIDENCE_KINDS,
   INTERNAL_CODE,
+  MAX_CONTACT_NAME,
+  MAX_CONTACT_PHONE_INPUT,
   MAX_REFERENCE_NOTE,
   type ApprovalLimit,
   type DiscountApproval,
@@ -110,6 +113,16 @@ import {
  * read states them, with each line's decision and evidence beneath. A decision
  * is recorded against the revision the customer was shown, and the server
  * refuses one against a revision that is no longer current.
+ *
+ * ## The acceptance record (ADR-023 D11)
+ *
+ * When the decision that completes an acceptance is recorded, the server keeps
+ * an acceptance record: the paying customer (when the operator said the payer
+ * decided), the person who spoke for them and their telephone number as typed,
+ * the channel, the time, the employee who recorded it and the evidence
+ * reference. The decisions panel shows it with names rather than ids, and a
+ * revision accepted before records were kept says it has none. It is a record,
+ * never a signature.
  *
  * ## A discount over the threshold waits for somebody else
  *
@@ -286,6 +299,7 @@ export function QuotationDetailScreen({
           locale={locale}
           messages={messages}
           quotation={quotation}
+          payerName={payerName}
           revision={current}
           canDecide={canDecide && open}
           onRecorded={reload}
@@ -625,6 +639,7 @@ function DecisionsPanel({
   locale,
   messages,
   quotation,
+  payerName,
   revision,
   canDecide,
   onRecorded,
@@ -632,6 +647,8 @@ function DecisionsPanel({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly quotation: QuotationDetail;
+  /** The payer's name as this page read it, or `null` when it could not be read. */
+  readonly payerName: string | null;
   readonly revision: QuotationRevision;
   readonly canDecide: boolean;
   /** Reads the quotation again; resolves once that answer is on screen. */
@@ -671,7 +688,16 @@ function DecisionsPanel({
           onRetry={() => void decisions.reload()}
         />
       ) : (
-        <DecisionsBody locale={locale} messages={messages} decisions={state.data} />
+        <>
+          <DecisionsBody locale={locale} messages={messages} decisions={state.data} />
+          <AcceptanceRecordNote
+            locale={locale}
+            messages={messages}
+            decisions={state.data}
+            payerRef={quotation.payerPartnerRef}
+            payerName={payerName}
+          />
+        </>
       )}
       {canDecide && !decidable ? (
         <p className="text-caption text-text-muted">
@@ -780,6 +806,141 @@ function DecisionsBody({
   );
 }
 
+/**
+ * The acceptance record of an accepted revision (ADR-023 D11).
+ *
+ * Who accepted, through whom, how, when, who recorded it and on what reference —
+ * rendered as the server stored it, with names rather than ids. A part that was
+ * not given says so; nothing is filled in. A revision accepted before records
+ * were kept says that it has none, rather than offering an empty card. It is
+ * labelled a record, never a signature.
+ */
+function AcceptanceRecordNote({
+  locale,
+  messages,
+  decisions,
+  payerRef,
+  payerName,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly decisions: RevisionDecisions;
+  readonly payerRef: string | null;
+  readonly payerName: string | null;
+}) {
+  const record = decisions.acceptance;
+  if (record === null) {
+    if (decisions.outcome !== 'accepted') return null;
+    return (
+      <p className="text-caption text-text-muted" data-testid="acceptance-record-missing">
+        {translate(messages, 'quotations.acceptance.notRecorded')}
+      </p>
+    );
+  }
+  const customer =
+    record.customerPartnerId === null
+      ? null
+      : record.customerPartnerId === payerRef && payerName !== null
+        ? payerName
+        : translate(messages, 'quotations.acceptance.customerUnnamed');
+  const recorder =
+    record.recordedBy.displayName ??
+    translate(
+      messages,
+      record.recordedByCaller
+        ? 'quotations.acceptance.recordedByYou'
+        : 'quotations.acceptance.recordedBySomeone'
+    );
+  return (
+    <section
+      aria-labelledby="quotation-acceptance-heading"
+      className="flex flex-col gap-2 rounded-md border border-border p-3"
+      data-testid="acceptance-record"
+    >
+      <h3 id="quotation-acceptance-heading" className="text-body font-medium text-text-primary">
+        {translate(messages, 'quotations.acceptance.heading')}
+      </h3>
+      <p className="text-caption text-text-muted">
+        {translate(messages, 'quotations.acceptance.explain')}
+      </p>
+      <dl className="grid gap-3 sm:grid-cols-3">
+        <Figure label={translate(messages, 'quotations.acceptance.acceptedAt')}>
+          <When value={record.acceptedAt} locale={locale} />
+        </Figure>
+        <Figure label={translate(messages, 'quotations.acceptance.customer')}>
+          {customer === null ? (
+            <span className="text-text-muted">
+              {translate(messages, 'quotations.acceptance.customerNotAttributed')}
+            </span>
+          ) : (
+            <bdi>{customer}</bdi>
+          )}
+        </Figure>
+        <Figure label={translate(messages, 'quotations.acceptance.contact')}>
+          {record.contactName === null && record.contactPhone === null ? (
+            <span className="text-text-muted">
+              {translate(messages, 'quotations.acceptance.contactNotGiven')}
+            </span>
+          ) : (
+            <>
+              {record.contactName !== null ? <bdi>{record.contactName}</bdi> : null}
+              {record.contactPhone !== null ? (
+                <span className="block font-mono" dir="ltr">
+                  {record.contactPhone}
+                </span>
+              ) : null}
+            </>
+          )}
+        </Figure>
+        <Figure label={translate(messages, 'quotations.acceptance.channel')}>
+          {translateDynamic(messages, `quotations.channel.${record.channel}`)}
+        </Figure>
+        <Figure label={translate(messages, 'quotations.acceptance.recordedBy')}>
+          <bdi>{recorder}</bdi>
+        </Figure>
+        <Figure label={translate(messages, 'quotations.acceptance.reference')}>
+          {record.evidenceKind === null ? (
+            <span className="text-text-muted">
+              {translate(messages, 'quotations.acceptance.referenceNone')}
+            </span>
+          ) : (
+            <>
+              {translateDynamic(messages, `quotations.evidenceKind.${record.evidenceKind}`)}
+              {record.referenceNote !== null ? (
+                <>
+                  {': '}
+                  <bdi>{record.referenceNote}</bdi>
+                </>
+              ) : null}
+            </>
+          )}
+        </Figure>
+        {record.documentVersionId !== null ? (
+          <Figure label={translate(messages, 'quotations.acceptance.document')} wide>
+            <code className="font-mono" dir="ltr">
+              {record.documentVersionId}
+            </code>
+          </Figure>
+        ) : null}
+      </dl>
+    </section>
+  );
+}
+
+/** `ck_acceptance_records_contact_phone`, mirrored: what the server stores. */
+const STORED_CONTACT_PHONE = /^\+?[0-9]{3,20}$/;
+
+/**
+ * Whether a typed telephone number is one the server will keep: no longer than
+ * the route accepts, and 3 to 20 digits once normalised the way the server
+ * normalises it (Arabic-Indic digits folded, other characters dropped).
+ */
+function acceptablePhone(value: string): boolean {
+  if (value.length > MAX_CONTACT_PHONE_INPUT) return false;
+  const normalized = normalizePhoneDigits(value);
+  return normalized !== null && STORED_CONTACT_PHONE.test(normalized);
+}
+
 function DecisionForm({
   messages,
   quotation,
@@ -806,6 +967,17 @@ function DecisionForm({
   const [evidenceKind, setEvidenceKind] = useState<string>('');
   const [note, setNote] = useState('');
   const [documentVersionId, setDocumentVersionId] = useState('');
+  /*
+   * Who spoke for the customer (ADR-023 D11). Typed, because the customer
+   * record holds contact channels rather than people; both optional. Offered on
+   * an approval only — the server keeps them on the acceptance record when this
+   * decision completes the acceptance, and refuses them on a rejection. A value
+   * typed before the decision changed stays in its box, but only an approval
+   * sends it.
+   */
+  const [contactName, setContactName] = useState('');
+  const [contactPhone, setContactPhone] = useState('');
+  const approving = decision === 'approved';
   // Question f: the cursor goes to the first thing to fix, and a complaint is
   // withdrawn once its field changes (route sweep B3).
   const {
@@ -818,6 +990,8 @@ function DecisionForm({
     evidenceKind,
     documentVersionId,
     referenceNote: note,
+    contactName,
+    contactPhone,
   });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
@@ -832,13 +1006,17 @@ function DecisionForm({
     setEvidenceKind('');
     setNote('');
     setDocumentVersionId('');
+    setContactName('');
+    setContactPhone('');
   };
   useUnsavedGuard(
     decision !== '' ||
       channel !== '' ||
       evidenceKind !== '' ||
       note.trim().length > 0 ||
-      documentVersionId.trim().length > 0,
+      documentVersionId.trim().length > 0 ||
+      contactName.trim().length > 0 ||
+      contactPhone.trim().length > 0,
     () => {
       reset();
       setOutcome(null);
@@ -870,6 +1048,17 @@ function DecisionForm({
       found['documentVersionId'] = 'quotations.decide.documentOnlyForDocument';
     if (referenceNote.length > MAX_REFERENCE_NOTE)
       found['referenceNote'] = 'quotations.decide.noteTooLong';
+    // A note travels with its evidence; one typed with no kind was silently
+    // dropped before, which would leave an acceptance without the reference the
+    // operator gave.
+    if (!kind && referenceNote.length > 0) found['evidenceKind'] = 'quotations.decide.kindForNote';
+    const name = approving ? contactName.trim() : '';
+    const phone = approving ? contactPhone.trim() : '';
+    if (name.length > MAX_CONTACT_NAME)
+      found['contactName'] = 'quotations.decide.contactNameTooLong';
+    if (phone.length > 0 && !acceptablePhone(phone)) {
+      found['contactPhone'] = 'quotations.decide.contactPhoneInvalid';
+    }
     localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
@@ -885,6 +1074,8 @@ function DecisionForm({
       channel: channel as (typeof DECISION_CHANNELS)[number],
       ...(partyId ? { decidingPartyRef: partyId } : {}),
       ...(evidence ? { evidence } : {}),
+      ...(name ? { contactName: name } : {}),
+      ...(phone ? { contactPhone: phone } : {}),
       presentedRevisionId: revision.id,
     };
     setBusy(true);
@@ -984,6 +1175,31 @@ function DecisionForm({
           {translate(messages, 'quotations.decide.noPayer')}
         </p>
       )}
+      {approving ? (
+        <>
+          <FormTextField
+            label={translate(messages, 'quotations.decide.contactName')}
+            description={translate(messages, 'quotations.decide.contactNameHelp')}
+            autoComplete="off"
+            value={contactName}
+            onChange={setContactName}
+            error={errorFor('contactName')}
+            testId="quotation-decide-contact-name"
+          />
+          <FormTextField
+            label={translate(messages, 'quotations.decide.contactPhone')}
+            description={translate(messages, 'quotations.decide.contactPhoneHelp')}
+            autoComplete="off"
+            type="tel"
+            inputMode="tel"
+            dir="ltr"
+            value={contactPhone}
+            onChange={setContactPhone}
+            error={errorFor('contactPhone')}
+            testId="quotation-decide-contact-phone"
+          />
+        </>
+      ) : null}
       <FormSelectField
         label={translate(messages, 'quotations.decide.evidenceKind')}
         value={evidenceKind}

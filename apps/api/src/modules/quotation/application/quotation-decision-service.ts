@@ -42,17 +42,23 @@ import { AppFailure } from '@/server/errors/app-failure';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
+import { iamDirectory } from '@/modules/iam';
 import { sharedServicesModule } from '@/modules/shared-services';
+import { normalizePhoneDigits } from '@/shared/text/normalization';
 import {
+  AcceptanceContactError,
   DECISION_CHANNELS,
   DECISIONS,
   EVIDENCE_KINDS,
   QuotationRuleError,
   assertEvidenceShape,
   hasExpired,
+  normalizeAcceptanceContact,
   rollUpDecisions,
+  type AcceptanceContact,
 } from '../domain/quotation';
 import type {
+  AcceptanceRecordRow,
   DecisionRow,
   ItemRow,
   QuotationRepository,
@@ -76,8 +82,65 @@ export interface DecideInput {
    */
   readonly decidingPartyRef?: string | undefined;
   readonly evidence?: EvidenceInput | undefined;
+  /**
+   * Who spoke for the customer, when the decision completes an acceptance
+   * (ADR-023 D11). A typed name and telephone number: the CRM model records a
+   * customer's contact channels, not the people who speak for it. Both optional,
+   * and refused on a rejection. Kept on the acceptance record only.
+   */
+  readonly contactName?: string | undefined;
+  readonly contactPhone?: string | undefined;
   /** The revision the caller believes it is deciding. Refused if it has moved on. */
   readonly presentedRevisionId: string;
+}
+
+/**
+ * What the decision that completes an acceptance carries into the acceptance
+ * record: the deciding party as validated, the contact, the channel and the
+ * evidence as given. The recorder and the time are the session's own.
+ */
+interface AcceptanceDetails {
+  readonly customerPartnerId: string | null;
+  readonly contact: AcceptanceContact;
+  readonly channel: string;
+  readonly evidenceKind: string | null;
+  readonly referenceNote: string | null;
+  readonly evidenceDocumentVersionId: string | null;
+}
+
+/** A person named on an acceptance record. `displayName` is `null` for a caller who may not read users. */
+export interface AcceptanceRecorderView {
+  readonly id: string;
+  readonly displayName: string | null;
+}
+
+/**
+ * The acceptance record of an accepted revision (P1-32-PRE-OD-FD11, ADR-023 D11).
+ *
+ * Who accepted (the payer, when the employee said the payer decided, and the
+ * contact who spoke for them), how (`channel`), when (`acceptedAt`, the
+ * database's time), who recorded it (`recordedBy`, the signed-in employee) and on
+ * what reference or evidence. It is a record of what the employee was told and
+ * did, not an electronic signature. Every optional part is `null` when it was not
+ * given — nothing is filled in.
+ *
+ * `recordedBy.displayName` is resolved through the identity directory, which
+ * names nobody to a caller who may not read users; `recordedByCaller` still lets
+ * that caller see the record was their own.
+ */
+export interface AcceptanceRecordView {
+  readonly id: string;
+  readonly quotationRevisionId: string;
+  readonly customerPartnerId: string | null;
+  readonly contactName: string | null;
+  readonly contactPhone: string | null;
+  readonly channel: string;
+  readonly evidenceKind: string | null;
+  readonly referenceNote: string | null;
+  readonly documentVersionId: string | null;
+  readonly acceptedAt: string;
+  readonly recordedBy: AcceptanceRecorderView;
+  readonly recordedByCaller: boolean;
 }
 
 export interface DecisionView {
@@ -156,6 +219,12 @@ export interface RevisionDecisionAuditView {
   readonly decidedCount: number;
   readonly outcome: 'accepted' | 'rejected' | null;
   readonly decisions: readonly DecisionAuditView[];
+  /**
+   * The revision's acceptance record, or `null`. `null` beside `outcome:
+   * 'accepted'` is a revision accepted before acceptance records existed — it is
+   * not backfilled, because who spoke for the customer was never captured.
+   */
+  readonly acceptance: AcceptanceRecordView | null;
 }
 
 export class QuotationDecisionService {
@@ -203,6 +272,8 @@ export class QuotationDecisionService {
 
     const rows = await this.repository.listDecisionsForRevision(db, revision.id);
     const tally = await this.repository.tallyDecisions(db, revision.id);
+    const record = await this.repository.findAcceptanceRecordForRevision(db, revision.id);
+    const acceptance = record === null ? null : await this.describeAcceptance(db, record);
     return {
       quotationId: revision.quotationId,
       revisionId: revision.id,
@@ -228,6 +299,32 @@ export class QuotationDecisionService {
           recordedAt: piece.recordedAt.toISOString(),
         })),
       })),
+      acceptance,
+    };
+  }
+
+  /** Renders an acceptance record for the wire, naming the recorder where the caller may. */
+  private async describeAcceptance(
+    db: DbHandle,
+    record: AcceptanceRecordRow
+  ): Promise<AcceptanceRecordView> {
+    const names = await iamDirectory().directory.resolveDisplayIdentities(db, [record.recordedBy]);
+    return {
+      id: record.id,
+      quotationRevisionId: record.quotationRevisionId,
+      customerPartnerId: record.customerPartnerId,
+      contactName: record.contactName,
+      contactPhone: record.contactPhone,
+      channel: record.channel,
+      evidenceKind: record.evidenceKind,
+      referenceNote: record.referenceNote,
+      documentVersionId: record.evidenceDocumentVersionId,
+      acceptedAt: record.acceptedAt.toISOString(),
+      recordedBy: {
+        id: record.recordedBy,
+        displayName: names.get(record.recordedBy)?.displayName ?? null,
+      },
+      recordedByCaller: record.recordedBy === db.context.principal.userId,
     };
   }
 
@@ -244,6 +341,7 @@ export class QuotationDecisionService {
     authorizeScope: ScopeAuthorizer
   ): Promise<DecisionView> {
     this.assertVocabulary(input);
+    const contact = this.acceptanceContact(input);
 
     const item = await this.repository.findItem(db, itemId);
     if (item === null) {
@@ -296,7 +394,7 @@ export class QuotationDecisionService {
 
     await this.auditDecision(db, quotation, locked, item, input, decisionId, evidence?.id ?? null);
     await this.publishItemDecided(db, quotation, locked, item, input.decision, decisionId);
-    await this.rollUp(db, quotation, locked);
+    await this.rollUp(db, quotation, locked, this.acceptanceDetails(input, contact, evidenceRef));
 
     const stored = await this.repository.findDecisionForItem(db, item.id);
     if (stored === null) {
@@ -335,6 +433,7 @@ export class QuotationDecisionService {
     authorizeScope: ScopeAuthorizer
   ): Promise<RevisionDecisionView> {
     this.assertVocabulary(input);
+    const contact = this.acceptanceContact(input);
 
     const revision = await this.repository.findRevision(db, revisionId);
     if (revision === null) {
@@ -439,7 +538,12 @@ export class QuotationDecisionService {
       ],
     });
 
-    const outcome = await this.rollUp(db, quotation, locked);
+    const outcome = await this.rollUp(
+      db,
+      quotation,
+      locked,
+      this.acceptanceDetails(input, contact, evidenceRef)
+    );
     return {
       quotationId: quotation.id,
       revisionId: locked.id,
@@ -477,6 +581,46 @@ export class QuotationDecisionService {
         });
       }
     }
+  }
+
+  /**
+   * The contact of an acceptance, normalised, or a field refusal naming the box.
+   * Checked before anything is written, so a bad telephone number never leaves a
+   * half-recorded decision behind.
+   */
+  private acceptanceContact(input: DecideInput): AcceptanceContact {
+    try {
+      return normalizeAcceptanceContact(
+        input.decision,
+        { contactName: input.contactName, contactPhone: input.contactPhone },
+        normalizePhoneDigits
+      );
+    } catch (cause) {
+      if (cause instanceof AcceptanceContactError) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: cause.message,
+          safeDetails: { violations: [{ path: `body.${cause.field}`, rule: cause.rule }] },
+        });
+      }
+      throw cause;
+    }
+  }
+
+  /** What an acceptance completed by this decision records, all of it as given. */
+  private acceptanceDetails(
+    input: DecideInput,
+    contact: AcceptanceContact,
+    evidenceRef: string | null
+  ): AcceptanceDetails {
+    return {
+      // `assertParty` has already refused any party that is not the payer.
+      customerPartnerId: input.decidingPartyRef ?? null,
+      contact,
+      channel: input.channel,
+      evidenceKind: input.evidence?.evidenceKind ?? null,
+      referenceNote: input.evidence?.referenceNote ?? null,
+      evidenceDocumentVersionId: evidenceRef,
+    };
   }
 
   private async lockAndAuthorize(
@@ -703,7 +847,8 @@ export class QuotationDecisionService {
   private async rollUp(
     db: DbHandle,
     quotation: QuotationRow,
-    revision: RevisionRow
+    revision: RevisionRow,
+    acceptance: AcceptanceDetails
   ): Promise<string | null> {
     const tally = await this.repository.tallyDecisions(db, revision.id);
     const outcome = rollUpDecisions(tally);
@@ -740,6 +885,31 @@ export class QuotationDecisionService {
       await this.repository.updateRevisionStatus(db, revision.id, 'rejected');
     }
 
+    /**
+     * The acceptance record (ADR-023 D11), written exactly once: only on the
+     * transition INTO `accepted` — a replay finds the quotation already accepted
+     * and returns above — and `uq_acceptance_records_revision` refuses a second
+     * row for the revision in any case. Same transaction as the decision, so an
+     * acceptance without its record, or a record without its acceptance, cannot
+     * be committed.
+     */
+    const record =
+      outcome === 'accepted'
+        ? await this.repository.insertAcceptanceRecord(db, {
+            companyId: quotation.companyId,
+            branchId: quotation.branchId,
+            quotationId: quotation.id,
+            quotationRevisionId: revision.id,
+            customerPartnerId: acceptance.customerPartnerId,
+            contactName: acceptance.contact.contactName,
+            contactPhone: acceptance.contact.contactPhone,
+            channel: acceptance.channel,
+            evidenceKind: acceptance.evidenceKind,
+            referenceNote: acceptance.referenceNote,
+            evidenceDocumentVersionId: acceptance.evidenceDocumentVersionId,
+          })
+        : null;
+
     await appendAudit(db, {
       action: outcome === 'accepted' ? 'quo.quotation.accepted' : 'quo.quotation.rejected',
       entityType: 'quo.quotation',
@@ -755,6 +925,17 @@ export class QuotationDecisionService {
           value: outcome,
         },
         { field: 'itemCount', classification: 'public', value: String(tally.itemCount) },
+        // Which record states the acceptance — never its contents: the contact is
+        // personal data and stays on the record, behind the record's own read.
+        ...(record === null
+          ? []
+          : [
+              {
+                field: 'acceptanceRecordId',
+                classification: 'internal' as const,
+                value: record.id,
+              },
+            ]),
       ],
     });
 

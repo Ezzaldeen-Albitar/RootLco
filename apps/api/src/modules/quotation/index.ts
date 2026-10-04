@@ -57,6 +57,7 @@ export {
 import { DiscountApprovalService } from './application/discount-approval-service';
 
 export type {
+  AcceptanceRecordRow,
   DecisionRow,
   DecisionTally,
   DiscountApprovalRow,
@@ -79,6 +80,8 @@ export type {
 } from './application/quotation-service';
 
 export type {
+  AcceptanceRecordView,
+  AcceptanceRecorderView,
   DecideInput,
   DecisionAuditView,
   DecisionView,
@@ -89,10 +92,13 @@ export type {
 } from './application/quotation-decision-service';
 
 export {
+  AcceptanceContactError,
   DECISIONS,
   DECISION_CHANNELS,
   EVIDENCE_KINDS,
   ITEM_KINDS,
+  MAX_CONTACT_NAME,
+  MAX_CONTACT_PHONE_INPUT,
   MAX_ITEMS_PER_REVISION,
   MAX_ITEM_DESCRIPTION,
   MAX_REFERENCE_NOTE,
@@ -105,7 +111,9 @@ export {
   assertRevisionEditable,
   hasExpired,
   isTerminalRevision,
+  normalizeAcceptanceContact,
   rollUpDecisions,
+  type AcceptanceContact,
   type Decision,
   type DecisionChannel,
   type EvidenceKind,

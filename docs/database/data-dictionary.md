@@ -4005,6 +4005,42 @@ Generated from the live catalog (svc / quo / inv). Money is `numeric(18,4)`; qua
 
 ### Quotation & Approvals (`quo`)
 
+#### quo.acceptance_records
+
+P1-32-PRE-OD-FD11 (ADR-023 D11). One append-only row per ACCEPTED quotation revision
+(`uq_acceptance_records_revision`), written only by the decision that completes the acceptance,
+in its transaction. `customer_partner_id` is the quotation's payer when the employee said the
+payer decided, otherwise null. `contact_name` and `contact_phone` are typed — the CRM model holds
+contact channels, not contact persons — and either may be null; `contact_phone` is normalised (an
+optional leading `+` and 3 to 20 ASCII digits). `channel`, `evidence_kind`, `reference_note` and
+`evidence_document_version_id` are those of the completing decision, null when none was given.
+`quo.guard_acceptance_record` stamps `recorded_by`, `created_by`, `accepted_at` and `created_at`
+from the session, refuses a row for anything but the accepted current revision of its quotation
+or naming a customer other than the payer, and refuses every UPDATE; `ins_acceptance_records_scope`
+also pins `recorded_by` to the signed-in user. SELECT and INSERT only for `app_runtime`. Revisions
+accepted before this table existed have no row and are not backfilled. Not an electronic
+signature.
+
+| #   | Column                         | Type                     | Nullable |
+| --- | ------------------------------ | ------------------------ | -------- |
+| 1   | `id`                           | uuid                     | no       |
+| 2   | `tenant_id`                    | uuid                     | no       |
+| 3   | `company_id`                   | uuid                     | no       |
+| 4   | `branch_id`                    | uuid                     | no       |
+| 5   | `quotation_id`                 | uuid                     | no       |
+| 6   | `quotation_revision_id`        | uuid                     | no       |
+| 7   | `customer_partner_id`          | uuid                     | yes      |
+| 8   | `contact_name`                 | text                     | yes      |
+| 9   | `contact_phone`                | text                     | yes      |
+| 10  | `channel`                      | text                     | no       |
+| 11  | `evidence_kind`                | text                     | yes      |
+| 12  | `reference_note`               | text                     | yes      |
+| 13  | `evidence_document_version_id` | uuid                     | yes      |
+| 14  | `accepted_at`                  | timestamp with time zone | no       |
+| 15  | `recorded_by`                  | uuid                     | no       |
+| 16  | `created_at`                   | timestamp with time zone | no       |
+| 17  | `created_by`                   | uuid                     | no       |
+
 #### quo.approval_decisions
 
 | #   | Column                  | Type                     | Nullable |

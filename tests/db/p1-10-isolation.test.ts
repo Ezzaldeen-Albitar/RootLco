@@ -57,7 +57,9 @@ describe('p1-10 tenant isolation', () => {
     // iam.current_tenant_id() in the predicate.
     // 53 with the discount approval record (P1-32-PRE-OD-DISC-01):
     // quo.discount_approvals, held to the same rule.
-    expect(tables.length).toBe(53);
+    // 54 with the acceptance record (P1-32-PRE-OD-FD11, ADR-023 D11):
+    // quo.acceptance_records, held to the same rule.
+    expect(tables.length).toBe(54);
     for (const t of tables) {
       const fq = `${t.table_schema}.${t.table_name}`;
       const pol = (
