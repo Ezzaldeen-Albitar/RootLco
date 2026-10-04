@@ -453,6 +453,13 @@ function SignatureRow({
 }) {
   const [reason, setReason] = useState('');
   const [showRepudiate, setShowRepudiate] = useState(false);
+  // A typed repudiation reason is unsaved work, like the capture form above
+  // and the media step's waiver reason: leaving the page, switching branch or
+  // changing step asks first, and a confirmed discard closes the form empty.
+  useUnsavedGuard(showRepudiate && reason !== '', () => {
+    setReason('');
+    setShowRepudiate(false);
+  });
   const [pending, startTransition] = useTransition();
 
   const accepted = entry.documentVersionStatus === ACCEPTED_VERSION_STATUS;

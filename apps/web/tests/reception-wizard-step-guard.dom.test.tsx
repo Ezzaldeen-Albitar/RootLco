@@ -9,7 +9,11 @@ import type {
   CheckInStepDefinition,
   CheckInStepProps,
 } from '@/features/receptions/check-in/wizard';
-import type { CaptureContract, ReceptionDetail } from '@/features/receptions/receptions-contract';
+import type {
+  CaptureContract,
+  ReceptionDetail,
+  SignatureEntry,
+} from '@/features/receptions/receptions-contract';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 
 /**
@@ -20,7 +24,12 @@ import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvid
  * drive the shell through every way the step changes — a numbered button, and
  * a step sending the operator on through `goToStep` — with work declared
  * through the same `useUnsavedGuard` every capture form uses, and once with
- * the real complaint form, the one the browser checkpoint lost words from.
+ * the real complaint form, the one the browser checkpoint lost words from,
+ * the media step's waiver reason and the signature step's repudiation reason.
+ *
+ * Known limitation, recorded rather than guarded: a CHOSEN file (the media
+ * capture form, the signature capture form) is not typed input and is not
+ * declared as unsaved work, so a step change drops it without asking.
  */
 
 const EN = en as Record<string, string>;
@@ -31,7 +40,13 @@ const recordConditionEvidence = vi.fn();
 const listConditionEvidence = vi.fn();
 const readCaptureContract = vi.fn();
 const overrideCaptureRequirement = vi.fn();
+const listPartyRoles = vi.fn();
+const readSignatures = vi.fn();
+const recordSignatureEvent = vi.fn();
 vi.mock('@/features/receptions/api', () => ({
+  listPartyRoles: (...args: unknown[]) => listPartyRoles(...args),
+  readSignatures: (...args: unknown[]) => readSignatures(...args),
+  recordSignatureEvent: (...args: unknown[]) => recordSignatureEvent(...args),
   readReception: (...args: unknown[]) => readReception(...args),
   recordConditionEvidence: (...args: unknown[]) => recordConditionEvidence(...args),
   listConditionEvidence: (...args: unknown[]) => listConditionEvidence(...args),
@@ -42,6 +57,10 @@ vi.mock('@/features/receptions/api', () => ({
 vi.mock('@/features/receptions/evidence-capture', () => ({
   captureRequirementEvidence: vi.fn(),
   finalizeCapturedEvidence: vi.fn(),
+}));
+// The signature step's capture action.
+vi.mock('@/features/receptions/signature-capture', () => ({
+  captureSignatureEvidence: vi.fn(),
 }));
 vi.mock('@/features/receptions/support-api', () => ({
   readUserIdentity: vi.fn(),
@@ -54,6 +73,28 @@ vi.mock('@/lib/customers/directory-read', () => ({
 const { CheckInWizardShell } = await import('@/features/receptions/components/CheckInWizardShell');
 const { ComplaintsStep } = await import('@/features/receptions/components/steps/ComplaintsStep');
 const { MediaStep } = await import('@/features/receptions/components/steps/MediaStep');
+const { SignatureStep } = await import('@/features/receptions/components/steps/SignatureStep');
+
+/** A signature already made final on an accepted version, so it may be repudiated. */
+const FINALIZED: SignatureEntry = {
+  id: 'sig-1',
+  signerRole: 'vehicle_owner',
+  signerPartnerId: 'partner-1',
+  captureMethod: 'uploaded',
+  purpose: 'custody_acceptance',
+  documentId: 'doc-1',
+  documentVersionId: 'ver-1',
+  documentVersionStatus: 'accepted',
+  integritySha256: null,
+  signedAt: '2026-08-13T08:15:00.000Z',
+  actorId: 'user-1',
+  replacesSignatureId: null,
+  replacedBySignatureId: null,
+  finalizedAt: '2026-08-13T08:20:00.000Z',
+  repudiatedAt: null,
+  repudiationReason: null,
+  status: 'finalized',
+};
 
 /** One requirement nothing has evidenced yet, so its waiver form is offered. */
 const UNMET_VIN: CaptureContract = {
@@ -351,6 +392,66 @@ describe('the check-in wizard asks before a step change discards typed work', ()
       screen.getByRole('textbox', { name: EN['receptions.capture.overrideReason']! })
     ).toHaveValue('The bay is flooded');
     expect(overrideCaptureRequirement).not.toHaveBeenCalled();
+  });
+
+  it('treats a typed repudiation reason in the signature step as unsaved work', async () => {
+    listPartyRoles.mockResolvedValue({
+      status: 'ok',
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-parties',
+    });
+    readSignatures.mockResolvedValue({
+      status: 'ok',
+      data: { receptionVisitId: 'rv-1', signatures: [FINALIZED] },
+      correlationId: 'corr-sig',
+    });
+    const user = userEvent.setup();
+    renderShell([
+      {
+        id: 'signature',
+        titleKey: 'receptions.steps.signature.title',
+        descriptionKey: 'receptions.steps.signature.description',
+        Component: SignatureStep,
+      },
+      STEPS[1]!,
+    ]);
+    const reasonBox = () =>
+      screen.getByRole('textbox', { name: EN['receptions.signature.repudiateReason']! });
+
+    await user.click(await screen.findByTestId('signature-repudiate-open-sig-1'));
+    // An opened, empty repudiation form holds nothing to lose.
+    await user.click(stepButton(2, 'receptions.steps.readings.title'));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    await user.click(stepButton(1, 'receptions.steps.signature.title'));
+
+    await user.click(await screen.findByTestId('signature-repudiate-open-sig-1'));
+    await user.type(reasonBox(), 'Signed by the wrong party');
+    await user.click(stepButton(2, 'receptions.steps.readings.title'));
+
+    // Stay keeps the reason, the step and the open form.
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', {
+        name: EN['receptions.wizard.discard.stay']!,
+      })
+    );
+    expect(screen.queryByText('second step body')).not.toBeInTheDocument();
+    expect(reasonBox()).toHaveValue('Signed by the wrong party');
+
+    // Discard moves on, and the step comes back with the form closed and empty.
+    await user.click(stepButton(2, 'receptions.steps.readings.title'));
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', {
+        name: EN['receptions.wizard.discard.confirm']!,
+      })
+    );
+    expect(screen.getByText('second step body')).toBeInTheDocument();
+    await user.click(stepButton(1, 'receptions.steps.signature.title'));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    await user.click(await screen.findByTestId('signature-repudiate-open-sig-1'));
+    expect(reasonBox()).toHaveValue('');
+    expect(recordSignatureEvent).not.toHaveBeenCalled();
   });
 
   it('asks in Arabic, right to left, from the same catalogue', async () => {
