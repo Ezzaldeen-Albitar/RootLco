@@ -160,7 +160,7 @@ export const CANDIDATE_MODULES = Object.freeze([
   },
 ]);
 
-export const MODULE_KEYS = Object.freeze(CANDIDATE_MODULES.map((module) => module.key));
+export const MODULE_KEYS = Object.freeze(CANDIDATE_MODULES.map((candidate) => candidate.key));
 
 /** Core: never a flag (R3). */
 export const CORE = 'core';
@@ -204,14 +204,14 @@ function longestPrefix(text, pairs) {
 
 const CODE_PAIRS = [
   ...CORE_PREFIXES.map((prefix) => [prefix, CORE]),
-  ...CANDIDATE_MODULES.flatMap((module) =>
-    module.codePrefixes.map((prefix) => [prefix, module.key])
+  ...CANDIDATE_MODULES.flatMap((candidate) =>
+    candidate.codePrefixes.map((prefix) => [prefix, candidate.key])
   ),
 ];
 const AUDIT_PAIRS = [
   ...CORE_PREFIXES.map((prefix) => [prefix, CORE]),
-  ...CANDIDATE_MODULES.flatMap((module) =>
-    module.auditPrefixes.map((prefix) => [prefix, module.key])
+  ...CANDIDATE_MODULES.flatMap((candidate) =>
+    candidate.auditPrefixes.map((prefix) => [prefix, candidate.key])
   ),
 ];
 
@@ -231,13 +231,15 @@ export function classifyAuditAction(action) {
  * that live inside the reception API module are told apart.
  */
 export function classifyOperation(operation) {
-  for (const module of CANDIDATE_MODULES) {
-    for (const prefix of module.operationIdPrefixes ?? []) {
-      if (operation.id.startsWith(prefix)) return module.key;
+  for (const candidate of CANDIDATE_MODULES) {
+    for (const prefix of candidate.operationIdPrefixes ?? []) {
+      if (operation.id.startsWith(prefix)) return candidate.key;
     }
   }
   if (CORE_API_MODULES.includes(operation.module)) return CORE;
-  const owner = CANDIDATE_MODULES.find((module) => module.apiModules.includes(operation.module));
+  const owner = CANDIDATE_MODULES.find((candidate) =>
+    candidate.apiModules.includes(operation.module)
+  );
   return owner ? owner.key : null;
 }
 

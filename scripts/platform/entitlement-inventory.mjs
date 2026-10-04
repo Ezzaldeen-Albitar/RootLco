@@ -130,7 +130,7 @@ export const SNAPSHOT_TABLES = Object.freeze([
   'iam.platform_grants',
   'iam.audit_records',
   'iam.security_events',
-  ...CANDIDATE_MODULES.flatMap((module) => module.mainTables),
+  ...CANDIDATE_MODULES.flatMap((candidate) => candidate.mainTables),
 ]);
 
 export class InventoryRefused extends Error {}
@@ -240,8 +240,8 @@ export function parseOperationsFromSource(source, file) {
         fields[name] = property.initializer;
       }
       const id = literalText(fields.id);
-      const module = literalText(fields.module);
-      if (id === null || module === null) {
+      const apiModule = literalText(fields.module);
+      if (id === null || apiModule === null) {
         throw new InventoryRefused(`${file}: defineOperation without a literal id and module`);
       }
       let permissions = [];
@@ -257,7 +257,7 @@ export function parseOperationsFromSource(source, file) {
       }
       const isPublic =
         fields.public !== undefined && fields.public.kind === ts.SyntaxKind.TrueKeyword;
-      operations.push({ id, module, permissions, public: isPublic, file });
+      operations.push({ id, module: apiModule, permissions, public: isPublic, file });
     }
     ts.forEachChild(node, visit);
   };
@@ -339,15 +339,15 @@ export async function readInventoryData(query, opening) {
   const tenantScoped = new Set(
     (await query(QUERIES.tenantScopedTables)).map((row) => row.qualified)
   );
-  const missing = CANDIDATE_MODULES.flatMap((module) => module.mainTables).filter(
+  const missing = CANDIDATE_MODULES.flatMap((candidate) => candidate.mainTables).filter(
     (table) => !tenantScoped.has(table)
   );
   if (missing.length > 0) {
     throw new InventoryRefused(`main tables without a tenant column: ${missing.join(', ')}`);
   }
   const rowCounts = {};
-  for (const module of CANDIDATE_MODULES) {
-    for (const table of module.mainTables) {
+  for (const candidate of CANDIDATE_MODULES) {
+    for (const table of candidate.mainTables) {
       rowCounts[table] = (await query(rowCountQuery(table))).map((row) => ({
         tenantId: row.tenant_id,
         n: Number(row.n),
@@ -426,25 +426,25 @@ export function computeInventory(data, operations, labels = {}) {
   const heldModules = new Map();
   for (const user of activeUsers) {
     for (const code of codesByUser.get(user.userId) ?? []) {
-      const module = classifyCode(code);
-      if (module !== CORE) addTo(heldModules, user.tenantId, module);
+      const candidate = classifyCode(code);
+      if (candidate !== CORE) addTo(heldModules, user.tenantId, candidate);
     }
   }
   const rowModules = new Map();
-  for (const module of CANDIDATE_MODULES) {
-    for (const table of module.mainTables) {
+  for (const candidate of CANDIDATE_MODULES) {
+    for (const table of candidate.mainTables) {
       for (const row of data.rowCounts[table] ?? []) {
-        if (row.n > 0) addTo(rowModules, row.tenantId, module.key);
+        if (row.n > 0) addTo(rowModules, row.tenantId, candidate.key);
       }
     }
   }
   const auditModules = new Map();
   const unmappedAudit = new Map();
   for (const row of data.auditActions) {
-    const module = classifyAuditAction(row.action);
-    if (module === null)
+    const candidate = classifyAuditAction(row.action);
+    if (candidate === null)
       unmappedAudit.set(row.action, (unmappedAudit.get(row.action) ?? 0) + row.n);
-    else if (module !== CORE) addTo(auditModules, row.tenantId, module);
+    else if (candidate !== CORE) addTo(auditModules, row.tenantId, candidate);
   }
 
   const entitlements = proposeEntitlements({ tenants, heldModules, rowModules, auditModules });
