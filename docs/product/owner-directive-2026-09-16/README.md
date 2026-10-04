@@ -302,15 +302,44 @@ been demonstrated.
 evidence. A `change-control.md` row owns its disposition, names the C-id and does not restate the
 evidence. Where an earlier finding already records a coupling, it stays the record and no new row
 is opened: PPD-01 and ADR-023 D6 for C-08, PPD-03 for C-17 (`docs/product/README.md:272,274`).
-ADR-023 owns the D1 to D17 decision text and implementation state (`:197-214`), and other records
-cite it by line. The delivery matrix owns verification state. The accounting section owns the split
+ADR-023 owns the D1 to D17 decision text and implementation state (its mapping table, "Mapping:
+decision → today → what is missing → tests → pull request", `:270-288` at develop `02a0462c`; the
+line range `:197-214` cited here earlier is where that table stood at `ec91239b`, before later
+additions to ADR-023 moved it), and other records cite it by line. The delivery matrix owns verification state. The accounting section owns the split
 between invariants, policy and configuration, and between independent and blocked. ADR-024 alone
 owns the module lifecycle definitions and the licence options; the assessment states only today's
 state and links to ADR-024.
 
+### Owner decisions of 2026-10-03
+
+Recorded 2026-10-04 at develop `02a0462c`, under task id P1-32-PRE-OD-LIC. Each line is the Owner's
+decision in substance and the pull request or record that delivered it. Evidence folders named here
+are outside the repository, under the coordinator's `orchestration/evidence/`.
+
+- **CI time limit (open decision 21).** The web-quality job limit is raised from 30 to 45 minutes
+  through one focused, reviewed pull request: delivered by #502. This is separate from the
+  clean-room limit raised from 60 to 90 minutes by #493. Slow tests keep being improved; no
+  unlimited retries and no extra concurrency are introduced.
+- **The `braces` advisory.** A local patched copy is used while upstream publishes no fix, with its
+  documented limitations and replacement condition: delivered by #501
+  (`docs/engineering/dependency-maintenance/ghsa-vfj7-8cjw-p6xm-braces/README.md`, sections 9 and
+  10; change-control row CC-OD-55).
+- **D12 extension.** Permission refusals on the four finance decisions are recorded: delivered by
+  #505 (ADR-023, "D12 extension (approved by the Owner 2026-10-03)"). Browser-tested at `5d3dcbec`
+  (evidence `owner-directive-2026-10-04-fxe-d12x-retest`).
+- **Finish fix PR D.** #500 is completed and merged; its signed-in retest at `c8940b1c` is the
+  evidence `owner-directive-2026-10-03-fxd-retest`. The failures that retest found were fixed by
+  fix PR E (#504) and passed at `5d3dcbec` (evidence `owner-directive-2026-10-04-fxe-d12x-retest`).
+- **One worker.** The work queue continues with one worker at a time.
+- **Module licensing method (open decision 7).** Recorded against decision 7 below and as the
+  2026-10-03 amendment in ADR-024.
+- **The two checkpoint findings (open decision 19).** Both are defects. Recorded against decision 19
+  below.
+
 ### Open Owner decisions raised by the 2026-10-01 records
 
-Listed so that each can be answered once. None is answered here.
+Listed so that each can be answered once. Where the Owner has answered, the answer is recorded
+against the question with its date; every other question is still open.
 
 1. **Package definitions.** Which modules are sold separately, and which package holds which? In
    particular, are appointments, diagnostics, quality control, warranty and reporting part of every
@@ -333,6 +362,19 @@ Listed so that each can be answered once. None is answered here.
 7. **Existing organisations.** When module entitlements are switched on, should every existing
    organisation keep all the modules it uses today until its plan is explicitly changed? This is
    ADR-024's default-on proposal.
+
+   **Method decided by the Owner, 2026-10-03; the question is otherwise still open.** Do not grant
+   every company every module, and do not assign packages silently. Before anything is enforced,
+   inventory what each existing company actually uses and depends on, and prepare a reviewed,
+   explicit mapping from existing access to initial entitlements that proves no access is removed
+   and none is added. Rehearse it, make it idempotent, and test server enforcement and tenant
+   isolation. Any part of the mapping that depends on an open commercial question (package
+   composition and the other decisions in this list) stays pending, with a recommendation and its
+   consequence. This supersedes ADR-024's default-on proposal (ADR-024, "Owner decision
+   2026-10-03"). The inventory and the proposed mapping are in
+   [`docs/platform/module-entitlement-inventory-2026-10-04.md`](../../platform/module-entitlement-inventory-2026-10-04.md);
+   nothing in it is enforced or applied.
+
 8. **D13 transition (CC-OD-50).** Organisations provisioned earlier cannot approve credit notes after
    upgrade until the code is granted and a limit set, and the backfill covers only the named QA
    organisations. Should the backfill extend to every existing organisation, or stay limited with
@@ -365,13 +407,27 @@ Listed so that each can be answered once. None is answered here.
     approved first and values follow the costing answer? Who approves opening quantities and values?
 18. **QA identities.** The cross-tenant cases need a login for the second tenant, and the
     new-organisation case on the new interface needs a platform-operator identity. Will the Owner
-    provide both?
+    provide both? **Still open.** Until it is answered, the second-company cases of every browser
+    checkpoint remain NOT RUN for this reason, including the 2026-10-03 and 2026-10-04 finance
+    checkpoints.
 19. **Decisions flagged by the browser checkpoints.** The check-in wizard's step buttons discard
     typed input without asking (`78602752`), and a concern recorded with no severity is stored as
     "medium", a value the customer did not give (`78602752`). Should either change?
+
+    **Answered by the Owner in the continuation instruction of 2026-10-03: both are defects.**
+    Moving between check-in steps must not discard typed input without the unsaved-work
+    confirmation. A concern recorded with no severity must be stored as "not stated", instead of
+    being stored silently as "medium". Historical data is not rewritten. Neither fix is delivered at
+    the time of this record.
+
 20. **Email verification with the mail provider.** Stage 4 waits on the Owner's choice of recipient.
 21. **CI.** The web-quality job runs close to its 30-minute limit. Should the limit be raised, or the
     job split?
+
+    **Answered by the Owner, 2026-10-03.** The limit is raised from 30 to 45 minutes through one
+    focused, reviewed pull request, delivered by #502. This is separate from the clean-room limit
+    raised from 60 to 90 minutes by #493. Slow tests keep being improved; no unlimited retries and
+    no extra concurrency.
 
 ## Code-scanning result on `2c573a24`, consumed once (section 9)
 
