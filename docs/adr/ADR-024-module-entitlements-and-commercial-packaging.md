@@ -13,6 +13,10 @@ anywhere in this record.
 Nothing in this record is implemented. It does not claim that any package has been validated or
 that any module can be licensed separately today.
 
+Amended 2026-10-04: the Owner decided on 2026-10-03 how existing organisations receive their initial
+entitlements. That decision supersedes the default-on proposal below; it is recorded in "Owner
+decision 2026-10-03 (amendment)", and the status above is unchanged.
+
 ## Context
 
 The Owner directive of 2026-10-01 (recorded as OD-12 to OD-21 in
@@ -51,11 +55,12 @@ recommendation, and no price or term is proposed. Migration file names are under
 
 - Reuse the existing flag register, plan entitlements, tenant overrides and pipeline hook. No new
   entitlement store is introduced.
-- Register one flag per licensable module, with `default_enabled` set to true. The column defaults
-  to false (`20260717102000_org_subscriptions.sql:73`), and a module flag left at that default would
-  switch the module off for every tenant whose plan does not name it — a silent change on upgrade,
-  which directive section 2 forbids. Unfinished capabilities may be registered default-off and
-  released per tenant.
+- **Superseded on 2026-10-03 by the Owner's decision recorded below; the original proposal is kept
+  as written.** Register one flag per licensable module, with `default_enabled` set to true. The
+  column defaults to false (`20260717102000_org_subscriptions.sql:73`), and a module flag left at
+  that default would switch the module off for every tenant whose plan does not name it — a silent
+  change on upgrade, which directive section 2 forbids. Unfinished capabilities may be registered
+  default-off and released per tenant.
 - Enforce the entitlement on APIs, background jobs, reports and exports, not only in navigation.
 - Filter grants by entitlement: a tenant administrator cannot grant a code of a module that is not
   entitled, and buying a module grants no user anything by itself.
@@ -85,6 +90,36 @@ recommendation, and no price or term is proposed. Migration file names are under
 
 The questions themselves are listed once, under "Open Owner decisions raised by the 2026-10-01
 records" in the directive record.
+
+### Owner decision 2026-10-03 (amendment)
+
+Recorded 2026-10-04 under task id P1-32-PRE-OD-LIC. The Owner decided the METHOD by which existing
+organisations receive module entitlements. Package composition and the other commercial questions
+stay open. This record's status stays Proposed: the decision governs how the mechanism is introduced,
+and it does not accept the mechanism.
+
+The decision, in substance:
+
+- No company is given every module, and no package is assigned silently.
+- Before anything is enforced, what each existing company actually uses and depends on is
+  inventoried.
+- A reviewed, explicit mapping from existing access to initial entitlements is prepared. It must
+  prove that no access is removed and none is added.
+- The mapping is rehearsed, is idempotent, and server enforcement and tenant isolation are tested.
+- Any part of the mapping that depends on an open commercial question stays pending, with a
+  recommendation and its consequence.
+
+What it supersedes: the proposal above to register every module flag with `default_enabled` true,
+so that existing organisations keep every module by default. Under the decision, an existing
+organisation's initial entitlements are explicit rows per organisation and module, derived from the
+reviewed mapping, so the result depends neither on a flag default nor on a plan document. The
+column-default concern in "Alternatives Considered" still holds for any flag that is registered: a
+default must never switch a module off silently.
+
+The inventory, the proposed mapping rules and the measured proof are in the analysis
+[`docs/platform/module-entitlement-inventory-2026-10-04.md`](../platform/module-entitlement-inventory-2026-10-04.md).
+It enforces nothing and applies nothing, and its recommendations are not approvals. The decision is
+also recorded against open decision 7 in the directive record.
 
 ## Alternatives Considered
 
