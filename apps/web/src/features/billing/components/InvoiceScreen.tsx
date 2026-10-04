@@ -32,7 +32,6 @@ import {
   listInvoices,
   readInvoice,
   readInvoicePreview,
-  readOutstanding,
   readWorkOrderInvoice,
 } from '../api';
 import {
@@ -46,6 +45,7 @@ import {
   type WorkOrderInvoice,
 } from '../billing-contract';
 import { CreditNoteRequestForm } from './CreditNoteRequestForm';
+import { settlementOf, useOutstandingRead, type SettlementRead } from '../use-outstanding-read';
 import { InvoiceDocument, payerNameKey, type PayerName } from './InvoiceDocument';
 import {
   Figure,
@@ -1085,9 +1085,16 @@ function InvoicePanel({
 }) {
   const [detail, setDetail] = useState<ReadState<InvoiceDetail> | null>(null);
   const [attempt, setAttempt] = useState(0);
-  // The balance panel's own read, reported up so the credit form is offered
-  // only while money is still open — one read, not two.
-  const [balance, setBalance] = useState<Outstanding | null>(null);
+  // The balance, read once here for the three panels that need it — the balance
+  // panel, the credit form (offered only while money is still open) and the copy
+  // — through the cancellable route rather than a Server Action, so the payer
+  // lookup cannot hold it up (DX-2, finance QA fixes E).
+  const outstanding = useOutstandingRead(
+    invoice.id,
+    canViewFinance ? `${invoice.id}#${invoice.recordVersion}` : null
+  );
+  const balance =
+    outstanding.state !== null && outstanding.state.status === 'ok' ? outstanding.state.data : null;
   const { payer, retry: retryPayer } = usePayerName(invoice, workOrder, canViewFinance);
   useEffect(() => {
     let live = true;
@@ -1126,9 +1133,9 @@ function InvoicePanel({
       <OutstandingPanel
         locale={locale}
         messages={messages}
-        invoiceId={invoice.id}
         canViewFinance={canViewFinance}
-        onRead={setBalance}
+        state={outstanding.state}
+        onRetry={outstanding.retry}
         customer={payer}
       />
       <ActionsPanel
@@ -1173,7 +1180,10 @@ function InvoicePanel({
         payer={payer}
         onRetryPayer={retryPayer}
         canViewFinance={canViewFinance}
-        balance={balance}
+        // The balance panel reads for every status, and the copy prints what that
+        // read carries, exactly as before; what changed is that it waits for it.
+        settlement={settlementOf(outstanding.state, canViewFinance)}
+        onRetrySettlement={outstanding.retry}
       />
     </>
   );
@@ -1355,36 +1365,21 @@ function DetailPanel({
 function OutstandingPanel({
   locale,
   messages,
-  invoiceId,
   canViewFinance,
-  onRead,
+  state,
+  onRetry,
   customer = { kind: 'notShown' },
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly invoiceId: string;
   readonly canViewFinance: boolean;
-  /** The balance as read, or `null` when it could not be — never a guessed zero. */
-  readonly onRead?: (balance: Outstanding | null) => void;
+  /** The balance read the invoice panel made, `null` while it is out — never a guessed zero. */
+  readonly state: ReadState<Outstanding> | null;
+  /** Reads the balance again. */
+  readonly onRetry: () => void;
   /** Who the invoice bills, as the screen names them — for "Paid by … for …" (D14). */
   readonly customer?: PayerName;
 }) {
-  const [state, setState] = useState<ReadState<Outstanding> | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  useEffect(() => {
-    if (!canViewFinance) return;
-    let live = true;
-    void readOutstanding(invoiceId).then((next) => {
-      if (!live) return;
-      setState(next);
-      onRead?.(next.status === 'ok' ? next.data : null);
-    });
-    return () => {
-      live = false;
-    };
-    // `onRead` is the parent's state setter, so it is stable and never re-reads.
-  }, [invoiceId, canViewFinance, onRead, attempt]);
-
   return (
     <section
       aria-labelledby="invoice-outstanding-heading"
@@ -1405,10 +1400,7 @@ function OutstandingPanel({
           locale={locale}
           state={state}
           kind="outstanding"
-          onRetry={() => {
-            setState(null);
-            setAttempt((n) => n + 1);
-          }}
+          onRetry={onRetry}
         />
       ) : (
         <dl className="grid gap-3 sm:grid-cols-3">
@@ -1758,18 +1750,20 @@ function ActionsPanel({
  * the detail itself now names. The caller places it as its own direct child of a
  * `data-print-scope`, so paper carries the copy and not the working panels.
  *
- * `balance` is the counter's own balance read of the issued sale: the copy prints
- * it as its "settlement as of" section, exactly as a job's copy does (finance
- * checkpoint, DF-B1; it used to pass none, so the paper carried no paid, credited
- * or due figure). `initiallyOpen` opens the copy at once — the counter's way back
- * to an issued sale is a request to print it again (DF-B3).
+ * `settlement` is the counter's own balance read of the issued sale: the copy
+ * prints it as its "settlement as of" section, exactly as a job's copy does
+ * (finance checkpoint, DF-B1; it used to pass none, so the paper carried no paid,
+ * credited or due figure), and waits for it while it is being read (DX-2).
+ * `initiallyOpen` opens the copy at once — the counter's way back to an issued
+ * sale is a request to print it again (DF-B3).
  */
 export function CounterSalePrintPanel({
   locale,
   messages,
   detail,
   canViewFinance,
-  balance = null,
+  settlement = { kind: 'none' },
+  onRetrySettlement,
   initiallyOpen = false,
   payer: lifted,
 }: {
@@ -1777,8 +1771,10 @@ export function CounterSalePrintPanel({
   readonly messages: Messages;
   readonly detail: InvoiceDetail;
   readonly canViewFinance: boolean;
-  /** The sale's balance read, or `null` while it is unread or not the reader's to see. */
-  readonly balance?: Outstanding | null;
+  /** Where the sale's balance read stands; `none` for a draft or a reader who may not see money. */
+  readonly settlement?: SettlementRead;
+  /** Reads the balance again, after a read that was refused or did not answer in time. */
+  readonly onRetrySettlement?: () => void;
   readonly initiallyOpen?: boolean;
   /**
    * The buyer's name as the counter screen already looks it up (`usePayerName`),
@@ -1798,7 +1794,8 @@ export function CounterSalePrintPanel({
       payer={lookup.payer}
       onRetryPayer={lookup.retry}
       canViewFinance={canViewFinance}
-      balance={canViewFinance ? balance : null}
+      settlement={canViewFinance ? settlement : { kind: 'none' }}
+      {...(onRetrySettlement === undefined ? {} : { onRetrySettlement })}
       initiallyOpen={initiallyOpen}
     />
   );
@@ -1812,7 +1809,8 @@ function PrintPanel({
   payer,
   onRetryPayer,
   canViewFinance,
-  balance,
+  settlement,
+  onRetrySettlement,
   initiallyOpen = false,
 }: {
   readonly locale: Locale;
@@ -1824,10 +1822,13 @@ function PrintPanel({
   readonly onRetryPayer?: () => void;
   readonly canViewFinance: boolean;
   /**
-   * The balance as the balance panel read it — what is due, the credit and
-   * payment positions (D7) and when they were read (D10) — or `null`.
+   * The balance as the screen read it — what is due, the credit and payment
+   * positions (D7) and when they were read (D10) — and whether that read is
+   * still out, failed, or does not apply (DX-2).
    */
-  readonly balance: Outstanding | null;
+  readonly settlement: SettlementRead;
+  /** Reads the balance again, after a read that was refused or did not answer in time. */
+  readonly onRetrySettlement?: () => void;
   /** Open the copy at once rather than on request. */
   readonly initiallyOpen?: boolean;
 }) {
@@ -1862,8 +1863,18 @@ function PrintPanel({
   // with the honest "not shown" when it is withheld or could not be found. The
   // wait is bounded: a lookup that does not answer in time settles as "not
   // available right now", and the panel offers to find the name again.
+  //
+  // The settlement is waited for in exactly the same way (DX-2, finance QA fixes
+  // E). A copy printed while what was paid is still being read leaves out the
+  // "Payments and credits as of" section — and with it who paid for the customer
+  // — so the Print button waits for that read too. Its wait is bounded as well:
+  // a read that is refused or does not answer in time settles as "could not be
+  // read", which the copy says in words, and the panel offers to read it again.
   const counterSale = workOrderId === null;
-  const ready = (counterSale || !canViewFinance || preview !== null) && payer.kind !== 'loading';
+  const ready =
+    (counterSale || !canViewFinance || preview !== null) &&
+    payer.kind !== 'loading' &&
+    settlement.kind !== 'reading';
 
   return (
     <section
@@ -1899,6 +1910,16 @@ function PrintPanel({
           </Button>
         </div>
       ) : null}
+      {open && settlement.kind === 'unavailable' && onRetrySettlement !== undefined ? (
+        <div className="flex flex-wrap items-center gap-3" data-print="hide">
+          <p className="text-body text-text-secondary" role="status">
+            {translate(messages, 'invoices.print.settlementTimedOut')}
+          </p>
+          <Button type="button" variant="outlined" onClick={onRetrySettlement}>
+            {translate(messages, 'invoices.print.retrySettlement')}
+          </Button>
+        </div>
+      ) : null}
       {open ? (
         !ready ? (
           <MuiLoadingState messages={messages} variant="inline" />
@@ -1920,7 +1941,8 @@ function PrintPanel({
                       : { kind: 'mismatch' }
             }
             workOrderNumber={workOrderNumber}
-            balance={balance}
+            balance={settlement.kind === 'read' ? settlement.balance : null}
+            settlementUnavailable={settlement.kind === 'unavailable'}
           />
         )
       ) : null}

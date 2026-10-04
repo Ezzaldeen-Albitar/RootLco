@@ -61,12 +61,15 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ userId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     USER_DETAIL_OPERATION,
     request,
-    async ({ db }) => ({ body: await iamModule().users.detail(db, params.userId) }),
-    { params }
+    async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return { body: await iamModule().users.detail(db, params.userId) };
+    },
+    { params: raw }
   );
 }
 
@@ -74,11 +77,12 @@ export async function PATCH(
   request: Request,
   route: { params: Promise<{ userId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     USER_UPDATE_OPERATION,
     request,
     async ({ db, request: raw, expectedVersion }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const body = await parseJsonBody(raw, PatchBody);
       if (expectedVersion === null) {
         // Unreachable while `versionGuarded` is true — the pipeline raises
@@ -92,6 +96,6 @@ export async function PATCH(
       });
       return { body: user, recordVersion: user.recordVersion };
     },
-    { params }
+    { params: rawParams }
   );
 }

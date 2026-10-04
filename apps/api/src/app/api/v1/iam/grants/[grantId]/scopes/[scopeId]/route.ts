@@ -41,14 +41,15 @@ export async function DELETE(
   request: Request,
   route: { params: Promise<{ grantId: string; scopeId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     GRANT_SCOPE_REMOVE_OPERATION,
     request,
     async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
       await iamModule().access.removeScope(db, params.grantId, params.scopeId);
       return { body: { status: 'removed' } };
     },
-    { params }
+    { params: raw }
   );
 }

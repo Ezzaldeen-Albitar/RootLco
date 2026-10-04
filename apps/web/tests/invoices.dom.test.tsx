@@ -119,6 +119,14 @@ vi.mock('@/features/billing/api', () => ({
   listInvoices: (...args: unknown[]) => listInvoices(...args),
 }));
 
+// DX-2 (finance QA fixes E): the balance is read through the cancellable route
+// rather than a Server Action. Its browser half is forwarded to the same stand-in
+// the action had, so every case below asks and answers exactly as before.
+vi.mock('@/features/billing/outstanding-read', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  readOutstandingCancellable: (invoiceId: string) => readOutstanding(invoiceId),
+}));
+
 // A different payer is FOUND among customers; the directory adapter is replaced.
 const searchCustomerDirectory = vi.fn();
 vi.mock('@/lib/customers/directory-read', () => ({

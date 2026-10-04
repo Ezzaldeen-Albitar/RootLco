@@ -1530,7 +1530,13 @@ over the counter, or that was fitted to a job."_ <!-- inventory.returns.descript
    quantity above what may still come back — the field turns red with the reason beside it and the
    cursor moves to it; the reason goes as soon as you correct the quantity, whether the screen or
    the server refused it (finance QA fixes D: a refusal from the server used to stay until the next
-   press).
+   press). That includes the server's own "more than may still come back", met when another return
+   was recorded after the screen read the figures: the quantity box turns red with **"That is more
+   than may still come back, counting returns recorded since this screen read the figure. Lower the
+   amount and try again."** <!-- form.violation.stock_return_exceeds_remaining --> , the cursor moves
+   to it, and once you correct the quantity both that sentence and the one under the form go (finance
+   QA fixes E: it used to be said only under the form, and stayed after the correction). Any other
+   refusal of the return is still said under the form.
 
 **When the sales cannot be offered, the screen says so and offers the old way rather than
 stopping.** **"You do not have permission to see the sales made at this branch, so the sale cannot

@@ -38,11 +38,12 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ vehicleId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     VEHICLE_HISTORY_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const query = parseOrFail(
         Query,
         searchParamsToObject(new URL(raw.url).searchParams),
@@ -55,6 +56,6 @@ export async function GET(
         }),
       };
     },
-    { params }
+    { params: rawParams }
   );
 }

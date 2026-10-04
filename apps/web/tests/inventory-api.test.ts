@@ -40,6 +40,7 @@ const {
   createReservation,
   createMaterialRequirement,
   createReturn,
+  createSalesReturn,
   createStockLocation,
   listAvailability,
   listBranches,
@@ -1093,5 +1094,48 @@ describe('a refused material requirement says which rule refused it', () => {
       keys.push(outcome.state.messageKey as string);
     }
     expect(new Set(keys).size).toBe(MATERIAL_REFUSAL_RULES.length);
+  });
+});
+
+describe('a customer return refused for more than remains (DX-1, finance QA fixes E)', () => {
+  const RETURN_BODY = {
+    sourceKind: 'invoice_line' as const,
+    sourceId: '66666666-6666-4666-8666-666666666666',
+    quantity: '2',
+    condition: 'restockable' as const,
+    receivedLocationId: LOCATION_ID,
+  };
+  const conflict = (violations?: readonly { path: string; rule: string }[]) => ({
+    ok: false as const,
+    kind: 'conflict',
+    status: 409,
+    problem: {
+      code: 'ERR-TRN-001',
+      correlationId: 'corr-1',
+      ...(violations === undefined ? {} : { violations }),
+    },
+    correlationId: 'corr-1',
+  });
+
+  it('files the refusal under the quantity box, keeping the sentence that says why', async () => {
+    send.mockResolvedValue(
+      conflict([{ path: 'body.quantity', rule: 'stock_return_exceeds_remaining' }])
+    );
+    const outcome = await createSalesReturn(RETURN_BODY, 'key-1');
+    expect(outcome.created).toBeNull();
+    expect(outcome.state.status).toBe('conflict');
+    expect(outcome.state.fieldErrors).toEqual({
+      quantity: 'form.violation.stock_return_exceeds_remaining',
+    });
+    expect(outcome.state.messageKey).toBe('inventory.returns.create.refused');
+    expect(EN['form.violation.stock_return_exceeds_remaining']).toBeTypeOf('string');
+    expect(AR['form.violation.stock_return_exceeds_remaining']).toBeTypeOf('string');
+  });
+
+  it('keeps a state refusal that names no box at form level only', async () => {
+    send.mockResolvedValue(conflict());
+    const outcome = await createSalesReturn(RETURN_BODY, 'key-2');
+    expect(outcome.state.messageKey).toBe('inventory.returns.create.refused');
+    expect(outcome.state.fieldErrors).toBeUndefined();
   });
 });

@@ -69,6 +69,7 @@ const dashboard = await import('@/features/overview/dashboard-summary-read');
 const directory = await import('@/lib/customers/directory-read');
 const vehicles = await import('@/features/vehicles/vehicle-search-read');
 const customerVehicles = await import('@/lib/customers/vehicles-read');
+const outstanding = await import('@/features/billing/outstanding-read');
 const { EMPTY_CRITERIA } = await import('@/features/vehicles/contract');
 
 const COMPANY = '11111111-1111-4111-8111-111111111111';
@@ -128,6 +129,8 @@ const VEHICLE_ARGS = [
   null,
 ] as const;
 const CUSTOMER_VEHICLE_ARGS = [CUSTOMER, { ...INITIAL_REQUEST, pageSize: 10 }, 'cursor-3'] as const;
+const INVOICE = '88888888-8888-4888-8888-888888888888';
+const OUTSTANDING_ARGS = [INVOICE] as const;
 
 const FAMILIES: readonly Family[] = [
   {
@@ -216,12 +219,30 @@ const FAMILIES: readonly Family[] = [
     typed: [],
     data: PAGE_DATA,
   },
+  {
+    // DX-2 (finance QA fixes E): an invoice's balance and settlement, read apart
+    // from the Server Action queue so a held buyer-name lookup cannot delay it.
+    name: "an invoice's balance",
+    route: '/reads/invoice-outstanding',
+    method: 'GET',
+    handler: () => import('@/app/reads/invoice-outstanding/route'),
+    core: async () =>
+      (await import('@/features/billing/outstanding-read.server')).readOutstandingState(
+        ...OUTSTANDING_ARGS
+      ),
+    cancellable: (signal) => outstanding.readOutstandingCancellable(...OUTSTANDING_ARGS, signal),
+    params: outstanding.invoiceOutstandingParams(...OUTSTANDING_ARGS),
+    typed: [],
+    data: { invoiceId: INVOICE, outstanding: { amount: '7.5000', currency: 'JOD' } },
+  },
 ];
 
 const POST_FAMILIES = FAMILIES.filter((family) => family.method === 'POST');
 const GET_FAMILIES = FAMILIES.filter((family) => family.method === 'GET');
 const RECEPTIONS = FAMILIES[0] as Family;
 const OVERVIEW = FAMILIES[2] as Family;
+/** The families that answer one record (`ReadState`) rather than a page. */
+const SINGLE_READS: readonly Family[] = [OVERVIEW, FAMILIES[FAMILIES.length - 1] as Family];
 
 /** The handler a family's route exports for its own method. */
 async function handlerOf(family: Family): Promise<Handler> {
@@ -730,8 +751,9 @@ describe('every answer is private, uncached and keyed by cookie', () => {
       const body = (await response.json()) as Record<string, unknown>;
       // The family's own shape, so the browser half accepts it as a failure
       // rather than as a malformed answer, and the screen offers Retry.
-      const expected =
-        family === OVERVIEW ? readFailure('unavailable', null) : pageFailure('unavailable', null);
+      const expected = SINGLE_READS.includes(family)
+        ? readFailure('unavailable', null)
+        : pageFailure('unavailable', null);
       expect(body).toEqual(expected);
       // Nothing of the fault itself reaches the browser.
       expect(JSON.stringify(body)).not.toContain('10.0.0.7');
@@ -1195,6 +1217,7 @@ const CORES = [
   join(WEB_SRC, 'lib', 'customers', 'directory-read.server.ts'),
   join(WEB_SRC, 'features', 'vehicles', 'vehicle-search-read.server.ts'),
   join(WEB_SRC, 'lib', 'customers', 'vehicles-read.server.ts'),
+  join(WEB_SRC, 'features', 'billing', 'outstanding-read.server.ts'),
 ].map((file) => resolve(file));
 
 function code(source: string): string {
@@ -1227,12 +1250,13 @@ function localImportsOf(file: string, source: string): string[] {
 }
 
 describe('the read structure', () => {
-  it('serves exactly the six phase-one routes, each on its one method and nothing else', () => {
+  it('serves exactly the six phase-one routes and the invoice balance, each on its one method and nothing else', () => {
     const routes = readdirSync(READS_DIR).sort();
     expect(routes).toEqual([
       'customer-directory',
       'customer-vehicles',
       'dashboard-summary',
+      'invoice-outstanding',
       'receptions',
       'vehicles',
       'work-orders',
@@ -1242,6 +1266,7 @@ describe('the read structure', () => {
       'customer-directory': 'POST',
       'customer-vehicles': 'GET',
       'dashboard-summary': 'GET',
+      'invoice-outstanding': 'GET',
       receptions: 'POST',
       vehicles: 'POST',
       'work-orders': 'POST',
@@ -1272,6 +1297,7 @@ describe('the read structure', () => {
       directory.CUSTOMER_DIRECTORY_ROUTE,
       vehicles.VEHICLE_SEARCH_ROUTE,
       customerVehicles.CUSTOMER_VEHICLES_ROUTE,
+      outstanding.INVOICE_OUTSTANDING_ROUTE,
     ]) {
       expect(
         existsSync(join(WEB_SRC, 'app', ...route.split('/').filter(Boolean), 'route.ts')),

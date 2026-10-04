@@ -357,6 +357,17 @@ describe('inv.sales-return-create', () => {
       receivedLocationId: cell,
     });
     expect(excess.status).toBe(409);
+    // DX-1 (finance QA fixes E): the refusal names its rule against the quantity
+    // box, so the return form marks that box rather than the whole form.
+    expect(
+      await bodyOf<{
+        readonly code?: string;
+        readonly violations?: readonly { readonly path: string; readonly rule: string }[];
+      }>(excess)
+    ).toMatchObject({
+      code: 'ERR-TRN-001',
+      violations: [{ path: 'body.quantity', rule: 'stock_return_exceeds_remaining' }],
+    });
     expect(await onHandOf(ITEM_A, cell)).toBe(before);
     // An internal return credits nothing.
     expect(

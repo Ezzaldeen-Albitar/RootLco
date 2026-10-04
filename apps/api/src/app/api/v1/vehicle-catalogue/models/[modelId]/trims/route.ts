@@ -39,17 +39,20 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ modelId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     VEHICLE_TRIM_LIST_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
-      body: await vehicleModule().vehicleCatalogue.listTrims(
-        db,
-        params.modelId,
-        parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
-      ),
-    }),
-    { params }
+    async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        body: await vehicleModule().vehicleCatalogue.listTrims(
+          db,
+          params.modelId,
+          parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query')
+        ),
+      };
+    },
+    { params: rawParams }
   );
 }

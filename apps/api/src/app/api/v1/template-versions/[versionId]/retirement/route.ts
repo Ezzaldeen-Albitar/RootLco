@@ -39,11 +39,12 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ versionId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     TEMPLATE_VERSION_RETIRE_OPERATION,
     request,
     async ({ db, expectedVersion }) => {
+      const params = parseOrFail(Params, raw, 'path');
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
       }
@@ -53,6 +54,6 @@ export async function POST(
         recordVersion: expectedVersion + 1,
       };
     },
-    { params }
+    { params: raw }
   );
 }

@@ -40,11 +40,12 @@ export async function PUT(
   request: Request,
   route: { params: Promise<{ templateId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     TEMPLATE_ACTIVATION_OPERATION,
     request,
     async ({ db, request: raw, expectedVersion }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const input = await parseJsonBody(raw, Body);
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
@@ -60,6 +61,6 @@ export async function PUT(
         recordVersion: expectedVersion + 1,
       };
     },
-    { params }
+    { params: rawParams }
   );
 }

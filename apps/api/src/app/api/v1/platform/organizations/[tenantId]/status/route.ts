@@ -74,11 +74,12 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ tenantId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     ORGANIZATION_LIFECYCLE_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const input = await parseJsonBody(raw, Body);
       await platformModule().organizations.changeStatus(db, {
         tenantId: params.tenantId,
@@ -88,6 +89,6 @@ export async function POST(
       });
       return { body: { tenantId: params.tenantId, status: input.to } };
     },
-    { params }
+    { params: rawParams }
   );
 }

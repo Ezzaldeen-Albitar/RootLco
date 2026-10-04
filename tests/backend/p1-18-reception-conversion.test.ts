@@ -579,6 +579,28 @@ describe('authorization', () => {
     expect(await workOrderCount(reception.visitId)).toBe(0);
     expect((await receptionStatus(reception.visitId)).status).toBe('authorized');
   });
+
+  it('answers a malformed reception id with 422 and a correlation id, writing nothing', async () => {
+    // DX-4 (finance QA fixes E): a harness sent `/receptions/undefined/...` and
+    // the path parse, which ran before `handleOperation`, threw past it — HTTP
+    // 500, no correlation id, and an unstructured failure in the server log. The
+    // parse now runs inside the operation, so the answer is the validation
+    // failure every other malformed request gets.
+    authAs(SUBJ_A);
+    const before = await count(
+      `SELECT count(*)::text AS n FROM wo.work_orders WHERE tenant_id = $1`,
+      [TENANT_A]
+    );
+    const response = await convert('undefined', { version: 1 });
+    expect(response.status).toBe(422);
+    expect(response.headers.get('x-correlation-id')).toMatch(/^[0-9a-f-]{36}$/);
+    const body = (await response.json()) as ConvertBody;
+    expect(body.code).toBe('ERR-VAL-001');
+    expect(body.violations?.map((violation) => violation.path)).toEqual(['path.receptionId']);
+    expect(
+      await count(`SELECT count(*)::text AS n FROM wo.work_orders WHERE tenant_id = $1`, [TENANT_A])
+    ).toBe(before);
+  });
 });
 
 describe('rec.reception-convert-to-work-order', () => {

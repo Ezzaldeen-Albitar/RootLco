@@ -91,7 +91,6 @@ import {
   listCounterSales,
   listInvoices,
   readInvoice,
-  readOutstanding,
 } from '@/features/billing/api';
 import {
   MAX_INVOICE_SEARCH,
@@ -106,6 +105,7 @@ import {
 import type { PayerName } from '@/features/billing/components/InvoiceDocument';
 import { CounterSalePrintPanel, usePayerName } from '@/features/billing/components/InvoiceScreen';
 import { ThirdPartyPaymentItems, When } from '@/features/billing/components/shared';
+import { settlementOf, useOutstandingRead } from '@/features/billing/use-outstanding-read';
 import { searchCustomerDirectoryCancellable } from '@/lib/customers/directory-read';
 import type { CustomerSearchHit } from '@/lib/customers/directory-contract';
 import type { Locale } from '@/i18n/config';
@@ -260,7 +260,7 @@ function BranchCounter({
    */
   const [draftKey, setDraftKey] = useState(() => crypto.randomUUID());
   const [draftOutcome, setDraftOutcome] = useState<ActionState | null>(null);
-  const balance = useSaleBalance(sale);
+  const { balance, retryBalance } = useSaleBalance(sale);
 
   /*
    * DF-B3. An issued sale, opened read-only with its copy already open. The
@@ -414,6 +414,7 @@ function BranchCounter({
           messages={messages}
           sale={sale}
           balance={balance}
+          onRetryBalance={retryBalance}
           canIssue={canIssue}
           initiallyOpen={origin === 'reprint'}
           onChanged={(next, noticeKey) => {
@@ -449,6 +450,7 @@ function SaleView({
   messages,
   sale,
   balance,
+  onRetryBalance,
   canIssue,
   initiallyOpen,
   onChanged,
@@ -458,6 +460,8 @@ function SaleView({
   readonly messages: Messages;
   readonly sale: CreatedInvoice;
   readonly balance: ReadState<Outstanding> | null;
+  /** Reads the balance again, after a read that was refused or did not answer in time. */
+  readonly onRetryBalance: () => void;
   readonly canIssue: boolean;
   readonly initiallyOpen: boolean;
   readonly onChanged: (next: CreatedInvoice, noticeKey: string) => void;
@@ -482,7 +486,12 @@ function SaleView({
         messages={messages}
         detail={sale}
         canViewFinance={canViewFinance}
-        balance={balance !== null && balance.status === 'ok' ? balance.data : null}
+        // DX-2: the copy waits for its settlement as it waits for the name — it
+        // is never offered for printing while what was paid is still being read,
+        // and a read that failed or ran out of time is said on the copy, with a
+        // way to read it again.
+        settlement={settlementOf(balance, canViewFinance && owes(sale))}
+        onRetrySettlement={onRetryBalance}
         initiallyOpen={initiallyOpen}
         payer={payer}
       />
@@ -511,29 +520,25 @@ const DRAFT_SALES = (where: StockTarget) => listCounterSales(where, { status: 'd
  * A read for a sale the operator has already left is dropped: the answer is
  * kept only for the sale it was asked for.
  */
-function useSaleBalance(sale: CreatedInvoice | null): ReadState<Outstanding> | null {
+function useSaleBalance(sale: CreatedInvoice | null): {
+  readonly balance: ReadState<Outstanding> | null;
+  readonly retryBalance: () => void;
+} {
   const invoiceId = sale?.invoice.id ?? null;
-  const owing =
-    sale !== null && (sale.invoice.status === 'issued' || sale.invoice.status === 'credited');
   const version = sale?.recordVersion ?? 0;
-  const [held, setHeld] = useState<{
-    readonly key: string;
-    readonly state: ReadState<Outstanding>;
-  } | null>(null);
-  const key = owing && invoiceId !== null ? `${invoiceId}#${version}` : null;
-  useEffect(() => {
-    if (key === null || invoiceId === null) return;
-    let live = true;
-    void readOutstanding(invoiceId)
-      .catch((): ReadState<Outstanding> => ({ status: 'unavailable', correlationId: null }))
-      .then((state) => {
-        if (live) setHeld({ key, state });
-      });
-    return () => {
-      live = false;
-    };
-  }, [key, invoiceId]);
-  return key !== null && held !== null && held.key === key ? held.state : null;
+  // DX-2: read through the cancellable route, not a Server Action, so the
+  // buyer-name lookup — an action the router runs one at a time with every
+  // other — can no longer hold it up.
+  const { state, retry } = useOutstandingRead(
+    invoiceId,
+    sale !== null && owes(sale) && invoiceId !== null ? `${invoiceId}#${version}` : null
+  );
+  return { balance: state, retryBalance: retry };
+}
+
+/** Whether a sale claims anything yet: an issued or credited one does, a draft never. */
+function owes(sale: CreatedInvoice): boolean {
+  return sale.invoice.status === 'issued' || sale.invoice.status === 'credited';
 }
 
 /* ------------------------------------------------------------------ *

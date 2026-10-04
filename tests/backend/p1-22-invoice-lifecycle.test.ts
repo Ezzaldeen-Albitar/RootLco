@@ -358,6 +358,8 @@ const PLAIN_HUNDRED_LINE: QuotationLineSpec = {
 };
 
 interface Billable {
+  /** The reception visit the work order came from, whose customer it bills by default. */
+  readonly visitId: string;
   readonly tag: string;
   readonly workOrderId: string;
   readonly companyId: string;
@@ -494,6 +496,8 @@ async function seedAcceptedQuotation(input: {
   readonly lines?: readonly QuotationLineSpec[];
   /** `none` leaves the revision undecided, so `rollUpDecisions` yields neither outcome. */
   readonly decision?: 'approved' | 'rejected' | 'none';
+  /** The quotation's payer; `null` names none (DX-3). `PARTNER_A` unless stated. */
+  readonly payer?: string | null;
 }): Promise<{
   readonly quotationId: string;
   readonly revisionId: string;
@@ -516,7 +520,7 @@ async function seedAcceptedQuotation(input: {
         input.workOrderId,
         `FXQ-${input.tag}`,
         currency,
-        PARTNER_A,
+        input.payer === undefined ? PARTNER_A : input.payer,
         USER_A,
       ]
     );
@@ -619,6 +623,7 @@ async function seedBillable(
     readonly currency?: string;
     readonly lines?: readonly QuotationLineSpec[];
     readonly decision?: 'approved' | 'rejected' | 'none';
+    readonly payer?: string | null;
   } = {}
 ): Promise<Billable> {
   const chain = await seedWorkOrderChain(
@@ -633,8 +638,10 @@ async function seedBillable(
     ...(options.currency === undefined ? {} : { currency: options.currency }),
     ...(options.lines === undefined ? {} : { lines: options.lines }),
     ...(options.decision === undefined ? {} : { decision: options.decision }),
+    ...(options.payer === undefined ? {} : { payer: options.payer }),
   });
   return {
+    visitId: chain.visitId,
     tag: chain.tag,
     workOrderId: chain.workOrderId,
     companyId: chain.companyId,
@@ -1197,6 +1204,96 @@ describe('sal.invoice-create', () => {
     const response = await createInvoice({ workOrderId: billable.workOrderId });
     expect(response.status).toBe(404);
     expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-RES-001');
+    expect(await invoiceRowsForWorkOrder(billable.workOrderId)).toBe(0);
+  });
+});
+
+/**
+ * Who an invoice bills (DX-3, finance QA fixes E).
+ *
+ * The invoice screen's "a different paying customer" box says "Optional. Leave it
+ * empty to bill the customer on the work order." That was true only when the
+ * accepted quotation named a payer: with none, an empty box was refused 422 on
+ * `body.payerPartnerId`. The order is now the quotation's payer, then the one the
+ * request names, then the work order's own customer — and a work order with no
+ * single customer is refused with a rule that says so.
+ */
+describe('sal.invoice-create, who pays', () => {
+  /** A second tenant-A partner, so "which payer won" is observable. */
+  const PAYER_OF_RECORD = 'c2200000-0000-4000-8000-0000000000e1';
+
+  beforeAll(async () => {
+    await inTenantTransaction(async (client) => {
+      await client.query(
+        `INSERT INTO crm.business_partners
+           (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
+         VALUES ($1,$2,'organization','Payer of record','active',$3)
+         ON CONFLICT (id) DO NOTHING`,
+        [PAYER_OF_RECORD, TENANT_A, USER_A]
+      );
+    });
+  });
+
+  it('bills the payer the quotation names, even when the request names another', async () => {
+    const billable = await seedBillable('inv_payer_quoted', { payer: PAYER_OF_RECORD });
+    authAs(SAL_FULL);
+    const response = await createInvoice({
+      workOrderId: billable.workOrderId,
+      payerPartnerId: PARTNER_A,
+    });
+    expect(response.status).toBe(201);
+    expect((await bodyOf<CreatedInvoiceBody>(response)).invoice.payerPartnerId).toBe(
+      PAYER_OF_RECORD
+    );
+  });
+
+  it('bills the payer the request names when the quotation names none', async () => {
+    const billable = await seedBillable('inv_payer_named', { payer: null });
+    authAs(SAL_FULL);
+    const response = await createInvoice({
+      workOrderId: billable.workOrderId,
+      payerPartnerId: PAYER_OF_RECORD,
+    });
+    expect(response.status).toBe(201);
+    expect((await bodyOf<CreatedInvoiceBody>(response)).invoice.payerPartnerId).toBe(
+      PAYER_OF_RECORD
+    );
+  });
+
+  it("bills the work order's customer when neither the quotation nor the request names a payer", async () => {
+    const billable = await seedBillable('inv_payer_customer', { payer: null });
+    authAs(SAL_FULL);
+    // The body names no payer at all, exactly as the screen sends an empty box.
+    const response = await createInvoice({ workOrderId: billable.workOrderId });
+    expect(response.status).toBe(201);
+    // PARTNER_A is the party who brought the car: the check-in fixture's
+    // `service_requester`, which is the customer the work order screens show.
+    expect((await bodyOf<CreatedInvoiceBody>(response)).invoice.payerPartnerId).toBe(PARTNER_A);
+  });
+
+  it('refuses, naming the payer box, when the work order has no customer to bill either', async () => {
+    const billable = await seedBillable('inv_payer_none', { payer: null });
+    // The visit's only customer is dated out before the work order was opened, so
+    // as at `opened_at` the work order has none. `valid_to` is the one column of a
+    // party role a supersession may write.
+    const dated = await inTenantTransaction((client) =>
+      client.query(
+        `UPDATE rec.reception_party_roles
+            SET valid_to = valid_from + interval '1 microsecond'
+          WHERE reception_visit_id = $1 AND relationship_role = 'service_requester'
+            AND valid_to IS NULL AND deleted_at IS NULL`,
+        [billable.visitId]
+      )
+    );
+    expect(dated.rowCount).toBe(1);
+    authAs(SAL_FULL);
+    const response = await createInvoice({ workOrderId: billable.workOrderId });
+    expect(response.status).toBe(422);
+    const problem = await bodyOf<ProblemBody>(response);
+    expect(problem.code).toBe('ERR-VAL-001');
+    expect(problem.violations).toEqual([
+      { path: 'body.payerPartnerId', rule: 'invoice_payer_required' },
+    ]);
     expect(await invoiceRowsForWorkOrder(billable.workOrderId)).toBe(0);
   });
 });
