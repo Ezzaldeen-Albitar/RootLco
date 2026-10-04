@@ -3131,7 +3131,9 @@ Known limitations of this slice, one line each:
   done, because the model binds documents to their price-list currency, not to the base currency.
 - The reversal half of residual SB1 (a reversal in another currency than its receipt) is still a
   residual and still pinned as one; no reversal request exists yet (GAP-06, an Owner decision).
-- Business-rule refusals are still not recorded as security events (GAP-18, an Owner decision).
+- ~~Business-rule refusals are still not recorded as security events (GAP-18, an Owner decision).~~
+  Closed by P1-32-PRE-OD-FD2A (ADR-023 D12, `business-rule.refused`); permission refusals on the
+  four financial approval decisions by P1-32-PRE-OD-FD12X (D12 extension, below).
 - The race cases force both orders behind a held row lock; the negative control (the same cases
   with the lock removed) was not re-run for them.
 - Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
@@ -3885,3 +3887,31 @@ Residual items, one line each:
 - Two parties holding `service_requester` on the visit at the work order's opening make the fallback refuse rather than pick one; the screen does not yet say which two.
 - The `readOutstanding` Server Action in `features/billing/api.ts` stays, tested, with no screen calling it; the payments screen keeps its own action-backed balance read.
 - The buyer-name lookup is still a Server Action; a held lookup no longer blocks the balance, but it still occupies the action queue for any later action on the page until it settles.
+
+### Permission refusals on finance approvals (P1-32-PRE-OD-FD12X, ADR-023 D12 extension)
+
+Owner decision 2026-10-03. A refusal for want of a permission on approving or rejecting a credit
+note, or approving or rejecting a receipt reversal, is now persisted in the security trail as ONE
+`authorization.denied` event after the refused command rolls back, whether the call came from a
+screen or directly from the API. Before this change such a refusal was logged by the server but not
+persisted; no record exists for an attempt made before the deploy. No migration, no new permission
+code, no screen change.
+
+| Route                                                   | Behaviour now                                                                                                                                                                                         |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/credit-notes/{creditNoteId}/approval`     | Still 403 for a caller without `sal.credit.approve` or `sal.finance.view` in the note's branch; one `authorization.denied` row (operation, branch, missing codes, source); nothing financial changes. |
+| `POST /api/v1/credit-notes/{creditNoteId}/rejection`    | The same, for the rejection; a refusal by its database guard is recorded as source `database`.                                                                                                        |
+| `POST /api/v1/receipt-reversals/{reversalId}/approval`  | The same, with `sal.reversal.approve`; the receipt stays recorded and no financial event is written.                                                                                                  |
+| `POST /api/v1/receipt-reversals/{reversalId}/rejection` | The same, for the rejection.                                                                                                                                                                          |
+
+Preserved: the answer each caller receives is unchanged (status, code and the declared
+`requiredPermissions`); the refusal happens before the record is attempted, so a failed record can
+never let the action through; business-rule refusals (self-approval, the D13 limits, state rules)
+stay `business-rule.refused` and one attempt is never recorded as both; reading the trail still needs
+`iam.audit.view` in the tenant under row-level security; discount-approval and credit-note rules are
+untouched.
+
+Residual items, one line each:
+
+- No API route or screen reads security events yet; a security reviewer reads them only through the database under row-level security (follow-up, not in this slice).
+- Every other permission refusal in the platform, including the receipt-reversal request and withdrawal, remains a server log line and is not persisted.

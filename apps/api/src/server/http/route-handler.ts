@@ -63,7 +63,13 @@ import { RATE_LIMIT_POLICIES, enforceRateLimit, type RateLimitPolicy } from './r
 import { resolveClientAddress } from './trusted-proxy';
 import { backendConfig } from '../config/backend-config';
 import { recordSecurityEvent } from '../audit/security-events';
-import { businessRefusalOf, recordBusinessRefusal } from '../audit/business-refusals';
+import {
+  businessRefusalOf,
+  permissionRefusalOf,
+  recordBusinessRefusal,
+  recordPermissionRefusal,
+  recordsPermissionRefusals,
+} from '../audit/business-refusals';
 
 /** What a handler returns. `status` defaults to 200. */
 export interface HandlerResult<T> {
@@ -498,10 +504,12 @@ export async function handleOperation<T>(
     } catch (error) {
       if (!(error instanceof IdempotencyRaceError)) {
         // The command's transaction has rolled back by now, and a refusal by
-        // business rule (ADR-023, D12) is recorded AFTER it, on a transaction of
-        // its own, so the record survives the refusal. At most one event per
-        // attempt, and never a change to what the caller is told.
-        await persistBusinessRefusal(operation, context as RequestContext, error);
+        // business rule (ADR-023, D12) — or for want of a permission on one of
+        // the four financial approval decisions (D12 extension) — is recorded
+        // AFTER it, on a transaction of its own, so the record survives the
+        // refusal. At most one event per attempt, and never a change to what the
+        // caller is told.
+        await persistRefusal(operation, context as RequestContext, error);
         throw error;
       }
       // Another transaction won the key while this one executed. This
@@ -623,35 +631,55 @@ function respondWithFailure(
 }
 
 /**
- * Records a refusal by business rule after its command rolled back (ADR-023, D12).
+ * Records a refusal after its command rolled back (ADR-023, D12 and its
+ * extension).
  *
- * Only a failure a service marked with `withBusinessRefusal` is recorded; every
- * other failure passes through untouched. The operation id is this pipeline's
- * own registration, never anything the caller or the service supplied. The write
- * runs on the operation's own connection, so a control-plane refusal is recorded
- * by the platform role and a tenant refusal by the runtime role. It can never
- * fail the request: a lost record is logged, and the caller still receives the
- * refusal the service threw.
+ * A failure carries at most ONE mark, so an attempt is recorded at most once and
+ * in one class:
+ *
+ *  - marked with `withBusinessRefusal` — a `business-rule.refused` event, for any
+ *    operation, exactly as before;
+ *  - marked with `withPermissionRefusal` — an `authorization.denied` event, for
+ *    the four operations in `PERMISSION_REFUSAL_OPERATIONS` ONLY. Every other
+ *    permission refusal stays the log line `requirePermissions` already wrote.
+ *
+ * Every other failure passes through untouched. The operation id is this
+ * pipeline's own registration, never anything the caller or the service
+ * supplied. The write runs on the operation's own connection, so a control-plane
+ * refusal is recorded by the platform role and a tenant refusal by the runtime
+ * role. It can never fail the request: a lost record is logged, and the caller
+ * still receives the refusal that was thrown — the refusal happened before the
+ * record was attempted, so a failure to record can never let the action through.
  */
-async function persistBusinessRefusal(
+async function persistRefusal(
   operation: RegisteredOperation,
   context: RequestContext,
   error: unknown
 ): Promise<void> {
-  const refusal = businessRefusalOf(error);
-  if (!refusal) return;
+  const business = businessRefusalOf(error);
+  const permission = recordsPermissionRefusals(operation.id)
+    ? permissionRefusalOf(error)
+    : undefined;
+  const record =
+    business !== undefined
+      ? (db: DbHandle) => recordBusinessRefusal(db, { ...business, operationId: operation.id })
+      : permission !== undefined
+        ? (db: DbHandle) =>
+            recordPermissionRefusal(db, { ...permission, operationId: operation.id })
+        : undefined;
+  if (record === undefined) return;
   try {
     await withTransaction(
       context,
-      async (db) => recordBusinessRefusal(db, { ...refusal, operationId: operation.id }),
+      record,
       isControlPlane(operation) ? { connection: 'platform' as const } : {}
     );
   } catch (failure) {
-    log.error('Business refusal could not be recorded', {
+    log.error('Refusal could not be recorded', {
       ...contextLogFields(context),
       result: 'failure',
       context: {
-        rule: refusal.rule,
+        ...(business !== undefined ? { rule: business.rule } : { refusal: 'permission' }),
         reason: failure instanceof Error ? failure.name : 'unknown',
       },
     });

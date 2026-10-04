@@ -44,6 +44,29 @@
  * recorded by marking the failure exactly as the credit-note and discount
  * refusals below do — `throw withBusinessRefusal(new AppFailure(...), { ... })`
  * — with a rule code of its own. Nothing else is needed.
+ *
+ * ## Permission refusals on the financial approvals (D12 extension)
+ *
+ * Approved by the Owner on 2026-10-03: a refusal for want of a PERMISSION on one
+ * of the four financial approval decisions — approving or rejecting a credit
+ * note, approving or rejecting a receipt reversal — is recorded through this same
+ * seam, as its own event type (`authorization.denied`), never as a
+ * `business-rule.refused`. Before this extension such a refusal was written to the
+ * server log and was NOT persisted; no record exists for an attempt made before
+ * it was deployed, and none is claimed.
+ *
+ * The mark lives in the same `WeakMap`, so one failure carries ONE mark and
+ * therefore yields ONE row of ONE class: whichever mark was set last wins. The
+ * authorization layer marks every permission refusal it raises
+ * (`requirePermissions`); a service marks a refusal the database raised for the
+ * same reason. Only the operations in `PERMISSION_REFUSAL_OPERATIONS` are ever
+ * written — every other 403 in the product stays a log line, as before.
+ *
+ * The detail names the operation, the branch the decision was made against, the
+ * missing permission codes and where the refusal came from, and nothing else: no
+ * document id, no amount, no name, no request text. The branch is the
+ * authorization target the server resolved (from a row the caller's own row-level
+ * security admitted), or `none` when the decision had no branch to name.
  */
 import type { DbHandle } from '../db/transaction';
 import { recordSecurityEvent, type SecurityEventOutcome } from './security-events';
@@ -67,7 +90,58 @@ export interface RecordedBusinessRefusal extends BusinessRefusal {
   readonly operationId: string;
 }
 
-const REFUSALS = new WeakMap<object, BusinessRefusal>();
+/**
+ * The event type of a permission refusal on one of the four financial approval
+ * decisions (ADR-023, D12 extension). Distinct from `BUSINESS_REFUSAL_EVENT`.
+ */
+export const PERMISSION_REFUSAL_EVENT = 'authorization.denied';
+
+/**
+ * The ONLY operations whose permission refusals are persisted (ADR-023, D12
+ * extension, Owner decision 2026-10-03). An explicit list on purpose: the Owner
+ * approved recording these four, not every 403 in the product.
+ */
+export const PERMISSION_REFUSAL_OPERATIONS: readonly string[] = Object.freeze([
+  'sal.credit-note-approve',
+  'sal.credit-note-reject',
+  'sal.receipt-reversal-approve',
+  'sal.receipt-reversal-reject',
+]);
+
+/**
+ * Where a permission refusal was decided: `route` is the pipeline's gate before
+ * the handler ran, `scope` the deferred check against the document's own company
+ * and branch, `database` a guard or privilege check inside the command.
+ */
+export type PermissionRefusalSource = 'route' | 'scope' | 'database';
+
+/** What the authorization layer or a service states about a permission refusal. */
+export interface PermissionRefusal {
+  readonly source: PermissionRefusalSource;
+  /**
+   * The permission codes the decision found missing. Empty when the database
+   * refused without naming one; the record then says `undetermined`.
+   */
+  readonly missing: readonly string[];
+  /**
+   * The branch the decision was made against — the authorization target the
+   * server resolved, never the caller's input — or `null` when it had none.
+   */
+  readonly branchId: string | null;
+}
+
+/** A permission refusal with the operation that refused it, as it is written. */
+export interface RecordedPermissionRefusal extends PermissionRefusal {
+  /** The declared operation id, taken from the registration — never from the caller. */
+  readonly operationId: string;
+}
+
+type Refusal =
+  | { readonly kind: 'business'; readonly refusal: BusinessRefusal }
+  | { readonly kind: 'permission'; readonly refusal: PermissionRefusal };
+
+/** One mark per failure: the last one set wins, so an attempt yields one row of one class. */
+const REFUSALS = new WeakMap<object, Refusal>();
 
 /** Dotted or hyphenated lower-case identifiers: an operation id, an entity type, a rule code. */
 const IDENTIFIER = /^[a-z][a-z0-9_.-]{0,99}$/;
@@ -79,14 +153,46 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * caller receives is exactly what it would have received without the mark.
  */
 export function withBusinessRefusal<E extends object>(failure: E, refusal: BusinessRefusal): E {
-  REFUSALS.set(failure, Object.freeze({ ...refusal }));
+  REFUSALS.set(
+    failure,
+    Object.freeze({ kind: 'business', refusal: Object.freeze({ ...refusal }) })
+  );
   return failure;
 }
 
-/** The refusal a thrown value was marked with, or `undefined` for any other failure. */
+/** The business refusal a thrown value was marked with, or `undefined` for any other failure. */
 export function businessRefusalOf(error: unknown): BusinessRefusal | undefined {
   if (typeof error !== 'object' || error === null) return undefined;
-  return REFUSALS.get(error);
+  const mark = REFUSALS.get(error);
+  return mark?.kind === 'business' ? mark.refusal : undefined;
+}
+
+/**
+ * Marks a failure as a refusal for want of a permission (ADR-023, D12 extension),
+ * and returns the same failure. Like `withBusinessRefusal` it changes nothing the
+ * caller receives, and it REPLACES any earlier mark on the same failure.
+ */
+export function withPermissionRefusal<E extends object>(failure: E, refusal: PermissionRefusal): E {
+  REFUSALS.set(
+    failure,
+    Object.freeze({
+      kind: 'permission',
+      refusal: Object.freeze({ ...refusal, missing: Object.freeze([...refusal.missing]) }),
+    })
+  );
+  return failure;
+}
+
+/** The permission refusal a thrown value was marked with, or `undefined`. */
+export function permissionRefusalOf(error: unknown): PermissionRefusal | undefined {
+  if (typeof error !== 'object' || error === null) return undefined;
+  const mark = REFUSALS.get(error);
+  return mark?.kind === 'permission' ? mark.refusal : undefined;
+}
+
+/** Whether a permission refusal of this operation is persisted. */
+export function recordsPermissionRefusals(operationId: string): boolean {
+  return PERMISSION_REFUSAL_OPERATIONS.includes(operationId);
 }
 
 /**
@@ -127,6 +233,59 @@ export async function recordBusinessRefusal(
   if (detail === null) return null;
   return recordSecurityEvent(db, {
     eventType: BUSINESS_REFUSAL_EVENT,
+    severity: 'warning',
+    detail,
+  });
+}
+
+const SOURCES: ReadonlySet<string> = new Set<PermissionRefusalSource>([
+  'route',
+  'scope',
+  'database',
+]);
+/** A permission code: dotted lower-case segments, e.g. `sal.credit.approve`. */
+const PERMISSION_CODE = /^[a-z][a-z0-9_-]*(\.[a-z][a-z0-9_-]*)+$/;
+
+/**
+ * The detail line of a permission refusal, or `null` when any part falls outside
+ * its closed shape or the operation is not one of the four.
+ *
+ * `operation=<id> branch=<uuid|none> missing=<codes|undetermined> source=<route|scope|database> outcome=refused`
+ * — five fixed keys. The operation is one of `PERMISSION_REFUSAL_OPERATIONS`, the
+ * branch a UUID the server resolved, each missing code a permission code, the
+ * source one of three words. There is no position in which a document attribute
+ * or caller text could appear.
+ */
+export function permissionRefusalDetail(refusal: RecordedPermissionRefusal): string | null {
+  if (!recordsPermissionRefusals(refusal.operationId)) return null;
+  if (!SOURCES.has(refusal.source)) return null;
+  if (refusal.branchId !== null && !UUID.test(refusal.branchId)) return null;
+  if (refusal.missing.some((code) => !PERMISSION_CODE.test(code))) return null;
+  const missing = [...new Set(refusal.missing)];
+  return (
+    `operation=${refusal.operationId} ` +
+    `branch=${refusal.branchId === null ? 'none' : refusal.branchId.toLowerCase()} ` +
+    `missing=${missing.length === 0 ? 'undetermined' : missing.join(',')} ` +
+    `source=${refusal.source} outcome=refused`
+  );
+}
+
+/**
+ * Writes the ONE security event for a permission refusal (ADR-023, D12 extension).
+ *
+ * Same contract as `recordBusinessRefusal`: called on a transaction opened AFTER
+ * the refused command rolled back, and it can never fail the request or turn the
+ * refusal into anything else — `recordSecurityEvent` logs and swallows a failed
+ * write. An operation outside the four writes nothing.
+ */
+export async function recordPermissionRefusal(
+  db: DbHandle,
+  refusal: RecordedPermissionRefusal
+): Promise<SecurityEventOutcome | null> {
+  const detail = permissionRefusalDetail(refusal);
+  if (detail === null) return null;
+  return recordSecurityEvent(db, {
+    eventType: PERMISSION_REFUSAL_EVENT,
     severity: 'warning',
     detail,
   });

@@ -18,15 +18,17 @@ transaction it is auditing. Nothing about **reading** changed: browsing the audi
 trail or the security log still requires the `iam.audit.view` permission, and
 `iam.security_events` gained no new SELECT policy.
 
-| Event                                                           | Captured by                                    | Table / mechanism                                      | Phase                                                   |
-| --------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------- |
-| Successful / failed / lockout / logout authentication           | backend session service → DB                   | `iam.login_audit` (append-only, hashed context)        | DB shape now; writer 1-14                               |
-| Session issued / last-seen / expired / revoked                  | backend session service → DB                   | `iam.user_sessions` (metadata, no token)               | DB shape now; writer 1-14                               |
-| Account lifecycle transition (invite/active/lock/archive)       | `iam.change_user_status`                       | `iam.user_status_history` (server-stamped)             | now                                                     |
-| Role granted / revoked / expired                                | `iam.role_grants` (+ status/valid_to)          | grant rows + optional `shared.status_history`          | now                                                     |
-| Any audited business mutation                                   | `iam.audit_append`, called by the request path | `iam.audit_records`/`details`/`links` (hash chain)     | DB writer capability granted in 1-13 (DBCR-P1-13-001)   |
-| Detected anomaly (brute force, escalation attempt, chain break) | backend / operator                             | `iam.security_events` (payload-free)                   | DB producer capability granted in 1-13 (DBCR-P1-13-001) |
-| Audit-read access (who viewed the trail)                        | backend/API layer                              | **NOT** in the DB (RLS cannot safely log every SELECT) | 1-14                                                    |
+| Event                                                            | Captured by                                    | Table / mechanism                                      | Phase                                                   |
+| ---------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------- |
+| Successful / failed / lockout / logout authentication            | backend session service → DB                   | `iam.login_audit` (append-only, hashed context)        | DB shape now; writer 1-14                               |
+| Session issued / last-seen / expired / revoked                   | backend session service → DB                   | `iam.user_sessions` (metadata, no token)               | DB shape now; writer 1-14                               |
+| Account lifecycle transition (invite/active/lock/archive)        | `iam.change_user_status`                       | `iam.user_status_history` (server-stamped)             | now                                                     |
+| Role granted / revoked / expired                                 | `iam.role_grants` (+ status/valid_to)          | grant rows + optional `shared.status_history`          | now                                                     |
+| Any audited business mutation                                    | `iam.audit_append`, called by the request path | `iam.audit_records`/`details`/`links` (hash chain)     | DB writer capability granted in 1-13 (DBCR-P1-13-001)   |
+| Detected anomaly (brute force, escalation attempt, chain break)  | backend / operator                             | `iam.security_events` (payload-free)                   | DB producer capability granted in 1-13 (DBCR-P1-13-001) |
+| Refusal by business rule (self-approval, limits, state rules)    | route pipeline, after the rollback             | `iam.security_events`, `business-rule.refused`         | ADR-023 D12 (P1-32-PRE-OD-FD2A)                         |
+| Permission refusal on a credit-note or receipt-reversal decision | route pipeline, after the rollback             | `iam.security_events`, `authorization.denied`          | ADR-023 D12 extension (P1-32-PRE-OD-FD12X)              |
+| Audit-read access (who viewed the trail)                         | backend/API layer                              | **NOT** in the DB (RLS cannot safely log every SELECT) | 1-14                                                    |
 
 ## Data-classification of captured fields
 
@@ -51,3 +53,11 @@ backend/observability responsibility. Logging audit _reads_ remains a Phase-1-14
 responsibility and is not implemented here. A granted capability is not a
 captured event: this document records where the write is possible, not a claim
 that every listed event is being produced today.
+
+Authorization denials in particular: a permission refusal is persisted only for the four financial
+approval decisions — approving or rejecting a credit note, approving or rejecting a receipt
+reversal (ADR-023 D12 extension, approved by the Owner on 2026-10-03; one `authorization.denied`
+row per refused attempt, its detail limited to the operation, the branch, the missing permission
+codes and where the refusal was decided). Before that extension such a refusal was logged by the
+server but not persisted, and no record exists for an attempt made before it was deployed. Every
+other authorization denial is still a log line and a metric only.

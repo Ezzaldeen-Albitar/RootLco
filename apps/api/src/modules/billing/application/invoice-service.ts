@@ -48,7 +48,7 @@
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
-import { withBusinessRefusal } from '@/server/audit/business-refusals';
+import { withBusinessRefusal, withPermissionRefusal } from '@/server/audit/business-refusals';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, sqlState, SQLSTATE, violatedConstraint } from '@/server/db/repository';
 import { Decimal, MONEY } from '@/modules/pricing';
@@ -57,11 +57,7 @@ import { inventoryModule } from '@/modules/inventory';
 import { receptionModule } from '@/modules/reception';
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
-import {
-  callerApprovalLimitStanding,
-  callerHoldsPermission,
-  type ScopeAuthorizer,
-} from '@/server/auth/authorization';
+import { callerApprovalLimitStanding, type ScopeAuthorizer } from '@/server/auth/authorization';
 import {
   BILLING_SQLSTATE,
   COUNTER_SALE_ORDER,
@@ -229,13 +225,55 @@ const CREDIT_LIMIT_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
  */
 function refuseCreditApproval(creditNoteId: string, rule: string, cause?: unknown): never {
   return refuseCreditNote(creditNoteId, rule, () => {
-    throw new AppFailure('ERR-IAM-001', {
-      message:
-        CREDIT_LIMIT_REFUSALS[rule] ?? `Credit note approval was refused by the rule ${rule}`,
-      safeDetails: { violations: [{ path: 'path.creditNoteId', rule }] },
-      ...(cause === undefined ? {} : { cause }),
-    });
+    throw creditApprovalFailure(rule, cause);
   });
+}
+
+/** The answer a refused credit-note approval receives, naming its rule on the path parameter. */
+function creditApprovalFailure(rule: string, cause?: unknown): AppFailure {
+  return new AppFailure('ERR-IAM-001', {
+    message: CREDIT_LIMIT_REFUSALS[rule] ?? `Credit note approval was refused by the rule ${rule}`,
+    safeDetails: { violations: [{ path: 'path.creditNoteId', rule }] },
+    ...(cause === undefined ? {} : { cause }),
+  });
+}
+
+/** The token `sal.guard_credit_note_decision` raises when the rejecter lacks the approval code. */
+const CREDIT_REJECT_PERMISSION_TOKEN = 'credit_note_reject_permission_missing';
+
+/**
+ * The token before the first colon of an `insufficient_privilege` refusal, or
+ * `null` — for any other error, and for a privilege refusal that names none.
+ */
+function privilegeToken(error: unknown): string | null {
+  if (!isSqlState(error, SQLSTATE.insufficientPrivilege)) return null;
+  return /^([a-z_]+):/.exec(driverMessage(error) ?? '')?.[1] ?? null;
+}
+
+/**
+ * Refuses an `insufficient_privilege` a decision primitive raised, with the answer
+ * it always received (`toDomainFailure`), marked as a refusal for want of a
+ * permission that the DATABASE decided (ADR-023, D12 extension). The pipeline
+ * records it as `authorization.denied` for the approval and the rejection only.
+ * `missing` names the code when the guard's token says which; empty means the
+ * database did not say, and the record reads `undetermined`. Returns, doing
+ * nothing, for any other error.
+ */
+function refuseDatabasePrivilege(
+  error: unknown,
+  branchId: string,
+  missing: readonly string[],
+  what: string
+): void {
+  if (!isSqlState(error, SQLSTATE.insufficientPrivilege)) return;
+  try {
+    toDomainFailure(error, what);
+  } catch (failure) {
+    if (failure instanceof AppFailure) {
+      withPermissionRefusal(failure, { source: 'database', missing, branchId });
+    }
+    throw failure;
+  }
 }
 
 /** The D13 rule tokens the decision guard raises on an approval. */
@@ -1724,7 +1762,7 @@ export class InvoiceService {
         message: `Credit note ${creditNoteId} was not found in scope`,
       });
     }
-    await this.authorizeApprovalScope(db, note, authorizeScope);
+    await this.authorizeApprovalScope(note, authorizeScope);
 
     if (note.approvalState === 'approved') {
       return { creditNote: toCreditNoteView(note, await this.unitsOf(db, note)), replayed: true };
@@ -1793,6 +1831,15 @@ export class InvoiceService {
       await this.repository.approveCreditNote(db, creditNoteId, db.context.correlationId);
     } catch (error) {
       const token = creditApprovalToken(error);
+      if (token === CREDIT_NOTE_REFUSAL_RULES.approvalPermissionMissing) {
+        // A permission the database found missing (D12 extension): the same
+        // answer as before, recorded as `authorization.denied`, not as a rule.
+        throw withPermissionRefusal(creditApprovalFailure(token, error), {
+          source: 'database',
+          missing: [CREDIT_APPROVE_PERMISSION],
+          branchId: note.branchId,
+        });
+      }
       if (token !== null) refuseCreditApproval(note.id, token, error);
       if (isSelfApprovalViolation(error)) {
         refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.selfApproval, () => {
@@ -1810,6 +1857,7 @@ export class InvoiceService {
           toDomainFailure(error, 'Credit note approval')
         );
       }
+      refuseDatabasePrivilege(error, note.branchId, [], 'Credit note approval');
       toDomainFailure(error, 'Credit note approval');
     }
 
@@ -2009,6 +2057,12 @@ export class InvoiceService {
     try {
       await this.repository.rejectCreditNote(db, creditNoteId, reason);
     } catch (error) {
+      refuseDatabasePrivilege(
+        error,
+        note.branchId,
+        privilegeToken(error) === CREDIT_REJECT_PERMISSION_TOKEN ? [CREDIT_APPROVE_PERMISSION] : [],
+        'Credit note rejection'
+      );
       refuseDecisionFailure(error, note.id, 'Credit note rejection');
     }
 
@@ -2061,41 +2115,23 @@ export class InvoiceService {
   }
 
   /**
-   * Authorizes the note's own company and branch for an approval, and records a
-   * caller who lacks the approval permission there as a refusal (ADR-023 D12, D13).
+   * Authorizes the note's own company and branch for an approval (ADR-023 D13).
    *
    * The pipeline already refused anybody holding `sal.credit.approve` nowhere at
    * all. What reaches here is a caller who holds it somewhere else — another
-   * branch, another company — and the deferred scope check refuses them exactly as
-   * before, with the same uniform authorization answer. The only addition is the
-   * record: when the code the caller lacks in this scope is the approval
-   * permission, the failure is marked `credit_approval_permission_missing` so one
-   * security event names the rule after the rollback. The answer is unchanged.
+   * branch, another company — and the deferred scope check refuses them with the
+   * same uniform authorization answer. That refusal is a PERMISSION refusal and
+   * is recorded as one (D12 extension): `requirePermissions` marks it with the
+   * codes missing in this scope and the note's branch, and the pipeline writes one
+   * `authorization.denied` event after the rollback. It is no longer marked as the
+   * business rule `credit_approval_permission_missing` — an attempt yields one
+   * record of one class. The answer is unchanged.
    */
   private async authorizeApprovalScope(
-    db: DbHandle,
     note: CreditNoteRow,
     authorizeScope: ScopeAuthorizer
   ): Promise<void> {
-    try {
-      await authorizeScope({ companyId: note.companyId, branchId: note.branchId });
-    } catch (failure) {
-      if (
-        failure instanceof AppFailure &&
-        failure.code === 'ERR-IAM-001' &&
-        !(await callerHoldsPermission(db, CREDIT_APPROVE_PERMISSION, {
-          companyId: note.companyId,
-          branchId: note.branchId,
-        }))
-      ) {
-        withBusinessRefusal(failure, {
-          entityType: 'sal.credit_note',
-          entityId: note.id,
-          rule: CREDIT_NOTE_REFUSAL_RULES.approvalPermissionMissing,
-        });
-      }
-      throw failure;
-    }
+    await authorizeScope({ companyId: note.companyId, branchId: note.branchId });
   }
 
   /**

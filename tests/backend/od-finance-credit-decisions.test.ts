@@ -631,8 +631,19 @@ describe('D3 — a decided note is terminal, and the version guards every decisi
     authAs(SAL_PERMISSION_ELSEWHERE);
     const elsewhere = await reject(note.id, note.version, { reason: 'Other branch' });
     expect(elsewhere.status).toBe(403);
-    expect((await bodyOf<ProblemBody>(elsewhere)).code).toBe('ERR-IAM-001');
+    expect((await bodyOf<ProblemBody>(elsewhere.clone())).code).toBe('ERR-IAM-001');
     expect(await storedNote(note.id)).toEqual({ state: 'pending', version: note.version });
+    // Recorded since the D12 extension (Owner decision 2026-10-03): one
+    // `authorization.denied` row for the attempt, and no business-rule row.
+    const attempt = elsewhere.headers.get('x-correlation-id');
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM iam.security_events
+          WHERE correlation_id = $1 AND event_type = 'authorization.denied'`,
+        [attempt]
+      )
+    ).toBe(1);
+    expect(await creditEvents(note.id)).toBe(0);
   });
 
   it('lets exactly one of an approval and a rejection win the same note, in either order', async () => {

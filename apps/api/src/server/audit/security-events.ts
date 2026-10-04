@@ -4,14 +4,22 @@
  * Authorization denials and abuse-relevant rate-limit breaches are security
  * signals, and `iam.security_events` is where they belong.
  *
- * They are called *candidates* here for an honest reason: the runtime role holds
- * SELECT only on that table (DBCR-P1-13-001), so P1-13 cannot persist them. The
- * behaviour therefore is:
+ * They were called *candidates* because, when P1-13 wrote this, the runtime role
+ * held SELECT only on that table. DBCR-P1-13-001 and its migration
+ * (`20260725090000_iam_shared_runtime_write_capabilities.sql`) have since granted
+ * the runtime role a tenant-scoped INSERT, so a call here does persist. What is
+ * CALLED is narrower than "every denial": control-plane rate-limit breaches,
+ * refusals by business rule (`business-rule.refused`, ADR-023 D12) on any
+ * operation, and refusals for want
+ * of a permission (`authorization.denied`) on the four financial approval
+ * decisions only (D12 extension, Owner decision 2026-10-03 — see
+ * `business-refusals.ts`). Every other authorization denial is still a log line
+ * and a metric, and is not persisted. The behaviour is:
  *
- *  - always emit the structured log record and the metric — those work today and
- *    are searchable by correlation ID;
- *  - attempt the durable write only when the capability is present, so the day
- *    the change request is applied the records start landing with no code change;
+ *  - always emit the structured log record — searchable by correlation ID;
+ *  - attempt the durable write only when the capability is present
+ *    (`foundationCapabilities`), so a connection without the grant degrades to
+ *    the log line rather than failing;
  *  - **never fail the request** because the security record could not be
  *    persisted. The denial itself is the control; losing its telemetry must not
  *    convert a clean 403 into a 500.

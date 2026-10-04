@@ -557,13 +557,20 @@ authority, never borrowed from the permission to raise one or from a discount li
 - **Refused attempts are recorded too.** When the application refuses a decision by rule — approving
   your own note, rejecting a note you raised, withdrawing somebody else's, deciding a note already
   decided, crediting more than is open (when the note is raised as well as when it is approved),
-  approving a credit note without the permission in its branch
-  or without a credit note limit that covers it, deciding a discount you asked for or have no limit
-  for, or
+  approving a credit note without a credit note limit that covers it, deciding a discount you asked
+  for or have no limit for, or
   allocating more money than a receipt or an invoice has left — the attempt is recorded as a security
   event in the organisation's log, after the refusal, naming who tried, what, and which rule refused
   it. No amount, name or typed text is recorded with it. Reading that log needs the audit permission,
   and only within your own organisation.
+- **Refused for want of a permission (Owner decision of 2026-10-03).** When somebody tries to approve
+  or reject a credit note, or to approve or reject a receipt reversal, without the permission it
+  needs in that branch — from a screen or by calling the service directly — the attempt is refused
+  exactly as before and is also recorded once in the same log, after the refusal: who tried, which
+  action, in which branch, which permission was missing, and when. Nothing about the note, the
+  receipt, the amount or the customer is recorded with it, and nothing financial changes. Attempts
+  made before this change were not recorded and cannot be recovered. Other refusals for want of a
+  permission elsewhere in the application are not recorded in the log.
 
 **An organisation created before this change** keeps the set it was given until the platform
 operator runs the administrator backfill for it. That run adds the permission only to an
