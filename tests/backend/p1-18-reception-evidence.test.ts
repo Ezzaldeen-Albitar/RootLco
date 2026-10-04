@@ -43,7 +43,7 @@ import {
   expectSqlState,
   runtimeAppPool,
 } from './helpers';
-import { MAX_COMPLAINT_TEXT } from '@/modules/reception';
+import { COMPLAINT_SEVERITY_NOT_STATED, MAX_COMPLAINT_TEXT } from '@/modules/reception';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import {
   StaticClaimsAuthenticator,
@@ -1308,6 +1308,64 @@ describe('rec.reception-condition-evidence', () => {
       'Rattle over speed bumps.',
       'Headlights flicker at idle.',
     ]);
+  });
+
+  /*
+   * Owner decision of 2026-10-03 (README question 19): a concern recorded with
+   * no severity is "not stated", never 'medium', a value the customer did not
+   * give. 20261004090000_rec_complaint_severity_not_stated.sql.
+   */
+  it('stores an omitted severity as not stated and a given one exactly as given', async () => {
+    authAs(SUBJ_FULL);
+    const visit = await newVisit();
+
+    const omitted = await json(
+      await recordEvidence(visit, {
+        kind: 'complaint',
+        category: 'noise',
+        complaintText: 'Squeal on a cold start.',
+      })
+    );
+    const stated = await json(
+      await recordEvidence(visit, {
+        kind: 'complaint',
+        category: 'body',
+        severity: 'medium',
+        complaintText: 'The door rubs when closing.',
+      })
+    );
+    const sentAsNotStated = await json(
+      await recordEvidence(visit, {
+        kind: 'complaint',
+        category: 'other',
+        severity: COMPLAINT_SEVERITY_NOT_STATED,
+        complaintText: 'A smell inside the cabin.',
+      })
+    );
+
+    const stored = await admin.query<{ id: string; severity: string }>(
+      `SELECT id, severity FROM rec.complaints WHERE reception_visit_id = $1`,
+      [visit]
+    );
+    const severityOf = new Map(stored.rows.map((row) => [row.id, row.severity]));
+    expect(severityOf.size).toBe(3);
+    expect(severityOf.get(omitted.evidenceId ?? '')).toBe('not_stated');
+    expect(severityOf.get(stated.evidenceId ?? '')).toBe('medium');
+    expect(severityOf.get(sentAsNotStated.evidenceId ?? '')).toBe('not_stated');
+  });
+
+  it('refuses a severity outside the stored vocabulary as a 422 on the field, writing nothing', async () => {
+    authAs(SUBJ_FULL);
+    const visit = await newVisit();
+
+    const response = await recordEvidence(visit, {
+      kind: 'complaint',
+      category: 'noise',
+      severity: 'unknown',
+      complaintText: 'Whine at speed.',
+    });
+    expect(response.status).toBe(422);
+    expect(await complaints(visit)).toBe(0);
   });
 
   it('refuses a second observation of the same warning lamp, and evidence on a terminal reception', async () => {

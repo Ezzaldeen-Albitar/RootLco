@@ -194,7 +194,7 @@ export {
 } from './domain/reception';
 export {
   COMPLAINT_CATEGORIES,
-  COMPLAINT_SEVERITIES,
+  COMPLAINT_SEVERITY_NOT_STATED,
   DAMAGE_MARK_TYPES,
   EVIDENCE_KINDS,
   FINDING_CATEGORIES,
@@ -214,8 +214,9 @@ export {
   SIGNATURE_CAPTURE_METHODS,
   SIGNATURE_PURPOSES,
   SIGNER_ROLES,
+  STORED_COMPLAINT_SEVERITIES,
   type ComplaintCategory,
-  type ComplaintSeverity,
+  type StoredComplaintSeverity,
   type DamageMarkType,
   type EvidenceKind,
   type FindingCategory,

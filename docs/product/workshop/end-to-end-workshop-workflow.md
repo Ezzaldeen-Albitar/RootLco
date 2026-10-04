@@ -247,17 +247,17 @@ become the second has destroyed the evidence that would settle the argument.
 
 ### 4.2 The two records, side by side
 
-| aspect         | Customer-reported concern                                                                           | Technically verified finding                                                                                   |
-| -------------- | --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| Table          | `rec.complaints`                                                                                    | `dia.findings`                                                                                                 |
-| Hangs off      | `reception_visit_id`                                                                                | `diagnostic_report_id`                                                                                         |
-| Attributed to  | `reported_by_partner_id` — the customer                                                             | `created_by` — the technician; the report also pins its template version                                       |
-| Classification | `category`: `mechanical` · `electrical` · `body` · `noise` · `performance` · `other`                | `severity`: `info` · `low` · `medium` · `high` · `critical`                                                    |
-| Judgement      | `severity`: `low` · `medium` · `high` · `critical` — the **customer's** sense of urgency            | `disposition`: `monitor` · `repair_recommended` · `repair_required` · `no_action` — the **workshop's** verdict |
-| Free text      | `complaint_text` on a **separate restricted table**, `rec.complaint_details`, one row per complaint | `description` on the finding row itself, required non-blank                                                    |
-| Written by     | `rec.reception-condition-evidence` with `kind: 'complaint'`                                         | `dia.diagnostic-finding-record`                                                                                |
-| Permission     | `rec.reception.evidence.manage`, **and `iam.sensitive.view` as well** for the words themselves      | `dia.diagnostic.record`                                                                                        |
-| Corrections    | `correction_of` — a superseding row, never an edit                                                  | Report-level revision; the report's items freeze once its version publishes                                    |
+| aspect         | Customer-reported concern                                                                               | Technically verified finding                                                                                   |
+| -------------- | ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| Table          | `rec.complaints`                                                                                        | `dia.findings`                                                                                                 |
+| Hangs off      | `reception_visit_id`                                                                                    | `diagnostic_report_id`                                                                                         |
+| Attributed to  | `reported_by_partner_id` — the customer                                                                 | `created_by` — the technician; the report also pins its template version                                       |
+| Classification | `category`: `mechanical` · `electrical` · `body` · `noise` · `performance` · `other`                    | `severity`: `info` · `low` · `medium` · `high` · `critical`                                                    |
+| Judgement      | `severity`: `not_stated` · `low` · `medium` · `high` · `critical` — the **customer's** sense of urgency | `disposition`: `monitor` · `repair_recommended` · `repair_required` · `no_action` — the **workshop's** verdict |
+| Free text      | `complaint_text` on a **separate restricted table**, `rec.complaint_details`, one row per complaint     | `description` on the finding row itself, required non-blank                                                    |
+| Written by     | `rec.reception-condition-evidence` with `kind: 'complaint'`                                             | `dia.diagnostic-finding-record`                                                                                |
+| Permission     | `rec.reception.evidence.manage`, **and `iam.sensitive.view` as well** for the words themselves          | `dia.diagnostic.record`                                                                                        |
+| Corrections    | `correction_of` — a superseding row, never an edit                                                      | Report-level revision; the report's items freeze once its version publishes                                    |
 
 There is a third record again distinct from both: `rec.condition_items` — what
 staff observed **at reception**, before any diagnosis. The route file states the

@@ -1406,6 +1406,12 @@ below.
 **"Fuel level"**, **"EV charge"** and **"Receiving employee"** <!-- receptions.wizard.* --> . The
 step rail is labelled **"Check-in steps"** <!-- receptions.wizard.stepsLabel --> .
 
+Moving to another step while the open one holds something you typed but have not recorded asks
+first: **"Leave this step without saving?"** <!-- receptions.wizard.discard.title --> . **"Stay on
+this step"** <!-- receptions.wizard.discard.stay --> keeps every entry where it is; **"Discard and
+change step"** <!-- receptions.wizard.discard.confirm --> empties the form and moves. With nothing
+unsaved the step changes at once.
+
 | Step                                                                     | What it is for                                                                                                                                        | Write permission                                                                |
 | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | **"Customer and vehicle"** <!-- receptions.steps.confirm.title -->       | "Confirm who is here and which vehicle is on the ramp before anything is captured." <!-- receptions.steps.confirm.description -->                     | none — reading it is confirming it                                              |
@@ -1566,7 +1572,9 @@ observations deliberately apart.
 . Fields: **"Category"** <!-- receptions.complaint.category --> (_required_: Mechanical, Electrical,
 Body, Noise, Performance, Other <!-- receptions.complaintCategory.* --> ), **"Severity as
 described"** <!-- receptions.complaint.severity --> ("How serious the customer said it was, not a
-technical assessment." <!-- receptions.complaint.severityHint --> ), **"The customer's words"** <!-- receptions.complaint.text -->
+technical assessment." <!-- receptions.complaint.severityHint --> ; Not stated, Low, Medium, High,
+Critical <!-- receptions.complaintSeverity.* --> — left at **"Not stated"** when the customer gave
+none, and shown that way afterwards), **"The customer's words"** <!-- receptions.complaint.text -->
 (_required_; "Recorded and kept as written. It is stored as restricted information." <!-- receptions.complaint.textHint -->
 ), **"Who reported it"** <!-- receptions.complaint.reportedBy --> . Button **"Record concern"** <!-- receptions.complaint.record -->
 . Guidance: "Write what the customer said, in their words. A concern is not a technical finding; the

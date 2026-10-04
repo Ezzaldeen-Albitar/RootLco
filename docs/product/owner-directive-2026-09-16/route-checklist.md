@@ -1138,7 +1138,8 @@ Every `useUnsavedGuard` owner in `apps/web/src` (`grep -rn "useUnsavedGuard(" ap
 the declaration itself excluded). The risk: after a confirmed "Discard and change branch", a form
 keeps its typed input and submits the previous branch's input into the new one. `QA1B-04`
 audited 46 call sites; QA round three added three (`QA1B-06`: the two parts draw forms; `QA1B-07`:
-the price rule form), so there were 49; the appointments slice adds the reschedule form. Each owner has one mechanism:
+the price rule form), so there were 49; the appointments slice adds the reschedule form, and the
+reception wizard step guard the media waiver reason. Each owner has one mechanism:
 
 - **a** — remounted or reset by the branch itself: keyed on the branch pair or the
   working-context version, unmounted by the screen's branch handler, or reset through
@@ -1190,6 +1191,7 @@ Line numbers are those of the call on the branch head that last changed this tab
 | features/receptions/components/CheckInStartScreen.tsx                            | 629                     | b       | `onDiscard` resets origin and note, appointment, customer and its typed search, vehicle, intake facts, hand-over and complaints (`QA1B-02`)                                                                                                           |
 | features/receptions/components/steps/EvidencePanels.tsx (`useStepForm`)          | 726                     | c→b     | reception intake slice: every capture form of the wizard (complaint, inspection, finding, leak, damage map and mark, warning light, contents, party role, authorization, refusal) holds its draft here; `onDiscard` puts the form back as it opened   |
 | features/receptions/components/steps/ReadingsStep.tsx (OdometerForm)             | 367                     | c→b     | reception intake slice: the typed reading, unit, moment and source; `onDiscard` empties them                                                                                                                                                          |
+| features/receptions/components/steps/MediaStep.tsx (RequirementRow)              | 385                     | c→b     | reception wizard step guard: a typed waiver reason in an open waiver form; `onDiscard` empties the reason and closes the form                                                                                                                         |
 | features/receptions/components/steps/SignatureStep.tsx                           | 200                     | c→b     | reception intake slice: the chosen signer, purpose and party; `onDiscard` empties them and resets the form (the chosen file with it)                                                                                                                  |
 | features/receptions/intake/components/IntakeCustomerCreate.tsx                   | 104                     | c→b     | reception intake slice: typed customer details; `onDiscard` empties them (the status back to its default)                                                                                                                                             |
 | features/receptions/intake/components/IntakeVehicleStep.tsx (VehicleCreate)      | 614                     | c→b     | reception intake slice: typed vehicle details; `onDiscard` empties them                                                                                                                                                                               |

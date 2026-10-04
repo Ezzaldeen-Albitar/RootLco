@@ -26,8 +26,32 @@ export const COMPLAINT_CATEGORIES = [
   'other',
 ] as const;
 export type ComplaintCategory = (typeof COMPLAINT_CATEGORIES)[number];
+/**
+ * The severities a customer can STATE.
+ *
+ * A customer who gave none is recorded as `COMPLAINT_SEVERITY_NOT_STATED`
+ * (Owner decision of 2026-10-03,
+ * `20261004090000_rec_complaint_severity_not_stated.sql`) — whether the caller
+ * omits the field or sends that value — and never as one of these. `'medium'`
+ * was the substitute before, and it is a value the customer did not give.
+ */
 export const COMPLAINT_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
 export type ComplaintSeverity = (typeof COMPLAINT_SEVERITIES)[number];
+/** What an omitted severity is stored as, and the column default. */
+export const COMPLAINT_SEVERITY_NOT_STATED = 'not_stated' as const;
+/** Every value `ck_complaints_severity` admits: "not stated" and the four stated ones. */
+export const STORED_COMPLAINT_SEVERITIES = [
+  COMPLAINT_SEVERITY_NOT_STATED,
+  ...COMPLAINT_SEVERITIES,
+] as const;
+export type StoredComplaintSeverity = (typeof STORED_COMPLAINT_SEVERITIES)[number];
+
+/** The severity a complaint is stored with: the one given, or "not stated". */
+export function storedComplaintSeverity(
+  stated: StoredComplaintSeverity | undefined
+): StoredComplaintSeverity {
+  return stated ?? COMPLAINT_SEVERITY_NOT_STATED;
+}
 
 /** Frozen `ck_condition_items_category` / `ck_condition_items_severity`. */
 export const FINDING_CATEGORIES = [

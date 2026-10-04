@@ -3064,6 +3064,10 @@ Governed visit-reason attachments (P1-08-DB-008). Archived reasons cannot be new
 
 Reception complaint metadata (P1-08-DB-009). SAFE fields; restricted narrative in rec.complaint_details. Corrections linked.
 
+`severity` is `not_stated` when the customer gave none, and one of `low`, `medium`, `high`, `critical` as stated
+(`20261004090000_rec_complaint_severity_not_stated.sql`). Rows recorded before that migration hold `medium` where the
+severity was omitted, which cannot be told apart from a stated `medium`; they are not rewritten.
+
 | Column                   | Type                     | Null | Default             | Class    |
 | ------------------------ | ------------------------ | ---- | ------------------- | -------- |
 | `id`                     | uuid                     | NO   | `gen_random_uuid()` | internal |
@@ -3073,7 +3077,7 @@ Reception complaint metadata (P1-08-DB-009). SAFE fields; restricted narrative i
 | `reception_visit_id`     | uuid                     | NO   | —                   | internal |
 | `reported_by_partner_id` | uuid                     | YES  | —                   | internal |
 | `category`               | text                     | NO   | —                   | internal |
-| `severity`               | text                     | NO   | `'medium'`          | internal |
+| `severity`               | text                     | NO   | `'not_stated'`      | internal |
 | `evidence_document_id`   | uuid                     | YES  | —                   | internal |
 | `correction_of`          | uuid                     | YES  | —                   | internal |
 | `correlation_id`         | uuid                     | YES  | —                   | internal |
