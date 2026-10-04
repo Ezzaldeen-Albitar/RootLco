@@ -100,7 +100,7 @@ and it does not accept the mechanism.
 
 The decision, in substance:
 
-- No company is given every module, and no package is assigned silently.
+- Do not grant every company every module (no blanket grant), and do not assign packages silently.
 - Before anything is enforced, what each existing company actually uses and depends on is
   inventoried.
 - A reviewed, explicit mapping from existing access to initial entitlements is prepared. It must

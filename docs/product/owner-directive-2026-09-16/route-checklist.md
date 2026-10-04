@@ -1357,6 +1357,18 @@ that slice; one line each:
 7. At review the implementer's 13 source falsifications were not re-run (the review was read-only); the permanent falsification cases of the syntax-tree check in `p1-28-security.test.ts` were run. `MODULE_DISPOSITION` entries `components/data` and `components/filters` are `in-surface` — scanned registrations, not exclusions. The e2e selectors match the new DOM (the Period group by its `ToggleButtonGroup` label, the native status select, links drawn by `Button component={Link}`).
 8. Confirmed at review: the instant windows (`period.ts` `boardInstantWindow`) match the old `windowOf`, "Before today" included (upper bound only); the zone rule matches (the working branch's own zone, else `branches[0]`, else `UTC`); the status select holds a whole group or one code, never both; the action buttons are `type="button"` and wrap with logical gaps; the diff carries no baseline edit and no migration change.
 
+**Residual limits of the licensing inventory and the 2026-10-03 decision records (PR #507
+review).** Recorded, not fixed in that slice; one line each:
+
+1. The read-only SQL guard (`assertReadOnlySql` in `scripts/platform/entitlement-inventory-model.mjs`) treats the backslash in an `E''` string as an ordinary character, so a crafted literal can hide a second statement from it; no live path sends one (every statement is a frozen constant or built from frozen table names) and the READ ONLY transaction and the transaction-id check are the backstop. The inventory's method section now says so instead of claiming the guard accepts only a single SELECT.
+2. "0 added" in the inventory's reachable-set proof holds by construction (entitlements only filter, `proveReachability`); the measured evidence that nothing is added is "entitled minus evidence equals forced, which is empty". The inventory now says so.
+3. `tests/unit/entitlement-inventory.test.ts` parses the real route tree and fails closed on an unclassified API module, so a later PR that adds an API module fails the unit tier until the candidate catalogue is updated; intended, and it couples the unit tier to the catalogue.
+4. The ADR register row for ADR-024 (`docs/adr/README.md`) does not mention the 2026-10-03 amendment; its status is unchanged, so this is drift, not a status error.
+5. Citation re-anchoring was checked at review by content for the 16 changed ADR-023 citations in `capability-status.md` and the architecture assessment's pointer; the remaining citations of the 41 were not checked one by one.
+6. The checkpoint row figures (bfe4e773, c8940b1c, 5d3dcbec) rest on evidence folders outside the repository; the folders exist, their contents were not re-audited at review.
+7. Locally, the repository aggregate exited 1 at review: three unit tests in two files this PR does not touch timed out at 30 s under concurrent load; run alone with the new test file they passed. The hosted unit-coverage job carries the tier.
+8. The inventory figures were checked at review against the private run output and match; the live database run was not repeated, by design.
+
 ## Material UI adoption (ADR-022)
 
 ADR-022 makes Material UI and the MUI X Community editions the component layer. Screens move onto

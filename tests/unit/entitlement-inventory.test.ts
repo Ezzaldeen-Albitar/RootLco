@@ -1,6 +1,7 @@
 // The module entitlement inventory (P1-32-PRE-OD-LIC): the read-only guard, the
 // mapping rules R1 to R6 and the no-change proof, on synthetic in-test data only.
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -580,5 +581,47 @@ describe('entitlement inventory: inputs and where it may write', () => {
     expect(() => parseArguments(['--out', 'x.json', '--db-port', 'abc'])).toThrow(/port/);
     expect(() => parseArguments(['--out'])).toThrow(/needs a value/);
     expect(parseArguments(['--out', 'x.json'])).toMatchObject({ host: '127.0.0.1', port: 54322 });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The record of the Owner's 2026-10-03 method. The directive record words the
+// prohibition as "do not grant every company every module": a blanket grant is
+// forbidden, not a company being entitled to many modules by its own evidence.
+// The ADR and the script must record that decision and not a stronger one, and
+// the inventory must explain to the Owner any tenant it entitles to everything.
+// ---------------------------------------------------------------------------
+
+function prose(relativePath: string): string {
+  const text = readFileSync(join(REPOSITORY_ROOT, relativePath), 'utf8');
+  return text.replace(/^\s*\*(?!\*)\s?/gm, '').replace(/\s+/g, ' ');
+}
+
+describe('entitlement inventory: the recorded Owner decision is the decision made', () => {
+  const directive = prose('docs/product/owner-directive-2026-09-16/README.md');
+  const records = {
+    adr: prose('docs/adr/ADR-024-module-entitlements-and-commercial-packaging.md'),
+    script: prose('scripts/platform/entitlement-inventory-model.mjs'),
+  };
+  const inventory = prose('docs/platform/module-entitlement-inventory-2026-10-04.md');
+
+  it('records the prohibition in the words of the directive record: no blanket grant', () => {
+    expect(directive).toContain('Do not grant every company every module');
+    for (const record of Object.values(records)) {
+      expect(record.toLowerCase()).toContain('grant every company every module (no blanket grant)');
+      expect(record).toMatch(/do not assign packages silently/i);
+      expect(record).not.toMatch(/no company is given every module/i);
+    }
+  });
+
+  it('explains to the Owner why tenants are entitled to every candidate module', () => {
+    const measured = /(\d+) tenants to all (\d+)/.exec(inventory);
+    expect(measured).not.toBeNull();
+    const [, tenants = '0', modules = '0'] = measured ?? [];
+    expect(Number(modules)).toBe(CANDIDATE_MODULES.length);
+    expect(Number(tenants)).toBeGreaterThan(0);
+    expect(inventory).toContain("Why the result is near-universal, for the Owner's review.");
+    expect(inventory).toContain('forbids a blanket grant of every module to every company');
+    expect(inventory).toContain('For the Owner to review:');
   });
 });

@@ -9,8 +9,9 @@
  * ## What it answers
  *
  * The Owner decided on 2026-10-03 HOW module entitlements are to be introduced
- * for existing organisations (ADR-024, amendment of that date): no company is
- * given every module, no package is assigned silently, and before anything is
+ * for existing organisations (ADR-024, amendment of that date): do not grant
+ * every company every module (no blanket grant), do not assign packages
+ * silently, and before anything is
  * enforced an explicit mapping from today's access to initial entitlements is
  * prepared and reviewed, proving that no access is removed and none is added.
  * This file holds the candidate module catalogue, the mapping rules R1 to R6 and

@@ -77,11 +77,14 @@ node scripts/platform/entitlement-inventory.mjs --db-host 127.0.0.1 --db-port 54
 ```
 
 - **Read-only.** Every statement runs inside `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY` and
-  ends with `ROLLBACK`. Before it is sent, each statement passes a guard that accepts only a single
-  SELECT or WITH statement with no data-changing keyword, no locking clause and no call outside a
-  short list of side-effect-free built-ins. Each transaction checks that the server reports it
-  read-only and that no transaction id was assigned. The guard and the transaction handling are
-  tested in `tests/unit/entitlement-inventory.test.ts`.
+  ends with `ROLLBACK`. Before it is sent, each statement passes a guard meant to accept only a
+  single SELECT or WITH statement with no data-changing keyword, no locking clause and no call
+  outside a short list of side-effect-free built-ins. The guard is a lexical check, not a SQL
+  parser: it treats the backslash in an `E''` string as an ordinary character, so a crafted literal
+  can hide a second statement from it. No such statement is sent: every statement is a frozen
+  constant or is built from frozen table names. Each transaction checks that the server reports it
+  read-only and that no transaction id was assigned, which is the backstop. The guard and the
+  transaction handling are tested in `tests/unit/entitlement-inventory.test.ts`.
 - **Four transactions.** A snapshot of the migration ledger and of 36 table row counts; the
   inventory read; the same read again; the snapshot again.
 - **Effective codes** follow `iam.has_permission`: an active, not deleted account in the grant's
@@ -209,7 +212,10 @@ Owner answers; it is a recommendation, not an approval.
 
 **Measured result, 2026-10-04.**
 
-- Reachable sets: identical for 152 of 152 active users; 0 operations removed and 0 added.
+- Reachable sets: identical for 152 of 152 active users; 0 operations removed. That none is added
+  holds by construction, not by measurement: entitlements only filter the before set
+  (`proveReachability`), so the after set can never be larger. The measured evidence that the
+  mapping adds nothing is the next line.
 - Entitled minus evidence: empty for all 61 tenants; forced additions 0.
 - The operator's tenant: 0 modules.
 - Proposed result: 59 tenants entitled to 16 candidates (all but appointments), 2 tenants to all 17,
@@ -224,6 +230,23 @@ Owner answers; it is a recommendation, not an approval.
   administrator bundles of 78 (58 tenants), 89 (1) and 97 codes (2), 152 active users, 145 holding
   codes, 19 distinct reachable-operation sets, 61 tenants entitled to 16 candidates with
   appointments for 2, none for the operator's tenant, and no addition by a forced dependency.
+
+**Why the result is near-universal, for the Owner's review.** The decided method forbids a blanket
+grant of every module to every company. This result is not one: each tenant's set is derived from
+its own evidence under R2, and the result is wide because today's access is wide.
+
+- The 2 tenants entitled to all 17 candidates are the 2 QA organisations, the only tenants whose
+  users hold `apt.*` codes.
+- The other 59 tenants are entitled to 16 because the standard administrator bundle holds codes of
+  every candidate module except appointments. That is true of the 78-code and the 89-code bundles;
+  the 97-code bundle also holds the appointment codes. Under R2 a held code entitles its module, so
+  an active user holding the bundle entitles those 16 modules by itself.
+- Much of that is held, not used: the _Granted_ column in section 2 counts tenants that hold a
+  module's codes with no business rows and no audit action for it, and it is 29 or more for every
+  module except appointments (58 of 61 for diagnostics).
+- For the Owner to review: whether a module reached only through the administrator bundle, with no
+  use, should be entitled initially. Withholding it would remove access users hold today, which the
+  decided method forbids, so the proposed mapping keeps it until the Owner decides otherwise.
 
 **Not done here, and required before any apply.**
 
