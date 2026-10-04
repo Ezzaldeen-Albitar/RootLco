@@ -58,14 +58,17 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ grantId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     GRANT_SCOPE_LIST_OPERATION,
     request,
-    async ({ db }) => ({
-      body: { items: await iamModule().access.listScopes(db, params.grantId) },
-    }),
-    { params }
+    async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return {
+        body: { items: await iamModule().access.listScopes(db, params.grantId) },
+      };
+    },
+    { params: raw }
   );
 }
 
@@ -73,7 +76,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ grantId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -81,14 +84,17 @@ export async function POST(
   return handleOperation(
     GRANT_SCOPE_ADD_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
-      status: 201,
-      body: await iamModule().access.addScope(
-        db,
-        params.grantId,
-        await parseJsonBody(raw, ScopeBody)
-      ),
-    }),
-    { params, body }
+    async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        status: 201,
+        body: await iamModule().access.addScope(
+          db,
+          params.grantId,
+          await parseJsonBody(raw, ScopeBody)
+        ),
+      };
+    },
+    { params: rawParams, body }
   );
 }

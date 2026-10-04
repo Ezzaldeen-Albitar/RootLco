@@ -85,7 +85,16 @@
  *   node scripts/ci/check-p1-27-closing-values.mjs [--json out.json]
  *   node scripts/ci/check-p1-27-closing-values.mjs --record <tier>
  *   node scripts/ci/check-p1-27-closing-values.mjs --record <tier> --hosted-run <runId>
+ *   node scripts/ci/check-p1-27-closing-values.mjs --record <tier> [--hosted-run <runId>] --diagnostic
  * Exit: 0 clean · 1 a value is unclassified, unbound or misclassified · 2 IO.
+ *
+ * `--record` exits 0 when it wrote, 1 when it REFUSED the run (nothing is
+ * written), and 2 when it could not read or write at all (nothing is written).
+ * It records SUCCESS only: a run that failed, was cancelled, timed out, was
+ * skipped, is still in flight, describes another head, lacks its artifact or
+ * carries counts that disagree is refused. `--diagnostic` is the one way to keep
+ * such a run as history, and it writes to `diagnostics` — never to `tiers`,
+ * which is the only part of the ledger any gate reads as a measurement.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
@@ -95,6 +104,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { deriveCounts, walk } from './check-p1-27-doc-counts.mjs';
 import { executableChangesSince, commitExists } from './check-p1-27-lifecycle.mjs';
+import { writeFilesAtomically } from '../lib/atomic-files.mjs';
 
 const HERE = fileURLToPath(new URL('.', import.meta.url));
 const ROOT = join(HERE, '..', '..');
@@ -491,6 +501,8 @@ export const FAILURES = Object.freeze({
     'a hosted run record whose run describes a different head than the record does',
   RUN_RECORD_HOSTED_CLAIMS_LOCAL_MEASUREMENT:
     'a hosted run record carrying a local measurement it could not have taken',
+  RUN_RECORD_DIAGNOSTIC_MISPLACED:
+    'a diagnostic record standing where a measurement is read, or history that does not mark itself diagnostic',
   UNKNOWN_CLASS: 'an entry naming a class this gate does not implement',
   BAD_STANDING: 'a class and standing pair the vocabulary does not allow',
   UNSEALED_DOCUMENT: 'a document whose regions do not tile it',
@@ -1102,12 +1114,72 @@ export function judgeRunProvenance(tier, record) {
   return problems;
 }
 
+/**
+ * Where a failed run's history may live, and the words it must carry.
+ *
+ * A failed, cancelled or otherwise ineligible run may be KEPT — the history of
+ * what went wrong is worth having — but it may never become evidence of what
+ * went right. So it is written under `diagnostics`, which no reader of this
+ * ledger reads as a measurement (every one of them reads `tiers`), and it
+ * carries `diagnostic: true` and a notice saying so. The two halves are both
+ * enforced below: a record in `tiers` carrying the marker is refused, and an
+ * entry in `diagnostics` without it is refused, so neither can be passed off
+ * as the other.
+ */
+export const DIAGNOSTICS_KEY = 'diagnostics';
+export const DIAGNOSTIC_NOTICE =
+  'DIAGNOSTIC ONLY — a run that did not succeed, kept as history. It is not a measurement, ' +
+  'it is never success evidence, and no gate reads it as one.';
+
+export function judgeRunDiagnostics(runs) {
+  const problems = [];
+  for (const [tier, record] of Object.entries(runs?.tiers ?? {})) {
+    if (record !== null && typeof record === 'object' && 'diagnostic' in record) {
+      problems.push(
+        problem(
+          'RUN_RECORD_DIAGNOSTIC_MISPLACED',
+          `the \`${tier}\` tier holds a diagnostic record. A diagnostic is the history of a run ` +
+            `that did not succeed and belongs under \`${DIAGNOSTICS_KEY}\`, never where a ` +
+            'measurement is read'
+        )
+      );
+    }
+  }
+  const history = runs?.[DIAGNOSTICS_KEY];
+  if (history === undefined) return problems;
+  if (!Array.isArray(history)) {
+    problems.push(
+      problem('RUN_RECORD_DIAGNOSTIC_MISPLACED', `\`${DIAGNOSTICS_KEY}\` is not a list`)
+    );
+    return problems;
+  }
+  history.forEach((entry, index) => {
+    if (
+      entry?.diagnostic !== true ||
+      typeof entry?.evidence !== 'string' ||
+      !entry.evidence.startsWith('DIAGNOSTIC ONLY')
+    ) {
+      problems.push(
+        problem(
+          'RUN_RECORD_DIAGNOSTIC_MISPLACED',
+          `\`${DIAGNOSTICS_KEY}[${index}]\` does not mark itself diagnostic, so a reader could ` +
+            'take it for a measurement'
+        )
+      );
+    }
+  });
+  return problems;
+}
+
 export function judgeRunLedger(facts) {
   const problems = [];
   const runs = facts.runs;
   if (!runs || typeof runs !== 'object') {
     return [problem('RUN_RECORD_STALE', `${RUN_LEDGER_PATH} is absent — run \`--record\``)];
   }
+  // Diagnostic history is judged for its MARKING only. Its contents are never
+  // read as a measurement: the loop below walks `tiers`, and nothing else.
+  problems.push(...judgeRunDiagnostics(runs));
   for (const [tier, record] of Object.entries(runs.tiers ?? {})) {
     // Completeness FIRST, and outside the staleness short-circuits below: a
     // record that names no resolvable commit `continue`s, and a run that ran
@@ -1453,6 +1525,14 @@ export const SELF_CHECK_CASES = Object.freeze([
     },
   },
   {
+    id: 'R8',
+    what: 'a diagnostic record of a failed run standing where the measurement is read',
+    expect: 'RUN_RECORD_DIAGNOSTIC_MISPLACED',
+    mutate: (f) => {
+      f.runs.tiers.web.diagnostic = true;
+    },
+  },
+  {
     id: 'J',
     what: 'a document with an unsealed gap',
     expect: 'UNSEALED_DOCUMENT',
@@ -1656,7 +1736,7 @@ export const TIER_COMMANDS = Object.freeze({
  * blocks, which is 486 for a 90-file tier and would have made the cross-check
  * against the tree meaningless.
  */
-function record(tier, root = ROOT) {
+function record(tier, root = ROOT, { diagnostic = false } = {}) {
   const command = TIER_COMMANDS[tier];
   if (!command) {
     process.stderr.write(`::error::unknown tier \`${tier}\` — ${Object.keys(TIER_COMMANDS)}\n`);
@@ -1701,7 +1781,7 @@ function record(tier, root = ROOT) {
     howToTake: 'node scripts/ci/check-p1-27-closing-values.mjs --record <tier>',
     tiers: {},
   };
-  ledger.tiers[tier] = {
+  const entry = {
     command: `${command.join(' ')} --reporter=json`,
     tests: report.numTotalTests,
     passed: report.numPassedTests,
@@ -1713,12 +1793,108 @@ function record(tier, root = ROOT) {
     dirtyExecutablePaths: dirty.filter((p) => !p.startsWith('docs/') && !p.endsWith('.md')),
     measuredAt: new Date().toISOString(),
   };
-  writeFileSync(native(root, RUN_LEDGER_PATH), `${JSON.stringify(ledger, null, 2)}\n`);
+  // Judged BEFORE anything is written: a run that did not succeed may not take
+  // the place of the record a gate reads, whatever else it reports.
+  const problems = recordProblems(tier, entry);
+  if (!diagnostic) {
+    if (problems.length > 0) return refuseRecord(tier, problems);
+    ledger.tiers[tier] = entry;
+  } else {
+    if (problems.length === 0) return refuseDiagnosticOfSuccess(tier);
+    appendDiagnostic(ledger, localDiagnosticRecord(tier, entry, problems));
+  }
+  if (!writeLedger(root, ledger)) return 2;
   process.stdout.write(
-    `recorded ${tier}: ${report.numTotalTests} tests, ${report.numFailedTests} failed, ` +
+    `${diagnostic ? 'kept as DIAGNOSTIC history (not evidence) ' : 'recorded '}${tier}: ` +
+      `${report.numTotalTests} tests, ${report.numFailedTests} failed, ` +
       `${(report.testResults ?? []).length} files at ${head.slice(0, 8)}\n`
   );
   return 0;
+}
+
+/**
+ * Why a record may not be written as SUCCESS evidence — the completeness and
+ * provenance rules the gate applies to `tiers`, plus a recorded failure, run
+ * before the write rather than after it. Empty means it may be written.
+ */
+export function recordProblems(tier, entry) {
+  const problems = [...judgeRunCompleteness(tier, entry), ...judgeRunProvenance(tier, entry)];
+  if (Number(entry?.failed) !== 0) {
+    problems.push(
+      problem(
+        'RUN_RECORD_RUN_NOT_SUCCESSFUL',
+        `the \`${tier}\` run recorded ${String(entry?.failed)} failure(s)`
+      )
+    );
+  }
+  return problems;
+}
+
+function refuseRecord(tier, problems, write = (text) => process.stderr.write(text)) {
+  for (const each of problems) write(`::error::${each.text}\n`);
+  write(
+    `::error::the ${tier} run is not success evidence, so nothing was written. To keep it as ` +
+      'failure history instead, re-run with `--diagnostic`; that writes under ' +
+      `\`${DIAGNOSTICS_KEY}\` and never touches \`tiers\`\n`
+  );
+  return 1;
+}
+
+function refuseDiagnosticOfSuccess(tier, write = (text) => process.stderr.write(text)) {
+  write(
+    `::error::the ${tier} run is eligible success evidence; record it without \`--diagnostic\`. ` +
+      'A diagnostic is history of a run that did NOT succeed, and nothing was written\n'
+  );
+  return 1;
+}
+
+function appendDiagnostic(ledger, entry) {
+  const history = Array.isArray(ledger[DIAGNOSTICS_KEY]) ? ledger[DIAGNOSTICS_KEY] : [];
+  ledger[DIAGNOSTICS_KEY] = [...history, entry];
+}
+
+/**
+ * Writes the ledger in one step or not at all. The whole file is computed
+ * first; `writeFilesAtomically` swaps it in, and on a failure the file keeps
+ * the bytes it had.
+ */
+function writeLedger(root, ledger, { fs, write = (text) => process.stderr.write(text) } = {}) {
+  try {
+    writeFilesAtomically(
+      [{ path: native(root, RUN_LEDGER_PATH), content: `${JSON.stringify(ledger, null, 2)}\n` }],
+      fs
+    );
+    return true;
+  } catch (error) {
+    write(`::error::${RUN_LEDGER_PATH} was not written, and is unchanged: ${error.message}\n`);
+    return false;
+  }
+}
+
+/**
+ * The history a failed LOCAL run leaves when `--diagnostic` asks for it.
+ * Marked, and filed under `diagnostics`, so no reader can take it for a tier.
+ */
+export function localDiagnosticRecord(tier, entry, problems) {
+  return {
+    diagnostic: true,
+    evidence: DIAGNOSTIC_NOTICE,
+    source: 'local',
+    tier,
+    outcome: 'not successful',
+    refusedBecause: problems.map((each) => each.text),
+    measuredAtCommit: entry.measuredAtCommit,
+    measuredAt: entry.measuredAt,
+    command: entry.command,
+    exitCode: entry.exitCode,
+    counts: {
+      tests: entry.tests,
+      passed: entry.passed,
+      failed: entry.failed,
+      skipped: entry.skipped,
+      files: entry.files,
+    },
+  };
 }
 
 /**
@@ -1767,6 +1943,59 @@ export function hostedRunRecord(tier, hosted) {
 }
 
 /**
+ * The history an ineligible HOSTED run leaves when `--diagnostic` asks for it.
+ *
+ * Everything in it is what the run reported, as `hostedRunRecord` takes it —
+ * but it is marked, filed under `diagnostics`, and names why it was refused, so
+ * it can explain a failure without ever standing in for a success.
+ */
+export function hostedDiagnosticRecord(tier, observation, problems) {
+  const report = observation.report;
+  return {
+    diagnostic: true,
+    evidence: DIAGNOSTIC_NOTICE,
+    source: 'hosted',
+    tier,
+    outcome:
+      observation.jobConclusion ?? observation.runConclusion ?? observation.runStatus ?? 'unknown',
+    refusedBecause: problems.map((each) => each.text),
+    run: {
+      id: observation.runId,
+      url: observation.runUrl,
+      workflow: observation.workflow,
+      headSha: observation.headSha,
+      status: observation.runStatus,
+      conclusion: observation.runConclusion,
+    },
+    job:
+      observation.job === null
+        ? null
+        : {
+            id: observation.job,
+            name: observation.jobName,
+            status: observation.jobStatus,
+            conclusion: observation.jobConclusion,
+          },
+    step: { name: observation.step, conclusion: observation.stepConclusion },
+    artifact:
+      observation.artifactDigest === null
+        ? null
+        : { name: observation.artifact, digest: observation.artifactDigest },
+    counts:
+      report === null || typeof report !== 'object'
+        ? null
+        : {
+            tests: report.numTotalTests,
+            passed: report.numPassedTests,
+            failed: report.numFailedTests,
+            skipped: (report.numPendingTests ?? 0) + (report.numTodoTests ?? 0),
+            files: (report.testResults ?? []).length,
+          },
+    observedAt: observation.completedAt,
+  };
+}
+
+/**
  * Records a tier from the GitHub run that produced it, rather than from a run of
  * it here.
  *
@@ -1785,65 +2014,110 @@ export function hostedRunRecord(tier, hosted) {
  * whose bytes are checked against the digest GitHub publishes for them. A caller
  * can pass the wrong run; it cannot pass the wrong numbers.
  *
- * The run must describe THIS head, and the record is filed against the commit it
- * was taken at, so the staleness rules expire it exactly as they expire a local
- * one. A hosted record buys authority, not permanence.
+ * ONLY SUCCESS IS RECORDED. `judgeHostedEligibility` decides, before anything is
+ * written, that the run describes THIS head, that the tier's own job belongs to
+ * it and concluded success, that the tier step concluded success, and that the
+ * artifact is the run's own, on its digest, with a report and a tier summary
+ * that agree and record no failure. A run whose OTHER jobs failed may still
+ * supply this tier — that is the per-tier rule in `ELIGIBLE_RUN_CONCLUSIONS` —
+ * but a cancelled, timed-out, skipped or unfinished run supplies nothing. The
+ * record is then put through the same completeness and provenance rules the
+ * gate applies, and only then written, in one step.
+ *
+ * `--diagnostic` inverts the last step for a run that is NOT eligible: it keeps
+ * the observation as marked history under `diagnostics`, and refuses a run that
+ * is eligible, so the two can never be confused.
+ *
+ * `options` exists for tests, which replay recorded API answers: `request`
+ * replaces the network, and `token`, `repo`, `head`, `fs`, `stdout` and `stderr`
+ * replace what the command line would otherwise read or write.
+ *
+ * Exit: 0 written · 1 refused, nothing written · 2 cannot read or write, nothing
+ * written.
  */
-export async function recordHosted(tier, runId, root = ROOT) {
+export async function recordHosted(tier, runId, root = ROOT, options = {}) {
+  const say = options.stdout ?? ((text) => process.stdout.write(text));
+  const warn = options.stderr ?? ((text) => process.stderr.write(text));
+  const diagnostic = options.diagnostic === true;
   if (!TIER_COMMANDS[tier]) {
-    process.stderr.write(`::error::unknown tier \`${tier}\` — ${Object.keys(TIER_COMMANDS)}\n`);
+    warn(`::error::unknown tier \`${tier}\` — ${Object.keys(TIER_COMMANDS)}\n`);
     return 2;
   }
   if (!/^\d+$/.test(String(runId ?? ''))) {
-    process.stderr.write('::error::--hosted-run needs a numeric GitHub run id\n');
+    warn('::error::--hosted-run needs a numeric GitHub run id\n');
     return 2;
   }
-  const token = process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
+  const token = options.token ?? process.env.GH_TOKEN ?? process.env.GITHUB_TOKEN;
   if (!token) {
-    process.stderr.write(
+    warn(
       '::error::no GH_TOKEN/GITHUB_TOKEN. Reading a hosted run needs an authenticated read, and ' +
         'refusing is the only honest answer without one\n'
     );
     return 2;
   }
-  const remote = git(['remote', 'get-url', 'origin'], root).trim();
   const repo =
-    process.env.GITHUB_REPOSITORY ?? remote.match(/github\.com[/:]([^/]+\/[^/.]+)/)?.[1] ?? '';
+    options.repo ??
+    process.env.GITHUB_REPOSITORY ??
+    git(['remote', 'get-url', 'origin'], root)
+      .trim()
+      .match(/github\.com[/:]([^/]+\/[^/.]+)/)?.[1] ??
+    '';
   if (!repo) {
-    process.stderr.write('::error::cannot tell which repository this is from `origin`\n');
+    warn('::error::cannot tell which repository this is from `origin`\n');
     return 2;
   }
 
-  let hosted;
+  let observation;
+  let judgeHostedEligibility;
   try {
-    const { fetchHostedTierRun } = await import('../lib/hosted-run-report.mjs');
-    hosted = await fetchHostedTierRun({ repo, runId: String(runId), tier, token });
+    const hostedRunReport = await import('../lib/hosted-run-report.mjs');
+    judgeHostedEligibility = hostedRunReport.judgeHostedEligibility;
+    observation = await hostedRunReport.fetchHostedTierRun({
+      repo,
+      runId: String(runId),
+      tier,
+      token,
+      request: options.request,
+    });
   } catch (error) {
-    process.stderr.write(`::error::${error.message}\n`);
+    warn(`::error::${error.message}; nothing was written\n`);
     return 2;
   }
 
-  const head = git(['rev-parse', 'HEAD'], root).trim();
-  if (hosted.headSha !== head) {
-    // Filing a run of one tree against another is the single way this writer
-    // could manufacture a green record, so it is refused here rather than left
-    // for the gate to catch afterwards.
-    process.stderr.write(
-      `::error::run ${runId} describes ${hosted.headSha.slice(0, 8)} but HEAD is ` +
-        `${head.slice(0, 8)}; a record may only be filed against the head its run ran\n`
-    );
-    return 2;
-  }
-
+  const head = options.head ?? git(['rev-parse', 'HEAD'], root).trim();
+  const ineligible = judgeHostedEligibility(observation, { head });
   const ledger = readJson(root, RUN_LEDGER_PATH) ?? { tiers: {} };
-  ledger.tiers[tier] = hostedRunRecord(tier, hosted);
-  const report = hosted.report;
-  writeFileSync(native(root, RUN_LEDGER_PATH), `${JSON.stringify(ledger, null, 2)}\n`);
-  process.stdout.write(
-    `recorded ${tier} from hosted run ${hosted.runId} job ${hosted.job}: ` +
+
+  if (diagnostic) {
+    if (ineligible.length === 0) return refuseDiagnosticOfSuccess(tier, warn);
+    if (observation.runStatus !== 'completed') {
+      // A run in flight has no outcome yet, so there is nothing to keep.
+      for (const each of ineligible) warn(`::error::${each.text}\n`);
+      warn('::error::a run in flight has no outcome to keep as history; nothing was written\n');
+      return 1;
+    }
+    appendDiagnostic(ledger, hostedDiagnosticRecord(tier, observation, ineligible));
+    if (!writeLedger(root, ledger, { fs: options.fs, write: warn })) return 2;
+    say(
+      `kept ${tier} from hosted run ${observation.runId} as DIAGNOSTIC history (not evidence) ` +
+        `under \`${DIAGNOSTICS_KEY}\`: ${ineligible.map((each) => each.id).join(', ')}\n`
+    );
+    return 0;
+  }
+
+  if (ineligible.length > 0) return refuseRecord(tier, ineligible, warn);
+  const entry = hostedRunRecord(tier, observation);
+  const problems = recordProblems(tier, entry);
+  if (problems.length > 0) return refuseRecord(tier, problems, warn);
+
+  ledger.tiers[tier] = entry;
+  if (!writeLedger(root, ledger, { fs: options.fs, write: warn })) return 2;
+  const report = observation.report;
+  say(
+    `recorded ${tier} from hosted run ${observation.runId} job ${observation.job}: ` +
       `${report.numTotalTests} tests, ${report.numFailedTests} failed, ` +
-      `${(report.testResults ?? []).length} files, exit ${hosted.exitCode} at ` +
-      `${hosted.headSha.slice(0, 8)}\n`
+      `${(report.testResults ?? []).length} files, exit ${observation.exitCode} at ` +
+      `${observation.headSha.slice(0, 8)}\n`
   );
   return 0;
 }
@@ -1865,9 +2139,10 @@ export function evaluate(root = ROOT) {
 function main(argv) {
   if (argv.includes('--record')) {
     const tier = argv[argv.indexOf('--record') + 1];
+    const diagnostic = argv.includes('--diagnostic');
     return argv.includes('--hosted-run')
-      ? recordHosted(tier, argv[argv.indexOf('--hosted-run') + 1], ROOT)
-      : record(tier, ROOT);
+      ? recordHosted(tier, argv[argv.indexOf('--hosted-run') + 1], ROOT, { diagnostic })
+      : record(tier, ROOT, { diagnostic });
   }
   let result;
   try {

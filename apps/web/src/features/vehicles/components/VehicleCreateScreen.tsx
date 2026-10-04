@@ -2,8 +2,9 @@
 
 import { useActionState, useEffect, useId, useState, useTransition } from 'react';
 import Link from 'next/link';
+import { FailureExplanation } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
 import { createVehicleAction, type VehicleCreationState } from '../api';
 import { VinField } from './VinField';
@@ -388,7 +389,8 @@ export function VehicleCreateScreen({
 
         {state.status !== 'idle' && state.status !== 'success' && state.messageKey ? (
           <p role="alert" className="text-body text-error">
-            {translateDynamic(messages, state.messageKey)}
+            {translateWithValues(messages, state.messageKey, state.messageValues)}
+            <FailureExplanation messages={messages} messageKey={state.messageKey} />
             {state.correlationId ? (
               <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
             ) : null}

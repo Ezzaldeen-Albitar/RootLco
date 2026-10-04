@@ -1,9 +1,15 @@
-import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { BranchSwitch, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+} from './support/branch-switch';
 import type { CheckInStepProps } from '@/features/receptions/check-in/wizard';
 import type { ReceptionDetail } from '@/features/receptions/receptions-contract';
 
@@ -32,12 +38,14 @@ const recordAuthorization = vi.fn();
 
 vi.mock('@/features/receptions/api', () => ({
   createReception: (...args: unknown[]) => createReception(...args),
-  listReceptions: (...args: unknown[]) => listReceptions(...args),
   readReception: (...args: unknown[]) => readReception(...args),
   listPartyRoles: (...args: unknown[]) => listPartyRoles(...args),
   listAuthorizations: (...args: unknown[]) => listAuthorizations(...args),
   assignPartyRole: (...args: unknown[]) => assignPartyRole(...args),
   recordAuthorization: (...args: unknown[]) => recordAuthorization(...args),
+}));
+vi.mock('@/features/receptions/reception-list-read', () => ({
+  listReceptionsCancellable: (...args: unknown[]) => listReceptions(...args),
 }));
 
 const listConfirmedAppointments = vi.fn();
@@ -55,13 +63,13 @@ vi.mock('@/features/receptions/support-api', () => ({
 }));
 
 const listCustomerVehicles = vi.fn();
-vi.mock('@/lib/customers/vehicles', () => ({
-  listCustomerVehicles: (...args: unknown[]) => listCustomerVehicles(...args),
+vi.mock('@/lib/customers/vehicles-read', () => ({
+  listCustomerVehiclesCancellable: (...args: unknown[]) => listCustomerVehicles(...args),
 }));
 
 const searchCustomerDirectory = vi.fn();
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 
 const { CheckInStartScreen } = await import('@/features/receptions/components/CheckInStartScreen');
@@ -164,14 +172,61 @@ const SESSION = { userId: 'user-1', displayName: 'Front Desk' };
  * their own case below.
  */
 
+/**
+ * The branch this check-in is for.
+ *
+ * It used to be two controls on the form — a select over raw references, or two
+ * free-text boxes for an operator whose grant is not narrowed. Recording
+ * custody of a vehicle against a branch somebody typed is exactly the fault
+ * this replaces, so the branch is the working context's named selection and the
+ * test states it by standing the screen in one.
+ */
+const CHECKIN_BRANCH = {
+  id: 'branch-1',
+  companyId: 'company-1',
+  code: 'B1',
+  name: 'Main workshop',
+  city: null,
+  timezone: 'Asia/Riyadh',
+  status: 'active',
+};
+
+const CHECKIN_CONTEXT = branchSnapshot([CHECKIN_BRANCH]);
+
+/** No branch chosen yet: two are authorized and the header has not been used. */
+const NO_BRANCH_CHOSEN = branchSnapshot([
+  CHECKIN_BRANCH,
+  { ...CHECKIN_BRANCH, id: 'branch-2', name: 'Second workshop' },
+]);
+
+/** A row action's name begins with its label; what it acts on follows. */
+const named = (label: string) => new RegExp(`^${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`);
+
+/** The service-requester chooser: one combobox, named by its label. */
+const requesterBox = (T: Record<string, string> = EN) =>
+  screen.getByRole('combobox', { name: T['receptions.checkIn.requester']! });
+
+/** Load the branch's confirmed appointments and choose the one on offer. */
+async function chooseTheAppointment(
+  user: ReturnType<typeof userEvent.setup>,
+  T: Record<string, string> = EN
+) {
+  await user.click(screen.getByRole('button', { name: T['receptions.checkIn.loadAppointments']! }));
+  const grid = await screen.findByTestId('check-in-appointments');
+  await user.click(
+    await within(grid).findByRole('button', { name: named(T['receptions.checkIn.choose']!) })
+  );
+}
+
+/** The Material field root a control sits in — where the error class is drawn. */
+const fieldRoot = (control: HTMLElement) => control.closest('.MuiInputBase-root');
+
 function startProps(over: Record<string, unknown> = {}) {
   return {
     locale: 'en' as const,
     messages: en,
     sessionUserId: 'user-1',
     sessionUserName: 'Front Desk',
-    companyIds: ['company-1'],
-    branchIds: ['branch-1'],
     canCreate: true,
     canListAppointments: true,
     canPickEmployee: false,
@@ -234,32 +289,33 @@ beforeEach(() => {
 
 describe('the start screen — origin XOR', () => {
   it('starts as a walk-in and shows the requester search, not the appointment picker', () => {
-    renderLtr(<CheckInStartScreen {...startProps()} />);
-    expect(screen.getByText(EN['receptions.checkIn.requester']!)).toBeInTheDocument();
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+    expect(requesterBox()).toBeInTheDocument();
     expect(screen.queryByText(EN['receptions.checkIn.loadAppointments']!)).not.toBeInTheDocument();
   });
 
   it('switching to appointment swaps the panels — one origin at a time, ever', async () => {
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
     expect(screen.getByText(EN['receptions.checkIn.loadAppointments']!)).toBeInTheDocument();
-    expect(screen.queryByText(EN['receptions.checkIn.requester']!)).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('combobox', { name: EN['receptions.checkIn.requester']! })
+    ).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('radio', { name: /Walk-in/ }));
-    expect(screen.getByText(EN['receptions.checkIn.requester']!)).toBeInTheDocument();
+    expect(requesterBox()).toBeInTheDocument();
     expect(screen.queryByText(EN['receptions.checkIn.loadAppointments']!)).not.toBeInTheDocument();
   });
 
   it('choosing an appointment surfaces the open visit of ITS vehicle, with a resume link', async () => {
     listReceptions.mockResolvedValue(page([OPEN_VISIT_ROW]));
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-    await user.click(await screen.findByText(/Layla Haddad/));
+    await chooseTheAppointment(user);
 
     // The lookup is filtered by the appointment's OWN vehicle.
     await waitFor(() => {
@@ -281,16 +337,32 @@ describe('the start screen — origin XOR', () => {
       attempt: 1,
     });
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-    await user.click(await screen.findByText(/Layla Haddad/));
+    await chooseTheAppointment(user);
     await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
 
     // Both readings of ERR-RES-002 in one sentence, plus the reference.
     expect(await screen.findByText(EN['receptions.checkIn.conflictBody']!)).toBeInTheDocument();
     expect(screen.getByText('corr-409')).toBeInTheDocument();
+  });
+
+  it('a create whose answer never arrives says so, keeps the choice and frees the button', async () => {
+    // The Server Action's promise REJECTS (the connection dropped): not a
+    // pending button for ever, not an unhandled rejection.
+    createReception.mockRejectedValue(new TypeError('Failed to fetch'));
+    const user = userEvent.setup();
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await chooseTheAppointment(user);
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+
+    expect(await screen.findByText(EN['state.unavailable.message']!)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! })).toBeEnabled();
+    // The appointment the operator chose is still chosen.
+    expect(screen.getByText(/A-0001/)).toBeInTheDocument();
   });
 
   it('a successful create offers the wizard, by the visit the backend named', async () => {
@@ -307,11 +379,10 @@ describe('the start screen — origin XOR', () => {
       },
     });
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-    await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-    await user.click(await screen.findByText(/Layla Haddad/));
+    await chooseTheAppointment(user);
     await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
 
     expect(await screen.findByText(EN['receptions.checkIn.created']!)).toBeInTheDocument();
@@ -331,8 +402,160 @@ describe('the start screen — origin XOR', () => {
     });
   });
 
+  it('states a refused receiving employee in the panel that names one, keeping the choice', async () => {
+    // `rec.reception-create` publishes `body.receivingEmployeeId`. Nothing on
+    // this form read the field errors, so the sentence reached nobody and the
+    // operator was left with the shared banner and four panels to guess between.
+    createReception.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { receivingEmployeeId: 'form.violation.ineligible_reference' },
+      correlationId: 'corr-422',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await chooseTheAppointment(user);
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+
+    const sentence = await screen.findByText(EN['form.violation.ineligible_reference']!);
+    expect(sentence).toBeInTheDocument();
+    // Beside the employee panel, not at the foot of the form.
+    expect(
+      sentence.closest('fieldset')?.textContent?.includes(EN['receptions.checkIn.employeeLegend']!)
+    ).toBe(true);
+    // The appointment the operator chose is still chosen.
+    expect(screen.getByText(/Layla Haddad/)).toBeInTheDocument();
+  });
+
+  it('states a refused branch in the panel the branch is chosen in', async () => {
+    createReception.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { branchId: 'form.violation.incoherent_reference' },
+      correlationId: 'corr-422',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await chooseTheAppointment(user);
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+
+    const sentence = await screen.findByText(EN['form.violation.incoherent_reference']!);
+    expect(
+      sentence.closest('fieldset')?.textContent?.includes(EN['receptions.checkIn.targetLegend']!)
+    ).toBe(true);
+  });
+
+  it('marks a refusal with the shape every other refused field carries', async () => {
+    /*
+     * Colour alone is not a cue: a reader who cannot see it, and a colour-blind
+     * reader who can, both get nothing. Every refused field in this product
+     * carries a bordered exclamation beside the sentence, and these three said
+     * their piece in red text and nothing else.
+     */
+    createReception.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { receivingEmployeeId: 'form.violation.ineligible_reference' },
+      correlationId: 'corr-422',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
+
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await chooseTheAppointment(user);
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+
+    const refusal = await screen.findByTestId('check-in-refusal-receivingEmployeeId');
+    expect(refusal).toHaveAttribute('role', 'alert');
+    expect(refusal.textContent).toContain('!');
+    expect(refusal.textContent).toContain(EN['form.violation.ineligible_reference']!);
+  });
+
+  it('retires a refusal when the operator changes the value it was about', async () => {
+    /*
+     * A complaint about a value that is no longer there is a false statement,
+     * and leaving it up makes the operator submit again to find out which of
+     * the complaints still stand — which is the opposite of what the mark is
+     * for. `useClearOnCorrect` is the shared rule and this is it, applied to a
+     * panel-level refusal rather than to a text box.
+     */
+    createReception.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { receivingEmployeeId: 'form.violation.ineligible_reference' },
+      correlationId: 'corr-422',
+      attempt: 1,
+    });
+    listReceivingEmployeeCandidates.mockResolvedValue(
+      page([
+        { id: 'user-1', displayName: 'Front Desk' },
+        { id: 'user-2', displayName: 'Second Desk' },
+      ])
+    );
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
+
+    await user.click(screen.getByRole('radio', { name: /Appointment/ }));
+    await chooseTheAppointment(user);
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+    await screen.findByTestId('check-in-refusal-receivingEmployeeId');
+
+    // Choosing somebody else IS the correction.
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.checkIn.employeeChoose']! })
+    );
+    await user.click(
+      await screen.findByRole('button', { name: `${EN['receptions.checkIn.choose']!} Second Desk` })
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByTestId('check-in-refusal-receivingEmployeeId')).toBeNull()
+    );
+  });
+
+  it('states the refused receiving employee in Arabic, in the same panel', async () => {
+    createReception.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.formError',
+      fieldErrors: { receivingEmployeeId: 'form.violation.ineligible_reference' },
+      correlationId: 'corr-422',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderRtl(
+      inBranch(<CheckInStartScreen {...startProps({ messages: ar as typeof en })} />, {
+        snapshot: CHECKIN_CONTEXT,
+        locale: 'ar',
+      })
+    );
+
+    // The accessible name carries the option's description too, so the label is
+    // matched as a prefix rather than whole.
+    await user.click(
+      screen.getByRole('radio', { name: new RegExp(`^${AR['receptions.origin.appointment']!}`) })
+    );
+    await chooseTheAppointment(user, AR);
+    await user.click(screen.getByRole('button', { name: AR['receptions.checkIn.submit']! }));
+
+    const sentence = await screen.findByText(AR['form.violation.ineligible_reference']!);
+    expect(
+      sentence.closest('fieldset')?.textContent?.includes(AR['receptions.checkIn.employeeLegend']!)
+    ).toBe(true);
+  });
+
   it('defaults the receiving employee to the operator, and states what the picker reads', () => {
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
     expect(
       screen.getByText(`${EN['receptions.checkIn.employeeSelf']} — Front Desk`)
     ).toBeInTheDocument();
@@ -343,7 +566,11 @@ describe('the start screen — origin XOR', () => {
 
   it('offers the BRANCH-eligible list, and asks the operation for that branch', async () => {
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
 
     await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
     // The branch target travels. A picker that asked tenant-wide would answer
@@ -355,7 +582,7 @@ describe('the start screen — origin XOR', () => {
     await user.click(
       screen.getByRole('button', { name: EN['receptions.checkIn.employeeChoose']! })
     );
-    expect(await screen.findByText('Front Desk')).toBeInTheDocument();
+    expect(await screen.findByRole('gridcell', { name: 'Front Desk' })).toBeInTheDocument();
   });
 
   it('withdraws the default when the operator is NOT eligible in the chosen branch', async () => {
@@ -369,7 +596,11 @@ describe('the start screen — origin XOR', () => {
     listReceivingEmployeeCandidates.mockResolvedValue(
       page([{ id: 'user-9', displayName: 'Other Branch Person' }])
     );
-    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
 
     // TWO awaited settles sit behind this — the list resolving, then the effect
     // withdrawing the default — so the wait is explicit and generous rather than
@@ -450,12 +681,13 @@ describe('the start screen — origin XOR', () => {
         });
 
         const user = userEvent.setup();
-        renderLtr(<CheckInStartScreen {...startProps()} />);
+        renderLtr(
+          inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT })
+        );
 
         // The lookup asks only once a vehicle is chosen.
         await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-        await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-        await user.click(await screen.findByText(/Layla Haddad/));
+        await chooseTheAppointment(user);
         const notice = await screen.findByTestId('open-visit-lookup');
         expect(notice).toHaveTextContent(EN[outcome.key]!);
 
@@ -486,10 +718,9 @@ describe('the start screen — origin XOR', () => {
       });
 
       const user = userEvent.setup();
-      renderLtr(<CheckInStartScreen {...startProps()} />);
+      renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
       await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-      await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-      await user.click(await screen.findByText(/Layla Haddad/));
+      await chooseTheAppointment(user);
       await waitFor(() => expect(listReceptions).toHaveBeenCalled());
 
       // The one outcome entitled to silence. Everything else above speaks.
@@ -511,10 +742,9 @@ describe('the start screen — origin XOR', () => {
       });
 
       const user = userEvent.setup();
-      renderLtr(<CheckInStartScreen {...startProps()} />);
+      renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
       await user.click(screen.getByRole('radio', { name: /Appointment/ }));
-      await user.click(screen.getByText(EN['receptions.checkIn.loadAppointments']!));
-      await user.click(await screen.findByText(/Layla Haddad/));
+      await chooseTheAppointment(user);
       const notice = await screen.findByTestId('open-visit-lookup');
       expect(notice).toHaveTextContent(EN['receptions.checkIn.openVisitTruncated']!);
     });
@@ -541,7 +771,11 @@ describe('the start screen — origin XOR', () => {
       correlationId: 'corr-page-1',
     });
 
-    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
     await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
 
     expect(
@@ -594,7 +828,11 @@ describe('the start screen — origin XOR', () => {
     );
 
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
     await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
 
     // Page one: the operator holds their own default, as the earlier case proves.
@@ -605,16 +843,14 @@ describe('the start screen — origin XOR', () => {
     await user.click(
       screen.getByRole('button', { name: EN['receptions.checkIn.employeeChoose']! })
     );
-    const pager = await screen.findByRole('navigation', {
-      name: EN['receptions.checkIn.employeePagerLabel']!,
+    const pager = within(await screen.findByTestId('check-in-employees')).getByRole('navigation', {
+      name: EN['table.pagination']!,
     });
     await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
     await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalledTimes(2));
 
     // Page two establishes nothing about an operator who is on page one.
-    await waitFor(() =>
-      expect(screen.getByText('Other Person', { exact: false })).toBeInTheDocument()
-    );
+    expect(await screen.findByRole('gridcell', { name: 'Other Person' })).toBeInTheDocument();
     expect(
       screen.queryByTestId('employee-self-ineligible'),
       'the last page of a walk is stated as an established ineligibility'
@@ -630,16 +866,20 @@ describe('the start screen — origin XOR', () => {
      * branch chosen yet, and a read that failed. The component shipped with the
      * first of them and three cases in this file caught it.
      */
-    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: false })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: false })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
     expect(
       screen.queryByText(EN['receptions.checkIn.employeeSelfIneligible']!)
     ).not.toBeInTheDocument();
     cleanup();
 
     renderLtr(
-      <CheckInStartScreen
-        {...startProps({ canPickEmployee: true, companyIds: [], branchIds: [] })}
-      />
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: NO_BRANCH_CHOSEN,
+      })
     );
     expect(
       screen.queryByText(EN['receptions.checkIn.employeeSelfIneligible']!)
@@ -654,7 +894,11 @@ describe('the start screen — origin XOR', () => {
       hasMore: false,
       correlationId: 'corr-fail',
     });
-    renderLtr(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canPickEmployee: true })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
     await waitFor(() => expect(listReceivingEmployeeCandidates).toHaveBeenCalled());
     expect(
       screen.queryByText(EN['receptions.checkIn.employeeSelfIneligible']!)
@@ -665,7 +909,11 @@ describe('the start screen — origin XOR', () => {
   });
 
   it('without rec.reception.manage the create form is withdrawn, with the reason', () => {
-    renderLtr(<CheckInStartScreen {...startProps({ canCreate: false })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canCreate: false })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
     expect(screen.getByText(EN['state.denied.title']!)).toBeInTheDocument();
     expect(screen.getByText(EN['receptions.checkIn.createDenied']!)).toBeInTheDocument();
     expect(
@@ -674,9 +922,14 @@ describe('the start screen — origin XOR', () => {
   });
 
   it('renders in Arabic, RTL, from the same catalogue', () => {
-    renderRtl(<CheckInStartScreen {...startProps({ messages: ar as typeof en })} />);
+    renderRtl(
+      inBranch(<CheckInStartScreen {...startProps({ messages: ar as typeof en })} />, {
+        snapshot: CHECKIN_CONTEXT,
+        locale: 'ar',
+      })
+    );
     expect(document.documentElement.dir).toBe('rtl');
-    expect(screen.getByText(AR['receptions.checkIn.requester']!)).toBeInTheDocument();
+    expect(requesterBox(AR)).toBeInTheDocument();
     expect(screen.getByText(AR['receptions.checkIn.employeeHint']!)).toBeInTheDocument();
   });
 });
@@ -728,12 +981,10 @@ describe('the start screen — the walk-in handoff', () => {
     vehicleId: 'veh-9',
   };
 
-  /** Every row of the vehicle picker, once it has rendered. */
+  /** Every row's Choose control in the vehicle picker, once it has rendered. */
   async function vehicleChoices() {
-    const group = await screen.findByRole('group', {
-      name: EN['receptions.checkIn.vehicleLabel']!,
-    });
-    return within(group).getAllByRole('button');
+    const grid = await screen.findByTestId('check-in-vehicles');
+    return within(grid).findAllByRole('button', { name: named(EN['receptions.checkIn.choose']!) });
   }
 
   const pressed = (buttons: readonly HTMLElement[]) =>
@@ -759,13 +1010,15 @@ describe('the start screen — the walk-in handoff', () => {
 
   it('pre-selects the customer and the vehicle the intake just recorded', async () => {
     listCustomerVehicles.mockResolvedValue(page([OTHER_VEHICLE, HANDED_OVER_VEHICLE]));
-    renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
 
-    // The customer is already chosen — by NAME, never by identifier — so the
-    // search controls are not what the operator is looking at.
-    expect(screen.getByText('Layla Haddad')).toBeInTheDocument();
-    expect(screen.getByTestId('customer-selector-value')).toHaveValue('partner-1');
-    expect(screen.queryByText(EN['customerSelector.idle']!)).not.toBeInTheDocument();
+    // The customer is already chosen — by NAME, never by identifier.
+    expect(requesterBox()).toHaveValue('Layla Haddad — C-0001');
+    expect(document.body.textContent).not.toContain('partner-1');
 
     // The vehicle list is read for THAT customer, and the handed-over row is
     // the chosen one — not merely present in the list.
@@ -774,10 +1027,10 @@ describe('the start screen — the walk-in handoff', () => {
 
     expect(await vehicleChoices()).toHaveLength(2);
     const chosen = await chosenVehicles();
-    expect(within(chosen[0]!).getByText('V-9')).toBeInTheDocument();
-    expect(
-      within(chosen[0]!).getByText(EN['receptions.checkIn.vehicleChosen']!)
-    ).toBeInTheDocument();
+    // The PRESSED control is the handed-over vehicle's, and its row says so.
+    expect(chosen[0]).toHaveAccessibleName(`${EN['receptions.checkIn.choose']!} V-9`);
+    const row = chosen[0]!.closest('[role="row"]') as HTMLElement;
+    expect(row).toHaveTextContent(EN['receptions.checkIn.vehicleChosen']!);
 
     // And the screen says why the form arrived filled in.
     expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -789,7 +1042,11 @@ describe('the start screen — the walk-in handoff', () => {
     listCustomerVehicles.mockResolvedValue(page([HANDED_OVER_VEHICLE]));
     createReception.mockResolvedValue({ status: 'success', correlationId: 'c', attempt: 1 });
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
 
     await chosenVehicles();
     await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
@@ -805,7 +1062,11 @@ describe('the start screen — the walk-in handoff', () => {
 
   it('states it when the handed-over vehicle is not on that customer list', async () => {
     listCustomerVehicles.mockResolvedValue(page([OTHER_VEHICLE]));
-    renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
 
     await waitFor(() =>
       expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -817,15 +1078,20 @@ describe('the start screen — the walk-in handoff', () => {
   });
 
   it('starts empty when the page passes no handoff', () => {
-    renderLtr(<CheckInStartScreen {...startProps()} />);
+    renderLtr(inBranch(<CheckInStartScreen {...startProps()} />, { snapshot: CHECKIN_CONTEXT }));
     expect(screen.queryByTestId('walk-in-handoff-notice')).not.toBeInTheDocument();
-    expect(screen.getByText(EN['customerSelector.idle']!)).toBeInTheDocument();
+    expect(requesterBox()).toHaveValue('');
+    expect(screen.queryByTestId('check-in-vehicles')).not.toBeInTheDocument();
   });
 
   it('is consumed once — switching origin drops it and switching back does not restore it', async () => {
     listCustomerVehicles.mockResolvedValue(page([HANDED_OVER_VEHICLE]));
     const user = userEvent.setup();
-    renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
     await chosenVehicles();
 
     await user.click(screen.getByRole('radio', { name: /Appointment/ }));
@@ -1001,6 +1267,7 @@ function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
     session: SESSION,
     writesLocked: false,
     refresh: vi.fn().mockResolvedValue(undefined),
+    goToStep: vi.fn(),
     ...over,
   };
 }
@@ -1166,10 +1433,12 @@ describe('the parties step', () => {
     );
     renderLtr(<PartiesStep {...stepProps()} />);
 
-    // Each row is judged INSIDE its own list item: the decision vocabulary
+    // Each row is judged INSIDE its own grid row: the decision vocabulary
     // also appears among the form's options, and an unscoped query would
     // count those.
-    const refusalRow = (await screen.findByText('Omar Nasser')).closest('li') as HTMLElement;
+    const refusalRow = (await screen.findByText('Omar Nasser')).closest(
+      '[role="row"]'
+    ) as HTMLElement;
     // A refusal row is labelled refusal EVIDENCE, never dressed as a declined
     // authorization — the two are different operations.
     expect(
@@ -1183,7 +1452,7 @@ describe('the parties step', () => {
       within(refusalRow).getByText(EN['receptions.authorization.standing']!)
     ).toBeInTheDocument();
 
-    const authRow = screen.getByText('Layla Haddad').closest('li') as HTMLElement;
+    const authRow = screen.getByText('Layla Haddad').closest('[role="row"]') as HTMLElement;
     expect(
       within(authRow).getByText(EN['receptions.authorization.kindAuthorization']!)
     ).toBeInTheDocument();
@@ -1220,14 +1489,17 @@ describe('the parties step', () => {
     const user = userEvent.setup();
     renderLtr(<PartiesStep {...stepProps({ refresh })} />);
 
-    // Choose the partner through the shared selector.
+    // Choose the partner through the shared chooser, by name.
     const form = await screen.findByRole('form', {
       name: EN['receptions.parties.formLabel']!,
     });
-    const nameBoxes = screen.getAllByLabelText(EN['crm.customers.column.name']!);
-    await user.type(nameBoxes[0]!, 'Huda');
-    await user.click(screen.getAllByRole('button', { name: EN['customerSelector.search']! })[0]!);
-    await user.click(await screen.findByText('Huda Salem'));
+    await user.type(
+      screen.getByRole('combobox', { name: EN['receptions.parties.partner']! }),
+      'Huda'
+    );
+    await user.click(
+      await screen.findByRole('option', { name: 'Huda Salem — C-0003' }, { timeout: 5000 })
+    );
 
     await user.selectOptions(
       screen.getByLabelText(new RegExp(EN['receptions.parties.role']!)),
@@ -1276,12 +1548,13 @@ describe('the parties step', () => {
     renderLtr(<PartiesStep {...stepProps({ refresh })} />);
 
     await screen.findByRole('form', { name: EN['receptions.authorization.formLabel']! });
-    const nameBoxes = screen.getAllByLabelText(EN['crm.customers.column.name']!);
-    await user.type(nameBoxes.at(-1)!, 'Huda');
-    await user.click(
-      screen.getAllByRole('button', { name: EN['customerSelector.search']! }).at(-1)!
+    await user.type(
+      screen.getByRole('combobox', { name: EN['receptions.authorization.partner']! }),
+      'Huda'
     );
-    await user.click(await screen.findByText('Huda Salem'));
+    await user.click(
+      await screen.findByRole('option', { name: 'Huda Salem — C-0003' }, { timeout: 5000 })
+    );
 
     await user.selectOptions(
       screen.getByLabelText(new RegExp(EN['receptions.authorization.role']!)),
@@ -1300,6 +1573,139 @@ describe('the parties step', () => {
     await waitFor(() => {
       expect(refresh).toHaveBeenCalled();
     });
+  });
+
+  it('keeps the authorization form busy through the 409 re-read, so it is sent once', async () => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([
+        {
+          id: 'partner-3',
+          displayName: 'Huda Salem',
+          displayNumber: 'C-0003',
+          partyType: 'individual',
+          lifecycleStatus: 'active',
+        },
+      ])
+    );
+    recordAuthorization.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'state.conflict.title',
+      correlationId: 'corr-trn',
+      attempt: 1,
+    });
+    // The re-read is held open: the settle awaits it, and until it lands the
+    // kept draft must not be sendable a second time.
+    let release: () => void = () => {};
+    const refresh = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        })
+    );
+    const user = userEvent.setup();
+    renderLtr(<PartiesStep {...stepProps({ refresh })} />);
+
+    await screen.findByRole('form', { name: EN['receptions.authorization.formLabel']! });
+    await user.type(
+      screen.getByRole('combobox', { name: EN['receptions.authorization.partner']! }),
+      'Huda'
+    );
+    await user.click(
+      await screen.findByRole('option', { name: 'Huda Salem — C-0003' }, { timeout: 5000 })
+    );
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(EN['receptions.authorization.role']!)),
+      'vehicle_owner'
+    );
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${EN['receptions.authorization.decision']!}`)),
+      'declined'
+    );
+    const record = screen.getByRole('button', { name: EN['receptions.authorization.record']! });
+    await user.click(record);
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(record).toBeDisabled();
+    expect(record).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(record);
+    expect(recordAuthorization).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      release();
+    });
+    await waitFor(() => expect(record).toBeEnabled());
+    expect(recordAuthorization).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * Owner directive, user-facing errors. The 409 above is the one the API
+   * sends when it says nothing else, and the fixed copy is right for it. When
+   * the API DOES name the rule — the person is not recorded as someone who may
+   * approve work here — the form says that instead, and points at the cure:
+   * record the role, or choose someone whose recorded role allows it. Nothing
+   * about which roles the party holds is added; the sentence says no more than
+   * the refusal already did.
+   */
+  const authorizationRefusal = async (locale: 'en' | 'ar') => {
+    searchCustomerDirectory.mockResolvedValue(
+      page([
+        {
+          id: 'partner-4',
+          displayName: 'Huda Salem',
+          displayNumber: 'C-0004',
+          partyType: 'individual',
+          lifecycleStatus: 'active',
+        },
+      ])
+    );
+    recordAuthorization.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.reception_party_not_authorised',
+      correlationId: 'corr-role-not-held',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    const catalogue = (locale === 'en' ? EN : AR) as Record<string, string>;
+    if (locale === 'en') renderLtr(<PartiesStep {...stepProps()} />);
+    else renderRtl(<PartiesStep {...stepProps({ locale: 'ar', messages: ar as typeof en })} />);
+
+    await screen.findByRole('form', { name: catalogue['receptions.authorization.formLabel']! });
+    await user.type(
+      screen.getByRole('combobox', { name: catalogue['receptions.authorization.partner']! }),
+      'Huda'
+    );
+    await user.click(
+      await screen.findByRole('option', { name: 'Huda Salem — C-0004' }, { timeout: 5000 })
+    );
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(catalogue['receptions.authorization.role']!)),
+      'vehicle_owner'
+    );
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${catalogue['receptions.authorization.decision']!}`)),
+      'approved'
+    );
+    await user.click(
+      screen.getByRole('button', { name: catalogue['receptions.authorization.record']! })
+    );
+    return catalogue;
+  };
+
+  it('names the refusal when the API names it, instead of the non-guessing copy', async () => {
+    const catalogue = await authorizationRefusal('en');
+    expect(
+      await screen.findByText(catalogue['form.violation.reception_party_not_authorised']!)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(EN['receptions.authorization.conflict']!)).toBeNull();
+    // The rule name itself never reaches the screen; only its sentence does.
+    expect(document.body.textContent).not.toContain('reception_party_not_authorised');
+  });
+
+  it('names it in Arabic words, not the English ones', async () => {
+    const catalogue = await authorizationRefusal('ar');
+    expect(
+      await screen.findByText(catalogue['form.violation.reception_party_not_authorised']!)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(EN['form.violation.reception_party_not_authorised']!)).toBeNull();
   });
 
   it('withdraws the write forms without their permissions, saying why', async () => {
@@ -1471,9 +1877,10 @@ describe('F1 — the three states a paged read can report', () => {
       renderLtr(<ConfirmationStep {...stepProps()} />);
       await verdictReads('receptions.confirm.linkTruncated');
 
-      const pager = screen.getByRole('navigation', {
-        name: EN['receptions.confirm.linkPagerLabel']!,
-      });
+      const pager = within(screen.getByTestId('confirm-customer-vehicles')).getByRole(
+        'navigation',
+        { name: EN['table.pagination']! }
+      );
       const next = within(pager).getByRole('button', { name: EN['table.nextPage']! });
       expect(next).toBeEnabled();
 
@@ -1487,25 +1894,28 @@ describe('F1 — the three states a paged read can report', () => {
       );
     });
 
-    it('offers no pager at all when the read covered the set', async () => {
-      // Anti-noise, and anti-vacuity for the case above: the control appears
-      // because there is somewhere to go, not on every render.
+    it('offers no next page when the read covered the set', async () => {
+      // Anti-vacuity for the case above: the way onward is offered because
+      // there is somewhere to go. The grid's pager is always drawn (G3), and
+      // over a covered set its Next is not offered.
       listCustomerVehicles.mockResolvedValue(page([OTHER_LINK]));
       renderLtr(<ConfirmationStep {...stepProps()} />);
       await verdictReads('receptions.confirm.linkAbsent');
 
-      expect(
-        screen.queryByRole('navigation', { name: EN['receptions.confirm.linkPagerLabel']! })
-      ).not.toBeInTheDocument();
+      const pager = within(screen.getByTestId('confirm-customer-vehicles')).getByRole(
+        'navigation',
+        { name: EN['table.pagination']! }
+      );
+      expect(within(pager).getByRole('button', { name: EN['table.nextPage']! })).toBeDisabled();
     });
   });
 
   describe('the walk-in handoff notice', () => {
     async function vehicleChoices() {
-      const group = await screen.findByRole('group', {
-        name: EN['receptions.checkIn.vehicleLabel']!,
+      const grid = await screen.findByTestId('check-in-vehicles');
+      return within(grid).findAllByRole('button', {
+        name: named(EN['receptions.checkIn.choose']!),
       });
-      return within(group).getAllByRole('button');
     }
 
     const pressed = (buttons: readonly HTMLElement[]) =>
@@ -1527,7 +1937,11 @@ describe('F1 — the three states a paged read can report', () => {
        * "that vehicle is not in this customer's list", with no way to reach it.
        */
       listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
 
       await waitFor(() =>
         expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -1541,7 +1955,11 @@ describe('F1 — the three states a paged read can report', () => {
 
     it('says nothing was learned when the vehicle list could not be read', async () => {
       listCustomerVehicles.mockResolvedValue(unreadable());
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
 
       await waitFor(() =>
         expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -1553,11 +1971,15 @@ describe('F1 — the three states a paged read can report', () => {
     it('reaches the handed-over vehicle on the next page and selects it', async () => {
       listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
       const user = userEvent.setup();
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
       await screen.findByTestId('walk-in-handoff-notice');
 
-      const pager = await screen.findByRole('navigation', {
-        name: EN['receptions.checkIn.vehiclePagerLabel']!,
+      const pager = within(await screen.findByTestId('check-in-vehicles')).getByRole('navigation', {
+        name: EN['table.pagination']!,
       });
       listCustomerVehicles.mockResolvedValue(page([MATCHING_LINK]));
       await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
@@ -1572,7 +1994,11 @@ describe('F1 — the three states a paged read can report', () => {
 
     it('states truncation beside the picker rather than presenting one page as the list', async () => {
       listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
 
       expect(await screen.findByTestId('checkin-vehicles-truncated')).toHaveTextContent(
         EN['receptions.checkIn.vehiclesTruncated']!
@@ -1597,7 +2023,11 @@ describe('F1 — the three states a paged read can report', () => {
           Promise.resolve(cursor === null ? truncated([MATCHING_LINK]) : page([OTHER_LINK]))
       );
       const user = userEvent.setup();
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
 
       await waitFor(() =>
         expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -1605,8 +2035,8 @@ describe('F1 — the three states a paged read can report', () => {
         )
       );
 
-      const pager = await screen.findByRole('navigation', {
-        name: EN['receptions.checkIn.vehiclePagerLabel']!,
+      const pager = within(await screen.findByTestId('check-in-vehicles')).getByRole('navigation', {
+        name: EN['table.pagination']!,
       });
       await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
 
@@ -1628,11 +2058,15 @@ describe('F1 — the three states a paged read can report', () => {
           Promise.resolve(cursor === null ? truncated([OTHER_LINK]) : page([MATCHING_LINK]))
       );
       const user = userEvent.setup();
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
       await screen.findByTestId('checkin-vehicles-truncated');
 
-      const pager = await screen.findByRole('navigation', {
-        name: EN['receptions.checkIn.vehiclePagerLabel']!,
+      const pager = within(await screen.findByTestId('check-in-vehicles')).getByRole('navigation', {
+        name: EN['table.pagination']!,
       });
       await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
       await waitFor(() => expect(listCustomerVehicles).toHaveBeenCalledTimes(2));
@@ -1654,7 +2088,11 @@ describe('F1 — the three states a paged read can report', () => {
 
     it('says nothing about truncation when the read covered the set', async () => {
       listCustomerVehicles.mockResolvedValue(page([MATCHING_LINK]));
-      renderLtr(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />);
+      renderLtr(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff })} />, {
+          snapshot: CHECKIN_CONTEXT,
+        })
+      );
       await screen.findByTestId('walk-in-handoff-notice');
 
       expect(screen.queryByTestId('checkin-vehicles-truncated')).not.toBeInTheDocument();
@@ -1662,7 +2100,12 @@ describe('F1 — the three states a paged read can report', () => {
 
     it('renders both new sentences in Arabic, not as keys', async () => {
       listCustomerVehicles.mockResolvedValue(truncated([OTHER_LINK]));
-      renderRtl(<CheckInStartScreen {...startProps({ walkInHandoff: handoff, messages: AR })} />);
+      renderRtl(
+        inBranch(<CheckInStartScreen {...startProps({ walkInHandoff: handoff, messages: AR })} />, {
+          snapshot: CHECKIN_CONTEXT,
+          locale: 'ar',
+        })
+      );
 
       await waitFor(() =>
         expect(screen.getByTestId('walk-in-handoff-notice')).toHaveTextContent(
@@ -1673,5 +2116,266 @@ describe('F1 — the three states a paged read can report', () => {
         AR['receptions.checkIn.vehiclesTruncated']!
       );
     });
+  });
+});
+
+describe('the start screen puts each complaint on its own control (browser QA part 7)', () => {
+  /*
+   * Rows 6.6 and 6.7b: "Choose the service requester." was drawn beside the
+   * submit button, some 460 px below the customer selector, with the selector
+   * unmarked; an EV charge of "abc" left the charge box grey, unfocused and
+   * described only by its hint. Row 10.4: after choosing a customer the cursor
+   * fell to the document body.
+   */
+  const LAYLA = {
+    id: 'partner-1',
+    displayNumber: 'C-0001',
+    displayName: 'Layla Haddad',
+    partyType: 'individual',
+    lifecycleStatus: 'active',
+    createdAt: '2026-08-01T00:00:00.000Z',
+    primaryPhone: null,
+    phoneMasked: false,
+    vehicleCount: 1,
+  };
+  const HER_VEHICLE = {
+    id: 'link-9',
+    vehicleId: 'veh-9',
+    relationshipRole: 'owner',
+    validFrom: '2026-08-01',
+    validTo: null,
+    active: true,
+    createdAt: '2026-08-01T00:00:00.000Z',
+    vehicleDisplayNumber: 'V-9',
+    vin: null,
+    makeId: null,
+    modelId: null,
+    modelYear: null,
+    color: null,
+    vehicleLifecycleStatus: 'active',
+  };
+  const handoff = {
+    requester: {
+      id: 'partner-1',
+      displayName: 'Layla Haddad',
+      displayNumber: 'C-0001',
+      partyType: 'individual',
+    },
+    vehicleId: 'veh-9',
+  };
+
+  for (const locale of ['en', 'ar'] as const) {
+    const T = locale === 'en' ? EN : AR;
+    const view = locale === 'en' ? renderLtr : renderRtl;
+    const mount = (over: Record<string, unknown> = {}) =>
+      view(
+        inBranch(
+          <CheckInStartScreen
+            {...startProps({ locale, messages: (locale === 'en' ? en : ar) as typeof en, ...over })}
+          />,
+          { snapshot: CHECKIN_CONTEXT, locale }
+        )
+      );
+
+    it(`marks the customer search itself when no requester is chosen, and moves the cursor there (${locale})`, async () => {
+      const user = userEvent.setup();
+      mount();
+      await user.click(screen.getByRole('button', { name: T['receptions.checkIn.submit']! }));
+
+      const box = requesterBox(T);
+      await waitFor(() => expect(box).toHaveFocus());
+      expect(box).toHaveAttribute('aria-invalid', 'true');
+      expect(fieldRoot(box)).toHaveClass('Mui-error');
+      expect(box).toHaveAccessibleDescription(
+        expect.stringContaining(T['receptions.checkIn.error.requesterRequired']!)
+      );
+      // Drawn inside the chooser, not at the foot of the form.
+      expect(
+        within(screen.getByTestId('check-in-requester')).getByText(
+          T['receptions.checkIn.error.requesterRequired']!
+        )
+      ).toBeInTheDocument();
+      expect(createReception).not.toHaveBeenCalled();
+    });
+
+    it(`withdraws that complaint once a customer is chosen, and keeps the cursor on the choice (${locale})`, async () => {
+      searchCustomerDirectory.mockResolvedValue(page([LAYLA]));
+      const user = userEvent.setup();
+      mount();
+      await user.click(screen.getByRole('button', { name: T['receptions.checkIn.submit']! }));
+      const box = requesterBox(T);
+      await waitFor(() => expect(box).toHaveFocus());
+
+      await user.type(box, 'Layla');
+      await user.click(
+        await screen.findByRole('option', { name: 'Layla Haddad — C-0001' }, { timeout: 5000 })
+      );
+
+      // Row 10.4: the cursor stays on the chooser, which now holds the chosen
+      // customer by name — so the choice is announced where the cursor is.
+      await waitFor(() => expect(requesterBox(T)).toHaveFocus());
+      expect(requesterBox(T)).toHaveValue('Layla Haddad — C-0001');
+      expect(requesterBox(T)).not.toHaveAttribute('aria-invalid');
+      expect(screen.queryByText(T['receptions.checkIn.error.requesterRequired']!)).toBeNull();
+    });
+
+    it(`marks the EV charge box, describes it by the complaint and focuses it (${locale})`, async () => {
+      listCustomerVehicles.mockResolvedValue(page([HER_VEHICLE]));
+      const user = userEvent.setup();
+      mount({ walkInHandoff: handoff });
+      // The pair is pre-selected only once the vehicle list has answered.
+      await waitFor(() =>
+        expect(
+          within(screen.getByTestId('check-in-vehicles')).getByRole('button', { pressed: true })
+        ).toBeInTheDocument()
+      );
+
+      const charge = screen.getByLabelText(T['receptions.checkIn.evSoc']!, { exact: false });
+      await user.type(charge, 'abc');
+      await user.click(screen.getByRole('button', { name: T['receptions.checkIn.submit']! }));
+
+      await waitFor(() => expect(charge).toHaveFocus());
+      expect(charge).toHaveAttribute('aria-invalid', 'true');
+      expect(fieldRoot(charge)).toHaveClass('Mui-error');
+      expect(charge).toHaveAccessibleDescription(
+        expect.stringContaining(T['receptions.checkIn.error.socInvalid']!)
+      );
+      expect(createReception).not.toHaveBeenCalled();
+
+      await user.clear(charge);
+      await user.type(charge, '55');
+      expect(charge).not.toHaveAttribute('aria-invalid');
+      expect(screen.queryByText(T['receptions.checkIn.error.socInvalid']!)).toBeNull();
+    });
+  }
+});
+
+describe('a requester complaint without the customer read', () => {
+  it('still stands, beside the sentence that says why there is no selector', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(<CheckInStartScreen {...startProps({ canSearchCustomers: false })} />, {
+        snapshot: CHECKIN_CONTEXT,
+      })
+    );
+    await user.click(screen.getByRole('button', { name: EN['receptions.checkIn.submit']! }));
+
+    const refusal = await screen.findByTestId('check-in-refusal-serviceRequesterPartnerId');
+    expect(refusal).toHaveTextContent(EN['receptions.checkIn.error.requesterRequired']!);
+    expect(
+      refusal.closest('fieldset')?.textContent?.includes(EN['receptions.checkIn.customersDenied']!)
+    ).toBe(true);
+    expect(createReception).not.toHaveBeenCalled();
+  });
+});
+
+describe('"Discard and change branch" discards what the question said it would (row 1c.3)', () => {
+  const TWO = branchSnapshot([
+    CHECKIN_BRANCH,
+    { ...CHECKIN_BRANCH, id: 'branch-2', name: 'Second workshop' },
+  ]);
+
+  function mountInTwo() {
+    return renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="branch-1" label="first" />
+          <BranchSwitch to="branch-2" label="second" />
+          <CheckInStartScreen {...startProps()} />
+        </>,
+        { snapshot: TWO }
+      )
+    );
+  }
+
+  const note = () => screen.getByLabelText(EN['receptions.checkIn.walkInNote']!, { exact: false });
+  const charge = () => screen.getByLabelText(EN['receptions.checkIn.evSoc']!, { exact: false });
+
+  it('keeps the typed note when the operator stays', async () => {
+    const user = userEvent.setup();
+    mountInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(note(), 'unsaved walk-in note');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(note()).toHaveValue('unsaved walk-in note');
+    forgetRememberedBranch();
+  });
+
+  it('empties the chosen customer too, and writes nothing, once the discard is confirmed', async () => {
+    // Row 1c.3, re-verified on Material UI: the question promised the entries
+    // would go, and nothing typed is half-saved behind the operator's back.
+    searchCustomerDirectory.mockResolvedValue(
+      page([
+        {
+          id: 'partner-1',
+          displayNumber: 'C-0001',
+          displayName: 'Layla Haddad',
+          partyType: 'individual',
+          lifecycleStatus: 'active',
+        },
+      ])
+    );
+    const user = userEvent.setup();
+    mountInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(requesterBox(), 'Layla');
+    await user.click(
+      await screen.findByRole('option', { name: 'Layla Haddad — C-0001' }, { timeout: 5000 })
+    );
+    await user.type(note(), 'unsaved walk-in note');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(requesterBox()).toHaveValue(''));
+    expect(note()).toHaveValue('');
+    expect(screen.queryByTestId('check-in-vehicles')).not.toBeInTheDocument();
+    expect(createReception).not.toHaveBeenCalled();
+    forgetRememberedBranch();
+  });
+
+  it('empties the note and the intake facts once the operator confirms the discard', async () => {
+    const user = userEvent.setup();
+    mountInTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(note(), 'unsaved walk-in note');
+    await user.type(charge(), '40');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(note()).toHaveValue(''));
+    expect(charge()).toHaveValue('');
+    // Nothing is left to lose, so the next switch asks nothing.
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    forgetRememberedBranch();
+  });
+});
+
+describe('a visit cannot be recorded against "all my branches"', () => {
+  it('refuses the submit and says which control answers', async () => {
+    /*
+     * `POST /receptions` names both halves of the pair as mandatory, so "all my
+     * branches" is not a target it can take — and choosing one on the operator
+     * behalf would put a vehicle into custody at a workshop nobody named. On
+     * the screen where a branch matters most, guessing is the worst option
+     * available.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <CheckInStartScreen {...startProps()} />
+        </>,
+        { snapshot: NO_BRANCH_CHOSEN }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+
+    expect(
+      await screen.findByRole('button', { name: EN['receptions.checkIn.submit'] as string })
+    ).toBeDisabled();
+    expect(screen.getByTestId('submit-needs-branch')).toHaveTextContent(
+      EN['workingContext.needsOneBranch'] as string
+    );
   });
 });

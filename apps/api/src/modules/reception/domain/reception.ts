@@ -40,6 +40,31 @@ export const TERMINAL_RECEPTION_STATUSES: readonly ReceptionStatus[] = [
   'refused',
 ];
 
+/**
+ * The two groups a reception board may narrow to (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * `open` is every status `TERMINAL_RECEPTION_STATUSES` does not name, and
+ * `finished` is exactly that list — derived from it rather than transcribed
+ * beside it, so the day the frozen graph gains a status the two groups still
+ * partition the vocabulary instead of quietly losing a row from both.
+ *
+ * "finished" rather than "closed": `converted` is terminal for the VISIT and is
+ * the opposite of abandoned — the car went on to a work order — so a label
+ * implying closure would describe the three exits by the least common one.
+ */
+export const RECEPTION_STATUS_GROUPS = ['open', 'finished'] as const;
+export type ReceptionStatusGroup = (typeof RECEPTION_STATUS_GROUPS)[number];
+
+/** The statuses one group covers, derived from the terminal list. */
+export function receptionStatusesInGroup(group: ReceptionStatusGroup): readonly ReceptionStatus[] {
+  return RECEPTION_STATUSES.filter((status) =>
+    group === 'finished'
+      ? TERMINAL_RECEPTION_STATUSES.includes(status)
+      : !TERMINAL_RECEPTION_STATUSES.includes(status)
+  );
+}
+
 /** Frozen `ck_reception_party_roles_role` vocabulary (7 roles). */
 export const RECEPTION_PARTY_ROLES = [
   'service_requester',
@@ -90,8 +115,27 @@ export const MAX_CLOSURE_REASON = 500;
 export const CLOSE_OUTCOMES = ['closed_without_work', 'refused'] as const;
 export type CloseOutcome = (typeof CLOSE_OUTCOMES)[number];
 
+/**
+ * Why a reception plan was refused, as a rule token on the wire.
+ *
+ * Both were published as `invalid_value`, which is only half true: a state of
+ * charge outside the permitted band is a range problem, and a walk-in note that
+ * was typed but holds nothing but spaces is not. The generic sentence stays for
+ * the refusals that really are "something on this form was not accepted".
+ */
+export const RECEPTION_PLAN_RULES = Object.freeze(['out_of_range', 'blank'] as const);
+export type ReceptionPlanRule = (typeof RECEPTION_PLAN_RULES)[number];
+
 export class ReceptionRuleError extends Error {
   public override readonly name = 'ReceptionRuleError';
+
+  public constructor(
+    message: string,
+    /** The token the publishing service puts on the wire for this cause. */
+    public readonly rule: ReceptionPlanRule
+  ) {
+    super(message);
+  }
 }
 
 /** Exactly one of these two origins, mirroring the XOR CHECK. */
@@ -152,14 +196,15 @@ export function toReceptionCreatePlan(
     // Mirrors ck_reception_visits_soc.
     if (!Number.isFinite(soc) || soc < MIN_SOC_PERCENT || soc > MAX_SOC_PERCENT) {
       throw new ReceptionRuleError(
-        `evSocPercent must be between ${MIN_SOC_PERCENT} and ${MAX_SOC_PERCENT}`
+        `evSocPercent must be between ${MIN_SOC_PERCENT} and ${MAX_SOC_PERCENT}`,
+        'out_of_range'
       );
     }
   }
   if (input.origin.kind === 'walk_in') {
     const note = input.origin.note;
     if (note !== undefined && note !== null && note.trim().length === 0) {
-      throw new ReceptionRuleError('A walk-in note, when supplied, must not be blank');
+      throw new ReceptionRuleError('A walk-in note, when supplied, must not be blank', 'blank');
     }
   }
   return {
@@ -181,16 +226,32 @@ export function toReceptionCreatePlan(
  * `opened` to `authorized` runs through `inspecting`, and the service walks that
  * path inside one transaction. Both edges are in the frozen graph; no state is
  * invented and no guard is bypassed.
+ *
+ * ## Why each refusal carries a rule token (DEF-T-10)
+ *
+ * Every approval refusal on this path is `ERR-TRN-001`, and a screen holding
+ * only the code can say nothing but "the state does not allow this". A
+ * receptionist met that sentence when the actual unmet precondition was a
+ * missing authorization, two steps away, and had no way to learn it.
+ *
+ * So each refusal publishes a violation on the ROUTE parameter — the command
+ * sends no body, so there is no control to file it under and `violationKeysOf`
+ * routes it to the banner. The token names the PRECONDITION and nothing else:
+ * no party, no decision, no role, no count. That is the same anti-probing line
+ * the messages already hold, and it is what makes these tokens safe to publish
+ * to a caller who is already reading the visit they name.
  */
 export function assertApprovable(current: string): void {
   if (current === 'authorized') {
     throw new AppFailure('ERR-TRN-001', {
       message: 'This reception is already authorized',
+      safeDetails: { violations: [{ path: 'path.receptionId', rule: 'already_authorized' }] },
     });
   }
   if (current !== 'opened' && current !== 'inspecting') {
     throw new AppFailure('ERR-TRN-001', {
       message: `A reception in state "${current}" cannot be approved`,
+      safeDetails: { violations: [{ path: 'path.receptionId', rule: 'state_not_approvable' }] },
     });
   }
 }
@@ -205,11 +266,20 @@ export function approvalPath(current: 'opened' | 'inspecting'): readonly Recepti
  * precisely what makes conversion exactly-once: a second attempt finds a
  * terminal state and is refused, and the row lock the service takes first makes
  * two concurrent attempts serial rather than simultaneous.
+ *
+ * Both refusals publish a rule token for the same reason the approval half does:
+ * the interface never renders server prose, so a refusal without a token reaches
+ * the operator as the generic "the state does not allow this". The tokens name
+ * the PRECONDITION only — no party, no decision, no role, no count — which is
+ * the same non-disclosing line the messages already hold.
  */
 export function assertConvertible(current: string): void {
   if (current === 'converted') {
     throw new AppFailure('ERR-TRN-001', {
       message: 'This reception has already been converted to a work order',
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'reception_already_converted' }],
+      },
     });
   }
   if (current !== 'authorized') {
@@ -217,6 +287,9 @@ export function assertConvertible(current: string): void {
       message:
         `A reception in state "${current}" cannot be converted; ` +
         'it must be approved (authorized) first',
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'reception_not_authorised' }],
+      },
     });
   }
 }
@@ -253,6 +326,16 @@ export interface StandingDecision {
  * is built to prevent. Where a business rule should let one authority outrank
  * another, that rule has to be stated and approved before it is coded — refusing
  * is the boundary that cannot silently do the wrong thing.
+ *
+ * ## The rule token, and the two commands that share it (DEF-T-10)
+ *
+ * Both refusals publish a violation on the route parameter so a screen can name
+ * the precondition instead of printing "the state does not allow this". This
+ * function guards TWO commands — approval and conversion to a work order — so
+ * the token names the missing authorization and nothing about which command
+ * asked for it; the catalogue sentence and the step it points at have to read
+ * correctly under both buttons. The token says no more than the message beside
+ * it already does: no party, no decision, no role, no count.
  */
 export function assertStandingAuthorization(decisions: readonly StandingDecision[]): void {
   if (decisions.some((entry) => entry.decision === 'declined')) {
@@ -260,11 +343,17 @@ export function assertStandingAuthorization(decisions: readonly StandingDecision
       message:
         'An authorizing party has withdrawn or refused authorization for this reception; ' +
         'record a new approval before proceeding',
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'authorization_withdrawn' }],
+      },
     });
   }
   if (!decisions.some((entry) => entry.decision === 'approved')) {
     throw new AppFailure('ERR-TRN-001', {
       message: 'This reception has no standing approved authorization',
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'authorization_missing' }],
+      },
     });
   }
 }
@@ -282,11 +371,28 @@ export function assertStandingAuthorization(decisions: readonly StandingDecision
  *
  * Same non-disclosing refusal as the role-specific check below, so neither
  * becomes a channel for probing which roles a party holds.
+ *
+ * That is also why both publish the SAME token. A screen needs a sentence, and
+ * one token gives it one without telling the caller which of the two rules
+ * refused — two tokens would be exactly the probing channel the uniform wording
+ * was chosen to close.
+ *
+ * Filed under the RECEPTION, like every other refusal in this module, and not
+ * under the body field each caller happened to send. The interface files a body
+ * violation under the control named by the path's last segment; neither the
+ * refusal form nor the authorization form has a control by those names, so a
+ * sentence filed there would be written into a map no screen reads. Under the
+ * route parameter it reaches the one place both forms already show a refusal.
  */
+export const PARTY_NOT_AUTHORISED_RULE = 'reception_party_not_authorised';
+
 export function assertMayAuthorize(activeRoles: readonly string[]): void {
   if (!activeRoles.some((role) => (AUTHORIZING_ROLES as readonly string[]).includes(role))) {
     throw new AppFailure('ERR-TRN-001', {
       message: 'That party may not authorize work on this reception',
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: PARTY_NOT_AUTHORISED_RULE }],
+      },
     });
   }
 }
@@ -307,11 +413,18 @@ export function assertMayAuthorize(activeRoles: readonly string[]): void {
  * the four authorizing roles one at a time and learn which a partner holds on
  * this visit. One uniform refusal keeps the contract the module already
  * documents — a refusal never says which roles a party has.
+ *
+ * The token is the SAME one `assertMayAuthorize` publishes, and the sentence it
+ * selects says no more than the uniform wording above: the person named may not
+ * approve work here in the capacity claimed. It carries no role and no list.
  */
 export function assertAuthorizingRoleHeld(claimed: string, activeRoles: readonly string[]): void {
   if (!activeRoles.includes(claimed)) {
     throw new AppFailure('ERR-TRN-001', {
       message: 'That party may not authorize work on this reception in the role claimed',
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: PARTY_NOT_AUTHORISED_RULE }],
+      },
     });
   }
 }
@@ -334,6 +447,9 @@ export function assertClosable(current: string): void {
   if (TERMINAL_RECEPTION_STATUSES.includes(current as ReceptionStatus)) {
     throw new AppFailure('ERR-TRN-001', {
       message: `A reception in state "${current}" is terminal and cannot be closed or refused`,
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'reception_already_finished' }],
+      },
     });
   }
 }
@@ -343,6 +459,9 @@ export function assertEvidenceRecordable(current: string): void {
   if (TERMINAL_RECEPTION_STATUSES.includes(current as ReceptionStatus)) {
     throw new AppFailure('ERR-TRN-001', {
       message: `A reception in state "${current}" is terminal; no further evidence may be recorded`,
+      safeDetails: {
+        violations: [{ path: 'path.receptionId', rule: 'reception_closed_to_evidence' }],
+      },
     });
   }
 }

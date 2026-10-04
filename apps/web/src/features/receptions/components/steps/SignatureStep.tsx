@@ -1,11 +1,16 @@
 'use client';
 
-import { useCallback, useState, useTransition } from 'react';
+import { useActionState, useCallback, useState, useTransition } from 'react';
+import Button from '@mui/material/Button';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
-import { SelectField, TextAreaField } from '@/components/forms/Field';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { PartyLabel } from '@/components/party/PartyLabel';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
+import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { IDLE, unreachable, type ActionState } from '@/lib/forms/action-result';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
@@ -22,12 +27,8 @@ import {
 } from '../../receptions-contract';
 import type { CheckInStepProps } from '../../check-in/wizard';
 import { CaptureFileField } from '../CaptureFileField';
-import {
-  EvidenceSection,
-  EvidenceStates,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
-} from './EvidencePanels';
+import { EvidenceSection, EvidenceStates, SubmitButton } from './EvidencePanels';
+import { PartyRoleGrid } from './PartiesStep';
 
 /**
  * Signatures — capture, the ledger, and the two lifecycle events
@@ -84,6 +85,12 @@ import {
  * published owns both, and `no-invented-media-limit` is what keeps it that way.
  */
 
+const EMPTY_SIGNATURE = {
+  signerRole: '',
+  purpose: '',
+  signerPartnerId: '',
+} as const satisfies Record<string, string>;
+
 /** What the operator is told after a capture. `recorded` is not `final`. */
 function outcomeKey(outcome: SignatureCaptureOutcome): string {
   if (outcome.status !== 'success') return 'receptions.signature.captureFailed';
@@ -105,25 +112,6 @@ export function SignatureStep({
 }: CheckInStepProps) {
   const [outcome, setOutcome] = useState<SignatureCaptureOutcome | null>(null);
   const [pending, startTransition] = useTransition();
-
-  /*
-   * The capture draft, and the attempt counter that makes it survive a failure.
-   *
-   * React resets the form DOM once a Server Action settles, and a controlled
-   * `value` does NOT survive that — measured and recorded in
-   * `tests/form-reset-class.test.ts`, which is the inventory of the five times
-   * this defect was fixed somewhere new. The shape that works is all three of:
-   * a `key` on the attempt counter to force a remount, `defaultValue` seeded
-   * from state — which is what the reset restores TO — and `onChange` to keep
-   * that state current.
-   *
-   * It matters more here than on most forms. A signature capture that fails
-   * because the store was unreachable would otherwise silently clear WHO signed
-   * and WHAT they signed for, and the retry would attribute the signature to
-   * whatever the operator picked the second time.
-   */
-  const [attempt, setAttempt] = useState(0);
-  const [draft, setDraft] = useState({ signerRole: '', purpose: '', signerPartnerId: '' });
 
   const canSign = capabilities.manageSignatures && !writesLocked;
 
@@ -160,6 +148,68 @@ export function SignatureStep({
   });
   const signatures = ledger.response?.rows ?? [];
   const rows = parties.response?.rows ?? [];
+
+  /*
+   * The capture draft, and why the selects are remounted on every settle.
+   *
+   * The capture is a Server Action form: the action receives the form's own
+   * data — the chosen file with it — and React resets the form DOM once the
+   * action settles. A controlled `value` does NOT survive that reset on a
+   * select (measured and recorded in `tests/form-reset-class.test.ts`), so each
+   * select is keyed on the attempt and REMOUNTED from the draft on every
+   * settle. A capture that fails because the store was unreachable therefore
+   * keeps WHO signed and WHAT they signed for, and the retry cannot attribute
+   * the signature to whatever the operator picked the second time; only a
+   * stored capture empties the draft (the reset has already cleared the file).
+   *
+   * Every refusal — this screen's or the capture's own — is marked on its field,
+   * the cursor goes to the first, and a correction withdraws it. The choices are
+   * unsaved work. A capture whose answer never arrives is said as that.
+   */
+  const [draft, setDraft] = useState(EMPTY_SIGNATURE);
+  const [state, capture, capturing] = useActionState(
+    async (previous: ActionState, form: FormData): Promise<ActionState> => {
+      const attempt = (previous.attempt ?? 0) + 1;
+      const found: Record<string, string> = {};
+      if (String(form.get('signerRole') ?? '') === '') found['signerRole'] = 'form.required';
+      if (String(form.get('purpose') ?? '') === '') found['purpose'] = 'form.required';
+      if (Object.keys(found).length > 0) {
+        return { status: 'invalid', messageKey: 'form.formError', fieldErrors: found, attempt };
+      }
+      let result: SignatureCaptureOutcome;
+      try {
+        result = await captureSignatureEvidence(visitId, form);
+      } catch {
+        // No answer came back: said as that, every choice kept.
+        return unreachable(attempt);
+      }
+      setOutcome(result);
+      notifyActionResult(result, messages);
+      if (result.status === 'success') {
+        setDraft(EMPTY_SIGNATURE);
+        ledger.refresh();
+        await refresh();
+      }
+      return { ...result, attempt };
+    },
+    IDLE
+  );
+  const formRef = useFocusFirstInvalid(state);
+  const corrections = useClearOnCorrect(state);
+  const dirty = draft.signerRole !== '' || draft.purpose !== '' || draft.signerPartnerId !== '';
+  useUnsavedGuard(dirty, () => {
+    setDraft(EMPTY_SIGNATURE);
+    formRef.current?.reset();
+  });
+  const fieldError = (name: string): string | undefined => {
+    const key = corrections.errorFor(name);
+    return key === undefined ? undefined : translateDynamic(messages, key);
+  };
+  const choose = (name: keyof typeof EMPTY_SIGNATURE, value: string) => {
+    corrections.noteEdited(name);
+    setDraft((current) => ({ ...current, [name]: value }));
+  };
+  const settled = state.attempt ?? 0;
 
   /*
    * `partnerDisplayName` is nullable — a partner whose name this operator may
@@ -203,6 +253,7 @@ export function SignatureStep({
         {ledger.status !== 'idle' ? (
           <EvidenceStates
             messages={messages}
+            locale={locale}
             status={ledger.status}
             correlationId={ledger.correlationId}
             onRetry={ledger.refresh}
@@ -241,54 +292,39 @@ export function SignatureStep({
       >
         {canSign ? (
           <form
+            ref={formRef}
             data-testid="signature-capture-form"
-            action={async (formData: FormData) => {
-              const result = await captureSignatureEvidence(visitId, formData);
-              setOutcome(result);
-              notifyActionResult(result, messages);
-              // Every settle remounts the controls. On success the draft is
-              // cleared first, so the remount seeds empty; on failure it keeps
-              // what the operator chose and the remount puts it back.
-              if (result.status === 'success') {
-                setDraft({ signerRole: '', purpose: '', signerPartnerId: '' });
-                startTransition(() => {
-                  ledger.refresh();
-                });
-                await refresh();
-              }
-              setAttempt((current) => current + 1);
-            }}
+            action={capture}
+            noValidate
             className="flex flex-col gap-3"
           >
-            <SelectField
-              key={`signerRole-${attempt}`}
+            <FormSelectField
+              key={`signerRole-${settled}`}
               label={translate(messages, 'receptions.signature.signerLabel')}
               name="signerRole"
               required
-              defaultValue={draft.signerRole}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, signerRole: event.target.value }))
-              }
+              value={draft.signerRole}
+              onChange={(value) => choose('signerRole', value)}
               options={SIGNER_ROLES.map((role) => ({
                 value: role,
                 label: translateDynamic(messages, `receptions.signerRole.${role}`),
               }))}
               placeholder={translate(messages, 'form.select.placeholder')}
+              error={fieldError('signerRole')}
             />
-            <SelectField
-              key={`purpose-${attempt}`}
+            <FormSelectField
+              key={`purpose-${settled}`}
               label={translate(messages, 'receptions.signature.purposeLabel')}
               name="purpose"
               required
-              defaultValue={draft.purpose}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, purpose: event.target.value }))
-              }
+              value={draft.purpose}
+              onChange={(value) => choose('purpose', value)}
               options={SIGNATURE_PURPOSES.map((purpose) => ({
                 value: purpose,
                 label: translateDynamic(messages, `receptions.signaturePurpose.${purpose}`),
               }))}
               placeholder={translate(messages, 'form.select.placeholder')}
+              error={fieldError('purpose')}
             />
             {/*
               WHICH person signed, chosen from the parties actually on this
@@ -297,27 +333,30 @@ export function SignatureStep({
               and offering a required partner field would force an operator to
               attribute a signature to somebody who did not give it.
             */}
-            <SelectField
-              key={`signerPartnerId-${attempt}`}
+            <FormSelectField
+              key={`signerPartnerId-${settled}`}
               label={translate(messages, 'receptions.signature.partyLabel')}
               name="signerPartnerId"
-              optionalHint={translate(messages, 'form.optional')}
-              defaultValue={draft.signerPartnerId}
-              onChange={(event) =>
-                setDraft((current) => ({ ...current, signerPartnerId: event.target.value }))
-              }
+              value={draft.signerPartnerId}
+              onChange={(value) => choose('signerPartnerId', value)}
               options={partyOptions}
               placeholder={translate(messages, 'form.select.placeholder')}
+              error={fieldError('signerPartnerId')}
             />
             <CaptureFileField
               name="signatureFile"
               label={translate(messages, 'receptions.signature.chooseFile')}
             />
-            <div>
-              <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-                {translate(messages, 'receptions.signature.submit')}
-              </button>
-            </div>
+            {fieldError('signatureFile') ? (
+              <p role="alert" className="text-supporting text-error">
+                {fieldError('signatureFile')}
+              </p>
+            ) : null}
+            <SubmitButton
+              messages={messages}
+              pending={capturing || pending}
+              labelKey="receptions.signature.submit"
+            />
           </form>
         ) : (
           <p
@@ -349,36 +388,13 @@ export function SignatureStep({
         <p className="text-caption text-text-muted" lang={locale}>
           {translate(messages, 'receptions.signature.partiesNote')}
         </p>
-        {parties.status !== 'idle' ? (
-          <EvidenceStates
-            messages={messages}
-            status={parties.status}
-            correlationId={parties.correlationId}
-            onRetry={parties.refresh}
-          />
-        ) : rows.length === 0 ? (
-          <p className="text-body text-text-secondary">
-            {translate(messages, 'receptions.parties.rolesEmpty')}
-          </p>
-        ) : (
-          <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-            {rows.map((row) => (
-              <li key={row.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
-                <PartyLabel
-                  messages={messages}
-                  party={{
-                    partnerName: row.partnerDisplayName,
-                    partnerNumber: row.partnerDisplayNumber,
-                    partnerType: null,
-                  }}
-                />
-                <span className="text-caption text-text-secondary">
-                  {translateDynamic(messages, `receptions.partyRole.${row.relationshipRole}`)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <PartyRoleGrid
+          locale={locale}
+          messages={messages}
+          table={parties}
+          showInterval={false}
+          testId="signature-party-grid"
+        />
       </EvidenceSection>
     </div>
   );
@@ -535,14 +551,15 @@ function SignatureRow({
             if (result.status === 'success') onDone();
           }}
         >
-          <button
+          <Button
             type="submit"
+            variant="contained"
+            size="small"
             data-testid={`signature-finalize-${entry.id}`}
             disabled={pending}
-            className={PRIMARY_BUTTON}
           >
             {translate(messages, 'receptions.signature.finalize')}
-          </button>
+          </Button>
         </form>
       ) : null}
 
@@ -573,41 +590,44 @@ function SignatureRow({
             }}
             className="flex flex-col gap-2"
           >
-            <TextAreaField
+            <FormTextField
               label={translate(messages, 'receptions.signature.repudiateReason')}
+              required
+              multiline
+              rows={3}
               value={reason}
               maxLength={MAX_REPUDIATION_REASON}
-              onChange={(event) => setReason(event.target.value)}
+              onChange={setReason}
             />
-            <div className="flex gap-2">
-              <button
+            <div className="flex flex-wrap gap-2">
+              <Button
                 type="submit"
+                variant="contained"
+                color="error"
                 data-testid={`signature-repudiate-submit-${entry.id}`}
                 disabled={reason.trim() === ''}
-                className={PRIMARY_BUTTON}
               >
                 {translate(messages, 'receptions.signature.repudiateSubmit')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowRepudiate(false)}
-                className={SECONDARY_BUTTON}
-              >
+              </Button>
+              <Button type="button" variant="outlined" onClick={() => setShowRepudiate(false)}>
                 {translate(messages, 'form.cancel')}
-              </button>
+              </Button>
             </div>
           </form>
         ) : (
-          <button
-            type="button"
-            data-testid={`signature-repudiate-open-${entry.id}`}
-            onClick={() => {
-              startTransition(() => setShowRepudiate(true));
-            }}
-            className={SECONDARY_BUTTON}
-          >
-            {translate(messages, 'receptions.signature.repudiate')}
-          </button>
+          <div>
+            <Button
+              type="button"
+              variant="outlined"
+              size="small"
+              data-testid={`signature-repudiate-open-${entry.id}`}
+              onClick={() => {
+                startTransition(() => setShowRepudiate(true));
+              }}
+            >
+              {translate(messages, 'receptions.signature.repudiate')}
+            </Button>
+          </div>
         )
       ) : null}
     </li>

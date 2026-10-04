@@ -50,6 +50,11 @@ const SECTIONS: readonly {
         labelKey: 'nav.approvalLimits',
         permission: PERMISSIONS.approvalManage,
       },
+      {
+        href: '/administration/discount-threshold',
+        labelKey: 'nav.discountThreshold',
+        permission: PERMISSIONS.priceRead,
+      },
     ],
   },
   {
@@ -87,6 +92,11 @@ const SECTIONS: readonly {
         href: '/administration/system-settings',
         labelKey: 'nav.systemSettings',
         permission: PERMISSIONS.settingsManage,
+      },
+      {
+        href: '/administration/appointment-setup',
+        labelKey: 'nav.appointmentSetup',
+        permission: PERMISSIONS.appointmentCatalogueManage,
       },
     ],
   },

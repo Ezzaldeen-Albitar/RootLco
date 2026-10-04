@@ -408,7 +408,39 @@ describe('declarations', () => {
   it('MD-B1 the administrator bundle now holds inv.adjustment.approve', () => {
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(APPROVE);
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toContain(MANAGE);
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(67);
+    // 73 since the P1-31 P-1 widening added six delivery, warranty and
+    // reporting codes (`rpt.export` withheld by Owner decision, P1-31 CC-04),
+    // and 74 since P1-31 P-7 minted and carried `wty.warranty.read` (CC-07);
+    // 75 since P1-31 P-10 published the warranty policy write surface and carried
+    // `wty.policy.manage` with it (CC-01, now closed); and 76 since P1-31 P-11
+    // published the report configuration write surface and carried
+    // `rpt.report.configure` with it (CC-02, now closed); the two inventory codes
+    // and 78 since P1-31 P-17 minted the two employee-register codes and carried
+    // both, because a delivery cannot be created without an employee to name;
+    // the two inventory codes this case owns are unaffected by all five; and 83
+    // since P1-32-PRE-134 carried the five material codes, without which no part
+    // could be issued to a job once every work-order draw needs approved demand.
+    // 85 since the Owner directive of 2026-09-16 carried org.company.manage and
+    // org.branch.manage for the two organisation creation operations; and 88
+    // since the Owner directive of 2026-09-17 carried three of the four codes a
+    // QA campaign measured as permanently closed in every provisioned
+    // organisation (wo.work_order.line.manage, crm.customer.profile.write,
+    // rec.reception.evidence.manage). The fourth, inv.cost.view, stays excluded:
+    // that exclusion is a recorded decision (change control CC-12, open; register
+    // gap E-14) and reversing it is the Owner's call, so DEF-T-03 — nobody in a
+    // provisioned organisation can record a unit cost — stands measured and open.
+    // 89 since the Owner decided the administrator carries sal.credit.manage, so
+    // that somebody in a provisioned organisation can read, request and — as a
+    // second person it delegates to — approve a credit note. 90 since the Owner
+    // decided (2026-09-27) the administrator edits its own organisation settings,
+    // and 94 since it decided (2026-09-29) the administrator holds the four
+    // appointment codes. 95 since Owner decision D13 (2026-09-30, ADR-023) carried
+    // the minted sal.credit.approve, which deciding a credit note now declares. 96
+    // since Owner decision D4 (2026-09-30, ADR-023) carried sal.reversal.approve,
+    // which deciding a receipt reversal declares. 97 since Owner decision D14
+    // (2026-09-30, ADR-023) carried the minted sal.payment.third_party.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(97);
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).not.toContain('inv.cost.view');
   });
 });
 

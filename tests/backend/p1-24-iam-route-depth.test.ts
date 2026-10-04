@@ -82,6 +82,7 @@
  *   iam.auth-password-reset: route service unauthenticated
  *   iam.auth-password-reset-completion: route service unauthenticated
  *   iam.auth-session: route service authorization success
+ *   iam.working-context-read: route service authorization success
  *   iam.branch-settings-read: route service authorization success cross-tenant isolation
  *   iam.branch-settings-write: route service authorization cross-tenant isolation
  *   iam.company-settings-read: route service authorization success cross-tenant isolation
@@ -146,6 +147,10 @@ import { PING_OPERATION, GET as pingRoute } from '@/app/api/v1/meta/ping/route';
 import { LOGIN_OPERATION, POST as loginRoute } from '@/app/api/v1/auth/login/route';
 import { LOGOUT_OPERATION, POST as logoutRoute } from '@/app/api/v1/auth/logout/route';
 import { SESSION_OPERATION, GET as sessionRoute } from '@/app/api/v1/auth/session/route';
+import {
+  WORKING_CONTEXT_OPERATION,
+  GET as workingContextRoute,
+} from '@/app/api/v1/auth/working-context/route';
 import {
   PASSWORD_RESET_OPERATION,
   POST as passwordResetRoute,
@@ -676,6 +681,11 @@ const REDIRECT_ALLOWED = 'https://app.test.local/invitation';
 const denialCases: readonly DenialCase[] = [
   { operation: PING_OPERATION, handler: pingRoute, input: { path: '/meta/ping' } },
   { operation: SESSION_OPERATION, handler: sessionRoute, input: { path: '/auth/session' } },
+  {
+    operation: WORKING_CONTEXT_OPERATION,
+    handler: workingContextRoute,
+    input: { path: '/auth/working-context' },
+  },
   { operation: USER_LIST_OPERATION, handler: userListRoute, input: { path: '/iam/users' } },
   {
     operation: USER_DETAIL_OPERATION,
@@ -1004,6 +1014,7 @@ const P1_24_AUTHENTICATED_IDS = [
   'iam.user-session-revoke-all',
   'iam.user-status-change',
   'iam.user-update',
+  'iam.working-context-read',
   'meta.ping',
 ] as const;
 
@@ -1220,6 +1231,19 @@ describe('P1-24-QA-002 — the read surface answers on the runtime identity', ()
     });
     expect(response.status).toBe(200);
     expect(JSON.stringify(response.body)).toContain(U24_ADMIN);
+  });
+
+  it('iam.working-context-read answers the caller its own companies and branches', async () => {
+    asAdmin();
+    const response = await call<{
+      tenantId?: string;
+      unrestricted?: boolean;
+      companies?: { id: string }[];
+      branches?: { id: string; companyId: string }[];
+    }>(workingContextRoute, { path: '/auth/working-context' });
+    expect(response.status).toBe(200);
+    expect(response.body.companies?.map((company) => company.id)).toContain(COMPANY_A1);
+    expect(response.body.branches?.map((branch) => branch.id)).toContain(BRANCH_A1);
   });
 
   it('iam.user-list returns tenant-A accounts and no tenant-B account', async () => {

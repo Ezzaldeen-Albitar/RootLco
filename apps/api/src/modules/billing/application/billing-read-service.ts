@@ -42,7 +42,7 @@
  * read would withhold facts a reception clerk is entitled to.
  */
 import { AppFailure } from '@/server/errors/app-failure';
-import { Decimal, MONEY, moneyView, type MoneyView } from '@/modules/pricing';
+import { Decimal, MONEY, moneyView, type MinorUnits, type MoneyView } from '@/modules/pricing';
 // `rollUpDecisions` is imported rather than reimplemented so there is exactly ONE
 // definition of "the customer accepted this revision" in the codebase. It is the
 // quotation module's rule (BR-QUO-001: a revision is accepted only when EVERY item
@@ -50,13 +50,31 @@ import { Decimal, MONEY, moneyView, type MoneyView } from '@/modules/pricing';
 // definition of what may be billed. Importing the surface does not boot the
 // quotation composition root — `quotationModule()` is memoised behind a closure.
 import { rollUpDecisions } from '@/modules/quotation';
+import { iamDirectory } from '@/modules/iam';
+import { inventoryModule, type ItemLabel } from '@/modules/inventory';
 import type { DbHandle } from '@/server/db/transaction';
-import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { callerHoldsPermissionAnywhere, type ScopeAuthorizer } from '@/server/auth/authorization';
+import { pageRequest, type Page } from '@/server/db/pagination';
+import {
+  CUSTOMER_SEARCH_PERMISSION,
+  toEntitySearchTerms,
+  withoutCustomerArms,
+  type EntitySearchTerms,
+} from '@/shared/text/search-terms';
+import { CREDIT_NOTE_ORDER, INVOICE_LIST_ORDER } from '../data/billing-repository';
+import {
+  deriveCreditStatus,
+  derivePaymentStatus,
+  type CreditStatus,
+  type PaymentStatus,
+  type RefundStatus,
+} from '../domain/billing';
 import type {
   BillingRepository,
   CommercialSourceRow,
   CreditNoteRow,
   InvoiceLineRow,
+  InvoiceListRow,
   InvoiceRow,
   NumberingConfigRow,
 } from '../data/billing-repository';
@@ -96,16 +114,32 @@ export interface InvoiceLineView {
   readonly quantity: string;
   readonly currency: string;
   readonly sourceQuotationItemId: string | null;
+  /**
+   * What a counter-sale line sold, by code and name (GAP-09), so the line can be
+   * printed with a description. `null` on a work-order line, which is described by
+   * the quotation item it was copied from. Not money: shown to every invoice reader.
+   */
+  readonly item: InvoiceLineItemView | null;
   readonly recordVersion: number;
   /** `null` without `sal.finance.view`. */
   readonly money: InvoiceLineMoneyView | null;
+}
+
+/** An item a counter-sale line sold. `code` is the SKU. */
+export interface InvoiceLineItemView {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
 }
 
 export interface InvoiceView {
   readonly id: string;
   readonly companyId: string;
   readonly branchId: string;
-  readonly workOrderId: string;
+  /** Null exactly when `saleKind` is `counter_sale` (P1-32 preparatory slice 2). */
+  readonly workOrderId: string | null;
+  /** `work_order` or `counter_sale`. */
+  readonly saleKind: string;
   readonly quotationRevisionId: string | null;
   readonly payerPartnerId: string;
   readonly currency: string;
@@ -116,6 +150,39 @@ export interface InvoiceView {
   readonly recordVersion: number;
   /** `null` without `sal.finance.view`, and on a draft before amounts are written. */
   readonly totals: InvoiceTotalsView | null;
+}
+
+/**
+ * Who an invoice bills, by name (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * Every field is `null` exactly when the payer is not named to THIS caller:
+ * withheld because the caller does not hold `crm.customer.read`, or not a live
+ * partner — retired since the invoice was written, or not visible. The box then
+ * cannot reach that name either, so the list never names a payer it would not
+ * find by name, nor finds one by a name it would not show. The block keeps its
+ * shape either way, as the warranty list's customer block does. The id is
+ * `payerPartnerId` on the header and is not repeated here.
+ */
+export interface InvoicePayerView {
+  readonly displayName: string | null;
+  readonly displayNumber: string | null;
+  readonly partyType: string | null;
+}
+
+/**
+ * One row of `sal.invoice-list`: the header every other invoice read publishes,
+ * plus the payer's name and the open balance.
+ *
+ * `outstanding` is `null` whenever `balanceIsTrustworthy` says the zero
+ * `sal.invoice_open_receivable` would compute cannot be believed — that is, for
+ * an issued or credited invoice whose amounts row this caller cannot see. The
+ * route's gate is `sal.finance.view`, so that is no longer the ordinary case;
+ * the guard stays because a policy change underneath must hide money, never
+ * report a zero. Omitted, never zeroed, for the reason `totals` is.
+ */
+export interface InvoiceListEntryView extends InvoiceView {
+  readonly payer: InvoicePayerView;
+  readonly outstanding: MoneyView | null;
 }
 
 /** An invoice with its lines, as the detail read returns it. */
@@ -147,7 +214,68 @@ export interface OutstandingView {
   readonly status: string;
   readonly outstanding: MoneyView;
   readonly isSettled: boolean;
+  /**
+   * The credit, payment and refund positions, kept apart (Owner decision D7,
+   * ADR-023). `null` for a draft or a voided invoice, which has claimed nothing
+   * and so has nothing to credit, pay or refund.
+   */
+  readonly settlement: SettlementView | null;
+  /**
+   * When the balance and the settlement were read, on the database's clock, as an
+   * ISO instant (Owner decision D10, ADR-023): a printed copy states its
+   * settlement figures "as of" this moment, apart from the issued facts, which
+   * never change. Additive; every other field is unchanged.
+   */
+  readonly asOf: string;
 }
+
+/**
+ * Three separate facts about an issued invoice, derived on every read (D7).
+ *
+ * `creditStatus` compares the effective (approved) credits with the eligible
+ * total, the invoice's gross; `paymentStatus` compares what was paid with what
+ * is still open; `refundStatus` is `none`, because the platform has no refund
+ * instrument yet. A fully credited invoice reads `credited` / `nothing_due` —
+ * never "settled" or "paid". `credited` and `paid` are the two amounts the
+ * statuses were derived from, in the invoice's currency.
+ */
+export interface SettlementView {
+  readonly creditStatus: CreditStatus;
+  readonly paymentStatus: PaymentStatus;
+  readonly refundStatus: RefundStatus;
+  readonly credited: MoneyView;
+  readonly paid: MoneyView;
+  /**
+   * The part of `paid` that somebody other than the invoice's customer paid, as an
+   * explicit third-party payment (ADR-023 D14) — an insurer, an employer — oldest
+   * first, at most `THIRD_PARTY_PAYMENTS_SHOWN`. Additive; empty when the customer
+   * paid it all. The invoice stays its customer's either way.
+   */
+  readonly thirdPartyPayments: readonly ThirdPartyPaymentView[];
+  /** True when the invoice has more third-party payments than are listed. */
+  readonly thirdPartyPaymentsTruncated: boolean;
+}
+
+/**
+ * One third-party payment of an invoice, as its settlement shows it (ADR-023 D14):
+ * who paid, named only to a caller holding `crm.customer.read` as everywhere else,
+ * what they are to the customer, the authorisation and the reason, the receipt by
+ * its number, and the amount applied.
+ */
+export interface ThirdPartyPaymentView {
+  readonly receipt: { readonly id: string; readonly reference: string };
+  /** `null` when the caller may not read customers, or the payer is not a live partner. */
+  readonly payerName: string | null;
+  /** `insurer`, `employer` or `other` — a fixed vocabulary. */
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
+  readonly money: MoneyView;
+  readonly allocatedAt: string;
+}
+
+/** How many third-party payments one settlement lists. */
+export const THIRD_PARTY_PAYMENTS_SHOWN = 50;
 
 /**
  * The delivery module's financial blocker, and the whole reason this port exists.
@@ -232,10 +360,16 @@ export interface InvoicePreview {
   readonly quotationId: string;
   readonly quotationRevisionId: string;
   readonly currency: string;
+  /**
+   * The minor unit of `currency`, as `shared.currencies` records it (Owner decision
+   * D1), so a client writes the preview's figures the way the platform does.
+   * Absent only for a currency the register does not hold.
+   */
+  readonly minorUnit?: number;
   readonly subtotal: string;
   readonly discountTotal: string;
   readonly taxTotal: string;
-  /** `Σ round(unit × qty − discount, 4)` — what becomes the invoice's `net_total`. */
+  /** `Σ` of the rounded line nets (ADR-023, D1) — what becomes the invoice's `net_total`. */
   readonly netTotal: string;
   readonly grossTotal: string;
   readonly lines: readonly InvoicePreviewLine[];
@@ -253,7 +387,64 @@ export interface CreditNoteView {
   readonly approvedBy: string | null;
   readonly approvedAt: string | null;
   readonly issuedAt: string | null;
+  /**
+   * Who withdrew or rejected the request and when (ADR-023, D3) — the requester
+   * for a withdrawal, a different person for a rejection; `null` while pending
+   * and on an approved note, whose approver is `approvedBy`.
+   */
+  readonly decidedBy: string | null;
+  readonly decidedAt: string | null;
+  /** Why the request was rejected; `null` on every other state. */
+  readonly decisionReason: string | null;
   readonly recordVersion: number;
+}
+
+/**
+ * The invoice a credit note reduces, as the note's detail names it (finance
+ * checkpoint, DF-B4). `payerName` is the name of who the invoice bills, published
+ * only to a caller holding `crm.customer.read` — the rule `sal.invoice-list`
+ * keeps — and `null` otherwise or when the payer is retired. `workOrderId` is
+ * there so a screen can link a job's invoice; a counter sale has none.
+ */
+export interface CreditNoteInvoiceView {
+  readonly invoiceNumber: string | null;
+  readonly saleKind: string;
+  readonly workOrderId: string | null;
+  readonly payerName: string | null;
+}
+
+/**
+ * The customer return that raised a credit note (DF-B4). A return carries no
+ * number of its own, so it is named by what came back — the item's code and name
+ * and the quantity — and when it was received.
+ */
+export interface CreditNoteSourceReturnView {
+  readonly id: string;
+  readonly itemCode: string | null;
+  readonly itemName: string | null;
+  /** `numeric(12,3)` decimal string. Not money. */
+  readonly quantity: string;
+  readonly receivedAt: string;
+}
+
+/**
+ * `sal.credit-note-detail` — the note, and what it is traceable to (finance
+ * checkpoint, DF-B4): the invoice it reduces, the return that raised it, when it
+ * was requested, and the people on it by NAME. Every field of `CreditNoteView`
+ * is unchanged; these are additive.
+ *
+ * Each name is `null` for a caller who may not read users — resolved through
+ * `iamDirectory().directory`, which checks `iam.user.read` itself, so a billing
+ * read never becomes a staff directory — and for a person who is not named. The
+ * ids stay where they were, so nothing a caller had is taken away.
+ */
+export interface CreditNoteDetailView extends CreditNoteView {
+  readonly requestedAt: string;
+  readonly requestedByName: string | null;
+  readonly approvedByName: string | null;
+  readonly decidedByName: string | null;
+  readonly invoice: CreditNoteInvoiceView | null;
+  readonly sourceReturn: CreditNoteSourceReturnView | null;
 }
 
 /**
@@ -278,13 +469,24 @@ export interface NumberingConfigView {
 // ---------------------------------------------------------------------------
 // View mappers. Module-level and exported, because the mutation service returns
 // the same shapes and two mappers would be two wire contracts.
+//
+// Each takes the minor units of the currencies it renders (`minorUnitsFor`), so
+// every amount it publishes says how many decimals its currency is written with
+// (Owner decision D1). Without them the amounts are the same, unstamped.
 // ---------------------------------------------------------------------------
 
-export const toInvoiceView = (row: InvoiceRow): InvoiceView => ({
+/** No minor units looked up: every amount is published unstamped. */
+const NO_MINOR_UNITS: MinorUnits = new Map();
+
+export const toInvoiceView = (
+  row: InvoiceRow,
+  units: MinorUnits = NO_MINOR_UNITS
+): InvoiceView => ({
   id: row.id,
   companyId: row.companyId,
   branchId: row.branchId,
   workOrderId: row.workOrderId,
+  saleKind: row.saleKind,
   quotationRevisionId: row.quotationRevisionId,
   payerPartnerId: row.payerPartnerId,
   currency: row.currencyCode,
@@ -294,47 +496,100 @@ export const toInvoiceView = (row: InvoiceRow): InvoiceView => ({
   recordVersion: row.recordVersion,
   totals: row.money
     ? {
-        net: moneyView(row.money.netTotal, row.currencyCode),
-        tax: moneyView(row.money.taxTotal, row.currencyCode),
-        gross: moneyView(row.money.grossTotal, row.currencyCode),
+        net: moneyView(row.money.netTotal, row.currencyCode, units),
+        tax: moneyView(row.money.taxTotal, row.currencyCode, units),
+        gross: moneyView(row.money.grossTotal, row.currencyCode, units),
       }
     : null,
 });
 
-export const toInvoiceLineView = (row: InvoiceLineRow): InvoiceLineView => ({
+/** The payer block of a caller the payer may not be named to. Same shape, every field null. */
+const WITHHELD_PAYER: InvoicePayerView = Object.freeze({
+  displayName: null,
+  displayNumber: null,
+  partyType: null,
+});
+
+/**
+ * The list row: the shared header mapper, the payer's name where the caller may
+ * read customers, and the open balance only where it can be believed.
+ */
+export const toInvoiceListEntryView = (
+  row: InvoiceListRow,
+  mayNamePayer: boolean,
+  units: MinorUnits = NO_MINOR_UNITS
+): InvoiceListEntryView => ({
+  ...toInvoiceView(row, units),
+  payer: mayNamePayer
+    ? {
+        displayName: row.payerDisplayName,
+        displayNumber: row.payerDisplayNumber,
+        partyType: row.payerPartyType,
+      }
+    : WITHHELD_PAYER,
+  outstanding: balanceIsTrustworthy(row)
+    ? moneyView(row.openAmount, row.currencyCode, units)
+    : null,
+});
+
+/**
+ * The permission a caller needs before the invoice list's box may match a plate
+ * or a VIN — the code the vehicle module itself asks before it tells anyone a
+ * registration (`VehicleReadRepository.mayReadVehicles`).
+ */
+const VEHICLE_SEARCH_PERMISSION = 'veh.vehicle.read';
+
+/** Switches off the two arms that read vehicle data. See `withoutCustomerArms`. */
+function withoutVehicleArms(terms: EntitySearchTerms): EntitySearchTerms {
+  if (!terms.present) return terms;
+  return { ...terms, plateFragment: '', vinFragment: '' };
+}
+
+export const toInvoiceLineView = (
+  row: InvoiceLineRow,
+  items: ReadonlyMap<string, ItemLabel> = new Map(),
+  units: MinorUnits = NO_MINOR_UNITS
+): InvoiceLineView => ({
   id: row.id,
   lineNumber: row.lineNumber,
   lineType: row.lineType,
   quantity: row.quantity,
   currency: row.currencyCode,
   sourceQuotationItemId: row.sourceQuotationItemId,
+  item: lineItemView(row.itemId, items),
   recordVersion: row.recordVersion,
   money: row.money
     ? {
-        unitPrice: moneyView(row.money.unitPrice, row.currencyCode),
-        net: moneyView(row.money.netAmount, row.currencyCode),
-        tax: moneyView(row.money.taxAmount, row.currencyCode),
-        gross: moneyView(row.money.grossAmount, row.currencyCode),
+        unitPrice: moneyView(row.money.unitPrice, row.currencyCode, units),
+        net: moneyView(row.money.netAmount, row.currencyCode, units),
+        tax: moneyView(row.money.taxAmount, row.currencyCode, units),
+        gross: moneyView(row.money.grossAmount, row.currencyCode, units),
         payerSplit: {
-          customer: moneyView(row.money.customerPayAmount, row.currencyCode),
-          warranty: moneyView(row.money.warrantyPayAmount, row.currencyCode),
+          customer: moneyView(row.money.customerPayAmount, row.currencyCode, units),
+          warranty: moneyView(row.money.warrantyPayAmount, row.currencyCode, units),
         },
       }
     : null,
 });
 
-export const toCreditNoteView = (row: CreditNoteRow): CreditNoteView => ({
+export const toCreditNoteView = (
+  row: CreditNoteRow,
+  units: MinorUnits = NO_MINOR_UNITS
+): CreditNoteView => ({
   id: row.id,
   invoiceId: row.invoiceId,
   companyId: row.companyId,
   branchId: row.branchId,
-  amount: moneyView(row.amount, row.currencyCode),
+  amount: moneyView(row.amount, row.currencyCode, units),
   reason: row.reason,
   approvalState: row.approvalState,
   requestedBy: row.requestedBy,
   approvedBy: row.approvedBy,
   approvedAt: row.approvedAt?.toISOString() ?? null,
   issuedAt: row.issuedAt?.toISOString() ?? null,
+  decidedBy: row.decidedBy,
+  decidedAt: row.decidedAt?.toISOString() ?? null,
+  decisionReason: row.decisionReason,
   recordVersion: row.recordVersion,
 });
 
@@ -473,6 +728,30 @@ export interface WorkOrderInvoiceView {
   readonly invoice: InvoiceView | null;
 }
 
+/** The line's item as published, or null when it names none or cannot be named. */
+function lineItemView(
+  itemId: string | null,
+  items: ReadonlyMap<string, ItemLabel>
+): InvoiceLineItemView | null {
+  if (itemId === null) return null;
+  const label = items.get(itemId);
+  return label ? { id: itemId, code: label.code, name: label.name } : null;
+}
+
+/**
+ * The code and name of every item the lines sold, from `@/modules/inventory`'s
+ * port — the item master is that module's table (GAP-09). One read per invoice,
+ * and none at all for a work-order invoice, whose lines name no item.
+ */
+export async function describeLineItems(
+  db: DbHandle,
+  lines: readonly InvoiceLineRow[]
+): Promise<ReadonlyMap<string, ItemLabel>> {
+  const ids = lines.flatMap((line) => (line.itemId === null ? [] : [line.itemId]));
+  if (ids.length === 0) return new Map();
+  return inventoryModule().reads.describeItems(db, ids);
+}
+
 export class BillingReadService {
   public constructor(private readonly repository: BillingRepository) {}
 
@@ -501,9 +780,11 @@ export class BillingReadService {
       companyId: invoice.companyId,
       branchId: invoice.branchId,
     });
+    const items = await describeLineItems(db, lines);
+    const units = await this.repository.minorUnitsFor(db, [invoice.currencyCode]);
     return {
-      invoice: toInvoiceView(invoice),
-      lines: lines.map(toInvoiceLineView),
+      invoice: toInvoiceView(invoice, units),
+      lines: lines.map((line) => toInvoiceLineView(line, items, units)),
       recordVersion: invoice.recordVersion,
     };
   }
@@ -550,7 +831,9 @@ export class BillingReadService {
     // them, so a caller without `sal.finance.view` gets the header with the money
     // OMITTED rather than zeroed. Reused deliberately: a second mapper would be a
     // second wire contract for one row.
-    return { workOrderId: scope.workOrderId, invoice: invoice ? toInvoiceView(invoice) : null };
+    if (!invoice) return { workOrderId: scope.workOrderId, invoice: null };
+    const units = await this.repository.minorUnitsFor(db, [invoice.currencyCode]);
+    return { workOrderId: scope.workOrderId, invoice: toInvoiceView(invoice, units) };
   }
 
   /**
@@ -603,26 +886,93 @@ export class BillingReadService {
     }
 
     const amount = Decimal.fromDatabase(open.amount, MONEY);
+    const units = await this.repository.minorUnitsFor(db, [
+      open.currencyCode,
+      invoice.currencyCode,
+    ]);
     return {
       invoiceId: open.invoiceId,
       status: open.status,
-      outstanding: moneyView(open.amount, open.currencyCode),
+      outstanding: moneyView(open.amount, open.currencyCode, units),
       isSettled: !amount.greaterThan(Decimal.zero(MONEY)),
+      settlement: await this.settlementOf(db, invoice, open.amount, units),
+      asOf: open.asOf.toISOString(),
+    };
+  }
+
+  /**
+   * The credit, payment and refund positions of a trustworthy invoice (D7), or
+   * `null` for one that claims nothing yet (draft, voided).
+   *
+   * Every comparison is between `Decimal`s built from the database's strings, and
+   * the amounts are the ones `sal.invoice_open_receivable` itself subtracts, read
+   * in the same transaction (`creditPosition`).
+   */
+  private async settlementOf(
+    db: DbHandle,
+    invoice: InvoiceRow,
+    openAmount: string,
+    units: MinorUnits
+  ): Promise<SettlementView | null> {
+    if (invoice.status !== 'issued' && invoice.status !== 'credited') return null;
+    const position = await this.repository.creditPosition(db, {
+      invoiceId: invoice.id,
+      companyId: invoice.companyId,
+      branchId: invoice.branchId,
+    });
+    /* c8 ignore next 5 -- the invoice was read in the same transaction under the
+       same context, and an issued invoice always has its amounts row. */
+    if (!position || position.gross === null) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'billing: an issued invoice has no readable amounts for its credit position',
+      });
+    }
+    const credited = Decimal.fromDatabase(position.credited, MONEY);
+    const paid = Decimal.fromDatabase(position.paid, MONEY);
+    // Who paid for whom (ADR-023 D14). The payer is named only to a caller who may
+    // read customers — asked once, and only when there is a payment to name.
+    const thirdPartyRows = await this.repository.thirdPartyPayments(
+      db,
+      { invoiceId: invoice.id, companyId: invoice.companyId, branchId: invoice.branchId },
+      THIRD_PARTY_PAYMENTS_SHOWN
+    );
+    const truncated = thirdPartyRows.length > THIRD_PARTY_PAYMENTS_SHOWN;
+    const shown = truncated ? thirdPartyRows.slice(0, THIRD_PARTY_PAYMENTS_SHOWN) : thirdPartyRows;
+    const mayNamePayer =
+      shown.length > 0 && (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION));
+    return {
+      creditStatus: deriveCreditStatus(credited, Decimal.fromDatabase(position.gross, MONEY)),
+      paymentStatus: derivePaymentStatus(paid, Decimal.fromDatabase(openAmount, MONEY)),
+      refundStatus: 'none',
+      credited: moneyView(position.credited, invoice.currencyCode, units),
+      paid: moneyView(position.paid, invoice.currencyCode, units),
+      thirdPartyPayments: shown.map((row) => ({
+        receipt: { id: row.receiptId, reference: row.receiptNumber },
+        payerName: mayNamePayer ? row.payerDisplayName : null,
+        relationship: row.relationship,
+        authorisationReference: row.authorisationReference,
+        reason: row.reason,
+        money: moneyView(row.amount, row.currencyCode, units),
+        allocatedAt: row.allocatedAt.toISOString(),
+      })),
+      thirdPartyPaymentsTruncated: truncated,
     };
   }
 
   /**
    * What an invoice for this work order would contain, without creating one.
    *
-   * Every amount is computed by PostgreSQL in `numeric`, in the same
-   * `round(…, 4)` shape `ck_invoice_amounts_gross` enforces and
-   * `sal.issue_invoice` later applies, from the captured values of the accepted
-   * quotation revision. So the preview is not an estimate that the create path
-   * might contradict — it is the same expression over the same frozen rows.
+   * Every amount is summed by PostgreSQL in `numeric` from the captured line
+   * amounts of the accepted quotation revision, each already rounded half-up to
+   * the currency's minor unit by `tg_quotation_items_money` (ADR-023, D1: a
+   * document total is the sum of its rounded lines), which is how
+   * `sal.issue_invoice` later recomputes the header from the invoice lines. So
+   * the preview is not an estimate that the create path might contradict — it is
+   * the same sum over the same frozen rows.
    *
    * Nothing here defaults a tax rate, a discount, a currency or a jurisdiction. The
    * rate is `quo.quotation_items.captured_tax_rate`, resolved by the pricing layer
-   * when the revision was priced and validated by `ck_quotation_items_tax_amount`;
+   * when the revision was priced and validated by `tg_quotation_items_money`;
    * the discount is `captured_discount`, bounded by `ck_quotation_items_discount`;
    * the currency is the revision's. A work order with no accepted revision produces
    * `ERR-RES-001`, never a guessed zero.
@@ -662,19 +1012,23 @@ export class BillingReadService {
      * previewing".
      *
      * Without it the promise was breakable. PostgreSQL's `sum()` returns UNCONSTRAINED
-     * `numeric`, not `numeric(18,4)`, and `ck_quotation_items_line_total` bounds each
+     * `numeric`, not `numeric(18,4)`, and `tg_quotation_items_money` bounds each
      * line's own total without bounding their sum — so a Σ exceeding 14 integer digits
      * was returned here as a cheerful `200`, while `POST /invoices` for the same work
      * order answered `409` on SQLSTATE `22003`. The preview now fails on exactly the
      * input the invoice fails on.
      */
     const exact = (value: string): string => Decimal.fromDatabase(value, MONEY).toString();
+    const minorUnit = (await this.repository.minorUnitsFor(db, [source.currencyCode])).get(
+      source.currencyCode
+    );
 
     return {
       workOrderId: scope.workOrderId,
       quotationId: source.quotationId,
       quotationRevisionId: source.revisionId,
       currency: source.currencyCode,
+      ...(minorUnit === undefined ? {} : { minorUnit }),
       subtotal: exact(source.subtotal),
       discountTotal: exact(source.discountTotal),
       taxTotal: exact(source.taxTotal),
@@ -727,12 +1081,20 @@ export class BillingReadService {
     return row ? toNumberingConfigView(row) : null;
   }
 
-  /** One credit note, or `ERR-RES-001` when it is absent or not visible. */
+  /**
+   * One credit note and what it is traceable to (DF-B4), or `ERR-RES-001` when it
+   * is absent or not visible.
+   *
+   * The trace is read only after the scope is authorized. It costs a fixed number
+   * of statements whatever the note: the trace, the customer-read answer, the
+   * item label when a return raised the note, and the names — the directory
+   * issues nothing for a caller who may not read users beyond its own check.
+   */
   public async readCreditNote(
     db: DbHandle,
     creditNoteId: string,
     authorizeScope: ScopeAuthorizer
-  ): Promise<CreditNoteView> {
+  ): Promise<CreditNoteDetailView> {
     const note = await this.repository.findCreditNote(db, creditNoteId);
     if (!note) {
       // Indistinguishable from "you do not hold sal.finance.view", because the whole
@@ -744,7 +1106,169 @@ export class BillingReadService {
       });
     }
     await authorizeScope({ companyId: note.companyId, branchId: note.branchId });
-    return toCreditNoteView(note);
+    const trace = await this.repository.findCreditNoteTrace(db, note);
+    /* c8 ignore next 5 -- the note was just read in the same transaction under the
+       same context, so the trace read cannot lose it. */
+    if (!trace) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'billing: credit note vanished between the note read and its trace read',
+      });
+    }
+    const mayReadCustomers =
+      trace.invoice !== null &&
+      (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION));
+    const items =
+      trace.sourceReturn === null
+        ? new Map<string, ItemLabel>()
+        : await inventoryModule().reads.describeItems(db, [trace.sourceReturn.itemId]);
+    const people = [note.requestedBy, note.approvedBy, note.decidedBy].filter(
+      (id): id is string => id !== null
+    );
+    const names = await iamDirectory().directory.resolveDisplayIdentities(db, [...new Set(people)]);
+    const nameOf = (id: string | null): string | null =>
+      id === null ? null : (names.get(id)?.displayName ?? null);
+    const returned = trace.sourceReturn;
+    const units = await this.repository.minorUnitsFor(db, [note.currencyCode]);
+    return {
+      ...toCreditNoteView(note, units),
+      requestedAt: trace.requestedAt.toISOString(),
+      requestedByName: nameOf(note.requestedBy),
+      approvedByName: nameOf(note.approvedBy),
+      decidedByName: nameOf(note.decidedBy),
+      invoice:
+        trace.invoice === null
+          ? null
+          : {
+              invoiceNumber: trace.invoice.invoiceNumber,
+              saleKind: trace.invoice.saleKind,
+              workOrderId: trace.invoice.workOrderId,
+              payerName: mayReadCustomers ? trace.invoice.payerDisplayName : null,
+            },
+      sourceReturn:
+        returned === null
+          ? null
+          : {
+              id: returned.id,
+              itemCode: items.get(returned.itemId)?.code ?? null,
+              itemName: items.get(returned.itemId)?.name ?? null,
+              quantity: returned.quantity,
+              receivedAt: returned.receivedAt.toISOString(),
+            },
+    };
+  }
+
+  /**
+   * One branch's credit notes, newest first (DEF-T-07).
+   *
+   * The acceptance campaign raised a credit note from a customer return, was told
+   * a second person had to approve it, and then found nothing anywhere that could
+   * open it. A note is created against an invoice and carries no parent screen of
+   * its own, so without a list it is reachable only by an id no screen prints.
+   *
+   * The branch is the read's TARGET — named by the caller and re-authorized here
+   * before any row is fetched, exactly as `listCounterSales` does — so a caller
+   * cannot page a branch it holds no authority in and learn what was credited
+   * there. RLS narrows again underneath, and `sel_credit_notes_gated` removes
+   * every row from a caller without `sal.finance.view`; that is why the operation
+   * declares the permission rather than answering an empty page that would read
+   * as "this branch has credited nothing".
+   */
+  public async listCreditNotes(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly approvalState?: string | undefined;
+      readonly invoiceId?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<CreditNoteView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const result = await this.repository.listCreditNotes(
+      db,
+      filter,
+      pageRequest(CREDIT_NOTE_ORDER, page)
+    );
+    const units = await this.repository.minorUnitsFor(
+      db,
+      result.items.map((row) => row.currencyCode)
+    );
+    return { ...result, items: result.items.map((row) => toCreditNoteView(row, units)) };
+  }
+
+  /**
+   * One branch's invoices of every kind, newest first (Owner directive,
+   * P1-32-PRE-OD-UX, `sal.invoice-list`).
+   *
+   * The pair is authorized BEFORE any row is read, as `listCreditNotes` and
+   * `listCounterSales` do, so a caller cannot page a branch it holds no authority
+   * in and learn what was billed there.
+   *
+   * ## Least privilege
+   *
+   * The gate is `sal.finance.view`, and that code reaches money, never a
+   * customer's name or a vehicle's registration. So the page names the payer,
+   * and the box matches a payer's name, only for a caller holding
+   * `crm.customer.read`; and the box matches a plate or a VIN only for a caller
+   * holding `veh.vehicle.read`. The invoice number is always matched: it is on
+   * the row the caller already reads. Each answer is ONE scope-blind
+   * `iam.has_permission` statement, asked the way the reception, appointment,
+   * delivery and warranty lists ask it — the customer question on every call,
+   * because the payer block depends on it; the vehicle question only when a box
+   * was sent. Both can only narrow the page, never widen it, and neither depends
+   * on the page size, so the statements sent stay constant.
+   *
+   * The PHONE arm is switched off for everyone: a phone number is on no row of
+   * this list, and a box that matched one would turn a billing read into a way
+   * of probing contact data.
+   */
+  public async listInvoices(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      /** Only the invoices money can still be applied to (`issued`/`credited`, open above zero). */
+      readonly allocatable?: boolean | undefined;
+      /** Only one kind: `counter_sale` or `work_order` (DF-B3). */
+      readonly saleKind?: string | undefined;
+      /** The raw free-text box; reduced here, once, by the shared rule. */
+      readonly q?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<InvoiceListEntryView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const mayReadCustomers = await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION);
+    let terms = toEntitySearchTerms(filter.q);
+    if (terms.present) {
+      terms = { ...terms, phoneDigits: '', phoneSuffixEligible: false };
+      if (!mayReadCustomers) terms = withoutCustomerArms(terms);
+      if (!(await callerHoldsPermissionAnywhere(db, VEHICLE_SEARCH_PERMISSION))) {
+        terms = withoutVehicleArms(terms);
+      }
+    }
+    const result = await this.repository.listInvoices(
+      db,
+      {
+        companyId: filter.companyId,
+        branchId: filter.branchId,
+        ...(filter.status === undefined ? {} : { status: filter.status }),
+        ...(filter.allocatable === true ? { allocatable: true } : {}),
+        ...(filter.saleKind === undefined ? {} : { saleKind: filter.saleKind }),
+        search: terms,
+      },
+      pageRequest(INVOICE_LIST_ORDER, page)
+    );
+    const units = await this.repository.minorUnitsFor(
+      db,
+      result.items.map((row) => row.currencyCode)
+    );
+    return {
+      ...result,
+      items: result.items.map((row) => toInvoiceListEntryView(row, mayReadCustomers, units)),
+    };
   }
 
   // -------------------------------------------------------------------------

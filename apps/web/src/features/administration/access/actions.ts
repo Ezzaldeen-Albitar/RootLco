@@ -54,7 +54,7 @@ export async function createRoleAction(
   if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send('POST', '/api/v1/iam/roles', parsed.data);
   if (!result.ok) return fromFailure(result, attempt);
@@ -67,7 +67,7 @@ export async function updateRoleAction(
   changes: { readonly name?: string; readonly description?: string; readonly archive?: boolean }
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send(
     'PATCH',
@@ -90,7 +90,7 @@ export async function addRolePermissionAction(
     return invalid({ permissionCode: 'field.required' }, 1);
   }
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send(
     'POST',
@@ -106,7 +106,7 @@ export async function removeRolePermissionAction(
   mappingId: string
 ): Promise<ActionState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send(
     'DELETE',
@@ -124,18 +124,47 @@ const limitSchema = z
     subject: z.enum(['role', 'user']),
     roleId: z.string().trim().optional(),
     userId: z.string().trim().optional(),
-    limitType: z.string().trim().regex(ROLE_CODE, 'approvalLimits.field.limitTypeHint'),
+    // One of the types the platform consults (`APPROVAL_LIMIT_TYPES`): the form
+    // offers no other, and a type nothing reads would be a limit that limits nothing.
+    limitType: z.enum(['discount', 'credit_note'], { message: 'approvalLimits.error.type' }),
     // A STRING. Validated by pattern, never parsed into a number.
     amount: z.string().trim().regex(AMOUNT, 'approvalLimits.error.amount'),
     currency: z.string().trim().regex(CURRENCY, 'approvalLimits.error.currency'),
     effectiveFrom: z.string().trim().regex(DATE, 'approvalLimits.error.date'),
     effectiveTo: z.string().trim().regex(DATE, 'approvalLimits.error.date').optional(),
   })
-  .refine(
-    (value) =>
-      value.subject === 'role' ? UUID.test(value.roleId ?? '') : UUID.test(value.userId ?? ''),
-    { path: ['subject'], message: 'approvalLimits.error.subject' }
-  );
+  /*
+   * The complaint lands on the control that holds the missing choice — the role
+   * select or the person — rather than on "Applies to", which was answered
+   * (route sweep B3: field-level errors).
+   */
+  .superRefine((value, context) => {
+    if (value.subject === 'role' && !UUID.test(value.roleId ?? '')) {
+      context.addIssue({
+        code: 'custom',
+        path: ['roleId'],
+        message: 'approvalLimits.error.role',
+      });
+    }
+    if (value.subject === 'user' && !UUID.test(value.userId ?? '')) {
+      context.addIssue({
+        code: 'custom',
+        path: ['userId'],
+        message: 'approvalLimits.error.person',
+      });
+    }
+    // A credit note is always above zero, so a zero credit-note limit could approve
+    // nothing (ADR-023 D13). Matched on the TEXT: the amount is never a number here.
+    // Whether it fits the currency's smallest coin is the server's answer, filed on
+    // the same field.
+    if (value.limitType === 'credit_note' && /^0+(?:\.0+)?$/.test(value.amount)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['amount'],
+        message: 'approvalLimits.error.positive',
+      });
+    }
+  });
 
 export async function createApprovalLimitAction(
   previous: ActionState,
@@ -156,7 +185,7 @@ export async function createApprovalLimitAction(
   if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const value = parsed.data;
   const result = await client.send('POST', '/api/v1/iam/approval-limits', {
@@ -182,7 +211,7 @@ export async function endApprovalLimitAction(
   if (!DATE.test(effectiveTo)) return invalid({ effectiveTo: 'approvalLimits.error.date' }, 1);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt: 1 };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
 
   const result = await client.send(
     'PATCH',

@@ -69,10 +69,11 @@ export const Body = z
     payerPartnerRef: schemas.uuid.optional(),
     customerClass: z.string().regex(INTERNAL_CODE, 'must be a lower-snake class code').optional(),
     lines: z.array(Line).min(1).max(MAX_ITEMS_PER_REVISION),
-    // Who ASKED for a discount, when that is someone other than the caller. The
-    // maker/approver separation in `svc.pricing_approval_policies` compares this
-    // against the actor, and a company with the flag set refuses them being equal.
-    discountRequestedBy: schemas.uuid.optional(),
+    // There is no requester field. A discount that needs approval is recorded as a
+    // request by the SIGNED-IN person and approved separately by somebody else
+    // (`quo.discount-approval-decide`). The schema is `.strict()`, so a client that
+    // still sends `discountRequestedBy` is refused with a 422 naming the key rather
+    // than having it silently ignored (P1-32-PRE-OD-DISC-01).
   })
   .strict();
 
@@ -85,10 +86,11 @@ export const QUOTATION_CREATE_OPERATION = defineOperation({
   summary: 'Create a quotation with its first draft revision and priced lines.',
   // A CONJUNCTION, and both halves are load-bearing. Creating a quotation reads
   // the work order to derive its company and branch - that order is the scope
-  // authority - and RLS on wo.work_orders is permission-based, so a caller without
-  // wo.work_order.read cannot see it at all. Declaring only quo.quotation.manage
-  // produced a 404 that looked like a missing work order rather than a missing
-  // permission.
+  // authority - so the create exercises a work-order read and declares its code.
+  // Row security on wo.work_orders (sel_work_orders_scope) is scope-based, not
+  // permission-based: it narrows by tenant and by the caller's company and
+  // branch grant union, and never looks at a permission code. The work-order
+  // half is therefore enforced by this declaration, not by the table.
   permissions: ['quo.quotation.manage', 'wo.work_order.read'],
   scope: 'branch',
   auditClass: 'financial',
@@ -115,7 +117,6 @@ export async function POST(request: Request): Promise<Response> {
           payerPartnerRef: parsed.payerPartnerRef,
           customerClass: parsed.customerClass,
           lines: parsed.lines,
-          discountRequestedBy: parsed.discountRequestedBy,
         },
         authorizeScope
       );

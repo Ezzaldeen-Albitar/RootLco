@@ -132,8 +132,6 @@ export default async function CheckInStartPage({
           messages={messages}
           sessionUserId={session.userId}
           sessionUserName={session.displayName}
-          companyIds={session.companyIds}
-          branchIds={session.branchIds}
           canCreate={canCreate}
           canListAppointments={holds(session.permissions, APPOINTMENT_PERMISSIONS.read)}
           canPickEmployee={canPickEmployee}

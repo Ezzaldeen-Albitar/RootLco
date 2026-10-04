@@ -14,7 +14,7 @@
         {
           "file": "apps/web/tests/crm-customer-search.test.ts",
           "cases": [
-            "sends only the six parameters the contract accepts",
+            "sends only the parameters the contract accepts",
             "sends no sort parameter, because the operation publishes none",
             "disables the client retry, because the operation is rate-limited"
           ]

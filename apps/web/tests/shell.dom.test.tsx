@@ -1,29 +1,72 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
-import { screen, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { renderToString } from 'react-dom/server';
 import ts from 'typescript';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { axe } from 'vitest-axe';
 import { DataTable, type Column, type TableStatus } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { MoneyField } from '@/components/forms/MoneyField';
+import { RecordForm } from '@/components/forms/RecordForm';
 import { TextField } from '@/components/forms/Field';
+import { SearchPicker } from '@/components/search/SearchPicker';
+import { AppShell } from '@/components/shell/AppShell';
 import { PageHeader } from '@/components/shell/PageHeader';
 import { LocaleSwitcher, swapLocale } from '@/components/shell/LocaleSwitcher';
 import { Sidebar } from '@/components/shell/Sidebar';
 import { NAVIGATION, flattenNavigation, hrefFor, navigationLinks } from '@/config/navigation';
+import type { Locale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { visibleNavigation } from '@/lib/permissions';
-import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { WorkingContextControl } from '@/features/working-context/components/WorkingContextControl';
+import { BranchSelector } from '@/features/working-context/mui/BranchSelector';
+import {
+  WorkingContextProvider,
+  useUnsavedGuard,
+  useWorkingContext,
+  useWorkingContextChange,
+  type WorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
+import {
+  preferenceKeyFor,
+  type WorkingContextSnapshot,
+} from '@/features/working-context/working-context-contract';
+import {
+  BOTH_DIRECTIONS,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 
 // `useSearchParams` joined the mock when the locale switcher began preserving
 // safe query parameters. An empty instance is the honest default: these cases
 // assert the SWAP, and the carrying rule has its own tests below.
+const refreshed = vi.hoisted(() => vi.fn());
+
 vi.mock('next/navigation', () => ({
   usePathname: () => '/en',
   useSearchParams: () => new URLSearchParams(''),
+  // The working-context header control offers a retry when the branch list
+  // could not be read, and a retry is a fresh render of the route that read it.
+  useRouter: () => ({ refresh: refreshed }),
 }));
 
 const messages = getMessages('en');
@@ -45,26 +88,27 @@ describe('sidebar', () => {
     renderLtr(
       <Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed={false} />
     );
-    const overview = screen.getByRole('link', { name: 'Overview' });
-    expect(overview).toHaveAttribute('aria-current', 'page');
+    const dashboard = screen.getByRole('link', { name: 'Dashboard' });
+    expect(dashboard).toHaveAttribute('aria-current', 'page');
   });
 
   it('renders a planned module as NOT a link', () => {
     // An operator who clicks a module and lands on a 404 stops trusting the
     // whole navigation.
     //
-    // The example is `Reports`, not `Customers` and not `Inventory`. Customers
-    // was planned when this test was written and became available in P1-27;
-    // Inventory took its place and became available in P1-30 W4 — each time the
-    // assertion started failing against a module that had simply been built.
-    // Reports is a later phase, which is what makes it a valid stand-in today;
-    // whoever builds it will land here for the same reason and should move the
-    // example on again rather than weaken the claim.
+    // The example is `Documents`, not `Customers`, `Inventory` or `Reports`.
+    // Customers was planned when this test was written and became available in
+    // P1-27; Inventory took its place and became available in P1-30 W4; Reports
+    // took its place and became available in P1-31 FE-011 … FE-014 — each time
+    // the assertion started failing against a module that had simply been built.
+    // Documents has no screen and no phase building one, which is what makes it a
+    // valid stand-in today; whoever builds it will land here for the same reason
+    // and should move the example on again rather than weaken the claim.
     renderLtr(
       <Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed={false} />
     );
-    expect(screen.queryByRole('link', { name: /Reports/ })).toBeNull();
-    const planned = screen.getByText('Reports', { selector: 'span' });
+    expect(screen.queryByRole('link', { name: /Documents/ })).toBeNull();
+    const planned = screen.getByText('Documents', { selector: 'span' });
     expect(planned.closest('[aria-disabled="true"]')).not.toBeNull();
   });
 
@@ -84,11 +128,11 @@ describe('sidebar', () => {
     const { rerender } = renderLtr(
       <Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed={false} />
     );
-    expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
     rerender(<Sidebar locale="en" messages={messages} groups={groups} pathname="/en" collapsed />);
     // Collapsing is a VISUAL affordance; it must not change what a screen
     // reader announces.
-    expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
   });
 
   it('shows only what the actor may see', () => {
@@ -102,8 +146,24 @@ describe('sidebar', () => {
         collapsed={false}
       />
     );
-    expect(screen.getByRole('link', { name: 'Overview' })).toBeInTheDocument();
+    // The dashboard is gated on `wo.work_order.read` — the code its summary read
+    // is entitled by — so an actor holding nothing is not offered it either.
+    expect(screen.queryByRole('link', { name: 'Dashboard' })).toBeNull();
     expect(screen.queryByText('Billing')).toBeNull();
+
+    const groupsForFloorStaff = visibleNavigation(NAVIGATION, {
+      permissions: ['wo.work_order.read'],
+    });
+    renderLtr(
+      <Sidebar
+        locale="en"
+        messages={messages}
+        groups={groupsForFloorStaff}
+        pathname="/en"
+        collapsed={false}
+      />
+    );
+    expect(screen.getByRole('link', { name: 'Dashboard' })).toBeInTheDocument();
   });
 
   it('renders in Arabic under RTL', () => {
@@ -306,9 +366,9 @@ describe('page header', () => {
       <PageHeader
         locale="en"
         messages={messages}
-        titleKey="overview.title"
-        descriptionKey="overview.description"
-        crumbs={[{ labelKey: 'nav.overview', href: '/en' }, { labelKey: 'nav.gallery' }]}
+        titleKey="dashboard.title"
+        descriptionKey="dashboard.description"
+        crumbs={[{ labelKey: 'nav.dashboard', href: '/en' }, { labelKey: 'nav.gallery' }]}
       />
     );
     expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
@@ -320,7 +380,7 @@ describe('page header', () => {
         locale="en"
         messages={messages}
         titleKey="gallery.title"
-        crumbs={[{ labelKey: 'nav.overview', href: '/en' }, { labelKey: 'nav.gallery' }]}
+        crumbs={[{ labelKey: 'nav.dashboard', href: '/en' }, { labelKey: 'nav.gallery' }]}
       />
     );
     const nav = screen.getByRole('navigation', { name: 'Breadcrumb' });
@@ -427,14 +487,14 @@ describe('exactly one breadcrumb says it is the current page', () => {
   const TRAILS = crumbTrailsInSource();
 
   /** Real keys for the crumbs whose `labelKey` the source computes at runtime. */
-  const RUNTIME_LABEL_KEYS = ['nav.overview', 'nav.gallery', 'nav.profile'];
+  const RUNTIME_LABEL_KEYS = ['nav.dashboard', 'nav.gallery', 'nav.profile'];
 
   function renderTrail(trail: SourceTrail) {
     return renderLtr(
       <PageHeader
         locale="en"
         messages={messages}
-        titleKey="overview.title"
+        titleKey="dashboard.title"
         crumbs={trail.crumbs.map((crumb, index) => ({
           labelKey: crumb.labelKey ?? (RUNTIME_LABEL_KEYS[index] as string),
           ...(crumb.href === null ? {} : { href: crumb.href }),
@@ -518,6 +578,76 @@ describe('exactly one breadcrumb says it is the current page', () => {
       expect(links.every((link) => (link.getAttribute('href') ?? '').length > 0)).toBe(true);
     }
   );
+});
+
+/**
+ * Every breadcrumb link keeps the operator in their language (DEF-02).
+ *
+ * The work-order and inventory trails passed `'/work-orders'`,
+ * `` `/work-orders/${workOrderId}` `` and `'/inventory'`: every route lives under
+ * `[locale]`, so a click landed on the not-found page and the link prefetch
+ * logged a 404 on every load of the closure, job-diagnostics and template
+ * pages. The corpus is the same parsed one as above, so a route added tomorrow
+ * is held to this the day it is written.
+ */
+describe('every breadcrumb link carries the locale', () => {
+  const TRAILS = crumbTrailsInSource();
+  const LINKED = TRAILS.flatMap((trail) =>
+    trail.crumbs
+      .filter((crumb) => crumb.hasHref)
+      .map((crumb) => ({ file: trail.file, where: `${trail.file}:${trail.line}`, crumb }))
+  );
+
+  it('reads the hrefs from the source, including the trails that lost the locale', () => {
+    // Anti-vacuity: the corpus holds the work-order and inventory trails.
+    expect(LINKED.length).toBeGreaterThan(40);
+    const files = new Set(LINKED.map((entry) => entry.file));
+    for (const file of [
+      'src/app/[locale]/(dashboard)/work-orders/[workOrderId]/page.tsx',
+      'src/app/[locale]/(dashboard)/work-orders/[workOrderId]/closure/page.tsx',
+      'src/app/[locale]/(dashboard)/work-orders/[workOrderId]/jobs/[jobId]/diagnostics/page.tsx',
+      'src/app/[locale]/(dashboard)/work-orders/diagnostics/page.tsx',
+      'src/app/[locale]/(dashboard)/work-orders/diagnostics/[templateId]/page.tsx',
+      'src/app/[locale]/(dashboard)/work-orders/quality/page.tsx',
+      'src/app/[locale]/(dashboard)/inventory/parts/page.tsx',
+    ]) {
+      expect(files, `${file} passes no linked crumb`).toContain(file);
+    }
+  });
+
+  it('opens every crumb href with the route locale', () => {
+    const bare = LINKED.filter((entry) => !entry.crumb.localeLed).map(
+      (entry) => `${entry.where} (${entry.crumb.href ?? 'unreadable'})`
+    );
+    expect(bare, `crumb hrefs without the locale: ${bare.join(', ')}`).toEqual([]);
+  });
+
+  it.each(
+    TRAILS.filter((trail) => trail.crumbs.length > 1).map(
+      (trail) => [`${trail.file}:${trail.line}`, trail] as const
+    )
+  )('links every ancestor to an Arabic page in the Arabic trail at %s', (_where, trail) => {
+    const arabic = getMessages('ar');
+    const runtimeLabelKeys = ['nav.dashboard', 'nav.gallery', 'nav.profile'];
+    const { container } = renderRtl(
+      <PageHeader
+        locale="ar"
+        messages={arabic}
+        titleKey="dashboard.title"
+        crumbs={trail.crumbs.map((crumb, index) => ({
+          labelKey: crumb.labelKey ?? (runtimeLabelKeys[index] as string),
+          ...(crumb.arabicHref === null ? {} : { href: crumb.arabicHref }),
+        }))}
+      />
+    );
+    const nav = container.querySelector(`nav[aria-label="${arabic['shell.breadcrumbs']}"]`);
+    expect(nav, 'the breadcrumb landmark did not render').not.toBeNull();
+    const hrefs = Array.from(nav?.querySelectorAll('a[href]') ?? []).map(
+      (link) => link.getAttribute('href') ?? ''
+    );
+    expect(hrefs).toHaveLength(trail.crumbs.length - 1);
+    for (const href of hrefs) expect(href).toMatch(/^\/ar(\/|$)/);
+  });
 });
 
 describe('locale switcher', () => {
@@ -717,6 +847,16 @@ interface SourceCrumb {
   readonly labelKey: string | null;
   readonly href: string | null;
   readonly hasHref: boolean;
+  /** The same href with the locale resolved to `ar`, to render an Arabic trail. */
+  readonly arabicHref: string | null;
+  /**
+   * The href is a template that OPENS with the route's own locale segment —
+   * `` `/${locale}` `` or `` `/${locale}/…` ``. A bare `'/work-orders'` is not:
+   * the application has no route outside `[locale]`, so it lands on the
+   * not-found page and its prefetch fails on every load (DEF-02). A literal
+   * `'/en/…'` is not either: it would send an Arabic operator to English.
+   */
+  readonly localeLed: boolean;
 }
 
 interface SourceTrail {
@@ -800,20 +940,34 @@ function crumbArrayOf(node: ts.Node): ts.ArrayLiteralExpression | null {
 
 function readSourceCrumb(element: ts.Expression): SourceCrumb {
   if (!ts.isObjectLiteralExpression(element)) {
-    return { labelKey: null, href: null, hasHref: true };
+    return { labelKey: null, href: null, hasHref: true, arabicHref: null, localeLed: false };
   }
   let labelKey: string | null = null;
   let href: string | null = null;
+  let arabicHref: string | null = null;
   let hasHref = false;
+  let localeLed = false;
   for (const property of element.properties) {
     if (!ts.isPropertyAssignment(property) || !ts.isIdentifier(property.name)) continue;
     if (property.name.text === 'labelKey') labelKey = staticText(property.initializer);
     if (property.name.text === 'href') {
       hasHref = true;
       href = staticText(property.initializer);
+      arabicHref = staticText(property.initializer, 'ar');
+      localeLed = opensWithLocale(property.initializer);
     }
   }
-  return { labelKey, href, hasHref };
+  return { labelKey, href, hasHref, arabicHref, localeLed };
+}
+
+/** `` `/${locale}` `` or `` `/${locale}/…` ``, read from the syntax. */
+function opensWithLocale(node: ts.Expression): boolean {
+  if (!ts.isTemplateExpression(node) || node.head.text !== '/') return false;
+  const first = node.templateSpans[0];
+  if (!first || !ts.isIdentifier(first.expression) || first.expression.text !== 'locale') {
+    return false;
+  }
+  return first.literal.text === '' || first.literal.text.startsWith('/');
 }
 
 /**
@@ -834,15 +988,1307 @@ function readSourceCrumb(element: ts.Expression): SourceCrumb {
  * property this function exists to protect: an unreadable href must never be
  * silently downgraded into "this crumb is the current page".
  */
-function staticText(node: ts.Expression): string | null {
+function staticText(node: ts.Expression, locale: Locale = 'en'): string | null {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
   if (ts.isTemplateExpression(node)) {
     let text = node.head.text;
     for (const span of node.templateSpans) {
       if (!ts.isIdentifier(span.expression)) return null;
-      text += `${span.expression.text === 'locale' ? 'en' : 'record-id'}${span.literal.text}`;
+      text += `${span.expression.text === 'locale' ? locale : 'record-id'}${span.literal.text}`;
     }
     return text;
   }
   return null;
 }
+
+/**
+ * The working context — where the operator is working, asked once.
+ *
+ * ## What these cases are actually defending
+ *
+ * Every rule here exists because its opposite was shipped. The pair fields
+ * across appointments, receptions and work orders each asked for a company and
+ * a branch as raw references, and the operator with the widest grant — whose
+ * session resolves to EMPTY lists, meaning unrestricted — was handed a
+ * free-text box. So: one branch is never asked about, a remembered choice is
+ * honoured only while it is still authorized, nothing is chosen on the
+ * operator's behalf, and a change cannot quietly re-address a half-filled form.
+ */
+
+const WC_TENANT = '2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e';
+const WC_ACCOUNT = '9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d';
+
+function wcBranch(id: string, companyId: string, name: string) {
+  return {
+    id,
+    companyId,
+    code: id.toUpperCase(),
+    name,
+    city: null,
+    timezone: 'Asia/Riyadh',
+    status: 'active',
+  };
+}
+
+const WC_COMPANIES = [
+  { id: 'c-1', name: 'Northern Operations', code: 'NORTH' },
+  { id: 'c-2', name: 'Coastal Operations', code: 'COAST' },
+];
+
+function wcSnapshot(
+  branches: readonly ReturnType<typeof wcBranch>[],
+  status: WorkingContextSnapshot['status'] = 'ready'
+): WorkingContextSnapshot {
+  return {
+    status,
+    tenantId: status === 'unavailable' ? null : WC_TENANT,
+    accountId: WC_ACCOUNT,
+    unrestricted: false,
+    companies: WC_COMPANIES,
+    branches,
+    companySettingsReadableIds: [],
+  };
+}
+
+const MAIN = wcBranch('b-1', 'c-1', 'Main workshop');
+const SECOND = wcBranch('b-2', 'c-1', 'Second workshop');
+const COAST = wcBranch('b-3', 'c-2', 'Coastal workshop');
+
+function Probe({ onContext }: { readonly onContext: (context: WorkingContext) => void }) {
+  const context = useWorkingContext();
+  useEffect(() => {
+    onContext(context);
+  }, [context, onContext]);
+  return null;
+}
+
+/** Reports every change the way a screen seeding state from the branch sees it. */
+function ChangeProbe({ onChange }: { readonly onChange: (branchId: string | null) => void }) {
+  const { selection } = useWorkingContext();
+  useWorkingContextChange(() => onChange(selection?.branchId ?? null));
+  return null;
+}
+
+function SelectionText() {
+  const { selection } = useWorkingContext();
+  return <p>{`selection:${selection?.branchId ?? 'none'}`}</p>;
+}
+
+function DirtyScreen({ dirty }: { readonly dirty: boolean }) {
+  useUnsavedGuard(dirty);
+  return null;
+}
+
+const WC_KEY = preferenceKeyFor(WC_TENANT, WC_ACCOUNT);
+
+describe('the working context', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    refreshed.mockClear();
+  });
+
+  function renderContext(
+    snapshot: WorkingContextSnapshot,
+    extra?: ReactNode
+  ): { readonly seen: () => WorkingContext } {
+    const onContext = vi.fn();
+    renderLtr(
+      <WorkingContextProvider snapshot={snapshot} messages={messages}>
+        <Probe onContext={onContext} />
+        {extra}
+        <WorkingContextControl messages={messages} />
+      </WorkingContextProvider>
+    );
+    return {
+      seen: () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext,
+    };
+  }
+
+  it('auto-selects the only branch, and never asks about it', () => {
+    // A required control with one option is a chore, not a decision — and the
+    // pair fields used to render exactly that on every screen.
+    const { seen } = renderContext(wcSnapshot([MAIN]));
+    expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-1', allBranches: false });
+    expect(screen.queryByTestId('working-context-select')).toBeNull();
+    expect(screen.getByTestId('working-context-single')).toHaveTextContent(
+      'Main workshop · Northern Operations'
+    );
+  });
+
+  it('restores a remembered branch that is still authorized', () => {
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]));
+    expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-2', allBranches: false });
+  });
+
+  it('DISCARDS a remembered branch the server no longer publishes, and clears it', async () => {
+    // The failure this closes: a revoked branch would otherwise be sent on
+    // every read and refused server-side, which reads to the operator as a
+    // broken screen rather than as a grant that changed.
+    window.localStorage.setItem(WC_KEY, 'b-9');
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]));
+    expect(seen().selection).toBeNull();
+    await waitFor(() => expect(window.localStorage.getItem(WC_KEY)).toBeNull());
+  });
+
+  it('does not let one operator inherit the branch of the last person on the machine', () => {
+    window.localStorage.setItem(preferenceKeyFor(WC_TENANT, 'somebody-else'), 'b-2');
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]));
+    expect(seen().selection).toBeNull();
+  });
+
+  it('asks ONCE when several are authorized and none is remembered', () => {
+    renderContext(wcSnapshot([MAIN, SECOND, COAST]));
+    const prompt = screen.getByTestId('working-context-prompt');
+    expect(prompt).toHaveTextContent('Choose your branch to start');
+    // Announced, not merely shown. It is the first action of the session.
+    expect(prompt).toHaveAttribute('role', 'status');
+    expect(prompt).toHaveAttribute('aria-live', 'polite');
+  });
+
+  it('groups the choices by company and offers every branch as a reading posture', () => {
+    renderContext(wcSnapshot([MAIN, SECOND, COAST]));
+    const select = screen.getByTestId('working-context-select');
+    expect(within(select).getByRole('group', { name: 'Northern Operations' })).toBeInTheDocument();
+    expect(within(select).getByRole('group', { name: 'Coastal Operations' })).toBeInTheDocument();
+    expect(within(select).getByRole('option', { name: 'All my branches' })).toBeInTheDocument();
+  });
+
+  it('offers no "all" entry when there is only one branch, because there is no set', () => {
+    renderContext(wcSnapshot([MAIN]));
+    expect(screen.queryByRole('option', { name: 'All my branches' })).toBeNull();
+  });
+
+  it('increments the version and ABORTS the outstanding signal on a change', async () => {
+    const user = userEvent.setup();
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]));
+    const before = seen();
+    expect(before.signal.aborted).toBe(false);
+
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+
+    await waitFor(() => expect(seen().version).toBe(before.version + 1));
+    // A list mid-read when the branch changed must not commit its rows under
+    // the new heading.
+    expect(before.signal.aborted).toBe(true);
+    expect(seen().signal.aborted).toBe(false);
+    expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-2', allBranches: false });
+  });
+
+  it('names no company for an "all" selection that spans more than one', async () => {
+    const user = userEvent.setup();
+    const { seen } = renderContext(wcSnapshot([MAIN, COAST]));
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'all');
+    await waitFor(() =>
+      expect(seen().selection).toEqual({ companyId: null, branchId: null, allBranches: true })
+    );
+  });
+
+  it('ASKS before changing branch while a screen holds unsaved work', async () => {
+    const user = userEvent.setup();
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]), <DirtyScreen dirty />);
+    const before = seen();
+
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText('Leave this unsaved work?')).toBeInTheDocument();
+    // Nothing has moved yet: not the selection, not the version, not the signal.
+    expect(seen().selection).toEqual(before.selection);
+    expect(seen().version).toBe(before.version);
+    expect(before.signal.aborted).toBe(false);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Discard and change branch' }));
+    await waitFor(() =>
+      expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-2', allBranches: false })
+    );
+  });
+
+  it('leaves the branch alone when the operator chooses to stay', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]), <DirtyScreen dirty />);
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+  });
+
+  it('switches without asking when no screen holds unsaved work', async () => {
+    const user = userEvent.setup();
+    const { seen } = renderContext(wcSnapshot([MAIN, SECOND]), <DirtyScreen dirty={false} />);
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('says the branch list could not be read, and offers to try again', async () => {
+    const user = userEvent.setup();
+    renderContext(wcSnapshot([], 'unavailable'));
+    expect(screen.getByTestId('working-context-unavailable')).toHaveTextContent(
+      'Your branch list could not be read.'
+    );
+    // An empty control here would read as "you have no branches", which is a
+    // different and much worse sentence.
+    expect(screen.queryByTestId('working-context-select')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(refreshed).toHaveBeenCalled();
+  });
+
+  it('says so plainly when no branch is assigned at all', () => {
+    renderContext(wcSnapshot([], 'none'));
+    expect(screen.getByTestId('working-context-none')).toHaveTextContent(
+      'No branch is assigned to you yet.'
+    );
+    expect(screen.queryByTestId('working-context-select')).toBeNull();
+  });
+
+  it('reads as a control in Arabic too, with no direction-specific markup', () => {
+    renderRtl(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={arabic}>
+        <WorkingContextControl messages={arabic} />
+      </WorkingContextProvider>
+    );
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(screen.getByLabelText(arabic['workingContext.label'])).toBeInTheDocument();
+    expect(screen.getByTestId('working-context-prompt')).toHaveTextContent(
+      arabic['workingContext.prompt']
+    );
+  });
+});
+
+describe('the remembered branch, revoked and re-read', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('DISCARDS a stored "all" once only one branch is left', async () => {
+    /*
+     * "All my branches" is a set, and a set of one is a branch. Keeping the
+     * stored value would leave the operator in a posture no screen can write
+     * from — every form would refuse with "choose one branch" while the header
+     * showed a plain sentence and no control to change it.
+     */
+    window.localStorage.setItem(WC_KEY, 'all');
+    const onContext = vi.fn();
+    renderLtr(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN])} messages={messages}>
+        <Probe onContext={onContext} />
+      </WorkingContextProvider>
+    );
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    // Auto-selected, because one branch is never asked about.
+    expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-1', allBranches: false });
+    await waitFor(() => expect(window.localStorage.getItem(WC_KEY)).toBeNull());
+  });
+
+  it('follows the choice made in ANOTHER TAB', async () => {
+    /*
+     * A `storage` event fires only in the other documents, which is exactly
+     * what it is for here: an operator with the board open on one screen and a
+     * form on another must not have the two disagree about where they are
+     * working. The preference goes through the single browser-storage
+     * authority, so this behaviour is the collapse flag's, inherited.
+     */
+    const onContext = vi.fn();
+    renderLtr(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <Probe onContext={onContext} />
+      </WorkingContextProvider>
+    );
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    expect(seen().selection).toBeNull();
+
+    /*
+     * Exactly what another tab does: write, then the browser notifies this one.
+     *
+     * A bare `Event('storage')` rather than a `StorageEvent` carrying the key
+     * and the new value, and the difference is the point rather than a
+     * shortcut. `use-persisted-flag.ts` subscribes with a zero-argument
+     * callback and RE-READS storage when it fires — it never looks at the
+     * event's payload — so a notification is the whole of what production
+     * depends on, and asserting against a hand-built payload would be asserting
+     * against something no code reads. It also keeps this file clear of a
+     * `StorageEvent` constructor that the static analysis models with one
+     * parameter.
+     */
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    window.dispatchEvent(new Event('storage'));
+
+    await waitFor(() =>
+      expect(seen().selection).toEqual({ companyId: 'c-1', branchId: 'b-2', allBranches: false })
+    );
+  });
+
+  it('moves the version and aborts the signal when ANOTHER TAB changes the branch', async () => {
+    /*
+     * The header's own select moved the version; a change arriving from
+     * another tab changed the selection with the version and the signal
+     * untouched, so every `useWorkingContextChange` consumer kept the state it
+     * had seeded from the previous branch and a read in flight committed.
+     */
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const onContext = vi.fn();
+    const onChange = vi.fn();
+    renderLtr(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <Probe onContext={onContext} />
+        <ChangeProbe onChange={onChange} />
+      </WorkingContextProvider>
+    );
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    const before = seen();
+    expect(before.selection).toMatchObject({ branchId: 'b-1' });
+
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    window.dispatchEvent(new Event('storage'));
+
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(seen().version).toBe(before.version + 1);
+    expect(before.signal.aborted).toBe(true);
+    expect(seen().signal.aborted).toBe(false);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('b-2');
+  });
+
+  it('moves the version once, not twice, when the header select makes the change', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const { seen } = (() => {
+      const onContext = vi.fn();
+      renderLtr(
+        <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+          <Probe onContext={onContext} />
+          <ChangeProbe onChange={onChange} />
+          <WorkingContextControl messages={messages} />
+        </WorkingContextProvider>
+      );
+      return {
+        seen: () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext,
+      };
+    })();
+    const before = seen();
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(seen().version).toBe(before.version + 1);
+    expect(onChange).toHaveBeenCalledTimes(1);
+  });
+
+  it('takes a restored branch as where this tab starts, even over unsaved work', async () => {
+    /*
+     * The same reload, with a screen that already holds unsaved work when the
+     * remembered branch arrives. The first value read in the browser is where
+     * this tab starts: it is not another tab's change, so nothing is held and
+     * nobody is told a change happened (route sweep B3 review).
+     */
+    const onContext = vi.fn();
+    const onChange = vi.fn();
+    const tree = (
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <Probe onContext={onContext} />
+        <ChangeProbe onChange={onChange} />
+        <DirtyScreen dirty />
+        <SelectionText />
+      </WorkingContextProvider>
+    );
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(tree);
+    document.body.appendChild(container);
+    expect(container).toHaveTextContent('selection:none');
+
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    renderLtr(tree, { container, hydrate: true });
+
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(container).toHaveTextContent('selection:b-2');
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('b-2');
+    // Still what storage holds: nothing was written back over it.
+    expect(window.localStorage.getItem(WC_KEY)).toBe('b-2');
+  });
+
+  it('moves the version when a reload restores the remembered branch after hydration', async () => {
+    /*
+     * A reload renders on the server with nothing chosen — storage does not
+     * exist there — and the remembered branch arrives when hydration gives way
+     * to the client snapshot. That is a change of branch for every screen that
+     * mounted under "nothing chosen", and it must reach them as one.
+     */
+    const onContext = vi.fn();
+    const onChange = vi.fn();
+    const tree = (
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <Probe onContext={onContext} />
+        <ChangeProbe onChange={onChange} />
+        <SelectionText />
+      </WorkingContextProvider>
+    );
+    const container = document.createElement('div');
+    container.innerHTML = renderToString(tree);
+    document.body.appendChild(container);
+    expect(container).toHaveTextContent('selection:none');
+
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    renderLtr(tree, { container, hydrate: true });
+
+    const seen = () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext;
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(seen().version).toBe(1);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('b-2');
+  });
+});
+
+describe('a form with unsaved work blocks a branch switch', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it('ASKS when a RecordForm has been typed into', async () => {
+    /*
+     * `useUnsavedGuard` existed with no caller, which is the "declared but
+     * never wired" defect this repository keeps finding. `RecordForm` is where
+     * wiring it pays for itself: eleven write surfaces render through it, and
+     * its `set` is the single place every field kind reports a change.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND])} messages={messages}>
+        <RecordForm
+          messages={messages}
+          fields={[{ name: 'reason', kind: 'text', labelKey: 'crm.customers.notes.body' }]}
+          action={async () => ({ status: 'success', messageKey: 'action.succeeded', attempt: 1 })}
+          submitKey="form.submit"
+          titleKey="crm.customers.notes.add"
+        />
+        <WorkingContextControl messages={messages} />
+      </WorkingContextProvider>
+    );
+
+    // Clean: the switch goes through without a question.
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-2');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+
+    await user.type(screen.getByLabelText(messages['crm.customers.notes.body']), 'a note');
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-1');
+
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(messages['workingContext.discard.title'])).toBeInTheDocument();
+  });
+});
+
+describe('a branch change made in ANOTHER TAB does not discard unsaved work', () => {
+  /*
+   * The header's select asks before it discards; a change arriving from another
+   * tab used to be applied straight away, so a record chosen in a half-filled
+   * form was cleared without a word (route sweep B3 review). With unsaved work
+   * on screen the change is now held and the operator is asked; with none it is
+   * followed as before.
+   */
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  interface Chosen {
+    readonly id: string;
+    readonly name: string;
+  }
+
+  /** A write form holding one chosen record — the case the review reproduced. */
+  function PickerForm({ onCleared }: { readonly onCleared: () => void }) {
+    const [value, setValue] = useState<Chosen | null>({ id: 'r-1', name: 'Chosen record' });
+    return (
+      <SearchPicker<Chosen>
+        messages={messages}
+        label="Record"
+        value={value}
+        onChange={(next) => {
+          if (next === null) onCleared();
+          setValue(next);
+        }}
+        labelOf={(row) => row.name}
+        load={async () => ({
+          status: 'ok',
+          data: { items: [], nextCursor: null, hasMore: false },
+          correlationId: null,
+        })}
+        canSearch
+        notPermitted="Not permitted"
+        minLength={2}
+        maxLength={40}
+        placeholder=""
+        example=""
+        tooShort=""
+        resultsLabel="Matches"
+        change="Change record"
+        testId="record-picker"
+      />
+    );
+  }
+
+  /** A screen whose unsaved work the operator can save, which clears its guard. */
+  function SaveableScreen() {
+    const [dirty, setDirty] = useState(true);
+    useUnsavedGuard(dirty);
+    return (
+      <button type="button" onClick={() => setDirty(false)}>
+        save the work
+      </button>
+    );
+  }
+
+  function renderWith(
+    extra: ReactNode,
+    locale: 'en' | 'ar' = 'en',
+    branches: readonly ReturnType<typeof wcBranch>[] = [MAIN, SECOND]
+  ) {
+    const onContext = vi.fn();
+    const onChange = vi.fn();
+    const render = locale === 'ar' ? renderRtl : renderLtr;
+    render(
+      <WorkingContextProvider
+        snapshot={wcSnapshot(branches)}
+        messages={locale === 'ar' ? arabic : messages}
+      >
+        <Probe onContext={onContext} />
+        <ChangeProbe onChange={onChange} />
+        {extra}
+        <WorkingContextControl messages={locale === 'ar' ? arabic : messages} />
+      </WorkingContextProvider>
+    );
+    return {
+      onChange,
+      seen: () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext,
+    };
+  }
+
+  /** Exactly what another tab does: write the preference, then notify this one. */
+  function otherTabChooses(branchId: string) {
+    window.localStorage.setItem(WC_KEY, branchId);
+    window.dispatchEvent(new Event('storage'));
+  }
+
+  it("keeps a chosen record and this tab's branch, and says what happened", async () => {
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const onCleared = vi.fn();
+    const { seen, onChange } = renderWith(<PickerForm onCleared={onCleared} />);
+    const before = seen();
+    expect(screen.getByTestId('record-picker-chosen')).toHaveTextContent('Chosen record');
+
+    otherTabChooses('b-2');
+
+    const notice = await screen.findByTestId('working-context-cross-tab');
+    expect(within(notice).getByText(messages['workingContext.crossTab.title'])).toBeInTheDocument();
+    expect(notice).toHaveTextContent('Another tab is now working in Second workshop.');
+    expect(notice).toHaveAccessibleName(messages['workingContext.crossTab.title']);
+    // A status, announced through a live region that was there before it was.
+    expect(notice).toHaveAttribute('role', 'status');
+    expect(screen.getByTestId('working-context-cross-tab-live')).toHaveAttribute(
+      'aria-live',
+      'polite'
+    );
+    expect(screen.getByTestId('working-context-cross-tab-live')).toContainElement(notice);
+    expect(
+      within(notice).getByRole('button', { name: 'Stay on Main workshop' })
+    ).toBeInTheDocument();
+    expect(
+      within(notice).getByRole('button', { name: messages['workingContext.crossTab.switch'] })
+    ).toBeInTheDocument();
+
+    // Nothing moved: not the branch, not the version, not the signal, not the record.
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(seen().version).toBe(before.version);
+    expect(before.signal.aborted).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(onCleared).not.toHaveBeenCalled();
+    expect(screen.getByTestId('record-picker-chosen')).toHaveTextContent('Chosen record');
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('"Switch now" asks the same discard question the header asks, then switches', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const onCleared = vi.fn();
+    const { seen } = renderWith(<PickerForm onCleared={onCleared} />);
+    otherTabChooses('b-2');
+    const notice = await screen.findByTestId('working-context-cross-tab');
+
+    await user.click(
+      within(notice).getByRole('button', { name: messages['workingContext.crossTab.switch'] })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    expect(within(dialog).getByText(messages['workingContext.discard.title'])).toBeInTheDocument();
+    // Still on this tab's branch while the question is open.
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(onCleared).not.toHaveBeenCalled();
+
+    await user.click(
+      within(dialog).getByRole('button', { name: messages['workingContext.discard.confirm'] })
+    );
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(onCleared).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(window.localStorage.getItem(WC_KEY)).toBe('b-2');
+  });
+
+  it('"Stay" keeps this tab on its branch and keeps what was typed', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen, onChange } = renderWith(
+      <RecordForm
+        messages={messages}
+        fields={[{ name: 'reason', kind: 'text', labelKey: 'crm.customers.notes.body' }]}
+        action={async () => ({ status: 'success', messageKey: 'action.succeeded', attempt: 1 })}
+        submitKey="form.submit"
+        titleKey="crm.customers.notes.add"
+      />
+    );
+    await user.type(screen.getByLabelText(messages['crm.customers.notes.body']), 'a note');
+    otherTabChooses('b-2');
+    const notice = await screen.findByTestId('working-context-cross-tab');
+
+    await user.click(within(notice).getByRole('button', { name: 'Stay on Main workshop' }));
+
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByLabelText(messages['crm.customers.notes.body'])).toHaveValue('a note');
+  });
+
+  it('asks again when, after "Stay", the other tab makes a DIFFERENT change', async () => {
+    /*
+     * "Stay" answers the change that was offered, and only that one. A later
+     * change to another branch is a new question while the work is still
+     * unsaved, and it is asked; until it is answered this tab stays put.
+     */
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen, onChange } = renderWith(<DirtyScreen dirty />, 'en', [MAIN, SECOND, COAST]);
+    const before = seen();
+    otherTabChooses('b-2');
+    const first = await screen.findByTestId('working-context-cross-tab');
+    await user.click(within(first).getByRole('button', { name: 'Stay on Main workshop' }));
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+
+    otherTabChooses('b-3');
+
+    const again = await screen.findByTestId('working-context-cross-tab');
+    expect(again).toHaveTextContent('Another tab is now working in Coastal workshop.');
+    expect(within(again).getByRole('button', { name: 'Stay on Main workshop' })).toBeVisible();
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(seen().version).toBe(before.version);
+    expect(before.signal.aborted).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('follows the next change at once after the work here was saved, and not before', async () => {
+    /*
+     * The hold exists only while something is at stake. Once the work is saved
+     * the next change from the other tab is followed without a word, like any
+     * other. Saving alone does not move this tab: a switch at that moment would
+     * be one nobody asked for, so it waits for the other tab's next change.
+     */
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen, onChange } = renderWith(<SaveableScreen />, 'en', [MAIN, SECOND, COAST]);
+    const before = seen();
+    otherTabChooses('b-2');
+    const notice = await screen.findByTestId('working-context-cross-tab');
+    await user.click(within(notice).getByRole('button', { name: 'Stay on Main workshop' }));
+
+    await user.click(screen.getByRole('button', { name: 'save the work' }));
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(onChange).not.toHaveBeenCalled();
+
+    otherTabChooses('b-3');
+
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-3' }));
+    expect(seen().version).toBe(before.version + 1);
+    expect(before.signal.aborted).toBe(true);
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenLastCalledWith('b-3');
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('follows the other tab at once when nothing on screen is unsaved', async () => {
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen, onChange } = renderWith(<DirtyScreen dirty={false} />);
+    otherTabChooses('b-2');
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('working-context-cross-tab')).toBeNull();
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('says it in Arabic too', async () => {
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    renderWith(<DirtyScreen dirty />, 'ar');
+    otherTabChooses('b-2');
+    const notice = await screen.findByTestId('working-context-cross-tab');
+    expect(notice).toHaveTextContent(arabic['workingContext.crossTab.title']);
+    expect(
+      within(notice).getByRole('button', { name: arabic['workingContext.crossTab.switch'] })
+    ).toBeInTheDocument();
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+});
+
+/**
+ * "Discard and change branch" has to be true.
+ *
+ * The question tells the operator that the entries on the screen will be lost.
+ * A screen whose state does not follow the branch by itself — a form keyed on
+ * something else, or one that belongs to a record rather than to the branch —
+ * passes `onDiscard` to `useUnsavedGuard`, and the provider calls it for every
+ * guard that was dirty when the operator confirmed. These cases pin the
+ * provider's half of that promise; each feature's own suite pins its screen.
+ */
+
+const DISCARD_TWO = branchSnapshot([TEST_BRANCH, OTHER_BRANCH]);
+
+/** One guard, dirty on demand, with the discard it was given. */
+function DiscardGuard({
+  id,
+  dirty,
+  onDiscard,
+}: {
+  readonly id: string;
+  readonly dirty: boolean;
+  readonly onDiscard?: () => void;
+}) {
+  useUnsavedGuard(dirty, onDiscard);
+  return <span data-testid={`guard-${id}`}>{dirty ? 'dirty' : 'clean'}</span>;
+}
+
+function renderGuards(guards: React.ReactNode) {
+  return renderLtr(
+    inBranch(
+      <>
+        <BranchSwitch to={TEST_BRANCH.id} label="first" />
+        <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+        <WorkingBranchProbe />
+        {guards}
+      </>,
+      { snapshot: DISCARD_TWO }
+    )
+  );
+}
+
+describe('the provider calls onDiscard for every guard the question was about', () => {
+  afterEach(forgetRememberedBranch);
+
+  it('calls each dirty guard once on a confirmed discard, and never a clean one', async () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const clean = vi.fn();
+    const user = userEvent.setup();
+    renderGuards(
+      <>
+        <DiscardGuard id="a" dirty onDiscard={first} />
+        <DiscardGuard id="b" dirty onDiscard={second} />
+        <DiscardGuard id="c" dirty={false} onDiscard={clean} />
+      </>
+    );
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(clean).not.toHaveBeenCalled();
+  });
+
+  it('calls nothing when the operator stays', async () => {
+    const discard = vi.fn();
+    const user = userEvent.setup();
+    renderGuards(<DiscardGuard id="a" dirty onDiscard={discard} />);
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    // Nothing was chosen before the question, and nothing is now.
+    expect(heldBranch()).toBe('');
+    expect(discard).not.toHaveBeenCalled();
+  });
+
+  it('calls nothing on a switch that asked nothing', async () => {
+    const discard = vi.fn();
+    const user = userEvent.setup();
+    renderGuards(<DiscardGuard id="a" dirty={false} onDiscard={discard} />);
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    expect(discard).not.toHaveBeenCalled();
+  });
+
+  it('a guard declared without onDiscard is still asked about and does not break the switch', async () => {
+    const user = userEvent.setup();
+    renderGuards(<DiscardGuard id="a" dirty />);
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('reaches the callback of the latest render, not the one the guard registered with', async () => {
+    const seen: string[] = [];
+    function Typed() {
+      const [text, setText] = useState('');
+      useUnsavedGuard(text.length > 0, () => {
+        seen.push(text);
+        setText('');
+      });
+      return (
+        <label>
+          Draft
+          <input value={text} onChange={(event) => setText(event.target.value)} />
+        </label>
+      );
+    }
+    const user = userEvent.setup();
+    renderGuards(<Typed />);
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(screen.getByLabelText('Draft'), 'abc');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(screen.getByLabelText('Draft')).toHaveValue(''));
+    expect(seen).toEqual(['abc']);
+    // Emptied, so the next switch has nothing to ask about.
+    await switchWithoutQuestion(user, 'first');
+  });
+});
+
+describe('RecordForm empties itself on a confirmed discard', () => {
+  afterEach(forgetRememberedBranch);
+
+  /*
+   * Eleven write surfaces render through `RecordForm`, most of them on a
+   * customer's or a vehicle's own page where nothing is keyed on the branch.
+   * The text is controlled; the select is seeded through `defaultValue`, so it
+   * shows an emptied value only once it is remounted.
+   */
+  function renderRecordForm() {
+    return renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <RecordForm
+            messages={messages}
+            fields={[
+              { name: 'body', kind: 'text', labelKey: 'crm.customers.notes.body' },
+              {
+                name: 'status',
+                kind: 'select',
+                labelKey: 'crm.customers.status.newStatus',
+                options: [
+                  { value: 'active', label: 'Active' },
+                  { value: 'blocked', label: 'Blocked' },
+                ],
+              },
+            ]}
+            action={async () => ({ status: 'success', messageKey: 'action.succeeded', attempt: 1 })}
+            submitKey="form.submit"
+            titleKey="crm.customers.notes.add"
+          />
+        </>,
+        { snapshot: DISCARD_TWO }
+      )
+    );
+  }
+
+  const text = () => screen.getByLabelText(messages['crm.customers.notes.body']);
+  const select = () =>
+    screen.getByLabelText(messages['crm.customers.status.newStatus']) as HTMLSelectElement;
+
+  it('keeps both entries when the operator stays', async () => {
+    const user = userEvent.setup();
+    renderRecordForm();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(text(), 'a note');
+    await user.selectOptions(select(), 'blocked');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(text()).toHaveValue('a note');
+    expect(select().value).toBe('blocked');
+  });
+
+  it('empties the text and the select once the operator confirms the discard', async () => {
+    const user = userEvent.setup();
+    renderRecordForm();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(text(), 'a note');
+    await user.selectOptions(select(), 'blocked');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() => expect(text()).toHaveValue(''));
+    expect(select().value).toBe('');
+    // Nothing is left to lose, so the next switch asks nothing.
+    await switchWithoutQuestion(user, 'first');
+    expect(within(document.body).queryByRole('alertdialog')).toBeNull();
+  });
+});
+
+/*
+ * The working-branch control on Material UI (`mui/BranchSelector`, ADR-022 PR1).
+ *
+ * `WorkingContextControl` is now a container over `BranchSelector`; every case
+ * above already runs through it. These pin what the redraw itself must keep:
+ * one native selector with the same label and test id, the provider's rule for
+ * "All my branches", a switch that goes through the provider's guarded path —
+ * whose question is now Material's `ConfirmDialog` — and both directions.
+ */
+describe('the branch selector, on Material UI', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    refreshed.mockClear();
+  });
+
+  function inFoundation(ui: ReactNode, locale: 'en' | 'ar' = 'en') {
+    const catalogue = locale === 'ar' ? arabic : messages;
+    const renderIn = locale === 'ar' ? renderRtl : renderLtr;
+    const onContext = vi.fn();
+    const { container } = renderIn(
+      <UiFoundationProvider locale={locale} text={muiTextOf(catalogue)}>
+        <WorkingContextProvider snapshot={wcSnapshot([MAIN, SECOND, COAST])} messages={catalogue}>
+          <Probe onContext={onContext} />
+          {ui}
+          <WorkingContextControl messages={catalogue} />
+        </WorkingContextProvider>
+      </UiFoundationProvider>
+    );
+    return {
+      container,
+      seen: () => onContext.mock.calls[onContext.mock.calls.length - 1]?.[0] as WorkingContext,
+    };
+  }
+
+  it('is ONE named, native selector drawn by Material', () => {
+    inFoundation(null);
+    const selectors = screen.getAllByRole('combobox');
+    expect(selectors).toHaveLength(1);
+    const select = screen.getByRole('combobox', { name: messages['workingContext.label'] });
+    expect(select).toBe(screen.getByTestId('working-context-select'));
+    expect(select.tagName).toBe('SELECT');
+    expect(select).toHaveClass('MuiNativeSelect-select');
+    // Company headings travel as optgroups, which a custom listbox would lose.
+    expect(select.querySelectorAll('optgroup')).toHaveLength(2);
+  });
+
+  it("asks through Material's confirmation, Cancel first, and returns to the selector", async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen } = inFoundation(<DirtyScreen dirty />);
+    const select = screen.getByTestId('working-context-select');
+
+    await user.selectOptions(select, 'b-2');
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveClass('MuiDialog-paper');
+    expect(dialog).toHaveAccessibleName(messages['workingContext.discard.title']);
+    expect(dialog).toHaveAccessibleDescription(messages['workingContext.discard.description']);
+    const cancel = within(dialog).getByRole('button', { name: messages['overlay.cancel'] });
+    // Destructive: the discard is never the default answer.
+    await waitFor(() => expect(document.activeElement).toBe(cancel));
+    expect(
+      within(dialog).getByRole('button', { name: messages['workingContext.discard.confirm'] })
+    ).toHaveAttribute('data-destructive', 'true');
+
+    await user.click(cancel);
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    // The controlled selector shows the branch still in force, not the refused one.
+    expect(select).toHaveValue('b-1');
+    await waitFor(() => expect(document.activeElement).toBe(select));
+  });
+
+  it('switches on "Discard and change branch", and calls the screen\'s onDiscard', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const discarded = vi.fn();
+    function DiscardingScreen() {
+      useUnsavedGuard(true, discarded);
+      return null;
+    }
+    const { seen } = inFoundation(<DiscardingScreen />);
+    const before = seen();
+    await user.selectOptions(screen.getByTestId('working-context-select'), 'b-3');
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: messages['workingContext.discard.confirm'] })
+    );
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-3' }));
+    expect(seen().version).toBe(before.version + 1);
+    expect(before.signal.aborted).toBe(true);
+    expect(discarded).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('working-context-select')).toHaveValue('b-3');
+  });
+
+  it('holds another tab\'s change over unsaved work, and "Switch now" asks the same question', async () => {
+    const user = userEvent.setup();
+    window.localStorage.setItem(WC_KEY, 'b-1');
+    const { seen } = inFoundation(<DirtyScreen dirty />);
+    window.localStorage.setItem(WC_KEY, 'b-2');
+    window.dispatchEvent(new Event('storage'));
+
+    const notice = await screen.findByTestId('working-context-cross-tab');
+    expect(seen().selection).toMatchObject({ branchId: 'b-1' });
+    expect(screen.getByTestId('working-context-select')).toHaveValue('b-1');
+    await user.click(
+      within(notice).getByRole('button', { name: messages['workingContext.crossTab.switch'] })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveClass('MuiDialog-paper');
+    await user.click(
+      within(dialog).getByRole('button', { name: messages['workingContext.discard.confirm'] })
+    );
+    await waitFor(() => expect(seen().selection).toMatchObject({ branchId: 'b-2' }));
+    expect(screen.getByTestId('working-context-select')).toHaveValue('b-2');
+  });
+
+  it.each(BOTH_DIRECTIONS)(
+    'reads as a labelled control with no axe violations in %s',
+    async (locale) => {
+      const { container } = inFoundation(null, locale);
+      const catalogue = locale === 'ar' ? arabic : messages;
+      expect(document.documentElement.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+      const select = screen.getByRole('combobox', { name: catalogue['workingContext.label'] });
+      expect(
+        within(select).getByRole('option', { name: catalogue['workingContext.allBranches'] })
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('working-context-prompt')).toHaveTextContent(
+        catalogue['workingContext.prompt']
+      );
+      const results = await axe(container);
+      expect(results.violations).toEqual([]);
+    }
+  );
+});
+
+describe('BranchSelector, the drawing on its own', () => {
+  function draw(overrides: Partial<Parameters<typeof BranchSelector>[0]> = {}) {
+    const onSelect = vi.fn();
+    const onRetry = vi.fn();
+    renderLtr(
+      <UiFoundationProvider locale="en" text={muiTextOf(messages)}>
+        <BranchSelector
+          messages={messages}
+          status="ready"
+          companies={WC_COMPANIES}
+          branches={[MAIN, SECOND]}
+          value=""
+          onSelect={onSelect}
+          onRetry={onRetry}
+          offerAllBranches
+          {...overrides}
+        />
+      </UiFoundationProvider>
+    );
+    return { onSelect, onRetry };
+  }
+
+  it('offers "All my branches" only when told the set has more than one branch', () => {
+    draw({ offerAllBranches: false });
+    // The falsification of the provider's rule: the option follows the flag,
+    // it is not drawn unconditionally.
+    expect(screen.queryByRole('option', { name: 'All my branches' })).toBeNull();
+  });
+
+  it('never reports the "choose" placeholder as a choice', async () => {
+    const user = userEvent.setup();
+    const { onSelect } = draw();
+    const select = screen.getByTestId('working-context-select');
+    await user.selectOptions(select, 'b-2');
+    expect(onSelect).toHaveBeenCalledWith('b-2');
+    await user.selectOptions(select, '');
+    expect(onSelect).not.toHaveBeenCalledWith('');
+  });
+
+  it('drops the "choose" line once a branch is in force, and stops announcing the ask', () => {
+    draw({ value: 'b-1' });
+    expect(screen.queryByRole('option', { name: 'Choose your branch' })).toBeNull();
+    expect(screen.queryByTestId('working-context-prompt')).toBeNull();
+  });
+
+  it('offers a retry, and nothing else, when the list could not be read', async () => {
+    const user = userEvent.setup();
+    const { onRetry } = draw({ status: 'unavailable', branches: [] });
+    expect(screen.queryByRole('combobox')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
+
+  it('names the one branch and its company, and asks nothing', () => {
+    draw({ branches: [COAST], value: 'b-3' });
+    expect(screen.queryByRole('combobox')).toBeNull();
+    expect(screen.getByTestId('working-context-single')).toHaveTextContent(
+      'Coastal workshop · Coastal Operations'
+    );
+  });
+});
+
+/**
+ * Checkpoint browser QA, DEF-01: a printed document came out as the one
+ * screenful at the current scroll position. The print sheet releases the
+ * shell's viewport contract by ATTRIBUTE (`styles/print/_index.scss`), so every
+ * box between the page and `main` must carry `data-app-shell`, and the chrome
+ * around the document must be marked to leave the paper. The cascade half —
+ * that those releases outrank the utilities — is held on the compiled sheet in
+ * `gallery-and-print.dom.test.tsx`; the printed result in the browser tier.
+ */
+describe('the shell on paper', () => {
+  for (const locale of ['en', 'ar'] as const) {
+    it(`names every box of the viewport contract for the print sheet (${locale})`, () => {
+      const catalogue = locale === 'ar' ? arabic : messages;
+      const render = locale === 'ar' ? renderRtl : renderLtr;
+      const { container } = render(
+        <UiFoundationProvider locale={locale} text={muiTextOf(catalogue)}>
+          <AppShell locale={locale} messages={catalogue} secondaryPanel={<p>aside</p>}>
+            <p>content</p>
+          </AppShell>
+        </UiFoundationProvider>
+      );
+      const root = container.querySelector('[data-app-shell="root"]') as HTMLElement;
+      expect(root).not.toBeNull();
+      // The box the print sheet must release is the one that clips the screen.
+      expect(root.className).toMatch(/(^|\s)h-dvh(\s|$)/);
+      expect(root.className).toMatch(/(^|\s)overflow-hidden(\s|$)/);
+
+      const main = container.querySelector('main') as HTMLElement;
+      expect(root.contains(main)).toBe(true);
+      const unnamed: string[] = [];
+      for (let node = main.parentElement; node && node !== root; node = node.parentElement) {
+        if (!node.hasAttribute('data-app-shell')) unnamed.push(node.className);
+      }
+      expect(unnamed, 'every box between the shell root and main').toEqual([]);
+
+      // The chrome leaves the paper: the header, the navigation column and the
+      // secondary panel.
+      expect(container.querySelector('header')).toHaveAttribute('data-print', 'hide');
+      expect(
+        container.querySelector('aside[data-collapsed]'),
+        'the navigation column'
+      ).toHaveAttribute('data-print', 'hide');
+      expect(
+        screen.getByRole('complementary', { name: catalogue['shell.secondaryPanel'] })
+      ).toHaveAttribute('data-print', 'hide');
+    });
+  }
+});
+
+/**
+ * Browser QA part 7, row 9.5: at 375 px the language switcher was drawn over
+ * the working-branch select, in English and in Arabic.
+ *
+ * jsdom lays nothing out, so the overlap itself is measured in the browser
+ * tier. What is held here is the flex contract that prevents it, on the
+ * RENDERED header rather than on source text: the header's trailing group
+ * (language switcher and account) never shrinks, and every box between the
+ * header and the native select may shrink below its content, so the select is
+ * what gives way. Removing either class makes a case below fail.
+ */
+describe('the header at a narrow width', () => {
+  function drawShell(locale: 'en' | 'ar') {
+    const catalogue = locale === 'ar' ? arabic : messages;
+    const render = locale === 'ar' ? renderRtl : renderLtr;
+    return render(
+      <UiFoundationProvider locale={locale} text={muiTextOf(catalogue)}>
+        <AppShell
+          locale={locale}
+          messages={catalogue}
+          workingContext={
+            <BranchSelector
+              messages={catalogue}
+              status="ready"
+              companies={WC_COMPANIES}
+              branches={[MAIN, SECOND]}
+              value="b-1"
+              onSelect={vi.fn()}
+              onRetry={vi.fn()}
+              offerAllBranches={false}
+            />
+          }
+        >
+          <p>content</p>
+        </AppShell>
+      </UiFoundationProvider>
+    );
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`keeps the language switcher out of the select's way (${locale})`, () => {
+      const catalogue = locale === 'ar' ? arabic : messages;
+      const { container } = drawShell(locale);
+      const header = container.querySelector('header') as HTMLElement;
+      const switcher = within(header).getByRole('navigation', {
+        name: catalogue['locale.switch'],
+      });
+      const end = switcher.closest('[data-header-end]') as HTMLElement;
+      expect(end).not.toBeNull();
+      expect(end.classList.contains('shrink-0')).toBe(true);
+      expect(end.classList.contains('ms-auto')).toBe(true);
+
+      const select = within(header).getByTestId('working-context-select');
+      expect(end.contains(select)).toBe(false);
+      // Every box from the select up to the header's child may shrink.
+      const chain: HTMLElement[] = [];
+      for (let node = select.parentElement; node && node !== header; node = node.parentElement) {
+        chain.push(node);
+      }
+      expect(chain.length).toBeGreaterThanOrEqual(3);
+      for (const box of chain) {
+        expect(box.className, box.outerHTML.slice(0, 120)).toMatch(/(^|\s)min-w-0(\s|$)/);
+      }
+      // Tokens and logical properties only: no raw lengths in the header chrome.
+      for (const element of [end, ...chain]) {
+        expect(element.className).not.toMatch(/\[\d+(px|rem|em)\]/);
+      }
+    });
+  }
+
+  /*
+   * Checkpoint browser QA, DEF-01: at 375 x 812 the select is about 104 px and
+   * the chosen name was cut mid-letter with no ellipsis, and in Arabic a Latin
+   * name lost its BEGINNING instead of its end. The select now ends the name in
+   * an ellipsis, carries it whole as its title, and is laid out in the name's
+   * own direction, so the beginning is kept in both interfaces. jsdom draws no
+   * ellipsis; what is held is the contract that produces it.
+   */
+  for (const locale of ['en', 'ar'] as const) {
+    it(`ends a long branch name in an ellipsis and keeps its beginning (${locale})`, () => {
+      const { container } = drawShell(locale);
+      const select = within(container.querySelector('header') as HTMLElement).getByTestId(
+        'working-context-select'
+      );
+      expect(select.className).toMatch(/(^|\s)truncate(\s|$)/);
+      expect(select).toHaveAttribute('title', 'Main workshop');
+      // A Latin name is laid out left to right in the Arabic interface as well,
+      // so the ellipsis replaces its END, not its beginning.
+      expect(select).toHaveAttribute('dir', 'ltr');
+    });
+  }
+
+  it('lays an Arabic branch name out right to left in the English interface', () => {
+    const arabicBranch = wcBranch('b-9', 'c-1', 'الورشة الرئيسية');
+    renderLtr(
+      <UiFoundationProvider locale="en" text={muiTextOf(messages)}>
+        <BranchSelector
+          messages={messages}
+          status="ready"
+          companies={WC_COMPANIES}
+          branches={[arabicBranch, SECOND]}
+          value="b-9"
+          onSelect={vi.fn()}
+          onRetry={vi.fn()}
+          offerAllBranches
+        />
+      </UiFoundationProvider>
+    );
+    const select = screen.getByTestId('working-context-select');
+    expect(select).toHaveAttribute('dir', 'rtl');
+    expect(select).toHaveAttribute('title', arabicBranch.name);
+  });
+});

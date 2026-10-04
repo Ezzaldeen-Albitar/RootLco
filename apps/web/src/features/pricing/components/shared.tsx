@@ -1,13 +1,23 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import Button from '@mui/material/Button';
+import { regexes } from 'zod';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { EntityPicker } from '@/components/pickers/EntityPicker';
 import { listServices } from '@/features/services/api';
 import type { BranchOption, ServiceSummary } from '@/features/services/services-contract';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
+import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 
 import { listBranches } from '../api';
@@ -24,7 +34,14 @@ import type { ActivationState, PriceListVersionState } from '../pricing-contract
  * read in flight must never render as a refusal.
  */
 
-export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/**
+ * An identifier exactly as the server's `z.string().uuid()` accepts it — zod's own
+ * pattern, not a copy: an RFC 9562 version digit (1-8) and variant (8, 9, a or b),
+ * or the all-zero and all-f identifiers zod also admits. A looser 8-4-4-4-12 hex
+ * check passed values the route then refused, so the box said nothing and the
+ * submit failed on the server instead.
+ */
+export const UUID = regexes.uuid();
 
 export const PRIMARY_BUTTON =
   'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover';
@@ -54,13 +71,13 @@ export const SECONDARY_BUTTON =
  * suggests otherwise (`components/party/CustomerSelector.tsx`).
  */
 export type Branches =
-  /** No `org.branch.read`. Identifier fields are the DESIGN, not a fallback. */
+  /** No `org.branch.read`, and no working context to fall back on. */
   | { readonly phase: 'not-offered' }
-  /** Permitted, and `org.branch-list` has not answered. The only phase with no field. */
+  /** Permitted, and `org.branch-list` has not answered. */
   | { readonly phase: 'loading' }
-  /** Answered with at least one row. */
+  /** Answered with at least one row. The only phase in which a pair can be named. */
   | { readonly phase: 'listed'; readonly items: readonly BranchOption[] }
-  /** Answered with no row. Identifiers are still offered — the server re-authorizes the pair. */
+  /** Answered with no row. There is nothing to choose, and the screen says so. */
   | { readonly phase: 'none' }
   /** Did not answer. `retry` is null for a refusal and for a dead session. */
   | {
@@ -74,14 +91,49 @@ const LOADING: Branches = { phase: 'loading' };
 const NO_BRANCH: Branches = { phase: 'none' };
 
 /**
- * Whether a pair can be named at all. ONLY `loading` says no: every other phase
- * mounts either the select or the two identifier fields.
+ * Whether a pair can be named at all.
+ *
+ * Only `listed` says yes now. It used to be "anything but `loading`", because
+ * every other phase mounted two boxes to type a reference into; with those gone
+ * there is nothing to submit unless a branch can be chosen, and a submit left
+ * enabled over an absent control is a button whose only outcome is a refusal.
  */
 export function canNameBranch(branches: Branches): boolean {
-  return branches.phase !== 'loading';
+  return branches.phase === 'listed';
+}
+
+/**
+ * The working context, mapped onto the shape this picker already speaks.
+ *
+ * The layout reads `GET /auth/working-context` ONCE per request and publishes
+ * the named, active branches this operator is authorized for. Where that answer
+ * exists there is nothing for a second read of `org.branch-list` to add: it is
+ * the same operator, the same workspace, the same moment — and issuing it
+ * anyway is one request per screen for a fact the shell already holds, which is
+ * what five separate branch hooks across inventory and pricing were each doing.
+ *
+ * `countryCode` is the one field the working context does not publish. It is
+ * `null` rather than invented; nothing in these pickers reads it.
+ */
+function branchesFromContext(
+  context: ReturnType<typeof useWorkingContext>
+): readonly BranchOption[] | null {
+  if (context.status !== 'ready' || context.branches.length === 0) return null;
+  return context.branches.map((branch) => ({
+    id: branch.id,
+    companyId: branch.companyId,
+    branchCode: branch.code,
+    name: branch.name,
+    city: branch.city,
+    countryCode: null,
+    timezoneName: branch.timezone,
+    status: branch.status,
+  }));
 }
 
 export function useBranches(canRead: boolean): Branches {
+  const context = useWorkingContext();
+  const fromContext = branchesFromContext(context);
   const [items, setItems] = useState<readonly BranchOption[] | null>(null);
   const [failure, setFailure] = useState<{ key: string; retryable: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -96,7 +148,9 @@ export function useBranches(canRead: boolean): Branches {
   }, []);
 
   useEffect(() => {
-    if (!canRead) return;
+    // Not read at all when the shell already holds the answer. This is the
+    // request that stopped being made once per screen.
+    if (!canRead || fromContext !== null) return;
     let live = true;
     void listBranches().then((state) => {
       if (!live) return;
@@ -110,7 +164,7 @@ export function useBranches(canRead: boolean): Branches {
       if (state.status === 'denied') {
         setFailure({ key: 'pricing.common.branchesRefused', retryable: false });
       } else if (state.status === 'expired') {
-        setFailure({ key: 'state.expired.title', retryable: false });
+        setFailure({ key: 'state.expired.message', retryable: false });
       } else {
         setFailure({ key: 'pricing.common.branchesUnavailable', retryable: true });
       }
@@ -118,10 +172,24 @@ export function useBranches(canRead: boolean): Branches {
     return () => {
       live = false;
     };
-  }, [canRead, attempt]);
+  }, [canRead, attempt, fromContext]);
 
-  // Derived last and in this order: permission, then failure, then arrival, then
-  // emptiness. Nothing outside this function can observe the raw fields.
+  /*
+   * Derived last and in this order: the working context, then permission, then
+   * failure, then arrival, then emptiness. Nothing outside this function can
+   * observe the raw fields.
+   *
+   * The context comes FIRST. It used to be tested after the permission, so an
+   * operator without `org.branch.read` was reported as `not-offered` even
+   * though the shell was holding their named branches — and with the identifier
+   * boxes gone that would leave a price with nothing to be resolved for. The
+   * directory read is an optimisation on top of the context, never the
+   * authority over it: `GET /auth/working-context` publishes what this caller
+   * may act in, and the server re-authorizes the pair on every request either
+   * way. It is also tested before the failure branch, so a screen mounted during
+   * an `org.branch-list` hiccup still lists names.
+   */
+  if (fromContext !== null) return { phase: 'listed', items: fromContext };
   if (!canRead) return NOT_OFFERED;
   if (failure !== null) {
     return { phase: 'failed', messageKey: failure.key, retry: failure.retryable ? retry : null };
@@ -140,10 +208,71 @@ export interface BranchPair {
 export const EMPTY_PAIR: BranchPair = { companyId: '', branchId: '' };
 
 /**
- * A branch as a list when the operator may read one — choosing a branch fills
- * its company too — and as two identifier fields in every case where this
- * screen has no list to narrow to. A read in flight is a WAIT, not a refusal,
- * and is the one phase with no field to type into.
+ * The company a price rule is narrowed to, NAMED from the working context
+ * (Owner directive, `P1-32-PRE-OD-UX`).
+ *
+ * A rule may apply to one company and every one of its branches. The branch
+ * picker names a company only by naming one of its branches, so before this a
+ * company-only rule had no control at all — it was reachable only through the
+ * reference boxes an earlier pass removed. The companies are the ones
+ * `GET /auth/working-context` publishes for this operator, by name.
+ *
+ * Choosing a company that is not the chosen branch's own clears the branch,
+ * because the pair the server receives must be coherent.
+ */
+export function CompanyPicker({
+  messages,
+  label,
+  placeholder,
+  value,
+  onChange,
+  error,
+  onEdit,
+}: {
+  readonly messages: Messages;
+  readonly label: string;
+  readonly placeholder: string;
+  readonly value: BranchPair;
+  readonly onChange: (next: BranchPair) => void;
+  readonly error?: string | undefined;
+  /** Called on every edit, before the change is reported — clear-on-correct. */
+  readonly onEdit?: (() => void) | undefined;
+}) {
+  const context = useWorkingContext();
+  if (context.companies.length === 0) {
+    return (
+      <div className="flex flex-col gap-1.5">
+        <span className="text-label font-medium text-text-primary">{label}</span>
+        <p className="text-supporting text-text-secondary">
+          {translate(messages, 'pricing.rule.noCompanies')}
+        </p>
+      </div>
+    );
+  }
+  return (
+    <FormSelectField
+      label={label}
+      value={value.companyId}
+      onEdit={onEdit}
+      onChange={(companyId) => {
+        const keepsBranch =
+          value.branchId !== '' && context.companyOf(value.branchId)?.id === companyId;
+        onChange({ companyId, branchId: keepsBranch ? value.branchId : '' });
+      }}
+      options={context.companies.map((company) => ({
+        value: company.id,
+        label: company.code ? `${company.code} — ${company.name}` : company.name,
+      }))}
+      placeholder={placeholder}
+      error={error}
+    />
+  );
+}
+
+/**
+ * A branch as a list — choosing a branch fills its company too — and a sentence
+ * saying why in every case where this screen has no list to narrow to. A read
+ * in flight is a WAIT, not a refusal.
  */
 export function BranchPairPicker({
   messages,
@@ -154,6 +283,7 @@ export function BranchPairPicker({
   onChange,
   required,
   errors,
+  onEdit,
 }: {
   readonly messages: Messages;
   readonly branches: Branches;
@@ -163,6 +293,8 @@ export function BranchPairPicker({
   readonly onChange: (next: BranchPair) => void;
   readonly required?: boolean;
   readonly errors?: Readonly<Record<string, string | undefined>>;
+  /** Called on every edit, before the change is reported — clear-on-correct. */
+  readonly onEdit?: (() => void) | undefined;
 }) {
   /*
    * DECLARED BEFORE EVERY RETURN — a hook after an early return is a
@@ -174,6 +306,7 @@ export function BranchPairPicker({
    * still holds — and would still send — the typed pair. Clearing only when a
    * list has arrived that cannot contain the pair is the narrowest fix.
    */
+  const workingContext = useWorkingContext();
   const listedItems = branches.phase === 'listed' ? branches.items : null;
   const stale =
     listedItems !== null &&
@@ -203,12 +336,13 @@ export function BranchPairPicker({
   if (branches.phase === 'listed') {
     const { items } = branches;
     return (
-      <SelectField
+      <FormSelectField
         label={label}
-        {...(required ? { required: true } : {})}
+        required={required}
         value={stale ? '' : value.branchId}
-        onChange={(event) => {
-          const chosen = items.find((branch) => branch.id === event.target.value);
+        onEdit={onEdit}
+        onChange={(branchId) => {
+          const chosen = items.find((branch) => branch.id === branchId);
           onChange(
             chosen ? { companyId: chosen.companyId, branchId: chosen.id } : { ...EMPTY_PAIR }
           );
@@ -218,58 +352,62 @@ export function BranchPairPicker({
           label: `${branch.branchCode} — ${branch.name}`,
         }))}
         placeholder={placeholder}
-        error={errors?.['branchId']}
+        // EITHER half's complaint lands here: there is one control for the pair,
+        // and a company refusal with no company field would render nowhere.
+        error={errors?.['branchId'] ?? errors?.['companyId']}
       />
     );
   }
 
   /*
-   * `not-offered`, `none` and `failed` all take the pair as identifiers: in all
-   * three the operator may still be authorised for a branch this screen cannot
-   * name, and the server re-authorizes the pair on every request regardless. An
-   * empty list is a SENTENCE, never a blocked form.
+   * Everything that is not a list: `not-offered`, `none`, `failed`, and a
+   * working context that could not be read at all.
+   *
+   * All four used to render two free-text boxes asking the operator to paste a
+   * company reference and a branch reference. The argument was that
+   * `org.branch-list` lists what a caller may REACH, that an empty list says
+   * nothing about what they may operate on, and that the server re-authorizes
+   * the pair anyway — all true, and none of it made a reference something
+   * anybody could look up. The operator most likely to meet those boxes was the
+   * one whose directory read had just been refused (Owner directive,
+   * `P1-32-PRE-OD-UX`).
+   *
+   * `present` rather than `status` decides the context case, because a
+   * component rendered with no provider above it reports `unavailable` too.
    */
-  const description =
-    branches.phase === 'failed'
+  const contextFailed = workingContext.present && workingContext.status === 'unavailable';
+  const sentence = contextFailed
+    ? translate(messages, 'workingContext.unavailable')
+    : branches.phase === 'failed'
       ? translateDynamic(messages, branches.messageKey)
       : branches.phase === 'none'
         ? translate(messages, 'pricing.common.branchesNone')
-        : translate(messages, 'pricing.common.identifierHelp');
+        : translate(messages, 'pricing.common.branchesNotOffered');
+  const retry = branches.phase === 'failed' ? branches.retry : null;
 
   return (
-    <>
-      <TextField
-        label={translate(messages, 'pricing.common.companyIdField')}
-        description={description}
-        {...(required ? { required: true } : {})}
-        spellCheck={false}
-        dir="ltr"
-        value={value.companyId}
-        onChange={(event) => onChange({ ...value, companyId: event.target.value })}
-        error={errors?.['companyId']}
-      />
-      <TextField
-        label={translate(messages, 'pricing.common.branchIdField')}
-        {...(required ? { required: true } : {})}
-        spellCheck={false}
-        dir="ltr"
-        value={value.branchId}
-        onChange={(event) => onChange({ ...value, branchId: event.target.value })}
-        error={errors?.['branchId']}
-      />
-      {branches.phase === 'failed' && branches.retry !== null ? (
+    <div className="flex flex-col gap-1.5 sm:col-span-2">
+      <p className="text-label font-medium text-text-primary">{label}</p>
+      <p
+        role="status"
+        data-testid="pricing-branch-unavailable"
+        className="text-supporting text-text-secondary"
+      >
+        {sentence}
+      </p>
+      {retry === null ? (
+        <p className="text-supporting text-text-muted">
+          {translate(messages, 'workingContext.retryInHeader')}
+        </p>
+      ) : (
+        // `type="button"`: every caller renders this picker inside a form.
         <div>
-          {/*
-            `type="button"`: every caller renders this picker inside a <form>, and
-            a bare <button> there submits it. The pair is NOT cleared — a retry
-            that fails again must not cost the operator what they typed.
-          */}
-          <button type="button" onClick={branches.retry} className={SECONDARY_BUTTON}>
+          <Button type="button" variant="outlined" size="small" onClick={retry}>
             {translate(messages, 'state.retry')}
-          </button>
+          </Button>
         </div>
-      ) : null}
-    </>
+      )}
+    </div>
   );
 }
 
@@ -286,106 +424,133 @@ export function branchLabel(branches: Branches, branchId: string): string | null
 
 /**
  * A service, found by the beginning of its code or name through
- * `svc.service-list` when the operator holds `svc.service.read`, and named by
- * identifier when they do not. The search is explicit — a button, never a
- * keystroke — and asks for one page.
+ * `svc.service-list` when the operator holds `svc.service.read` — on
+ * `EntityPicker`, the shared Material combobox (ADR-022): the server searches as
+ * the operator types (after a pause, or at once on Enter), the matches are the
+ * server's in its order, the chosen service reads by its code and name, and
+ * "Choose another service" puts the choice back. Without the read, the service
+ * is named by the reference box it always had.
+ *
+ * The value the caller holds is the service's id; the chosen row is kept here
+ * only to show its name, and only while the caller's value is still its id — a
+ * caller that empties the value (a discard, a reset) empties the choice.
  */
 export function ServicePicker({
   messages,
+  locale,
   canRead,
   label,
   value,
   onChange,
   error,
+  onEdit,
+  countsAsUnsaved = false,
+  onDiscard,
+  testId = 'pricing-service-picker',
 }: {
   readonly messages: Messages;
+  readonly locale?: Locale | undefined;
   readonly canRead: boolean;
   readonly label: string;
   readonly value: string;
   readonly onChange: (serviceId: string) => void;
   readonly error?: string | undefined;
+  /** Called on every edit, before the change is reported — clear-on-correct. */
+  readonly onEdit?: (() => void) | undefined;
+  /**
+   * Empties the surrounding form when the operator confirms "Discard and change
+   * branch". Without it only the reference is emptied: the value belongs to the
+   * caller, so the picker can clear its own part and no more.
+   */
+  readonly onDiscard?: (() => void) | undefined;
+  /**
+   * Whether a typed reference is unsaved work: true inside a form that writes,
+   * false beside a read such as the price lookup.
+   */
+  readonly countsAsUnsaved?: boolean;
+  readonly testId?: string | undefined;
 }) {
-  const [term, setTerm] = useState('');
-  const [found, setFound] = useState<readonly ServiceSummary[] | null>(null);
-  const [note, setNote] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [chosen, setChosen] = useState<ServiceSummary | null>(null);
+  const shown = chosen !== null && chosen.id === value ? chosen : null;
 
-  const search = async () => {
-    const needle = term.trim();
-    setBusy(true);
-    const page = await listServices(needle ? { search: needle } : {}, INITIAL_REQUEST, null);
-    setBusy(false);
-    if (page.status === 'ok') {
-      setFound(page.rows);
-      setNote(page.rows.length === 0 ? 'pricing.picker.noServices' : null);
-    } else {
-      setFound(null);
-      setNote(
-        page.status === 'denied' ? 'pricing.picker.servicesRefused' : 'pricing.picker.searchFailed'
-      );
-    }
-  };
-
-  const options = useMemo(
-    () =>
-      (found ?? []).map((service) => ({
-        value: service.id,
-        label: `${service.serviceCode} — ${service.name}`,
-      })),
-    [found]
+  const load = useCallback(
+    async (term: string, cursor: string | null): Promise<ReadState<CursorPage<ServiceSummary>>> => {
+      const page = await listServices({ search: term }, INITIAL_REQUEST, cursor);
+      if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
+      return {
+        status: 'ok',
+        data: { items: page.rows, nextCursor: page.nextCursor, hasMore: page.hasMore },
+        correlationId: page.correlationId,
+      };
+    },
+    []
   );
 
+  useUnsavedGuard(countsAsUnsaved && !canRead && value.trim().length > 0, () => {
+    if (onDiscard) onDiscard();
+    else onChange('');
+  });
+
+  /*
+   * Without the catalogue read there is nothing to choose from. Recording a rule
+   * (`svc.price-rule-record`, `svc.price.manage`) and looking a price up
+   * (`svc.price-resolve`, `svc.price.read`) do NOT need that read, so holding
+   * the submit would take away a write and a read the server accepts from this
+   * caller (Owner directive, `P1-32-PRE-OD-UX`: a pass never removes a workflow
+   * a role already had). The caller keeps the box it had before — a pasted
+   * service reference, labelled as the fallback it is and checked for shape by
+   * the caller before anything is sent. With the catalogue read there is no box.
+   */
   if (!canRead) {
     return (
-      <TextField
-        label={translate(messages, 'pricing.picker.serviceIdField')}
+      <FormTextField
+        label={translate(messages, 'pricing.picker.serviceReference')}
         description={translate(messages, 'pricing.picker.servicesNotReadable')}
         required
-        spellCheck={false}
         dir="ltr"
+        autoComplete="off"
         value={value}
-        onChange={(event) => onChange(event.target.value)}
+        onEdit={onEdit}
+        onChange={onChange}
         error={error}
+        testId={testId}
       />
     );
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      <div className="flex items-end gap-2">
-        <div className="grow">
-          <TextField
-            label={translate(messages, 'pricing.picker.serviceSearch')}
-            description={translate(messages, 'pricing.picker.serviceSearchHelp')}
-            spellCheck={false}
-            value={term}
-            onChange={(event) => setTerm(event.target.value)}
-          />
-        </div>
-        <button
-          type="button"
-          className={SECONDARY_BUTTON}
-          disabled={busy}
-          onClick={() => {
-            void search();
-          }}
-        >
-          {translate(messages, 'pricing.picker.search')}
-        </button>
-      </div>
-      <SelectField
-        label={label}
-        required
-        {...(note ? { description: translateDynamic(messages, note) } : {})}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        options={options}
-        placeholder={translate(messages, 'pricing.picker.chooseService')}
-        error={error}
-      />
-    </div>
+    <EntityPicker<ServiceSummary>
+      messages={messages}
+      locale={locale}
+      label={label}
+      value={shown}
+      onChange={(next) => {
+        onEdit?.();
+        setChosen(next);
+        onChange(next?.id ?? '');
+      }}
+      labelOf={(service) => `${service.serviceCode} — ${service.name}`}
+      load={load}
+      canSearch
+      notPermitted={translate(messages, 'pricing.picker.servicesRefused')}
+      error={error}
+      minLength={1}
+      maxLength={SERVICE_SEARCH_MAX}
+      placeholder={translate(messages, 'services.catalogue.searchPlaceholder')}
+      example={translate(messages, 'pricing.picker.serviceSearchHelp')}
+      tooShort={translate(messages, 'pricing.picker.serviceSearchHelp')}
+      resultsLabel={translate(messages, 'pricing.picker.serviceResults')}
+      change={translate(messages, 'pricing.picker.changeService')}
+      // The surrounding form declares its own unsaved work, whichever way the
+      // service is named.
+      countsAsUnsaved={false}
+      testId={testId}
+    />
   );
 }
+
+/** The longest search `svc.service-list` accepts — the length of a service name. */
+const SERVICE_SEARCH_MAX = 200;
 
 /* ------------------------------------------------------------------ *
  * Badges and notes
@@ -435,13 +600,19 @@ export function VersionStatusBadge({
 export function OutcomeNote({
   messages,
   outcome,
+  onReload,
 }: {
   readonly messages: Messages;
   readonly outcome: ActionState | null;
+  /**
+   * A version-guarded form's way out of a conflict: what is stored now
+   * replaces the stale work. Offered only beside a conflict.
+   */
+  readonly onReload?: () => void;
 }) {
   if (!outcome || outcome.status === 'idle' || outcome.status === 'success') return null;
   const key = outcome.messageKey ?? 'action.failed';
-  return (
+  const note = (
     <p role="alert" className="text-body text-error">
       {translateDynamic(messages, key)}
       {outcome.correlationId ? (
@@ -456,6 +627,15 @@ export function OutcomeNote({
         </>
       ) : null}
     </p>
+  );
+  if (onReload === undefined || outcome.status !== 'conflict') return note;
+  return (
+    <div className="flex flex-col items-start gap-2">
+      {note}
+      <Button type="button" variant="outlined" size="small" onClick={onReload}>
+        {translate(messages, 'pricing.detail.reload')}
+      </Button>
+    </div>
   );
 }
 

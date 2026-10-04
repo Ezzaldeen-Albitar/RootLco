@@ -17,9 +17,9 @@
  *     contract to bind to. This repository therefore reads definitions and does
  *     not run anything — see the service for what that means for the phase.
  *
- * Only `published` configurations are visible. A draft is an unfinished
- * decision and an archived one is a withdrawn decision; neither is something a
- * caller should be able to run or export.
+ * Only `published` configurations are visible in the catalogue. Internal
+ * lookups also detect drafts and withdrawals so baseline fallback cannot make
+ * them runnable.
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
@@ -78,6 +78,7 @@ const PUBLISHED_VERSION = `
      WHERE v2.tenant_id = c.tenant_id
        AND v2.report_configuration_id = c.id
        AND v2.status = 'published'
+       AND v2.deleted_at IS NULL
      ORDER BY v2.version_number DESC
      LIMIT 1
   ) v ON true
@@ -85,6 +86,21 @@ const PUBLISHED_VERSION = `
 
 export class ReportCatalogueRepository extends Repository {
   protected readonly module = 'reporting';
+
+  /** An explicit tenant decision, including an unpublished or withdrawn one. */
+  async findByCode(db: DbHandle, reportCode: string): Promise<ReportConfigurationRow | null> {
+    const context = this.assertContext(db);
+    return this.runOne<ReportConfigurationRow>(
+      db,
+      `SELECT ${COLUMNS}
+         FROM rpt.report_configurations c
+         ${PUBLISHED_VERSION}
+        WHERE c.tenant_id = $1
+          AND c.report_code = $2
+          AND c.deleted_at IS NULL`,
+      [context.principal.tenantId, reportCode]
+    );
+  }
 
   /**
    * A page of published report definitions in the caller's tenant, by code.
@@ -126,22 +142,37 @@ export class ReportCatalogueRepository extends Repository {
     }));
   }
 
-  /** One published report definition by its stable code. */
-  async findPublishedByCode(
+  /**
+   * The explicit configurations for a BOUNDED set of codes (P1-31 P-11).
+   *
+   * Used by the catalogue list to decide which code-registered baseline entries
+   * a tenant has configured — unpublished and archived rows suppress fallback
+   * too, without appearing in the published catalogue.
+   *
+   * Unpaginated, and unlike the list above that is safe rather than an
+   * inconsistency: the codes come from `REPORT_DATASETS`, an in-code frozen
+   * object, so the result set is bounded by the SOURCE TREE and not by anything
+   * a tenant writes. That is the same argument `shared.export-catalogue` makes
+   * for returning a static array, and it is the argument `listPublished` cannot
+   * make.
+   */
+  async findByCodes(
     db: DbHandle,
-    reportCode: string
-  ): Promise<ReportConfigurationRow | null> {
+    reportCodes: readonly string[]
+  ): Promise<readonly ReportConfigurationRow[]> {
+    if (reportCodes.length === 0) return [];
     const context = this.assertContext(db);
-    return this.runOne<ReportConfigurationRow>(
+    const result = await this.run<ReportConfigurationRow>(
       db,
       `SELECT ${COLUMNS}
          FROM rpt.report_configurations c
          ${PUBLISHED_VERSION}
         WHERE c.tenant_id = $1
-          AND c.report_code = $2
-          AND c.status = 'published'
-          AND c.deleted_at IS NULL`,
-      [context.principal.tenantId, reportCode]
+          AND c.report_code = ANY($2::text[])
+          AND c.deleted_at IS NULL
+        ORDER BY c.report_code`,
+      [context.principal.tenantId, [...reportCodes]]
     );
+    return result.rows;
   }
 }

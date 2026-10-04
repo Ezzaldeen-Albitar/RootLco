@@ -1,0 +1,688 @@
+'use client';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { TableStatus } from '@/components/data-table/DataTable';
+import { INITIAL_REQUEST, withPage, type TableRequest } from '@/components/data-table/table-state';
+import { useCursorPages, type CursorPages } from '@/components/data-table/use-cursor-pages';
+import type { ServerTable } from '@/components/data-table/use-server-table';
+import { SEARCH_DEBOUNCE_MS, useDebouncedValue } from '../use-debounced-value';
+import {
+  CLIENT_READ_QUEUE_MARGIN_MS,
+  CLIENT_READ_TIMEOUT_MS,
+  SERVER_READ_WORST_CASE_MS,
+  clientReadTimeoutMs,
+} from './read-budget';
+import type { CursorPage, ReadState } from './read-operation';
+
+/**
+ * One search, run as the operator types, with the previous one abandoned.
+ *
+ * ## The three failures this closes, in order of how often they bite
+ *
+ * 1. **A superseded answer winning.** Type "Kha", type "Khal": the first read
+ *    is slower and lands second, and the operator watches results for a term
+ *    they have already finished replacing. A cancelled flag per effect is not
+ *    enough on its own — an effect that has been cleaned up can still be racing
+ *    a sibling — so every request carries a SEQUENCE number and only the latest
+ *    may commit.
+ * 2. **Every failure looking the same.** A refusal, an outage and a genuinely
+ *    empty result are three different sentences with three different next
+ *    steps, and a hook that returns `rows: []` for all three forces the screen
+ *    to render "no matches" over a permission failure.
+ * 3. **"No results" shown before there is an answer.** `empty` is reached only
+ *    from a COMPLETED read that returned no rows. There is no state in which an
+ *    in-flight request renders as an absence.
+ *
+ * ## Paging is the backend's, not this hook's
+ *
+ * The operations behind these screens paginate by CURSOR and publish no count.
+ * An operator still thinks in pages and still presses Previous, so the cursor
+ * that OPENED each visited page is kept — page one's is `null`, page N's is the
+ * `nextCursor` page N−1 returned — and going back is one request with a cursor
+ * already in hand rather than a walk from the start.
+ *
+ * `useCursorPages` already owns that bookkeeping for `useServerTable`, and it
+ * is reused rather than reimplemented: two copies of cursor arithmetic is two
+ * chances to get the off-by-one wrong in different ways.
+ *
+ * The stack is thrown away whenever the CRITERIA, an explicit submission or the
+ * working-branch version changes, and the page returns to one. A cursor is
+ * issued against an ordering contract; spending one from a previous contract
+ * returns a window of a set that no longer exists, and those rows look entirely
+ * plausible. The same key that resets the stack is part of what a held answer
+ * is filed under, so a late response for an older criteria-and-cursor pair
+ * cannot be committed even if it arrives after the reset.
+ *
+ * ## What `signal` can and cannot do here
+ *
+ * Most reads in this application go through a Server Action, because the
+ * bearer token lives in a cookie the browser cannot read. A Server Action call
+ * cannot carry an `AbortSignal` across the boundary, so aborting does not stop
+ * the work the server has already started — what it does, reliably, is
+ * guarantee that a superseded answer is DISCARDED rather than rendered, and
+ * give a loader that does reach a real `fetch` (anything under `src/lib/api`)
+ * something to pass on. Both halves are stated because the weaker one is the
+ * one a reader would otherwise assume.
+ *
+ * The hottest reads now DO reach a real `fetch`: the boards, the overview
+ * figures and the customer and vehicle searches go through the cancellable
+ * read routes (`browser-read.ts`, P1-32-PRE-OD-READ), and their loaders pass
+ * this signal on — so for them the abort cancels the request as well as
+ * discarding its answer.
+ */
+
+export type SearchPhase =
+  /** Nothing has been asked for. No request has been made. */
+  | 'idle'
+  /** A request is in flight, or a keystroke has not settled yet. */
+  | 'loading'
+  /** Answered, with rows. */
+  | 'ready'
+  /** Answered, with none. Only ever reached from a completed read. */
+  | 'empty'
+  /** Could not be reached, timed out, or was throttled. Worth retrying. */
+  | 'unavailable'
+  /** The caller may not read this. Retrying cannot change it. */
+  | 'refused'
+  /**
+   * The session ended while the screen was open.
+   *
+   * Its own phase, and that is the point. It used to arrive as `failed`
+   * carrying `state.expired.message`, which every renderer then had to
+   * recognise by comparing an error KEY — one did, and the rest showed
+   * "Something went wrong" with a Try-again button that could only fail again.
+   * A phase is a fact about the read; a key is a sentence about it, and asking
+   * a screen to infer the first from the second is how the two came apart.
+   */
+  | 'expired'
+  /** Anything else. Worth retrying, and the reference is worth reporting. */
+  | 'failed';
+
+export interface SearchOutcome<Row> {
+  readonly phase: SearchPhase;
+  readonly rows: readonly Row[];
+  /** The whole page, for a screen that pages. Null until a read succeeds. */
+  readonly page: CursorPage<Row> | null;
+  /** A translation KEY, never server prose. Null unless the phase is a failure. */
+  readonly error: string | null;
+  readonly correlationId: string | null;
+}
+
+export interface SearchResult<Row> extends SearchOutcome<Row> {
+  /** The page in hand, counting from one. */
+  readonly pageNumber: number;
+  /** The server's own end-of-set signal. False until a read has answered. */
+  readonly hasMore: boolean;
+  /** Moves forward one page. Does nothing when the server says there is none. */
+  readonly next: () => void;
+  /** Moves back one page, using the cursor that opened it. */
+  readonly previous: () => void;
+  /**
+   * The same read, in the shape `DataTable` and `CursorPager` already speak.
+   *
+   * Offered so a screen can swap `useServerTable` for this hook without
+   * rewriting its table, its pager or its assertions — the two differ in how
+   * the request is DECIDED (settled, submitted, abandoned) and not at all in
+   * what a page of rows is.
+   */
+  readonly table: ServerTable<Row>;
+  /**
+   * Ask NOW, without waiting for the term to settle.
+   *
+   * Enter and the Search control are statements of intent, and making an
+   * operator who has already decided wait out a 300 ms timer is the interface
+   * being slower than the person using it. Calling it again for the same term
+   * re-issues once that read has settled — answered or failed — which is what
+   * makes it a retry and a refresh; only while page one of the same term is
+   * still in flight does it send nothing, so Enter after the pause does not ask
+   * twice.
+   */
+  readonly submit: () => void;
+}
+
+/**
+ * How long a screen waits for one read before calling it unavailable.
+ *
+ * ## Why there is a client-side bound at all
+ *
+ * The API client on the server already times out, and an answer it gives up on
+ * arrives here as an ordinary `unavailable`. What it cannot bound is the hop in
+ * front of it: the Server Action call from this browser to the web tier. When
+ * that call fails — the connection drops, or the web tier answers 503 — the call
+ * REJECTS instead of resolving, and when it hangs it does neither. Browser QA
+ * found both: the reception board, the work-order board and customer search
+ * still read "Loading" twelve seconds after the read had failed, with no
+ * sentence and no way to try again (rows 2.6 and 7.4 of the part-7 matrix).
+ *
+ * The rejection is the real defect, and `settleRead` closes it the moment it
+ * happens — no timer is involved. This ceiling is only the SAFETY NET for a call
+ * that neither resolves nor rejects.
+ *
+ * ## Why it must sit ABOVE the server's own worst case
+ *
+ * A ceiling below the server path would abandon reads the server is still
+ * legitimately working on, and show an outage over an answer that was about to
+ * arrive. So it is derived from the server client's own constants rather than
+ * chosen: every read there is at most `MAX_READ_RETRIES + 1` attempts of
+ * `DEFAULT_TIMEOUT_MS` each (`get` clamps to that), which is
+ * `SERVER_READ_WORST_CASE_MS`.
+ *
+ * It must also absorb QUEUEING. The timer starts when this browser asks, not
+ * when the server starts working: Server Action calls from one page are sent one
+ * at a time, so a read can wait behind an earlier action before its own attempts
+ * begin. `CLIENT_READ_QUEUE_MARGIN_MS` — one further per-attempt timeout — is
+ * that allowance. No figure here is chosen by hand: change the server client's
+ * timeout or its retry clamp and the ceiling moves with it. With today's values
+ * that is 15 s × 3 attempts + 15 s = 60 s.
+ *
+ * ## A loader that reads twice gets twice the server's time
+ *
+ * The worst case above is for ONE read. Some loaders make two in sequence — the
+ * delivery-readiness queue and the audit log re-read the caller's scope before
+ * they read the page — and on those a single-read ceiling equals the server's
+ * whole worst case with no room left for queueing: the browser could give up
+ * while the second read was still legitimately running. So the ceiling is a
+ * function of the loader's sequential read count, `serverReads`, which a
+ * caller states beside the loader: `serverReads × SERVER_READ_WORST_CASE_MS +
+ * CLIENT_READ_QUEUE_MARGIN_MS` (`clientReadTimeoutMs`). One is the default;
+ * reads made in parallel count once.
+ *
+ * ## One formula, for every read that uses it
+ *
+ * `settleRead` derives its ceiling from `serverReads`, and the three read paths
+ * that need a ceiling — this hook, `useServerTable` and the dashboard — all go
+ * through `settleRead` without naming a number. The figures themselves live in
+ * `read-budget.ts`, which imports nothing, so this browser module does not pull
+ * in the server API client to read them. There is no second copy to drift.
+ */
+export { CLIENT_READ_QUEUE_MARGIN_MS, CLIENT_READ_TIMEOUT_MS, SERVER_READ_WORST_CASE_MS };
+
+/**
+ * A read that always SETTLES — with its own answer, or with `failure`.
+ *
+ * ## The rule it enforces
+ *
+ * A loader's contract is to resolve a view state for every answer the server
+ * gives. A rejection therefore means no readable answer arrived at all — the
+ * transport failed, or the web tier answered with something that is not a
+ * Server Action response — so it becomes `failure`, which every caller makes an
+ * `unavailable` state with a retry. The same holds for a read that outlives
+ * `timeoutMs`, and for one whose `signal` is aborted: the caller has moved on,
+ * so waiting for it any longer only holds the screen.
+ *
+ * Nothing here can cancel the work the server already started — a Server
+ * Action call carries no `AbortSignal` across the boundary — so an aborted or
+ * timed-out read is ABANDONED here and its late answer, when it comes, is
+ * dropped by the settled flag. The timer is always cleared, so a read that
+ * answers promptly leaves nothing behind.
+ *
+ * `serverReads` is how many server reads `run` makes in sequence, and sets the
+ * ceiling (`clientReadTimeoutMs`). An explicit `timeoutMs` overrides it.
+ */
+export function settleRead<T>(
+  run: () => Promise<T>,
+  failure: T,
+  options: {
+    readonly signal?: AbortSignal;
+    readonly timeoutMs?: number;
+    readonly serverReads?: number;
+  } = {}
+): Promise<T> {
+  const { signal, serverReads = 1, timeoutMs = clientReadTimeoutMs(serverReads) } = options;
+  return new Promise<T>((resolve) => {
+    if (signal?.aborted) {
+      resolve(failure);
+      return;
+    }
+    let settled = false;
+    // Every path into `finish` runs after `timer` exists: the timer itself, the
+    // abort listener added below it, and the read started after both.
+    const finish = (value: T) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      resolve(value);
+    };
+    const onAbort = () => finish(failure);
+    const timer = setTimeout(() => finish(failure), timeoutMs);
+    signal?.addEventListener('abort', onAbort, { once: true });
+    let pending: Promise<T>;
+    try {
+      pending = run();
+    } catch {
+      finish(failure);
+      return;
+    }
+    pending.then(finish, () => finish(failure));
+  });
+}
+
+/** What a read that never answered is, as far as a screen is concerned. */
+export const UNANSWERED_READ = Object.freeze({
+  status: 'unavailable',
+  correlationId: null,
+} as const);
+
+/** A search's table honours the page and nothing else — see `table` below. */
+const SEARCH_HONOURS = Object.freeze({ pageSize: false, sort: false } as const);
+
+const IDLE: SearchOutcome<never> = {
+  phase: 'idle',
+  rows: [],
+  page: null,
+  error: null,
+  correlationId: null,
+};
+
+/**
+ * How a read outcome becomes a phase.
+ *
+ * An ended session is its OWN phase rather than a `failed` carrying a
+ * particular key. The two differ in what the operator must do next — sign in
+ * again, rather than try the same request once more — and a renderer that had
+ * to tell them apart by comparing an error key got it wrong everywhere the
+ * comparison was forgotten.
+ */
+function outcomeOf<Row>(state: ReadState<CursorPage<Row>>): SearchOutcome<Row> {
+  if (state.status === 'ok') {
+    return {
+      phase: state.data.items.length === 0 ? 'empty' : 'ready',
+      rows: state.data.items,
+      page: state.data,
+      error: null,
+      correlationId: state.correlationId,
+    };
+  }
+  const phase: SearchPhase =
+    state.status === 'denied'
+      ? 'refused'
+      : state.status === 'expired'
+        ? 'expired'
+        : state.status === 'unavailable'
+          ? 'unavailable'
+          : 'failed';
+  const error =
+    state.status === 'denied'
+      ? 'state.denied.title'
+      : state.status === 'expired'
+        ? 'state.expired.message'
+        : state.status === 'not-found'
+          ? 'state.notFound.title'
+          : state.status === 'unavailable'
+            ? 'state.unavailable.title'
+            : 'state.error.title';
+  return { phase, rows: [], page: null, error, correlationId: state.correlationId };
+}
+
+export function useSearchRequest<Row, Criteria>(options: {
+  /**
+   * What to ask for, or `null` for "nothing yet".
+   *
+   * `null` is how a screen says the operator has not expressed an intent — a
+   * box with fewer characters than the backend accepts, or a form that has not
+   * been touched. No request is made and the phase stays `idle`, which is what
+   * makes "no request before intent" a property of this hook rather than
+   * something every screen has to remember.
+   */
+  readonly criteria: Criteria | null;
+  /**
+   * One page of the read.
+   *
+   * `cursor` is `null` for the first page and otherwise the `nextCursor` the
+   * previous page returned — the same contract `useServerTable` hands its
+   * loader, so an adapter written for one works unchanged with the other.
+   */
+  readonly load: (
+    criteria: Criteria,
+    cursor: string | null,
+    signal: AbortSignal
+  ) => Promise<ReadState<CursorPage<Row>>>;
+  /**
+   * Anything outside the criteria that changes what the answer means — the
+   * working-context version above all. A branch change abandons the read in
+   * flight AND bypasses the debounce, so the first read after a switch is for
+   * the branch that is now selected rather than for the one the settled key
+   * still remembers.
+   */
+  readonly version?: number;
+  readonly debounceMs?: number;
+  /**
+   * How many server reads `load` makes one after another. Sets how long the
+   * screen waits before calling the read unavailable (`settleRead`). One
+   * unless the loader re-reads something before it reads the page.
+   */
+  readonly serverReads?: number;
+  /**
+   * Whether these criteria narrow the set — a term, a filter — rather than
+   * only scope it. The table reports it (`ServerTable.narrowed`) so a zero-row
+   * answer is "no matches for this search", never "nothing here yet". Asked of
+   * the criteria the ANSWER was read for, not of the ones still settling.
+   * Every criteria narrow unless the caller says otherwise: a search that
+   * called a miss "nothing exists" would be making a claim about every record.
+   */
+  readonly narrows?: (criteria: Criteria) => boolean;
+}): SearchResult<Row> {
+  const {
+    criteria,
+    load,
+    version = 0,
+    debounceMs = SEARCH_DEBOUNCE_MS,
+    serverReads = 1,
+    narrows,
+  } = options;
+
+  /*
+   * The criteria, serialised.
+   *
+   * A screen builds its criteria inline, so the OBJECT is new on every render
+   * and is useless as an effect key. Its content is not: two objects that
+   * serialise the same ask for the same thing. It follows that criteria must be
+   * JSON-serialisable, which they already are — every one of them becomes query
+   * parameters.
+   */
+  const key = criteria === null ? null : JSON.stringify(criteria);
+  const settledKey = useDebouncedValue(key, debounceMs);
+
+  /*
+   * An explicit submission skips the wait.
+   *
+   * `forced.key` is the term the operator submitted. While the box still holds
+   * that term the settled value is bypassed; the moment they type again the key
+   * moves on and the debounce takes over. `nonce` is what lets the same term be
+   * submitted twice — pressing Search again on a failed read has to re-issue.
+   */
+  const [forced, setForced] = useState<{ readonly key: string; readonly nonce: number } | null>(
+    null
+  );
+
+  /* The held answer, declared here because the version adjustment below drops it. */
+  const [held, setHeld] = useState<{
+    readonly key: string;
+    readonly outcome: SearchOutcome<Row>;
+  } | null>(null);
+
+  /*
+   * A WORKING-CONTEXT CHANGE IS AN EXPLICIT SUBMISSION, and this is the defect
+   * that made it one.
+   *
+   * `version` was part of the request key and `activeKey` was the DEBOUNCED
+   * one, so the two moved on different clocks. A branch changed in the header
+   * produced new criteria immediately — the screens derive their scope during
+   * render — while `settledKey` still held the previous branch's criteria for
+   * up to 300 ms. The key that went out was therefore the OLD branch's criteria
+   * at the NEW version: one whole read issued for the branch the operator had
+   * just left, answered, and rendered under the new branch's heading. Worse
+   * than a stale list, and the exact failure the version was added to prevent.
+   *
+   * A switch is an intent, not a keystroke, so it is treated as a submission of
+   * whatever the criteria are NOW: the debounce is bypassed, the nonce moves so
+   * an identical ask still re-issues, and the held answer is dropped rather
+   * than left to be filtered out by its key.
+   *
+   * The request already IN FLIGHT needs nothing here. The read effect is keyed
+   * on the wanted key, the version is part of it, so the effect is torn down
+   * and its cleanup aborts the previous controller — and the continuation
+   * refuses to commit on an aborted signal. Bumping the sequence as well would
+   * be writing a ref during render for a guarantee the abort already gives.
+   *
+   * Adjusted DURING render — React's documented shape for "reset state when an
+   * input changes". An effect would paint one frame of the previous branch's
+   * request first, which is the thing being fixed.
+   */
+  const [lastVersion, setLastVersion] = useState(version);
+  if (version !== lastVersion) {
+    setLastVersion(version);
+    setHeld(null);
+    if (key === null) setForced(null);
+    else setForced((previous) => ({ key, nonce: (previous?.nonce ?? 0) + 1 }));
+  }
+
+  const submitted = forced !== null && forced.key === key;
+  /*
+   * LEAVING a submission is not a new ask for what was submitted.
+   *
+   * Once the criteria move off the submitted key, `activeKey` falls back to the
+   * settled one — which for the length of the debounce is still the key that
+   * was submitted. Filing that under nonce 0 made it a DIFFERENT request name
+   * from the one just answered, so the board re-read the criteria the operator
+   * was leaving before it read the ones they chose: clicking Yesterday after a
+   * branch switch sent today's window again, then yesterday's (checkpoint
+   * browser QA). While the settled key is still the submitted one, the answer
+   * in hand keeps its name, and the next read is the new criteria's own.
+   */
+  const leaving = forced !== null && !submitted && settledKey === forced.key;
+  const nonce = forced !== null && (submitted || leaving) ? forced.nonce : 0;
+  const activeKey = submitted ? key : settledKey;
+  const wanted = activeKey === null ? null : `${activeKey}#${version}#${nonce}`;
+
+  /*
+   * Ask again, whatever is in hand: a retry, a refresh after a write.
+   */
+  const reissue = useCallback(() => {
+    if (key === null) return;
+    setForced((previous) => ({ key, nonce: (previous?.nonce ?? 0) + 1 }));
+  }, [key]);
+
+  /*
+   * The criteria that produced each key, and the latest loader.
+   *
+   * The loader is here for the ordinary reason: it is a new function on every
+   * render and would re-read on every render if it were a dependency, and
+   * excluding it with a suppression would be a suppression.
+   *
+   * The criteria are here for a sharper reason. While the debounce lags, the
+   * key being fetched is the SETTLED one and `criteria` is already the newer
+   * object — so reading the current criteria at issue time fetched one thing
+   * and filed the answer under the name of another. The rows would then be
+   * shown the moment the debounce caught up, as if they had been read for the
+   * newer term. The map hands back the criteria that the key actually names, so
+   * what is fetched and what it is filed under cannot come apart.
+   *
+   * Bounded, because a search box generates a key per keystroke and this must
+   * not grow with the session.
+   */
+  const box = useRef<{
+    load: typeof load;
+    serverReads: number;
+    seen: Map<string, Criteria>;
+    cursors: CursorPages | null;
+  }>({ load, serverReads, seen: new Map(), cursors: null });
+  useEffect(() => {
+    box.current.load = load;
+    box.current.serverReads = serverReads;
+    if (key === null || criteria === null) return;
+    const seen = box.current.seen;
+    seen.set(key, criteria);
+    while (seen.size > 8) {
+      const oldest = seen.keys().next().value;
+      if (oldest === undefined) break;
+      seen.delete(oldest);
+    }
+  });
+
+  /*
+   * The ordering contract: everything that invalidates every held cursor.
+   *
+   * The criteria, the working-branch version and the submission nonce. A page
+   * number is NOT part of it — walking to page two must not throw away the
+   * cursor that got there.
+   */
+  const ordering = `${activeKey ?? ''}#${version}#${nonce}`;
+  const cursors = useCursorPages(ordering);
+  /*
+   * The cursor stack joins the box for the same reason the loader did.
+   *
+   * Its identity changes every time a cursor is remembered — which happens as a
+   * RESULT of the read below — so listing it as a dependency re-runs the read
+   * that produced it, for ever. `use-server-table.ts` reaches the same place and
+   * silences the rule; carrying it through the box that already exists here
+   * states the same thing without a suppression. The refreshing effect is
+   * declared FIRST, and React runs effects in declaration order after a commit,
+   * so the read always sees the stack belonging to its own render.
+   */
+  useEffect(() => {
+    box.current.cursors = cursors;
+  });
+
+  const [pageNumber, setPageNumber] = useState(1);
+  const [lastOrdering, setLastOrdering] = useState(ordering);
+  /*
+   * Back to page one when the contract changes, adjusted DURING render.
+   *
+   * `useCursorPages` resets its own stack on the same key, and this is the
+   * other half of that reset: `use-server-table.ts` records what happens when
+   * only one of the two moves — the stack goes back to `[null]` while the page
+   * number stays where it was, so `cursorFor(2)` returns null, page two is read
+   * with the START cursor, and the pager is permanently out by one for that
+   * filter. Both halves, or neither.
+   */
+  if (ordering !== lastOrdering) {
+    setLastOrdering(ordering);
+    if (pageNumber !== 1) setPageNumber(1);
+  }
+
+  const wantedPage = ordering === lastOrdering ? pageNumber : 1;
+  const wantedKey = wanted === null ? null : `${wanted}#${wantedPage}`;
+
+  const sequence = useRef(0);
+
+  useEffect(() => {
+    if (wantedKey === null || activeKey === null) return undefined;
+    const asked = box.current.seen.get(activeKey);
+    if (asked === undefined) return undefined;
+    const stack = box.current.cursors;
+    if (stack === null) return undefined;
+    const cursor = stack.cursorFor(wantedPage);
+    const controller = new AbortController();
+    sequence.current += 1;
+    const mine = sequence.current;
+    void (async () => {
+      // Awaited before any state write, so nothing here is a synchronous
+      // setState inside an effect body. Settled, never left hanging: a load
+      // that rejects or outlives the ceiling is an outage with a retry, not a
+      // screen that reads "Loading" for ever (`settleRead`). The controller's
+      // signal abandons it the moment this effect is torn down — a branch
+      // switch among them — so nothing here waits on a superseded read.
+      const load = box.current.load;
+      const state = await settleRead<ReadState<CursorPage<Row>>>(
+        () => load(asked, cursor, controller.signal),
+        UNANSWERED_READ,
+        { signal: controller.signal, serverReads: box.current.serverReads }
+      );
+      // Two guards, not one. The abort covers this effect being cleaned up; the
+      // sequence covers a slower SIBLING request that was started earlier and is
+      // still in flight. The key carries the criteria AND the page, so a late
+      // answer for an older pair cannot be shown under a newer one.
+      if (controller.signal.aborted || mine !== sequence.current) return;
+      const outcome = outcomeOf(state);
+      setHeld({ key: wantedKey, outcome });
+      if (outcome.page !== null) stack.remember(wantedPage, outcome.page.nextCursor);
+    })();
+    return () => controller.abort();
+  }, [wantedKey, activeKey, wantedPage]);
+
+  const outcome = useMemo<SearchOutcome<Row>>(() => {
+    if (wantedKey === null) return IDLE as SearchOutcome<Row>;
+    // Loading is DERIVED — "what I am holding is not what I want" — rather than
+    // written at the top of the effect, which would cascade a render on every
+    // keystroke and is what `react-hooks/set-state-in-effect` exists to catch.
+    if (held === null || held.key !== wantedKey) {
+      return { phase: 'loading', rows: [], page: null, error: null, correlationId: null };
+    }
+    return held.outcome;
+  }, [wantedKey, held]);
+
+  const hasMore = outcome.page?.hasMore ?? false;
+
+  /*
+   * Enter and Search, which must not ask twice for what is already asked.
+   *
+   * The toolbar's search settles after the pause AND asks at once on Enter, so
+   * an operator who types, waits a moment and presses Enter used to send the
+   * same read twice — the settled one and the submitted one, 50 ms apart. Under
+   * the board's `expensive-read` limit (30 a minute per user) that doubled
+   * every search, and the checkpoint browser QA drew 429s from it. So while the
+   * read IN FLIGHT is already page one of exactly these criteria, Enter is
+   * answered by that read and sends nothing. Once it has settled, Enter and
+   * Search ask again: after a failure that is the retry, and after an answer it
+   * is the only refresh the boards, the customer search, the calendar and the
+   * pickers offer (nothing polls, and `table.refresh` is wired only to an error
+   * state's retry). Any other page asks again too, because a submission starts
+   * again at page one. `table.refresh` stays `reissue`: a table's refresh is
+   * asked for after a write, when the answer in hand is old.
+   */
+  const inHand =
+    activeKey !== null && activeKey === key && wantedPage === 1 && outcome.phase === 'loading';
+  const submit = useCallback(() => {
+    if (inHand) return;
+    reissue();
+  }, [inHand, reissue]);
+
+  const next = useCallback(() => {
+    setPageNumber((current) => current + 1);
+  }, []);
+  const previous = useCallback(() => {
+    setPageNumber((current) => (current > 1 ? current - 1 : current));
+  }, []);
+
+  /*
+   * `TableStatus` and `SearchPhase` say the same seven things in different words.
+   *
+   * `idle` and `empty` both map to the table's `idle` — an answered read — and
+   * the ZERO-ROW case is the table's to render or the screen's to suppress,
+   * exactly as it was under `useServerTable`.
+   */
+  const status: TableStatus =
+    outcome.phase === 'idle' || outcome.phase === 'loading'
+      ? 'loading'
+      : outcome.phase === 'refused'
+        ? 'denied'
+        : outcome.phase === 'expired'
+          ? 'expired'
+          : outcome.phase === 'unavailable'
+            ? 'unavailable'
+            : outcome.phase === 'failed'
+              ? outcome.error === 'state.notFound.title'
+                ? 'not-found'
+                : 'error'
+              : 'idle';
+
+  const request: TableRequest = useMemo(() => withPage(INITIAL_REQUEST, wantedPage), [wantedPage]);
+
+  // The active key IS the criteria of the read being shown, serialised; its
+  // content is JSON by construction (see `key` above).
+  const narrowed =
+    activeKey !== null && (narrows ? narrows(JSON.parse(activeKey) as Criteria) : true);
+
+  const table: ServerTable<Row> = useMemo(
+    () => ({
+      request,
+      // Only the PAGE is a request parameter here. Sorting and filtering are the
+      // screen's own criteria, and a table control that changed them behind the
+      // screen's back would put the two out of step. The loaders take the
+      // criteria and a cursor — no page size, no sort — so the table says so,
+      // and a renderer offers neither control (`honours`).
+      setRequest: (nextRequest) => setPageNumber(Math.max(1, nextRequest.page)),
+      honours: SEARCH_HONOURS,
+      narrowed,
+      response:
+        outcome.phase === 'ready' || outcome.phase === 'empty'
+          ? {
+              rows: outcome.rows,
+              // Never invented. These operations publish `hasMore` and no count.
+              total: null,
+              page: wantedPage,
+              pageSize: request.pageSize,
+              hasMore,
+            }
+          : null,
+      status,
+      correlationId: outcome.correlationId ?? undefined,
+      refresh: reissue,
+    }),
+    [request, outcome, wantedPage, hasMore, status, reissue, narrowed]
+  );
+
+  return { ...outcome, submit, pageNumber: wantedPage, hasMore, next, previous, table };
+}

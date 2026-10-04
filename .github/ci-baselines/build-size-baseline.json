@@ -1,19 +1,47 @@
 {
   "description": "Production build size. Measured first, ratcheted second — no byte count here was invented. `standaloneBytes` is what the Dockerfile `runner` stage actually copies, so it is the number that governs the deployed artifact.",
   "policy": "docs/engineering/ci-automation/pr-gate.md",
-  "establishedBy": "PR CI run 19 (run id 30431556718), job `application-build / build`, artifact `evidence-build`, file `build-size.json`, at feature head 8d7bfff09cf914e00ff5ff4587341ece261185c3, started 2026-07-29T07:24:48Z, GitHub-hosted ubuntu-latest.",
+  "establishedBy": "ORIGINALLY: PR CI run 19 (run id 30431556718), job `application-build / build`, artifact `evidence-build`, file `build-size.json`, at feature head 8d7bfff09cf914e00ff5ff4587341ece261185c3, started 2026-07-29T07:24:48Z, GitHub-hosted ubuntu-latest. `standaloneBytes` and `totalBytes` have since been RE-MEASURED on GitHub-hosted PR CI run 34321869051 — see `standaloneReEstablishment` and `measurementNote` — and `staticBytes` is the one field of the three that still carries run 19's figure.",
   "establishmentNote": "Recorded from the first GitHub-hosted build that ever measured it. The earlier DELIBERATELY UNSET note is now spent, and it was not caution for its own sake: `.next` had never been measured by any workflow, and a Windows measurement is not the number a Linux runner produces, so the baseline waited for the runner rather than being guessed.",
+  "standaloneReEstablishment": {
+    "previousBytes": 34367299,
+    "previousMiB": 32.78,
+    "previousEstablishedOn": "2026-07-29",
+    "newBytes": 69733445,
+    "newMiB": 66.5,
+    "measuredAt": "branch head 64b8cb08b9f81be02ee627bcde83286c0bc25331, on the September 2026 dependency-advisory branch",
+    "provenance": "GITHUB-HOSTED, not local. PR CI run id 34321869051, job `application-build / build`, artifact `evidence-build`, file `build-size.json`, at head 64b8cb08b9f81be02ee627bcde83286c0bc25331, ubuntu-latest. That same artifact records the comparison the gate performed: `baselineBytes` 34367299, `ratio` 2.0291, `warnings` []. An earlier revision of this field carried a caveat saying the runner behind this byte count was not established; that uncertainty was false and is withdrawn, not softened. The rule it invoked still stands for anything measured elsewhere — a Windows measurement is not the number a Linux runner produces, which is the caution `establishmentNote` states — and it is satisfied here because this figure IS the hosted one.",
+    "whyItGrew": "THE FRAMEWORK GREW, THE APPLICATION DID NOT. The `next` package itself went from 155,398,744 to 184,740,391 bytes unpacked between 16.2.12 and 16.3.3 — +29,341,647 bytes, or +27.98 MiB — and that was verified rather than inferred: both installed trees were measured on disk and each matched its registry `dist.unpackedSize` exactly. Against the unmodified `develop` build the standalone output grew +22.62 MiB, which is less than the framework's own growth because the standalone tracer copies a subset. Everything the application contributes moved the other way or not at all: server chunks FELL 54.97 -> 54.69 MiB, static assets FELL 612.81 -> 554.04 KiB, and the route count is UNCHANGED at 302. So there is no application-code growth in this figure to find.",
+    "whyTheOldBaselineHadToMove": "The 32.78 MiB baseline was ALREADY STALE before this upgrade, and that is the more useful finding. Unmodified `develop` — no dependency change at all — measured x1.3327 against it, which had already consumed two thirds of the 1.5 fail ratio's headroom. A ratchet that a no-op branch sits two thirds of the way through is not protecting anything by the time a real change arrives. Re-establishing it here restores the full band; it does NOT widen it, because `warnGrowthRatio` and `failGrowthRatio` are untouched at 1.1 and 1.5.",
+    "totalTreeSizeObservation": "The reported total `.next` size jumped 105.2 MB -> 272.3 MB between the two builds. That is Next 16.3.3 emitting a large PERSISTENT TURBOPACK BUILD CACHE that 16.2.12 did not emit. Three things about it, so nobody spends an afternoon on it: it is NOT gated — `build-size-report.mjs` compares `standaloneBytes` alone against the ratio; it OVERLAPS the other figures by design, exactly as `measurementNote` says of the three fields below; and it is NOT copied by the Dockerfile `runner` stage, so none of it ships."
+  },
   "warnGrowthRatio": 1.1,
   "failGrowthRatio": 1.5,
   "ratioRationale": "Expressed as a MULTIPLE of the recorded baseline rather than an absolute ceiling, because an absolute ceiling would be a guess. 1.1 flags a 10% jump for a human to look at; 1.5 refuses a 50% jump outright — at that size change something structural happened and it should be deliberate.",
-  "standaloneBytes": 34367299,
+  "standaloneBytes": 69733445,
   "staticBytes": 632213,
-  "totalBytes": 66333419,
-  "measurementNote": "These three figures OVERLAP and must never be added together. `totalBytes` is the whole `.next` tree (4954 files); `standaloneBytes` is the `.next/standalone` subtree the runner stage copies; `staticBytes` is `.next/static`. The same run also measured `.next/server` at 30526906 bytes, which is counted inside `totalBytes` as well. Only `standaloneBytes` is ratcheted — build-size-report.mjs reads that field alone — because it is the only one that governs what actually ships.",
+  "totalBytes": 272264137,
+  "measurementNote": "These three figures OVERLAP and must never be added together. `totalBytes` is the whole `.next` tree; `standaloneBytes` is the `.next/standalone` subtree the runner stage copies; `staticBytes` is `.next/static`. Only `standaloneBytes` is ratcheted — build-size-report.mjs reads that field alone — because it is the only one that governs what actually ships. MIXED PROVENANCE, stated per field rather than left to be discovered: `standaloneBytes` 69733445 and `totalBytes` 272264137 are both hosted run 34321869051's own figures (7658 files in the tree at that measurement), while `staticBytes` 632213 IS STILL RUN 19'S EXACT BYTE COUNT and was not re-measured in bytes. Run 34321869051 did measure `.next/static`, and it reports 554.04 KiB — but that is the report's humanized spelling, and an exact byte count is not reconstructed from it by multiplying, so the exact field keeps the last figure that was measured exactly and is labelled here rather than being quietly refreshed with an approximation. The consequence to respect: `staticBytes` describes a different build from the two above it, so it must not be differenced against them. It is kept rather than deleted because nothing reads it for enforcement and a removed number is harder to notice than a labelled one; replace it the next time a hosted `build-size.json` is read for its exact `staticBytes`.",
   "alsoMeasuredInTheSameRun": {
+    "run": "34321869051, job `application-build / build`, artifact `evidence-build`, file `build-size.json`, head 64b8cb08b9f81be02ee627bcde83286c0bc25331",
+    "totalFiles": 7658,
+    "routes": 302,
+    "baselineBytesComparedAgainst": 34367299,
+    "ratio": 2.0291,
+    "warnings": [],
+    "serverChunksReported": "54.69 MiB",
+    "staticAssetsReported": "554.04 KiB",
+    "note": "Every entry here is run 34321869051's own. The two `Reported` fields are the report's humanized spellings; no exact byte count for `.next/server` or `.next/static` is held for this run, and none is invented from the rounded figure. `routes` 302 is the count that run reports, which is the same route count the pre-upgrade build reported."
+  },
+  "supersededRun19Figures": {
+    "run": "PR CI run 19 (run id 30431556718), job `application-build / build`, artifact `evidence-build`, at 8d7bfff09cf914e00ff5ff4587341ece261185c3",
+    "standaloneBytes": 34367299,
+    "staticBytes": 632213,
+    "totalBytes": 66333419,
     "serverBytes": 30526906,
     "totalFiles": 4954,
     "routesInManifest": 173,
-    "routeFilesOnDisk": 171
+    "routeFilesOnDisk": 171,
+    "note": "Kept for traceability, and so the labelling above is checkable: `staticBytes` in the enforced block is this run's figure, unchanged, while `standaloneBytes` and `totalBytes` there are run 34321869051's. `routesInManifest` and `routeFilesOnDisk` are this run's spelling of a figure the later report expresses as a single `routes` count, so the two are not differenced here."
   }
 }

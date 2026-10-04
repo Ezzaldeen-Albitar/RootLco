@@ -6,6 +6,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 import { updateOwnProfileAction } from '../actions/profile';
 import { FormFeedback } from './FormFeedback';
 import { SubmitButton } from './SubmitButton';
@@ -36,10 +37,22 @@ export function ProfileForm({
    */
   const [draftName, setDraftName] = useState(displayName);
   const [state, formAction] = useActionState<ActionState, FormData>(updateOwnProfileAction, IDLE);
-  const error = state.fieldErrors?.displayName;
+  // Question f: the cursor goes to the refused name, and the complaint goes once
+  // it is edited (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const error = refusalErrorKey('displayName');
 
   return (
-    <form action={formAction} className="flex max-w-md flex-col gap-4" noValidate>
+    <form
+      ref={refusalFormRef}
+      action={formAction}
+      className="flex max-w-md flex-col gap-4"
+      noValidate
+    >
       <input type="hidden" name="locale" value={locale} />
       <input type="hidden" name="recordVersion" value={recordVersion} />
 
@@ -50,7 +63,10 @@ export function ProfileForm({
         name="displayName"
         label={translate(messages, 'profile.displayName')}
         defaultValue={draftName}
-        onChange={(event) => setDraftName(event.target.value)}
+        onChange={(event) => {
+          refusalEdited('displayName');
+          setDraftName(event.target.value);
+        }}
         required
         autoComplete="name"
         error={error ? translate(messages, error as keyof Messages) : undefined}

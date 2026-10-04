@@ -52,9 +52,11 @@
  *
  * ## What the backend does not publish, said rather than hidden
  *
- * - No invoice list, and no invoice-for-partner list: an invoice is reached
- *   through its work order (`sal.work-order-invoice-read` answers `null` when
- *   the order has no live invoice).
+ * - No invoice-for-partner list. A branch's invoices are listed by
+ *   `sal.invoice-list` (`sal.finance.view`), which the counter narrows to its
+ *   own issued sales with `saleKind=counter_sale` so a copy can be printed again
+ *   (finance checkpoint, DF-B3); a job's invoice is still reached through its
+ *   work order (`sal.work-order-invoice-read`).
  * - No line description on the detail; the preview is the only read with one.
  * - No print or document route: a printable view is composed on the client
  *   from the detail and, when its revision matches, the preview.
@@ -72,11 +74,72 @@ export const BILLING_PERMISSIONS = {
   issue: 'sal.invoice.issue',
   /** The work-order header, for the screen's context. */
   workOrderRead: 'wo.work_order.read',
+  /** Credit notes — both reads, the request and the withdrawal declare it (DEF-T-07). */
+  creditManage: 'sal.credit.manage',
+  /**
+   * Deciding a credit note — the approval and the rejection declare it (Owner
+   * decision D13, ADR-023). An approval also needs a credit-note approval limit,
+   * which the server checks; holding the code is what makes the decision offered.
+   */
+  creditApprove: 'sal.credit.approve',
+  /** A different payer is FOUND among customers, which `crm.customer-search` answers. */
+  customerRead: 'crm.customer.read',
+  /**
+   * The customer-returns screen's own gate (`inv.stock.read`). A credit note
+   * raised by a return links to that screen only for a reader it would admit
+   * (DF-B4); stated here so the credit-note page needs no inventory import.
+   */
+  returnsRead: 'inv.stock.read',
 } as const;
 
 /** `ck_invoices_status`, mirrored. `credited` is admitted by the guard and unreachable today. */
 export const INVOICE_STATUSES = ['draft', 'issued', 'credited', 'void_before_issue'] as const;
 export type InvoiceStatus = (typeof INVOICE_STATUSES)[number];
+
+/**
+ * How much of an invoice has been credited (Owner decision D7, ADR-023) —
+ * `BillingReadService.SettlementView.creditStatus`, derived by the server from the
+ * approved credits against the invoice's gross. Never read from `status`.
+ */
+export const CREDIT_STATUSES = ['none', 'partly_credited', 'credited'] as const;
+export type CreditStatus = (typeof CREDIT_STATUSES)[number];
+
+/** What was paid against what is still open (D7). `nothing_due`: credits cleared it, nothing paid. */
+export const PAYMENT_STATUSES = ['open', 'partly_paid', 'paid', 'nothing_due'] as const;
+export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
+
+/** Money handed back (D7). The platform has no refund instrument yet, so only `none`. */
+export const REFUND_STATUSES = ['none'] as const;
+export type RefundStatus = (typeof REFUND_STATUSES)[number];
+
+/** `SettlementView` — three separate positions of an issued invoice, and the two amounts behind them. */
+export interface Settlement {
+  readonly creditStatus: CreditStatus;
+  readonly paymentStatus: PaymentStatus;
+  readonly refundStatus: RefundStatus;
+  readonly credited: MoneyView;
+  readonly paid: MoneyView;
+  /**
+   * The part of `paid` somebody other than the customer paid as a third-party
+   * payment (ADR-023 D14), oldest first; absent from a server before D14.
+   */
+  readonly thirdPartyPayments?: readonly ThirdPartyPayment[];
+  /** True when the invoice has more third-party payments than are listed. */
+  readonly thirdPartyPaymentsTruncated?: boolean;
+}
+
+/** One third-party payment of an invoice — `ThirdPartyPaymentView` (ADR-023 D14). */
+export interface ThirdPartyPayment {
+  readonly receipt: { readonly id: string; readonly reference: string };
+  /** Who paid, by name; `null` when withheld from this reader. */
+  readonly payerName: string | null;
+  /** `insurer`, `employer` or `other`. */
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
+  readonly money: MoneyView;
+  readonly allocatedAt: string;
+}
 
 /** `ck_invoice_lines_line_type`, mirrored. The preview carries `service` and `part` only. */
 export const LINE_TYPES = ['service', 'part', 'fee'] as const;
@@ -89,6 +152,12 @@ export const MAX_REASON = 2000;
 export interface MoneyView {
   readonly amount: string;
   readonly currency: string;
+  /**
+   * How many decimals the currency is written with — `shared.currencies.minor_unit`,
+   * as the server published it (Owner decision D1). `formatMoney` writes the amount
+   * with it; absent only where the read did not look the currency up.
+   */
+  readonly minorUnit?: number | undefined;
 }
 
 /** The three header totals — `InvoiceTotalsView`; `null` on the header when the amounts are not the caller's to see. */
@@ -98,12 +167,22 @@ export interface InvoiceTotals {
   readonly gross: MoneyView;
 }
 
+/** `ck_invoices_sale_kind`, mirrored. A counter sale has no work order (P1-32). */
+export const SALE_KINDS = ['work_order', 'counter_sale'] as const;
+export type SaleKind = (typeof SALE_KINDS)[number];
+
 /** The invoice header — `InvoiceView`. */
 export interface Invoice {
   readonly id: string;
   readonly companyId: string;
   readonly branchId: string;
-  readonly workOrderId: string;
+  /**
+   * Null exactly when `saleKind` is `counter_sale`: a part sold over the counter
+   * opens no job, and `ck_invoices_sale_kind_source` makes the work order present
+   * for exactly one of the two kinds.
+   */
+  readonly workOrderId: string | null;
+  readonly saleKind: SaleKind;
   readonly quotationRevisionId: string | null;
   readonly payerPartnerId: string;
   readonly currency: string;
@@ -115,6 +194,35 @@ export interface Invoice {
   readonly recordVersion: number;
   readonly totals: InvoiceTotals | null;
 }
+
+/**
+ * Who an invoice bills, by name — `InvoicePayerView`. Every field is `null` when
+ * the payer is not named to this caller: withheld without `crm.customer.read`, or
+ * retired since the invoice was written.
+ */
+export interface InvoicePayer {
+  readonly displayName: string | null;
+  readonly displayNumber: string | null;
+  readonly partyType: string | null;
+}
+
+/**
+ * One row of `sal.invoice-list` — `InvoiceListEntryView` (Owner directive,
+ * `P1-32-PRE-OD-UX`).
+ *
+ * `outstanding` is `null` whenever the balance cannot be believed for this
+ * caller — an issued or credited invoice whose amounts it cannot see — and is
+ * never a zero standing in for "not shown". A draft's zero IS the true answer, and
+ * the picker still shows no balance beside it (`InvoicePicker`).
+ */
+export interface InvoiceListEntry extends Invoice {
+  readonly payer: InvoicePayer;
+  readonly outstanding: MoneyView | null;
+}
+
+/** The shortest and longest box `sal.invoice-list` accepts, mirrored. */
+export const MIN_INVOICE_SEARCH = 2;
+export const MAX_INVOICE_SEARCH = 80;
 
 /** A line's money — `InvoiceLineMoneyView`; `null` without `sal.finance.view`. */
 export interface InvoiceLineMoney {
@@ -134,8 +242,21 @@ export interface InvoiceLine {
   readonly quantity: string;
   readonly currency: string;
   readonly sourceQuotationItemId: string | null;
+  /**
+   * `InvoiceLineItemView` — what a counter-sale line sold, by code and name, so
+   * the printed copy can describe the line (GAP-09). `null` on a work-order line,
+   * which is described by its quotation item instead. Not money.
+   */
+  readonly item: InvoiceLineItem | null;
   readonly recordVersion: number;
   readonly money: InvoiceLineMoney | null;
+}
+
+/** `InvoiceLineItemView` — an item a counter-sale line sold. `code` is its SKU. */
+export interface InvoiceLineItem {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
 }
 
 /** `sal.invoice-detail` — `InvoiceDetailView`; `recordVersion` mirrors the header's. */
@@ -175,6 +296,8 @@ export interface InvoicePreview {
   readonly quotationId: string;
   readonly quotationRevisionId: string;
   readonly currency: string;
+  /** The minor unit of `currency`, as `shared.currencies` records it (Owner decision D1). */
+  readonly minorUnit?: number | undefined;
   readonly subtotal: string;
   readonly discountTotal: string;
   readonly taxTotal: string;
@@ -189,6 +312,15 @@ export interface Outstanding {
   readonly status: InvoiceStatus;
   readonly outstanding: MoneyView;
   readonly isSettled: boolean;
+  /** `null` for a draft or voided invoice, which claims nothing yet. */
+  readonly settlement: Settlement | null;
+  /**
+   * When the balance and the settlement were read, on the database's clock (an
+   * ISO instant). A printed copy states its settlement figures "as of" this
+   * moment, apart from the issued amounts, which never change (Owner decision
+   * D10, ADR-023).
+   */
+  readonly asOf: string;
 }
 
 /** The echo of `sal.invoice-create` — the detail plus whether the key had already been used. */
@@ -210,3 +342,123 @@ export interface VoidedInvoice {
   readonly replayed: boolean;
   readonly recordVersion: number;
 }
+
+/* ------------------------------------------------------------------ *
+ * Credit notes (DEF-T-07).
+ *
+ * | operation                | method | path                             | permissions (ALL required)               |
+ * | ------------------------ | ------ | -------------------------------- | ---------------------------------------- |
+ * | `sal.credit-note-list`   | GET    | `/credit-notes`                  | `sal.credit.manage`, `sal.finance.view`  |
+ * | `sal.credit-note-detail` | GET    | `/credit-notes/{creditNoteId}`   | `sal.credit.manage`, `sal.finance.view`  |
+ * | `sal.credit-note-create` | POST   | `/invoices/{invoiceId}/credit-notes` | `sal.credit.manage`, `sal.finance.view` |
+ * | `sal.credit-note-approve` | POST  | `/credit-notes/{creditNoteId}/approval` | `sal.credit.approve`, `sal.finance.view` |
+ * | `sal.credit-note-reject`  | POST  | `/credit-notes/{creditNoteId}/rejection` | `sal.credit.approve`, `sal.finance.view` |
+ * | `sal.credit-note-withdraw` | POST | `/credit-notes/{creditNoteId}/withdrawal` | `sal.credit.manage` |
+ *
+ * Rejection and withdrawal (ADR-023, D3) are version-guarded: `If-Match` is the
+ * NOTE's `recordVersion` from the detail read. Only the requester withdraws, and
+ * only someone else rejects, with a reason; every state but `pending` is final.
+ *
+ * Both DECLARE `sal.finance.view` rather than nulling amounts the way the
+ * invoice reads do, and that asymmetry is the database's: the invoice header is
+ * scope-gated with its money in separate gated tables, so a header without money
+ * is an honest answer; `sel_credit_notes_gated` gates a credit note's WHOLE row,
+ * so a caller without the permission is refused rather than shown an empty list
+ * that would read as "nothing has been credited here". `amount` is therefore
+ * never null on this surface.
+ * ------------------------------------------------------------------ */
+
+/** `ck_credit_notes_approval_state`, mirrored. `withdrawn` is the requester's own withdrawal. */
+export const CREDIT_NOTE_STATES = ['pending', 'approved', 'rejected', 'withdrawn'] as const;
+export type CreditNoteState = (typeof CREDIT_NOTE_STATES)[number];
+
+/** `sal.credit-note-list` and `sal.credit-note-detail` — `CreditNoteView`. */
+export interface CreditNote {
+  readonly id: string;
+  readonly invoiceId: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  /** `numeric(18,4)` beside its currency; the note's currency is the invoice's. */
+  readonly amount: MoneyView;
+  /** Free text the requester wrote. Rendered as given, never parsed. */
+  readonly reason: string;
+  readonly approvalState: CreditNoteState;
+  readonly requestedBy: string;
+  /** Present only once approved — `ck_credit_notes_approved_shape`. */
+  readonly approvedBy: string | null;
+  readonly approvedAt: string | null;
+  readonly issuedAt: string | null;
+  /**
+   * Who withdrew or rejected the request, and when — the requester for a
+   * withdrawal, somebody else for a rejection; `null` while pending and on an
+   * approved note. An id, compared with the signed-in person and never shown.
+   */
+  readonly decidedBy: string | null;
+  readonly decidedAt: string | null;
+  /** Why it was rejected, as the person who rejected it wrote it; `null` otherwise. */
+  readonly decisionReason: string | null;
+  readonly recordVersion: number;
+}
+
+/**
+ * The invoice a credit note reduces, as the note's detail names it — the
+ * `CreditNoteInvoiceView` of `sal.credit-note-detail` (finance checkpoint, DF-B4).
+ * `payerName` is `null` for a reader who may not read customers, or for a payer
+ * who is no longer named; the screen then says the name is not shown.
+ */
+export interface CreditNoteInvoice {
+  readonly invoiceNumber: string | null;
+  readonly saleKind: SaleKind;
+  readonly workOrderId: string | null;
+  readonly payerName: string | null;
+}
+
+/**
+ * The customer return that raised a credit note — `CreditNoteSourceReturnView`.
+ * A return has no number of its own, so it is named by what came back and when.
+ */
+export interface CreditNoteSourceReturn {
+  readonly id: string;
+  readonly itemCode: string | null;
+  readonly itemName: string | null;
+  /** `numeric(12,3)` as a string; not money. */
+  readonly quantity: string;
+  readonly receivedAt: string;
+}
+
+/**
+ * `sal.credit-note-detail` — `CreditNoteDetailView`: the note, and what it is
+ * traceable to (DF-B4). Every person is named, never shown by reference: each
+ * name is `null` for a reader who may not read users, and the screen then says
+ * the name is not shown. The ids above stay for comparing with the signed-in
+ * person and are never printed.
+ */
+export interface CreditNoteDetail extends CreditNote {
+  readonly requestedAt: string;
+  readonly requestedByName: string | null;
+  readonly approvedByName: string | null;
+  readonly decidedByName: string | null;
+  /** `null` only if the invoice could not be read with the note. */
+  readonly invoice: CreditNoteInvoice | null;
+  /** `null` when the note was raised by hand rather than by a customer return. */
+  readonly sourceReturn: CreditNoteSourceReturn | null;
+}
+
+/*
+ * The request body of `sal.credit-note-create` is `CreditNoteCreateBody` in
+ * `lib/contracts/billing-contract.ts`, the payload-parity mirror the P1-30 gate
+ * holds against the route's zod schema.
+ */
+
+/**
+ * The echo of `sal.credit-note-create`, `sal.credit-note-approve`,
+ * `sal.credit-note-reject` and `sal.credit-note-withdraw` — `CreditNoteResult`.
+ */
+export interface CreditNoteEcho {
+  readonly creditNote: CreditNote;
+  /** True when the key (create) or an already-approved note (approve) was met again. */
+  readonly replayed: boolean;
+}
+
+/** The shape `sal.credit-note-create` accepts, mirrored: unsigned, 14 integer digits, 4 decimals. */
+export const CREDIT_AMOUNT = /^\d{1,14}(\.\d{1,4})?$/;

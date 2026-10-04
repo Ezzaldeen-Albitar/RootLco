@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { authorizedClient } from '@/lib/api/server-client';
 import type { Locale } from '@/i18n/config';
+import { readPlatformSession } from '@/features/platform/api/session';
 import { SESSION_ENDED_SEGMENT } from './session-ended';
 import type { SessionState, SessionSummary } from '../types/session';
 
@@ -102,6 +103,15 @@ export async function requireSession(locale: Locale): Promise<SessionSummary> {
   const state = await readSession();
   if (state.ok) return state.session;
   if (state.problem === 'expired') redirect(`/${locale}/${SESSION_ENDED_SEGMENT}`);
+  // A forbidden workspace session may belong to the platform operator, who holds
+  // no tenant role by construction. When the platform session answers, the
+  // operator is routed to the console rather than stranded on sign-in
+  // (P1-32-PRE-061). A tenant user never reaches this branch: their own session
+  // read succeeds above.
+  if (state.problem === 'forbidden') {
+    const platform = await readPlatformSession();
+    if (platform.ok) redirect(`/${locale}/platform`);
+  }
   // The reason is a fixed enum, not free text and not an identifier. It changes
   // which sentence the sign-in page shows; it names no user and no record.
   redirect(`/${locale}/login?reason=${state.problem}`);

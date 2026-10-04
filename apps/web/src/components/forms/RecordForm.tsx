@@ -1,9 +1,13 @@
 'use client';
 
 import { useActionState, useId, useState, type ReactNode } from 'react';
+import { FailureExplanation } from '@/components/states/States';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import { invalid, type ActionState } from '@/lib/forms/action-result';
+import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import { composeInstant, instantFieldError, toLocalDateTimeValue } from './instant';
 
 /**
@@ -22,6 +26,44 @@ import { composeInstant, instantFieldError, toLocalDateTimeValue } from './insta
  *
  * The form clears on SUCCESS only, and only then because the record is now
  * stored and the next entry is a different one.
+ *
+ * ## What happens after a refusal (P1-32)
+ *
+ * Three things, and none of them happened before:
+ *
+ *   - **The cursor moves to the first thing to fix.** Focus used to stay on the
+ *     submit button while the invalid field sat somewhere further up, so the
+ *     operator was told the save failed and left to hunt for the red text.
+ *     `useFocusFirstInvalid` queries the form for `[aria-invalid="true"]`, which
+ *     is the element assistive technology would announce as invalid.
+ *   - **A corrected field stops complaining.** A server error stood until the
+ *     next submission, so a form that refused three fields kept saying three
+ *     were wrong while the operator corrected them one at a time with no way to
+ *     tell which still were. `useClearOnCorrect` drops the complaint for a
+ *     field the moment its value is edited, and the whole set resets on the next
+ *     attempt so a fresh complaint can never be hidden by an old correction.
+ *   - **The error is not red text alone.** `FieldFrame` now leads each message
+ *     with a bordered "!" — a shape as well as a colour.
+ *
+ * ## Entered values survive a failure — verified, not assumed
+ *
+ * The claim at the top of this docblock is the reason this component exists,
+ * and it is worth saying exactly HOW it holds, because two of the three field
+ * kinds needed a fix to make it true and the third still reads as if it were
+ * free:
+ *
+ *   - text, number, date and textarea are CONTROLLED from `values`, which lives
+ *     above `useActionState` and is untouched by a settled action;
+ *   - `select` and `checkbox` cannot be controlled through a reset — React
+ *     assigns a checkbox's DOM default only at mount and never rewrites an
+ *     unchanged `value` prop — so both carry `key={`${name}-${attempt}`}` plus
+ *     `defaultValue` / `defaultChecked` seeded FROM `values`. The remount is
+ *     what makes the reset land on the operator's own value instead of on the
+ *     placeholder;
+ *   - `instant` submits through a hidden input and keeps its local wall time in
+ *     `values` like any text field.
+ *
+ * `apps/web/tests/record-form.dom.test.tsx` asserts each of those directly.
  *
  * ## Why it lives here and not under a feature
  *
@@ -292,6 +334,28 @@ export function RecordForm({
   const [values, setValues] = useState<Record<string, string>>(() =>
     seedValues(fields, initialValues)
   );
+
+  /*
+   * Unsaved work, declared to the shell.
+   *
+   * Changing the working branch re-addresses every write on the page, so a
+   * half-filled form must be asked about rather than silently re-pointed. This
+   * component is where eleven write surfaces get that for free: `set` below is
+   * the one place every field kind reports a change, so a flag raised there
+   * covers all of them without a listener per control.
+   *
+   * It is lowered on SUCCESS and on nothing else. A failed attempt leaves the
+   * operator's text on screen — that is the property this component exists for
+   * — so the work is still unsaved and the question still has to be asked.
+   */
+  const [dirty, setDirty] = useState(false);
+  /*
+   * Counts confirmed discards, and is part of the key of every control seeded
+   * through `defaultValue` below. Emptying `values` alone would leave a
+   * select or a checkbox showing the discarded choice, because an uncontrolled
+   * control is only re-seeded by a remount.
+   */
+  const [discards, setDiscards] = useState(0);
   // Per-instance, because the vehicle profile renders more than one of these on
   // one screen. The id used to be `record-${field.name}`, which is stable and
   // therefore duplicated across instances — two `id="record-effectiveDate"`
@@ -311,16 +375,49 @@ export function RecordForm({
       // Cleared only here, and only for an append. On any failure the
       // operator's text stays put either way.
       if (clearOnSuccess) setValues({});
+      // The work is stored, so there is nothing left to warn about.
+      setDirty(false);
       onRecorded?.();
     }
     return result;
   }, EMPTY);
 
-  const set = (name: string, value: string) =>
+  /*
+   * A server complaint is dropped the moment the field it names is edited, and
+   * the whole set resets on a new attempt. `set` is the one place every field
+   * kind reports a change, so wiring it here covers all of them rather than
+   * each branch remembering.
+   */
+  const corrections = useClearOnCorrect(state);
+
+  /*
+   * A confirmed "Discard and change branch" empties the form. The question told
+   * the operator their entries would go, so they go: back to the values the form
+   * opened with, with no complaint left standing about a value no longer shown.
+   * A `prelude` is the caller's own state and is not counted as unsaved here.
+   */
+  useUnsavedGuard(dirty, () => {
+    setValues(seedValues(fields, initialValues));
+    setDirty(false);
+    setDiscards((count) => count + 1);
+    for (const field of fields) corrections.noteEdited(field.name);
+  });
+
+  /*
+   * The ref goes on the `<form>`. The hook does nothing until an attempt
+   * arrives carrying field errors, so an ordinary render never steals focus
+   * from wherever the operator has put it.
+   */
+  const formRef = useFocusFirstInvalid(state);
+
+  const set = (name: string, value: string) => {
+    corrections.noteEdited(name);
+    setDirty(true);
     setValues((current) => ({ ...current, [name]: value }));
+  };
 
   return (
-    <form action={submit} className="rounded-lg border border-border bg-surface p-4">
+    <form ref={formRef} action={submit} className="rounded-lg border border-border bg-surface p-4">
       <h3 className="mb-3 text-section-title font-medium text-text-primary">
         {translateDynamic(messages, titleKey)}
       </h3>
@@ -330,7 +427,10 @@ export function RecordForm({
       <div className="grid gap-3 sm:grid-cols-2">
         {fields.map((field) => {
           const id = `${instance}-${field.name}`;
-          const errorKey = state.fieldErrors?.[field.name];
+          // Not `state.fieldErrors[...]` directly: a complaint about a field
+          // the operator has since edited is a sentence about a value that is
+          // no longer on screen.
+          const errorKey = corrections.errorFor(field.name);
           const describedBy =
             [errorKey ? `${id}-error` : null, field.hintKey ? `${id}-hint` : null]
               .filter(Boolean)
@@ -379,7 +479,7 @@ export function RecordForm({
                  * changed blind; this is that follow-up, now with a test.
                  */
                 <select
-                  key={`${field.name}-${state.attempt ?? 0}`}
+                  key={`${field.name}-${state.attempt ?? 0}-${discards}`}
                   id={id}
                   name={field.name}
                   defaultValue={values[field.name] ?? ''}
@@ -427,7 +527,7 @@ export function RecordForm({
                    * Save again — having changed nothing they can see — sends no
                    * `highVoltageWarning` at all, which the adapter maps to false.
                    */
-                  key={`${field.name}-${state.attempt ?? 0}`}
+                  key={`${field.name}-${state.attempt ?? 0}-${discards}`}
                   id={id}
                   name={field.name}
                   type="checkbox"
@@ -496,8 +596,21 @@ export function RecordForm({
                 </p>
               ) : null}
               {errorKey ? (
-                <p id={`${id}-error`} role="alert" className="mt-1 text-caption text-error">
-                  {translateDynamic(messages, errorKey)}
+                <p
+                  id={`${id}-error`}
+                  role="alert"
+                  className="mt-1 flex items-start gap-1.5 text-caption text-error"
+                >
+                  {/* A shape as well as a colour — the same cue `FieldFrame`
+                      carries, because this component renders its own fields
+                      rather than going through it. */}
+                  <span
+                    aria-hidden="true"
+                    className="mt-px inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-error text-caption font-bold leading-none"
+                  >
+                    !
+                  </span>
+                  <span>{translateDynamic(messages, errorKey)}</span>
                 </p>
               ) : null}
             </div>
@@ -522,7 +635,21 @@ export function RecordForm({
 
         {state.status !== 'idle' && state.status !== 'success' && state.messageKey ? (
           <p role="alert" className="text-body text-error">
-            {translateDynamic(messages, state.messageKey)}
+            {/*
+              The values as well as the key. A refusal sentence may name a
+              number the server published — the wait a throttle advised, the
+              ceiling a subscription reached — and those sentences carry a
+              `{name}` placeholder. Translating the key alone printed the
+              placeholder as written.
+            */}
+            {translateWithValues(messages, state.messageKey, state.messageValues)}
+            {/*
+              And the next step, when the key is a heading with a sentence
+              behind it. A refused permission arrives as `state.denied.title` —
+              four words that name the verdict and nothing an operator can act
+              on. `FailureExplanation` is the one place that pairing is decided.
+            */}
+            <FailureExplanation messages={messages} messageKey={state.messageKey} />
             {state.correlationId ? (
               // The reference an operator can quote. Without it a support call
               // starts with "something went wrong at some point today".

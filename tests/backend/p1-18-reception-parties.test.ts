@@ -730,6 +730,24 @@ describe('rec.reception-party-role: assignment', () => {
     expect(await roleCount(visit, PARTNER_DRIVER, 'payer')).toBe(1);
   });
 
+  /**
+   * The vocabulary refusal, and the layer that issues it.
+   *
+   * `rec.reception_party_roles` carries three CHECKs that all arrive as SQLSTATE
+   * 23514, indistinguishable from one another. The service's handler for that
+   * state used to publish the path `body.relationshipRole`, which named the one
+   * cause the request cannot have: the role vocabulary is already enforced ahead
+   * of the insert by the route's own enum, and the not-blank CHECK by the
+   * service's normalisation. So the sentence pointed a reader at a control that
+   * could not have caused the refusal. The handler now publishes `body` — the
+   * request, not a field — because that is what is actually known.
+   *
+   * This case pins the half that a caller can reach: an unrecognised role is
+   * answered BY THE ROUTE, on the role field, with the schema's own token. The
+   * assertion that it is NOT the general request-level violation is what would
+   * fail if the enum were ever dropped and the refusal fell through to the
+   * database handler, which is the change that made the old path wrong.
+   */
   it('refuses a relationship role outside the frozen seven-value vocabulary', async () => {
     authAs(SUBJ_RECEPTION);
     const visit = await seedVisit();
@@ -743,6 +761,8 @@ describe('rec.reception-party-role: assignment', () => {
     expect((body.violations ?? []).map((violation) => violation.path)).toContain(
       'body.relationshipRole'
     );
+    expect((body.violations ?? []).map((violation) => violation.path)).not.toContain('body');
+    expect(body.violations?.[0]?.rule).toBe('invalid_value');
     expect(await roleCount(visit, PARTNER_OWNER, 'chief_mechanic')).toBe(0);
   });
 });
@@ -808,9 +828,10 @@ describe('rec.reception-authorization: verification', () => {
     // is guessing must not learn which roles this partner holds, which roles would
     // have qualified, or that the partner is known to the visit at all — that is an
     // enumeration of another party's relationship to the vehicle. Pinning the exact
-    // field set is what makes this hold: a `detail` or `violations` field added
-    // later would carry the database's own "partner X holds no active authorizing
-    // role on visit Y" message straight to the caller, and this assertion fails.
+    // field set is what makes this hold: a `detail` field, or a `violations` entry
+    // beyond the one pinned below, would carry the database's own "partner X holds
+    // no active authorizing role on visit Y" message straight to the caller, and
+    // these assertions fail.
     const raw = await refused.text();
     for (const role of RECEPTION_PARTY_ROLES) {
       expect(raw).not.toContain(role);
@@ -818,8 +839,26 @@ describe('rec.reception-authorization: verification', () => {
     expect(raw).not.toContain(PARTNER_STRANGER);
     expect(raw).not.toContain(visit);
     const body = JSON.parse(raw) as Record<string, unknown>;
-    expect(Object.keys(body).sort()).toEqual(['code', 'correlationId', 'status', 'title', 'type']);
+    expect(Object.keys(body).sort()).toEqual([
+      'code',
+      'correlationId',
+      'status',
+      'title',
+      'type',
+      'violations',
+    ]);
     expect(body['code']).toBe('ERR-TRN-001');
+
+    // Owner directive, user-facing errors. The interface renders no server prose,
+    // so without a token this refusal reaches the operator as the generic "the
+    // state does not allow this". The token names the PRECONDITION only, and the
+    // role-specific check publishes the SAME one, so it does not tell a guessing
+    // caller which of the two rules refused. Pinned as the whole array: an extra
+    // entry, a second token, or a `path` naming the party would each be the
+    // enumeration channel the uniform wording was chosen to close.
+    expect(body['violations']).toEqual([
+      { path: 'path.receptionId', rule: 'reception_party_not_authorised' },
+    ]);
 
     expect(await authorizationCount(visit)).toBe(0);
   });

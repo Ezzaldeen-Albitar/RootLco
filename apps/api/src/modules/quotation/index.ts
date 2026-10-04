@@ -6,8 +6,8 @@
  * ## What this module owns
  *
  * The whole `quo` schema: `quotations`, `quotation_revisions`, `quotation_items`,
- * `approval_decisions`, `approval_evidence`, and the trigger-written
- * `quotation_status_history`. No other module reads or writes those tables.
+ * `approval_decisions`, `approval_evidence`, `discount_approvals`, and the
+ * trigger-written `quotation_status_history`. No other module reads or writes those tables.
  *
  * ## What it consumes, and through whose surface
  *
@@ -15,7 +15,8 @@
  * | ---- | -------- |
  * | Work-order identity, scope and terminality | `@/modules/work-order` |
  * | Service availability on a date | `@/modules/service-catalog` |
- * | Price, tax rate, discount authorization | `@/modules/pricing` |
+ * | Price, tax rate, discount assessment and approval authority | `@/modules/pricing` |
+ * | Display names of the people on a discount approval | `@/modules/iam` |
  * | Quotation number, evidence attachment | `@/modules/shared-services` |
  *
  * Nothing here reads another module's tables. In particular the money types come
@@ -36,8 +37,29 @@ import { QuotationService } from './application/quotation-service';
 import { QuotationDecisionService } from './application/quotation-decision-service';
 
 export type {
+  DecideDiscountInput,
+  DiscountApprovalDecision,
+  DiscountApprovalListQuery,
+  DiscountDecisionBlock,
+  DiscountApprovalPerson,
+  DiscountApprovalState,
+  DiscountApprovalThresholdView,
+  DiscountApprovalView,
+  ListableDiscountApprovalState,
+} from './application/discount-approval-service';
+export {
+  DISCOUNT_APPROVAL_DECISIONS,
+  DISCOUNT_APPROVAL_STATES,
+  DISCOUNT_DECISION_BLOCKS,
+  LISTABLE_DISCOUNT_APPROVAL_STATES,
+  MAX_DISCOUNT_DECISION_REASON,
+} from './application/discount-approval-service';
+import { DiscountApprovalService } from './application/discount-approval-service';
+
+export type {
   DecisionRow,
   DecisionTally,
+  DiscountApprovalRow,
   EvidenceRow,
   ItemRow,
   NewItemInput,
@@ -100,6 +122,7 @@ export const quotationModule = composeModule({
     return {
       quotations: new QuotationService(repository),
       decisions: new QuotationDecisionService(repository),
+      discountApprovals: new DiscountApprovalService(repository),
     };
   },
 });

@@ -1,6 +1,7 @@
 'use client';
 
 import { useActionState, useCallback, useState, useTransition } from 'react';
+import Link from 'next/link';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
 import {
   withFilter,
@@ -13,6 +14,7 @@ import { Dialog, ReasonConfirmDialog } from '@/components/overlays/Overlays';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
+import { roleDisplayName } from '../../access/role-name';
 import { formatDate } from '@/lib/format';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
@@ -27,6 +29,7 @@ import {
   inviteUserAction,
   revokeUserSessionsAction,
 } from '../actions';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
  * The Users screen.
@@ -223,6 +226,7 @@ export function UsersScreen({
         rowActions={(row) => (
           <RowActions
             row={row}
+            locale={locale}
             messages={messages}
             canManage={canManage}
             canRevokeSessions={canRevokeSessions}
@@ -269,7 +273,7 @@ export function UsersScreen({
           reasonLabel={t('admin.reason')}
           error={
             actionState.status !== 'idle' && actionState.status !== 'success'
-              ? t(actionState.messageKey ?? 'admin.actionFailed')
+              ? t(dialogErrorKey(actionState))
               : undefined
           }
           onCancel={() => setPending(null)}
@@ -286,6 +290,31 @@ export function UsersScreen({
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The one sentence the confirmation can show, chosen so the specific one wins.
+ *
+ * The dialog carries a single error slot and exactly one control — the written
+ * reason — so there is nowhere else for a per-control sentence to go. Two of the
+ * three refusals this dialog can meet name a control rather than the request:
+ * the reason itself (empty, over five hundred characters, or carrying characters
+ * that cannot be stored) and the chosen state (already held, or not reachable
+ * from the one the account is in). Those arrive as field errors, which nothing
+ * on this dialog rendered, so the operator was shown the general "that change
+ * was not saved" and told nothing they could act on.
+ *
+ * `reason` is preferred over `status` because it is the control they can edit
+ * here; `messageKey` remains the answer for a refusal about the whole request,
+ * which is how an account that has been switched off still explains itself.
+ */
+function dialogErrorKey(state: ActionState): string {
+  return (
+    state.fieldErrors?.reason ??
+    state.fieldErrors?.status ??
+    state.messageKey ??
+    'admin.actionFailed'
   );
 }
 
@@ -348,12 +377,14 @@ function StatusPill({
  */
 function RowActions({
   row,
+  locale,
   messages,
   canManage,
   canRevokeSessions,
   onChoose,
 }: {
   readonly row: UserRow;
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly canManage: boolean;
   readonly canRevokeSessions: boolean;
@@ -368,10 +399,21 @@ function RowActions({
   // Revoking sessions needs BOTH permissions the operation declares.
   if (canManage && canRevokeSessions && row.status !== 'archived') available.push('revoke');
 
-  if (available.length === 0) return null;
-
   return (
     <div className="flex flex-wrap justify-end gap-1">
+      {/*
+        Roles and where they apply live on the user's own page. Offered to every
+        reader of this list: the page reads with `iam.user.read`, the code this
+        list already required, and shows its management controls only to a
+        session holding `iam.grant.manage`.
+      */}
+      <Link
+        href={`/${locale}/administration/users/${encodeURIComponent(row.id)}`}
+        aria-label={`${translate(messages, 'users.action.access')}: ${row.displayName}`}
+        className="rounded-md border border-border bg-surface px-2 py-1 text-caption text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-subtle hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+      >
+        {translate(messages, 'users.action.access')}
+      </Link>
       {available.map((kind) => (
         <button
           key={kind}
@@ -423,8 +465,17 @@ function InviteDialog({
   const [roleIds, setRoleIds] = useState<readonly string[]>([]);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const retained = (name: string) => draft[name] ?? '';
-  const retain = (name: string) => (event: { target: { value: string } }) =>
+  // Question f: the cursor goes to the refused field, and its complaint goes
+  // once the operator edits it (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const retain = (name: string) => (event: { target: { value: string } }) => {
+    refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: event.target.value }));
+  };
   const t = (key: string) => translate(messages, key as keyof Messages);
 
   return (
@@ -435,7 +486,7 @@ function InviteDialog({
       title={t('users.invite.title')}
       description={t('users.invite.description')}
     >
-      <form action={formAction} className="flex flex-col gap-4" noValidate>
+      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
 
         {/*
@@ -452,7 +503,7 @@ function InviteDialog({
           spellCheck={false}
           defaultValue={retained('email')}
           onChange={retain('email')}
-          error={state.fieldErrors?.email ? t(state.fieldErrors.email) : undefined}
+          error={refusalErrorKey('email') ? t(refusalErrorKey('email') as string) : undefined}
         />
         <TextField
           key={`displayName-${state.attempt ?? 0}`}
@@ -462,7 +513,9 @@ function InviteDialog({
           autoComplete="off"
           defaultValue={retained('displayName')}
           onChange={retain('displayName')}
-          error={state.fieldErrors?.displayName ? t(state.fieldErrors.displayName) : undefined}
+          error={
+            refusalErrorKey('displayName') ? t(refusalErrorKey('displayName') as string) : undefined
+          }
         />
         {/*
           `key` + a default + `onChange`, the shape this repository has now had
@@ -496,7 +549,10 @@ function InviteDialog({
             onChange={(event) =>
               setRoleIds(Array.from(event.target.selectedOptions, (option) => option.value))
             }
-            options={roles.map((role) => ({ value: role.id, label: role.name }))}
+            options={roles.map((role) => ({
+              value: role.id,
+              label: roleDisplayName(messages, role),
+            }))}
           />
         ) : null}
 

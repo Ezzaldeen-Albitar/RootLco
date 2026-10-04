@@ -55,7 +55,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ receptionId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   const body = await request
     .clone()
     .json()
@@ -64,6 +64,7 @@ export async function POST(
     RECEPTION_APPROVE_OPERATION,
     request,
     async ({ db, expectedVersion, authorizeScope }) => {
+      const params = parseOrFail(Params, raw, 'path');
       parseOrFail(Body, body, 'body');
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
@@ -81,6 +82,6 @@ export async function POST(
       // is what the conversion that follows must present.
       return { status: 200, body: approved, recordVersion: approved.recordVersion };
     },
-    { params, body }
+    { params: raw, body }
   );
 }

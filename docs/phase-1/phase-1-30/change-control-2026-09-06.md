@@ -80,3 +80,12 @@ cite one place rather than reconstruct the sequence from pull requests.
   of the register: the reconciliation held thirty-two canonical tasks plus the two execution
   brackets. The two DevOps tasks are now `DO-001` and `DO-002` in `closure-record.md` §2, with
   evidence in `w8-security-and-qa-evidence.md` §12 and §13.
+
+## 5. Amendment A2, 2026-09-20 — CC-12 stands, with its consequence now measured
+
+- 2026-09-20, against CC-12 (still open, nothing above edited): the QA campaign of the Owner
+  directive of 2026-09-17 measured the `inv.cost.view` half of this row on the shipped routes as
+  DEF-T-03 — nobody in a platform-provisioned organisation can record a unit cost, because an
+  unheld code cannot be delegated to anyone — and the exclusion was left in place because
+  reversing the deliberate decision this row records is the Owner's call; the disposition is
+  unchanged and an Owner decision is owed.

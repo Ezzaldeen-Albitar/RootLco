@@ -1,14 +1,16 @@
 'use client';
 
-import { useMemo, useState, useTransition } from 'react';
-import { CursorPager } from '@/components/data-table/CursorPager';
+import { useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
 import { readCompleteness } from '@/components/data-table/read-completeness';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { formatDateTime } from '@/lib/format';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { recordConditionEvidence } from '../../api';
 import {
   FINDING_CATEGORIES,
@@ -30,13 +32,14 @@ import {
   CoverageNotice,
   EvidenceReadBack,
   EvidenceSection,
-  PRIMARY_BUTTON,
   SessionCaptureList,
   StepOutcome,
+  SubmitButton,
   WriteWithdrawn,
   personIdsOf,
   useEvidenceTable,
   usePersonNames,
+  useStepForm,
 } from './EvidencePanels';
 
 /**
@@ -107,8 +110,6 @@ import {
  * bounded-string treatment, because for those the list really is unknown.
  */
 
-const IDLE: ActionState = { status: 'idle' };
-
 export function InspectionStep({
   locale,
   messages,
@@ -140,7 +141,7 @@ export function InspectionStep({
    * that used to follow said "this visit has none" — about a visit whose open
    * inspection was simply on the next page. `inspectionsRead` carries the read's
    * own completeness alongside, so the notice states what was established rather
-   * than what happened to be in hand, and `CursorPager` reaches the rest.
+   * than what happened to be in hand, and the grid's pager reaches the rest.
    */
   const openInspections = useMemo(() => {
     const rows = inspections.response?.rows ?? [];
@@ -215,11 +216,6 @@ export function InspectionStep({
           kind="inspection"
           table={inspections}
           people={inspectorNames}
-        />
-        <CursorPager
-          messages={messages}
-          table={inspections}
-          label={translate(messages, 'receptions.inspection.pagerLabel')}
         />
 
         {!canWrite ? (
@@ -336,14 +332,16 @@ export function InspectionStep({
                 retry would re-read the same first page.
               */}
               {inspectionsRead === 'unreadable' ? (
-                <button
+                <Button
                   type="button"
+                  variant="text"
+                  size="small"
                   data-testid="finding-inspections-retry"
                   onClick={() => inspections.refresh()}
-                  className="ms-2 underline underline-offset-2"
+                  className="ms-2"
                 >
                   {translate(messages, 'state.retry')}
-                </button>
+                </Button>
               ) : null}
             </p>
           )
@@ -446,6 +444,11 @@ export function InspectionStep({
  * Forms
  * ---------------------------------------------------------------------- */
 
+/**
+ * Opening an inspection asks for nothing: the inspector is the signed-in
+ * account, named on the form. It still goes through `useStepForm`, so a write
+ * whose answer never arrives is said as that and the button is usable again.
+ */
 function OpenInspectionForm({
   messages,
   inspectorName,
@@ -455,31 +458,31 @@ function OpenInspectionForm({
   readonly inspectorName: string;
   readonly onSubmit: (attempt: number) => Promise<ActionState>;
 }) {
-  const [state, setState] = useState<ActionState>(IDLE);
-  const [pending, startTransition] = useTransition();
+  const form = useStepForm<Record<string, never>>({
+    messages,
+    empty: {},
+    check: () => ({}),
+    send: (_draft, attempt) => onSubmit(attempt),
+  });
+  const formRef = useFocusFirstInvalid(form.state);
 
   return (
     <form
+      ref={formRef}
       aria-label={translate(messages, 'receptions.inspection.formLabel')}
-      onSubmit={(event) => {
-        event.preventDefault();
-        startTransition(async () => {
-          setState(await onSubmit((state.attempt ?? 0) + 1));
-        });
-      }}
+      onSubmit={form.onSubmit}
+      noValidate
       className="flex flex-col gap-3 border-t border-border pt-3"
     >
       <p className="text-body text-text-primary">
         {translate(messages, 'receptions.inspection.inspectorIs')} {inspectorName}
       </p>
-      <StepOutcome messages={messages} state={state} />
-      <div>
-        <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-          {pending
-            ? translate(messages, 'form.pending')
-            : translate(messages, 'receptions.inspection.open')}
-        </button>
-      </div>
+      <StepOutcome messages={messages} state={form.state} />
+      <SubmitButton
+        messages={messages}
+        pending={form.pending}
+        labelKey="receptions.inspection.open"
+      />
     </form>
   );
 }
@@ -492,6 +495,14 @@ interface FindingDraft {
   readonly note: string;
 }
 
+const EMPTY_FINDING: FindingDraft = {
+  inspectionId: '',
+  findingCategory: '',
+  vehicleZone: '',
+  severity: '',
+  note: '',
+};
+
 function FindingForm({
   messages,
   inspections,
@@ -501,112 +512,95 @@ function FindingForm({
   readonly inspections: readonly { value: string; label: string }[];
   readonly onSubmit: (draft: FindingDraft, attempt: number) => Promise<ActionState>;
 }) {
-  const [draft, setDraft] = useState<FindingDraft>({
-    inspectionId: '',
-    findingCategory: '',
-    vehicleZone: '',
-    severity: '',
-    note: '',
-  });
-  const [state, setState] = useState<ActionState>(IDLE);
-  const [pending, startTransition] = useTransition();
-
-  const set = (patch: Partial<FindingDraft>) => setDraft((current) => ({ ...current, ...patch }));
-
-  const submit = () => {
-    const attempt = (state.attempt ?? 0) + 1;
-    const missing =
-      draft.inspectionId === ''
-        ? 'receptions.finding.error.inspectionRequired'
-        : draft.findingCategory === ''
-          ? 'receptions.finding.error.categoryRequired'
-          : draft.vehicleZone.trim() === ''
-            ? 'receptions.finding.error.zoneRequired'
-            : null;
-    if (missing !== null) {
-      setState({ status: 'invalid', messageKey: missing, attempt });
-      return;
-    }
-    startTransition(async () => {
-      const result = await onSubmit(draft, attempt);
-      setState(result);
-      if (result.status === 'success') {
-        setDraft({
-          inspectionId: draft.inspectionId,
-          findingCategory: '',
-          vehicleZone: '',
-          severity: '',
-          note: '',
-        });
+  const form = useStepForm<FindingDraft>({
+    messages,
+    empty: EMPTY_FINDING,
+    errorNames: { note: 'findingNote' },
+    check: (draft) => {
+      const found: Record<string, string> = {};
+      if (draft.inspectionId === '') {
+        found['inspectionId'] = 'receptions.finding.error.inspectionRequired';
       }
-    });
-  };
+      if (draft.findingCategory === '') {
+        found['findingCategory'] = 'receptions.finding.error.categoryRequired';
+      }
+      if (draft.vehicleZone.trim() === '') {
+        found['vehicleZone'] = 'receptions.finding.error.zoneRequired';
+      }
+      return found;
+    },
+    send: onSubmit,
+    // The next finding is usually filed under the same inspection.
+    afterStored: (draft) => ({ ...EMPTY_FINDING, inspectionId: draft.inspectionId }),
+  });
+  const { draft } = form;
+  const formRef = useFocusFirstInvalid(form.state);
 
   return (
     <form
+      ref={formRef}
       aria-label={translate(messages, 'receptions.finding.formLabel')}
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
+      onSubmit={form.onSubmit}
+      noValidate
       className="flex flex-col gap-3 border-t border-border pt-3"
     >
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.finding.inspection')}
         description={translate(messages, 'receptions.finding.inspectionHint')}
         required
         value={draft.inspectionId}
-        onChange={(event) => set({ inspectionId: event.target.value })}
+        onChange={(value) => form.update('inspectionId', value)}
         options={inspections}
         placeholder={translate(messages, 'form.select.placeholder')}
+        error={form.fieldError('inspectionId')}
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.finding.category')}
         required
         value={draft.findingCategory}
-        onChange={(event) => set({ findingCategory: event.target.value })}
+        onChange={(value) => form.update('findingCategory', value)}
         options={FINDING_CATEGORIES.map((value) => ({
           value,
           label: translateDynamic(messages, `receptions.findingCategory.${value}`),
         }))}
         placeholder={translate(messages, 'form.select.placeholder')}
+        error={form.fieldError('findingCategory')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'receptions.finding.zone')}
         description={translate(messages, 'receptions.finding.zoneHint')}
         required
         value={draft.vehicleZone}
         maxLength={MAX_ZONE}
-        onChange={(event) => set({ vehicleZone: event.target.value })}
+        onChange={(value) => form.update('vehicleZone', value)}
+        error={form.fieldError('vehicleZone')}
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.finding.severity')}
-        optionalHint={translate(messages, 'form.optional')}
         value={draft.severity}
-        onChange={(event) => set({ severity: event.target.value })}
+        onChange={(value) => form.update('severity', value)}
         options={FINDING_SEVERITIES.map((value) => ({
           value,
           label: translateDynamic(messages, `receptions.findingSeverity.${value}`),
         }))}
         placeholder={translate(messages, 'form.select.placeholder')}
+        error={form.fieldError('severity')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'receptions.finding.note')}
-        optionalHint={translate(messages, 'form.optional')}
         value={draft.note}
         maxLength={MAX_NOTE}
-        onChange={(event) => set({ note: event.target.value })}
+        onChange={(value) => form.update('note', value)}
+        error={form.fieldError('findingNote')}
       />
 
-      <StepOutcome messages={messages} state={state} />
+      <StepOutcome messages={messages} state={form.state} />
 
-      <div>
-        <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-          {pending
-            ? translate(messages, 'form.pending')
-            : translate(messages, 'receptions.finding.record')}
-        </button>
-      </div>
+      <SubmitButton
+        messages={messages}
+        pending={form.pending}
+        labelKey="receptions.finding.record"
+      />
     </form>
   );
 }
@@ -618,6 +612,8 @@ interface LeakDraft {
   readonly note: string;
 }
 
+const EMPTY_LEAK: LeakDraft = { leakType: '', vehicleZone: '', severity: '', note: '' };
+
 function LeakForm({
   messages,
   onSubmit,
@@ -625,48 +621,31 @@ function LeakForm({
   readonly messages: Messages;
   readonly onSubmit: (draft: LeakDraft, attempt: number) => Promise<ActionState>;
 }) {
-  const [draft, setDraft] = useState<LeakDraft>({
-    leakType: '',
-    vehicleZone: '',
-    severity: '',
-    note: '',
-  });
-  const [state, setState] = useState<ActionState>(IDLE);
-  const [pending, startTransition] = useTransition();
-
-  const set = (patch: Partial<LeakDraft>) => setDraft((current) => ({ ...current, ...patch }));
-
-  const submit = () => {
-    const attempt = (state.attempt ?? 0) + 1;
-    const missing =
-      draft.leakType === ''
-        ? 'receptions.leak.error.typeRequired'
-        : draft.vehicleZone.trim() === ''
-          ? 'receptions.finding.error.zoneRequired'
-          : null;
-    if (missing !== null) {
-      setState({ status: 'invalid', messageKey: missing, attempt });
-      return;
-    }
-    startTransition(async () => {
-      const result = await onSubmit(draft, attempt);
-      setState(result);
-      if (result.status === 'success') {
-        setDraft({ leakType: '', vehicleZone: '', severity: '', note: '' });
+  const form = useStepForm<LeakDraft>({
+    messages,
+    empty: EMPTY_LEAK,
+    check: (draft) => {
+      const found: Record<string, string> = {};
+      if (draft.leakType === '') found['leakType'] = 'receptions.leak.error.typeRequired';
+      if (draft.vehicleZone.trim() === '') {
+        found['vehicleZone'] = 'receptions.finding.error.zoneRequired';
       }
-    });
-  };
+      return found;
+    },
+    send: onSubmit,
+  });
+  const { draft } = form;
+  const formRef = useFocusFirstInvalid(form.state);
 
   return (
     <form
+      ref={formRef}
       aria-label={translate(messages, 'receptions.leak.formLabel')}
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
+      onSubmit={form.onSubmit}
+      noValidate
       className="flex flex-col gap-3 border-t border-border pt-3"
     >
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.leak.type')}
         // The seven types `ck_leak_observations_type` admits, and nothing else.
         // This was a required free-text box, which offered the operator only
@@ -679,44 +658,40 @@ function LeakForm({
           label: translateDynamic(messages, `receptions.leakType.${value}`),
         }))}
         placeholder={translate(messages, 'form.select.placeholder')}
-        onChange={(event) => set({ leakType: event.target.value })}
+        onChange={(value) => form.update('leakType', value)}
+        error={form.fieldError('leakType')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'receptions.finding.zone')}
         description={translate(messages, 'receptions.finding.zoneHint')}
         required
         value={draft.vehicleZone}
         maxLength={MAX_ZONE}
-        onChange={(event) => set({ vehicleZone: event.target.value })}
+        onChange={(value) => form.update('vehicleZone', value)}
+        error={form.fieldError('vehicleZone')}
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.finding.severity')}
-        optionalHint={translate(messages, 'form.optional')}
         value={draft.severity}
-        onChange={(event) => set({ severity: event.target.value })}
+        onChange={(value) => form.update('severity', value)}
         options={FINDING_SEVERITIES.map((value) => ({
           value,
           label: translateDynamic(messages, `receptions.findingSeverity.${value}`),
         }))}
         placeholder={translate(messages, 'form.select.placeholder')}
+        error={form.fieldError('severity')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'receptions.finding.note')}
-        optionalHint={translate(messages, 'form.optional')}
         value={draft.note}
         maxLength={MAX_NOTE}
-        onChange={(event) => set({ note: event.target.value })}
+        onChange={(value) => form.update('note', value)}
+        error={form.fieldError('note')}
       />
 
-      <StepOutcome messages={messages} state={state} />
+      <StepOutcome messages={messages} state={form.state} />
 
-      <div>
-        <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-          {pending
-            ? translate(messages, 'form.pending')
-            : translate(messages, 'receptions.leak.record')}
-        </button>
-      </div>
+      <SubmitButton messages={messages} pending={form.pending} labelKey="receptions.leak.record" />
     </form>
   );
 }

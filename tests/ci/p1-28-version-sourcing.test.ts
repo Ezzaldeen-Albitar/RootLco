@@ -13,6 +13,7 @@ import {
   callsTo,
   classifyVersionExpression,
   declarations,
+  editBaselineHookProblems,
   guardedAdaptersIn,
   guardedOperations,
   parameterNames,
@@ -131,6 +132,8 @@ interface Report {
     enclosing: string | null;
     ok: boolean;
     renews?: boolean;
+    /** `response`, `supplied`, or `baseline` when traced through the edit-baseline hook. */
+    kind?: string;
   }[];
   violations: string[];
 }
@@ -192,9 +195,16 @@ describe('the gate is green on the CURRENT tree', () => {
     // count that collapsed would pass as "nothing to check"; a withheld count
     // that grew would be this gate's subject shrinking without anybody
     // deciding to.
+    //
+    // Since the Owner decision of 2026-09-29 six of the fifteen are reached: the
+    // rename and the status change of the three APPOINTMENT catalogues, from the
+    // appointment setup screen. They moved from withheld to expected — and so
+    // came under every rule here — in the same change that gave them adapters.
+    // Nine stay withheld: the reception catalogue administration.
     expect(live.guarded).toHaveLength(22);
-    expect(live.withheld).toHaveLength(15);
-    expect(live.expected).toHaveLength(7);
+    expect(live.withheld).toHaveLength(9);
+    expect(live.expected).toHaveLength(13);
+    for (const entry of live.withheld) expect(entry.id).toMatch(/^rec\./);
     for (const operation of live.guarded) expect(operation.id).toMatch(/^(apt|rec)\./);
   });
 
@@ -220,9 +230,11 @@ describe('the gate is green on the CURRENT tree', () => {
     // whole of `apps/web/src` on purpose, and since P1-29 W3 and W4 that tree
     // also holds versioned adapters for `wo` and `tech` operations — real,
     // correct, and not this contract's subject. They are declared by name in
-    // `OUT_OF_SUBJECT_ADAPTERS` and still held to every rule below; the seven
-    // accounted for are the apt/rec adapters this contract is about.
-    expect(live.accountedFor).toHaveLength(7);
+    // `OUT_OF_SUBJECT_ADAPTERS` and still held to every rule below; the thirteen
+    // accounted for are the apt/rec adapters this contract is about — the seven
+    // operator commands and, since the Owner decision of 2026-09-29, the six
+    // appointment catalogue renames and status changes.
+    expect(live.accountedFor).toHaveLength(13);
     expect(live.adapters.length).toBeGreaterThanOrEqual(live.accountedFor.length);
     for (const adapter of live.adapters) {
       expect(adapter.required, `${adapter.name} declares an optional ifMatch`).toBe(true);
@@ -997,5 +1009,393 @@ describe('the helpers this gate is built on', () => {
     expect(renewsAfter('router.refresh();', 0, 17, new Set())).toBe(true);
     expect(renewsAfter('setState(result);', 0, 17, binds)).toBe(false);
     expect(RENEWAL_NAMES).toContain('refresh');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The subject, as the contract states it (P1-32)
+ * ------------------------------------------------------------------ */
+
+/**
+ * An adapter module whose sends name their operations with literal paths: one for
+ * the guarded `wo.synthetic-seal` the synthetic contract publishes outside apt/rec,
+ * and a second, correct-looking apt/rec adapter for `rec.synthetic-lock`.
+ */
+const LITERAL_ADAPTER = `
+'use server';
+export async function sealOtherThing(id: string, ifMatch: number, attempt = 1) {
+  return client.send('POST', \`/api/v1/other-things/\${id}/seal\`, undefined, { ifMatch });
+}
+`;
+
+const SEAL_SCREEN = `
+'use client';
+import { sealOtherThing } from '../seal-actions';
+
+export function OtherThingSealPanel({ id, detail, settle }) {
+  const submit = () => {
+    startTransition(async () => {
+      const result = await sealOtherThing(id, detail.recordVersion, 1);
+      await settle(result);
+    });
+  };
+  return submit;
+}
+`;
+
+/** The synthetic tree plus one more adapter module and the screen that calls it. */
+function withExtra(adapter: string, screen: string = SEAL_SCREEN) {
+  return [
+    ...sources,
+    [`${ADAPTER_ROOT}/seal-actions.ts`, adapter],
+    [`${ADAPTER_ROOT}/components/OtherThingSealPanel.tsx`, screen],
+  ] as const;
+}
+
+describe('an adapter the contract places outside apt/rec is excluded from the count, and only it', () => {
+  it('on the live tree, excludes exactly the nine billing, inventory, payment and pricing adapters by their guarded operations', () => {
+    const live = run() as Report & {
+      outsideByContract: { name: string; operations: string[] }[];
+    };
+    // The operation ids are asserted by SHAPE rather than spelled out: this file's
+    // header records that a real id written here is credited as coverage for an
+    // operation this suite does not exercise, and the P1-24 register does exactly
+    // that. The adapter names are the claim; the namespace is what places them
+    // outside an apt/rec subject.
+    // The third arrived with the Owner directive's reorder-level retirement, which
+    // is an inv operation reached from the setup screen. The fourth is the company
+    // discount threshold (P1-32-PRE-OD-DISC-01), a pricing operation reached from
+    // the administration screen. The fifth and sixth are the credit-note
+    // withdrawal and rejection (P1-32-PRE-OD-FD2A, ADR-023 D3), sal operations
+    // reached from the credit-notes screen with the note's own version. The
+    // seventh, eighth and ninth are the receipt-reversal request, rejection and
+    // withdrawal (P1-32-PRE-OD-FD4, ADR-023 D4), sal operations reached from the
+    // payments screen with the receipt's and the reversal's own versions.
+    expect(live.outsideByContract.map((one) => one.name)).toEqual([
+      'withdrawCreditNote',
+      'rejectCreditNote',
+      'postGoodsReceipt',
+      'recordStockCountLine',
+      'retireReorderLevel',
+      'requestReceiptReversal',
+      'rejectReceiptReversal',
+      'withdrawReceiptReversal',
+      'setDiscountThreshold',
+    ]);
+    for (const entry of live.outsideByContract) {
+      expect(entry.operations).toHaveLength(1);
+      expect(entry.operations[0]).toMatch(/^(inv|svc|sal)[.]/);
+    }
+    expect(live.accountedFor).not.toContain('withdrawCreditNote');
+    expect(live.accountedFor).not.toContain('rejectCreditNote');
+    expect(live.accountedFor).not.toContain('postGoodsReceipt');
+    expect(live.accountedFor).not.toContain('recordStockCountLine');
+    expect(live.accountedFor).not.toContain('retireReorderLevel');
+    expect(live.accountedFor).not.toContain('setDiscountThreshold');
+    expect(live.accountedFor).not.toContain('requestReceiptReversal');
+    expect(live.accountedFor).not.toContain('rejectReceiptReversal');
+    expect(live.accountedFor).not.toContain('withdrawReceiptReversal');
+  });
+
+  it('does not count an adapter whose every versioned send reaches a guarded wo operation', () => {
+    const report = judge({ sources: withExtra(LITERAL_ADAPTER) }) as Report & {
+      outsideByContract: { name: string; operations: string[] }[];
+    };
+    expect(report.violations).toEqual([]);
+    expect(report.outsideByContract).toEqual([
+      { name: 'sealOtherThing', operations: ['wo.synthetic-seal'] },
+    ]);
+    expect(report.accountedFor.sort()).toEqual(['lockSyntheticVisit', 'unlockSyntheticVisit']);
+  });
+
+  it('still holds that adapter to version sourcing: a computed version at its call site fails', () => {
+    const report = judge({
+      sources: withExtra(
+        LITERAL_ADAPTER,
+        SEAL_SCREEN.replace('id, detail.recordVersion, 1', 'id, detail.recordVersion + 1, 1')
+      ),
+    });
+    expect(report.violations.join('\n')).toContain('sealOtherThing');
+    expect(report.violations.join('\n')).toContain('computes a version');
+  });
+
+  it('still refuses an optional ifMatch on that adapter', () => {
+    const report = judge({
+      sources: withExtra(LITERAL_ADAPTER.replace('ifMatch: number', 'ifMatch?: number')),
+    });
+    expect(report.violations.join('\n')).toContain('sealOtherThing declares ifMatch as optional');
+  });
+
+  it('keeps a phase-subject adapter inside: a literal apt/rec send is counted and a computed version fails', () => {
+    const inSubject = `
+'use server';
+export async function relockSyntheticVisit(visitId: string, ifMatch: number, attempt = 1) {
+  return client.send('POST', \`/api/v1/synthetic-visits/\${visitId}/lock\`, undefined, { ifMatch });
+}
+`;
+    const screen = `
+'use client';
+import { relockSyntheticVisit } from '../seal-actions';
+
+export function SyntheticRelockPanel({ visitId, recordVersion, settle }) {
+  const submit = () => {
+    startTransition(async () => {
+      const result = await relockSyntheticVisit(visitId, recordVersion + 1, 1);
+      await settle(result);
+    });
+  };
+  return submit;
+}
+`;
+    const report = judge({ sources: withExtra(inSubject, screen) }) as Report & {
+      outsideByContract: { name: string }[];
+    };
+    expect(report.outsideByContract).toEqual([]);
+    expect(report.accountedFor).toContain('relockSyntheticVisit');
+    const text = report.violations.join('\n');
+    expect(text).toContain('relockSyntheticVisit is sent an If-Match this gate refuses');
+    expect(text).toContain('computes a version');
+    expect(text).toContain('tree exports 3 adapters');
+  });
+
+  it('keeps inside an adapter whose send it cannot attribute, and fails the count', () => {
+    const throughHelper = LITERAL_ADAPTER.replace(
+      '`/api/v1/other-things/${id}/seal`',
+      "thingPath(id, '/seal')"
+    );
+    const report = judge({ sources: withExtra(throughHelper) });
+    expect(report.accountedFor).toContain('sealOtherThing');
+    expect(report.violations.join('\n')).toContain('tree exports 3 adapters');
+  });
+
+  it('keeps inside an adapter that sends a version to an operation the contract does not guard', () => {
+    const report = judge({
+      document: {
+        paths: {
+          ...document.paths,
+          '/api/v1/other-things/{id}/seal': {
+            post: { operationId: 'wo.synthetic-seal', parameters: [] },
+          },
+        },
+      },
+      sources: withExtra(LITERAL_ADAPTER),
+    });
+    expect(report.accountedFor).toContain('sealOtherThing');
+    expect(report.violations.join('\n')).toContain('tree exports 3 adapters');
+  });
+
+  it('keeps inside an adapter that sends to a wo operation AND an apt/rec one', () => {
+    const mixed = LITERAL_ADAPTER.replace(
+      "  return client.send('POST', `/api/v1/other-things/${id}/seal`, undefined, { ifMatch });",
+      "  await client.send('POST', `/api/v1/other-things/${id}/seal`, undefined, { ifMatch });\n" +
+        "  return client.send('POST', `/api/v1/synthetic-visits/${id}/unlock`, undefined, { ifMatch });"
+    );
+    const report = judge({ sources: withExtra(mixed) });
+    expect(report.accountedFor).toContain('sealOtherThing');
+    expect(report.violations.join('\n')).toContain('tree exports 3 adapters');
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The edit-baseline hook: `edit.version` traced to what fed it
+ * ------------------------------------------------------------------ */
+
+/**
+ * An edit form sends the version its BASELINE was stored at, held by
+ * `useEditBaseline`, so its call sites read `edit.version`. The gate follows
+ * that member to the hook's `storedVersion` and to every `rebase` version on
+ * the binding, and reads the hook's own source. Every case below mutates one of
+ * those and asserts the gate goes red; the name `version` alone admits nothing.
+ */
+const HOOK_FILE = 'apps/web/src/lib/forms/use-edit-baseline.ts';
+const HOOK_SOURCE = readFileSync(join(REPOSITORY_ROOT, ...HOOK_FILE.split('/')), 'utf8');
+
+const BASELINE_SCREEN = `
+'use client';
+import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
+import { lockSyntheticVisit, unlockSyntheticVisit } from '../lock-actions';
+
+export function SyntheticLockPanel({ visitId, detail, settle }) {
+  const edit = useEditBaseline({ stored: formOf(detail), storedVersion: detail.recordVersion });
+  const { values, setValues } = edit;
+  const submit = async () => {
+    const result = await lockSyntheticVisit(visitId, edit.version, 1);
+    if (result.status === 'success') edit.rebase(values, result.recordVersion);
+    await settle(result);
+  };
+  return submit;
+}
+
+export function SyntheticUnlockPanel({ visitId, recordVersion, refresh }) {
+  const edit = useEditBaseline({ stored: EMPTY, storedVersion: recordVersion });
+  const submit = async () => {
+    const result = await unlockSyntheticVisit(visitId, edit.version, 1);
+    edit.rebase(EMPTY);
+    await refresh();
+  };
+  return submit;
+}
+`;
+
+function withBaseline(screen: string = BASELINE_SCREEN, hook: string | null = HOOK_SOURCE) {
+  return [...withScreen(screen), ...(hook === null ? [] : [[HOOK_FILE, hook] as const])] as const;
+}
+
+function baselineReport(screen: string, hook: string | null = HOOK_SOURCE) {
+  return judge({ sources: withBaseline(screen, hook) });
+}
+
+function violationsOf(screen: string, hook: string | null = HOOK_SOURCE): string {
+  return baselineReport(screen, hook).violations.join('\n');
+}
+
+describe('a version held by the edit-baseline hook is traced, not trusted by name', () => {
+  it('on the live tree, every edit-form site is traced through the hook, and the hook vouches', () => {
+    const live = run() as Report;
+    const traced = live.sites.filter((site) => site.kind === 'baseline');
+    expect(traced.map((site) => site.adapter).sort()).toEqual([
+      'createPriceListVersion',
+      // The quotation's new-revision form and its issue form, since the sales and
+      // finance slice: each holds the QUOTATION's version its work was based on
+      // through the hook, fed the quotation read's version, so a refresh that
+      // lands while lines or an expiry are typed never moves the If-Match.
+      'createQuotationRevision',
+      'issueQuotation',
+      'publishPriceListVersion',
+      // The receipt panel's reversal (P1-32-PRE-OD-FD4, ADR-023 D4): the request
+      // holds the RECEIPT's version through the hook, fed the receipt read's
+      // version; the rejection and the withdrawal hold the REVERSAL's, fed the
+      // reversal the same read publishes.
+      'rejectReceiptReversal',
+      // The rename dialog of the appointment setup screen (Owner decision
+      // 2026-09-29): the stored name and its version held through the hook, fed
+      // the management list's version, once per catalogue.
+      'renameAppointmentType',
+      'renameCancellationReason',
+      'renameSourceChannel',
+      'requestReceiptReversal',
+      // The appointment reschedule form, since the appointments slice: its
+      // confirmed times are held through the hook, fed the detail's version.
+      'rescheduleAppointment',
+      'updateJob',
+      'updateService',
+      // The job's routing panel and the template settings, since the Material
+      // UI slice 4: both hold their stored values and version through the hook,
+      // fed the job's and the template's read version.
+      'updateTemplate',
+      'withdrawReceiptReversal',
+    ]);
+    expect(editBaselineHookProblems(HOOK_SOURCE)).toEqual([]);
+  });
+
+  it('accepts a hook fed a read version, re-based on a response or on nothing', () => {
+    const report = baselineReport(BASELINE_SCREEN);
+    expect(report.violations).toEqual([]);
+    expect(report.sites.map((site) => site.kind)).toEqual(['baseline', 'baseline']);
+  });
+
+  it('refuses a hook FED a computed version', () => {
+    const text = violationsOf(
+      BASELINE_SCREEN.replace(
+        'storedVersion: detail.recordVersion',
+        'storedVersion: detail.recordVersion + 1'
+      )
+    );
+    expect(text).toContain('lockSyntheticVisit is sent an If-Match this gate refuses');
+    expect(text).toContain('the storedVersion it is fed is refused');
+    expect(text).toContain('computes a version');
+  });
+
+  it('refuses a hook FED a cached version', () => {
+    const text = violationsOf(
+      BASELINE_SCREEN.replace(
+        '  const edit = useEditBaseline({ stored: formOf(detail), storedVersion: detail.recordVersion });',
+        '  const [held, setHeld] = useState(detail.recordVersion);\n' +
+          '  const edit = useEditBaseline({ stored: formOf(detail), storedVersion: held });'
+      )
+    );
+    expect(text).toContain('the storedVersion it is fed is refused');
+    expect(text).toContain('holds in its own state');
+  });
+
+  it('refuses a rebase that hands the hook a computed or cached version', () => {
+    const computed = violationsOf(
+      BASELINE_SCREEN.replace(
+        'edit.rebase(values, result.recordVersion)',
+        'edit.rebase(values, result.recordVersion + 1)'
+      )
+    );
+    expect(computed).toContain('re-bases on a version that is not a response');
+    const cached = violationsOf(
+      BASELINE_SCREEN.replace(
+        '  const { values, setValues } = edit;',
+        '  const { values, setValues } = edit;\n  const [kept, setKept] = useState(0);'
+      ).replace('edit.rebase(values, result.recordVersion)', 'edit.rebase(values, kept)')
+    );
+    expect(cached).toContain('re-bases on a version that is not a response');
+    expect(cached).toContain('holds in its own state');
+  });
+
+  it('refuses a rebase that escapes the reading: destructured, or the binding handed away', () => {
+    expect(
+      violationsOf(
+        BASELINE_SCREEN.replace(
+          'const { values, setValues } = edit;',
+          'const { values, rebase } = edit;'
+        )
+      )
+    ).toContain('takes rebase');
+    expect(
+      violationsOf(BASELINE_SCREEN.replace('await settle(result);', 'await settle(edit);'))
+    ).toContain('used as a bare value');
+  });
+
+  it('refuses a look-alike hook that is not imported, unaliased, from its module', () => {
+    const local = BASELINE_SCREEN.replace(
+      "import { useEditBaseline } from '@/lib/forms/use-edit-baseline';",
+      "import { useEditBaseline } from './my-own-baseline';"
+    );
+    expect(violationsOf(local)).toContain('does not import it, unaliased');
+    const aliased = BASELINE_SCREEN.replace(
+      "import { useEditBaseline } from '@/lib/forms/use-edit-baseline';",
+      "import { useEditBaseline as other } from '@/lib/forms/use-edit-baseline';\n" +
+        "import { useEditBaseline } from './my-own-baseline';"
+    );
+    expect(violationsOf(aliased)).toContain('does not import it, unaliased');
+  });
+
+  it('resolves the binding the call can SEE: a correct panel beside a defective one', () => {
+    const report = baselineReport(
+      BASELINE_SCREEN.replace(
+        'storedVersion: recordVersion }',
+        'storedVersion: recordVersion * 2 }'
+      )
+    );
+    const byAdapter = new Map(report.sites.map((site) => [site.adapter, site.ok]));
+    expect(byAdapter.get('lockSyntheticVisit')).toBe(true);
+    expect(byAdapter.get('unlockSyntheticVisit')).toBe(false);
+    expect(report.violations.join('\n')).toContain('computes a version');
+  });
+
+  it('refuses when the hook is missing from the sweep, or its own source invents a version', () => {
+    expect(violationsOf(BASELINE_SCREEN, null)).toContain('could not be read or parsed');
+    const inventing = HOOK_SOURCE.replace(
+      'current = { values: stored, baseline: stored, version: storedVersion, seen: storedVersion };',
+      'current = { values: stored, baseline: stored, version: storedVersion + 1, seen: storedVersion };'
+    );
+    expect(inventing).not.toBe(HOOK_SOURCE);
+    expect(violationsOf(BASELINE_SCREEN, inventing)).toContain(
+      'neither the storedVersion it was fed, a rebase answer, nor one it already held'
+    );
+  });
+
+  it('still refuses a member named version off anything that is not the hook', () => {
+    const text = violationsOf(
+      BASELINE_SCREEN.replace(
+        'lockSyntheticVisit(visitId, edit.version, 1)',
+        'lockSyntheticVisit(visitId, detail.version, 1)'
+      )
+    );
+    expect(text).toContain('"detail.version" is not a recordVersion the server stated');
   });
 });

@@ -35,8 +35,9 @@
  *
  * This repository has recorded a scanner reading prose as code seven times. The
  * gate therefore reads the `permissions` array of a PARSED `defineOperation`
- * call, and the `permission` property of a PARSED navigation entry, and nothing
- * else. `scripts/lib/typescript-source.mjs` supplies the fail-closed parse.
+ * call, and the `permission` property and `alsoRequires` list of a PARSED
+ * navigation entry, and nothing else. `scripts/lib/typescript-source.mjs`
+ * supplies the fail-closed parse.
  *
  * ## The two directions are not symmetric
  *
@@ -118,13 +119,20 @@ export const FLOORS = Object.freeze({
  * somewhere a route declaration cannot show".
  */
 export const DATABASE_ENFORCED = Object.freeze({
-  'inv.cost.view':
-    'checked twelve times across nine RLS policies on the three restricted cost tables',
+  // `inv.cost.view` left this list with the P1-32 preparatory inventory slice:
+  // `inv.item-cost-history-read` declares it, so it is no longer unreferenced by
+  // executable code and the annotation would describe a state that has ended.
   'iam.login.view_all':
     'one RLS policy — supabase/migrations/20260718098000_iam_rls_grants_hardening.sql:73',
   'rec.reception.receiving_employee.assign_any':
     'iam.has_permission_in_scope inside the rec.stamp_receiving_employee_identity() BEFORE ' +
     'INSERT trigger — supabase/migrations/20260815093000_rec_receiving_employee_identity.sql:184',
+  // ADR-023 D14: no operation declares it, because an ordinary allocation never needs
+  // it; sal.payment-allocate consults it (callerHoldsPermission) for a third-party
+  // allocation only, and the database checks it for every one.
+  'sal.payment.third_party':
+    'iam.has_permission_in_scope inside the sal.guard_allocation_payer() BEFORE INSERT ' +
+    'trigger — supabase/migrations/20261002100000_sal_third_party_allocations.sql:161',
 });
 
 /**
@@ -153,15 +161,11 @@ export const KNOWN_UNCATALOGUED = Object.freeze([
   // `sal.invoice.read` on the billing navigation entry was the first entry here;
   // P1-30 W6 re-gated the entry on `sal.invoice.manage` (the code every invoice
   // read declares) in the change that built the page, and the entry left.
-  {
-    file: 'apps/web/src/config/navigation.ts',
-    code: 'sal.delivery.read',
-    why:
-      'the same defect one entry below, and this one has an obvious intended target: the ' +
-      'catalogue carries sal.delivery.view, sal.delivery.complete and sal.delivery.manage. ' +
-      '`read` is not among them. Recorded rather than corrected here for the same reason.',
-    owner: 'the delivery Frontend phase (P1-30/P1-31), or a Frontend-profile correction before it',
-  },
+  //
+  // `sal.delivery.read` on the delivery navigation entry was the second and last;
+  // P1-31 P-8 re-pointed that gate at `sal.delivery.view` (the code every shipped
+  // delivery read declares) on a Frontend profile, and the entry left. The
+  // register is empty, and a new uncatalogued reference still fails hard.
 ]);
 
 /**
@@ -424,24 +428,75 @@ function literalPropertyOf(objectLiteral, name) {
  * fails closed. That is a different failure from an unguarded route and it is
  * worth catching, but ONLY structurally: every translation key in this tree has
  * the same three-segment shape.
+ *
+ * `alsoRequires` is read the same way. An entry offered only to a caller who
+ * holds EVERY code it names is hidden from everybody by one unknown code in that
+ * list, exactly as by an unknown `permission` — so each element is a reference,
+ * and an element or a list this gate cannot read statically is malformed rather
+ * than skipped (route sweep B3 review).
  */
 export function navigationPermissions(sourceFile) {
   const references = [];
   const malformed = [];
+  const isLiteral = (node) => ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node);
   const visit = (node) => {
+    /*
+     * The shorthand form — `{ permission }`, `{ alsoRequires }` — names a
+     * variable, never a literal, so it is exactly as unreadable as
+     * `{ permission: code }`. It is a different node kind from a property
+     * assignment, and the checks below would pass over it without a word: it is
+     * reported as malformed rather than skipped (route sweep B3 review).
+     */
+    if (
+      ts.isShorthandPropertyAssignment(node) &&
+      (node.name.text === 'permission' || node.name.text === 'alsoRequires')
+    ) {
+      malformed.push({
+        reason: `a navigation entry declares ${node.name.text} in shorthand, which this gate cannot read statically`,
+        node,
+      });
+    }
     if (
       ts.isPropertyAssignment(node) &&
       (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) &&
       node.name.text === 'permission'
     ) {
       const initializer = node.initializer;
-      if (ts.isStringLiteral(initializer) || ts.isNoSubstitutionTemplateLiteral(initializer)) {
+      if (isLiteral(initializer)) {
         references.push({ code: initializer.text, node });
       } else if (initializer.kind !== ts.SyntaxKind.NullKeyword) {
         malformed.push({
           reason: 'a navigation entry declares a permission this gate cannot read statically',
           node,
         });
+      }
+    }
+    if (
+      ts.isPropertyAssignment(node) &&
+      (ts.isIdentifier(node.name) || ts.isStringLiteral(node.name)) &&
+      node.name.text === 'alsoRequires'
+    ) {
+      // `as const` and parentheses are transparent; anything else is not a list
+      // this gate can read.
+      let list = node.initializer;
+      while (ts.isAsExpression(list) || ts.isParenthesizedExpression(list)) list = list.expression;
+      if (!ts.isArrayLiteralExpression(list)) {
+        malformed.push({
+          reason: 'a navigation entry declares alsoRequires this gate cannot read statically',
+          node,
+        });
+      } else {
+        for (const element of list.elements) {
+          if (isLiteral(element)) {
+            references.push({ code: element.text, node: element });
+          } else {
+            malformed.push({
+              reason:
+                'a navigation entry declares an alsoRequires code this gate cannot read statically',
+              node: element,
+            });
+          }
+        }
       }
     }
     ts.forEachChild(node, visit);

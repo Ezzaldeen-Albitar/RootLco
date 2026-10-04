@@ -567,12 +567,15 @@ describe('wty.warranty-detail', () => {
     expect(problem.violations?.[0]?.path).toBe('path.warrantyId');
   });
 
-  it('refuses a caller lacking wty.warranty.issue (authorization)', async () => {
+  it('refuses a caller lacking wty.warranty.read (authorization)', async () => {
     const delivery = await seedDeliveredDelivery('wty_detail_authz');
     const issued = await issuedWarranty(delivery.deliveryId);
-    // The catalogue contains no `wty.warranty.read`, so the read reuses the issue
-    // authority rather than borrowing `wty.policy.manage` — which would hand coverage
-    // administration to a caller who only needs to look at a record.
+    // P1-31 prerequisite P-7 re-pointed this read from `wty.warranty.issue` — the
+    // authority to CREATE a warranty — onto the newly minted `wty.warranty.read`.
+    // `SAL_READER` holds neither, so this refusal survived the re-point unchanged;
+    // the proof that the codes are now SEPARATE lives in
+    // `tests/backend/p1-31-warranty-read-seam.test.ts`, which runs a principal
+    // holding only one of them in each direction.
     authAs(SAL_READER);
     const response = await readWarranty(issued.id);
     expect(response.status).toBe(403);

@@ -178,6 +178,7 @@ export {
   MAX_WALK_IN_NOTE,
   MIN_SOC_PERCENT,
   RECEPTION_PARTY_ROLES,
+  RECEPTION_STATUS_GROUPS,
   RECEPTION_STATUSES,
   RECEPTION_TRANSITIONS,
   TERMINAL_RECEPTION_STATUSES,
@@ -189,6 +190,7 @@ export {
   type ReceptionOrigin,
   type ReceptionPartyRole,
   type ReceptionStatus,
+  type ReceptionStatusGroup,
 } from './domain/reception';
 export {
   COMPLAINT_CATEGORIES,

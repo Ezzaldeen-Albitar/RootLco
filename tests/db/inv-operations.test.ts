@@ -16,7 +16,14 @@ import {
   USER_A,
 } from './helpers';
 import { seedP109Base, makeAuthorizedVisit, newWorkOrder } from './p1-09-helpers';
-import { seedItem, seedLocations, seedStock, expectFail, OTHER_ACTOR } from './p1-10-helpers';
+import {
+  seedItem,
+  seedLocations,
+  seedStock,
+  seedMaterialRequest,
+  expectFail,
+  OTHER_ACTOR,
+} from './p1-10-helpers';
 
 const admin = adminPool();
 const runtime = runtimePool();
@@ -133,10 +140,17 @@ describe('inv operations', () => {
       const { item } = await seedItem(c, 'o5');
       const { warehouse } = await seedLocations(c, 'o5');
       await seedStock(c, item, warehouse, 10, 'o5');
-      const res = (await c.query(`SELECT inv.reserve_stock($1,$2,5) AS id`, [item, warehouse]))
-        .rows[0].id;
+      // A work-order draw is governed: reserve and issue on an approved material request.
+      const { request } = await seedMaterialRequest(c, wo, item, 5);
+      const res = (
+        await c.query(`SELECT inv.reserve_material_request($1,$2,5) AS id`, [request, warehouse])
+      ).rows[0].id;
       const issue = (
-        await c.query(`SELECT inv.issue_part($1,$2,$3,5,$4) AS id`, [wo, item, warehouse, res])
+        await c.query(`SELECT inv.issue_material_request($1,$2,5,$3) AS id`, [
+          request,
+          warehouse,
+          res,
+        ])
       ).rows[0].id;
       expect(await onHand(c, item, warehouse)).toBe(5);
       await c.query(`SELECT inv.return_part($1,3)`, [issue]);

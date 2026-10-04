@@ -85,11 +85,12 @@ function blockerPath(blockerId: string, tail = ''): string {
 /** `qms.qc-record-branch-list` — the branch QC queue, a real cursor page. */
 export async function listQcQueue(
   target: BranchTarget,
-  filter: { readonly overallResult?: string },
+  filter: { readonly overallResult?: string; readonly limit?: number },
   cursor: string | null
 ): Promise<ReadState<CursorPage<QcRecord>>> {
   const scope = branchTargetQuery(target);
-  const rest = query({ overallResult: filter.overallResult, cursor, limit: 50 });
+  // The page size the grid asked for; 50 for a caller that names none.
+  const rest = query({ overallResult: filter.overallResult, cursor, limit: filter.limit ?? 50 });
   const joined = scope + (rest ? (scope ? '&' : '?') + rest.slice(1) : '');
   return readOperation<CursorPage<QcRecord>>('/api/v1/quality-controls' + joined);
 }

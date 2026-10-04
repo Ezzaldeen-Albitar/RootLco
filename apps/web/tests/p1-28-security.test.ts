@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { holds } from '@/features/crm/permissions';
 import {
@@ -76,6 +77,168 @@ function repoFile(...parts: string[]): string {
 /** A file under `apps/web/src`. */
 function webFile(...parts: string[]): string {
   return readFileSync(join(WEB_ROOT, 'src', ...parts), 'utf8');
+}
+
+/**
+ * A board's read contract, read from its SYNTAX TREE rather than from its text
+ * (Owner directive: the Material UI reception slice, then the work-order slice).
+ *
+ * The check it replaces searched the file for four literal strings. A rename, a
+ * wrapper or a reformat broke it while the behaviour stood, and a string left
+ * in a comment kept it green while the behaviour was gone. This reads what the
+ * code DOES at the one call that files the board's reads, and answers with the
+ * rules that do not hold — empty when the contract stands:
+ *
+ *   - **version** — `useSearchRequest` is passed `version: <ctx>.version`, where
+ *     `<ctx>` is bound to `useWorkingContext()` in the same component, so a
+ *     branch change in the header abandons the read in flight.
+ *   - **scope** — the `criteria` passed is a declaration whose type names an
+ *     interface holding `scope: BranchScope`, and whose value builds an object
+ *     carrying that `scope`: the scope is part of what the read is filed under,
+ *     so a branch change is a new ordering contract, never a reused cursor.
+ *   - **asked** — the `load` passed hands exactly those criteria's `scope` and
+ *     `filters` to the board's own cancellable read (`readName`:
+ *     `listReceptionsCancellable`, `listWorkOrdersCancellable`), so what the
+ *     board is keyed on is what it sends.
+ */
+function boardReadContractViolations(source: string, readName: string): string[] {
+  const file = ts.createSourceFile('BoardScreen.tsx', source, ts.ScriptTarget.Latest, true);
+  const violations: string[] = [];
+  const calls: ts.CallExpression[] = [];
+  const declarations = new Map<string, ts.VariableDeclaration>();
+  const interfaces = new Map<string, ts.InterfaceDeclaration>();
+  const visit = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === 'useSearchRequest'
+    ) {
+      calls.push(node);
+    }
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name)) {
+      declarations.set(node.name.text, node);
+    }
+    if (ts.isInterfaceDeclaration(node)) interfaces.set(node.name.text, node);
+    ts.forEachChild(node, visit);
+  };
+  visit(file);
+
+  if (calls.length !== 1) return [`expected one useSearchRequest call, found ${calls.length}`];
+  const options = calls[0]?.arguments[0];
+  if (options === undefined || !ts.isObjectLiteralExpression(options)) {
+    return ['useSearchRequest is not handed an object literal'];
+  }
+  /** The value a property of the options carries, following a shorthand to its name. */
+  const valueOf = (name: string): ts.Expression | null => {
+    for (const property of options.properties) {
+      if (property.name === undefined || !ts.isIdentifier(property.name)) continue;
+      if (property.name.text !== name) continue;
+      if (ts.isPropertyAssignment(property)) return property.initializer;
+      if (ts.isShorthandPropertyAssignment(property)) return property.name;
+    }
+    return null;
+  };
+  const initializerOf = (expression: ts.Expression | null): ts.Expression | null => {
+    if (expression === null || !ts.isIdentifier(expression)) return null;
+    return declarations.get(expression.text)?.initializer ?? null;
+  };
+
+  // version: <ctx>.version, <ctx> = useWorkingContext()
+  const version = valueOf('version');
+  const context =
+    version !== null &&
+    ts.isPropertyAccessExpression(version) &&
+    version.name.text === 'version' &&
+    ts.isIdentifier(version.expression)
+      ? initializerOf(version.expression)
+      : null;
+  if (
+    context === null ||
+    !ts.isCallExpression(context) ||
+    !ts.isIdentifier(context.expression) ||
+    context.expression.text !== 'useWorkingContext'
+  ) {
+    violations.push('version: the read is not keyed on the working-context version');
+  }
+
+  // scope: criteria's declared type holds `scope: BranchScope`, and its value builds it
+  const criteria = valueOf('criteria');
+  const criteriaDeclaration =
+    criteria !== null && ts.isIdentifier(criteria) ? declarations.get(criteria.text) : undefined;
+  const namedTypes: string[] = [];
+  const collectTypeNames = (node: ts.Node) => {
+    if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName)) {
+      namedTypes.push(node.typeName.text);
+    }
+    ts.forEachChild(node, collectTypeNames);
+  };
+  if (criteriaDeclaration?.type) collectTypeNames(criteriaDeclaration.type);
+  const holdsScope = namedTypes.some((name) =>
+    (interfaces.get(name)?.members ?? []).some(
+      (member) =>
+        ts.isPropertySignature(member) &&
+        ts.isIdentifier(member.name) &&
+        member.name.text === 'scope' &&
+        member.type !== undefined &&
+        ts.isTypeReferenceNode(member.type) &&
+        ts.isIdentifier(member.type.typeName) &&
+        member.type.typeName.text === 'BranchScope'
+    )
+  );
+  let buildsScope = false;
+  const findScope = (node: ts.Node) => {
+    if (ts.isObjectLiteralExpression(node)) {
+      const names = node.properties.flatMap((property) =>
+        property.name !== undefined && ts.isIdentifier(property.name) ? [property.name.text] : []
+      );
+      if (names.includes('scope') && names.includes('filters')) buildsScope = true;
+    }
+    ts.forEachChild(node, findScope);
+  };
+  if (criteriaDeclaration?.initializer) findScope(criteriaDeclaration.initializer);
+  if (!holdsScope || !buildsScope) {
+    violations.push('scope: the criteria the read is filed under do not carry a BranchScope scope');
+  }
+
+  // asked: load hands criteria.scope and criteria.filters to the read
+  const loadInitializer = initializerOf(valueOf('load'));
+  const loader =
+    loadInitializer !== null &&
+    ts.isCallExpression(loadInitializer) &&
+    loadInitializer.arguments[0] !== undefined &&
+    (ts.isArrowFunction(loadInitializer.arguments[0]) ||
+      ts.isFunctionExpression(loadInitializer.arguments[0]))
+      ? loadInitializer.arguments[0]
+      : loadInitializer !== null &&
+          (ts.isArrowFunction(loadInitializer) || ts.isFunctionExpression(loadInitializer))
+        ? loadInitializer
+        : null;
+  const parameter = loader?.parameters[0]?.name;
+  let sendsAsked = false;
+  const findRead = (node: ts.Node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === readName &&
+      parameter !== undefined &&
+      ts.isIdentifier(parameter)
+    ) {
+      const [first, second] = node.arguments;
+      const reads = (argument: ts.Expression | undefined, field: string) =>
+        argument !== undefined &&
+        ts.isPropertyAccessExpression(argument) &&
+        ts.isIdentifier(argument.expression) &&
+        argument.expression.text === parameter.text &&
+        argument.name.text === field;
+      if (reads(first, 'scope') && reads(second, 'filters')) sendsAsked = true;
+    }
+    ts.forEachChild(node, findRead);
+  };
+  if (loader?.body) findRead(loader.body);
+  if (!sendsAsked) {
+    violations.push('asked: the read is not sent the scope and filters the board is keyed on');
+  }
+  return violations;
 }
 
 interface RegisterOperation {
@@ -367,7 +530,9 @@ describe('P1-28-SEC-001 — the receiving-employee picker, and what iam.user.rea
       USER_DIRECTORY_PERMISSION
     );
 
-    expect(USER_DIRECTORY_OPERATIONS.length).toBe(3);
+    // Four since the Owner directive (P1-32-PRE-OD-UX) added
+    // `iam.working-context-read`, the caller's own directory-class read.
+    expect(USER_DIRECTORY_OPERATIONS.length).toBe(4);
     for (const id of USER_DIRECTORY_OPERATIONS) {
       expect(operation(id).permissions, id).toContain(USER_DIRECTORY_PERMISSION);
     }
@@ -781,8 +946,8 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      * (driven), and the reason it cannot is structural (read).
      */
     backendAnswering(200, { items: [], nextCursor: null, hasMore: false });
-    const { listReceptions } = await import('@/features/receptions/api');
-    const page = await listReceptions(
+    const { readReceptionList } = await import('@/features/receptions/reception-list-read.server');
+    const page = await readReceptionList(
       { companyId: 'c1', branchId: 'b1' },
       { branchId: FORGED.branchId, vehicleId: 'v1' } as never,
       TABLE_REQUEST,
@@ -802,12 +967,18 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
     // And the structure that makes it so: every criterion is named. A spread of
     // the criteria object would put the guard back in the path — which would
     // still be safe — but a spread of anything WIDER would not, and this is the
-    // line that would change.
-    const source = webFile('features', 'receptions', 'api.ts');
+    // line that would change. The body lives in the server-only core the
+    // action and the cancellable read route share (P1-32-PRE-OD-READ).
+    const source = webFile('features', 'receptions', 'reception-list-read.server.ts');
     expect(source).toContain('status: criteria.status');
     expect(source).toContain('vehicleId: criteria.vehicleId');
+    // The door is `branchScopeQuery` since the branch became optional on this
+    // route; the rule it enforces is unchanged. Named explicitly, because a
+    // negative assertion about a helper the file no longer calls would pass
+    // while proving nothing.
+    expect(source).toContain('branchScopeQuery(scope, {');
     expect(source, 'the criteria object is spread into the query builder').not.toMatch(
-      /branchTargetQuery\(\s*target,\s*\{\s*\.\.\.criteria/
+      /branchScopeQuery\(\s*scope,\s*\{\s*\.\.\.criteria/
     );
   });
 
@@ -822,9 +993,9 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      *   - the cursor is not a filter, so it cannot be smuggled into the target.
      */
     backendAnswering(200, { items: [], nextCursor: null, hasMore: false });
-    const { listReceptions } = await import('@/features/receptions/api');
+    const { readReceptionList } = await import('@/features/receptions/reception-list-read.server');
     const issued = 'eyJvIjoiMjAyNi0wOC0xMyIsImkiOiJhYmMifQ==';
-    await listReceptions({ companyId: 'c1', branchId: 'b1' }, {}, TABLE_REQUEST, issued);
+    await readReceptionList({ companyId: 'c1', branchId: 'b1' }, {}, TABLE_REQUEST, issued);
 
     const parameters = new URL(onlyRequest().url).searchParams;
     expect(parameters.get('cursor'), 'the cursor was rewritten in flight').toBe(issued);
@@ -852,17 +1023,207 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
      * would refuse it as a cursor issued for a different ordering contract. Both
      * list screens mount the results component under a key derived from the
      * WHOLE submission, so a new target is a new table with no cursor at all.
+     *
+     * The key now carries the WORKING-CONTEXT VERSION as well, and that half is
+     * the stronger one. The branch is chosen in the header rather than on the
+     * form, so it can change without the submission changing at all — and a
+     * table keyed on the submission alone would then page branch A's cursor
+     * under branch B's name. The version moves on every change, so it cannot.
      */
-    for (const relative of [
-      ['features', 'appointments', 'components', 'AppointmentCalendarScreen.tsx'],
-      ['features', 'receptions', 'components', 'ReceptionQueueScreen.tsx'],
-    ]) {
-      const source = webFile(...relative);
-      expect(source, relative.join('/')).toContain('key={JSON.stringify(submitted)}');
-      // And the submission that keys it carries the target, so a branch change
-      // really does change the key.
-      expect(source, relative.join('/')).toMatch(/target:\s*\{\s*companyId/);
-    }
+    /*
+     * Three screens reach the same place by the same mechanism, and the
+     * mechanism is now the hook's rather than a remount key.
+     *
+     * They read on arrival (Owner directive `P1-32-PRE-OD-UX`), so there is no
+     * submission to key a remount on — the calendar's Show button and its
+     * `JSON.stringify(submitted)` remount key went with it. `useSearchRequest` owns the ordering
+     * contract instead: it is the serialised CRITERIA plus the working-context
+     * VERSION, `useCursorPages` is keyed on exactly that string, and page one is
+     * restored in the same render that the contract changes in. So both halves
+     * still hold — a branch change throws the cursor stack away, and so does any
+     * change to the filters.
+     *
+     * What this asserts is that both inputs really reach the hook: the scope
+     * travels INSIDE the criteria, so it is part of the serialised key, and the
+     * version is passed explicitly so a header change abandons the read in
+     * flight rather than letting it land under the new branch's name.
+     */
+    // All three boards are held by `boardReadContractViolations` — their syntax
+    // trees, not their text. The calendar's text check was replaced when it
+    // moved onto the Material UI wrappers; its falsification is the case below.
+    const relative = ['features', 'appointments', 'components', 'AppointmentCalendarScreen.tsx'];
+    const source = webFile(...relative);
+    expect(boardReadContractViolations(source, 'listAppointments'), relative.join('/')).toEqual([]);
+    // And no screen spends a cursor of its own: the stack is the hook's.
+    expect(source, relative.join('/')).not.toMatch(/atob\(|Buffer\.from\(|JSON\.parse\(cursor/);
+  });
+
+  it('3/3 cursor: the calendar contract check fails when any of its three rules is broken', () => {
+    const source = webFile(
+      'features',
+      'appointments',
+      'components',
+      'AppointmentCalendarScreen.tsx'
+    );
+    const check = (text: string) => boardReadContractViolations(text, 'listAppointments');
+    const broken = (from: RegExp, to: string) => {
+      expect(source, `the falsification anchor ${from} is gone from the source`).toMatch(from);
+      return check(source.replace(from, to));
+    };
+    // No version: the read would land under the next branch's name.
+    expect(broken(/version: context\.version,/, '')).toEqual([
+      'version: the read is not keyed on the working-context version',
+    ]);
+    // A version that is not the working context's.
+    expect(broken(/version: context\.version,/, 'version: 0,')).toEqual([
+      'version: the read is not keyed on the working-context version',
+    ]);
+    // Criteria whose type no longer carries a BranchScope scope.
+    expect(broken(/readonly scope: BranchScope;/, 'readonly scope: string;')).toEqual([
+      'scope: the criteria the read is filed under do not carry a BranchScope scope',
+    ]);
+    // Criteria that are no longer the asked object.
+    expect(broken(/criteria: asked,/, 'criteria: null,')).toEqual([
+      'scope: the criteria the read is filed under do not carry a BranchScope scope',
+    ]);
+    // A loader that sends something other than what the calendar is keyed on.
+    expect(broken(/criteria\.scope,\n(\s*)criteria\.filters,/, 'criteria.scope,\n$1{},')).toEqual([
+      'asked: the read is not sent the scope and filters the board is keyed on',
+    ]);
+    // The calendar's own read, not another board's: the check names the call.
+    expect(boardReadContractViolations(source, 'listWorkOrdersCancellable')).toEqual([
+      'asked: the read is not sent the scope and filters the board is keyed on',
+    ]);
+    // No comment can keep it green: the same words in a comment are not a call.
+    expect(
+      check(
+        `// useSearchRequest({ criteria: asked, load, version: context.version })\n${source.replace(
+          /version: context\.version,/,
+          ''
+        )}`
+      )
+    ).toContain('version: the read is not keyed on the working-context version');
+  });
+
+  it('3/3 cursor: the reception board keys its reads on the version and the scope it sends', () => {
+    /*
+     * The same guarantee as the case above, for the reception board, read from
+     * the call itself: the version is the working context's, the criteria carry
+     * the BranchScope, and the loader sends exactly those criteria. The
+     * behaviour is also driven end to end — `cancellable-reads.dom.test.tsx`
+     * aborts the left branch's request on a switch, and
+     * `reception-queue.dom.test.tsx` asserts the scope and filters every read
+     * was sent.
+     */
+    const relative = ['features', 'receptions', 'components', 'ReceptionQueueScreen.tsx'];
+    const source = webFile(...relative);
+    expect(
+      boardReadContractViolations(source, 'listReceptionsCancellable'),
+      relative.join('/')
+    ).toEqual([]);
+    // And no screen spends a cursor of its own: the stack is the hook's.
+    expect(source, relative.join('/')).not.toMatch(/atob\(|Buffer\.from\(|JSON\.parse\(cursor/);
+  });
+
+  it('3/3 cursor: the reception contract check fails when any of its three rules is broken', () => {
+    /*
+     * Each rule, falsified on a copy of the real source. A check that stayed
+     * green over these would be describing the text, not the behaviour.
+     */
+    const source = webFile('features', 'receptions', 'components', 'ReceptionQueueScreen.tsx');
+    const broken = (from: RegExp, to: string) => {
+      expect(source, `the falsification anchor ${from} is gone from the source`).toMatch(from);
+      return boardReadContractViolations(source.replace(from, to), 'listReceptionsCancellable');
+    };
+    // No version: the read would land under the next branch's name.
+    expect(broken(/version: context\.version,/, '')).toEqual([
+      'version: the read is not keyed on the working-context version',
+    ]);
+    // A version that is not the working context's.
+    expect(broken(/version: context\.version,/, 'version: 0,')).toEqual([
+      'version: the read is not keyed on the working-context version',
+    ]);
+    // Criteria whose type no longer carries a BranchScope scope.
+    expect(broken(/readonly scope: BranchScope;/, 'readonly scope: string;')).toEqual([
+      'scope: the criteria the read is filed under do not carry a BranchScope scope',
+    ]);
+    // Criteria that are no longer the asked object.
+    expect(broken(/criteria: asked,/, 'criteria: null,')).toEqual([
+      'scope: the criteria the read is filed under do not carry a BranchScope scope',
+    ]);
+    // A loader that sends something other than what the board is keyed on.
+    expect(broken(/criteria\.scope,\n(\s*)criteria\.filters,/, 'criteria.scope,\n$1{},')).toEqual([
+      'asked: the read is not sent the scope and filters the board is keyed on',
+    ]);
+    // No comment can keep it green: the same words in a comment are not a call.
+    expect(
+      boardReadContractViolations(
+        `// useSearchRequest({ criteria: asked, load, version: context.version })\n${source.replace(
+          /version: context\.version,/,
+          ''
+        )}`,
+        'listReceptionsCancellable'
+      )
+    ).toContain('version: the read is not keyed on the working-context version');
+  });
+
+  it('3/3 cursor: the work-order board keys its reads on the version and the scope it sends', () => {
+    /*
+     * The same guarantee, for the work-order board, from the call itself. The
+     * behaviour is driven end to end in `search-empty-states.dom.test.tsx`: a
+     * branch switch re-targets the board, issues no read for the branch it
+     * left, and every read carries the scope and filters the board asked for.
+     */
+    const relative = ['features', 'work-orders', 'components', 'WorkOrderQueueScreen.tsx'];
+    const source = webFile(...relative);
+    expect(
+      boardReadContractViolations(source, 'listWorkOrdersCancellable'),
+      relative.join('/')
+    ).toEqual([]);
+    // And no screen spends a cursor of its own: the stack is the hook's.
+    expect(source, relative.join('/')).not.toMatch(/atob\(|Buffer\.from\(|JSON\.parse\(cursor/);
+  });
+
+  it('3/3 cursor: the work-order contract check fails when any of its three rules is broken', () => {
+    const source = webFile('features', 'work-orders', 'components', 'WorkOrderQueueScreen.tsx');
+    const check = (text: string) => boardReadContractViolations(text, 'listWorkOrdersCancellable');
+    const broken = (from: RegExp, to: string) => {
+      expect(source, `the falsification anchor ${from} is gone from the source`).toMatch(from);
+      return check(source.replace(from, to));
+    };
+    // No version: the read would land under the next branch's name.
+    expect(broken(/version: context\.version,/, '')).toEqual([
+      'version: the read is not keyed on the working-context version',
+    ]);
+    // A version that is not the working context's.
+    expect(broken(/version: context\.version,/, 'version: 0,')).toEqual([
+      'version: the read is not keyed on the working-context version',
+    ]);
+    // Criteria whose type no longer carries a BranchScope scope.
+    expect(broken(/readonly scope: BranchScope;/, 'readonly scope: string;')).toEqual([
+      'scope: the criteria the read is filed under do not carry a BranchScope scope',
+    ]);
+    // Criteria that are no longer the asked object.
+    expect(broken(/criteria: asked,/, 'criteria: null,')).toEqual([
+      'scope: the criteria the read is filed under do not carry a BranchScope scope',
+    ]);
+    // A loader that sends something other than what the board is keyed on.
+    expect(broken(/criteria\.scope,\n(\s*)criteria\.filters,/, 'criteria.scope,\n$1{},')).toEqual([
+      'asked: the read is not sent the scope and filters the board is keyed on',
+    ]);
+    // The board's own read, not another board's: the check names the call.
+    expect(boardReadContractViolations(source, 'listReceptionsCancellable')).toEqual([
+      'asked: the read is not sent the scope and filters the board is keyed on',
+    ]);
+    // No comment can keep it green: the same words in a comment are not a call.
+    expect(
+      check(
+        `// useSearchRequest({ criteria: asked, load, version: context.version })\n${source.replace(
+          /version: context\.version,/,
+          ''
+        )}`
+      )
+    ).toContain('version: the read is not keyed on the working-context version');
   });
 
   it('3/3 cursor: a refused cursor surfaces as an error with a reference, never as “empty”', async () => {
@@ -876,8 +1237,8 @@ describe('P1-28-SEC-003 — the ONE door, and the abuse cases that try the walls
       status: 400,
       correlationId: 'corr-cursor',
     });
-    const { listReceptions } = await import('@/features/receptions/api');
-    const page = await listReceptions(
+    const { readReceptionList } = await import('@/features/receptions/reception-list-read.server');
+    const page = await readReceptionList(
       { companyId: 'c1', branchId: 'b1' },
       {},
       TABLE_REQUEST,

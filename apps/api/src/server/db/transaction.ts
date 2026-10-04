@@ -69,9 +69,52 @@ export interface TransactionOptions {
   readonly access?: 'read write' | 'read only';
 }
 
+/**
+ * One statement at a time on one connection.
+ *
+ * A request's transaction owns ONE pooled client, and several reads on it are
+ * often started together — `Promise.all` over two repository calls, a module
+ * that fans out to its neighbours, a savepoint handle and its parent. `pg`
+ * sends a statement only after the previous one has returned, so those calls
+ * were never parallel; they were QUEUED inside the client. `pg` 8 now warns
+ * about exactly that ("Calling client.query() when the client is already
+ * executing a query is deprecated", seen on the acceptance runtime's stderr)
+ * and `pg` 9 removes the queue, at which point every such call site would fail.
+ *
+ * So the queue is made explicit here, where every statement of a request
+ * passes: each statement is handed to the client only once the one before it
+ * has settled — fulfilled or rejected — in the order the calls were made. That
+ * is the order `pg` itself used, so a statement after a failed one still runs
+ * and still meets the aborted transaction, exactly as before; what changes is
+ * only that the client never holds two statements at once. The transaction's
+ * own `BEGIN`, context, `COMMIT` and `ROLLBACK` go through the same queue, so a
+ * rollback issued while a sibling read is still waiting runs AFTER it rather
+ * than beside it.
+ */
+class SerialClient {
+  private tail: Promise<unknown> = Promise.resolve();
+
+  constructor(private readonly client: PoolClient) {}
+
+  query<R extends QueryResultRow = QueryResultRow>(
+    text: string,
+    values: readonly unknown[] = []
+  ): Promise<QueryResult<R>> {
+    const run = () => this.client.query<R>(text, values as unknown[]);
+    const next = this.tail.then(run, run);
+    // The tail only orders the next statement; it never carries this one's
+    // failure, which belongs to the caller that asked for it.
+    this.tail = next.then(
+      () => undefined,
+      () => undefined
+    );
+    return next;
+  }
+}
+
 class TransactionHandle implements DbHandle {
   constructor(
-    private readonly client: PoolClient,
+    private readonly client: SerialClient,
     public readonly context: RequestContext,
     public readonly depth: number,
     /** Which pool the client came from. Read by withPlatformTarget, which refuses the primary. */
@@ -107,7 +150,7 @@ class TransactionHandle implements DbHandle {
  * Values are bound as parameters — never interpolated — so a context value can
  * never become SQL. `set_config(..., true)` is the transaction-local form.
  */
-async function applyContext(client: PoolClient, context: RequestContext): Promise<void> {
+async function applyContext(client: SerialClient, context: RequestContext): Promise<void> {
   const pairs: Array<[string, string]> = [
     ['app.tenant_id', context.principal.tenantId],
     ['app.user_id', context.principal.userId],
@@ -144,10 +187,11 @@ export async function withTransaction<T>(
   // platform policy is written TO that role, so serving a platform operation
   // from the primary pool would be refused by all of them while every
   // structural gate stayed green — the PC-1 shape.
-  const client =
+  const pooled =
     options.connection === 'platform'
       ? await acquirePlatformClient()
       : await acquirePrimaryClient();
+  const client = new SerialClient(pooled);
   let rolledBackCleanly = true;
   try {
     await client.query(`BEGIN ${access === 'read only' ? 'READ ONLY' : 'READ WRITE'}`);
@@ -186,7 +230,7 @@ export async function withTransaction<T>(
     }
     throw error;
   } finally {
-    client.release(rolledBackCleanly ? undefined : true);
+    pooled.release(rolledBackCleanly ? undefined : true);
   }
 }
 
@@ -258,6 +302,80 @@ export async function withPlatformTarget<T>(
     throw new AppFailure('ERR-CTX-001', {
       message: 'The target tenant was not created by this transaction or is no longer provisioning',
     });
+  }
+  const homeTenantId = db.context.principal.tenantId;
+  const retargeted = handle.retargeted({
+    ...db.context,
+    principal: { ...db.context.principal, tenantId: targetTenantId },
+  });
+  const target: PlatformTargetHandle = Object.assign(retargeted, { targetTenantId });
+  await db.query('SELECT set_config($1, $2, true)', ['app.tenant_id', targetTenantId]);
+  try {
+    return await fn(target);
+  } finally {
+    try {
+      await db.query('SELECT set_config($1, $2, true)', ['app.tenant_id', homeTenantId]);
+    } catch {
+      // The transaction is already aborted; the rollback discards the window.
+    }
+  }
+}
+
+/**
+ * Runs `fn` with the transaction's tenant context moved to a LIVE tenant the
+ * operator is administering — the platform-on-target window for an
+ * organisation that already exists (P1-32-PRE-151).
+ *
+ * `withPlatformTarget` above cannot serve this: it admits only a tenant the
+ * same transaction created and which is still `provisioning`, which is exactly
+ * what an organisation being GROWN is not. The two windows are deliberately
+ * separate rather than one with a relaxed predicate, because the predicate is
+ * the whole of the safety argument in each case.
+ *
+ * The refusals here:
+ *
+ *  - only a control-plane transaction may retarget. The primary connection runs
+ *    as `app_runtime`, whose policies are written against the session's own
+ *    tenant, so retargeting it would be a cross-tenant write path;
+ *  - the target must be a tenant this session can READ. Visibility is decided by
+ *    `sel_tenants_platform_manage`, which is predicated on
+ *    `platform.organization.manage` — so a caller without the authority sees
+ *    nothing and gets the same answer as for a tenant that does not exist. A
+ *    tenant still `provisioning` is refused too: it belongs to the provisioning
+ *    window, which writes its own companion rows, and letting a second path
+ *    into that state would mean two writers of the same bootstrap;
+ *  - the context handed to `fn` is a copy whose principal names the target, so
+ *    repositories that stamp `tenant_id` from the context write the target. The
+ *    actor is unchanged, so attribution still names the operator — and the audit
+ *    record of the act is appended OUTSIDE this window, in the operator's own
+ *    tenant, carrying the target as a detail.
+ *
+ * The GUC is restored in `finally`, and a restore that fails on an already
+ * aborted transaction is swallowed so the ORIGINAL error propagates.
+ */
+export async function withPlatformTenantScope<T>(
+  db: DbHandle,
+  targetTenantId: string,
+  fn: (target: PlatformTargetHandle) => Promise<T>
+): Promise<T> {
+  const handle = db as TransactionHandle;
+  if (handle.connection !== 'platform') {
+    throw new AppFailure('ERR-CTX-001', {
+      message: 'A platform-on-target context is only available on the control-plane connection',
+    });
+  }
+  if (!UUID_SHAPE.test(targetTenantId)) {
+    throw new AppFailure('ERR-VAL-001', { message: 'The target tenant is not a well-formed id' });
+  }
+  const visible = await db.query<{ id: string }>(
+    `SELECT id
+       FROM org.tenants
+      WHERE id = $1
+        AND status <> 'provisioning'`,
+    [targetTenantId]
+  );
+  if (visible.rows.length !== 1) {
+    throw new AppFailure('ERR-RES-001', { message: 'No such organization' });
   }
   const homeTenantId = db.context.principal.tenantId;
   const retargeted = handle.retargeted({

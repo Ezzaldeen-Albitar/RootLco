@@ -41,10 +41,13 @@ import { sessionAuthenticator } from '../context/principal';
 import { withTransaction, type DbHandle } from '../db/transaction';
 import {
   requirePermissions,
+  requireScopeClaimInTenant,
   requireScopeTargetInTenant,
   requireScopedPermissions,
+  resolveAuthorizedBranches,
   type AuthorizationTarget,
   type ScopeAuthorizer,
+  type BranchScopeResolver,
 } from '../auth/authorization';
 import { requireFeature } from '../auth/entitlement';
 import type { RegisteredOperation } from '../auth/operation-registry';
@@ -60,6 +63,7 @@ import { RATE_LIMIT_POLICIES, enforceRateLimit, type RateLimitPolicy } from './r
 import { resolveClientAddress } from './trusted-proxy';
 import { backendConfig } from '../config/backend-config';
 import { recordSecurityEvent } from '../audit/security-events';
+import { businessRefusalOf, recordBusinessRefusal } from '../audit/business-refusals';
 
 /** What a handler returns. `status` defaults to 200. */
 export interface HandlerResult<T> {
@@ -107,6 +111,43 @@ export interface HandlerInput {
    * operation's own declaration rather than restating it.
    */
   readonly authorizeScope: ScopeAuthorizer;
+  /**
+   * The branches of one company this caller may run this operation in (Owner
+   * directive, P1-32-PRE-OD-UX).
+   *
+   * What the branch-optional reads call when the caller names a company and no
+   * branch. `undefined` means "every branch of that company"; a list means
+   * exactly those; a caller with none is refused with the same document the
+   * other scope refusals carry. See `resolveAuthorizedBranches` for why a
+   * company-only target cannot answer this on its own.
+   *
+   * Bound to the operation for the same reason `authorizeScope` is: the
+   * permission codes stay in `defineOperation` and the refusal carries the
+   * operation's own declared codes.
+   */
+  readonly authorizedBranches: BranchScopeResolver;
+  /**
+   * Resolves the scope a BODY-SCOPED create claims, and refuses it when the
+   * caller cannot see it inside its own tenant (CC-56, applying CC-14 § 2).
+   *
+   * The counterpart of the probe the GET path runs above, for the requests that
+   * path cannot serve: a create names its company — or its company and branch —
+   * in a body this pipeline has deliberately not parsed, so the claim can only
+   * be resolved once the handler has validated it. `authorizeScope` is not
+   * enough on its own and never was: it asks whether the CALLER may write in the
+   * named scope, and a holder of an unrestricted grant satisfies that for any
+   * pair it cares to invent.
+   *
+   * Injected here, closing over the operation, for the same reason
+   * `authorizeScope` is: the permission codes stay in `defineOperation`, the
+   * refusal carries the operation's own declared codes, and a service never
+   * needs to reach for a declaration it cannot see without importing `app/**`.
+   *
+   * ORDER is the caller's to keep, and it is the same order the read path uses:
+   * `authorizeScope` first, this second. A caller missing the permission must be
+   * told that, not told the scope is invisible.
+   */
+  readonly requireScopeClaim: ScopeAuthorizer;
 }
 
 export type OperationHandler<T> = (input: HandlerInput) => Promise<HandlerResult<T>>;
@@ -420,6 +461,16 @@ export async function handleOperation<T>(
               // and reopen P1-18-A-01 through this very API.
               authorizeScope: (target: AuthorizationTarget) =>
                 requireScopedPermissions(db, operation, target),
+              // Bound to the same operation and the same handle, so it can
+              // never answer for a declaration other than this one's.
+              authorizedBranches: (companyId: string) =>
+                resolveAuthorizedBranches(db, operation, companyId),
+              // Bound to the same `operation` and the same handle, so the refusal
+              // it raises carries the declared codes and runs inside this
+              // transaction — a scope claim refused after a partial write would
+              // otherwise leave the write.
+              requireScopeClaim: (claim: AuthorizationTarget) =>
+                requireScopeClaimInTenant(db, operation, claim),
             });
 
           if (!idempotencyKey || !fingerprint) return execute();
@@ -445,7 +496,14 @@ export async function handleOperation<T>(
     try {
       result = await run();
     } catch (error) {
-      if (!(error instanceof IdempotencyRaceError)) throw error;
+      if (!(error instanceof IdempotencyRaceError)) {
+        // The command's transaction has rolled back by now, and a refusal by
+        // business rule (ADR-023, D12) is recorded AFTER it, on a transaction of
+        // its own, so the record survives the refusal. At most one event per
+        // attempt, and never a change to what the caller is told.
+        await persistBusinessRefusal(operation, context as RequestContext, error);
+        throw error;
+      }
       // Another transaction won the key while this one executed. This
       // transaction rolled back, so nothing partial committed; re-read the
       // winner's stored response on a fresh transaction.
@@ -498,6 +556,20 @@ async function handlePublic<T>(
     authorizeScope: () => {
       throw new Error(`Operation ${operation.id} is public and cannot authorize a scope`);
     },
+    // Same argument once more, and the throw matters MORE here than above: the
+    // resolver's ordinary answer is a branch list, so a stub returning `[]`
+    // would look like a working narrowing and quietly empty every page, while
+    // one returning `undefined` would admit every branch in the tenant. Neither
+    // is a decision.
+    authorizedBranches: () => {
+      throw new Error(`Operation ${operation.id} is public and cannot resolve a branch scope`);
+    },
+    // Same argument: a public operation has no tenant to resolve a claim inside,
+    // so asking is a coding error and answering "visible" would be the dangerous
+    // reading.
+    requireScopeClaim: () => {
+      throw new Error(`Operation ${operation.id} is public and cannot resolve a scope claim`);
+    },
   });
   metrics().increment(METRICS.requestCount, { operation: operation.id, result: 'success' });
   return new Response(JSON.stringify(result.body), {
@@ -548,6 +620,42 @@ function respondWithFailure(
     status: failure.status,
     headers: problemHeaders(failure, correlationId),
   });
+}
+
+/**
+ * Records a refusal by business rule after its command rolled back (ADR-023, D12).
+ *
+ * Only a failure a service marked with `withBusinessRefusal` is recorded; every
+ * other failure passes through untouched. The operation id is this pipeline's
+ * own registration, never anything the caller or the service supplied. The write
+ * runs on the operation's own connection, so a control-plane refusal is recorded
+ * by the platform role and a tenant refusal by the runtime role. It can never
+ * fail the request: a lost record is logged, and the caller still receives the
+ * refusal the service threw.
+ */
+async function persistBusinessRefusal(
+  operation: RegisteredOperation,
+  context: RequestContext,
+  error: unknown
+): Promise<void> {
+  const refusal = businessRefusalOf(error);
+  if (!refusal) return;
+  try {
+    await withTransaction(
+      context,
+      async (db) => recordBusinessRefusal(db, { ...refusal, operationId: operation.id }),
+      isControlPlane(operation) ? { connection: 'platform' as const } : {}
+    );
+  } catch (failure) {
+    log.error('Business refusal could not be recorded', {
+      ...contextLogFields(context),
+      result: 'failure',
+      context: {
+        rule: refusal.rule,
+        reason: failure instanceof Error ? failure.name : 'unknown',
+      },
+    });
+  }
 }
 
 /**

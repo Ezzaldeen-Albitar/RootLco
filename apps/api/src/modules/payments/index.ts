@@ -27,12 +27,15 @@
  * - **It does not read `sal.invoices`.** The invoice header and its open receivable
  *   come from `@/modules/billing`'s public port; the required shape is declared as
  *   `AllocationInvoiceHeader` so the dependency is stated in one reviewable place.
- * - **It does not reverse a receipt, refund, or correct an allocation.**
- *   `P1-22-L-05`. `sal.receipt_reversals` is full-receipt-only and terminal, and
- *   reaching `reversed` requires an approved reversal under dual control;
- *   `sal.approve_receipt_reversal` is deliberately left unexposed and no partial
- *   reversal or refund exists to expose. Allocations have no UPDATE or DELETE grant,
- *   so a single misallocated line is not correctable by design.
+ * - **It does not refund, or correct one allocation.** A mis-recorded receipt is
+ *   corrected by reversing the WHOLE receipt under dual control and recording its
+ *   replacement (ADR-023 D4, `reversals` below): requested by a payment recorder,
+ *   approved or rejected by a different holder of `sal.reversal.approve`, withdrawn
+ *   only by the requester. The original receipt is retained and its allocations
+ *   stay recorded; a reversed receipt stops counting. No partial reversal and no
+ *   refund exists (refunds are ADR-023 D2), and allocations have no UPDATE or
+ *   DELETE grant, so a single misallocated line is corrected only through the
+ *   whole receipt.
  * - **It does not claim an external settlement.** `ck_payment_methods_kind` admits
  *   `cash`, `card_terminal` and `bank_transfer` only, with the schema's own note "No
  *   online payment gateway/settlement types (ASM-14, CON-04)". There is no column an
@@ -60,42 +63,79 @@ import { PaymentsRepository } from './data/payments-repository';
 import { PaymentMethodBootstrapRepository } from './data/payment-method-bootstrap-repository';
 import { PaymentService } from './application/payment-service';
 import { PaymentReadService } from './application/payment-read-service';
+import { ReceiptReversalService } from './application/receipt-reversal-service';
 import { PaymentMethodBootstrapService } from './application/payment-method-bootstrap-service';
+import { PaymentsReportPort } from './application/payments-report-port';
 
 export type {
   PaymentAllocationRow,
   PaymentMethodRow,
+  ReceiptDocumentFilter,
   ReceiptListRow,
+  ReceiptReferenceRow,
+  ReceiptReversalRow,
   ReceiptRow,
   ReceiptScope,
   ReceiptUnallocatedRow,
+  ReportDocumentPage,
+  ThirdPartyStatement,
 } from './data/payments-repository';
 
 export type {
   AllocatePaymentInput,
   AllocationInvoiceHeader,
+  AllocationThirdPartyView,
   AllocationView,
   ReceiptView,
   RecordPaymentInput,
+  RecordReplacementInput,
 } from './application/payment-service';
 
 export type {
+  ReceiptReversalResult,
+  ReceiptReversalView,
+} from './application/receipt-reversal-service';
+
+export type {
   PaymentMethodView,
+  ReceiptAllocationThirdPartyView,
   ReceiptAllocationView,
   ReceiptDetailView,
+  ReceiptLinkView,
   ReceiptListView,
+  ReceiptPayerView,
+  ReceiptReversalDetailView,
 } from './application/payment-read-service';
+
+export type {
+  ReceiptDocumentEntry,
+  ReceiptDocumentSummary,
+  ReceiptDocumentTotal,
+} from './application/payments-report-port';
 
 export {
   ALLOCATION_PRIMITIVE,
+  MAX_REVERSAL_REASON,
   PAYMENT_METHOD_KINDS,
   PAYMENT_METHOD_SCOPES,
   PAYMENT_METHOD_STATUSES,
   PLATFORM_CODE_FORMAT,
   PaymentRuleError,
+  RECEIPT_REVERSAL_PERMISSIONS,
+  RECEIPT_REVERSAL_RULES,
+  RECEIPT_REVERSAL_STATES,
   RECEIPT_STATUSES,
   TENANT_BOOTSTRAP_METHOD_CODES,
   type TenantBootstrapMethodCode,
+  MAX_THIRD_PARTY_AUTHORISATION_REFERENCE,
+  MAX_THIRD_PARTY_REASON,
+  THIRD_PARTY_PERMISSION,
+  THIRD_PARTY_RELATIONSHIPS,
+  THIRD_PARTY_RULES,
+  thirdPartyViolations,
+  type ThirdPartyDeclaration,
+  type ThirdPartyRelationship,
+  type ThirdPartyViolation,
   assertAllocatable,
   assertAllocationCurrencyCoherent,
   assertAllocationUsesPrimitive,
@@ -106,6 +146,7 @@ export {
   type PaymentMethodKind,
   type PaymentMethodScope,
   type PaymentMethodStatus,
+  type ReceiptReversalState,
   type ReceiptStatus,
 } from './domain/payments';
 
@@ -138,6 +179,14 @@ export const paymentsModule = composeModule({
     return {
       reads: new PaymentReadService(repository),
       payments: new PaymentService(repository),
+      // ADR-023 D4 (P1-32-PRE-OD-FD4): request, approve, reject and withdraw the
+      // full reversal of a receipt. The replacement receipt is `payments`' own act.
+      reversals: new ReceiptReversalService(repository),
+      // P1-31 P-11 slice 4. The REPORTING port. Separate from `reads` because
+      // that service is the receipt screen's — bounded by a payer or an invoice,
+      // publishing the unallocated remainder and the allocation history — and a
+      // period report shares none of those shapes.
+      reportPort: new PaymentsReportPort(repository),
       methodBootstrap: new PaymentMethodBootstrapService(new PaymentMethodBootstrapRepository()),
     };
   },

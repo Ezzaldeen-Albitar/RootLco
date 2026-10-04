@@ -65,7 +65,8 @@ export const Body = z
   .object({
     lines: z.array(Line).min(1).max(MAX_ITEMS_PER_REVISION),
     customerClass: z.string().regex(INTERNAL_CODE, 'must be a lower-snake class code').optional(),
-    discountRequestedBy: schemas.uuid.optional(),
+    // No requester field: see `POST /quotations`. A discount that needs approval is
+    // requested by the signed-in person and approved by somebody else.
   })
   .strict();
 
@@ -175,7 +176,6 @@ export async function POST(
         {
           lines: parsed.lines,
           customerClass: parsed.customerClass,
-          discountRequestedBy: parsed.discountRequestedBy,
           expectedVersion,
         },
         authorizeScope

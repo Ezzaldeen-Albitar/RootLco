@@ -15,22 +15,25 @@
  * Search is `expensive-read` (30/min per user) and `auditClass: none`. Create is
  * `standard-command`, **`idempotent: true`**, and `auditClass: privileged`.
  *
- * ## Every text filter is EXACT. None of them is a prefix or a substring.
+ * ## Which filters are exact (widened in P1-32)
  *
- * This is the single biggest difference from CRM customer search, where `name`
- * is a prefix match. Here:
- *
- * - `vin` matches the **generated, normalised** VIN exactly. The value is
- *   normalised the same way the column was (upper-cased, every non-`[A-Z0-9]`
- *   character stripped), then compared for equality.
- * - `plate` matches only the vehicle's **currently active** plate — the row in
- *   `veh.plate_history` with `valid_to IS NULL`. A vehicle's previous plate
- *   finds nothing.
+ * - `vin` matches the **generated, normalised** VIN exactly.
+ * - `plate` matches **any plate the vehicle has carried**, normalised on the SQL
+ *   side. A hit that matched a plate carries `plateMatch`; `active: false` means
+ *   it matched an earlier plate, which the screen must say.
  * - `vehicleNumber` is `display_number = $n`, exact.
+ * - `make` and `model` are folded **contains** matches over the catalogue names,
+ *   two characters at least.
+ * - `q` is one box: make, model, vehicle number, part of a VIN or part of any
+ *   plate, two characters at least.
  *
- * So a type-ahead returns nothing until the whole value is typed, and the UI
- * must not imply otherwise. Combined with the 30/min rate limit, a
- * search-per-keystroke would 429 within seconds and still show nothing useful.
+ * Combined with the 30/min rate limit, a search-per-keystroke would 429 within
+ * seconds, so every surface searches on an explicit action.
+ *
+ * ## Search terms never reach the browser address bar
+ *
+ * `P1-27-SEC-002`: a VIN or a plate in a URL is in history and proxy logs, so the
+ * criteria live in screen state and travel only to the API.
  *
  * ## There is no sort parameter and no total
  *
@@ -65,6 +68,10 @@ export type WorkshopStatus = (typeof WORKSHOP_STATUSES)[number];
 export const MAX_VIN_FRAGMENT = 64;
 export const MAX_PLATE_FRAGMENT = 32;
 export const MAX_VEHICLE_NUMBER = 64;
+/** `MAX_VEHICLE_TEXT_FRAGMENT` in the domain: make, model and the free-text box. */
+export const MAX_VEHICLE_TEXT = 80;
+/** `MIN_VEHICLE_FRAGMENT` in the domain: make, model and the free-text box. */
+export const MIN_VEHICLE_TEXT = 2;
 export const MAX_VIN_INPUT = 64;
 export const MAX_COLOR = 40;
 export const MAX_DISPLAY_NUMBER = 40;
@@ -74,14 +81,14 @@ export const MODEL_YEAR_MAX = 2100;
 /**
  * The safe master projection, exactly as `VehicleSearchHit` declares it.
  *
- * **No make or model NAME.** Search publishes the catalogue ids and nothing
- * else; only the detail read resolves the labels. A results table that wants to
- * show "Toyota Camry" has to resolve the ids against the catalogue reads.
+ * **Make and model names since P1-32.** `makeName` and `modelName` are resolved
+ * by the backend. A screen may still fall back to the catalogue for a hit whose
+ * name is missing while its id is present.
  *
  * **No chassis or engine number, for anyone.** Those are `restricted` and live
- * in `veh.vehicle_identifiers`, which this contract never touches — so unlike a
- * note list, nothing here is silently filtered per caller. Every hit carries all
- * eleven fields or the request failed.
+ * in `veh.vehicle_identifiers`, which this contract never touches. The owner's
+ * name is the one projection that depends on the caller: it is null without
+ * `crm.customer.read`.
  */
 export interface VehicleSearchHit {
   readonly id: string;
@@ -106,24 +113,62 @@ export interface VehicleSearchHit {
    * an operator tried to edit it.
    */
   readonly mergedIntoId: string | null;
+  /** Catalogue make name (P1-32). Null when no make is recorded. */
+  readonly makeName: string | null;
+  /** Catalogue model name (P1-32). Null when no model is recorded. */
+  readonly modelName: string | null;
+  /** The plate the vehicle carries now (P1-32). */
+  readonly activePlate: string | null;
+  /** Present only when a plate criterion matched (P1-32). */
+  readonly plateMatch: VehiclePlateMatch | null;
+  /**
+   * The current owner's name (P1-32). Null when there is none, or when the
+   * caller does not also hold `crm.customer.read`.
+   */
+  readonly customerDisplayName: string | null;
 }
 
-/** The six criteria the `.strict()` query schema accepts, and nothing else. */
+/** Which plate a plate search matched, and whether it is still the current one. */
+export interface VehiclePlateMatch {
+  readonly plate: string;
+  readonly active: boolean;
+  readonly validFrom: string;
+  readonly validTo: string | null;
+}
+
+/** The criteria the `.strict()` query schema accepts, and nothing else. */
 export interface VehicleSearchCriteria {
+  readonly q: string;
   readonly vin: string;
   readonly plate: string;
   readonly vehicleNumber: string;
+  readonly make: string;
+  readonly model: string;
   readonly lifecycleStatus: string;
   readonly powertrainCategory: string;
 }
 
 export const EMPTY_CRITERIA: VehicleSearchCriteria = {
+  q: '',
   vin: '',
   plate: '',
   vehicleNumber: '',
+  make: '',
+  model: '',
   lifecycleStatus: '',
   powertrainCategory: '',
 };
+
+/** The criteria the backend refuses below `MIN_VEHICLE_TEXT` characters. */
+const MIN_LENGTH_KEYS = ['q', 'make', 'model'] as const;
+
+/** True when a free-text, make or model value is too short for the backend. */
+export function hasTooShortCriteria(criteria: VehicleSearchCriteria): boolean {
+  return MIN_LENGTH_KEYS.some((key) => {
+    const length = (criteria[key] ?? '').trim().length;
+    return length > 0 && length < MIN_VEHICLE_TEXT;
+  });
+}
 
 /**
  * The criteria keys, as a runtime value rather than only as a type.
@@ -175,7 +220,7 @@ export function normalizeCriteria(criteria: VehicleSearchCriteria): Record<strin
   // `Object.create(null)` and a fixed key list. The previous version iterated
   // `Object.entries(criteria)` and wrote each key into an object literal, which
   // CodeQL flagged as `js/remote-property-injection` (high) on PR #198 — a key
-  // reaching this loop from anywhere but the five below writes somewhere nobody
+  // reaching this loop from anywhere but the fixed keys writes somewhere nobody
   // intended, and a null-prototype target has nowhere dangerous to write.
   const out: Record<string, string> = Object.create(null) as Record<string, string>;
   for (const key of CRITERIA_KEYS) {

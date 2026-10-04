@@ -1,15 +1,35 @@
 'use server';
 
 import { authorizedClient } from '@/lib/api/server-client';
-import { readOperation, type ReadState } from '@/lib/api/read-operation';
-import type { InvoiceCancelBody, InvoiceCreateBody } from '@/lib/contracts/billing-contract';
+import {
+  branchTargetQuery,
+  readOperation,
+  type BranchTarget,
+  type CursorPage,
+  type ReadState,
+} from '@/lib/api/read-operation';
+import type {
+  CounterSaleCreateBody,
+  CreditNoteCreateBody,
+  CreditNoteRejectBody,
+  InvoiceCancelBody,
+  InvoiceCreateBody,
+} from '@/lib/contracts/billing-contract';
 import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
 import type {
   CreatedInvoice,
+  CreditNote,
+  CreditNoteDetail,
+  CreditNoteEcho,
+  CreditNoteState,
+  Invoice,
   InvoiceDetail,
+  InvoiceListEntry,
   InvoicePreview,
+  InvoiceStatus,
   IssuedInvoice,
   Outstanding,
+  SaleKind,
   VoidedInvoice,
   WorkOrderInvoice,
 } from './billing-contract';
@@ -21,11 +41,13 @@ import type {
  * in this application. This file turns operations into view states and does
  * no arithmetic: every amount is passed through as the string the server sent.
  *
- * ## Every read names its subject in the path
+ * ## Every read names its subject in the path — except the branch list
  *
  * The four reads take a work order or an invoice in the path and no query at
  * all; the parent row is the authorization target, re-checked server-side.
- * There is no invoice list to page.
+ * `listInvoices` is the one exception: it names a company AND a branch in the
+ * query, which the server takes as the authorization target (Owner directive,
+ * `P1-32-PRE-OD-UX`).
  *
  * ## The two guarded writes
  *
@@ -50,7 +72,7 @@ export type CreateOutcome<T> = {
 
 const expired = (attempt: number): ActionState => ({
   status: 'expired',
-  messageKey: 'state.expired.title',
+  messageKey: 'state.expired.message',
   attempt,
 });
 
@@ -168,4 +190,326 @@ export async function cancelInvoice(
     state: { ...success('invoices.cancel.success', attempt), correlationId: result.correlationId },
     created: result.data,
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — counter sales.
+ *
+ * A counter sale is an INVOICE with no work order, so it is listed, issued,
+ * settled and credited through the surface above rather than a second one. Only
+ * the two acts that are peculiar to it live here: listing a branch's counter
+ * sales, and creating the draft. The screen that calls them is the inventory
+ * feature's `CounterSalesScreen`, because what an operator is doing is selling
+ * STOCK; `issueInvoice` and `cancelInvoice` above are the same functions the
+ * work-order screen uses, and there is no second copy of either.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A branch's counter sales (`sal.counter-sale-list`), newest first.
+ *
+ * Branch-targeted: `companyId` and `branchId` are the read's TARGET, demanded by
+ * the route and re-authorized server-side, so they travel through
+ * `branchTargetQuery` rather than among the filters. One page of the route's own
+ * maximum; the caller reads `hasMore` rather than assuming the branch fitted.
+ */
+export async function listCounterSales(
+  target: BranchTarget,
+  filter: { readonly status?: InvoiceStatus | undefined } = {}
+): Promise<ReadState<CursorPage<Invoice>>> {
+  return readOperation<CursorPage<Invoice>>(
+    '/api/v1/counter-sales' +
+      branchTargetQuery(target, { status: filter.status ?? null, limit: 50 })
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Credit notes (DEF-T-07).
+ *
+ * A credit note is raised by a customer return, which never names the invoice
+ * it lands on, so the note has no parent screen a caller already holds. These
+ * two reads are how it is reached at all — before them the approval operation
+ * took an id no screen printed.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A branch's credit notes (`sal.credit-note-list`), newest first.
+ *
+ * Branch-targeted for the same reason the counter-sale list is: the branch is
+ * the read's TARGET, demanded by the route and re-authorized server-side, so it
+ * travels through `branchTargetQuery` rather than among the filters. One page of
+ * the route's own maximum; the caller reads `hasMore` rather than assuming the
+ * branch fitted.
+ *
+ * A caller without `sal.finance.view` is REFUSED rather than sent an empty page:
+ * the whole row is gated, and an empty list would read as "this branch has
+ * credited nothing". The screen renders that refusal as a refusal.
+ */
+export async function listCreditNotes(
+  target: BranchTarget,
+  filter: {
+    readonly approvalState?: CreditNoteState | undefined;
+    readonly invoiceId?: string | undefined;
+  } = {},
+  page: { readonly cursor?: string | null; readonly limit?: number } = {}
+): Promise<ReadState<CursorPage<CreditNote>>> {
+  return readOperation<CursorPage<CreditNote>>(
+    '/api/v1/credit-notes' +
+      branchTargetQuery(target, {
+        approvalState: filter.approvalState ?? null,
+        invoiceId: filter.invoiceId ?? null,
+        // The screen walks the pages with the route's own cursor (`OperationalGrid`).
+        cursor: page.cursor ?? null,
+        limit: page.limit ?? 50,
+      })
+  );
+}
+
+/**
+ * One credit note (`sal.credit-note-detail`) — what a second person is asked to
+ * approve: the amount, the reason the requester gave, the approval state, and
+ * what the note is traceable to — the invoice it reduces, the return that raised
+ * it and the people on it, by name (DF-B4).
+ */
+export async function readCreditNote(creditNoteId: string): Promise<ReadState<CreditNoteDetail>> {
+  return readOperation<CreditNoteDetail>(
+    `/api/v1/credit-notes/${encodeURIComponent(creditNoteId)}`
+  );
+}
+
+/**
+ * Raise a credit note against an invoice (`sal.credit-note-create`).
+ *
+ * Born pending, and worth nothing until a second person approves it. The
+ * transport key is the one the form holds for THIS attempt: pressing again
+ * after a lost answer replays the stored request instead of raising a second
+ * note, and the echo says so with `replayed`.
+ *
+ * A 409 here is the invoice refusing the amount — more than is still open, or
+ * an invoice no longer open for credit — and the server names neither with a
+ * token. Both are about the amount the operator typed against this invoice, so
+ * the refusal is filed under the amount rather than left as the generic
+ * "this record changed" banner, which would send the operator looking for an
+ * edit nobody made.
+ */
+export async function requestCreditNote(
+  invoiceId: string,
+  body: CreditNoteCreateBody,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<CreditNoteEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<CreditNoteEcho>(
+    'POST',
+    invoicePath(invoiceId, '/credit-notes'),
+    body,
+    { idempotencyKey }
+  );
+  if (!result.ok) {
+    const state = fromFailure(result, attempt);
+    if (state.status === 'conflict' && (result.problem?.violations ?? []).length === 0) {
+      return {
+        state: {
+          ...state,
+          messageKey: 'form.formError',
+          fieldErrors: { ...(state.fieldErrors ?? {}), amount: 'creditNotes.request.overOpen' },
+        },
+        created: null,
+      };
+    }
+    return { state, created: null };
+  }
+  return {
+    state: {
+      ...success('creditNotes.request.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Approve a pending credit note (`sal.credit-note-approve`) — the moment the
+ * credit becomes real and the invoice's open receivable falls by its amount.
+ *
+ * No body: the approver is the session and the amount was fixed when the note
+ * was raised. The server refuses the person who raised it with the named rule
+ * `credit_note_self_approval`, which reaches the banner as its own sentence. Any
+ * other 409 — a note already decided, or an invoice that no longer has that much
+ * open — carries no token and is said as that, not as "someone changed it".
+ */
+export async function approveCreditNote(
+  creditNoteId: string,
+  attempt = 1
+): Promise<CreateOutcome<CreditNoteEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<CreditNoteEcho>(
+    'POST',
+    `/api/v1/credit-notes/${encodeURIComponent(creditNoteId)}/approval`
+  );
+  if (!result.ok) {
+    const state = fromFailure(result, attempt);
+    if (state.status === 'conflict' && (result.problem?.violations ?? []).length === 0) {
+      return { state: { ...state, messageKey: 'creditNotes.approve.conflict' }, created: null };
+    }
+    return { state, created: null };
+  }
+  return {
+    state: {
+      ...success('creditNotes.approve.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * A refused withdrawal or rejection, as the screen states it. A named rule keeps
+ * its own sentence; a conflict with no rule is the version guard — the note
+ * changed since it was read — and is said as that, not as a refusal of the step.
+ */
+function decisionFailure(result: Parameters<typeof fromFailure>[0], attempt: number): ActionState {
+  const state = fromFailure(result, attempt);
+  if (state.status === 'conflict' && (result.problem?.violations ?? []).length === 0) {
+    return { ...state, messageKey: 'creditNotes.decision.conflict' };
+  }
+  return state;
+}
+
+/**
+ * Withdraw your own pending credit note (`sal.credit-note-withdraw`, ADR-023 D3).
+ *
+ * No body: the requester is the session. `ifMatch` is the NOTE's
+ * `recordVersion` from the detail read, required, never computed. The server
+ * refuses anyone but the requester with the named rule
+ * `credit_note_withdraw_not_requester`, and a decided note with
+ * `credit_note_decision_frozen`; both reach the banner as their own sentences.
+ * A stale version is a conflict the screen answers by reading the note again.
+ */
+export async function withdrawCreditNote(
+  creditNoteId: string,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<CreditNoteEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<CreditNoteEcho>(
+    'POST',
+    `/api/v1/credit-notes/${encodeURIComponent(creditNoteId)}/withdrawal`,
+    undefined,
+    { ifMatch }
+  );
+  if (!result.ok) return { state: decisionFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('creditNotes.withdraw.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Reject a pending credit note somebody else raised (`sal.credit-note-reject`,
+ * ADR-023 D3), stating why.
+ *
+ * `ifMatch` is the NOTE's `recordVersion` from the detail read, required. A
+ * blank reason is refused on the reason itself (`fieldErrors.reason`); the
+ * requester is refused with `credit_note_self_rejection` and a decided note
+ * with `credit_note_decision_frozen`.
+ */
+export async function rejectCreditNote(
+  creditNoteId: string,
+  body: CreditNoteRejectBody,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<CreditNoteEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<CreditNoteEcho>(
+    'POST',
+    `/api/v1/credit-notes/${encodeURIComponent(creditNoteId)}/rejection`,
+    body,
+    { ifMatch }
+  );
+  if (!result.ok) return { state: decisionFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('creditNotes.reject.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Draft a counter sale (`sal.counter-sale-create`).
+ *
+ * The body names the buyer and the lines and NOTHING else — no price, no total,
+ * no tax, no discount — because the route refuses a body carrying one rather
+ * than dropping it, and every figure is computed inside the database from the
+ * item's configured selling price. An item with no configured price refuses the
+ * whole sale rather than selling at zero, which the screen states as that.
+ *
+ * `idempotencyKey` is the transport key for THIS confirmation: a counter runs on
+ * scans, and a doubled frame or a lost answer must replay the first draft rather
+ * than open a second one. A fresh draft answers 201, a replay 200 with
+ * `replayed: true`; both are `ok` to the transport, and the screen tells them
+ * apart from the body.
+ *
+ * Nothing moves yet. The stock leaves the shelf at ISSUANCE.
+ */
+export async function createCounterSale(
+  body: CounterSaleCreateBody,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<CreatedInvoice>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<CreatedInvoice>('POST', '/api/v1/counter-sales', body, {
+    idempotencyKey,
+  });
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('invoices.counterSale.create.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * A branch's invoices, found by number, payer or vehicle (`sal.invoice-list`,
+ * Owner directive `P1-32-PRE-OD-UX`).
+ *
+ * The term travels to the server and nowhere else: it is not written to the
+ * browser's address, and the screen holds it in memory only. `status` narrows to
+ * one state; `allocatable` narrows to the invoices money can still be applied to
+ * — `issued` or `credited` with a balance still open, which the SERVER decides —
+ * and is what the payment desk's allocation form asks for.
+ */
+export async function listInvoices(
+  target: BranchTarget,
+  filter: {
+    readonly q?: string | undefined;
+    readonly status?: InvoiceStatus | undefined;
+    readonly allocatable?: boolean | undefined;
+    /** One kind only — the counter lists its own issued sales (DF-B3). */
+    readonly saleKind?: SaleKind | undefined;
+  },
+  cursor: string | null
+): Promise<ReadState<CursorPage<InvoiceListEntry>>> {
+  return readOperation<CursorPage<InvoiceListEntry>>(
+    '/api/v1/invoices' +
+      branchTargetQuery(target, {
+        status: filter.status ?? null,
+        allocatable: filter.allocatable === true ? 'true' : null,
+        saleKind: filter.saleKind ?? null,
+        q: filter.q ?? null,
+        cursor,
+        limit: 10,
+      })
+  );
 }

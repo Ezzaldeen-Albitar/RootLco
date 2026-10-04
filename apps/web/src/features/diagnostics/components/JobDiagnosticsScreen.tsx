@@ -23,23 +23,41 @@
  * report's own `nextStatuses`; completion needs `dia.diagnostic.complete` and
  * is refused by the backend while a mandatory item is outstanding — the
  * outstanding list is shown for that reason, not hidden. Nothing here edits or
- * deletes an entry, because nothing on the wire does.
+ * deletes an entry, because nothing on the wire does. The version-guarded
+ * commands (`transitionReport`, `completeReport`) hand their outcome onward so
+ * the record version the screen holds is renewed after every move.
  *
- * Every select inside a `<form action>` carries the epoch-key shape (`key` from
- * the form's `attempt`, `defaultValue`, `onChange`): React resets the form DOM
- * once the action settles, and that shape keeps the operator's choice when the
- * write is refused. The version-guarded commands (`transitionReport`,
- * `completeReport`) hand their outcome onward through `onDone` so the record
- * version the screen holds is renewed after every move.
+ * ## On the shared Material wrappers (ADR-022, Owner directive slice 4)
+ *
+ * - Every entry form is `forms/mui/*`: a missing answer is refused on its own
+ *   field (red, the sentence beside it, the cursor moved there) where the
+ *   forms used to return silently from a press; a refusal from the service
+ *   lands on the field it names; what was typed survives a refusal; and typed
+ *   work is unsaved work until it is stored.
+ * - Every command stays busy until the report has been read again
+ *   (`useReread`), so a second press cannot re-send an entry or a stale version.
+ * - Completing the report and cancelling it are asked first (`ConfirmDialog`):
+ *   neither can be walked back here.
+ * - The report's status, every move and every history line are said in words
+ *   (browser QA row B.S3); the outstanding items by their prompt; the evidence
+ *   category by its name where the platform defines one; and neither a document
+ *   nor a reviewer is printed as a reference nobody can read.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useState } from 'react';
+import Button from '@mui/material/Button';
 import { listDocumentCategories } from '@/features/attachments/api';
-import type { DocumentCategory } from '@/features/attachments/attachments-contract';
+import { documentCategoryLabel } from '@/features/attachments/attachments-contract';
 import { CaptureFileField } from '@/features/receptions/components/CaptureFileField';
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { EmptyState } from '@/components/states/States';
-import type { ItemsOnly, ReadState } from '@/lib/api/read-operation';
+import { MuiEmptyState, MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
+import { useReread } from '@/lib/api/use-reread';
+import type { ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime } from '@/lib/format';
 import type { Locale } from '@/i18n/config';
@@ -62,20 +80,16 @@ import {
   transitionReport,
   writeItemResult,
 } from '../api';
-import type {
-  DiagnosticReport,
-  DiagnosticReportDetail,
-  PublishableVersion,
-  ReportHistory,
-  TemplateItem,
+import {
+  unattachedRefusalKey,
+  type DiagnosticReportDetail,
+  type ReportHistory,
+  type TemplateItem,
 } from '../diagnostics-contract';
-
-const PRIMARY_BUTTON =
-  'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:opacity-60';
-const SECONDARY_BUTTON =
-  'rounded-md border border-border px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard hover:bg-surface-subtle disabled:opacity-60';
+import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 
 const RECORDABLE = new Set(['draft', 'in_progress']);
+const REPORT_STATUSES = ['draft', 'in_progress', 'completed', 'cancelled'];
 const SEVERITIES = ['info', 'low', 'medium', 'high', 'critical'] as const;
 const DISPOSITIONS = ['monitor', 'repair_recommended', 'repair_required', 'no_action'] as const;
 const DTC_STATUSES = ['active', 'pending', 'stored', 'cleared'] as const;
@@ -90,46 +104,90 @@ export interface DiagnosticsCapabilities {
   readonly canCapture: boolean;
 }
 
-function useReload(): readonly [number, () => void] {
-  const [reloadCount, setReloadCount] = useState(0);
-  const reload = useCallback(() => setReloadCount((n) => n + 1), []);
-  return [reloadCount, reload];
-}
+/** What a panel is told to re-read with, awaited by the command that asked. */
+type Renew = () => Promise<void>;
 
 function problemKeyOf(result: ActionState): string {
   if (result.status === 'conflict') return 'diagnostics.report.conflict';
   return result.messageKey ?? 'action.failed';
 }
 
+/** A report status in words; an unknown one keeps its code. */
+function statusText(messages: Messages, code: string): string {
+  return REPORT_STATUSES.includes(code)
+    ? translateDynamic(messages, `diagnostics.reportStatus.${code}`)
+    : code;
+}
+
 function ReadProblem({
+  locale,
   messages,
   state,
+  onRetry,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
-  readonly state: { readonly status: string; readonly correlationId: string | null };
+  readonly state: Exclude<ReadState<unknown>, { readonly status: 'ok' }>;
+  readonly onRetry: () => void;
 }) {
   return (
-    <p role="alert" className="text-body text-error">
-      {translateDynamic(messages, `state.${state.status}.title`)}
-      {state.correlationId
-        ? ` ${translate(messages, 'action.reference')} ${state.correlationId}`
-        : ''}
-    </p>
+    <MuiReadFailureState
+      messages={messages}
+      locale={locale}
+      status={state.status}
+      correlationId={state.correlationId}
+      onRetry={onRetry}
+    />
   );
 }
 
 function Problem({
   messages,
   problem,
+  onReload,
 }: {
   readonly messages: Messages;
   readonly problem: string | null;
+  readonly onReload?: (() => void) | undefined;
 }) {
   if (problem === null) return null;
   return (
-    <p role="alert" className="basis-full text-body text-error">
-      {translateDynamic(messages, problem)}
-    </p>
+    <div className="flex basis-full flex-wrap items-center gap-3">
+      <p role="alert" className="text-body text-error">
+        {translateDynamic(messages, problem)}
+      </p>
+      {onReload !== undefined && problem === 'diagnostics.report.conflict' ? (
+        <Button type="button" variant="outlined" size="small" onClick={onReload}>
+          {translate(messages, 'form.loadLatest')}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** A form's one submit, saying "Working…" while its write — and its re-read — is in flight. */
+function Submit({
+  messages,
+  pending,
+  labelKey,
+  variant = 'outlined',
+  disabled = false,
+}: {
+  readonly messages: Messages;
+  readonly pending: boolean;
+  readonly labelKey: string;
+  readonly variant?: 'contained' | 'outlined';
+  readonly disabled?: boolean;
+}) {
+  return (
+    <Button
+      type="submit"
+      variant={variant}
+      disabled={pending || disabled}
+      aria-busy={pending || undefined}
+    >
+      {pending ? translate(messages, 'form.pending') : translateDynamic(messages, labelKey)}
+    </Button>
   );
 }
 
@@ -144,24 +202,20 @@ export function JobDiagnosticsScreen({
   readonly jobId: string;
   readonly capabilities: DiagnosticsCapabilities;
 }) {
-  const [reports, setReports] = useState<ReadState<ItemsOnly<DiagnosticReport>> | null>(null);
-  const [reloadCount, reload] = useReload();
+  const readReports = useCallback(() => listJobReports(jobId), [jobId]);
+  const reports = useReread(readReports);
   const [openReportId, setOpenReportId] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    void listJobReports(jobId).then((next) => {
-      if (!cancelled) setReports(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [jobId, reloadCount]);
+  const list = reports.value;
 
   return (
     <div className="flex flex-col gap-6">
       {capabilities.canRecord ? (
-        <StartReportForm messages={messages} jobId={jobId} onStarted={reload} />
+        <StartReportForm
+          locale={locale}
+          messages={messages}
+          jobId={jobId}
+          onStarted={reports.reload}
+        />
       ) : null}
 
       <section
@@ -171,55 +225,63 @@ export function JobDiagnosticsScreen({
         <h2 id="reports-heading" className="mb-3 text-section-title font-medium text-text-primary">
           {translate(messages, 'diagnostics.job.reportsHeading')}
         </h2>
-        {reports === null ? (
-          <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-        ) : reports.status !== 'ok' ? (
-          <ReadProblem messages={messages} state={reports} />
-        ) : reports.data.items.length === 0 ? (
-          <EmptyState
+        {list === null ? (
+          <MuiLoadingState messages={messages} variant="inline" />
+        ) : list.status !== 'ok' ? (
+          <ReadProblem
+            locale={locale}
+            messages={messages}
+            state={list}
+            onRetry={() => void reports.reload()}
+          />
+        ) : list.data.items.length === 0 ? (
+          <MuiEmptyState
             messages={messages}
             titleKey="diagnostics.job.emptyTitle"
             descriptionKey="diagnostics.job.emptyBody"
           />
         ) : (
           <ul className="flex flex-col gap-2">
-            {reports.data.items.map((report) => (
-              <li key={report.id} className="rounded-md border border-border p-3">
-                <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                  <span className="text-body font-medium text-text-primary">
-                    {translate(messages, 'diagnostics.job.report')} {report.revisionNumber}
-                  </span>
-                  <code className="font-mono text-caption" dir="ltr">
-                    {report.status}
-                  </code>
-                  <span className="text-caption text-text-muted">
-                    {formatDateTime(report.createdAt, locale)}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setOpenReportId(openReportId === report.id ? null : report.id)}
-                    aria-expanded={openReportId === report.id}
-                    className="ms-auto text-primary underline-offset-2 hover:underline"
-                  >
-                    {translate(
-                      messages,
-                      openReportId === report.id
-                        ? 'diagnostics.job.closeReport'
-                        : 'diagnostics.job.openReport'
-                    )}
-                  </button>
-                </div>
-                {openReportId === report.id ? (
-                  <ReportWorkbench
-                    locale={locale}
-                    messages={messages}
-                    reportId={report.id}
-                    capabilities={capabilities}
-                    onListChanged={reload}
-                  />
-                ) : null}
-              </li>
-            ))}
+            {list.data.items.map((report) => {
+              const open = openReportId === report.id;
+              const name = `${translate(messages, 'diagnostics.job.report')} ${report.revisionNumber}`;
+              return (
+                <li key={report.id} className="rounded-md border border-border p-3">
+                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                    <span className="text-body font-medium text-text-primary">{name}</span>
+                    <span className="text-caption text-text-secondary" data-testid="report-status">
+                      {statusText(messages, report.status)}
+                    </span>
+                    <span className="text-caption text-text-muted">
+                      <bdi>{formatDateTime(report.createdAt, locale)}</bdi>
+                    </span>
+                    <Button
+                      type="button"
+                      size="small"
+                      variant="text"
+                      onClick={() => setOpenReportId(open ? null : report.id)}
+                      aria-expanded={open}
+                      className="ms-auto"
+                    >
+                      {translate(
+                        messages,
+                        open ? 'diagnostics.job.closeReport' : 'diagnostics.job.openReport'
+                      )}
+                      <span className="sr-only"> — {name}</span>
+                    </Button>
+                  </div>
+                  {open ? (
+                    <ReportWorkbench
+                      locale={locale}
+                      messages={messages}
+                      reportId={report.id}
+                      capabilities={capabilities}
+                      onListChanged={reports.reload}
+                    />
+                  ) : null}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
@@ -228,29 +290,70 @@ export function JobDiagnosticsScreen({
 }
 
 function StartReportForm({
+  locale,
   messages,
   jobId,
   onStarted,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly jobId: string;
-  readonly onStarted: () => void;
+  readonly onStarted: Renew;
 }) {
-  const [versions, setVersions] = useState<ReadState<ItemsOnly<PublishableVersion>> | null>(null);
+  const readVersions = useCallback(() => listPublishableVersions(jobId), [jobId]);
+  const versions = useReread(readVersions);
   const [templateVersionId, setTemplateVersionId] = useState('');
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  /**
+   * `body.templateVersionId` — the chosen version is not published, so no
+   * inspection may be started from it. The sentence belongs beside the control
+   * that holds the choice; the choice is kept, so the reader sees what they
+   * picked while they pick again.
+   */
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: fieldErrorsRefusalErrors, formRef: fieldErrorsRefusalFormRef } = useHeldRefusal(
+    fieldErrors,
+    { templateVersionId }
+  );
+  useUnsavedGuard(templateVersionId !== '', () => {
+    setTemplateVersionId('');
+    setFieldErrors({});
+    setProblem(null);
+  });
 
-  useEffect(() => {
-    let cancelled = false;
-    void listPublishableVersions(jobId).then((next) => {
-      if (!cancelled) setVersions(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [jobId]);
+  const submit = async () => {
+    setProblem(null);
+    if (templateVersionId.length === 0) {
+      setFieldErrors({ templateVersionId: 'field.required' });
+      return;
+    }
+    setFieldErrors({});
+    setPending(true);
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await createReport(jobId, { templateVersionId });
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        setTemplateVersionId('');
+        await onStarted();
+        return;
+      }
+      setFieldErrors(outcome.fieldErrors ?? {});
+      setProblem(problemKeyOf(outcome));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const list = versions.value;
 
   return (
     <section
@@ -263,54 +366,53 @@ function StartReportForm({
       >
         {translate(messages, 'diagnostics.job.startHeading')}
       </h2>
-      {versions === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-      ) : versions.status !== 'ok' ? (
-        <ReadProblem messages={messages} state={versions} />
-      ) : versions.data.items.length === 0 ? (
+      {list === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : list.status !== 'ok' ? (
+        <ReadProblem
+          locale={locale}
+          messages={messages}
+          state={list}
+          onRetry={() => void versions.reload()}
+        />
+      ) : list.data.items.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'diagnostics.job.noPublishable')}
         </p>
       ) : (
         <form
-          action={async () => {
-            setPending(true);
-            setProblem(null);
-            if (templateVersionId.length === 0) {
-              setPending(false);
-              setAttempt((n) => n + 1);
-              setProblem('field.required');
-              return;
-            }
-            const outcome = await createReport(jobId, { templateVersionId });
-            setPending(false);
-            setAttempt((n) => n + 1);
-            notifyActionResult(outcome, messages);
-            if (outcome.status === 'success') {
-              setTemplateVersionId('');
-              onStarted();
-              return;
-            }
-            setProblem(problemKeyOf(outcome));
+          ref={fieldErrorsRefusalFormRef}
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (pending) return;
+            void submit();
           }}
-          className="flex flex-wrap items-end gap-3"
+          className="flex flex-wrap items-start gap-3"
         >
-          <SelectField
-            key={`templateVersionId-${attempt}`}
+          <FormSelectField
             name="templateVersionId"
             label={translate(messages, 'diagnostics.job.template')}
-            defaultValue={templateVersionId}
-            onChange={(event) => setTemplateVersionId(event.target.value)}
-            options={versions.data.items.map((version) => ({
+            value={templateVersionId}
+            onChange={setTemplateVersionId}
+            options={list.data.items.map((version) => ({
               value: version.versionId,
               label: `${version.templateName} — ${translate(messages, 'diagnostics.template.version')} ${version.versionNumber} (${version.itemCount})`,
             }))}
             placeholder={translate(messages, 'diagnostics.job.chooseTemplate')}
+            error={
+              fieldErrorsRefusalErrors['templateVersionId']
+                ? translateDynamic(messages, fieldErrorsRefusalErrors['templateVersionId'])
+                : undefined
+            }
             required
           />
-          <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-            {translate(messages, pending ? 'diagnostics.job.starting' : 'diagnostics.job.start')}
-          </button>
+          <Submit
+            messages={messages}
+            pending={pending}
+            labelKey="diagnostics.job.start"
+            variant="contained"
+          />
           <Problem messages={messages} problem={problem} />
         </form>
       )}
@@ -329,54 +431,57 @@ function ReportWorkbench({
   readonly messages: Messages;
   readonly reportId: string;
   readonly capabilities: DiagnosticsCapabilities;
-  readonly onListChanged: () => void;
+  readonly onListChanged: Renew;
 }) {
-  const [detail, setDetail] = useState<ReadState<DiagnosticReportDetail> | null>(null);
-  const [items, setItems] = useState<ReadState<ItemsOnly<TemplateItem>> | null>(null);
-  const [reloadCount, reload] = useReload();
+  const readDetail = useCallback(() => readReport(reportId), [reportId]);
+  const report = useReread(readDetail);
+  const detail = report.value;
+  const versionId = detail?.status === 'ok' ? detail.data.report.templateVersionId : null;
+  const readItems = useCallback(() => listVersionItems(versionId ?? ''), [versionId]);
+  const items = useReread(versionId === null ? null : readItems);
+  const [historyEpoch, setHistoryEpoch] = useState(0);
+  const reloadReport = report.reload;
 
-  useEffect(() => {
-    let cancelled = false;
-    void readReport(reportId).then((next) => {
-      if (cancelled) return;
-      setDetail(next);
-      if (next.status === 'ok') {
-        void listVersionItems(next.data.report.templateVersionId).then((list) => {
-          if (!cancelled) setItems(list);
-        });
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [reportId, reloadCount]);
+  /** The report read again — and its history with it. */
+  const reload = useCallback(async () => {
+    await reloadReport();
+    setHistoryEpoch((n) => n + 1);
+  }, [reloadReport]);
+  const changed = useCallback(async () => {
+    await Promise.all([reload(), onListChanged()]);
+  }, [reload, onListChanged]);
 
   if (detail === null) {
     return (
-      <p className="mt-3 text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+      <div className="mt-3">
+        <MuiLoadingState messages={messages} variant="inline" />
+      </div>
     );
   }
   if (detail.status !== 'ok') {
     return (
       <div className="mt-3">
-        <ReadProblem messages={messages} state={detail} />
+        <ReadProblem
+          locale={locale}
+          messages={messages}
+          state={detail}
+          onRetry={() => void report.reload()}
+        />
       </div>
     );
   }
 
   const data = detail.data;
   const recordable = capabilities.canRecord && RECORDABLE.has(data.report.status);
-  const changed = () => {
-    reload();
-    onListChanged();
-  };
 
   return (
     <div className="mt-3 flex flex-col gap-4">
       <Checklist
+        locale={locale}
         messages={messages}
         detail={data}
-        items={items}
+        items={items.value}
+        onRetryItems={() => void items.reload()}
         recordable={recordable}
         onChanged={reload}
       />
@@ -407,28 +512,27 @@ function ReportWorkbench({
       {capabilities.canReview ? (
         <ReviewForm messages={messages} reportId={reportId} onDone={reload} />
       ) : null}
-      <HistoryPanel
-        locale={locale}
-        messages={messages}
-        reportId={reportId}
-        reloadCount={reloadCount}
-      />
+      <HistoryPanel key={historyEpoch} locale={locale} messages={messages} reportId={reportId} />
     </div>
   );
 }
 
 function Checklist({
+  locale,
   messages,
   detail,
   items,
+  onRetryItems,
   recordable,
   onChanged,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly detail: DiagnosticReportDetail;
-  readonly items: ReadState<ItemsOnly<TemplateItem>> | null;
+  readonly items: ReadState<{ readonly items: readonly TemplateItem[] }> | null;
+  readonly onRetryItems: () => void;
   readonly recordable: boolean;
-  readonly onChanged: () => void;
+  readonly onChanged: Renew;
 }) {
   const [problem, setProblem] = useState<string | null>(null);
   const [pendingItem, setPendingItem] = useState<string | null>(null);
@@ -440,19 +544,28 @@ function Checklist({
   ): Promise<boolean> => {
     setPendingItem(templateItemId);
     setProblem(null);
-    const body =
-      notApplicableReason.trim().length > 0
-        ? { notApplicableReason: notApplicableReason.trim() }
-        : { resultValue: resultValue.trim() };
-    const outcome = await writeItemResult(detail.report.id, templateItemId, body);
-    setPendingItem(null);
-    notifyActionResult(outcome, messages);
-    if (outcome.status === 'success') {
-      onChanged();
-      return true;
+    try {
+      const body =
+        notApplicableReason.trim().length > 0
+          ? { notApplicableReason: notApplicableReason.trim() }
+          : { resultValue: resultValue.trim() };
+      let outcome: ActionState;
+      try {
+        outcome = await writeItemResult(detail.report.id, templateItemId, body);
+      } catch {
+        setProblem('state.unavailable.message');
+        return false;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        await onChanged();
+        return true;
+      }
+      setProblem(problemKeyOf(outcome));
+      return false;
+    } finally {
+      setPendingItem(null);
     }
-    setProblem(problemKeyOf(outcome));
-    return false;
   };
 
   return (
@@ -463,13 +576,14 @@ function Checklist({
       {detail.outstandingMandatory.length > 0 ? (
         <p className="text-caption text-text-muted">
           {translate(messages, 'diagnostics.report.outstanding')}{' '}
-          {detail.outstandingMandatory.map((o) => o.itemCode).join(', ')}
+          {/* By what the item ASKS, as the checklist below says it. */}
+          {detail.outstandingMandatory.map((o) => o.prompt).join(', ')}
         </p>
       ) : null}
       {items === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+        <MuiLoadingState messages={messages} variant="inline" />
       ) : items.status !== 'ok' ? (
-        <ReadProblem messages={messages} state={items} />
+        <ReadProblem locale={locale} messages={messages} state={items} onRetry={onRetryItems} />
       ) : items.data.items.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'diagnostics.template.noItems')}
@@ -497,7 +611,7 @@ function Checklist({
                       ? translate(messages, 'diagnostics.report.unanswered')
                       : result.notApplicableReason !== null
                         ? `${translate(messages, 'diagnostics.report.notApplicable')}: ${result.notApplicableReason}`
-                        : `${translate(messages, 'diagnostics.report.answer')}: ${result.resultValue ?? ''}`}
+                        : `${translate(messages, 'diagnostics.report.answer')}: ${answerText(messages, item, result.resultValue ?? '')}`}
                   </span>
                 </div>
                 {recordable ? (
@@ -505,6 +619,7 @@ function Checklist({
                     messages={messages}
                     item={item}
                     pending={pendingItem === item.id}
+                    busy={pendingItem !== null}
                     onSubmit={(value, reason) => answer(item.id, value, reason)}
                   />
                 ) : null}
@@ -513,76 +628,110 @@ function Checklist({
           })}
         </ol>
       )}
-      <Problem messages={messages} problem={problem} />
+      <Problem messages={messages} problem={problem} onReload={() => void onChanged()} />
     </section>
   );
+}
+
+/** A recorded answer as it reads: a yes-or-no in words, anything else as recorded. */
+function answerText(messages: Messages, item: TemplateItem, value: string): string {
+  if (item.responseType !== 'boolean') return value;
+  if (value === 'true') return translate(messages, 'diagnostics.report.yes');
+  if (value === 'false') return translate(messages, 'diagnostics.report.no');
+  return value;
 }
 
 function ItemAnswerForm({
   messages,
   item,
   pending,
+  busy,
   onSubmit,
 }: {
   readonly messages: Messages;
   readonly item: TemplateItem;
   readonly pending: boolean;
+  readonly busy: boolean;
   readonly onSubmit: (resultValue: string, notApplicableReason: string) => Promise<boolean>;
 }) {
   const [value, setValue] = useState('');
   const [reason, setReason] = useState('');
-  const [attempt, setAttempt] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  const { errors, formRef } = useHeldRefusal(fieldErrors, { resultValue: value, reason });
+  useUnsavedGuard(value.trim().length > 0 || reason.trim().length > 0, () => {
+    setValue('');
+    setReason('');
+    setFieldErrors({});
+  });
+  const answerError = errors['resultValue']
+    ? translateDynamic(messages, errors['resultValue'])
+    : undefined;
+
   return (
     <form
-      action={async () => {
-        const ok = await onSubmit(value, reason);
-        setAttempt((n) => n + 1);
-        if (ok) {
+      ref={formRef}
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (busy) return;
+        if (value.trim().length === 0 && reason.trim().length === 0) {
+          // Said on the answer, where the cursor is taken; the reason beside it
+          // is the other way to answer.
+          setFieldErrors({ resultValue: 'diagnostics.report.answerOrReason' });
+          return;
+        }
+        setFieldErrors({});
+        void onSubmit(value, reason).then((stored) => {
+          if (!stored) return;
           setValue('');
           setReason('');
-        }
+        });
       }}
-      className="mt-2 flex flex-wrap items-end gap-2"
+      className="mt-2 flex flex-wrap items-start gap-3"
     >
       {item.responseType === 'boolean' ? (
-        <SelectField
-          key={`result-${item.id}-${attempt}`}
+        <FormRadioGroupField
           name={`result-${item.id}`}
           label={translate(messages, 'diagnostics.report.answer')}
-          defaultValue={value}
-          onChange={(event) => setValue(event.target.value)}
+          value={value}
+          onChange={setValue}
           options={[
             { value: 'true', label: translate(messages, 'diagnostics.report.yes') },
             { value: 'false', label: translate(messages, 'diagnostics.report.no') },
           ]}
-          placeholder={translate(messages, 'diagnostics.report.chooseAnswer')}
+          error={answerError}
         />
-      ) : (
-        <TextField
+      ) : item.responseType === 'numeric' ? (
+        <FormNumberField
           name={`result-${item.id}`}
           label={translate(messages, 'diagnostics.report.answer')}
           value={value}
-          onChange={(event) => setValue(event.target.value)}
-          inputMode={item.responseType === 'numeric' ? 'decimal' : undefined}
-          dir={item.responseType === 'numeric' ? 'ltr' : undefined}
+          onChange={setValue}
+          unit={item.unit ?? undefined}
+          unitId={`unit-${item.id}`}
+          error={answerError}
+        />
+      ) : (
+        <FormTextField
+          name={`result-${item.id}`}
+          label={translate(messages, 'diagnostics.report.answer')}
+          value={value}
+          onChange={setValue}
+          error={answerError}
         />
       )}
-      <TextField
+      <FormTextField
         name={`reason-${item.id}`}
         label={translate(messages, 'diagnostics.report.notApplicableReason')}
         value={reason}
-        onChange={(event) => setReason(event.target.value)}
+        onChange={setReason}
       />
-      <button
-        type="submit"
-        disabled={pending || (value.trim().length === 0 && reason.trim().length === 0)}
-        className={SECONDARY_BUTTON}
-      >
-        {translate(
-          messages,
-          pending ? 'diagnostics.report.recording' : 'diagnostics.report.record'
-        )}
-      </button>
+      <Submit
+        messages={messages}
+        pending={pending}
+        disabled={busy && !pending}
+        labelKey="diagnostics.report.record"
+      />
     </form>
   );
 }
@@ -686,27 +835,85 @@ function Entries({
   );
 }
 
-/** The shared settle-and-report of every entry form: pending, problem, epoch. */
-function useEntryForm(messages: Messages, onDone: () => void) {
+/**
+ * The shared settle-and-report of every entry form: pending (through the
+ * re-read), the problem, and the refusal's field errors.
+ */
+function useEntryForm(messages: Messages, onDone: Renew) {
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const run = async (action: () => Promise<ActionState>): Promise<boolean> => {
     setPending(true);
     setProblem(null);
-    const outcome = await action();
-    setPending(false);
-    setAttempt((n) => n + 1);
-    notifyActionResult(outcome, messages);
-    if (outcome.status === 'success') {
-      onDone();
-      return true;
+    setFieldErrors({});
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await action();
+      } catch {
+        setProblem('state.unavailable.message');
+        return false;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        await onDone();
+        return true;
+      }
+      setFieldErrors(outcome.fieldErrors ?? {});
+      /*
+       * The review refusal names `reviewer`, which is the signed-in user and so
+       * is no control on any of these forms; without this its sentence — ask a
+       * colleague to review it — was filed under a name nothing renders.
+       */
+      setProblem(unattachedRefusalKey(outcome.fieldErrors, []) ?? problemKeyOf(outcome));
+      return false;
+    } finally {
+      setPending(false);
     }
-    setProblem(problemKeyOf(outcome));
-    return false;
   };
-  return { pending, problem, attempt, run } as const;
+  return { pending, problem, fieldErrors, run } as const;
 }
+
+/**
+ * One entry form's draft, its own refusals and the service's, and the unsaved
+ * work it declares until it is stored.
+ */
+function useEntryDraft<Draft extends Record<string, string>>(
+  empty: Draft,
+  serverErrors: Readonly<Record<string, string>>
+) {
+  const [draft, setDraft] = useState<Draft>(empty);
+  const [localErrors, setLocalErrors] = useState<Readonly<Record<string, string>>>({});
+  const shown = Object.keys(localErrors).length > 0 ? localErrors : serverErrors;
+  const { errors, formRef } = useHeldRefusal(shown, draft);
+  useUnsavedGuard(
+    Object.values(draft).some((value) => value.trim().length > 0),
+    () => {
+      setDraft(empty);
+      setLocalErrors({});
+    }
+  );
+  return {
+    draft,
+    set: (field: keyof Draft & string) => (value: string) =>
+      setDraft((current) => ({ ...current, [field]: value })),
+    reset: () => setDraft(empty),
+    /** Refuses the missing fields, and says whether anything was missing. */
+    refuseMissing: (fields: readonly (keyof Draft & string)[]): boolean => {
+      const missing: Record<string, string> = {};
+      for (const field of fields) {
+        if ((draft[field] ?? '').trim().length === 0) missing[field] = 'field.required';
+      }
+      setLocalErrors(missing);
+      return Object.keys(missing).length > 0;
+    },
+    errors,
+    formRef,
+  };
+}
+
+const FORM_FRAME = 'grid gap-3 rounded-md border border-dashed border-border p-3 content-start';
 
 function MeasurementForm({
   messages,
@@ -715,71 +922,66 @@ function MeasurementForm({
 }: {
   readonly messages: Messages;
   readonly reportId: string;
-  readonly onDone: () => void;
+  readonly onDone: Renew;
 }) {
-  const [label, setLabel] = useState('');
-  const [measuredValue, setMeasuredValue] = useState('');
-  const [unit, setUnit] = useState('');
-  const { pending, problem, run } = useEntryForm(messages, onDone);
+  const { pending, problem, fieldErrors, run } = useEntryForm(messages, onDone);
+  const { draft, set, reset, refuseMissing, errors, formRef } = useEntryDraft(
+    { label: '', measuredValue: '', unit: '' },
+    fieldErrors
+  );
+  const errorFor = (field: string) =>
+    errors[field] ? translateDynamic(messages, errors[field]) : undefined;
   return (
     <form
-      action={async () => {
-        if (
-          label.trim().length === 0 ||
-          measuredValue.trim().length === 0 ||
-          unit.trim().length === 0
-        ) {
-          return;
-        }
-        const ok = await run(() =>
+      ref={formRef}
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending || refuseMissing(['label', 'measuredValue', 'unit'])) return;
+        void run(() =>
           recordMeasurement(reportId, {
-            label: label.trim(),
-            measuredValue: measuredValue.trim(),
-            unit: unit.trim(),
+            label: draft.label.trim(),
+            measuredValue: draft.measuredValue.trim(),
+            unit: draft.unit.trim(),
           })
-        );
-        if (ok) {
-          setLabel('');
-          setMeasuredValue('');
-          setUnit('');
-        }
+        ).then((ok) => {
+          if (ok) reset();
+        });
       }}
-      className="flex flex-wrap items-end gap-2 rounded-md border border-dashed border-border p-3"
+      className={FORM_FRAME}
     >
-      <span className="basis-full text-caption font-medium text-text-secondary">
+      <span className="text-caption font-medium text-text-secondary">
         {translate(messages, 'diagnostics.report.addMeasurement')}
       </span>
-      <TextField
+      <FormTextField
         name="label"
         label={translate(messages, 'diagnostics.report.measurementLabel')}
-        value={label}
-        onChange={(e) => setLabel(e.target.value)}
+        value={draft.label}
+        onChange={set('label')}
+        error={errorFor('label')}
         required
       />
-      <TextField
+      <FormNumberField
         name="measuredValue"
         label={translate(messages, 'diagnostics.report.measuredValue')}
-        value={measuredValue}
-        onChange={(e) => setMeasuredValue(e.target.value)}
-        inputMode="decimal"
-        dir="ltr"
+        value={draft.measuredValue}
+        onChange={set('measuredValue')}
+        error={errorFor('measuredValue')}
         required
       />
-      <TextField
+      <FormTextField
         name="unit"
         label={translate(messages, 'diagnostics.template.unit')}
-        value={unit}
-        onChange={(e) => setUnit(e.target.value)}
+        value={draft.unit}
+        onChange={set('unit')}
+        error={errorFor('unit')}
         dir="ltr"
         required
       />
-      <button type="submit" disabled={pending} className={SECONDARY_BUTTON}>
-        {translate(
-          messages,
-          pending ? 'diagnostics.report.recording' : 'diagnostics.report.record'
-        )}
-      </button>
-      <Problem messages={messages} problem={problem} />
+      <div className="flex flex-wrap items-center gap-3">
+        <Submit messages={messages} pending={pending} labelKey="diagnostics.report.record" />
+        <Problem messages={messages} problem={problem} />
+      </div>
     </form>
   );
 }
@@ -791,67 +993,71 @@ function DtcForm({
 }: {
   readonly messages: Messages;
   readonly reportId: string;
-  readonly onDone: () => void;
+  readonly onDone: Renew;
 }) {
-  const [code, setCode] = useState('');
-  const [dtcStatus, setDtcStatus] = useState('');
-  const [description, setDescription] = useState('');
-  const { pending, problem, attempt, run } = useEntryForm(messages, onDone);
+  const { pending, problem, fieldErrors, run } = useEntryForm(messages, onDone);
+  const { draft, set, reset, refuseMissing, errors, formRef } = useEntryDraft(
+    { code: '', dtcStatus: '', description: '' },
+    fieldErrors
+  );
+  const errorFor = (field: string) =>
+    errors[field] ? translateDynamic(messages, errors[field]) : undefined;
   return (
     <form
-      action={async () => {
-        if (code.trim().length === 0) return;
-        const ok = await run(() =>
+      ref={formRef}
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending || refuseMissing(['code'])) return;
+        const { code, dtcStatus, description } = draft;
+        void run(() =>
           recordDtc(reportId, {
             code: code.trim(),
             ...(description.trim().length > 0 ? { description: description.trim() } : {}),
             ...(dtcStatus ? { dtcStatus: dtcStatus as (typeof DTC_STATUSES)[number] } : {}),
           })
-        );
-        if (ok) {
-          setCode('');
-          setDtcStatus('');
-          setDescription('');
-        }
+        ).then((ok) => {
+          if (ok) reset();
+        });
       }}
-      className="flex flex-wrap items-end gap-2 rounded-md border border-dashed border-border p-3"
+      className={FORM_FRAME}
     >
-      <span className="basis-full text-caption font-medium text-text-secondary">
+      <span className="text-caption font-medium text-text-secondary">
         {translate(messages, 'diagnostics.report.addDtc')}
       </span>
-      <TextField
+      <FormTextField
         name="code"
         label={translate(messages, 'diagnostics.report.dtcCode')}
-        value={code}
-        onChange={(e) => setCode(e.target.value)}
+        value={draft.code}
+        onChange={set('code')}
+        error={errorFor('code')}
         dir="ltr"
+        autoComplete="off"
         required
       />
-      <SelectField
-        key={`dtcStatus-${attempt}`}
+      <FormSelectField
         name="dtcStatus"
         label={translate(messages, 'diagnostics.report.dtcStatus')}
-        defaultValue={dtcStatus}
-        onChange={(e) => setDtcStatus(e.target.value)}
+        value={draft.dtcStatus}
+        onChange={set('dtcStatus')}
         options={DTC_STATUSES.map((value) => ({
           value,
-          label: translate(messages, `diagnostics.dtcStatus.${value}` as keyof Messages),
+          label: translate(messages, `diagnostics.dtcStatus.${value}`),
         }))}
         placeholder={translate(messages, 'diagnostics.report.dtcStatusDefault')}
+        error={errorFor('dtcStatus')}
       />
-      <TextField
+      <FormTextField
         name="description"
         label={translate(messages, 'diagnostics.report.description')}
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
+        value={draft.description}
+        onChange={set('description')}
+        error={errorFor('description')}
       />
-      <button type="submit" disabled={pending} className={SECONDARY_BUTTON}>
-        {translate(
-          messages,
-          pending ? 'diagnostics.report.recording' : 'diagnostics.report.record'
-        )}
-      </button>
-      <Problem messages={messages} problem={problem} />
+      <div className="flex flex-wrap items-center gap-3">
+        <Submit messages={messages} pending={pending} labelKey="diagnostics.report.record" />
+        <Problem messages={messages} problem={problem} />
+      </div>
     </form>
   );
 }
@@ -863,75 +1069,78 @@ function FindingForm({
 }: {
   readonly messages: Messages;
   readonly reportId: string;
-  readonly onDone: () => void;
+  readonly onDone: Renew;
 }) {
-  const [severity, setSeverity] = useState('');
-  const [disposition, setDisposition] = useState('');
-  const [description, setDescription] = useState('');
-  const { pending, problem, attempt, run } = useEntryForm(messages, onDone);
+  const { pending, problem, fieldErrors, run } = useEntryForm(messages, onDone);
+  const { draft, set, reset, refuseMissing, errors, formRef } = useEntryDraft(
+    { severity: '', disposition: '', description: '' },
+    fieldErrors
+  );
+  const errorFor = (field: string) =>
+    errors[field] ? translateDynamic(messages, errors[field]) : undefined;
   return (
     <form
-      action={async () => {
-        if (description.trim().length === 0 || !severity || !disposition) return;
-        const ok = await run(() =>
+      ref={formRef}
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending || refuseMissing(['severity', 'disposition', 'description'])) return;
+        const { severity, disposition, description } = draft;
+        void run(() =>
           recordFinding(reportId, {
             severity: severity as (typeof SEVERITIES)[number],
             disposition: disposition as (typeof DISPOSITIONS)[number],
             description: description.trim(),
           })
-        );
-        if (ok) {
-          setSeverity('');
-          setDisposition('');
-          setDescription('');
-        }
+        ).then((ok) => {
+          if (ok) reset();
+        });
       }}
-      className="flex flex-wrap items-end gap-2 rounded-md border border-dashed border-border p-3"
+      className={FORM_FRAME}
     >
-      <span className="basis-full text-caption font-medium text-text-secondary">
+      <span className="text-caption font-medium text-text-secondary">
         {translate(messages, 'diagnostics.report.addFinding')}
       </span>
-      <SelectField
-        key={`severity-${attempt}`}
+      <FormSelectField
         name="severity"
         label={translate(messages, 'diagnostics.report.severity')}
-        defaultValue={severity}
-        onChange={(e) => setSeverity(e.target.value)}
+        value={draft.severity}
+        onChange={set('severity')}
         options={SEVERITIES.map((value) => ({
           value,
-          label: translate(messages, `diagnostics.severity.${value}` as keyof Messages),
+          label: translate(messages, `diagnostics.severity.${value}`),
         }))}
         placeholder={translate(messages, 'diagnostics.report.chooseSeverity')}
+        error={errorFor('severity')}
         required
       />
-      <SelectField
-        key={`disposition-${attempt}`}
+      <FormSelectField
         name="disposition"
         label={translate(messages, 'diagnostics.report.disposition')}
-        defaultValue={disposition}
-        onChange={(e) => setDisposition(e.target.value)}
+        value={draft.disposition}
+        onChange={set('disposition')}
         options={DISPOSITIONS.map((value) => ({
           value,
-          label: translate(messages, `diagnostics.disposition.${value}` as keyof Messages),
+          label: translate(messages, `diagnostics.disposition.${value}`),
         }))}
         placeholder={translate(messages, 'diagnostics.report.chooseDisposition')}
+        error={errorFor('disposition')}
         required
       />
-      <TextAreaField
+      <FormTextField
         name="description"
         label={translate(messages, 'diagnostics.report.description')}
-        value={description}
-        onChange={(e) => setDescription(e.target.value)}
+        value={draft.description}
+        onChange={set('description')}
+        error={errorFor('description')}
+        multiline
         rows={2}
         required
       />
-      <button type="submit" disabled={pending} className={SECONDARY_BUTTON}>
-        {translate(
-          messages,
-          pending ? 'diagnostics.report.recording' : 'diagnostics.report.record'
-        )}
-      </button>
-      <Problem messages={messages} problem={problem} />
+      <div className="flex flex-wrap items-center gap-3">
+        <Submit messages={messages} pending={pending} labelKey="diagnostics.report.record" />
+        <Problem messages={messages} problem={problem} />
+      </div>
     </form>
   );
 }
@@ -943,62 +1152,75 @@ function RecommendationForm({
 }: {
   readonly messages: Messages;
   readonly reportId: string;
-  readonly onDone: () => void;
+  readonly onDone: Renew;
 }) {
-  const [recommendation, setRecommendation] = useState('');
-  const [priority, setPriority] = useState('');
-  const { pending, problem, attempt, run } = useEntryForm(messages, onDone);
+  const { pending, problem, fieldErrors, run } = useEntryForm(messages, onDone);
+  const { draft, set, reset, refuseMissing, errors, formRef } = useEntryDraft(
+    { recommendation: '', priority: '' },
+    fieldErrors
+  );
+  const errorFor = (field: string) =>
+    errors[field] ? translateDynamic(messages, errors[field]) : undefined;
   return (
     <form
-      action={async () => {
-        if (recommendation.trim().length === 0) return;
-        const ok = await run(() =>
+      ref={formRef}
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending || refuseMissing(['recommendation'])) return;
+        const { recommendation, priority } = draft;
+        void run(() =>
           recordRecommendation(reportId, {
             recommendation: recommendation.trim(),
             ...(priority ? { priority: priority as (typeof PRIORITIES)[number] } : {}),
           })
-        );
-        if (ok) {
-          setRecommendation('');
-          setPriority('');
-        }
+        ).then((ok) => {
+          if (ok) reset();
+        });
       }}
-      className="flex flex-wrap items-end gap-2 rounded-md border border-dashed border-border p-3"
+      className={FORM_FRAME}
     >
-      <span className="basis-full text-caption font-medium text-text-secondary">
+      <span className="text-caption font-medium text-text-secondary">
         {translate(messages, 'diagnostics.report.addRecommendation')}
       </span>
-      <TextAreaField
+      <FormTextField
         name="recommendation"
         label={translate(messages, 'diagnostics.report.recommendation')}
-        value={recommendation}
-        onChange={(e) => setRecommendation(e.target.value)}
+        value={draft.recommendation}
+        onChange={set('recommendation')}
+        error={errorFor('recommendation')}
+        multiline
         rows={2}
         required
       />
-      <SelectField
-        key={`priority-${attempt}`}
+      <FormSelectField
         name="priority"
         label={translate(messages, 'diagnostics.report.priority')}
-        defaultValue={priority}
-        onChange={(e) => setPriority(e.target.value)}
+        value={draft.priority}
+        onChange={set('priority')}
         options={PRIORITIES.map((value) => ({
           value,
-          label: translate(messages, `diagnostics.priority.${value}` as keyof Messages),
+          label: translate(messages, `diagnostics.priority.${value}`),
         }))}
         placeholder={translate(messages, 'diagnostics.report.priorityDefault')}
+        error={errorFor('priority')}
       />
-      <button type="submit" disabled={pending} className={SECONDARY_BUTTON}>
-        {translate(
-          messages,
-          pending ? 'diagnostics.report.recording' : 'diagnostics.report.record'
-        )}
-      </button>
-      <Problem messages={messages} problem={problem} />
+      <div className="flex flex-wrap items-center gap-3">
+        <Submit messages={messages} pending={pending} labelKey="diagnostics.report.record" />
+        <Problem messages={messages} problem={problem} />
+      </div>
     </form>
   );
 }
 
+/**
+ * Evidence on the report: the file goes up through ONE Server Action that takes
+ * the form's data (`captureReportEvidence`), so this is the one form here that
+ * keeps `action={…}`. React resets such a form's DOM once the action settles,
+ * so every control carries the epoch shape — a `key` that moves with each
+ * settlement — and is controlled, so the remount shows exactly what the state
+ * holds: the operator's entries after a refusal, nothing after a success.
+ */
 function EvidencePanel({
   locale,
   messages,
@@ -1012,33 +1234,80 @@ function EvidencePanel({
   readonly reportId: string;
   readonly detail: DiagnosticReportDetail;
   readonly canCapture: boolean;
-  readonly onDone: () => void;
+  readonly onDone: Renew;
 }) {
-  const [categories, setCategories] = useState<readonly DocumentCategory[] | null>(null);
+  const categories = useReread(canCapture ? listDocumentCategories : null);
   const [categoryCode, setCategoryCode] = useState('');
   const [evidenceType, setEvidenceType] = useState('');
   const [note, setNote] = useState('');
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the first refused field, and a complaint
+  // goes once its field changes (route sweep B3).
+  const { errors: fieldErrorsRefusalErrors, formRef: fieldErrorsRefusalFormRef } = useHeldRefusal(
+    fieldErrors,
+    { categoryCode, evidenceType, note }
+  );
+  /** Moves with every settled capture: the controls remount on the state. */
   const [attempt, setAttempt] = useState(0);
+  useUnsavedGuard(
+    categoryCode !== '' || evidenceType.trim().length > 0 || note.trim().length > 0,
+    () => {
+      setCategoryCode('');
+      setEvidenceType('');
+      setNote('');
+      setFieldErrors({});
+      setAttempt((n) => n + 1);
+    }
+  );
 
-  useEffect(() => {
-    if (!canCapture) return;
-    let cancelled = false;
-    void listDocumentCategories().then((next) => {
-      if (cancelled) return;
-      setCategories(next.status === 'ok' ? next.data.items : []);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [canCapture]);
-
-  const category = categories?.find((each) => each.categoryCode === categoryCode);
+  const read = categories.value;
+  const list = read?.status === 'ok' ? read.data.items : null;
+  const category = list?.find((each) => each.categoryCode === categoryCode);
   const errorFor = (name: string): string | undefined => {
-    const key = fieldErrors[name];
+    const key = fieldErrorsRefusalErrors[name];
     return key ? translateDynamic(messages, key) : undefined;
+  };
+
+  const capture = async (formData: FormData) => {
+    const missing: Record<string, string> = {};
+    if (categoryCode === '') missing['categoryCode'] = 'field.required';
+    if (evidenceType.trim().length === 0) missing['evidenceType'] = 'field.required';
+    if (Object.keys(missing).length > 0) {
+      setFieldErrors(missing);
+      setAttempt((n) => n + 1);
+      return;
+    }
+    setPending(true);
+    setProblem(null);
+    setFieldErrors({});
+    try {
+      let outcome: Awaited<ReturnType<typeof captureReportEvidence>>;
+      try {
+        outcome = await captureReportEvidence(reportId, formData);
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        setCategoryCode('');
+        setEvidenceType('');
+        setNote('');
+        await onDone();
+        return;
+      }
+      if (outcome.fieldErrors) setFieldErrors(outcome.fieldErrors);
+      setProblem(
+        outcome.stage === undefined
+          ? (outcome.messageKey ?? 'action.failed')
+          : 'diagnostics.report.capturedPartial'
+      );
+    } finally {
+      setPending(false);
+      setAttempt((n) => n + 1);
+    }
   };
 
   return (
@@ -1047,65 +1316,51 @@ function EvidencePanel({
         {translate(messages, 'diagnostics.report.evidenceHeading')}
       </h3>
       {canCapture ? (
-        categories === null ? (
-          <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-        ) : categories.length === 0 ? (
+        read === null ? (
+          <MuiLoadingState messages={messages} variant="inline" />
+        ) : list === null || list.length === 0 ? (
           <p className="text-body text-text-secondary">
             {translate(messages, 'diagnostics.report.noCategories')}
           </p>
         ) : (
           <form
-            action={async (formData: FormData) => {
-              setPending(true);
-              setProblem(null);
-              setFieldErrors({});
-              const outcome = await captureReportEvidence(reportId, formData);
-              setPending(false);
-              setAttempt((n) => n + 1);
-              notifyActionResult(outcome, messages);
-              if (outcome.status === 'success') {
-                setEvidenceType('');
-                setNote('');
-                onDone();
-                return;
-              }
-              if (outcome.fieldErrors) setFieldErrors(outcome.fieldErrors);
-              setProblem(
-                outcome.stage === undefined
-                  ? (outcome.messageKey ?? 'action.failed')
-                  : 'diagnostics.report.capturedPartial'
-              );
-            }}
-            className="flex flex-wrap items-end gap-3"
+            ref={fieldErrorsRefusalFormRef}
+            noValidate
+            action={capture}
+            className="flex flex-wrap items-start gap-3"
           >
-            <SelectField
+            <FormSelectField
               key={`categoryCode-${attempt}`}
               name="categoryCode"
               label={translate(messages, 'diagnostics.report.evidenceCategory')}
-              defaultValue={categoryCode}
-              onChange={(event) => setCategoryCode(event.target.value)}
-              options={categories.map((each) => ({
+              value={categoryCode}
+              onChange={setCategoryCode}
+              options={list.map((each) => ({
                 value: each.categoryCode,
-                label: each.categoryCode,
+                label: documentCategoryLabel(each.categoryCode, (key) =>
+                  translateDynamic(messages, key)
+                ),
               }))}
               placeholder={translate(messages, 'diagnostics.report.evidenceCategory')}
               error={errorFor('categoryCode')}
               required
             />
-            <TextField
+            <FormTextField
+              key={`evidenceType-${attempt}`}
               name="evidenceType"
               label={translate(messages, 'diagnostics.report.evidenceType')}
               description={translate(messages, 'diagnostics.report.evidenceTypeHint')}
               value={evidenceType}
-              onChange={(event) => setEvidenceType(event.target.value)}
+              onChange={setEvidenceType}
               error={errorFor('evidenceType')}
               required
             />
-            <TextField
+            <FormTextField
+              key={`note-${attempt}`}
               name="note"
               label={translate(messages, 'diagnostics.report.evidenceNote')}
               value={note}
-              onChange={(event) => setNote(event.target.value)}
+              onChange={setNote}
               error={errorFor('note')}
             />
             <CaptureFileField
@@ -1113,12 +1368,12 @@ function EvidencePanel({
               label={translate(messages, 'diagnostics.report.chooseFile')}
               accept={category?.allowedContentTypes}
             />
-            <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-              {translate(
-                messages,
-                pending ? 'diagnostics.report.attaching' : 'diagnostics.report.attach'
-              )}
-            </button>
+            <Submit
+              messages={messages}
+              pending={pending}
+              labelKey="diagnostics.report.attach"
+              variant="contained"
+            />
             {errorFor('evidenceFile') ? (
               <p role="alert" className="basis-full text-body text-error">
                 {errorFor('evidenceFile')}
@@ -1136,13 +1391,16 @@ function EvidencePanel({
         <ul className="flex flex-col gap-1">
           {detail.evidence.map((item) => (
             <li key={item.id} className="text-body text-text-primary">
-              {item.evidenceType}
-              {item.note === null ? '' : ` — ${item.note}`}
+              <bdi>{item.evidenceType}</bdi>
+              {item.note === null ? null : (
+                <>
+                  {' — '}
+                  <bdi>{item.note}</bdi>
+                </>
+              )}
               <span className="text-caption text-text-muted">
-                {' '}
-                · {formatDateTime(item.createdAt, locale)} ·{' '}
-                {translate(messages, 'diagnostics.report.documentReference')}{' '}
-                {item.documentVersionId}
+                {' · '}
+                <bdi>{formatDateTime(item.createdAt, locale)}</bdi>
               </span>
             </li>
           ))}
@@ -1163,65 +1421,96 @@ function StatusPanel({
   readonly reportId: string;
   readonly detail: DiagnosticReportDetail;
   readonly capabilities: DiagnosticsCapabilities;
-  readonly onDone: () => void;
+  readonly onDone: Renew;
 }) {
   const [reason, setReason] = useState('');
   const [summary, setSummary] = useState('');
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [asking, setAsking] = useState<ReportStatus | null>(null);
   const version = detail.report.recordVersion;
   const moves = capabilities.canRecord ? detail.nextStatuses.filter((s) => s !== 'completed') : [];
   const canComplete = capabilities.canComplete && detail.nextStatuses.includes('completed');
+  useUnsavedGuard(reason.trim().length > 0 || summary.trim().length > 0, () => {
+    setReason('');
+    setSummary('');
+  });
 
   /*
    * Both commands are version-guarded: the `If-Match` is the version this panel
    * was rendered from, and after either one the record has moved. `onDone`
    * re-reads the detail (and the list), so the next command carries the renewed
-   * version rather than the one this panel can no longer vouch for.
+   * version rather than the one this panel can no longer vouch for — and the
+   * buttons wait for that re-read before they are offered again.
    */
   const move = async (toStatus: ReportStatus) => {
     setPending(true);
     setProblem(null);
-    const outcome = await transitionReport(
-      reportId,
-      { toStatus, ...(reason.trim().length > 0 ? { reason: reason.trim() } : {}) },
-      version
-    );
-    setPending(false);
-    notifyActionResult(outcome, messages);
-    if (outcome.status === 'success') {
-      setReason('');
-      onDone();
-      return;
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await transitionReport(
+          reportId,
+          { toStatus, ...(reason.trim().length > 0 ? { reason: reason.trim() } : {}) },
+          version
+        );
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        setReason('');
+        await onDone();
+        return;
+      }
+      setProblem(problemKeyOf(outcome));
+    } finally {
+      setPending(false);
+      setAsking(null);
     }
-    setProblem(problemKeyOf(outcome));
   };
 
   const complete = async () => {
     setPending(true);
     setProblem(null);
-    const outcome = await completeReport(
-      reportId,
-      summary.trim().length > 0 ? { summary: summary.trim() } : {},
-      version
-    );
-    setPending(false);
-    notifyActionResult(outcome, messages);
-    if (outcome.status === 'success') {
-      setSummary('');
-      onDone();
-      return;
+    try {
+      let outcome: ActionState;
+      try {
+        outcome = await completeReport(
+          reportId,
+          summary.trim().length > 0 ? { summary: summary.trim() } : {},
+          version
+        );
+      } catch {
+        setProblem('state.unavailable.message');
+        return;
+      }
+      notifyActionResult(outcome, messages);
+      if (outcome.status === 'success') {
+        setSummary('');
+        await onDone();
+        return;
+      }
+      /*
+       * Completion is refused one violation per unanswered required item, keyed
+       * by the item's own code — no control on this panel is named after a
+       * checklist item, so the sentence telling the technician to answer them
+       * first had nowhere to appear. It is shown here, beside the button that
+       * raised it.
+       */
+      setProblem(unattachedRefusalKey(outcome.fieldErrors, []) ?? problemKeyOf(outcome));
+    } finally {
+      setPending(false);
+      setAsking(null);
     }
-    setProblem(problemKeyOf(outcome));
   };
 
   return (
     <section aria-labelledby={`status-${reportId}`} className="flex flex-col gap-2">
       <h3 id={`status-${reportId}`} className="text-body font-medium text-text-primary">
         {translate(messages, 'diagnostics.report.statusHeading')}:{' '}
-        <code className="font-mono" dir="ltr">
-          {detail.report.status}
-        </code>
+        <span data-testid="report-status-now">{statusText(messages, detail.report.status)}</span>
       </h3>
       {detail.report.summary ? (
         <p className="text-body text-text-primary">
@@ -1229,46 +1518,48 @@ function StatusPanel({
         </p>
       ) : null}
       {moves.length > 0 || canComplete ? (
-        <div className="flex flex-wrap items-end gap-2">
-          <TextField
-            name="reason"
+        <div className="flex flex-wrap items-start gap-3">
+          <FormTextField
+            name={`reason-${reportId}`}
             label={translate(messages, 'diagnostics.report.reason')}
             value={reason}
-            onChange={(event) => setReason(event.target.value)}
+            onChange={setReason}
           />
           {moves.map((toStatus) => (
-            <button
+            <Button
               key={toStatus}
               type="button"
+              variant="outlined"
               disabled={pending}
-              onClick={() => void move(toStatus as ReportStatus)}
-              className={SECONDARY_BUTTON}
+              onClick={() => {
+                // Cancelling ends the report: asked first. Any other move is a step.
+                if (toStatus === 'cancelled') setAsking('cancelled');
+                else void move(toStatus as ReportStatus);
+              }}
             >
-              {translate(messages, 'diagnostics.report.moveTo')}{' '}
-              <code className="font-mono" dir="ltr">
-                {toStatus}
-              </code>
-            </button>
+              {translate(messages, 'diagnostics.report.moveTo')} {statusText(messages, toStatus)}
+            </Button>
           ))}
           {canComplete ? (
             <>
-              <TextField
-                name="summary"
+              <FormTextField
+                name={`summary-${reportId}`}
                 label={translate(messages, 'diagnostics.report.summary')}
                 value={summary}
-                onChange={(event) => setSummary(event.target.value)}
+                onChange={setSummary}
               />
-              <button
+              <Button
                 type="button"
+                variant="contained"
                 disabled={pending}
-                onClick={() => void complete()}
-                className={PRIMARY_BUTTON}
+                aria-busy={pending || undefined}
+                onClick={() => setAsking('completed')}
               >
                 {translate(messages, 'diagnostics.report.complete')}
-              </button>
+              </Button>
             </>
           ) : null}
-          <Problem messages={messages} problem={problem} />
+          <Problem messages={messages} problem={problem} onReload={() => void onDone()} />
         </div>
       ) : null}
       {detail.reviews.length > 0 ? (
@@ -1277,14 +1568,39 @@ function StatusPanel({
             <li key={review.id} className="text-body text-text-primary">
               {translateDynamic(messages, `diagnostics.reviewResult.${review.reviewResult}`)}
               {review.notes ? ` — ${review.notes}` : ''}
-              <span className="text-caption text-text-muted">
-                {' '}
-                · {translate(messages, 'diagnostics.report.reviewer')} {review.reviewerId}
-              </span>
             </li>
           ))}
         </ul>
       ) : null}
+      <ConfirmDialog
+        open={asking !== null}
+        onCancel={() => setAsking(null)}
+        onConfirm={() => {
+          if (asking === 'completed') void complete();
+          else if (asking !== null) void move(asking);
+        }}
+        title={translate(
+          messages,
+          asking === 'completed'
+            ? 'diagnostics.report.confirmCompleteTitle'
+            : 'diagnostics.report.confirmCancelTitle'
+        )}
+        description={translate(
+          messages,
+          asking === 'completed'
+            ? 'diagnostics.report.confirmCompleteBody'
+            : 'diagnostics.report.confirmCancelBody'
+        )}
+        confirmLabel={
+          asking === 'completed'
+            ? translate(messages, 'diagnostics.report.complete')
+            : `${translate(messages, 'diagnostics.report.moveTo')} ${statusText(messages, 'cancelled')}`
+        }
+        messages={messages}
+        destructive={asking === 'cancelled'}
+        pending={pending}
+        testId="report-status-confirm"
+      />
     </section>
   );
 }
@@ -1296,95 +1612,111 @@ function ReviewForm({
 }: {
   readonly messages: Messages;
   readonly reportId: string;
-  readonly onDone: () => void;
+  readonly onDone: Renew;
 }) {
-  const [reviewResult, setReviewResult] = useState('');
-  const [notes, setNotes] = useState('');
-  const { pending, problem, attempt, run } = useEntryForm(messages, onDone);
+  const { pending, problem, fieldErrors, run } = useEntryForm(messages, onDone);
+  const { draft, set, reset, refuseMissing, errors, formRef } = useEntryDraft(
+    { reviewResult: '', notes: '' },
+    fieldErrors
+  );
   return (
     <form
-      action={async () => {
-        if (!reviewResult) return;
-        const ok = await run(() =>
+      ref={formRef}
+      noValidate
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (pending || refuseMissing(['reviewResult'])) return;
+        const { reviewResult, notes } = draft;
+        void run(() =>
           reviewReport(reportId, {
             reviewResult: reviewResult as (typeof REVIEW_RESULTS)[number],
             ...(notes.trim().length > 0 ? { notes: notes.trim() } : {}),
           })
-        );
-        if (ok) {
-          setReviewResult('');
-          setNotes('');
-        }
+        ).then((ok) => {
+          if (ok) reset();
+        });
       }}
-      className="flex flex-wrap items-end gap-2 rounded-md border border-dashed border-border p-3"
+      className="flex flex-wrap items-start gap-3 rounded-md border border-dashed border-border p-3"
     >
       <span className="basis-full text-caption font-medium text-text-secondary">
         {translate(messages, 'diagnostics.report.reviewHeading')}
       </span>
-      <SelectField
-        key={`reviewResult-${attempt}`}
-        name="reviewResult"
+      <FormRadioGroupField
+        name={`reviewResult-${reportId}`}
         label={translate(messages, 'diagnostics.report.reviewResult')}
-        defaultValue={reviewResult}
-        onChange={(e) => setReviewResult(e.target.value)}
+        value={draft.reviewResult}
+        onChange={set('reviewResult')}
         options={REVIEW_RESULTS.map((value) => ({
           value,
-          label: translate(messages, `diagnostics.reviewResult.${value}` as keyof Messages),
+          label: translate(messages, `diagnostics.reviewResult.${value}`),
         }))}
-        placeholder={translate(messages, 'diagnostics.report.chooseReviewResult')}
         required
+        error={
+          errors['reviewResult'] ? translateDynamic(messages, errors['reviewResult']) : undefined
+        }
       />
-      <TextField
-        name="notes"
+      <FormTextField
+        name={`reviewNotes-${reportId}`}
         label={translate(messages, 'diagnostics.report.reviewNotes')}
-        value={notes}
-        onChange={(e) => setNotes(e.target.value)}
+        value={draft.notes}
+        onChange={set('notes')}
       />
-      <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-        {translate(
-          messages,
-          pending ? 'diagnostics.report.reviewing' : 'diagnostics.report.review'
-        )}
-      </button>
+      <Submit
+        messages={messages}
+        pending={pending}
+        labelKey="diagnostics.report.review"
+        variant="contained"
+      />
       <Problem messages={messages} problem={problem} />
     </form>
   );
 }
 
+/**
+ * The report's status history, a cursor page at a time. The workbench remounts
+ * it (`key`) whenever the report is read again, so the first page is always
+ * the newest.
+ */
 function HistoryPanel({
   locale,
   messages,
   reportId,
-  reloadCount,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly reportId: string;
-  readonly reloadCount: number;
 }) {
-  const [history, setHistory] = useState<ReadState<ReportHistory> | null>(null);
-  const [pages, setPages] = useState<readonly ReportHistory['transitions'][]>([]);
+  const readFirst = useCallback(() => readReportHistory(reportId, null), [reportId]);
+  const first = useReread(readFirst);
+  const [more, setMore] = useState<{
+    readonly source: typeof readFirst;
+    readonly pages: readonly ReportHistory['transitions'][];
+  } | null>(null);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    void readReportHistory(reportId, null).then((next) => {
-      if (cancelled) return;
-      setHistory(next);
-      if (next.status === 'ok') setPages([next.data.transitions]);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [reportId, reloadCount]);
-
+  const firstRead = first.value;
+  const pages = [
+    ...(firstRead?.status === 'ok' ? [firstRead.data.transitions] : []),
+    ...(more !== null && more.source === readFirst ? more.pages : []),
+  ];
   const last = pages.at(-1) ?? null;
   const loadMore = async () => {
-    if (last === null || !last.hasMore || last.nextCursor === null) return;
+    if (last === null || !last.hasMore || last.nextCursor === null || loading) return;
     setLoading(true);
-    const next = await readReportHistory(reportId, last.nextCursor);
-    setLoading(false);
-    if (next.status === 'ok') setPages((current) => [...current, next.data.transitions]);
+    try {
+      const next = await readReportHistory(reportId, last.nextCursor);
+      if (next.status === 'ok') {
+        setMore((current) => ({
+          source: readFirst,
+          pages: [
+            ...(current !== null && current.source === readFirst ? current.pages : []),
+            next.data.transitions,
+          ],
+        }));
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -1392,29 +1724,37 @@ function HistoryPanel({
       <h3 id={`history-${reportId}`} className="text-body font-medium text-text-primary">
         {translate(messages, 'diagnostics.report.historyHeading')}
       </h3>
-      {history === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-      ) : history.status !== 'ok' ? (
-        <ReadProblem messages={messages} state={history} />
+      {firstRead === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : firstRead.status !== 'ok' ? (
+        <ReadProblem
+          locale={locale}
+          messages={messages}
+          state={firstRead}
+          onRetry={() => void first.reload()}
+        />
       ) : (
         <ol className="flex flex-col gap-1">
           <li className="text-caption text-text-muted">
             {translate(messages, 'diagnostics.report.opened')}{' '}
-            {formatDateTime(history.data.origin.createdAt, locale)} ·{' '}
-            <code className="font-mono" dir="ltr">
-              {history.data.origin.initialStatus}
-            </code>
+            <bdi>{formatDateTime(firstRead.data.origin.createdAt, locale)}</bdi> ·{' '}
+            {statusText(messages, firstRead.data.origin.initialStatus)}
           </li>
           {pages.flatMap((page) =>
             page.items.map((entry) => (
               <li key={entry.id} className="text-body text-text-primary">
-                <code className="font-mono" dir="ltr">
-                  {entry.fromState ?? '—'} → {entry.toState}
-                </code>
-                {entry.reason ? ` — ${entry.reason}` : ''}
+                {entry.fromState === null
+                  ? statusText(messages, entry.toState)
+                  : `${statusText(messages, entry.fromState)} → ${statusText(messages, entry.toState)}`}
+                {entry.reason ? (
+                  <>
+                    {' — '}
+                    <bdi>{entry.reason}</bdi>
+                  </>
+                ) : null}
                 <span className="text-caption text-text-muted">
-                  {' '}
-                  · {formatDateTime(entry.occurredAt, locale)}
+                  {' · '}
+                  <bdi>{formatDateTime(entry.occurredAt, locale)}</bdi>
                 </span>
               </li>
             ))
@@ -1422,14 +1762,18 @@ function HistoryPanel({
         </ol>
       )}
       {last !== null && last.hasMore ? (
-        <button
-          type="button"
-          onClick={() => void loadMore()}
-          disabled={loading}
-          className={SECONDARY_BUTTON}
-        >
-          {translate(messages, loading ? 'state.loading' : 'diagnostics.report.moreHistory')}
-        </button>
+        <div>
+          <Button
+            type="button"
+            variant="outlined"
+            size="small"
+            onClick={() => void loadMore()}
+            disabled={loading}
+            aria-busy={loading || undefined}
+          >
+            {translate(messages, loading ? 'state.loading' : 'diagnostics.report.moreHistory')}
+          </Button>
+        </div>
       ) : null}
     </section>
   );

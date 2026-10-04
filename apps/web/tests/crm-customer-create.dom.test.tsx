@@ -5,7 +5,17 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
+import { forgetRememberedBranch, heldBranch, switchWithoutQuestion } from './support/branch-switch';
 import {
   CREATABLE_LIFECYCLE_STATUSES,
   MAX_COMPANY_NAME,
@@ -259,6 +269,72 @@ describe('failure', () => {
     // Described, not merely coloured. A colour is not an announcement.
     expect(field.getAttribute('aria-describedby')).toBeTruthy();
   });
+
+  /*
+   * Browser QA part 7, rows 6.2, 6.3 and 6.5, in both languages. The refused
+   * box kept the grey edge of a valid one; after Save the cursor sat on the
+   * document body, and after Enter in "Given name" it stayed there while
+   * "Family name" was the box refused; and a corrected family name went on
+   * saying "This field is required." until the next submission.
+   */
+  const FAMILY_REFUSED = {
+    status: 'invalid' as const,
+    messageKey: 'form.formError',
+    fieldErrors: { familyName: 'field.required' },
+    attempt: 1,
+  };
+
+  for (const locale of ['en', 'ar'] as const) {
+    const messages = locale === 'en' ? en : ar;
+    const view = locale === 'en' ? renderLtr : renderRtl;
+    const given = () =>
+      screen.getByLabelText(messages['crm.customers.create.givenName'], { exact: false });
+    const family = () =>
+      screen.getByLabelText(messages['crm.customers.create.familyName'], { exact: false });
+
+    it(`marks the refused box with the red edge, and only that box (${locale})`, async () => {
+      createIndividualAction.mockResolvedValue(FAMILY_REFUSED);
+      const user = userEvent.setup();
+      view(<CustomerCreateScreen locale={locale} messages={messages} kind="individual" />);
+      await user.type(given(), 'Nadia');
+      await user.click(screen.getByRole('button', { name: messages['form.submit'] }));
+
+      await waitFor(() => expect(family()).toHaveAttribute('aria-invalid', 'true'));
+      expect(family()).toHaveClass('border-error');
+      expect(family()).not.toHaveClass('border-border');
+      expect(given()).toHaveClass('border-border');
+      expect(given()).not.toHaveClass('border-error');
+    });
+
+    it(`puts the cursor on the refused box, even after Enter in another (${locale})`, async () => {
+      createIndividualAction.mockResolvedValue(FAMILY_REFUSED);
+      const user = userEvent.setup();
+      view(<CustomerCreateScreen locale={locale} messages={messages} kind="individual" />);
+      await user.type(given(), 'Nadia{Enter}');
+
+      await waitFor(() => expect(family()).toHaveFocus());
+      expect(createIndividualAction).toHaveBeenCalledTimes(1);
+    });
+
+    it(`withdraws the complaint once the box is corrected, before any resubmission (${locale})`, async () => {
+      createIndividualAction.mockResolvedValue(FAMILY_REFUSED);
+      const user = userEvent.setup();
+      view(<CustomerCreateScreen locale={locale} messages={messages} kind="individual" />);
+      await user.type(given(), 'Nadia');
+      await user.click(screen.getByRole('button', { name: messages['form.submit'] }));
+      await waitFor(() => expect(family()).toHaveFocus());
+      expect(screen.getByText(messages['field.required'])).toBeInTheDocument();
+
+      await user.type(family(), 'Khoury');
+      await user.tab();
+
+      expect(family()).not.toHaveAttribute('aria-invalid');
+      expect(family()).toHaveClass('border-border');
+      expect(screen.queryByText(messages['field.required'])).toBeNull();
+      // No second request was needed to find that out.
+      expect(createIndividualAction).toHaveBeenCalledTimes(1);
+    });
+  }
 
   it('shows the correlation reference and keeps the form usable', async () => {
     createIndividualAction.mockResolvedValue({
@@ -646,5 +722,37 @@ describe('the field errors a real 422 carries reach the CRM controls it names', 
       expect(message.length).toBeGreaterThan(0);
     }
     expect(new Set(messages).size).toBe(messages.length);
+  });
+});
+
+describe('a branch switch neither asks about nor empties a customer being created', () => {
+  /*
+   * A customer is the tenant's, not a branch's: the create request names no
+   * branch, and nothing typed here is re-addressed by a switch. So the form
+   * does not declare unsaved work — the question "Changing branch now will lose
+   * them" would be untrue here — and a switch leaves every entry where it was.
+   */
+  it('switches without a question and keeps what was typed', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          <CustomerCreateScreen locale="en" messages={en} kind="individual" />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    try {
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await user.type(screen.getByLabelText(/Given name/), 'Layla');
+      await switchWithoutQuestion(user, 'second');
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      expect(screen.getByLabelText(/Given name/)).toHaveValue('Layla');
+    } finally {
+      forgetRememberedBranch();
+    }
   });
 });

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   NAVIGATION,
@@ -9,12 +11,13 @@ import {
 import { NO_CAPABILITIES, hasPermission, visibleNavigation } from '../src/lib/permissions';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import accountManifest from './e2e/authenticated/account-manifest.json';
 
 const ALL = flattenNavigation();
 
 const item = (over: Partial<NavigationItem> = {}): NavigationItem => ({
   key: 'k',
-  labelKey: 'nav.overview',
+  labelKey: 'nav.dashboard',
   icon: 'overview',
   href: '/x',
   permission: null,
@@ -51,8 +54,19 @@ describe('the navigation model', () => {
     const available = ALL.filter((entry) => entry.status === 'available').map((e) => e.key);
     expect(available.sort()).toEqual([
       'administration',
+      // Owner decision 2026-09-29: the organisation's own appointment types,
+      // booking channels and cancellation reasons, gated on
+      // `apt.catalogue.manage` — the code its management lists declare.
+      'administration.appointmentSetup',
       'administration.approvalLimits',
       'administration.auditLog',
+      // P1-32 preparation: the department and employee registers, each gated on
+      // its list operation's own read code.
+      'administration.departments',
+      // P1-32-PRE-OD-DISC-01: the company discount threshold, gated on
+      // `svc.price.read` — the code its read declares.
+      'administration.discountThreshold',
+      'administration.employees',
       // The parent row became a DISCLOSURE at Owner acceptance — it opens and
       // closes its children instead of navigating — so `/administration` needs
       // a child of its own or the page it serves becomes unreachable.
@@ -63,20 +77,63 @@ describe('the navigation model', () => {
       // Built in P1-28 (`P1-28-FE-001`): the branch calendar at
       // `/appointments`, flipped in the same change that landed the screen.
       'appointments',
+      // Owner directive, operational alerts: the Attention area at `/attention`,
+      // gated on `inv.stock.read` — the code four of its five cards declare.
+      'attention',
       // P1-30 W6: the invoice of a work order at `/invoices`, gated on
       // `sal.invoice.manage` — the code every invoice read requires.
       'billing',
       // P1-30 W1: the service catalogue at `/services`, gated on
       // `svc.service.read` — the permission its list operation requires.
       'catalog',
+      /*
+       * DEF-T-07: the credit notes of a branch at `/credit-notes`, gated on
+       * `sal.credit.manage`. A return raised a credit note, told the operator a
+       * second person had to approve it, and nothing in the navigation could
+       * open one. The reads also require `sal.finance.view`, which the PAGE
+       * checks — a navigation gate names one code, as every other row here does.
+       */
+      'creditNotes',
       // Both duplicate queues are in the sidebar, each behind its OWN
       // `*.duplicate.review` code. They had screens and no route into them —
       // a page nobody can reach is not delivered.
       'customer-duplicates',
       'customers',
+      // P1-31 FE-001: the ready-for-delivery queue at `/delivery`, gated on
+      // `sal.delivery.view` — the module's own read code — AND, since route
+      // sweep B3, on `wo.work_order.read` and `sal.finance.view`, the other two
+      // codes its one read declares (`alsoRequires`): the page holds nothing
+      // for a caller missing either.
+      'delivery',
       'gallery',
       // P1-30 W4: item search, stock availability and reservations at `/inventory`.
       'inventory',
+      // P1-32 stock operations: the parent's own route as a child (a disclosure
+      // parent carries no current-page marker), and the four screens, each gated
+      // on `inv.stock.read`.
+      'inventory.adjustments',
+      /*
+       * P1-32 barcodes and the counter: selling over the counter, taking a part
+       * back, and printing labels. Each names the code its own PAGE gates on,
+       * which is deliberately not one code for all three — a counter sale is an
+       * invoice (`sal.invoice.manage`), a customer return is stock
+       * (`inv.stock.read`), and a label is the catalogue (`inv.item.read`).
+       */
+      'inventory.counterSales',
+      'inventory.counts',
+      'inventory.customerReturns',
+      'inventory.goods-receipts',
+      'inventory.labels',
+      'inventory.stock',
+      'inventory.transfers',
+      /*
+       * P1-32 material demand control: the two facts a work-order requirement is
+       * derived from. Both gate on `inv.item.read` — the code their list
+       * operations declare — while the writes on them need a second, tenant-wide
+       * code each, which is not what a navigation gate names.
+       */
+      'inventory.unitConversions',
+      'inventory.vehicleSpecifications',
       'overview',
       // P1-30 W7: the branch's receipts at `/payments`, gated on
       // `sal.finance.view` — the only code both receipt reads declare, and the
@@ -91,6 +148,17 @@ describe('the navigation model', () => {
       // P1-28 Wave D: the Reception entry landed WITH its first screen, the
       // check-in wizard at `/receptions/check-in` (`P1-28-FE-007`).
       'receptions',
+      // P1-31 FE-011 … FE-014: the report catalogue at `/reports`, gated on
+      // `rpt.report.read` — the code all three report operations declare. The
+      // rows a given report returns need that report's own dataset codes as
+      // well; those are per-report and only the server can evaluate them.
+      'reports',
+      // P1-31 FE-010: the catalogue child names its parent's own route so the
+      // disclosure parent has a link to mark as the current page, and the
+      // operational overview at `/reports/overview` is the FE-010 screen. Both
+      // carry `rpt.report.read`, the code the parent already names.
+      'reports.catalogue',
+      'reports.overview',
       'settings',
       'settings.currencies',
       'settings.languages',
@@ -109,6 +177,10 @@ describe('the navigation model', () => {
       // /reception/walk-in, gated on the permission its first operation
       // (customer search) requires.
       'walk-in',
+      // P1-31 FE-008 landed the branch's warranty records at /warranty, gated on
+      // `wty.warranty.read` — the code BOTH warranty reads declare, minted by P-7
+      // so that reading a warranty no longer borrows the authority to issue one.
+      'warranty',
       // The work-order board landed with P1-29 W1 at /work-orders, gated on
       // `wo.work_order.read` — the permission its only operation requires.
       'work-orders',
@@ -130,45 +202,56 @@ describe('the navigation model', () => {
       // `billing` left this list in P1-30 W6, and `payments` was ADDED as an
       // available entry in W7 (the module had no navigation row before it).
       // `customers` and `vehicles` left this list in P1-27, and `appointments`
-      // in P1-28, when the screens they point at were built.
-      'delivery',
+      // in P1-28, when the screens they point at were built. `delivery` left
+      // this list in P1-31 FE-001.
       'documents',
       // `inventory` left this list in P1-30 W4.
       'notifications',
-      'reports',
+      // `reports` left this list in P1-31 FE-011 … FE-014, when the catalogue and
+      // the report screen were built.
       // `technicians` left this list in P1-29 W4, when the workspace was built.
       // `work-orders` left this list in P1-29 W1, `work-orders.diagnostics` in
       // W7 and `work-orders.quality` in W8.
     ]);
   });
 
-  it('gates every P1-26 entry on a permission that exists in the platform catalogue', () => {
+  it('gates every entry on a permission that exists in the platform catalogue', () => {
     // `org.settings.read` was the previous Settings gate and is in NO catalogue
     // and NO operation — so "unknown means denied" hid the entry from every
-    // actor who ever existed (finding P1-26-F-011). These are the codes seeded
-    // by supabase/seeds/04_iam_permission_catalog.sql that P1-26's operations
-    // actually require.
-    const CATALOGUE = new Set([
-      'iam.user.read',
-      'iam.role.read',
-      'iam.approval.manage',
-      'iam.audit.view',
-      'org.tenant.read',
-      'org.settings.manage',
-      'org.tax.manage',
-    ]);
-    const administration = NAVIGATION.find((group) => group.key === 'administration');
-    expect(administration).toBeDefined();
-    const entries = flattenNavigation([administration!]);
-    for (const entry of entries) {
-      if (entry.permission === null) continue;
-      expect(CATALOGUE.has(entry.permission), `${entry.key} → ${entry.permission}`).toBe(true);
+    // actor who ever existed (finding P1-26-F-011).
+    //
+    // This assertion was scoped to the `administration` group and to a copied
+    // list of seven codes, so it was green over `sal.delivery.read` — a code in
+    // no catalogue, on the delivery entry, in another group (RES-05). P1-31 P-8
+    // widened it: EVERY gated entry in EVERY group, including `planned` ones,
+    // read against the seed itself rather than against a transcription of it.
+    const seed = readFileSync(
+      join(__dirname, '..', '..', '..', 'supabase', 'seeds', '04_iam_permission_catalog.sql'),
+      'utf8'
+    );
+    // Only a VALUES row begins with `('code',`; the seed's prose comments begin
+    // with `--` and are therefore never read as codes.
+    const CATALOGUE = new Set(
+      [...seed.matchAll(/^\s*\('([a-z0-9_]+(?:\.[a-z0-9_]+)+)'\s*,/gm)].map((m) => m[1])
+    );
+    expect(CATALOGUE.size, 'the catalogue seed parsed to nothing').toBeGreaterThan(100);
+    const gated = ALL.filter((entry) => entry.permission !== null);
+    expect(gated.length, 'no gated navigation entry was examined').toBeGreaterThan(0);
+    for (const entry of gated) {
+      expect(CATALOGUE.has(entry.permission!), `${entry.key} → ${entry.permission}`).toBe(true);
+      for (const code of entry.alsoRequires ?? []) {
+        expect(CATALOGUE.has(code), `${entry.key} → ${code}`).toBe(true);
+      }
     }
   });
 
-  it('requires a permission for every module except the two ungated ones', () => {
+  it('requires a permission for every module except the design gallery', () => {
     const ungated = ALL.filter((entry) => entry.permission === null).map((e) => e.key);
-    expect(ungated.sort()).toEqual(['gallery', 'overview']);
+    expect(ungated.sort()).toEqual(['gallery']);
+    // The dashboard is gated on the one code its summary read is entitled by,
+    // `wo.work_order.read`. Ungated, it offered the page to staff it could only
+    // refuse.
+    expect(ALL.find((entry) => entry.key === 'overview')?.permission).toBe('wo.work_order.read');
   });
 
   it('declares a scope for every entry', () => {
@@ -244,7 +327,7 @@ describe('permission filtering — unknown means denied', () => {
   it('shows only the ungated entries to an actor with no capabilities', () => {
     const visible = visibleNavigation(NAVIGATION, NO_CAPABILITIES);
     const keys = visible.flatMap((group) => group.items.map((entry) => entry.key));
-    expect(keys.sort()).toEqual(['gallery', 'overview']);
+    expect(keys.sort()).toEqual(['gallery']);
   });
 
   it('removes a group whose every item is hidden', () => {
@@ -277,7 +360,90 @@ describe('permission filtering — unknown means denied', () => {
       group.items.map((entry) => entry.key)
     );
     // `walk-in` appears with `crm.customer.read` because that is the code its
-    // first operation (customer search) requires.
-    expect(keys.sort()).toEqual(['customers', 'gallery', 'overview', 'vehicles', 'walk-in']);
+    // first operation (customer search) requires. The dashboard does NOT: it
+    // needs `wo.work_order.read`, which these capabilities do not hold.
+    expect(keys.sort()).toEqual(['customers', 'gallery', 'vehicles', 'walk-in']);
+  });
+
+  it('offers the delivery queue only with every code its one read declares', () => {
+    /*
+     * The queue's page draws the shared refusal for a caller missing any of the
+     * three, so an entry shown on the delivery code alone landed on a refusal.
+     * Each code is dropped in turn: the entry must disappear every time.
+     */
+    const all = ['sal.delivery.view', 'wo.work_order.read', 'sal.finance.view'];
+    const offered = (permissions: readonly string[]) =>
+      visibleNavigation(NAVIGATION, { permissions })
+        .flatMap((group) => group.items)
+        .some((entry) => entry.key === 'delivery');
+    expect(offered(all)).toBe(true);
+    for (const missing of all) {
+      expect(offered(all.filter((code) => code !== missing)), `offered without ${missing}`).toBe(
+        false
+      );
+    }
+  });
+
+  it('reads `alsoRequires` as a conjunction, never as "any of"', () => {
+    const gated = item({ permission: 'a.b.c', alsoRequires: ['d.e.f', 'g.h.i'] });
+    const shown = (permissions: readonly string[]) =>
+      visibleNavigation([{ key: 'g', labelKey: 'nav.dashboard', items: [gated] }], {
+        permissions,
+      }).length === 1;
+    expect(shown(['a.b.c', 'd.e.f', 'g.h.i'])).toBe(true);
+    expect(shown(['a.b.c', 'd.e.f'])).toBe(false);
+    expect(shown(['d.e.f', 'g.h.i'])).toBe(false);
+    expect(shown(['a.b.c'])).toBe(false);
+  });
+
+  it('offers credit notes to the first administrator of a provisioned organisation, and moves nothing else', () => {
+    /*
+     * The administrator's set is GENERATED from the provisioning bundle
+     * (emit-account-manifest.mjs), so this is the navigation that administrator
+     * is actually given. The credit code is the only difference the bundle
+     * change makes, so exactly one entry may appear or disappear with it.
+     */
+    const administrator = accountManifest['org-administrator'];
+    const keysFor = (permissions: readonly string[]) =>
+      flattenNavigation(visibleNavigation(NAVIGATION, { permissions })).map((entry) => entry.key);
+    const withCode = keysFor(administrator);
+    const withoutCode = keysFor(administrator.filter((code) => code !== 'sal.credit.manage'));
+    expect(withCode).toContain('creditNotes');
+    expect(withCode.filter((key) => !withoutCode.includes(key))).toEqual(['creditNotes']);
+    expect(withoutCode.filter((key) => !withCode.includes(key))).toEqual([]);
+
+    // A cashier built from payment and invoice codes is not offered the entry.
+    const cashier = ['sal.invoice.manage', 'sal.finance.view', 'sal.payment.record'];
+    expect(keysFor(cashier)).not.toContain('creditNotes');
+  });
+
+  it('offers Appointments and Appointment setup to the first administrator of a provisioned organisation, and moves nothing else (Owner decision 2026-09-29)', () => {
+    /*
+     * The same generated set. The four appointment codes are the only difference
+     * the decision makes to the bundle, so exactly the entries they gate may
+     * appear or disappear with them — the calendar and the setup screen.
+     */
+    const appointmentCodes = [
+      'apt.appointment.read',
+      'apt.appointment.manage',
+      'apt.appointment.lifecycle.manage',
+      'apt.catalogue.manage',
+    ];
+    const administrator = accountManifest['org-administrator'];
+    for (const code of appointmentCodes) expect(administrator).toContain(code);
+    const keysFor = (permissions: readonly string[]) =>
+      flattenNavigation(visibleNavigation(NAVIGATION, { permissions })).map((entry) => entry.key);
+    const withCodes = keysFor(administrator);
+    const withoutCodes = keysFor(administrator.filter((code) => !appointmentCodes.includes(code)));
+    expect(withCodes.filter((key) => !withoutCodes.includes(key)).sort()).toEqual([
+      'administration.appointmentSetup',
+      'appointments',
+    ]);
+    expect(withoutCodes.filter((key) => !withCodes.includes(key))).toEqual([]);
+
+    // A front-desk role built from reception and customer codes is offered neither.
+    const frontDesk = ['rec.reception.read', 'crm.customer.read'];
+    expect(keysFor(frontDesk)).not.toContain('appointments');
+    expect(keysFor(frontDesk)).not.toContain('administration.appointmentSetup');
   });
 });

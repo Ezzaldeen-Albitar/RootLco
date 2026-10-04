@@ -30,6 +30,7 @@
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
+import { AppFailure } from '@/server/errors/app-failure';
 import { handleOperation } from '@/server/http/route-handler';
 import {
   parseJsonBody,
@@ -38,10 +39,12 @@ import {
   scopeTargetOption,
   searchParamsToObject,
 } from '@/server/http/validation';
+import { MAX_SEARCH_FRAGMENT, MIN_SEARCH_FRAGMENT } from '@/shared/text/search-terms';
 import {
   MAX_SOC_PERCENT,
   MAX_WALK_IN_NOTE,
   MIN_SOC_PERCENT,
+  RECEPTION_STATUS_GROUPS,
   RECEPTION_STATUSES,
   receptionModule,
 } from '@/modules/reception';
@@ -128,16 +131,132 @@ export async function POST(request: Request): Promise<Response> {
 // decides against the branch actually read (P1-18-A-01).
 // ---------------------------------------------------------------------------
 
+/**
+ * The plate on a board row is shown to EVERY holder of `rec.reception.read`,
+ * and that is a decision rather than an omission (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * The customer NAME beside it is narrowed — it is resolved through the CRM
+ * module's own read, which checks `crm.customer.read` and answers an unentitled
+ * caller with nothing — so the obvious question is why the plate is not narrowed
+ * too. It is not, for three reasons, and the shipped board already answers the
+ * same way:
+ *
+ *  - `wo.work-order-list` publishes the plate as `WorkOrderSummary.vehicle`
+ *    (`work-order-service.ts`) to every holder of `wo.work_order.read`, with no
+ *    vehicle-side capability check. Narrowing here and not there would give one
+ *    tenant two different answers about the same car on two screens an operator
+ *    reads side by side;
+ *  - the plate is the property of the VEHICLE, and a caller who may read this
+ *    visit already holds that vehicle's id, its display number and its whole
+ *    condition record. `docs/database/veh-ownership-visibility-matrix.md` reserves
+ *    the CRM columns, not the registration;
+ *  - a board that named only a vehicle id made an operator match cars by
+ *    identifier, which is the defect this field exists to remove.
+ *
+ * So: no narrowing, deliberately, and recorded here so the next reader does not
+ * have to decide it again.
+ */
+
+/**
+ * `branchId` is OPTIONAL (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * Omitting it asks for every branch of the company the caller may read, which is
+ * how a person who works in three branches sees their day without picking one
+ * three times. It is not a widening: `authorizedBranches` decides the set, one
+ * branch at a time, against this operation's own declared codes, and refuses a
+ * caller that holds none of them — see `resolveAuthorizedBranches`. Naming a
+ * branch is unchanged and is still refused exactly as before, by the
+ * `scopeTargetOption` target below.
+ */
 const ListQuery = z
   .object({
     companyId: schemas.uuid,
-    branchId: schemas.uuid,
+    branchId: schemas.uuid.optional(),
     status: z.enum(RECEPTION_STATUSES).optional(),
+    /**
+     * The status GROUP (Owner directive, P1-32-PRE-OD-UX) — `open` for the
+     * visits still in play, `finished` for the three terminal exits.
+     *
+     * The control a board actually offers, because "today's queue" is one
+     * question and six lifecycle codes are six. The group is expanded into the
+     * statuses it covers inside the module, from `TERMINAL_RECEPTION_STATUSES`,
+     * so the frozen graph is stated once.
+     *
+     * Mutually exclusive with `status`, refused below rather than ANDed: the
+     * intersection is either that one status or an empty page, and an empty page
+     * on a board is indistinguishable from a branch with nothing in it.
+     */
+    statusGroup: z.enum(RECEPTION_STATUS_GROUPS).optional(),
     vehicleId: schemas.uuid.optional(),
+    /**
+     * Inclusive bounds on the instant custody was accepted (Owner directive,
+     * P1-32-PRE-OD-UX) — the column the board already orders on, so the filter
+     * and the ordering date the same business fact.
+     */
+    from: z.string().datetime({ offset: true }).optional(),
+    to: z.string().datetime({ offset: true }).optional(),
+    /**
+     * One free-text box (Owner directive, P1-32-PRE-OD-UX): part of a party's
+     * name, the tail of their phone number, part of any plate the vehicle has
+     * carried, part of its VIN, or part of the reception number. It narrows a
+     * board the caller is already entitled to and never widens one.
+     */
+    q: z.string().min(MIN_SEARCH_FRAGMENT).max(MAX_SEARCH_FRAGMENT).optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((query, context) => {
+    if (
+      query.from !== undefined &&
+      query.to !== undefined &&
+      Date.parse(query.to) < Date.parse(query.from)
+    ) {
+      // An inverted range matches nothing by construction, so answering it with
+      // an empty page would read as "no visits" rather than "bad request" — the
+      // rule `apt.appointment-list` already applies to its own window. Compared
+      // as INSTANTS: both values carry an explicit offset, and a lexical
+      // comparison of offset-bearing ISO strings is wrong in both directions.
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['to'],
+        message: 'to must not be earlier than from',
+      });
+    }
+  });
+
+/**
+ * The one cross-field refusal this query carries, as a CATALOGUED rule token.
+ *
+ * Asserted here rather than in the `superRefine` above, and the difference is
+ * what the caller receives: `toViolations` publishes `issue.code` as the rule,
+ * and every refinement issue carries the code `custom`, so a refinement can only
+ * state its reason in an English message the problem document does not publish.
+ * A catalogued token is what the browser turns into a sentence in the operator's
+ * own language.
+ *
+ * The inverted-window refusal above is left as it was. It is not this change's
+ * to reshape, and moving it would alter a refusal shape that shipped before this
+ * directive; it is recorded here as the one refusal on this route that still
+ * reaches a screen as the generic sentence.
+ */
+function assertStatusFilterCoherent(query: {
+  readonly status?: string | undefined;
+  readonly statusGroup?: string | undefined;
+}): void {
+  if (query.status === undefined || query.statusGroup === undefined) return;
+  // See `statusGroup` above: ANDing them is well defined and useless, and the
+  // useless answer looks exactly like a quiet board.
+  throw new AppFailure('ERR-VAL-001', {
+    // Not published: `problemFor` renders the catalogue title and the
+    // violations, never this string. It exists for the log line.
+    message: 'The board query names a status and a status group at once',
+    safeDetails: {
+      violations: [{ path: 'query.statusGroup', rule: 'status_and_group_exclusive' }],
+    },
+  });
+}
 
 export const RECEPTION_LIST_OPERATION = defineOperation({
   id: 'rec.reception-list',
@@ -149,6 +268,7 @@ export const RECEPTION_LIST_OPERATION = defineOperation({
   scope: 'branch',
   auditClass: 'none',
   rateLimitPolicy: 'expensive-read',
+  branchNarrowing: 'authorized-union',
   cacheCategory: 'never',
 });
 
@@ -157,17 +277,47 @@ export async function GET(request: Request): Promise<Response> {
   return handleOperation(
     RECEPTION_LIST_OPERATION,
     request,
-    async ({ db }) => ({
+    async ({ db, authorizedBranches }) => {
       // Parsed INSIDE the handler so a malformed query is rendered as the
       // shared problem document rather than an unhandled 500.
-      body: await receptionModule().receptionRead.listReceptions(
-        db,
-        parseOrFail(ListQuery, raw, 'query')
-      ),
-    }),
-    // `scopeTargetOption` can only make authorization STRICTER: a malformed or
-    // absent pair yields no target and the schema above then refuses. Tenant is
-    // never accepted from the client; it comes from the resolved principal.
+      const query = parseOrFail(ListQuery, raw, 'query');
+      assertStatusFilterCoherent(query);
+      // A named branch was already decided by the `scopeTargetOption` target
+      // below, so it is passed through unchanged; an omitted one is resolved
+      // here, inside the transaction, against the caller's own grants.
+      const branchIds =
+        query.branchId === undefined ? await authorizedBranches(query.companyId) : [query.branchId];
+      return {
+        body: await receptionModule().receptionRead.listReceptions(db, {
+          companyId: query.companyId,
+          branchIds,
+          status: query.status,
+          statusGroup: query.statusGroup,
+          vehicleId: query.vehicleId,
+          from: query.from,
+          to: query.to,
+          q: query.q,
+          cursor: query.cursor,
+          limit: query.limit,
+        }),
+      };
+    },
+    // The pre-handler target, and what now stands behind it.
+    //
+    // `scopeTargetOption` reads the pair out of not-yet-validated input and
+    // yields a target only when BOTH are well-formed UUIDs, so it can only ever
+    // make authorization stricter (P1-18-A-01).
+    //
+    // What it can no longer do is carry the whole decision. Since the Owner
+    // directive (P1-32-PRE-OD-UX) an absent `branchId` is LEGAL, so an absent
+    // pair yields no target and this pre-handler check degrades to the
+    // scope-blind `iam.has_permission` — it is NOT refused by the schema any
+    // more, and a comment saying so would be describing the old contract. The
+    // decision for that request is made inside the transaction by
+    // `resolveAuthorizedBranches`, which evaluates this operation's declared
+    // codes once per candidate branch of the named company and refuses a caller
+    // that holds none. Tenant is never accepted from the client either way; it
+    // comes from the resolved principal.
     scopeTargetOption(raw)
   );
 }

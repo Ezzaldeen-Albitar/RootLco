@@ -23,6 +23,12 @@
  * a table and is reconciled against it by test.
  */
 import { AppFailure } from '@/server/errors/app-failure';
+import {
+  foldDigits,
+  foldSearchText,
+  normalizePlate,
+  normalizeVin,
+} from '@/shared/text/normalization';
 
 /**
  * Frozen `ck_work_orders_kind` vocabulary — exactly two values.
@@ -35,6 +41,33 @@ export const WORK_ORDER_KINDS = ['ordinary', 'rework'] as const;
 export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
 
 /**
+ * The three groups a board may narrow to (Owner directive, P1-32-PRE-OD-UX).
+ *
+ * A group is NOT a state code and never becomes one here. `wo.work_order_states`
+ * is tenant-extensible and carries `is_terminal` and `is_cancellation`; the
+ * group is resolved from those two flags against the LIVE catalogue, so a tenant
+ * that defines its own non-terminal state has it counted as `active` without
+ * this vocabulary changing. Naming state codes in TypeScript instead would be a
+ * second copy of a tenant's own configuration, rotting from the moment it was
+ * written.
+ *
+ * The three are a PARTITION of the catalogue, which is why `terminal` excludes
+ * the cancellations rather than containing them:
+ *
+ *   cancelled  is_cancellation
+ *   terminal   is_terminal AND NOT is_cancellation
+ *   active     NOT is_terminal AND NOT is_cancellation
+ *
+ * If `terminal` meant "every is_terminal row" it would overlap `cancelled`, and
+ * a board offering all three as one control would show the same abandoned job
+ * under two labels — which reads as a duplicate rather than as a classification.
+ * A caller that wants the union asks for two groups' worth by asking twice; a
+ * caller that wants one asks for one, and gets rows that belong to no other.
+ */
+export const WORK_ORDER_STATE_GROUPS = ['active', 'terminal', 'cancelled'] as const;
+export type WorkOrderStateGroup = (typeof WORK_ORDER_STATE_GROUPS)[number];
+
+/**
  * Frozen `ck_work_orders_parts_forward_state` vocabulary.
  *
  * Note `reserved_elsewhere` — not `reserved`, and there is no `issued`. The column
@@ -43,6 +76,31 @@ export type WorkOrderKind = (typeof WORK_ORDER_KINDS)[number];
  */
 export const PARTS_FORWARD_STATES = ['none', 'requested', 'reserved_elsewhere'] as const;
 export type PartsForwardState = (typeof PARTS_FORWARD_STATES)[number];
+
+/**
+ * The `parts_forward_state` values that mean the parts are NOT YET IN HAND for
+ * the job (Owner directive, P1-32-PRE-OD-UX — "waiting for parts").
+ *
+ * Both non-`none` values qualify, and each for a stated reason:
+ *
+ *   `requested`           somebody asked for the parts and nothing has been
+ *                         reserved yet;
+ *   `reserved_elsewhere`  the parts were reserved in a system this phase does not
+ *                         own. A reservation is not an issue: the vocabulary has
+ *                         no `issued` value because handing stock to a job is not
+ *                         a fact this schema can record (see
+ *                         `DEFERRED_CLOSURE_BLOCKERS`), so the column never says
+ *                         the parts arrived.
+ *
+ * Listed explicitly rather than written as "anything but `none`", so a value
+ * added later — an `issued`, say — does not silently join the set. This is the
+ * ONE definition the overview count and the board's `awaitingParts` view share;
+ * the repository builds its SQL fragment from it.
+ */
+export const PARTS_NOT_IN_HAND_STATES = [
+  'requested',
+  'reserved_elsewhere',
+] as const satisfies readonly PartsForwardState[];
 
 // Deliberately NOT here: the quality-control result vocabulary, the diagnostic
 // report status vocabulary and the labor-session source vocabulary. Each of those
@@ -310,4 +368,85 @@ export function assertTransitionReason(requiresReason: boolean, reason: string |
       safeDetails: { violations: [{ path: 'body.reason', rule: 'max_length' }] },
     });
   }
+}
+
+/**
+ * The longest work-order number or free-text fragment accepted at the edge. A
+ * longer input is a payload, not a query.
+ */
+export const MAX_WORK_ORDER_SEARCH_FRAGMENT = 80;
+
+/**
+ * The shortest free-text fragment accepted. A one-character fragment matches
+ * nearly every work order in a branch, so the page it returns says nothing.
+ */
+export const MIN_WORK_ORDER_SEARCH_FRAGMENT = 2;
+
+/**
+ * A work-order search, reduced to the differently-normalised forms each column
+ * needs (P1-32).
+ *
+ * One free-text box is compared against four columns that were normalised by four
+ * different rules, so the fragment is reduced four ways HERE, once, by the shared
+ * rules — never re-derived in SQL, and never by a second implementation:
+ *
+ *   `numberFragment` digits folded, trimmed, LIKE-escaped — for the work-order number
+ *   `nameFragment`   the NAME rule, LIKE-escaped — for the customer's display name
+ *   `plateFragment`  the plate rule — for any plate the vehicle has carried
+ *   `vinFragment`    the VIN rule — for the vehicle's VIN
+ *
+ * An empty `plateFragment` or `vinFragment` means that arm cannot match anything
+ * the caller typed, and the repository skips it rather than appending `LIKE '%%'`,
+ * which would match every row.
+ */
+export interface WorkOrderSearchTerms {
+  /** Exact work-order number with digits folded, or null when none was supplied. */
+  readonly number: string | null;
+  /** Whether a free-text fragment was supplied at all. */
+  readonly hasFreeText: boolean;
+  readonly numberFragment: string;
+  readonly nameFragment: string;
+  readonly plateFragment: string;
+  readonly vinFragment: string;
+}
+
+/** Escapes LIKE metacharacters so the `%` the repository appends is the only wildcard. */
+function escapeLikeFragment(value: string): string {
+  return value.replace(/[\\%_]/g, (character) => `\\${character}`);
+}
+
+/**
+ * Reduces the caller's `number` and `q` to `WorkOrderSearchTerms`.
+ *
+ * A work-order number is issued by a number sequence in ASCII, but a person
+ * reading it off a job card may type it on an Arabic keyboard, so its digits are
+ * folded; nothing else about it is changed, because it is an identifier.
+ */
+export function toWorkOrderSearchTerms(input: {
+  readonly number?: string | undefined;
+  readonly q?: string | undefined;
+}): WorkOrderSearchTerms {
+  const number = input.number === undefined ? null : foldDigits(input.number.trim());
+  if (input.q === undefined) {
+    return {
+      number,
+      hasFreeText: false,
+      numberFragment: '',
+      nameFragment: '',
+      plateFragment: '',
+      vinFragment: '',
+    };
+  }
+  return {
+    number,
+    hasFreeText: true,
+    numberFragment: escapeLikeFragment(foldDigits(input.q.trim())),
+    nameFragment: escapeLikeFragment(foldSearchText(input.q) ?? ''),
+    // LIKE-escaped for the reason `shared/text/search-terms.ts` gives: the plate
+    // rule keeps every character it does not fold, `%` and `_` among them, so an
+    // unescaped fragment of `%%` would turn the plate arm into `LIKE '%%%%'` and
+    // match every row in the branch.
+    plateFragment: escapeLikeFragment(normalizePlate(input.q) ?? ''),
+    vinFragment: escapeLikeFragment(normalizeVin(input.q) ?? ''),
+  };
 }

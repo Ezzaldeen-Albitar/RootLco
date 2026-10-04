@@ -81,13 +81,50 @@ export function FieldFrame({
         </p>
       ) : null}
 
+      {/*
+        `invalid` is `Boolean(error)` and nothing else, and every control below
+        renders `aria-invalid={invalid || undefined}` — so the attribute is
+        ABSENT rather than `"false"` on a healthy field.
+
+        That is not tidiness. `lib/forms/use-focus-first-invalid.ts` finds the
+        first thing to fix by querying `[aria-invalid="true"]` within the form,
+        which is only a correct query because this frame never writes the
+        attribute speculatively. A control that carried `aria-invalid="false"`
+        would be invisible to that query; one that carried a bare `aria-invalid`
+        on every render would make the first field the answer every time.
+      */}
       {children({ controlId, describedBy, invalid: Boolean(error), errorId })}
 
       {error ? (
         // `role="alert"` so a validation failure that appears after submit is
         // announced without the user having to go looking for it.
-        <p id={errorId} role="alert" className="text-supporting text-error">
-          {error}
+        <p
+          id={errorId}
+          role="alert"
+          className="flex items-start gap-1.5 text-supporting text-error"
+        >
+          {/*
+            A SHAPE as well as a colour.
+            
+            The error sentence was red text and nothing else, which makes colour
+            the only carrier of "this is the thing that is wrong" — 1.4.1 again,
+            and the same fault the required-field asterisk was written to avoid
+            a few lines above. Under forced colours, in greyscale, and for a
+            red-green colour deficiency, red supporting text and grey supporting
+            text are the same text.
+
+            The glyph is `aria-hidden`: the sentence beside it already says what
+            is wrong, `aria-invalid` and `aria-errormessage` already say that the
+            control is the one at fault, and announcing "exclamation mark" before
+            every message is noise.
+          */}
+          <span
+            aria-hidden="true"
+            className="mt-px inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-error text-caption font-bold leading-none"
+          >
+            !
+          </span>
+          <span>{error}</span>
         </p>
       ) : null}
     </div>
@@ -336,18 +373,39 @@ export interface SelectOption {
   readonly label: string;
 }
 
+/**
+ * Options under a heading that is not itself a choice.
+ *
+ * A closed vocabulary that divides into two meaningful halves — the reception
+ * statuses a visit can still move out of and the three exits, the work-order
+ * states that mean the car is still here and the ones that mean it is not —
+ * reads as six or nine unrelated words in a flat list. `<optgroup>` is the
+ * native control for that: the heading is announced by a screen reader as the
+ * group's name, it cannot be chosen by mistake, and it needs no JavaScript.
+ *
+ * The groups are always DERIVED from the same fact the rest of the screen uses
+ * (a terminal flag, a catalogue), never hand-listed beside it.
+ */
+export interface SelectOptionGroup {
+  readonly label: string;
+  readonly options: readonly SelectOption[];
+}
+
 export function SelectField({
   label,
   description,
   error,
   required,
   optionalHint,
-  options,
+  options = [],
+  groups = [],
   placeholder,
   ...select
 }: BaseFieldProps &
   Omit<SelectHTMLAttributes<HTMLSelectElement>, 'id' | 'required'> & {
-    readonly options: readonly SelectOption[];
+    readonly options?: readonly SelectOption[];
+    /** Rendered after `options`, each as an `<optgroup>`. */
+    readonly groups?: readonly SelectOptionGroup[];
     readonly placeholder?: string | undefined;
   }) {
   return (
@@ -373,6 +431,15 @@ export function SelectField({
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
+          ))}
+          {groups.map((group) => (
+            <optgroup key={group.label} label={group.label}>
+              {group.options.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       )}

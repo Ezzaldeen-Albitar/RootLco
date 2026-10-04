@@ -590,6 +590,96 @@ describe('G-4: company and branch administration', () => {
     expect(result.status).toBe(403);
     expect(result.body.code).toBe('ERR-IAM-001');
   }, 30_000);
+
+  /*
+   * A reference the platform does not hold, and a malformed code, are refusals
+   * of the field that carried them — never a 500. The currency case reaches the
+   * foreign key; the lower-case cases are refused at the boundary.
+   */
+  type Refusal = { code?: string; violations?: readonly { path: string; rule: string }[] };
+  const branchVersion = async (): Promise<number> =>
+    Number(
+      await scalar<number>('SELECT record_version FROM org.branches WHERE id = $1', [BRANCH_A1])
+    );
+
+  it('W33 refuses a company currency the platform does not hold, on that field', async () => {
+    const before = await scalar<string>(
+      'SELECT base_currency_code FROM org.legal_companies WHERE id = $1',
+      [COMPANY_A2]
+    );
+    asAdmin();
+    const result = await call<Refusal>(companyUpdateRoute, {
+      path: `/org/companies/${COMPANY_A2}`,
+      method: 'PATCH',
+      body: { baseCurrencyCode: 'XTS' },
+      params: { companyId: COMPANY_A2 },
+      ifMatch: await companyVersion(COMPANY_A2),
+    });
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe('ERR-VAL-001');
+    expect(result.body.violations).toEqual([
+      { path: 'body.baseCurrencyCode', rule: 'unknown_reference' },
+    ]);
+    expect(
+      await scalar<string>('SELECT base_currency_code FROM org.legal_companies WHERE id = $1', [
+        COMPANY_A2,
+      ])
+    ).toBe(before);
+  }, 30_000);
+
+  it('W34 refuses a lower-case company currency at the boundary', async () => {
+    asAdmin();
+    const result = await call<Refusal>(companyUpdateRoute, {
+      path: `/org/companies/${COMPANY_A2}`,
+      method: 'PATCH',
+      body: { baseCurrencyCode: 'jod' },
+      params: { companyId: COMPANY_A2 },
+      ifMatch: await companyVersion(COMPANY_A2),
+    });
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe('ERR-VAL-001');
+    expect((result.body.violations ?? []).map((violation) => violation.path)).toEqual([
+      'body.baseCurrencyCode',
+    ]);
+  }, 30_000);
+
+  it('W35 refuses a branch time zone the platform does not hold, on that field', async () => {
+    const before = await scalar<string>('SELECT timezone_name FROM org.branches WHERE id = $1', [
+      BRANCH_A1,
+    ]);
+    asAdmin();
+    const result = await call<Refusal>(branchUpdateRoute, {
+      path: `/org/branches/${BRANCH_A1}`,
+      method: 'PATCH',
+      body: { timezoneName: 'Etc/Never_Seeded' },
+      params: { branchId: BRANCH_A1 },
+      ifMatch: await branchVersion(),
+    });
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe('ERR-VAL-001');
+    expect(result.body.violations).toEqual([
+      { path: 'body.timezoneName', rule: 'unknown_reference' },
+    ]);
+    expect(
+      await scalar<string>('SELECT timezone_name FROM org.branches WHERE id = $1', [BRANCH_A1])
+    ).toBe(before);
+  }, 30_000);
+
+  it('W36 refuses a lower-case branch country at the boundary', async () => {
+    asAdmin();
+    const result = await call<Refusal>(branchUpdateRoute, {
+      path: `/org/branches/${BRANCH_A1}`,
+      method: 'PATCH',
+      body: { countryCode: 'jo' },
+      params: { branchId: BRANCH_A1 },
+      ifMatch: await branchVersion(),
+    });
+    expect(result.status).toBe(422);
+    expect(result.body.code).toBe('ERR-VAL-001');
+    expect((result.body.violations ?? []).map((violation) => violation.path)).toEqual([
+      'body.countryCode',
+    ]);
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------

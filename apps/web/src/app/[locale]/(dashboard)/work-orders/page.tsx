@@ -3,8 +3,14 @@ import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { PermissionDeniedState } from '@/components/states/States';
 import { requireSession } from '@/features/authentication/api/session';
 import { holds } from '@/features/crm/permissions';
+import { DELIVERY_READINESS_PERMISSIONS } from '@/features/delivery/readiness-contract';
 import { WorkOrderQueueScreen } from '@/features/work-orders/components/WorkOrderQueueScreen';
-import { WORK_ORDER_PERMISSIONS } from '@/features/work-orders/work-orders-contract';
+import {
+  WORK_ORDER_BOARD_DEFAULT_VIEW,
+  WORK_ORDER_PERMISSIONS,
+  WORK_ORDER_STATE_CODE_PATTERN,
+  isWorkOrderBoardView,
+} from '@/features/work-orders/work-orders-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -17,6 +23,12 @@ import { pageMetadata } from '@/lib/page-metadata';
  * board can do beyond reading (transitions, jobs, assignment, closure) belongs
  * to later P1-29 items and is not offered here, so there is no second permission
  * to soften the denial into a missing button.
+ *
+ * One permission is read beyond that, and it gates a LINK rather than anything
+ * on this page: the board offers a way through to the ready-for-delivery queue,
+ * and that queue's own page refuses an operator missing any of the three codes
+ * `DELIVERY_READINESS_PERMISSIONS` names. The offer is made here on exactly
+ * those three, so it never lands on a refusal.
  *
  * The check is placed BEFORE any read is issued. `requireSession` runs first and
  * must: it is what produces the permissions being tested. Nothing else is
@@ -31,8 +43,10 @@ import { pageMetadata } from '@/lib/page-metadata';
  */
 export default async function WorkOrderQueuePage({
   params,
+  searchParams,
 }: {
   readonly params: Promise<{ locale: string }>;
+  readonly searchParams?: Promise<Record<string, string | string[] | undefined>> | undefined;
 }) {
   const { locale } = await params;
   if (!isLocale(locale)) notFound();
@@ -57,6 +71,30 @@ export default async function WorkOrderQueuePage({
     );
   }
 
+  /*
+   * Where the board opens, when something else sent the reader here.
+   *
+   * Two parameters and no more: a VIEW name out of the nine this repository
+   * declares, and a STATE code matching the shape the list operation accepts.
+   * Both are vocabulary; neither is anything an operator typed. Anything else in
+   * the address — and any value that fails its check — is dropped here rather
+   * than passed on, so a hand-edited address opens the default board instead
+   * of asking the backend a question it will refuse.
+
+   *
+   * `components/data-table/table-state.ts` holds the rule this follows: an
+   * address may carry WHICH filter is applied and never the VALUE behind it.
+   */
+  const query = (await searchParams) ?? {};
+  const askedView = single(query['view']);
+  const askedState = single(query['state']);
+  const initialState =
+    askedState !== null && WORK_ORDER_STATE_CODE_PATTERN.test(askedState) ? askedState : '';
+  const initialView =
+    askedView !== null && isWorkOrderBoardView(askedView)
+      ? askedView
+      : WORK_ORDER_BOARD_DEFAULT_VIEW;
+
   return (
     <>
       <PageHeader
@@ -70,12 +108,23 @@ export default async function WorkOrderQueuePage({
         <WorkOrderQueueScreen
           locale={locale}
           messages={messages}
-          companyIds={session.companyIds}
-          branchIds={session.branchIds}
+          initialView={initialView}
+          initialState={initialState}
+          canReachDelivery={
+            holds(session.permissions, DELIVERY_READINESS_PERMISSIONS.view) &&
+            holds(session.permissions, DELIVERY_READINESS_PERMISSIONS.workOrderRead) &&
+            holds(session.permissions, DELIVERY_READINESS_PERMISSIONS.financeView)
+          }
         />
       </PageBody>
     </>
   );
+}
+
+/** One value, or none. A repeated parameter is a malformed address, not a list. */
+function single(value: string | string[] | undefined): string | null {
+  if (typeof value === 'string') return value;
+  return Array.isArray(value) && typeof value[0] === 'string' ? value[0] : null;
 }
 
 export const generateMetadata = pageMetadata('workOrders.queue.title');

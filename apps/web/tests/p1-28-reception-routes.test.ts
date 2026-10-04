@@ -171,29 +171,40 @@ describe('the queue route', () => {
   it('renders the board only for a holder of the read permission', async () => {
     PERMISSIONS = [RECEPTION_PERMISSIONS.read];
     const granted = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(granted, 'companyIds')).not.toBeNull();
+    expect(findProps(granted, 'canCreate')).not.toBeNull();
 
     PERMISSIONS = ALL.filter((p) => p !== RECEPTION_PERMISSIONS.read);
     const denied = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(denied, 'companyIds')).toBeNull();
+    expect(findProps(denied, 'canCreate')).toBeNull();
   });
 
   it('grants the check-in offer from the manage permission and nothing else', async () => {
     PERMISSIONS = [RECEPTION_PERMISSIONS.read, RECEPTION_PERMISSIONS.manage];
     const granted = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(granted, 'companyIds')?.['canCreate']).toBe(true);
+    expect(findProps(granted, 'canCreate')?.['canCreate']).toBe(true);
 
     PERMISSIONS = ALL.filter((p) => p !== RECEPTION_PERMISSIONS.manage);
     const denied = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(denied, 'companyIds')?.['canCreate']).toBe(false);
+    expect(findProps(denied, 'canCreate')?.['canCreate']).toBe(false);
   });
 
-  it("passes the session's own resolved scope as the target options", async () => {
+  it('passes NO scope down — the branch is the working context, not the session', async () => {
+    /*
+     * The inverse of what this case used to assert, and for the reason the
+     * board itself changed: the session's `companyIds` and `branchIds` are bare
+     * references with no names, and an EMPTY pair of them means unrestricted
+     * rather than none. The route hands neither down now. The branch is chosen
+     * once in the header, and the route's job is the permission gate.
+     */
     PERMISSIONS = [RECEPTION_PERMISSIONS.read];
     const tree = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    const props = findProps(tree, 'companyIds');
-    expect(props?.['companyIds']).toEqual(['11111111-1111-4111-8111-111111111111']);
-    expect(props?.['branchIds']).toEqual(['22222222-2222-4222-8222-222222222222']);
+    const props = findProps(tree, 'canCreate');
+    expect(props, 'the reception board was not rendered at all').not.toBeNull();
+    expect(
+      props?.['companyIds'],
+      'the route still hands the board bare references'
+    ).toBeUndefined();
+    expect(props?.['branchIds'], 'the route still hands the board bare references').toBeUndefined();
   });
 });
 
@@ -292,6 +303,29 @@ describe('the acknowledgement route', () => {
     PERMISSIONS = [RECEPTION_PERMISSIONS.read];
     const granted = await AcknowledgementPage({ params });
     expect(findProps(granted, 'sections')).not.toBeNull();
+  });
+
+  it('prints the sheet alone: the print controls are a sibling of it inside the print scope', async () => {
+    /*
+     * Owner directive (the delivery sheet's rule): paper carries the whole
+     * sheet and nothing else. The page opts into the print scope, whose rule
+     * (`styles/print/_index.scss`) leaves off every direct child that holds no
+     * document — so the toolbar with Print and the way back must be a SIBLING
+     * of the sheet, and exactly one child may be the sheet.
+     */
+    PERMISSIONS = [RECEPTION_PERMISSIONS.read];
+    const tree = await AcknowledgementPage({ params });
+    const scope = findProps(tree, 'data-print-scope');
+    expect(scope).not.toBeNull();
+    const children = (Array.isArray(scope?.['children']) ? scope['children'] : []) as {
+      props: Record<string, unknown>;
+    }[];
+    expect(children).toHaveLength(2);
+    const toolbar = children.find((child) => 'printLabel' in child.props);
+    const sheet = children.find((child) => 'sections' in child.props);
+    expect(toolbar, 'no print toolbar beside the sheet').toBeDefined();
+    expect(sheet, 'the sheet is not a direct child of the print scope').toBeDefined();
+    expect(toolbar?.props['backHref']).toBe(`/en/receptions/check-in/${DETAIL.id}`);
   });
 
   it('reads the three sections on the server, so the first paint is the sheet', async () => {

@@ -25,9 +25,14 @@
  *
  * The five residuals, and where each is compensated:
  *
- *   1. SB1  — a credit note in one currency is accepted against an invoice in
- *             another, approved, and subtracted from the gross.
- *             Compensated by `assertCurrencyMatches` (billing domain). P1-22-L-02.
+ *   1. SB1  — a credit note in one currency was accepted against an invoice in
+ *             another, approved, and subtracted from the gross (P1-22-L-02).
+ *             CLOSED for credit notes by `20260930090000_sal_finance_controls.sql`
+ *             (GAP-13): the case below now proves the refusal, exactly as this
+ *             header said a closing migration would require. The reversal half
+ *             (a reversal in another currency than its receipt) is CLOSED by
+ *             `20261002090000_sal_receipt_reversal_requests.sql` (ADR-023 D4):
+ *             its BEFORE INSERT guard refuses it, and the case below proves it.
  *   2. BR-SAL-002 — a raw INSERT into `sal.payment_allocations` is unbounded, so
  *             `Σ allocations` may exceed both the receipt and the invoice.
  *             Compensated by routing every allocation through
@@ -93,8 +98,8 @@ afterAll(async () => {
   await admin.end();
 });
 
-describe('P1-22 residual 1 (SB1) — credit-note currency equality is enforced by nothing', () => {
-  it('accepts, approves, and subtracts a JOD credit note from a USD invoice', async () => {
+describe('P1-22 residual 1 (SB1) — credit-note currency equality, closed by GAP-13', () => {
+  it('refuses a JOD credit note against a USD invoice, so nothing is subtracted', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       // A USD invoice, issued, gross 100.0000 and nothing paid against it. USD is
       // the fixture default; the mismatch below is introduced on the credit note.
@@ -106,77 +111,81 @@ describe('P1-22 residual 1 (SB1) — credit-note currency equality is enforced b
       ).rows[0]!.o;
       expect(openBefore).toBe('100.0000');
 
-      // A credit note in a DIFFERENT currency. Nothing refuses it: five triggers
-      // fire on sal.credit_notes and not one of them reads
-      // sal.invoices.currency_code.
+      // The same raw insert on the app_runtime login that used to be stored and
+      // then approved. sal.guard_credit_note_currency now reads the invoice's
+      // currency and refuses the mismatch as check_violation.
+      await expectFail(
+        c,
+        '23514',
+        `INSERT INTO sal.credit_notes
+           (tenant_id, company_id, branch_id, invoice_id, currency_code, amount, reason, requested_by, created_by)
+         VALUES ($1,$2,$3,$4,'JOD',40,'residual proof',$5,$5)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, invoice, USER_A]
+      );
+      expect(
+        (
+          await c.query<{ n: string }>(
+            `SELECT count(*)::text AS n FROM sal.credit_notes WHERE invoice_id=$1`,
+            [invoice]
+          )
+        ).rows[0]!.n
+      ).toBe('0');
+
+      // The matching currency is still accepted, so the refusal is about the code
+      // and not about credit notes in general.
       const credit = (
         await c.query<{ id: string }>(
           `INSERT INTO sal.credit_notes
              (tenant_id, company_id, branch_id, invoice_id, currency_code, amount, reason, requested_by, created_by)
-           VALUES ($1,$2,$3,$4,'JOD',40,'residual proof',$5,$5) RETURNING id`,
+           VALUES ($1,$2,$3,$4,'USD',40,'currency matches',$5,$5) RETURNING id`,
           [TENANT_A, COMPANY_A1, BRANCH_A1, invoice, USER_A]
         )
       ).rows[0]!.id;
+      expect(credit).toMatch(/^[0-9a-f-]{36}$/);
 
-      // It is stored with the mismatched currency intact.
-      expect(
-        (
-          await c.query<{ cc: string }>(
-            `SELECT currency_code AS cc FROM sal.credit_notes WHERE id=$1`,
-            [credit]
-          )
-        ).rows[0]!.cc
-      ).toBe('JOD');
-
-      // And it APPROVES. sal.approve_credit_note compares the amount against the
-      // open receivable and never compares the currency, so a different approver
-      // completes dual control and the note becomes real.
-      await setUser(c, P11.APPROVER_USER);
-      await c.query(`SELECT sal.approve_credit_note($1)`, [credit]);
-      await setUser(c, USER_A);
-
-      expect(
-        (
-          await c.query<{ s: string }>(
-            `SELECT approval_state AS s FROM sal.credit_notes WHERE id=$1`,
-            [credit]
-          )
-        ).rows[0]!.s
-      ).toBe('approved');
-
-      // The consequence, which is the actual finding: 40 JOD has been subtracted
-      // from a USD gross as though the two were the same unit. There is no
-      // currency predicate anywhere in sal.invoice_open_receivable.
+      // Nothing in a foreign currency reached the receivable.
       const openAfter = (
         await c.query<{ o: string }>(`SELECT sal.invoice_open_receivable($1)::text AS o`, [invoice])
       ).rows[0]!.o;
-      expect(openAfter).toBe('60.0000');
+      expect(openAfter).toBe('100.0000');
     });
   });
 
-  it('accepts a reversal whose currency differs from its receipt', async () => {
+  it('refuses a reversal whose currency differs from its receipt, closed by ADR-023 D4', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const receipt = await seedReceipt(c, { amount: 75, payer: P9.SR, currency: 'USD' });
 
-      // Same absence on the reversal side. The row is stored; only its approval is
-      // bounded, and only by amount.
-      const reversal = (
-        await c.query<{ id: string }>(
+      // The same raw insert on the app_runtime login that used to be stored. The
+      // BEFORE INSERT guard sal.guard_receipt_reversal_request (P1-32-PRE-OD-FD4)
+      // now reads the receipt and refuses a currency other than its own.
+      await c.query('SAVEPOINT sp_currency');
+      let error: { code?: string; message?: string } | undefined;
+      try {
+        await c.query(
           `INSERT INTO sal.receipt_reversals
              (tenant_id, company_id, branch_id, original_receipt_id, currency_code, amount, reason, requested_by, created_by)
-           VALUES ($1,$2,$3,$4,'JOD',75,'residual proof',$5,$5) RETURNING id`,
+           VALUES ($1,$2,$3,$4,'JOD',75,'residual proof',$5,$5)`,
           [TENANT_A, COMPANY_A1, BRANCH_A1, receipt, USER_A]
-        )
-      ).rows[0]!.id;
+        );
+      } catch (e) {
+        error = e as { code?: string; message?: string };
+      }
+      await c.query('ROLLBACK TO SAVEPOINT sp_currency');
+      expect(error?.code).toBe('23514');
+      expect(error?.message).toContain('receipt_reversal_currency_mismatch');
 
+      // The receipt's own currency is still accepted, so the refusal is about the
+      // code and not about reversals in general; the row is born pending.
       const row = (
         await c.query<{ cc: string; st: string }>(
-          `SELECT currency_code AS cc, approval_state AS st FROM sal.receipt_reversals WHERE id=$1`,
-          [reversal]
+          `INSERT INTO sal.receipt_reversals
+             (tenant_id, company_id, branch_id, original_receipt_id, currency_code, amount, reason, requested_by, created_by)
+           VALUES ($1,$2,$3,$4,'USD',75,'currency matches',$5,$5)
+           RETURNING currency_code AS cc, approval_state AS st`,
+          [TENANT_A, COMPANY_A1, BRANCH_A1, receipt, USER_A]
         )
       ).rows[0]!;
-      expect(row.cc).toBe('JOD');
-      expect(row.st).toBe('pending');
+      expect(row).toEqual({ cc: 'USD', st: 'pending' });
     });
   });
 });

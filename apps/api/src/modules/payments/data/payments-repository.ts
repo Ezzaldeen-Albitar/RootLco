@@ -55,6 +55,7 @@ import {
   type Page,
   type PageRequest,
 } from '@/server/db/pagination';
+import { halfOpenLocalDayRange } from '@/server/db/period';
 import type { DbHandle } from '@/server/db/transaction';
 import { assertAllocationUsesPrimitive } from '../domain/payments';
 
@@ -86,7 +87,7 @@ export const PAYMENT_SQLSTATE = {
  * The exact SQL that creates an allocation — a module-level constant so the
  * structural guard below can be applied to it at import time.
  */
-const ALLOCATE_RECEIPT_SQL = `SELECT sal.allocate_receipt($1, $2, $3::numeric, $4) AS id`;
+const ALLOCATE_RECEIPT_SQL = `SELECT sal.allocate_receipt($1, $2, $3::numeric, $4, $5, $6, $7, $8) AS id`;
 
 /**
  * Refuses to load this module if the allocation statement ever stops being the
@@ -171,6 +172,49 @@ export interface ReceiptRow {
    */
   readonly deletedAt: Date | null;
   readonly recordVersion: number;
+  /**
+   * The reversed receipt this one replaces (ADR-023 D4), or `null`. Frozen once
+   * recorded by `sal.guard_receipt_freeze`; only a receipt an approved reversal
+   * reversed may be named (`sal.guard_receipt_replacement`).
+   */
+  readonly replacesReceiptId: string | null;
+}
+
+/**
+ * One request to reverse a whole receipt (ADR-023 D4, P1-32-PRE-OD-FD4).
+ *
+ * `amount` and `currencyCode` are the receipt's own, bound by
+ * `sal.guard_receipt_reversal_request`; `requestedBy` and every decider and date
+ * are stamped by the database from the session. `requestedAt` is the row's
+ * creation stamp. The approver of an approved reversal is `approvedBy`; the
+ * decider of a rejected or withdrawn one is `decidedBy`.
+ */
+export interface ReceiptReversalRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly originalReceiptId: string;
+  readonly currencyCode: string;
+  /** `numeric(18,4)` as an exact decimal STRING. */
+  readonly amount: string;
+  readonly reason: string;
+  readonly approvalState: string;
+  readonly requestedBy: string;
+  readonly requestedAt: Date;
+  readonly approvedBy: string | null;
+  readonly approvedAt: Date | null;
+  readonly reversedAt: Date | null;
+  readonly decidedBy: string | null;
+  readonly decidedAt: Date | null;
+  readonly decisionReason: string | null;
+  readonly idempotencyKey: string | null;
+  readonly recordVersion: number;
+}
+
+/** A receipt named by its id and its branch's receipt number, for a link. */
+export interface ReceiptReferenceRow {
+  readonly id: string;
+  readonly receiptNumber: string;
 }
 
 /**
@@ -185,6 +229,17 @@ export interface ReceiptRow {
 export interface ReceiptListRow extends ReceiptRow {
   /** `round(amount - sum(allocations), 4)` as a STRING. 0 for a reversed receipt. */
   readonly unallocated: string;
+  /**
+   * The payer's name, number and party type, read from the live partner row.
+   *
+   * `null` when the payer is no live partner visible to this caller - retired
+   * since the receipt was taken, or hidden by the partner table's own policy.
+   * Whether the name is PUBLISHED is the service's decision
+   * (`PaymentReadService.listReceipts`); this row only carries what was read.
+   */
+  readonly payerDisplayName: string | null;
+  readonly payerDisplayNumber: string | null;
+  readonly payerPartyType: string | null;
 }
 
 /** `sal.receipt_unallocated` plus the currency that labels it. */
@@ -194,6 +249,100 @@ export interface ReceiptUnallocatedRow {
   readonly unallocated: string;
   readonly currencyCode: string;
   readonly status: string;
+}
+
+/**
+ * The period, the branch and the cursor a report document read is bounded by
+ * (P1-31 P-11, engine slice 4).
+ *
+ * `toExclusive` rather than `to`, because the name is the contract: a reader who
+ * sees `to` assumes the last day reported, and that assumption is the off-by-one
+ * the half-open period exists to prevent (D-17).
+ */
+export interface ReceiptDocumentFilter {
+  /** REQUIRED. The authorized scope, and a predicate on every statement. */
+  readonly companyId: string;
+  readonly branchId: string;
+  /** Inclusive first day, `YYYY-MM-DD`, in `timezoneName`. */
+  readonly from: string;
+  /** First day EXCLUDED — the day after the last one reported, `YYYY-MM-DD`. */
+  readonly toExclusive: string;
+  /** An IANA zone name: the reporting branch's `org.branches.timezone_name`. */
+  readonly timezoneName: string;
+}
+
+/**
+ * Where the page starts and how many rows it may hold.
+ *
+ * A DECODED position rather than an encoded cursor: this report's rows are a
+ * MERGE of two modules' documents, so the ordering contract — and therefore the
+ * cursor's identity, its decode and its minting — belongs to the reporting module
+ * that merges them. A second contract declared here would be a second definition
+ * of one order, and the two would drift.
+ *
+ * `limit` is the number of rows to return and includes whatever sentinel the
+ * caller intends: this statement adds none, because the merge decides `hasMore`
+ * over the combined stream and a per-stream sentinel would answer for the wrong
+ * selection.
+ */
+export interface ReportDocumentPage {
+  readonly after: { readonly sortValue: string; readonly id: string } | null;
+  readonly limit: number;
+}
+
+/** One receipt of the reported period, with what it has been applied to. */
+export interface ReceiptDocumentRow {
+  readonly documentId: string;
+  /** `sal.receipts.receipt_number` — NOT NULL, so never absent. */
+  readonly documentNumber: string;
+  readonly documentDate: Date;
+  /**
+   * The party the receipt names, as an id, and the ROLE it names them under.
+   *
+   * `sal.receipts.payer_partner_id`, so the role is `payer` — the party who PAID,
+   * which is not necessarily the customer the work was done for. Publishing the
+   * one under the other's name is what the Owner's answer of 2026-09-12 forbids.
+   */
+  readonly partyId: string;
+  readonly partyRole: 'payer';
+  readonly currencyCode: string;
+  /** `recorded`, `partially_allocated` or `allocated`. Never `reversed`. */
+  readonly status: string;
+  /** `sal.receipts.amount` as a decimal string. */
+  readonly receiptAmount: string;
+  /** Sum of this receipt's allocations, as a decimal string. `0.0000` when none. */
+  readonly allocatedAmount: string;
+  /**
+   * The part of `allocatedAmount` applied to OTHER customers' invoices as
+   * third-party allocations (ADR-023 D14), as a decimal string; `0.0000` when
+   * none. Summed in the same statement over the same rows, never derived here.
+   */
+  readonly thirdPartyAllocatedAmount: string;
+  /**
+   * `sal.receipt_unallocated(id)` as a decimal string — the AUTHORITY, called.
+   *
+   * Not `amount − allocated` computed here. The function is the deployed
+   * definition the receipt screen already reads, it returns `0` for a reversed
+   * receipt, and a subtraction written in TypeScript would be a second authority
+   * that disagrees with the screen the first time either changes.
+   */
+  readonly unallocatedAmount: string;
+  /** The microsecond-precision cursor value for `documentDate`. */
+  readonly sortValue: string;
+}
+
+/** One currency's receipt totals over the WHOLE selection. */
+export interface ReceiptDocumentTotalRow {
+  readonly currencyCode: string;
+  readonly receipts: string;
+  readonly allocated: string;
+  /** Sum of `sal.receipt_unallocated` over the same receipts. */
+  readonly unallocated: string;
+}
+
+export interface ReceiptDocumentRows {
+  readonly totals: readonly ReceiptDocumentTotalRow[];
+  readonly documents: readonly ReceiptDocumentRow[];
 }
 
 /**
@@ -216,6 +365,39 @@ export interface PaymentAllocationRow {
   readonly amount: string;
   readonly allocatedAt: Date;
   readonly correlationId: string | null;
+  /**
+   * The third-party detail (ADR-023 D14): all four `null` on an allocation whose
+   * receipt payer is the invoice's own customer, all four present on a third-party
+   * allocation (`ck_payment_allocations_third_party_shape`). `thirdPartyAuthorisedBy`
+   * was stamped from the session by `sal.guard_allocation_payer`.
+   */
+  readonly thirdPartyRelationship: string | null;
+  readonly thirdPartyAuthorisationReference: string | null;
+  readonly thirdPartyReason: string | null;
+  readonly thirdPartyAuthorisedBy: string | null;
+}
+
+/** What a third-party allocation states (ADR-023 D14), as the primitive takes it. */
+export interface ThirdPartyStatement {
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
+}
+
+/**
+ * One entry of a receipt's allocation history, with what names its invoice
+ * (finance retest DF-R2-2): the invoice's number, and the name of the customer it
+ * bills. Both are read beside the row, never instead of it.
+ *
+ * `invoiceNumber` is `null` only when the invoice row is not visible in this scope;
+ * an allocation is only ever made to an issued invoice, which always has a number.
+ * `invoicePayerDisplayName` is the live partner's name, `null` when the partner is
+ * retired or not visible. Whether the caller may be TOLD that name is the read
+ * service's decision, not this row's.
+ */
+export interface ReceiptAllocationRow extends PaymentAllocationRow {
+  readonly invoiceNumber: string | null;
+  readonly invoicePayerDisplayName: string | null;
 }
 
 const PAYMENT_METHOD_COLUMNS = `id, scope, tenant_id, method_code, kind, display_name, status,
@@ -240,7 +422,7 @@ export const RECEIPT_ORDER: OrderingContract = Object.freeze({
 
 const RECEIPT_COLUMNS = `id, company_id, branch_id, receipt_number, payment_method_id,
   payer_partner_id, currency_code, amount, received_at, evidence_document_version_id, status,
-  idempotency_key, deleted_at, record_version`;
+  idempotency_key, deleted_at, record_version, replaces_receipt_id`;
 
 interface PaymentMethodSql {
   id: string;
@@ -269,6 +451,7 @@ interface ReceiptSql {
   idempotency_key: string | null;
   deleted_at: Date | null;
   record_version: number;
+  replaces_receipt_id: string | null;
 }
 
 interface PaymentAllocationSql {
@@ -282,7 +465,17 @@ interface PaymentAllocationSql {
   amount: string;
   allocated_at: Date;
   correlation_id: string | null;
+  third_party_relationship: string | null;
+  third_party_authorisation_reference: string | null;
+  third_party_reason: string | null;
+  third_party_authorised_by: string | null;
 }
+
+/** The allocation columns every single-row read selects, so none omits the D14 detail. */
+const ALLOCATION_COLUMNS = `id, seq::text AS seq, company_id, branch_id, receipt_id, invoice_id,
+              currency_code, amount, allocated_at, correlation_id,
+              third_party_relationship, third_party_authorisation_reference,
+              third_party_reason, third_party_authorised_by`;
 
 const toPaymentMethod = (r: PaymentMethodSql): PaymentMethodRow => ({
   id: r.id,
@@ -311,6 +504,53 @@ const toReceipt = (r: ReceiptSql): ReceiptRow => ({
   idempotencyKey: r.idempotency_key,
   deletedAt: r.deleted_at,
   recordVersion: r.record_version,
+  replacesReceiptId: r.replaces_receipt_id,
+});
+
+const REVERSAL_COLUMNS = `id, company_id, branch_id, original_receipt_id, currency_code, amount,
+  reason, approval_state, requested_by, created_at, approved_by, approved_at, reversed_at,
+  decided_by, decided_at, decision_reason, idempotency_key, record_version`;
+
+interface ReceiptReversalSql {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  original_receipt_id: string;
+  currency_code: string;
+  amount: string;
+  reason: string;
+  approval_state: string;
+  requested_by: string;
+  created_at: Date;
+  approved_by: string | null;
+  approved_at: Date | null;
+  reversed_at: Date | null;
+  decided_by: string | null;
+  decided_at: Date | null;
+  decision_reason: string | null;
+  idempotency_key: string | null;
+  record_version: number;
+}
+
+const toReversal = (r: ReceiptReversalSql): ReceiptReversalRow => ({
+  id: r.id,
+  companyId: r.company_id,
+  branchId: r.branch_id,
+  originalReceiptId: r.original_receipt_id,
+  currencyCode: r.currency_code,
+  amount: r.amount,
+  reason: r.reason,
+  approvalState: r.approval_state,
+  requestedBy: r.requested_by,
+  requestedAt: r.created_at,
+  approvedBy: r.approved_by,
+  approvedAt: r.approved_at,
+  reversedAt: r.reversed_at,
+  decidedBy: r.decided_by,
+  decidedAt: r.decided_at,
+  decisionReason: r.decision_reason,
+  idempotencyKey: r.idempotency_key,
+  recordVersion: r.record_version,
 });
 
 const toAllocation = (r: PaymentAllocationSql): PaymentAllocationRow => ({
@@ -324,6 +564,10 @@ const toAllocation = (r: PaymentAllocationSql): PaymentAllocationRow => ({
   amount: r.amount,
   allocatedAt: r.allocated_at,
   correlationId: r.correlation_id,
+  thirdPartyRelationship: r.third_party_relationship,
+  thirdPartyAuthorisationReference: r.third_party_authorisation_reference,
+  thirdPartyReason: r.third_party_reason,
+  thirdPartyAuthorisedBy: r.third_party_authorised_by,
 });
 
 /** The scope pair a receipt was found in, passed back as predicates on derived reads. */
@@ -459,6 +703,19 @@ export class PaymentsRepository extends Repository {
    * the platform does not support the code, which the caller reports rather than
    * silently falling back to the column's four decimal places.
    */
+  /** One row of the platform currency register, or null for an unknown code. */
+  public async findCurrency(
+    db: DbHandle,
+    code: string
+  ): Promise<{ readonly minorUnit: number; readonly status: string } | null> {
+    const row = await this.runOne<{ minor_unit: number; status: string }>(
+      db,
+      `SELECT minor_unit, status FROM shared.currencies WHERE code = $1`,
+      [code]
+    );
+    return row ? { minorUnit: row.minor_unit, status: row.status } : null;
+  }
+
   public async minorUnitForCurrency(db: DbHandle, code: string): Promise<number | null> {
     const row = await this.runOne<{ minor_unit: number }>(
       db,
@@ -466,6 +723,29 @@ export class PaymentsRepository extends Repository {
       [code]
     );
     return row ? row.minor_unit : null;
+  }
+
+  /**
+   * The minor units of several currencies at once, by code (Owner decision D1).
+   *
+   * A read stamps each amount it publishes with its currency's minor unit, so a
+   * client writes the amount the way the platform records the currency instead of
+   * the way its own locale data does. One statement per read, whatever the number
+   * of amounts. Reference data, so no permission and no scope, as above; a code the
+   * platform does not hold is simply absent from the map.
+   */
+  public async minorUnitsFor(
+    db: DbHandle,
+    codes: readonly string[]
+  ): Promise<ReadonlyMap<string, number>> {
+    const wanted = [...new Set(codes)];
+    if (wanted.length === 0) return new Map();
+    const rows = await this.run<{ code: string; minor_unit: number }>(
+      db,
+      `SELECT code, minor_unit FROM shared.currencies WHERE code = ANY($1::text[])`,
+      [wanted]
+    );
+    return new Map(rows.rows.map((row) => [row.code, row.minor_unit]));
   }
 
   public async findReceiptForUpdate(db: DbHandle, receiptId: string): Promise<ReceiptRow | null> {
@@ -592,16 +872,43 @@ export class PaymentsRepository extends Repository {
       RECEIPT_ORDER,
       values.length + 1
     );
-    const rows = await this.run<ReceiptSql & { unallocated: string; sort_value: string }>(
+    const rows = await this.run<
+      ReceiptSql & {
+        unallocated: string;
+        sort_value: string;
+        payer_display_name: string | null;
+        payer_display_number: string | null;
+        payer_party_type: string | null;
+      }
+    >(
       db,
       // `invoiceId` is an EXISTS over `sal.payment_allocations` rather than a JOIN:
       // a receipt may allocate to the same invoice more than once, and a join would
       // return that receipt twice on one page - a duplicate the keyset would then
       // page across.
+      //
+      // The payer is named through a LATERAL read of its live partner row (Owner
+      // directive, browser QA row 5.6b): one row or none per receipt, so the page
+      // is never widened or duplicated, and the lateral exposes only its three
+      // `payer_*` names, so the unqualified receipt columns stay unambiguous. The
+      // predicate is the invoice list's (`deleted_at IS NULL`): a payer retired
+      // since the receipt was taken is not named.
       `SELECT ${RECEIPT_COLUMNS},
               sal.receipt_unallocated(r.id)::text AS unallocated,
+              payer.payer_display_name,
+              payer.payer_display_number,
+              payer.payer_party_type,
               ${cursorTimestamp('r.received_at')} AS sort_value
          FROM sal.receipts r
+         LEFT JOIN LATERAL (
+               SELECT pp.display_name   AS payer_display_name,
+                      pp.display_number AS payer_display_number,
+                      pp.party_type     AS payer_party_type
+                 FROM crm.business_partners pp
+                WHERE pp.tenant_id = r.tenant_id
+                  AND pp.id = r.payer_partner_id
+                  AND pp.deleted_at IS NULL
+              ) payer ON true
         WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
           AND r.deleted_at IS NULL
           AND ($4::uuid IS NULL OR r.payer_partner_id = $4)
@@ -618,7 +925,13 @@ export class PaymentsRepository extends Repository {
     );
     return buildPageWithCursors(
       rows.rows.map((row) => ({
-        item: { ...toReceipt(row), unallocated: row.unallocated },
+        item: {
+          ...toReceipt(row),
+          unallocated: row.unallocated,
+          payerDisplayName: row.payer_display_name,
+          payerDisplayNumber: row.payer_display_number,
+          payerPartyType: row.payer_party_type,
+        },
         // Microsecond precision from SQL. A JS `Date` truncates to milliseconds
         // and silently skips rows sharing the boundary row's millisecond
         // (`P1-27-INT-006`); receipts recorded in one transaction share
@@ -680,19 +993,203 @@ export class PaymentsRepository extends Repository {
     receiptId: string,
     scope: ReceiptScope,
     limit: number
-  ): Promise<readonly PaymentAllocationRow[]> {
+  ): Promise<readonly ReceiptAllocationRow[]> {
     const context = this.assertContext(db);
-    const rows = await this.run<PaymentAllocationSql>(
+    const rows = await this.run<
+      PaymentAllocationSql & {
+        invoice_number: string | null;
+        invoice_payer_display_name: string | null;
+      }
+    >(
       db,
-      `SELECT id, seq::text AS seq, company_id, branch_id, receipt_id, invoice_id,
-              currency_code, amount, allocated_at, correlation_id
-         FROM sal.payment_allocations
-        WHERE tenant_id = $1 AND receipt_id = $2 AND company_id = $3 AND branch_id = $4
-        ORDER BY seq ASC
+      // The invoice and its payer are read through a LATERAL of their own rows, one
+      // row or none per allocation, so the history is never widened or reordered.
+      // The invoice is matched in the allocation's own company and branch (an
+      // allocation is made only to an invoice of the receipt's branch), and the
+      // payer by the invoice list's rule: a live partner, `deleted_at IS NULL`.
+      `SELECT a.id, a.seq::text AS seq, a.company_id, a.branch_id, a.receipt_id, a.invoice_id,
+              a.currency_code, a.amount, a.allocated_at, a.correlation_id,
+              a.third_party_relationship, a.third_party_authorisation_reference,
+              a.third_party_reason, a.third_party_authorised_by,
+              named.invoice_number, named.invoice_payer_display_name
+         FROM sal.payment_allocations a
+         LEFT JOIN LATERAL (
+               SELECT i.invoice_number,
+                      pp.display_name AS invoice_payer_display_name
+                 FROM sal.invoices i
+                 LEFT JOIN crm.business_partners pp
+                   ON pp.tenant_id = i.tenant_id AND pp.id = i.payer_partner_id
+                  AND pp.deleted_at IS NULL
+                WHERE i.tenant_id = a.tenant_id AND i.company_id = a.company_id
+                  AND i.branch_id = a.branch_id AND i.id = a.invoice_id
+              ) named ON true
+        WHERE a.tenant_id = $1 AND a.receipt_id = $2 AND a.company_id = $3 AND a.branch_id = $4
+        ORDER BY a.seq ASC
         LIMIT $5`,
       [context.principal.tenantId, receiptId, scope.companyId, scope.branchId, limit + 1]
     );
-    return rows.rows.map(toAllocation);
+    return rows.rows.map((row) => ({
+      ...toAllocation(row),
+      invoiceNumber: row.invoice_number,
+      invoicePayerDisplayName: row.invoice_payer_display_name,
+    }));
+  }
+
+  /**
+   * The branch's RECEIPTS in a period, with the receipt totals of the whole
+   * selection (P1-31 P-11, engine slice 4).
+   *
+   * ## A reversed receipt is a receipt that did not happen
+   *
+   * `status = 'reversed'` is excluded from both statements, which D-4 requires
+   * explicitly. Its allocations disappear with it, because they are only ever
+   * summed against a receipt that survives the predicate — the same exclusion
+   * `sal.invoice_open_receivable` performs on the invoice side, so the two sides
+   * of this report agree about which money moved.
+   *
+   * ## The allocated column is the receipt's own, and it is summed here ONCE
+   *
+   * A receipt may allocate to many invoices and more than once to the same one,
+   * so the column is a sum over `sal.payment_allocations` for that receipt.
+   *
+   * The invoice side of the report publishes no allocation column at all, so this
+   * money is counted once as a receipt measure and once as a reduction inside
+   * `sal.invoice_open_receivable` — never twice inside one group.
+   *
+   * ## What is LEFT is the function's answer, not a subtraction
+   *
+   * The Owner's answer of 2026-09-12 asks for the authoritative unallocated
+   * amount as a separate field, and the authority is `sal.receipt_unallocated` —
+   * the same deployed function `receiptUnallocated` and the receipt screen
+   * already call. It is CALLED here, per row and inside the aggregate, rather
+   * than derived as `amount − allocated` in TypeScript: the function returns `0`
+   * for a reversed receipt and rounds at scale 4, and a second derivation is how
+   * a report and a screen come to state different balances for one receipt.
+   *
+   * ## No page is built here
+   *
+   * These rows are one of TWO ordered streams the reporting module merges, so this
+   * returns ordered rows with their cursor values and mints no cursor. See
+   * `ReportDocumentPage`.
+   */
+  public async receiptDocuments(
+    db: DbHandle,
+    filter: ReceiptDocumentFilter,
+    page: ReportDocumentPage
+  ): Promise<ReceiptDocumentRows> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.from,
+      filter.toExclusive,
+      filter.timezoneName,
+    ];
+    // Written once and used by both statements. A second copy is how an aggregate
+    // and its rows come to answer for different selections. The LATERAL sums the
+    // receipt's own allocations; `LEFT JOIN` keeps a receipt that has none, which
+    // `coalesce` then renders as an exact zero rather than an absence.
+    const scope = `FROM sal.receipts r
+         LEFT JOIN LATERAL (
+           SELECT sum(pa.amount) AS allocated,
+                  sum(pa.amount) FILTER (WHERE pa.third_party_relationship IS NOT NULL)
+                    AS third_party_allocated
+             FROM sal.payment_allocations pa
+            WHERE pa.tenant_id = r.tenant_id AND pa.company_id = r.company_id
+              AND pa.branch_id = r.branch_id AND pa.receipt_id = r.id
+         ) al ON true
+        WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
+          AND r.deleted_at IS NULL
+          AND r.status <> 'reversed'
+          AND ${halfOpenLocalDayRange('r.received_at', 4, 5, 6)}`;
+
+    const totals = await this.run<{
+      currency_code: string;
+      receipts: string;
+      allocated: string;
+      unallocated: string;
+    }>(
+      db,
+      `SELECT r.currency_code,
+              sum(r.amount)::text                                     AS receipts,
+              coalesce(sum(al.allocated), 0::numeric(18, 4))::text    AS allocated,
+              coalesce(sum(sal.receipt_unallocated(r.id)), 0::numeric(18, 4))::text
+                                                                      AS unallocated
+         ${scope}
+        GROUP BY r.currency_code
+        ORDER BY r.currency_code`,
+      values
+    );
+
+    // The keyset predicate, written here rather than taken from `keysetFragment`,
+    // because the cursor belongs to the reporting module's MERGED ordering and
+    // arrives already decoded. The comparison is the same row-value form
+    // `keysetFragment` emits for a descending order.
+    const cursorIndex = values.length + 1;
+    let after = '';
+    if (page.after !== null) {
+      values.push(page.after.sortValue, page.after.id);
+      after = `AND (r.received_at, r.id) < ($${cursorIndex}, $${cursorIndex + 1})`;
+    }
+    const limitIndex = values.length + 1;
+    values.push(page.limit);
+
+    const rows = await this.run<{
+      document_id: string;
+      document_number: string;
+      document_date: Date;
+      payer_partner_id: string;
+      currency_code: string;
+      status: string;
+      receipt_amount: string;
+      allocated_amount: string;
+      third_party_allocated_amount: string;
+      unallocated_amount: string;
+      sort_value: string;
+    }>(
+      db,
+      `SELECT r.id AS document_id, r.receipt_number AS document_number,
+              r.received_at AS document_date, r.payer_partner_id, r.currency_code,
+              r.status, r.amount::text AS receipt_amount,
+              coalesce(al.allocated, 0::numeric(18, 4))::text AS allocated_amount,
+              coalesce(al.third_party_allocated, 0::numeric(18, 4))::text
+                AS third_party_allocated_amount,
+              sal.receipt_unallocated(r.id)::text AS unallocated_amount,
+              ${cursorTimestamp('r.received_at')} AS sort_value
+         ${scope}
+          ${after}
+        ORDER BY r.received_at DESC, r.id DESC
+        LIMIT $${limitIndex}`,
+      values
+    );
+
+    return {
+      totals: totals.rows.map((row) => ({
+        currencyCode: row.currency_code,
+        receipts: row.receipts,
+        allocated: row.allocated,
+        unallocated: row.unallocated,
+      })),
+      documents: rows.rows.map((row) => ({
+        documentId: row.document_id,
+        documentNumber: row.document_number,
+        documentDate: row.document_date,
+        // The payer, under the role the column actually carries.
+        partyId: row.payer_partner_id,
+        partyRole: 'payer' as const,
+        currencyCode: row.currency_code,
+        status: row.status,
+        // Carried through as the decimal strings `pg` produced. No arithmetic
+        // happens here and none may: `numeric(18,4)` holds values a double cannot
+        // represent, and one conversion is all it takes to lose the fourth place.
+        receiptAmount: row.receipt_amount,
+        allocatedAmount: row.allocated_amount,
+        thirdPartyAllocatedAmount: row.third_party_allocated_amount,
+        unallocatedAmount: row.unallocated_amount,
+        sortValue: row.sort_value,
+      })),
+    };
   }
 
   // -------------------------------------------------------------------------
@@ -731,11 +1228,16 @@ export class PaymentsRepository extends Repository {
       readonly evidenceDocumentVersionId: string | null;
       readonly idempotencyKey: string | null;
       readonly correlationId: string | null;
+      /**
+       * The reversed receipt this one replaces (ADR-023 D4), or `null`.
+       * `sal.guard_receipt_replacement` refuses any other target.
+       */
+      readonly replacesReceiptId?: string | null;
     }
   ): Promise<{ readonly id: string }> {
     const row = await this.runOne<{ id: string }>(
       db,
-      `SELECT sal.record_receipt($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9) AS id`,
+      `SELECT sal.record_receipt($1, $2, $3, $4, $5, $6::numeric, $7, $8, $9, $10) AS id`,
       [
         input.companyId,
         input.branchId,
@@ -746,6 +1248,7 @@ export class PaymentsRepository extends Repository {
         input.evidenceDocumentVersionId,
         input.idempotencyKey,
         input.correlationId,
+        input.replacesReceiptId ?? null,
       ]
     );
     if (!row?.id) throw new Error('payments: sal.record_receipt returned no id');
@@ -770,19 +1273,34 @@ export class PaymentsRepository extends Repository {
    *
    * The amount is a STRING bound parameter cast with `$3::numeric` — see
    * `recordReceipt`.
+   *
+   * `idempotencyKey` is stored on the allocation (M-09). The primitive resolves a
+   * repeated key under the receipt lock and returns the allocation it already made.
+   *
+   * `thirdParty` makes the allocation a third-party one (ADR-023 D14): its three
+   * statements travel as the primitive's trailing arguments, and
+   * `sal.guard_allocation_payer` holds them to their rules, checks
+   * `sal.payment.third_party` and stamps the authorising user. `null` for an
+   * ordinary allocation, which the same guard refuses when the payers differ.
    */
   public async allocateReceipt(
     db: DbHandle,
     receiptId: string,
     invoiceId: string,
     amount: string,
-    correlationId: string | null
+    correlationId: string | null,
+    idempotencyKey: string | null,
+    thirdParty: ThirdPartyStatement | null = null
   ): Promise<{ readonly id: string }> {
     const row = await this.runOne<{ id: string }>(db, ALLOCATE_RECEIPT_SQL, [
       receiptId,
       invoiceId,
       amount,
       correlationId,
+      idempotencyKey,
+      thirdParty?.relationship ?? null,
+      thirdParty?.authorisationReference ?? null,
+      thirdParty?.reason ?? null,
     ]);
     if (!row?.id) throw new Error('payments: sal.allocate_receipt returned no id');
     return { id: row.id };
@@ -803,6 +1321,24 @@ export class PaymentsRepository extends Repository {
    * reason for this read to be the one query in the file that could return a row from
    * outside it.
    */
+  public async findAllocationByIdempotencyKey(
+    db: DbHandle,
+    idempotencyKey: string
+  ): Promise<PaymentAllocationRow | null> {
+    // Tenant-wide, like `uq_payment_allocations_idempotency`: the caller compares the
+    // found row's receipt, invoice and amount with its own request and refuses a
+    // reused key, so a key never hands back an allocation it did not make.
+    const context = this.assertContext(db);
+    const row = await this.runOne<PaymentAllocationSql>(
+      db,
+      `SELECT ${ALLOCATION_COLUMNS}
+         FROM sal.payment_allocations
+        WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [context.principal.tenantId, idempotencyKey]
+    );
+    return row ? toAllocation(row) : null;
+  }
+
   public async findAllocation(
     db: DbHandle,
     allocationId: string,
@@ -811,12 +1347,168 @@ export class PaymentsRepository extends Repository {
     const context = this.assertContext(db);
     const row = await this.runOne<PaymentAllocationSql>(
       db,
-      `SELECT id, seq::text AS seq, company_id, branch_id, receipt_id, invoice_id,
-              currency_code, amount, allocated_at, correlation_id
+      `SELECT ${ALLOCATION_COLUMNS}
          FROM sal.payment_allocations
         WHERE tenant_id = $1 AND id = $2 AND company_id = $3 AND branch_id = $4`,
       [context.principal.tenantId, allocationId, scope.companyId, scope.branchId]
     );
     return row ? toAllocation(row) : null;
+  }
+  // -------------------------------------------------------------------------
+  // Receipt reversals (ADR-023 D4, P1-32-PRE-OD-FD4).
+  // -------------------------------------------------------------------------
+
+  /**
+   * One reversal by id, tenant-scoped. Like `findReceipt`, the anchor that
+   * DISCOVERS the company and branch the caller is then authorized against.
+   */
+  public async findReversal(db: DbHandle, reversalId: string): Promise<ReceiptReversalRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ReceiptReversalSql>(
+      db,
+      `SELECT ${REVERSAL_COLUMNS}
+         FROM sal.receipt_reversals
+        WHERE tenant_id = $1 AND id = $2`,
+      [context.principal.tenantId, reversalId]
+    );
+    return row ? toReversal(row) : null;
+  }
+
+  /**
+   * One reversal, LOCKED. A decision takes the receipt lock first and this one
+   * second — the order `sal.request_receipt_reversal` and
+   * `sal.approve_receipt_reversal` take — so two decisions, or a decision and a
+   * request, serialise instead of deadlocking.
+   */
+  public async findReversalForUpdate(
+    db: DbHandle,
+    reversalId: string
+  ): Promise<ReceiptReversalRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ReceiptReversalSql>(
+      db,
+      `SELECT ${REVERSAL_COLUMNS}
+         FROM sal.receipt_reversals
+        WHERE tenant_id = $1 AND id = $2
+          FOR UPDATE`,
+      [context.principal.tenantId, reversalId]
+    );
+    return row ? toReversal(row) : null;
+  }
+
+  /**
+   * The reversal a request's idempotency key already raised, tenant-wide like
+   * `uq_receipt_reversals_idempotency`. The caller compares its receipt.
+   */
+  public async findReversalByIdempotencyKey(
+    db: DbHandle,
+    idempotencyKey: string
+  ): Promise<ReceiptReversalRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ReceiptReversalSql>(
+      db,
+      `SELECT ${REVERSAL_COLUMNS}
+         FROM sal.receipt_reversals
+        WHERE tenant_id = $1 AND idempotency_key = $2`,
+      [context.principal.tenantId, idempotencyKey]
+    );
+    return row ? toReversal(row) : null;
+  }
+
+  /**
+   * The reversal a receipt's detail shows: its LIVE one (pending or approved —
+   * there is at most one, `uq_receipt_reversals_receipt_live`) or else its most
+   * recent declined one. `null` when nobody ever asked to reverse it.
+   */
+  public async findCurrentReversal(
+    db: DbHandle,
+    receiptId: string,
+    scope: ReceiptScope
+  ): Promise<ReceiptReversalRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ReceiptReversalSql>(
+      db,
+      `SELECT ${REVERSAL_COLUMNS}
+         FROM sal.receipt_reversals
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND original_receipt_id = $4
+        ORDER BY (approval_state IN ('pending', 'approved')) DESC, created_at DESC, id DESC
+        LIMIT 1`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, receiptId]
+    );
+    return row ? toReversal(row) : null;
+  }
+
+  /** Raises the full reversal of a receipt through `sal.request_receipt_reversal`. */
+  public async requestReversal(
+    db: DbHandle,
+    receiptId: string,
+    reason: string,
+    idempotencyKey: string | null
+  ): Promise<{ readonly id: string }> {
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `SELECT sal.request_receipt_reversal($1, $2, $3) AS id`,
+      [receiptId, reason, idempotencyKey]
+    );
+    if (!row?.id) throw new Error('payments: sal.request_receipt_reversal returned no id');
+    return { id: row.id };
+  }
+
+  /** Approves a pending reversal through `sal.approve_receipt_reversal`. */
+  public async approveReversal(
+    db: DbHandle,
+    reversalId: string,
+    correlationId: string | null
+  ): Promise<void> {
+    await this.run(db, `SELECT sal.approve_receipt_reversal($1, $2)`, [reversalId, correlationId]);
+  }
+
+  /** Rejects a pending reversal through `sal.reject_receipt_reversal`. */
+  public async rejectReversal(db: DbHandle, reversalId: string, reason: string): Promise<void> {
+    await this.run(db, `SELECT sal.reject_receipt_reversal($1, $2)`, [reversalId, reason]);
+  }
+
+  /** Withdraws the caller's own pending reversal through `sal.withdraw_receipt_reversal`. */
+  public async withdrawReversal(db: DbHandle, reversalId: string): Promise<void> {
+    await this.run(db, `SELECT sal.withdraw_receipt_reversal($1)`, [reversalId]);
+  }
+
+  /** A receipt's id and number in an authorized scope, for the replacement link. */
+  public async findReceiptReference(
+    db: DbHandle,
+    receiptId: string,
+    scope: ReceiptScope
+  ): Promise<ReceiptReferenceRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string; receipt_number: string }>(
+      db,
+      `SELECT id, receipt_number
+         FROM sal.receipts
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3 AND id = $4`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, receiptId]
+    );
+    return row ? { id: row.id, receiptNumber: row.receipt_number } : null;
+  }
+
+  /**
+   * The receipt that replaces a reversed one (`uq_receipts_replaces` allows one),
+   * or `null`.
+   */
+  public async findReplacementOf(
+    db: DbHandle,
+    receiptId: string,
+    scope: ReceiptScope
+  ): Promise<ReceiptReferenceRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string; receipt_number: string }>(
+      db,
+      `SELECT id, receipt_number
+         FROM sal.receipts
+        WHERE tenant_id = $1 AND company_id = $2 AND branch_id = $3
+          AND replaces_receipt_id = $4`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, receiptId]
+    );
+    return row ? { id: row.id, receiptNumber: row.receipt_number } : null;
   }
 }

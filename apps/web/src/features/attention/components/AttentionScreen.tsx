@@ -1,0 +1,189 @@
+'use client';
+
+import { useCallback, useMemo } from 'react';
+
+import { MuiRefusedState } from '@/components/states/MuiStates';
+import type { Locale } from '@/i18n/config';
+import type { Messages } from '@/i18n/get-messages';
+import { translate } from '@/i18n/get-messages';
+import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import { isKnownZone } from '@/lib/branch-time';
+import { EMPTY_PAIR, useBranches, type BranchPair } from '@/features/inventory/components/shared';
+
+import {
+  AgedInTransitCard,
+  CapacityCard,
+  CountDiscrepancyCard,
+  LowStockCard,
+  UnusualConsumptionCard,
+} from './cards';
+
+/**
+ * The Attention area (Owner directive, operational alerts).
+ *
+ * What is about to stop working, in one place, each finding beside the evidence
+ * it was decided from and each row linking to the screen where something can be
+ * done about it.
+ *
+ * ## Four cards are about a BRANCH, and one is about the organisation
+ *
+ * The stock alerts are branch-targeted reads: the pair is the read's target and
+ * is re-authorized server-side on every call. The subscription allowance is
+ * tenant-wide and has no target, so it reads on first paint.
+ *
+ * ## The branch is the working context's, and nothing else's
+ *
+ * Browser QA part 7, row 1a.3: this screen carried its own "Which branch"
+ * select — offered even to an operator with one branch — beside the header that
+ * already answered the question. There is now one answer. The stock cards read
+ * the working branch; an operator with one branch is never asked; under "All my
+ * branches", or before a branch is chosen, the branch section asks for one by
+ * name (`WorkingBranchField`, whose chooser is the header's own guarded switch)
+ * and the cards say they are waiting rather than showing an empty table. Every
+ * stock alert is addressed to one branch, so "All my branches" is not offered
+ * on this route at all (`config/route-branch-scope.ts`).
+ *
+ * ## Nothing on this screen writes
+ *
+ * There is no form and no submit. Every card calls a read, and the only figure
+ * that resembles an instruction — a preferred order quantity — is labelled as a
+ * suggestion where it is drawn. A suggestion is not a transaction: nothing here
+ * posts stock, orders anything or moves money.
+ *
+ * ## A missing permission is said, not drawn as emptiness
+ *
+ * A session without `inv.stock.read` is told the stock signals are not theirs to
+ * see, on the shared Material refusal (ADR-022) in the screen's own words. Rendering four empty cards instead would read as "the branch is fine",
+ * which is a claim about stock that nobody made.
+ */
+export function AttentionScreen({
+  locale,
+  messages,
+  canReadStock,
+  canReadCapacity,
+  canReadBranches,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  /** `inv.stock.read` — the four stock alerts. */
+  readonly canReadStock: boolean;
+  /** `org.tenant.read` — the subscription allowance. */
+  readonly canReadCapacity: boolean;
+  /**
+   * `org.branch.read` — whether the branch directory may be read to name the
+   * branches a transfer runs between when no working context is present.
+   */
+  readonly canReadBranches: boolean;
+}) {
+  const branches = useBranches(canReadBranches && canReadStock);
+  const target = useBranchTarget();
+  const pair: BranchPair =
+    target.kind === 'ready'
+      ? { companyId: target.target.companyId, branchId: target.target.branchId }
+      : EMPTY_PAIR;
+  const t = (key: keyof Messages) => translate(messages, key);
+
+  /*
+   * The clock the cards write days on: the working branch's own zone, as the
+   * working context publishes it, and `UTC` when no single branch is in force
+   * or its zone is not one this browser knows — the same clock "All my
+   * branches" is written on everywhere else.
+   */
+  const context = useWorkingContext();
+  const branchZone = context.branches.find((entry) => entry.id === pair.branchId)?.timezone ?? '';
+  const zone = isKnownZone(branchZone) ? branchZone : 'UTC';
+
+  /*
+   * The branch names, for the cards that report on a PAIR of branches. A
+   * transfer names the two it runs between by identifier only, so the names
+   * come from the branch list `useBranches` holds — the working context's own
+   * named branches in the shell. A branch missing from it stays missing: the
+   * card says so rather than inventing a name or quietly showing something
+   * else.
+   */
+  const names = useMemo(() => {
+    const map = new Map<string, string>();
+    if (branches.phase === 'listed') for (const row of branches.items) map.set(row.id, row.name);
+    return map;
+  }, [branches]);
+  const branchName = useCallback((id: string) => names.get(id) ?? null, [names]);
+
+  return (
+    <div className="flex flex-col gap-4">
+      {canReadStock ? (
+        <section className="rounded-xl border border-border-subtle bg-surface p-4">
+          <h2 className="text-section-title font-semibold text-text-primary">
+            {t('attention.target.heading')}
+          </h2>
+          <p className="mt-1 text-supporting text-text-secondary">
+            {t('attention.target.explain')}
+          </p>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+            <WorkingBranchField
+              messages={messages}
+              label={t('attention.target.branch')}
+              testId="attention-branch"
+            />
+          </div>
+        </section>
+      ) : (
+        <MuiRefusedState
+          messages={messages}
+          descriptionKey="attention.state.stockDenied"
+          testId="attention-stock-denied"
+        />
+      )}
+
+      <div className="flex flex-col gap-4">
+        {canReadStock ? (
+          /*
+           * Keyed on the PAIR, so choosing another branch remounts every card
+           * rather than leaving one branch's findings on screen while the next
+           * branch is being read. It is also what lets each card derive "in
+           * flight" instead of assigning it.
+           */
+          <div key={`${pair.companyId}:${pair.branchId}`} className="flex flex-col gap-4">
+            <LowStockCard
+              messages={messages}
+              locale={locale}
+              companyId={pair.companyId}
+              branchId={pair.branchId}
+            />
+            <CountDiscrepancyCard
+              messages={messages}
+              locale={locale}
+              companyId={pair.companyId}
+              branchId={pair.branchId}
+            />
+            <UnusualConsumptionCard
+              messages={messages}
+              locale={locale}
+              companyId={pair.companyId}
+              branchId={pair.branchId}
+              zone={zone}
+            />
+            <AgedInTransitCard
+              messages={messages}
+              locale={locale}
+              companyId={pair.companyId}
+              branchId={pair.branchId}
+              branchName={branchName}
+            />
+          </div>
+        ) : null}
+
+        {canReadCapacity ? (
+          <CapacityCard messages={messages} locale={locale} enabled />
+        ) : (
+          <MuiRefusedState
+            messages={messages}
+            descriptionKey="attention.state.capacityDenied"
+            testId="attention-capacity-denied"
+          />
+        )}
+      </div>
+    </div>
+  );
+}

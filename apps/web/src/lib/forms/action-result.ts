@@ -1,6 +1,8 @@
 import {
+  STATE_TRANSITION_CODE,
   VIOLATION_FALLBACK_KEY,
-  failureMessageKey,
+  refusalMessageKey,
+  failureMessageValues,
   violationKeysOf,
   type ApiFailure,
 } from '@/lib/api/client';
@@ -58,6 +60,17 @@ export type ActionStatus =
   | 'throttled'
   /** The backend could not be reached, timed out, or failed. */
   | 'unavailable'
+  /**
+   * The caller aborted the request — a Cancel button, or leaving the screen.
+   *
+   * Its own status rather than `error`, because it is not one. A cancellation
+   * used to arrive here as `error` with the key "Something went wrong", so an
+   * operator who pressed Cancel was told the system had failed and invited to
+   * try again. Nothing failed and nothing was sent to completion, so this status
+   * carries no message key at all: every renderer already drops a state with no
+   * key, and `notifyActionResult` raises no toast for a status with no tone.
+   */
+  | 'cancelled'
   /** Anything else the backend reported. */
   | 'error';
 
@@ -65,6 +78,19 @@ export interface ActionState {
   readonly status: ActionStatus;
   /** A translation key. Never a server-authored sentence. */
   readonly messageKey?: string;
+  /**
+   * Values for the `{name}` placeholders in the catalogue text of `messageKey`.
+   *
+   * Only numbers the backend published about the refusal itself — the capacity
+   * ceiling and its usage, the wait a throttle advised — and never prose.
+   * Present only when the key is the failure's own key, so an override or a
+   * violation banner never receives values meant for a different sentence.
+   *
+   * A renderer that shows `messageKey` must pass this to `translateWithValues`.
+   * Dropping it does not fall back to a shorter sentence; it prints `{limit}` or
+   * `{seconds}` to the operator exactly as the catalogue spells it.
+   */
+  readonly messageValues?: Readonly<Record<string, string>>;
   /**
    * Translation keys, by control name.
    *
@@ -105,7 +131,7 @@ const STATUS_BY_KIND: Record<ApiFailure['kind'], ActionStatus> = {
   server: 'error',
   unavailable: 'unavailable',
   timeout: 'unavailable',
-  cancelled: 'error',
+  cancelled: 'cancelled',
   network: 'unavailable',
 };
 
@@ -148,16 +174,67 @@ export function fromFailure(
   attempt: number,
   messageKeyOverride?: string
 ): ActionState {
+  /*
+   * A cancellation the CALLER asked for, reported as nothing.
+   *
+   * `#request` already separates a caller abort from the client's own deadline,
+   * precisely so a user pressing Cancel is not rendered as a backend fault. That
+   * distinction was then thrown away one layer up: `cancelled` mapped to
+   * `error`, whose banner reads "Something went wrong" and whose page-level
+   * description ends "Trying again is safe" — an apology and an invitation, for
+   * an outcome the operator chose. No key is returned, so every renderer in the
+   * application drops it: `FormFeedback` and `RecordForm` both require a
+   * `messageKey`, and `notifyActionResult` has no tone for this status.
+   *
+   * An override still wins. A caller that genuinely wants to say something about
+   * an abort — none does today — passes its own key and gets it.
+   */
+  if (failure.kind === 'cancelled' && messageKeyOverride === undefined) {
+    return { status: 'cancelled', correlationId: failure.correlationId, attempt };
+  }
   const status = STATUS_BY_KIND[failure.kind];
   const { fieldErrors, formKeys } = violationKeysOf(failure);
   const stated = formKeys.find((key) => key !== VIOLATION_FALLBACK_KEY);
+  const own = messageKeyOverride === undefined && stated === undefined;
+  const values = own ? failureMessageValues(failure) : undefined;
   return {
     status,
-    messageKey: messageKeyOverride ?? stated ?? failureMessageKey(failure),
+    messageKey: messageKeyOverride ?? stated ?? refusalMessageKey(failure),
+    ...(values !== undefined ? { messageValues: values } : {}),
     ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {}),
     correlationId: failure.correlationId,
     attempt,
   };
+}
+
+/**
+ * `fromFailure` for an operation whose `ERR-TRN-001` means one thing only: the
+ * record's stage no longer allows the step (a quotation on a closed job, a
+ * cancellation of an appointment already ended, a closure of a visit already
+ * closed).
+ *
+ * `fromFailure` cannot know that. The same code also reports a broken bound or
+ * invariant elsewhere (a payment allocation over the open balance, a billing
+ * invariant), where "refresh to see where it stands" is false, so the shared
+ * mapping keeps the sentence that claims no cause (`STATE_TRANSITION_CODE` in
+ * `lib/api/client.ts`). An adapter opts in here only after checking that every
+ * `ERR-TRN-001` its operation can answer is a stage refusal.
+ *
+ * A named precondition still speaks first: a refusal that carries any violation
+ * is left exactly as `fromFailure` said it (a discount-approval refusal names
+ * its rule this way), and only the generic blocked sentence is ever replaced.
+ */
+export function fromStateRefusal(failure: ApiFailure, attempt: number): ActionState {
+  const state = fromFailure(failure, attempt);
+  if (
+    failure.kind === 'conflict' &&
+    failure.problem?.code === STATE_TRANSITION_CODE &&
+    (failure.problem.violations?.length ?? 0) === 0 &&
+    state.messageKey === 'state.conflict.blocked.title'
+  ) {
+    return { ...state, messageKey: 'state.conflict.transition.title' };
+  }
+  return state;
 }
 
 export function invalid(
@@ -166,6 +243,21 @@ export function invalid(
   messageKey = 'form.formError'
 ): ActionState {
   return { status: 'invalid', messageKey, fieldErrors, attempt };
+}
+
+/**
+ * A write whose answer never arrived: the Server Action's promise was REJECTED
+ * — the connection dropped, or the server did not answer — so there is no
+ * refusal to render, only the fact that nothing came back.
+ *
+ * Without it a handler that set its button pending, awaited the action and then
+ * cleared it left the button pending for good and the rejection unhandled. A
+ * submit handler therefore awaits inside `try`, clears its pending flag in
+ * `finally`, and renders this state from `catch`: the operator's entries stay
+ * on the page and the sentence says to check the connection and try again.
+ */
+export function unreachable(attempt: number): ActionState {
+  return { status: 'unavailable', messageKey: 'state.unavailable.message', attempt };
 }
 
 export function success(messageKey: string, attempt: number): ActionState {

@@ -3,19 +3,36 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
 
-import { DataTable, type Column } from '@/components/data-table/DataTable';
+import {
+  OperationalGrid,
+  type OperationalColumn,
+  type RowAction,
+} from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { ZonedDateTimeField, type MomentProblem } from '@/components/forms/mui/DateField';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import { listApprovalLimits } from '@/features/administration/access/api';
+import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
-import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
+import { useReread } from '@/lib/api/use-reread';
+import { unreachable, type ActionState } from '@/lib/forms/action-result';
+import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
+import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 
 import type { DecisionEvidenceBody } from '@/lib/contracts/quotations-contract';
 import {
@@ -24,6 +41,7 @@ import {
   decideRevision,
   issueQuotation,
   listRevisions,
+  readQuotation,
   readRevision,
   readRevisionDecisions,
 } from '../api';
@@ -34,23 +52,28 @@ import {
   INTERNAL_CODE,
   MAX_REFERENCE_NOTE,
   type ApprovalLimit,
+  type DiscountApproval,
   type QuotationDetail,
   type QuotationRevision,
   type QuotationRevisionHeader,
   type RevisionDecisions,
 } from '../quotations-contract';
 import {
+  Day,
   Figure,
   LinesEditor,
+  lineErrors,
+  lineValues,
+  serverLineRefusals,
+  linesDirty,
   LinesTable,
   Money,
   OutcomeNote,
-  PRIMARY_BUTTON,
   QuotationStatusBadge,
   RevisionStatusBadge,
-  SECONDARY_BUTTON,
   TotalsList,
   UUID,
+  When,
   newLine,
   validateLines,
   type DraftLine,
@@ -58,7 +81,11 @@ import {
 
 /**
  * One quotation (P1-30, `W3`, FE-004 revisions, FE-007 approval display, and
- * the writes on it).
+ * the writes on it). On the shared Material UI wrappers since the sales and
+ * finance slice (ADR-022): the revision history is `OperationalGrid`, the forms
+ * are the `forms/mui` fields, the expiry is a `ZonedDateTimeField` on the
+ * quotation's own branch clock, issuing asks first (`ConfirmDialog`), and every
+ * read that fails is the Material state with its retry.
  *
  * ## Totals are captured figures
  *
@@ -70,8 +97,12 @@ import {
  *
  * `quo.quotation-issue` and `quo.quotation-revision-create` compare `If-Match`
  * with the quotation's `recordVersion`, which is what this page read; a
- * revision's own `recordVersion` is never sent. After either write the page is
- * refreshed so the next write reads a fresh one.
+ * revision's own `recordVersion` is never sent. Each form holds the version its
+ * work was based on (`useEditBaseline`): a refresh that lands while the operator
+ * is typing does not move it, so work built on an older quotation is refused as
+ * a conflict rather than applied to a newer one. After either write the
+ * quotation is read again, and the form stays busy until that read is on the
+ * screen, so a second press cannot send the version just spent.
  *
  * ## Decisions are the server's roll-up
  *
@@ -79,6 +110,22 @@ import {
  * read states them, with each line's decision and evidence beneath. A decision
  * is recorded against the revision the customer was shown, and the server
  * refuses one against a revision that is no longer current.
+ *
+ * ## A discount over the threshold waits for somebody else
+ *
+ * When the current revision carries a discount request, the page says whether it
+ * is waiting, approved or turned down, who asked for it and when — and, when the
+ * signed-in person asked, that it is waiting for ANOTHER approver. Issuing is not
+ * offered while the request is waiting or was turned down; the server refuses it
+ * in any case (P1-32-PRE-OD-DISC-01).
+ *
+ * ## One record, on its own branch's clock
+ *
+ * The page is one quotation reached by its address (`none` in
+ * `config/route-branch-scope.ts`): it never reads the working branch. The
+ * expiry is typed on the quotation's OWN branch clock, taken from the branches
+ * the working context names; where that clock is not known the page says so and
+ * offers issuing without an expiry rather than guessing a clock.
  *
  * ## Approval limits need their own code
  *
@@ -91,7 +138,8 @@ import {
 export function QuotationDetailScreen({
   locale,
   messages,
-  quotation,
+  quotation: initial,
+  workOrder = null,
   canManage,
   canDecide,
   canReadLimits,
@@ -100,6 +148,8 @@ export function QuotationDetailScreen({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly quotation: QuotationDetail;
+  /** The page's own read of the quotation's work order, when the operator may read it. */
+  readonly workOrder?: WorkOrderListEntry | null;
   /** `quo.quotation.manage` — revisions and issuing. */
   readonly canManage: boolean;
   /** `quo.decision.record` — recording the customer's decisions. */
@@ -110,9 +160,36 @@ export function QuotationDetailScreen({
   readonly canReadServices: boolean;
 }) {
   const router = useRouter();
+  const context = useWorkingContext();
+  /*
+   * The quotation as last read. The page's read seeds it; a write reads it again
+   * here and the form that wrote stays busy until that answer is on screen. A
+   * newer page read (`router.refresh`) supersedes it, because versions only rise.
+   */
+  const [reread, setReread] = useState<QuotationDetail | null>(null);
+  const quotation =
+    reread !== null && reread.id === initial.id && reread.recordVersion >= initial.recordVersion
+      ? reread
+      : initial;
+  const reload = useCallback(async () => {
+    try {
+      const next = await readQuotation(initial.id);
+      if (next.status === 'ok') setReread(next.data);
+    } catch {
+      // The page read below still brings the record up to date.
+    }
+    router.refresh();
+  }, [initial.id, router]);
+
   const open = quotation.status === 'draft' || quotation.status === 'active';
   const current = quotation.currentRevision;
-  const [decisionsEpoch, setDecisionsEpoch] = useState(0);
+  const zone =
+    context.branches.find((branch) => branch.id === quotation.branchId)?.timezone || null;
+  const payerName =
+    quotation.payerPartnerRef !== null &&
+    workOrder?.customer?.partnerId === quotation.payerPartnerRef
+      ? workOrder.customer.displayName
+      : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -141,27 +218,27 @@ export function QuotationDetailScreen({
           <Figure label={translate(messages, 'quotations.detail.workOrder')}>
             <Link
               href={`/${locale}/work-orders/${quotation.workOrderId}`}
-              className="font-mono text-caption text-primary underline-offset-2 hover:underline"
-              dir="ltr"
+              className="text-primary underline-offset-2 hover:underline"
             >
-              {quotation.workOrderId}
+              {workOrder?.displayNumber ? (
+                <bdi className="font-mono">{workOrder.displayNumber}</bdi>
+              ) : (
+                translate(messages, 'quotations.list.openWorkOrder')
+              )}
             </Link>
           </Figure>
           <Figure label={translate(messages, 'quotations.detail.payer')}>
-            {quotation.payerPartnerRef ? (
-              <code className="font-mono text-caption" dir="ltr">
-                {quotation.payerPartnerRef}
-              </code>
-            ) : (
+            {quotation.payerPartnerRef === null ? (
               <span className="text-text-muted">
                 {translate(messages, 'quotations.detail.noPayer')}
               </span>
+            ) : payerName !== null ? (
+              <bdi>{payerName}</bdi>
+            ) : (
+              <span className="text-text-muted">
+                {translate(messages, 'quotations.detail.payerNotNamed')}
+              </span>
             )}
-          </Figure>
-          <Figure label={translate(messages, 'quotations.detail.version')}>
-            <code className="font-mono" dir="ltr">
-              {quotation.recordVersion}
-            </code>
           </Figure>
         </dl>
         {!open ? (
@@ -180,7 +257,16 @@ export function QuotationDetailScreen({
           {translate(messages, 'quotations.current.heading')}
         </h2>
         {current ? (
-          <RevisionBody locale={locale} messages={messages} revision={current} />
+          <>
+            <RevisionBody locale={locale} messages={messages} revision={current} />
+            {current.discountApproval ? (
+              <DiscountApprovalNote
+                locale={locale}
+                messages={messages}
+                approval={current.discountApproval}
+              />
+            ) : null}
+          </>
         ) : (
           <p className="text-body text-text-secondary">
             {translate(messages, 'quotations.current.none')}
@@ -188,7 +274,12 @@ export function QuotationDetailScreen({
         )}
       </section>
 
-      <RevisionsPanel locale={locale} messages={messages} quotation={quotation} />
+      <RevisionsPanel
+        key={quotation.recordVersion}
+        locale={locale}
+        messages={messages}
+        quotation={quotation}
+      />
 
       {current ? (
         <DecisionsPanel
@@ -197,11 +288,7 @@ export function QuotationDetailScreen({
           quotation={quotation}
           revision={current}
           canDecide={canDecide && open}
-          epoch={decisionsEpoch}
-          onRecorded={() => {
-            setDecisionsEpoch((n) => n + 1);
-            router.refresh();
-          }}
+          onRecorded={reload}
         />
       ) : null}
 
@@ -210,7 +297,8 @@ export function QuotationDetailScreen({
           locale={locale}
           messages={messages}
           quotation={quotation}
-          onIssued={() => router.refresh()}
+          zone={zone}
+          onIssued={reload}
         />
       ) : null}
 
@@ -220,7 +308,7 @@ export function QuotationDetailScreen({
           messages={messages}
           quotation={quotation}
           canReadServices={canReadServices}
-          onCreated={() => router.refresh()}
+          onCreated={reload}
         />
       ) : null}
 
@@ -260,7 +348,7 @@ function RevisionBody({
         </Figure>
         <Figure label={translate(messages, 'quotations.revision.issuedAt')}>
           {revision.issuedAt ? (
-            <span dir="ltr">{formatDateTime(revision.issuedAt, locale)}</span>
+            <When value={revision.issuedAt} locale={locale} />
           ) : (
             <span className="text-text-muted">
               {translate(messages, 'quotations.revision.notIssued')}
@@ -269,7 +357,7 @@ function RevisionBody({
         </Figure>
         <Figure label={translate(messages, 'quotations.revision.expiresAt')}>
           {revision.expiresAt ? (
-            <span dir="ltr">{formatDateTime(revision.expiresAt, locale)}</span>
+            <When value={revision.expiresAt} locale={locale} />
           ) : (
             <span className="text-text-muted">
               {translate(messages, 'quotations.revision.noExpiry')}
@@ -292,6 +380,97 @@ function RevisionBody({
 }
 
 /* ------------------------------------------------------------------ *
+ * The discount request a revision carries
+ * ------------------------------------------------------------------ */
+
+const APPROVAL_STATUS_KEY = {
+  pending: 'quotations.discountApproval.status.pending',
+  approved: 'quotations.discountApproval.status.approved',
+  rejected: 'quotations.discountApproval.status.rejected',
+  superseded: 'quotations.discountApproval.status.superseded',
+} as const;
+
+function DiscountApprovalNote({
+  locale,
+  messages,
+  approval,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly approval: DiscountApproval;
+}) {
+  const requester =
+    approval.requestedBy.displayName ?? translate(messages, 'quotations.approvals.someoneElse');
+  return (
+    <section
+      aria-labelledby="quotation-discount-approval-heading"
+      className="flex flex-col gap-2 rounded-md border border-border p-3"
+      data-testid="discount-approval-note"
+    >
+      <h3
+        id="quotation-discount-approval-heading"
+        className="text-body font-medium text-text-primary"
+      >
+        {translate(messages, 'quotations.discountApproval.heading')}
+      </h3>
+      <dl className="grid gap-3 sm:grid-cols-3">
+        <Figure label={translate(messages, 'quotations.discountApproval.statusLabel')}>
+          {translate(messages, APPROVAL_STATUS_KEY[approval.status])}
+        </Figure>
+        <Figure label={translate(messages, 'quotations.discountApproval.discount')}>
+          <Money amount={approval.discountTotal} currency={approval.currency} locale={locale} />
+        </Figure>
+        <Figure label={translate(messages, 'quotations.discountApproval.requestedBy')}>
+          <bdi>{requester}</bdi>
+          <span className="block text-caption text-text-muted">
+            <When value={approval.requestedAt} locale={locale} />
+          </span>
+        </Figure>
+        {approval.decidedBy ? (
+          <Figure label={translate(messages, 'quotations.discountApproval.decidedBy')}>
+            <bdi>
+              {approval.decidedBy.displayName ??
+                translate(messages, 'quotations.approvals.someoneElse')}
+            </bdi>
+            {approval.decidedAt ? (
+              <span className="block text-caption text-text-muted">
+                <When value={approval.decidedAt} locale={locale} />
+              </span>
+            ) : null}
+          </Figure>
+        ) : null}
+        {approval.decisionReason ? (
+          <Figure label={translate(messages, 'quotations.discountApproval.reason')} wide>
+            <bdi>{approval.decisionReason}</bdi>
+          </Figure>
+        ) : null}
+      </dl>
+      {approval.status === 'pending' ? (
+        <p className="text-caption text-text-secondary">
+          {translate(
+            messages,
+            approval.requestedByCaller
+              ? 'quotations.discountApproval.waitingForAnother'
+              : 'quotations.discountApproval.waiting'
+          )}{' '}
+          <Link
+            href={`/${locale}/quotations`}
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            {translate(messages, 'quotations.discountApproval.openApprovals')}
+          </Link>
+        </p>
+      ) : null}
+      {approval.status === 'rejected' ? (
+        <p className="text-caption text-text-secondary">
+          {translate(messages, 'quotations.discountApproval.rejectedNext')}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ *
  * Revision history — headers, and any revision on request
  * ------------------------------------------------------------------ */
 
@@ -310,20 +489,13 @@ function RevisionsPanel({
   );
   const table = useServerTable<QuotationRevisionHeader>(load, { initial: INITIAL_REQUEST });
   const [chosenId, setChosenId] = useState<string | null>(null);
-  const [chosen, setChosen] = useState<ReadState<QuotationRevision> | null>(null);
+  const readChosen = useMemo(
+    () => (chosenId === null ? null : () => readRevision(chosenId)),
+    [chosenId]
+  );
+  const chosen = useReread<QuotationRevision>(readChosen);
 
-  useEffect(() => {
-    if (!chosenId) return;
-    let live = true;
-    void readRevision(chosenId).then((state) => {
-      if (live) setChosen(state);
-    });
-    return () => {
-      live = false;
-    };
-  }, [chosenId]);
-
-  const columns = useMemo<readonly Column<QuotationRevisionHeader>[]>(
+  const columns = useMemo<readonly OperationalColumn<QuotationRevisionHeader>[]>(
     () => [
       {
         id: 'revisionNumber',
@@ -364,28 +536,22 @@ function RevisionsPanel({
             <Money amount={row.grandTotal} currency={row.currency} locale={locale} />
           ),
       },
+    ],
+    [locale, messages]
+  );
+
+  const rowActions = useCallback(
+    (row: QuotationRevisionHeader): readonly RowAction[] => [
       {
-        id: 'show',
-        headerKey: 'quotations.revisions.column.actions',
-        cell: (row) => (
-          <button
-            type="button"
-            className={SECONDARY_BUTTON}
-            aria-pressed={row.id === chosenId}
-            onClick={() => {
-              setChosen(null);
-              setChosenId(row.id);
-            }}
-          >
-            {translate(messages, 'quotations.revisions.show')}{' '}
-            <code className="font-mono" dir="ltr">
-              {row.revisionNumber}
-            </code>
-          </button>
-        ),
+        kind: 'button',
+        label: translate(messages, 'quotations.revisions.show'),
+        about: String(row.revisionNumber),
+        // A choice among the rows: which revision is shown is announced with it.
+        pressed: row.id === chosenId,
+        onClick: () => setChosenId(row.id),
       },
     ],
-    [chosenId, locale, messages]
+    [chosenId, messages]
   );
 
   return (
@@ -400,18 +566,16 @@ function RevisionsPanel({
       <p className="text-caption text-text-muted">
         {translate(messages, 'quotations.revisions.explain')}
       </p>
-      <DataTable<QuotationRevisionHeader>
+      <OperationalGrid<QuotationRevisionHeader>
         messages={messages}
+        locale={locale}
+        label={translate(messages, 'quotations.revisions.caption')}
         columns={columns}
         rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'quotations.revisions.caption')}
+        table={table}
+        rowActions={rowActions}
         suppressEmptyState
+        testId="quotation-revisions-grid"
       />
       {table.response && table.response.rows.length === 0 ? (
         <p className="text-body text-text-secondary">
@@ -429,21 +593,23 @@ function RevisionsPanel({
           >
             {translate(messages, 'quotations.revisions.chosenHeading')}
           </h3>
-          {chosen === null ? (
-            <p className="text-body text-text-secondary" aria-busy="true">
-              {translate(messages, 'state.loading')}
-            </p>
-          ) : chosen.status !== 'ok' ? (
-            <p role="alert" className="text-body text-error">
-              {translate(
-                messages,
-                chosen.status === 'denied'
+          {chosen.value === null ? (
+            <MuiLoadingState messages={messages} variant="inline" />
+          ) : chosen.value.status !== 'ok' ? (
+            <MuiReadFailureState
+              messages={messages}
+              locale={locale}
+              status={chosen.value.status}
+              correlationId={chosen.value.correlationId}
+              descriptionKey={
+                chosen.value.status === 'denied'
                   ? 'quotations.revisions.refused'
                   : 'quotations.revisions.unavailable'
-              )}
-            </p>
+              }
+              onRetry={() => void chosen.reload()}
+            />
           ) : (
-            <RevisionBody locale={locale} messages={messages} revision={chosen.data} />
+            <RevisionBody locale={locale} messages={messages} revision={chosen.value.data} />
           )}
         </section>
       ) : null}
@@ -461,7 +627,6 @@ function DecisionsPanel({
   quotation,
   revision,
   canDecide,
-  epoch,
   onRecorded,
 }: {
   readonly locale: Locale;
@@ -469,25 +634,12 @@ function DecisionsPanel({
   readonly quotation: QuotationDetail;
   readonly revision: QuotationRevision;
   readonly canDecide: boolean;
-  readonly epoch: number;
-  readonly onRecorded: () => void;
+  /** Reads the quotation again; resolves once that answer is on screen. */
+  readonly onRecorded: () => Promise<void>;
 }) {
-  const [answer, setAnswer] = useState<{
-    readonly revisionId: string;
-    readonly state: ReadState<RevisionDecisions>;
-  } | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    void readRevisionDecisions(revision.id).then((state) => {
-      if (live) setAnswer({ revisionId: revision.id, state });
-    });
-    return () => {
-      live = false;
-    };
-  }, [revision.id, epoch]);
-
-  const state = answer && answer.revisionId === revision.id ? answer.state : null;
+  const read = useCallback(() => readRevisionDecisions(revision.id), [revision.id]);
+  const decisions = useReread<RevisionDecisions>(read);
+  const state = decisions.value;
   const decidable =
     canDecide && revision.status === 'issued' && quotation.currentRevisionId === revision.id;
 
@@ -504,18 +656,20 @@ function DecisionsPanel({
         {translate(messages, 'quotations.decisions.explain')}
       </p>
       {state === null ? (
-        <p className="text-body text-text-secondary" aria-busy="true">
-          {translate(messages, 'state.loading')}
-        </p>
+        <MuiLoadingState messages={messages} variant="inline" />
       ) : state.status !== 'ok' ? (
-        <p role="alert" className="text-body text-error">
-          {translate(
-            messages,
+        <MuiReadFailureState
+          messages={messages}
+          locale={locale}
+          status={state.status}
+          correlationId={state.correlationId}
+          descriptionKey={
             state.status === 'denied'
               ? 'quotations.decisions.refused'
               : 'quotations.decisions.unavailable'
-          )}
-        </p>
+          }
+          onRetry={() => void decisions.reload()}
+        />
       ) : (
         <DecisionsBody locale={locale} messages={messages} decisions={state.data} />
       )}
@@ -529,7 +683,9 @@ function DecisionsPanel({
           messages={messages}
           quotation={quotation}
           revision={revision}
-          onRecorded={onRecorded}
+          onRecorded={async () => {
+            await Promise.all([decisions.reload(), onRecorded()]);
+          }}
         />
       ) : null}
     </section>
@@ -586,7 +742,7 @@ function DecisionsBody({
                 </strong>{' '}
                 <span className="text-caption text-text-muted">
                   {translateDynamic(messages, `quotations.channel.${entry.channel}`)} ·{' '}
-                  <span dir="ltr">{formatDateTime(entry.decidedAt, locale)}</span>
+                  <When value={entry.decidedAt} locale={locale} />
                 </span>
               </p>
               {entry.evidence.length > 0 ? (
@@ -633,21 +789,64 @@ function DecisionForm({
   readonly messages: Messages;
   readonly quotation: QuotationDetail;
   readonly revision: QuotationRevision;
-  readonly onRecorded: () => void;
+  /** Reads the decisions and the quotation again; resolves once both are on screen. */
+  readonly onRecorded: () => Promise<void>;
 }) {
   const [target, setTarget] = useState('revision');
   const [decision, setDecision] = useState<string>('');
   const [channel, setChannel] = useState<string>('');
-  const [party, setParty] = useState(quotation.payerPartnerRef ?? '');
+  /*
+   * Whether the PAYING customer made this decision. The server accepts a deciding
+   * party only when it is this quotation's payer, so the honest control is a
+   * yes/no over that one customer rather than a box asking for a reference
+   * (Owner directive, `P1-32-PRE-OD-UX`). With no payer there is nothing to ask.
+   */
+  const payerRef = quotation.payerPartnerRef;
+  const [byPayer, setByPayer] = useState(payerRef !== null);
   const [evidenceKind, setEvidenceKind] = useState<string>('');
   const [note, setNote] = useState('');
   const [documentVersionId, setDocumentVersionId] = useState('');
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  // Question f: the cursor goes to the first thing to fix, and a complaint is
+  // withdrawn once its field changes (route sweep B3).
+  const {
+    errorKey: localErrorKey,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({
+    decision,
+    channel,
+    evidenceKind,
+    documentVersionId,
+    referenceNote: note,
+  });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
+  // A decision half recorded is work the operator would lose: a branch switch or
+  // leaving the page asks first, and "discard" empties the form.
+  const reset = () => {
+    setTarget('revision');
+    setDecision('');
+    setChannel('');
+    setByPayer(payerRef !== null);
+    setEvidenceKind('');
+    setNote('');
+    setDocumentVersionId('');
+  };
+  useUnsavedGuard(
+    decision !== '' ||
+      channel !== '' ||
+      evidenceKind !== '' ||
+      note.trim().length > 0 ||
+      documentVersionId.trim().length > 0,
+    () => {
+      reset();
+      setOutcome(null);
+    }
+  );
+
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
@@ -658,9 +857,7 @@ function DecisionForm({
     if (!DECISION_CHANNELS.includes(channel as (typeof DECISION_CHANNELS)[number])) {
       found['channel'] = 'field.required';
     }
-    const partyId = party.trim();
-    if (partyId.length > 0 && !UUID.test(partyId))
-      found['decidingPartyRef'] = 'quotations.common.idFormat';
+    const partyId = byPayer && payerRef !== null ? payerRef : '';
     const kind = evidenceKind;
     const referenceNote = note.trim();
     const docId = documentVersionId.trim();
@@ -673,7 +870,7 @@ function DecisionForm({
       found['documentVersionId'] = 'quotations.decide.documentOnlyForDocument';
     if (referenceNote.length > MAX_REFERENCE_NOTE)
       found['referenceNote'] = 'quotations.decide.noteTooLong';
-    setErrors(found);
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     const evidence: DecisionEvidenceBody | null = kind
@@ -691,16 +888,27 @@ function DecisionForm({
       presentedRevisionId: revision.id,
     };
     setBusy(true);
-    const result =
-      target === 'revision'
-        ? await decideRevision(revision.id, body)
-        : await decideItem(target, body);
-    setBusy(false);
-    setOutcome(result.state);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success') {
-      setOutcome(null);
-      onRecorded();
+    try {
+      let result: Awaited<ReturnType<typeof decideRevision | typeof decideItem>>;
+      try {
+        result =
+          target === 'revision'
+            ? await decideRevision(revision.id, body)
+            : await decideItem(target, body);
+      } catch {
+        setOutcome(unreachable(1));
+        return;
+      }
+      setOutcome(result.state);
+      notifyActionResult(result.state, messages);
+      if (result.state.status === 'success') {
+        setOutcome(null);
+        reset();
+        // Busy until the decisions and the quotation are read again.
+        await onRecorded();
+      }
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -714,6 +922,7 @@ function DecisionForm({
 
   return (
     <form
+      ref={localFormRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -731,18 +940,18 @@ function DecisionForm({
       <p className="text-caption text-text-muted sm:col-span-2">
         {translate(messages, 'quotations.decide.explain')}
       </p>
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'quotations.decide.target')}
         required
         value={target}
-        onChange={(event) => setTarget(event.target.value)}
+        onChange={setTarget}
         options={targetOptions}
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'quotations.decide.decision')}
         required
         value={decision}
-        onChange={(event) => setDecision(event.target.value)}
+        onChange={setDecision}
         options={DECISIONS.map((value) => ({
           value,
           label: translateDynamic(messages, `quotations.decision.${value}`),
@@ -750,11 +959,11 @@ function DecisionForm({
         placeholder={translate(messages, 'quotations.decide.chooseDecision')}
         error={errorFor('decision')}
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'quotations.decide.channel')}
         required
         value={channel}
-        onChange={(event) => setChannel(event.target.value)}
+        onChange={setChannel}
         options={DECISION_CHANNELS.map((value) => ({
           value,
           label: translateDynamic(messages, `quotations.channel.${value}`),
@@ -762,19 +971,27 @@ function DecisionForm({
         placeholder={translate(messages, 'quotations.decide.chooseChannel')}
         error={errorFor('channel')}
       />
-      <TextField
-        label={translate(messages, 'quotations.decide.party')}
-        description={translate(messages, 'quotations.decide.partyHelp')}
-        spellCheck={false}
-        dir="ltr"
-        value={party}
-        onChange={(event) => setParty(event.target.value)}
-        error={errorFor('decidingPartyRef')}
-      />
-      <SelectField
+      {payerRef !== null ? (
+        <FormCheckboxField
+          label={translate(messages, 'quotations.decide.party')}
+          description={translate(messages, 'quotations.decide.partyHelp')}
+          checked={byPayer}
+          onChange={setByPayer}
+          error={errorFor('decidingPartyRef')}
+        />
+      ) : (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'quotations.decide.noPayer')}
+        </p>
+      )}
+      <FormSelectField
         label={translate(messages, 'quotations.decide.evidenceKind')}
         value={evidenceKind}
-        onChange={(event) => setEvidenceKind(event.target.value)}
+        onChange={(next) => {
+          setEvidenceKind(next);
+          // The document reference belongs to document evidence only.
+          if (next !== 'document') setDocumentVersionId('');
+        }}
         options={EVIDENCE_KINDS.map((value) => ({
           value,
           label: translateDynamic(messages, `quotations.evidenceKind.${value}`),
@@ -782,20 +999,32 @@ function DecisionForm({
         placeholder={translate(messages, 'quotations.decide.noEvidence')}
         error={errorFor('evidenceKind')}
       />
-      <TextField
-        label={translate(messages, 'quotations.decide.documentVersionId')}
-        description={translate(messages, 'quotations.decide.documentHelp')}
-        spellCheck={false}
-        dir="ltr"
-        value={documentVersionId}
-        onChange={(event) => setDocumentVersionId(event.target.value)}
-        error={errorFor('documentVersionId')}
-      />
+      {/*
+        Offered only for document evidence, the one kind that names a document.
+        No read lists the documents of a quotation or its work order, so the
+        version is still a reference the operator enters — said in plain words
+        in the help, and recorded as a backend prerequisite.
+      */}
+      {evidenceKind === 'document' ? (
+        <FormTextField
+          label={translate(messages, 'quotations.decide.documentVersionId')}
+          description={translate(messages, 'quotations.decide.documentHelp')}
+          required
+          autoComplete="off"
+          dir="ltr"
+          value={documentVersionId}
+          onChange={setDocumentVersionId}
+          error={errorFor('documentVersionId')}
+          testId="quotation-decide-document"
+        />
+      ) : null}
       <div className="sm:col-span-2">
-        <TextAreaField
+        <FormTextField
           label={translate(messages, 'quotations.decide.note')}
+          multiline
+          rows={2}
           value={note}
-          onChange={(event) => setNote(event.target.value)}
+          onChange={setNote}
           error={errorFor('referenceNote')}
         />
       </div>
@@ -803,9 +1032,9 @@ function DecisionForm({
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy} aria-busy={busy || undefined}>
           {translate(messages, 'quotations.decide.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -815,58 +1044,131 @@ function DecisionForm({
  * Issuing — guarded by the QUOTATION's version
  * ------------------------------------------------------------------ */
 
+const NO_EXPIRY = { expiresAt: '' } as const;
+
 function IssuePanel({
   locale,
   messages,
   quotation,
+  zone,
   onIssued,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly quotation: QuotationDetail;
-  readonly onIssued: () => void;
+  /** The quotation's own branch clock, or `null` when the working context does not name it. */
+  readonly zone: string | null;
+  /** Reads the quotation again; resolves once that answer is on screen. */
+  readonly onIssued: () => Promise<void>;
 }) {
   const draft =
     quotation.currentRevision && quotation.currentRevision.status === 'draft'
       ? quotation.currentRevision
       : null;
-  const [expiresAt, setExpiresAt] = useState('');
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  // A draft whose discount is waiting or was turned down is not offered for issue:
+  // the server refuses it, and the page says why instead of offering the button.
+  const blockedBy =
+    draft?.discountApproval && draft.discountApproval.status !== 'approved'
+      ? draft.discountApproval.status
+      : null;
+  /*
+   * The version this issue is based on: the quotation's, as read. A refresh that
+   * lands while an expiry is typed does not move it, so an issue built on an
+   * older quotation is refused as a conflict, never applied to a newer one.
+   */
+  const edit = useEditBaseline<{ readonly expiresAt: string }>({
+    stored: NO_EXPIRY,
+    storedVersion: quotation.recordVersion,
+  });
+  const expiresAt = edit.values.expiresAt;
+  /*
+   * What the expiry field finds wrong, including an entry only partly typed
+   * (`'incomplete'`). A partial or impossible entry holds no instant, so its
+   * value is `''` — the same as no expiry at all — and only this tells the two
+   * apart. The complaint is kept against the value AND the finding, so it
+   * stands while the entry is still unfinished or impossible, and is withdrawn
+   * once the entry is whole or emptied again.
+   */
+  const [problem, setProblem] = useState<MomentProblem>(null);
+  const {
+    errorKey: localErrorKey,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({ expiresAt: `${expiresAt}|${problem ?? ''}` });
+  const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
-  const submit = async () => {
+  useUnsavedGuard(edit.dirty, () => {
+    edit.discard();
+    setOutcome(null);
+  });
+
+  const ask = () => {
     if (!draft) return;
-    const raw = expiresAt.trim();
-    let instant: string | null = null;
-    if (raw.length > 0) {
-      const parsed = new Date(raw);
-      if (Number.isNaN(parsed.getTime())) {
-        setErrors({ expiresAt: 'quotations.issue.dateFormat' });
-        return;
-      }
-      instant = parsed.toISOString();
-    }
-    setErrors({});
-    setBusy(true);
-    const result = await issueQuotation(
-      quotation.id,
-      { revisionId: draft.id, ...(instant ? { expiresAt: instant } : {}) },
-      quotation.recordVersion
-    );
-    setBusy(false);
-    notifyActionResult(result, messages);
-    if (result.status === 'success') {
-      setOutcome(null);
-      onIssued();
+    // Refused whatever the value: an unfinished or impossible expiry is `''`,
+    // and issuing then would send no expiry at all on an act that cannot be undone.
+    // Without the branch clock there is no expiry field, so nothing to refuse.
+    if (zone !== null && problem !== null) {
+      localRefuse({ expiresAt: 'quotations.issue.dateFormat' });
       return;
     }
-    setOutcome(
-      result.status === 'conflict'
-        ? { ...result, messageKey: 'quotations.detail.conflict' }
-        : result
-    );
+    localRefuse({});
+    setOutcome(null);
+    setAsking(true);
   };
+
+  const issue = async () => {
+    if (!draft) return;
+    setBusy(true);
+    try {
+      let result: ActionState;
+      try {
+        result = await issueQuotation(
+          quotation.id,
+          { revisionId: draft.id, ...(expiresAt ? { expiresAt } : {}) },
+          edit.version
+        );
+      } catch {
+        setAsking(false);
+        setOutcome(unreachable(1));
+        return;
+      }
+      notifyActionResult(result, messages);
+      if (result.status === 'success') {
+        edit.rebase(NO_EXPIRY);
+        setOutcome(null);
+        // Busy — and the question up — until the quotation is read again.
+        await onIssued();
+        setAsking(false);
+        return;
+      }
+      setAsking(false);
+      // A stale version is "changed since it was read"; a refusal the server
+      // names by its stage keeps its own sentence (`fromStateRefusal`).
+      setOutcome(
+        result.status === 'conflict' &&
+          (result.messageKey === undefined || result.messageKey === 'state.conflict.title')
+          ? { ...result, messageKey: 'quotations.detail.conflict' }
+          : result
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadLatest = async () => {
+    setBusy(true);
+    try {
+      edit.discard();
+      setOutcome(null);
+      await onIssued();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const expiryError = localErrorKey('expiresAt');
 
   return (
     <section
@@ -884,11 +1186,23 @@ function IssuePanel({
         <p className="text-body text-text-secondary">
           {translate(messages, 'quotations.issue.noDraft')}
         </p>
+      ) : blockedBy !== null ? (
+        <p className="text-body text-text-secondary" data-testid="issue-blocked-by-discount">
+          {translate(
+            messages,
+            blockedBy === 'rejected'
+              ? 'quotations.issue.discountRejected'
+              : blockedBy === 'superseded'
+                ? 'quotations.issue.discountSuperseded'
+                : 'quotations.issue.discountPending'
+          )}
+        </p>
       ) : (
         <form
+          ref={localFormRef}
           onSubmit={(event) => {
             event.preventDefault();
-            void submit();
+            ask();
           }}
           noValidate
           aria-labelledby="quotation-issue-heading"
@@ -900,27 +1214,59 @@ function IssuePanel({
               {draft.revisionNumber}
             </code>
           </p>
-          <TextField
-            label={translate(messages, 'quotations.issue.expiresAt')}
-            description={translate(messages, 'quotations.issue.expiresAtHelp')}
-            type="datetime-local"
-            dir="ltr"
-            value={expiresAt}
-            onChange={(event) => setExpiresAt(event.target.value)}
-            error={
-              errors['expiresAt'] ? translateDynamic(messages, errors['expiresAt']) : undefined
-            }
-          />
+          {zone !== null ? (
+            <ZonedDateTimeField
+              messages={messages}
+              label={translate(messages, 'quotations.issue.expiresAt')}
+              description={translate(messages, 'quotations.issue.expiresAtHelp')}
+              timezone={zone}
+              value={expiresAt}
+              onChange={(next) => edit.setValues({ expiresAt: next })}
+              onProblem={setProblem}
+              error={expiryError ? translateDynamic(messages, expiryError) : undefined}
+              testId="quotation-issue-expires"
+            />
+          ) : (
+            <p className="text-caption text-text-muted" data-testid="quotation-issue-no-clock">
+              {translate(messages, 'quotations.issue.zoneUnknown')}
+            </p>
+          )}
           <div className="sm:col-span-2">
             <OutcomeNote messages={messages} outcome={outcome} />
+            {outcome?.status === 'conflict' ? (
+              <div className="mt-2">
+                <Button
+                  type="button"
+                  variant="outlined"
+                  size="small"
+                  disabled={busy}
+                  onClick={() => void loadLatest()}
+                >
+                  {translate(messages, 'quotations.detail.reload')}
+                </Button>
+              </div>
+            ) : null}
           </div>
           <div className="sm:col-span-2">
-            <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+            <Button type="submit" variant="contained" disabled={busy} aria-busy={busy || undefined}>
               {translate(messages, 'quotations.issue.submit')}
-            </button>
+            </Button>
           </div>
         </form>
       )}
+      <ConfirmDialog
+        open={asking && draft !== null}
+        messages={messages}
+        title={formatMessage(translate(messages, 'quotations.issue.confirmTitle'), {
+          number: String(draft?.revisionNumber ?? ''),
+        })}
+        description={translate(messages, 'quotations.issue.confirmExplain')}
+        confirmLabel={translate(messages, 'quotations.issue.submit')}
+        pending={busy}
+        onCancel={() => setAsking(false)}
+        onConfirm={() => void issue()}
+        testId="quotation-issue-dialog"
+      />
     </section>
   );
 }
@@ -928,6 +1274,15 @@ function IssuePanel({
 /* ------------------------------------------------------------------ *
  * A new revision — FE-004, guarded by the QUOTATION's version
  * ------------------------------------------------------------------ */
+
+interface RevisionDraft {
+  readonly customerClass: string;
+  readonly lines: readonly DraftLine[];
+}
+
+const revisionDiffers = (values: RevisionDraft, baseline: RevisionDraft): boolean =>
+  values.customerClass.trim() !== baseline.customerClass.trim() ||
+  (values.lines !== baseline.lines && linesDirty(values.lines));
 
 function NewRevisionPanel({
   locale,
@@ -940,54 +1295,85 @@ function NewRevisionPanel({
   readonly messages: Messages;
   readonly quotation: QuotationDetail;
   readonly canReadServices: boolean;
-  readonly onCreated: () => void;
+  /** Reads the quotation again; resolves once that answer is on screen. */
+  readonly onCreated: () => Promise<void>;
 }) {
-  const [lines, setLines] = useState<readonly DraftLine[]>([newLine()]);
-  const [customerClass, setCustomerClass] = useState('');
-  const [requestedBy, setRequestedBy] = useState('');
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  // The empty draft a panel opens with, made once so the baseline holds still.
+  const [empty] = useState<RevisionDraft>(() => ({ customerClass: '', lines: [newLine()] }));
+  const edit = useEditBaseline<RevisionDraft>({
+    stored: empty,
+    storedVersion: quotation.recordVersion,
+    differs: revisionDiffers,
+  });
+  const { lines, customerClass } = edit.values;
+  const setLines = (next: readonly DraftLine[]) =>
+    edit.setValues((was) => ({ ...was, lines: next }));
+  const {
+    errorKey: localErrorKey,
+    errors: localErrors,
+    formRef: localFormRef,
+    refuse: localRefuse,
+  } = useLocalRefusal({ ...lineValues(lines), customerClass });
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
 
+  // Lines typed for a new revision are unsaved work: a switch or leaving asks.
+  useUnsavedGuard(edit.dirty, () => {
+    edit.discard();
+    setOutcome(null);
+  });
+
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
   const submit = async () => {
-    const { bodies, errors: found } = validateLines(lines);
+    const { bodies, errors: found } = validateLines(lines, canReadServices);
     const klass = customerClass.trim();
     if (klass.length > 0 && !INTERNAL_CODE.test(klass))
       found['customerClass'] = 'quotations.common.classFormat';
-    const requester = requestedBy.trim();
-    if (requester.length > 0 && !UUID.test(requester))
-      found['discountRequestedBy'] = 'quotations.common.idFormat';
-    setErrors(found);
+    localRefuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
-    const result = await createQuotationRevision(
-      quotation.id,
-      {
-        lines: bodies,
-        ...(klass ? { customerClass: klass } : {}),
-        ...(requester ? { discountRequestedBy: requester } : {}),
-      },
-      quotation.recordVersion
-    );
-    setBusy(false);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success') {
-      setOutcome(null);
-      setLines([newLine()]);
-      onCreated();
-      return;
+    try {
+      let result: Awaited<ReturnType<typeof createQuotationRevision>>;
+      try {
+        result = await createQuotationRevision(
+          quotation.id,
+          {
+            lines: bodies,
+            ...(klass ? { customerClass: klass } : {}),
+          },
+          edit.version
+        );
+      } catch {
+        setOutcome(unreachable(1));
+        return;
+      }
+      notifyActionResult(result.state, messages);
+      if (result.state.status === 'success') {
+        setOutcome(null);
+        edit.rebase({ customerClass: '', lines: [newLine()] });
+        // Busy until the quotation, with its new draft, is read again.
+        await onCreated();
+        return;
+      }
+      // A refused discount is marked on its own line, focused and withdrawn once
+      // corrected (ADR-023, D1): `lines` here is the draft that was sent.
+      const placed = serverLineRefusals(lines, result.state);
+      if (Object.keys(placed).length > 0) localRefuse(placed);
+      setOutcome(
+        result.state.status === 'conflict' &&
+          (result.state.messageKey === undefined ||
+            result.state.messageKey === 'state.conflict.title')
+          ? { ...result.state, messageKey: 'quotations.detail.conflict' }
+          : result.state
+      );
+    } finally {
+      setBusy(false);
     }
-    setOutcome(
-      result.state.status === 'conflict'
-        ? { ...result.state, messageKey: 'quotations.detail.conflict' }
-        : result.state
-    );
   };
 
   return (
@@ -1003,6 +1389,7 @@ function NewRevisionPanel({
         {translate(messages, 'quotations.revise.explain')}
       </p>
       <form
+        ref={localFormRef}
         onSubmit={(event) => {
           event.preventDefault();
           void submit();
@@ -1012,32 +1399,27 @@ function NewRevisionPanel({
         className="flex flex-col gap-4"
       >
         <div className="grid gap-3 sm:grid-cols-2">
-          <TextField
+          <FormTextField
             label={translate(messages, 'quotations.build.customerClass')}
             description={translate(messages, 'quotations.common.classHelp')}
-            spellCheck={false}
             dir="ltr"
+            autoComplete="off"
             value={customerClass}
-            onChange={(event) => setCustomerClass(event.target.value)}
+            onChange={(next) => edit.setValues((was) => ({ ...was, customerClass: next }))}
             error={errorFor('customerClass')}
           />
-          <TextField
-            label={translate(messages, 'quotations.build.requestedBy')}
-            description={translate(messages, 'quotations.build.requestedByHelp')}
-            spellCheck={false}
-            dir="ltr"
-            value={requestedBy}
-            onChange={(event) => setRequestedBy(event.target.value)}
-            error={errorFor('discountRequestedBy')}
-          />
         </div>
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'quotations.build.discountApprovalHelp')}
+        </p>
         <LinesEditor
           messages={messages}
+          locale={locale}
           currency={quotation.currency}
           lines={lines}
           onChange={setLines}
           canReadServices={canReadServices}
-          errors={errors}
+          errors={lineErrors(localErrors, outcome)}
         />
         <OutcomeNote
           messages={messages}
@@ -1045,9 +1427,9 @@ function NewRevisionPanel({
           hintKey="quotations.build.discountRefusedHint"
         />
         <div>
-          <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+          <Button type="submit" variant="contained" disabled={busy} aria-busy={busy || undefined}>
             {translate(messages, 'quotations.revise.submit')}
-          </button>
+          </Button>
         </div>
       </form>
     </section>
@@ -1069,8 +1451,8 @@ function LimitsPanel({
   readonly companyId: string;
   readonly canReadLimits: boolean;
 }) {
-  const [rows, setRows] = useState<readonly ApprovalLimit[] | null>(null);
-  const [refused, setRefused] = useState<string | null>(null);
+  const [state, setState] = useState<ReadState<readonly ApprovalLimit[]> | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!canReadLimits) return;
@@ -1080,18 +1462,23 @@ function LimitsPanel({
       null
     ).then((page) => {
       if (!live) return;
-      if (page.status === 'ok') setRows(page.rows as readonly ApprovalLimit[]);
-      else
-        setRefused(
-          page.status === 'denied' ? 'quotations.limits.refused' : 'quotations.limits.unavailable'
-        );
+      setState(
+        page.status === 'ok'
+          ? {
+              status: 'ok',
+              data: page.rows as readonly ApprovalLimit[],
+              correlationId: page.correlationId,
+            }
+          : { status: page.status, correlationId: page.correlationId }
+      );
     });
     return () => {
       live = false;
     };
-  }, [canReadLimits, companyId]);
+  }, [canReadLimits, companyId, attempt]);
 
-  const discountRows = (rows ?? []).filter((row) => row.limitType === 'discount');
+  const discountRows =
+    state?.status === 'ok' ? state.data.filter((row) => row.limitType === 'discount') : [];
 
   return (
     <section
@@ -1109,14 +1496,24 @@ function LimitsPanel({
         <p className="text-body text-text-secondary">
           {translate(messages, 'quotations.limits.noPermission')}
         </p>
-      ) : refused ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, refused)}
-        </p>
-      ) : rows === null ? (
-        <p className="text-body text-text-secondary" aria-busy="true">
-          {translate(messages, 'state.loading')}
-        </p>
+      ) : state === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : state.status !== 'ok' ? (
+        <MuiReadFailureState
+          messages={messages}
+          locale={locale}
+          status={state.status}
+          correlationId={state.correlationId}
+          descriptionKey={
+            state.status === 'denied'
+              ? 'quotations.limits.refused'
+              : 'quotations.limits.unavailable'
+          }
+          onRetry={() => {
+            setState(null);
+            setAttempt((n) => n + 1);
+          }}
+        />
       ) : discountRows.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'quotations.limits.none')}
@@ -1147,23 +1544,24 @@ function LimitsPanel({
               {discountRows.map((row) => (
                 <tr key={row.id} className="border-t border-border">
                   <td className="py-2 pe-3">
-                    <code className="font-mono text-caption" dir="ltr">
-                      {row.userId ?? row.roleId ?? '—'}
-                    </code>
+                    {translate(
+                      messages,
+                      row.userId !== null
+                        ? 'quotations.limits.holderPerson'
+                        : row.roleId !== null
+                          ? 'quotations.limits.holderRole'
+                          : 'quotations.limits.holderNone'
+                    )}
                   </td>
                   <td className="py-2 pe-3 text-end">
                     <Money amount={row.amount} currency={row.currencyCode} locale={locale} />
                   </td>
                   <td className="py-2 pe-3">
-                    <code className="font-mono text-caption" dir="ltr">
-                      {row.effectiveFrom}
-                    </code>
+                    <Day value={row.effectiveFrom} locale={locale} />
                   </td>
                   <td className="py-2">
                     {row.effectiveTo ? (
-                      <code className="font-mono text-caption" dir="ltr">
-                        {row.effectiveTo}
-                      </code>
+                      <Day value={row.effectiveTo} locale={locale} />
                     ) : (
                       <span className="text-text-muted">
                         {translate(messages, 'quotations.limits.noEnd')}

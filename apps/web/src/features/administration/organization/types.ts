@@ -45,6 +45,95 @@ export interface Read<T> {
   readonly correlationId: string | null;
 }
 
+/**
+ * `org.reference-values-read` — the ACTIVE currencies, time zones and languages
+ * the organisation screens offer as choices, each in code order
+ * (P1-32-PRE-OD-REF). Where it is passed, `null` means it was not read or could
+ * not be, and each select falls back to the values already in use.
+ */
+export interface ReferenceValues {
+  readonly currencies: readonly {
+    readonly code: string;
+    readonly name: string;
+    readonly minorUnit: number;
+  }[];
+  readonly timezones: readonly { readonly zoneName: string }[];
+  readonly languages: readonly {
+    readonly localeCode: string;
+    readonly name: string;
+    readonly direction: string;
+  }[];
+}
+
+// --- organisation structure ----------------------------------------------------
+
+/** A legal company as `org.company-list` publishes it. */
+export interface CompanyView {
+  readonly id: string;
+  readonly companyCode: string;
+  readonly legalName: string;
+  readonly status: string;
+}
+
+/** A branch as `org.branch-list` publishes it. */
+export interface BranchView {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchCode: string;
+  readonly name: string;
+  readonly city: string | null;
+  readonly countryCode: string | null;
+  readonly timezoneName: string;
+  readonly status: string;
+}
+
+/** One allowance. `limit` is null when the plan declares no ceiling. */
+export interface CapacityAllowance {
+  readonly used: number;
+  readonly limit: number | null;
+}
+
+export type CapacityKind = 'companies' | 'branches' | 'users';
+
+/** `org.capacity-read`: the allowances and the subscription behind them. */
+export interface CapacityView {
+  readonly capacity: Readonly<Record<CapacityKind, CapacityAllowance>>;
+  readonly subscription: {
+    readonly planCode: string;
+    readonly displayName: string;
+    readonly status: string;
+    readonly effectiveFrom: string;
+    readonly effectiveTo: string | null;
+  } | null;
+}
+
+/** The share of warning: at or above this many percent the bar says so. */
+export const CAPACITY_WARNING_PERCENT = 90;
+
+/**
+ * Whole percent of an allowance in use, or null when it is unlimited.
+ *
+ * Integer arithmetic on counts, never money. A limit of zero is 100 percent,
+ * because nothing more may be added.
+ */
+export function capacityPercent(allowance: CapacityAllowance): number | null {
+  if (allowance.limit === null) return null;
+  if (allowance.limit <= 0) return 100;
+  return Math.min(100, Math.floor((allowance.used * 100) / allowance.limit));
+}
+
+/** True when the allowance has no room for one more. Unlimited is never full. */
+export function isCapacityFull(allowance: CapacityAllowance | undefined): boolean {
+  if (allowance === undefined || allowance.limit === null) return false;
+  return allowance.used >= allowance.limit;
+}
+
+/** True when the allowance is at or above the warning share. */
+export function isCapacityNear(allowance: CapacityAllowance): boolean {
+  const percent = capacityPercent(allowance);
+  return percent !== null && percent >= CAPACITY_WARNING_PERCENT;
+}
+
 export type SettingsScope = 'company' | 'branch';
 
 /** The approved settings path for a scope. Identifiers are always encoded. */

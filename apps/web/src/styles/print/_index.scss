@@ -29,17 +29,74 @@
   // `height: auto` is what lets each region grow to its content; `overflow:
   // visible` is what lets that content reach the page. `max-height: none`
   // releases the table cap specifically.
+  //
+  // WHY THE SELECTORS ARE WRITTEN THE WAY THEY ARE (checkpoint browser QA,
+  // DEF-01). These rules used to read `main`, `[data-scroll-region]` and plain
+  // `body`, and every printed document came out as exactly ONE page — the
+  // screenful at the current scroll position, with the document cut after its
+  // title. They were loaded, and they lost. This sheet and the Tailwind
+  // utilities are both UNLAYERED (`styles/_layers.scss`: unlayered CSS is the
+  // top of the cascade, so a layer cannot help here), and the utilities are
+  // emitted AFTER this sheet (`app/globals.scss`), so between the two the more
+  // specific selector wins and a tie goes to the utility:
+  //
+  //   `main` (0,0,1)                  lost to `.overflow-y-auto` (0,1,0)
+  //   `[data-scroll-region]` (0,1,0)  tied with `.max-h-*` and lost on order
+  //   `body` (0,0,1)                  lost to `body.app-viewport` (0,1,1)
+  //   the shell root                  was not selected at all (`.h-dvh`,
+  //                                   `.overflow-hidden`)
+  //
+  // So each selector here outranks the one utility class it has to beat:
+  // `body.app-viewport` ties the reset's rule and wins on order (this sheet is
+  // loaded after `base`), and `:root …` adds a pseudo-class to an element or an
+  // attribute, which beats any single class.
+  // `tests/gallery-and-print.dom.test.tsx` compiles this sheet and holds that
+  // arithmetic, so a selector that falls back to losing fails a test instead of
+  // a customer's printout.
   html,
-  body {
+  body,
+  body.app-viewport {
     height: auto;
     overflow: visible;
   }
 
-  main,
-  [data-scroll-region] {
-    max-height: none;
-    height: auto;
+  // The application shell's boxes (`data-app-shell`, `AppShell.tsx`) and its
+  // main region stop being a viewport: block flow, no fixed height, no clip.
+  // Block rather than flex because the navigation beside the document is
+  // hidden on paper and a block box is what the page fragmenter handles best.
+  :root [data-app-shell],
+  :root main {
+    display: block;
+    block-size: auto;
+    min-block-size: 0;
+    max-block-size: none;
     overflow: visible;
+  }
+
+  :root [data-scroll-region] {
+    max-block-size: none;
+    block-size: auto;
+    overflow: visible;
+  }
+
+  // A screen that shows a printable document AMONG its working panels — the
+  // delivery screen's handover sheet sits under the release form, the checklist
+  // and the history — opts in with `data-print-scope`. While a document is open
+  // inside it, paper carries the document and not the screen around it: every
+  // direct child that holds no document is left off. Nothing changes while no
+  // document is open, so printing the screen itself still prints the screen.
+  //
+  // The document itself is never one of the children left off. `:has()` looks
+  // only at DESCENDANTS, so a document that is itself a direct child of the
+  // scope (the reception acknowledgement: the toolbar and the sheet side by
+  // side) holds no document below it and matched `:not(:has(…))` — the sheet
+  // hid itself and the page printed blank (checkpoint browser QA at 78602752,
+  // RI3). Naming the document itself in the `:not()` list keeps it; a document
+  // nested deeper (the delivery sheet inside its panel) is still kept through
+  // its panel.
+  [data-print-scope]:has([data-print='document'])
+    > :not([data-print='document'], :has([data-print='document'])) {
+    display: none;
   }
 
   // The notification region is a `div`, so the `nav`/`button` rule above does
@@ -85,4 +142,70 @@
 @page {
   size: a4;
   margin: 16mm;
+}
+
+// Label sheets (P1-32).
+//
+// A shelf label is the one document in this application whose PHYSICAL size is
+// part of its correctness: a 50 x 25 mm label printed at any other size does not
+// fit the stock it is stuck to, and a barcode printed at the wrong scale stops
+// scanning. So the geometry is stated in millimetres here rather than in
+// viewport units or utilities, and it is stated once — the screen chooses a
+// preset, and this stylesheet owns what each preset means.
+//
+// What this canNOT do, and the screen says so rather than pretending: choose the
+// paper. A page cannot set the operator's printer media; the print dialog does.
+// These rules size the labels correctly on whatever sheet is chosen, and the two
+// single-label presets put one label on each printed page so a roll printer
+// advances once per label.
+[data-label-sheet] {
+  display: grid;
+  gap: 2mm;
+  justify-content: start;
+}
+
+[data-label-sheet] [data-label='cell'] {
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2mm;
+  gap: 1mm;
+  border: 1px solid var(--color-border);
+  text-align: center;
+}
+
+[data-label-sheet='50x25'] [data-label='cell'] {
+  inline-size: 50mm;
+  block-size: 25mm;
+}
+
+[data-label-sheet='70x40'] [data-label='cell'] {
+  inline-size: 70mm;
+  block-size: 40mm;
+}
+
+// Three across an A4 page inside the 16 mm margins the `@page` rule sets.
+[data-label-sheet='a4'] {
+  grid-template-columns: repeat(3, 59mm);
+}
+
+[data-label-sheet='a4'] [data-label='cell'] {
+  inline-size: 59mm;
+  block-size: 36mm;
+}
+
+@media print {
+  // One label per page for the roll presets, and no cutting guide on paper —
+  // the label stock already has edges.
+  [data-label-sheet='50x25'] [data-label='cell'],
+  [data-label-sheet='70x40'] [data-label='cell'] {
+    border: 0;
+    break-after: page;
+  }
+
+  [data-label-sheet='a4'] [data-label='cell'] {
+    break-inside: avoid;
+  }
 }

@@ -1,8 +1,20 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr } from './render';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  TEST_COMPANY,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+} from './render';
 
 /**
  * The technician workspace, rendered (P1-29, `W4`).
@@ -13,9 +25,32 @@ import { renderLtr } from './render';
  * start button until the identity is confirmed, a stop only on the caller's
  * own open session — and every write addressed by the assignment, never by a
  * technician id the component could have chosen.
+ *
+ * On the Material UI wrappers (ADR-022, Owner directive slice 4): the queue is
+ * `OperationalGrid` with no pager (the read is unpaged), each row's "Open"
+ * named with its job; the moments are `DateTimeField`s on the branch's clock,
+ * sent with the branch's offset; every state and role is said in words.
  */
 
 const EN = en as Record<string, string>;
+
+/** The product's Material provider, as the locale layout mounts it. */
+function withMui(ui: ReactElement): ReactElement {
+  return (
+    <UiFoundationProvider locale="en" text={muiTextOf(getMessages('en'))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderMui = (ui: ReactElement) => renderLtr(withMui(ui));
+
+/** A name that STARTS with the words: a row's action carries its row after them. */
+const startsWith = (text: string) => new RegExp(`^${text}`);
+/** The row's "Open", named with the job it opens. */
+const OPEN = { name: startsWith(EN['technicians.workspace.open']!) };
+
+/** The field error's own element — the one `aria-describedby` names. */
+const errorElement = (text: HTMLElement) => text.closest('[role="alert"]') as HTMLElement;
 
 const readMyQueue = vi.fn();
 const resolveOwnAssignment = vi.fn();
@@ -25,6 +60,17 @@ const listJobEvidence = vi.fn();
 const startLaborSession = vi.fn();
 const stopLaborSession = vi.fn();
 const recordWorkLog = vi.fn();
+const correctLaborSession = vi.fn();
+const captureJobEvidence = vi.fn();
+/*
+ * The document categories, controllable per case.
+ *
+ * It was a fixed empty list, which makes the capture form render "no
+ * categories" and never offer a control — so the capture panel was unreachable
+ * from this suite. The DEFAULT is still empty, so every existing case sees
+ * exactly what it saw; a case that needs the form says so.
+ */
+const listDocumentCategories = vi.fn();
 vi.mock('@/features/technicians/api', () => ({
   readMyQueue: (...args: unknown[]) => readMyQueue(...args),
   resolveOwnAssignment: (...args: unknown[]) => resolveOwnAssignment(...args),
@@ -33,12 +79,12 @@ vi.mock('@/features/technicians/api', () => ({
   listJobEvidence: (...args: unknown[]) => listJobEvidence(...args),
   startLaborSession: (...args: unknown[]) => startLaborSession(...args),
   stopLaborSession: (...args: unknown[]) => stopLaborSession(...args),
-  correctLaborSession: vi.fn(),
+  correctLaborSession: (...args: unknown[]) => correctLaborSession(...args),
   recordWorkLog: (...args: unknown[]) => recordWorkLog(...args),
-  captureJobEvidence: vi.fn(),
+  captureJobEvidence: (...args: unknown[]) => captureJobEvidence(...args),
 }));
 vi.mock('@/features/attachments/api', () => ({
-  listDocumentCategories: async () => ({ status: 'ok', correlationId: 'c', data: { items: [] } }),
+  listDocumentCategories: (...args: unknown[]) => listDocumentCategories(...args),
 }));
 vi.mock('@/components/notifications/action-notifications', () => ({
   notifyActionResult: () => false,
@@ -47,8 +93,10 @@ vi.mock('@/components/notifications/action-notifications', () => ({
 const { TechnicianWorkspaceScreen } =
   await import('@/features/technicians/components/TechnicianWorkspaceScreen');
 
-const COMPANY = '11111111-1111-4111-8111-111111111111';
-const BRANCH = '22222222-2222-4222-8222-222222222222';
+// The branch the technician is standing in, chosen once in the header rather
+// than picked from two selects over raw references on this screen.
+const COMPANY = TEST_COMPANY.id;
+const BRANCH = TEST_BRANCH.id;
 const JOB = '77777777-7777-4777-8777-777777777777';
 const ASSIGNMENT = 'aaaaaaaa-0000-4000-8000-000000000001';
 const ME = 'bbbbbbbb-0000-4000-8000-000000000001';
@@ -82,14 +130,8 @@ const ALL = {
 };
 
 function renderScreen(capabilities = ALL) {
-  return renderLtr(
-    <TechnicianWorkspaceScreen
-      locale="en"
-      messages={en}
-      companyIds={[COMPANY]}
-      branchIds={[BRANCH]}
-      capabilities={capabilities}
-    />
+  return renderMui(
+    inBranch(<TechnicianWorkspaceScreen locale="en" messages={en} capabilities={capabilities} />)
   );
 }
 
@@ -103,6 +145,9 @@ beforeEach(() => {
     startLaborSession,
     stopLaborSession,
     recordWorkLog,
+    correctLaborSession,
+    captureJobEvidence,
+    listDocumentCategories,
   ]) {
     mock.mockReset();
   }
@@ -111,6 +156,9 @@ beforeEach(() => {
   listLaborSessions.mockResolvedValue(page([]));
   listWorkLog.mockResolvedValue(page([]));
   listJobEvidence.mockResolvedValue(ok({ items: [] }));
+  // Empty by default, exactly as the fixed mock was: a case that wants the
+  // capture form says so.
+  listDocumentCategories.mockResolvedValue(ok({ items: [] }));
 });
 
 describe('the queue', () => {
@@ -118,6 +166,23 @@ describe('the queue', () => {
     renderScreen();
     expect(await screen.findByText('Replace front pads')).toBeInTheDocument();
     expect(readMyQueue).toHaveBeenCalledWith({ companyId: COMPANY, branchId: BRANCH });
+  });
+
+  it('says the job state, the work order state and the role in words, never their codes', async () => {
+    renderScreen();
+    await screen.findByText('Replace front pads');
+    expect(screen.getByText(EN['workOrders.jobState.assigned']!)).toBeInTheDocument();
+    // The work order's cell: its number, and its state in words under it.
+    expect(screen.getByRole('gridcell', { name: /^WO-0001/ })).toHaveTextContent(
+      EN['workOrders.state.open']!
+    );
+    expect(screen.getByText(EN['workOrders.assignmentRole.primary']!)).toBeInTheDocument();
+    const grid = screen.getByRole('grid');
+    for (const code of ['assigned', 'primary']) {
+      expect(grid.textContent ?? '', code).not.toContain(code);
+    }
+    // The row's "Open" says which job it opens.
+    expect(screen.getByRole('button', OPEN)).toHaveTextContent('Replace front pads');
   });
 
   it('offers NO paging control — the read is unpaged and the screen says so', async () => {
@@ -148,9 +213,7 @@ describe('a job opened for execution', () => {
   async function openJob(capabilities = ALL) {
     const user = userEvent.setup();
     renderScreen(capabilities);
-    await user.click(
-      await screen.findByRole('button', { name: EN['technicians.workspace.open']! })
-    );
+    await user.click(await screen.findByRole('button', OPEN));
     return user;
   }
 
@@ -239,9 +302,7 @@ describe('a job opened for execution', () => {
     stopLaborSession.mockResolvedValue({ status: 'success' });
     // Re-open to re-read.
     await user.click(screen.getByRole('button', { name: EN['technicians.workspace.close']! }));
-    await user.click(
-      await screen.findByRole('button', { name: EN['technicians.workspace.open']! })
-    );
+    await user.click(await screen.findByRole('button', OPEN));
     await user.click(
       await screen.findByRole('button', { name: EN['technicians.workspace.stop']! })
     );
@@ -305,9 +366,7 @@ describe('the work log', () => {
     listWorkLog.mockResolvedValue(page([note]));
     const user = userEvent.setup();
     renderScreen();
-    await user.click(
-      await screen.findByRole('button', { name: EN['technicians.workspace.open']! })
-    );
+    await user.click(await screen.findByRole('button', OPEN));
     await screen.findByText(note.entry);
     return user;
   }
@@ -352,5 +411,390 @@ describe('the work log', () => {
     await user.click(screen.getByRole('button', { name: EN['technicians.workspace.addEntry']! }));
     expect(await screen.findByText(EN['field.required']!)).toBeInTheDocument();
     expect(recordWorkLog).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Owner directive, user-facing errors: the workspace says why the clock or a
+ * correction was refused.
+ *
+ * The three clock refusals are published against the technician profile the
+ * ADAPTER resolved. No screen here holds a technician reference — that is the
+ * identity seam this slice was built on — so each sentence was filed under a
+ * control that cannot exist and the technician saw only the generic apology.
+ * The correction refusals DO name controls the form has; those belong beside
+ * them, with the times as typed.
+ */
+describe('a refused clock or correction says what is wrong', () => {
+  async function openJob(capabilities = ALL) {
+    const user = userEvent.setup();
+    renderScreen(capabilities);
+    await user.click(await screen.findByRole('button', OPEN));
+    return user;
+  }
+
+  const stopped = {
+    id: 'mine-stopped',
+    technicianProfileId: ME,
+    jobId: JOB,
+    startedAt: '2026-07-26T08:00:00.000Z',
+    endedAt: '2026-07-26T10:00:00.000Z',
+    source: 'manual',
+    correctionOfId: null,
+    recordVersion: 3,
+  };
+
+  it('says a session is already running instead of the generic apology', async () => {
+    startLaborSession.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { technicianProfileId: 'form.violation.session-already-open' },
+      correlationId: 'corr-open',
+      attempt: 1,
+    });
+    const user = await openJob();
+    await user.click(
+      await screen.findByRole('button', { name: EN['technicians.workspace.start']! })
+    );
+
+    expect(await screen.findByText(EN['form.violation.session-already-open']!)).toBeInTheDocument();
+    expect(screen.queryByText(EN['technicians.workspace.conflict']!)).toBeNull();
+    // The refusal is about the profile the adapter resolved, and the sentence
+    // names no profile: the reference never reaches the screen.
+    expect(document.body.textContent).not.toContain(ME);
+    expect(document.body.textContent).not.toContain('session-already-open');
+  });
+
+  it('leaves a clock refusal it has not been told about to the generic line', async () => {
+    startLaborSession.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { technicianProfileId: 'form.violation.a_rule_this_screen_never_heard_of' },
+      correlationId: 'corr-unknown',
+      attempt: 1,
+    });
+    const user = await openJob();
+    await user.click(
+      await screen.findByRole('button', { name: EN['technicians.workspace.start']! })
+    );
+
+    expect(await screen.findByText(EN['technicians.workspace.conflict']!)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain('a_rule_this_screen_never_heard_of');
+  });
+
+  it('puts an overlap refusal beside the start time, leaves the form open, and keeps both times', async () => {
+    listLaborSessions.mockResolvedValue(page([stopped]));
+    correctLaborSession.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.invalid',
+      fieldErrors: { startedAt: 'form.violation.window-overlaps' },
+      correlationId: 'corr-overlap',
+      attempt: 1,
+    });
+    const user = await openJob({ ...ALL, canCorrectLabor: true });
+    await user.click(
+      await screen.findByRole('button', { name: EN['technicians.workspace.correctHeading']! })
+    );
+    const startedAt = await screen.findByRole('group', {
+      name: startsWith(EN['technicians.workspace.correctStartedAt']!),
+    });
+    const reason = screen.getByLabelText(
+      new RegExp(`^${EN['technicians.workspace.correctReason']!}`)
+    );
+    await user.type(reason, 'Clocked in late by mistake');
+    await user.click(
+      screen.getByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
+    );
+
+    const alert = errorElement(await screen.findByText(EN['form.violation.window-overlaps']!));
+    expect(alert).toBeVisible();
+    expect(alert.id).not.toBe('');
+    expect(startedAt.getAttribute('aria-describedby') ?? '').toContain(alert.id);
+    // The form is still open with everything as it was typed: the cure is to
+    // adjust a time, not to start the correction again.
+    expect((reason as HTMLInputElement).value).toBe('Clocked in late by mistake');
+    // The start still shows the moment it held: a day and a time, typed or kept.
+    expect(startedAt.textContent ?? '').toMatch(/\d/);
+  });
+
+  it('refuses an end before its start on the end, sending nothing', async () => {
+    listLaborSessions.mockResolvedValue(page([stopped]));
+    const user = await openJob({ ...ALL, canCorrectLabor: true });
+    await user.click(
+      await screen.findByRole('button', { name: EN['technicians.workspace.correctHeading']! })
+    );
+    const ended = await screen.findByRole('group', {
+      name: startsWith(EN['technicians.workspace.correctEndedAt']!),
+    });
+    // 26/07/2026 07:00 on the branch's clock — before the 11:00 start.
+    await user.click(within(ended).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('260720260700');
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['technicians.workspace.correctReason']!}`)),
+      'Clocked out early'
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
+    );
+    expect(await screen.findByText(EN['technicians.workspace.correctInverted']!)).toBeVisible();
+    await waitFor(() => expect(ended).toHaveAttribute('aria-invalid', 'true'));
+    expect(correctLaborSession).not.toHaveBeenCalled();
+  });
+
+  it('closes the correction form only when the correction was accepted', async () => {
+    listLaborSessions.mockResolvedValue(page([stopped]));
+    correctLaborSession.mockResolvedValue({ status: 'success', attempt: 1 });
+    const user = await openJob({ ...ALL, canCorrectLabor: true });
+    await user.click(
+      await screen.findByRole('button', { name: EN['technicians.workspace.correctHeading']! })
+    );
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['technicians.workspace.correctReason']!}`)),
+      'Clocked in late by mistake'
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
+    );
+
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
+      ).toBeNull()
+    );
+    // The moments went as the session held them, instants the server accepts.
+    expect(correctLaborSession.mock.calls[0]?.[4]).toEqual({
+      startedAt: stopped.startedAt,
+      endedAt: stopped.endedAt,
+      reason: 'Clocked in late by mistake',
+    });
+  });
+});
+
+describe('the work log takes its moment on the branch clock', () => {
+  it('sends "when the work happened" with the branch offset for that moment', async () => {
+    recordWorkLog.mockResolvedValue({ status: 'success' });
+    const user = userEvent.setup();
+    renderScreen();
+    await user.click(await screen.findByRole('button', OPEN));
+    await user.type(
+      await screen.findByRole('textbox', { name: new RegExp(EN['technicians.workspace.entry']!) }),
+      'Road test done.'
+    );
+    const when = screen.getByRole('group', {
+      name: startsWith(EN['technicians.workspace.loggedAt']!),
+    });
+    // 26/07/2026 14:30, typed on the working branch's clock (Asia/Riyadh).
+    await user.click(within(when).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('260720261430');
+    await user.click(screen.getByRole('button', { name: EN['technicians.workspace.addEntry']! }));
+    await waitFor(() => expect(recordWorkLog).toHaveBeenCalledTimes(1));
+    expect(recordWorkLog.mock.calls[0]?.[3]).toEqual({
+      entry: 'Road test done.',
+      loggedAt: '2026-07-26T14:30:00+03:00',
+    });
+  });
+});
+
+describe('the technician queue is about ONE branch', () => {
+  it('reads nothing and says which control answers while "all my branches" is chosen', async () => {
+    // A technician stands in one workshop. A queue spanning several would mix
+    // other people jobs into their own list.
+    const user = userEvent.setup();
+    readMyQueue.mockClear();
+    renderMui(
+      inBranch(
+        <>
+          <BranchSwitch to="all" label="use all" />
+          <TechnicianWorkspaceScreen locale="en" messages={en} capabilities={ALL} />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'use all' }));
+    expect(await screen.findByTestId('requires-concrete-branch')).toHaveTextContent(
+      en['workingContext.chooseBranchHere']
+    );
+    expect(readMyQueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('the unsaved-work guard stands down once the work is recorded', () => {
+  /**
+   * A guard that never stands down is worse than no guard.
+   *
+   * The correction reason and the evidence category were left in state after a
+   * SUCCESSFUL submit — the reason because nothing cleared it, the category
+   * because it was cleared one field short — so the shell went on asking
+   * "discard your unsaved work?" on every branch switch for the rest of the
+   * session, about work that had been accepted minutes earlier. An operator
+   * meeting that question repeatedly learns to dismiss it without reading it,
+   * which is exactly when it matters.
+   */
+  function renderWorkspace() {
+    return renderMui(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="use main" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="use second" />
+          <TechnicianWorkspaceScreen
+            locale="en"
+            messages={en}
+            // Both write surfaces this section is about: the correction form
+            // and the evidence capture beside it.
+            capabilities={{ ...ALL, canCorrectLabor: true, canCaptureDocuments: true }}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+
+  const stoppedSession = {
+    id: 'mine-stopped',
+    technicianProfileId: ME,
+    jobId: JOB,
+    startedAt: '2026-07-26T08:00:00.000Z',
+    endedAt: '2026-07-26T10:00:00.000Z',
+    source: 'manual',
+    correctionOfId: null,
+    recordVersion: 3,
+  };
+
+  it('asks while an evidence category is chosen, and NOT after it is stored', async () => {
+    /*
+     * The category was the field the clearing missed.
+     *
+     * A successful capture cleared the type and the note and left the CATEGORY
+     * in state, so the guard read as dirty for the rest of the session and the
+     * shell asked about every later branch switch for evidence that had been
+     * stored. It is the hardest of the three to notice by hand, because the
+     * select still shows the choice — correctly, it is what was captured — and
+     * only the question gives it away.
+     */
+    listDocumentCategories.mockResolvedValue(
+      ok({ items: [{ categoryCode: 'inspection_photo', name: 'Inspection photo' }] })
+    );
+    captureJobEvidence.mockResolvedValue({ status: 'success', attempt: 1 });
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.click(await screen.findByRole('button', OPEN));
+
+    const category = await screen.findByLabelText(
+      new RegExp(`^${EN['technicians.workspace.evidenceCategory']!}`)
+    );
+    await user.selectOptions(category, 'inspection_photo');
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['technicians.workspace.evidenceType']!}`)),
+      'photo'
+    );
+
+    // Chosen and unsent: the switch asks.
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    await user.click(screen.getByRole('button', { name: EN['technicians.workspace.attach']! }));
+    await waitFor(() => expect(captureJobEvidence).toHaveBeenCalled());
+
+    // Stored. The switch goes through without a question.
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+  });
+
+  it('keeps the forms, the chosen file and Stop when the operator keeps their work', async () => {
+    /*
+     * Choosing "keep my work" must keep it.
+     *
+     * The screen re-renders when the discard question opens and closes (the
+     * working context's pending switch flips) without the branch moving. The
+     * job panel's identity read was keyed on the target OBJECT, which is new on
+     * every render, so each re-render was a new read: the confirmed identity
+     * dropped to nothing until it answered again, the work-log and evidence
+     * forms unmounted — the uncontrolled file input losing the file with them —
+     * and Stop turned back into Start, at exactly the moment the operator had
+     * said their unsaved work mattered. Every read after the first is left
+     * hanging here, so a re-issued read cannot hide behind a quick answer.
+     */
+    listDocumentCategories.mockResolvedValue(
+      ok({ items: [{ categoryCode: 'inspection_photo', name: 'Inspection photo' }] })
+    );
+    listLaborSessions.mockResolvedValue(
+      page([{ ...stoppedSession, id: 'mine-open', endedAt: null, recordVersion: 4 }])
+    );
+    resolveOwnAssignment
+      .mockResolvedValueOnce(ok(own))
+      .mockReturnValue(new Promise(() => undefined));
+    const user = userEvent.setup();
+    const { container } = renderWorkspace();
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.click(await screen.findByRole('button', OPEN));
+
+    const stop = await screen.findByRole('button', { name: EN['technicians.workspace.stop']! });
+    // By its field name: the evidence form beside it has a note of its own.
+    const entryBox = container.querySelector<HTMLTextAreaElement>('textarea[name="entry"]')!;
+    await user.type(entryBox, 'Road test pending.');
+    await screen.findByLabelText(new RegExp(`^${EN['technicians.workspace.evidenceCategory']!}`));
+    const fileInput = container.querySelector<HTMLInputElement>('input[name="evidenceFile"]')!;
+    const photo = new File(['bytes'], 'pads.jpg', { type: 'image/jpeg' });
+    await user.upload(fileInput, photo);
+    expect(fileInput.files?.[0]).toBe(photo);
+
+    // Typed and unsent: the switch asks, and the operator keeps their work.
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+
+    // Nothing was read again, and nothing was taken off the screen.
+    expect(resolveOwnAssignment).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: EN['technicians.workspace.stop']! })).toBe(stop);
+    expect(screen.queryByRole('button', { name: EN['technicians.workspace.start']! })).toBeNull();
+    const keptEntry = container.querySelector<HTMLTextAreaElement>('textarea[name="entry"]');
+    expect(keptEntry).toBe(entryBox);
+    expect(keptEntry).toHaveValue('Road test pending.');
+    const keptFile = container.querySelector<HTMLInputElement>('input[name="evidenceFile"]');
+    expect(keptFile).toBe(fileInput);
+    expect(keptFile?.files?.[0]).toBe(photo);
+  });
+
+  it('asks while a correction reason is typed, and NOT after it is accepted', async () => {
+    listLaborSessions.mockResolvedValue(page([stoppedSession]));
+    correctLaborSession.mockResolvedValue({ status: 'success', attempt: 1 });
+    const user = userEvent.setup();
+    renderWorkspace();
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    await user.click(await screen.findByRole('button', OPEN));
+    await user.click(
+      await screen.findByRole('button', { name: EN['technicians.workspace.correctHeading']! })
+    );
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['technicians.workspace.correctReason']!}`)),
+      'Clocked in late by mistake'
+    );
+
+    // Typed and unsent: the switch asks.
+    await user.click(screen.getByRole('button', { name: 'use second' }));
+    expect(await screen.findByRole('alertdialog')).toBeInTheDocument();
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+
+    await user.click(
+      screen.getByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
+      ).toBeNull()
+    );
+
+    // Recorded. The switch goes through without a question.
+    await user.click(screen.getByRole('button', { name: 'use main' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });

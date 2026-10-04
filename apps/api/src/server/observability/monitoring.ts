@@ -41,8 +41,31 @@ export interface MonitoringEvent {
    * scrubbed for credential shapes, and never returned to an API caller.
    */
   readonly stack?: string;
+  /**
+   * The code path alone: the raw stack's frame lines (`    at …`), scrubbed and
+   * capped. The message line, and any message text that continues onto further
+   * lines, is dropped — a driver or RAISE message routinely carries a submitted
+   * value, and the stack's first line repeats that message verbatim.
+   */
+  readonly stackFrames?: readonly string[];
+  /**
+   * The structured identity of a PostgreSQL fault, copied field by field. Never
+   * `detail`, `where`, `hint`, the internal query or the parameters: those are
+   * where a driver repeats the value the caller submitted.
+   */
+  readonly database?: DatabaseFaultFields;
   /** Redacted extra context. */
   readonly context?: Record<string, unknown>;
+}
+
+/** What a database fault is logged by. Each field is present only when the driver set it. */
+export interface DatabaseFaultFields {
+  readonly sqlState: string;
+  readonly constraint?: string;
+  readonly schema?: string;
+  readonly table?: string;
+  readonly column?: string;
+  readonly routine?: string;
 }
 
 export interface ErrorMonitor {
@@ -81,7 +104,14 @@ export class RecordingErrorMonitor implements ErrorMonitor {
       ...(event.actorRef !== undefined ? { actorRef: event.actorRef } : {}),
       ...(event.errorCode !== undefined ? { errorCode: event.errorCode } : {}),
       result: 'failure',
-      context: { monitored: true, errorName: event.errorName },
+      // Inside `context` because the logger keeps only its fixed top-level keys
+      // and passes `context` through redaction; no key here names a secret.
+      context: {
+        monitored: true,
+        errorName: event.errorName,
+        ...(event.database !== undefined ? { database: event.database } : {}),
+        ...(event.stackFrames !== undefined ? { stackFrames: event.stackFrames } : {}),
+      },
     });
   }
 
@@ -105,12 +135,84 @@ export function setErrorMonitor(next: ErrorMonitor): void {
   monitor = next;
 }
 
+/** The most frame lines a single event carries. */
+const MAX_STACK_FRAMES = 20;
+const FRAME_LINE = /^\s+at /;
+const SQLSTATE_SHAPE = /^[0-9A-Z]{5}$/;
+
+type DriverError = Record<string, unknown> & { readonly code: string };
+
+/**
+ * A PostgreSQL driver error, recognised by its shape rather than by importing
+ * the database layer (this module is foundation code and must not).
+ *
+ * A five-character SQLSTATE alone is not enough: Node's own errno codes (EPIPE,
+ * EPERM) are five capital letters too. A server-reported error also carries a
+ * severity and the server routine or source file that raised it.
+ */
+function isDriverError(error: unknown): error is DriverError {
+  if (typeof error !== 'object' || error === null) return false;
+  const fields = error as Record<string, unknown>;
+  const code = fields['code'];
+  return (
+    typeof code === 'string' &&
+    SQLSTATE_SHAPE.test(code) &&
+    typeof fields['severity'] === 'string' &&
+    (typeof fields['routine'] === 'string' || typeof fields['file'] === 'string')
+  );
+}
+
+/** Copies the structural fields only, each one only when the driver set it as text. */
+function databaseFields(error: DriverError): DatabaseFaultFields {
+  const text = (name: string): string | undefined => {
+    const value = error[name];
+    return typeof value === 'string' ? scrubString(value) : undefined;
+  };
+  const constraint = text('constraint');
+  const schema = text('schema');
+  const table = text('table');
+  const column = text('column');
+  const routine = text('routine');
+  return {
+    sqlState: error.code,
+    ...(constraint !== undefined ? { constraint } : {}),
+    ...(schema !== undefined ? { schema } : {}),
+    ...(table !== undefined ? { table } : {}),
+    ...(column !== undefined ? { column } : {}),
+    ...(routine !== undefined ? { routine } : {}),
+  };
+}
+
+/**
+ * The frame lines of a RAW stack. The header and the whole message are cut
+ * first, through the end of the message's first occurrence, whatever the
+ * error's name: a message line that itself begins with `    at ` would
+ * otherwise pass the frame filter. Only the rest is split and filtered, before
+ * anything escapes its newlines.
+ */
+function stackFramesOf(stack: string, message: unknown): readonly string[] {
+  const text = typeof message === 'string' ? message : '';
+  const messageAt = text === '' ? -1 : stack.indexOf(text);
+  const afterMessage = messageAt === -1 ? stack : stack.slice(messageAt + text.length);
+  return afterMessage
+    .split('\n')
+    .filter((line) => FRAME_LINE.test(line))
+    .slice(0, MAX_STACK_FRAMES)
+    .map((line) => scrubString(line));
+}
+
 /** Sanitises and forwards a caught error. The only supported capture path. */
 export function captureException(error: unknown, context: CaptureContext): void {
   const isError = error instanceof Error;
+  const database = isDriverError(error) ? databaseFields(error) : undefined;
   const event: MonitoringEvent = {
     severity: context.severity ?? 'error',
-    message: scrubString(isError ? error.message : String(error)),
+    // A database fault is named by its SQLSTATE and nothing the driver wrote:
+    // its message can quote the submitted value.
+    message:
+      database !== undefined
+        ? `Database error ${database.sqlState}`
+        : scrubString(isError ? error.message : String(error)),
     errorName: isError ? error.name : typeof error,
     ...(context.errorCode !== undefined ? { errorCode: context.errorCode } : {}),
     correlationId: context.correlationId,
@@ -119,6 +221,8 @@ export function captureException(error: unknown, context: CaptureContext): void 
     ...(context.tenantRef !== undefined ? { tenantRef: context.tenantRef } : {}),
     ...(context.actorRef !== undefined ? { actorRef: context.actorRef } : {}),
     ...(isError && error.stack ? { stack: scrubString(error.stack) } : {}),
+    ...(isError && error.stack ? { stackFrames: stackFramesOf(error.stack, error.message) } : {}),
+    ...(database !== undefined ? { database } : {}),
     ...(context.context !== undefined
       ? { context: redact(context.context) as Record<string, unknown> }
       : {}),

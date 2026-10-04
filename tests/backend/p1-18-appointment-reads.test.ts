@@ -35,6 +35,7 @@ import {
   runtimeAppPool,
 } from './helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import {
   StaticClaimsAuthenticator,
   __resetAuthenticatorForTests,
@@ -56,6 +57,34 @@ const COMPANY_B1 = 'c1190000-0000-4000-8000-0000000000b1';
 const BRANCH_B1 = 'c1190000-0000-4000-8000-0000000000b2';
 /** A second branch of the same company, for the isolation split. */
 const BRANCH_A2 = 'c1190000-0000-4000-8000-0000000000a2';
+/**
+ * A THIRD branch and a SECOND company of tenant A (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * The branch-optional calendar needs a branch the two-branch principal below is
+ * authorized in, one it is NOT, and a company none of its branches belongs to —
+ * the last of which cannot be built out of tenant B, because a foreign tenant is
+ * refused by the tenant boundary long before the branch resolution this is about.
+ */
+const BRANCH_A3 = 'c1190000-0000-4000-8000-0000000000a3';
+const COMPANY_A2 = 'c1190000-0000-4000-8000-0000000000a4';
+const BRANCH_A4 = 'c1190000-0000-4000-8000-0000000000a5';
+
+/**
+ * Read granted in BRANCH_A2 AND BRANCH_A3, plus a decoy in BRANCH_A1 carrying no
+ * appointment permission. Its RLS reach is all three; its authority is two.
+ */
+const ROLE_TWO = 'c1190000-0000-4000-8000-000000000501';
+const USER_TWO = 'c1190000-0000-4000-8000-000000000502';
+const SUBJ_TWO = 'fx_p1_18_apt_two_branches';
+const GRANT_TWO = 'c1190000-0000-4000-8000-000000000503';
+const GRANT_TWO_DECOY = 'c1190000-0000-4000-8000-000000000504';
+
+/** A requester with a distinctive name and a phone, for the search box. */
+const PARTNER_SEARCH = 'c1190000-0000-4000-8000-0000000000c3';
+const SEARCH_NAME = 'Rawan Al-Masri';
+const SEARCH_PHONE = '962795443322';
+const SEARCH_PLATE = 'CD 9911';
 
 const ROLE_FULL = 'c1190000-0000-4000-8000-000000000101';
 const USER_FULL = 'c1190000-0000-4000-8000-000000000102';
@@ -91,11 +120,17 @@ const FULL_PERMISSIONS = [
   'apt.appointment.manage',
   'apt.appointment.lifecycle.manage',
   'apt.appointment.read',
+  // Owner directive P1-32-PRE-OD-UX. The search box's NAME and PHONE arms read
+  // `crm.*`, so they are off for a caller that does not work with customers; a
+  // scheduler searching the calendar by requester name does.
+  'crm.customer.read',
 ];
 
 interface Detail {
   readonly id?: string;
   readonly appointmentId?: string;
+  /** On a list row since the Owner directive (P1-32-PRE-OD-UX). */
+  readonly branchId?: string;
   readonly lifecycleStatus?: string;
   readonly recordVersion?: number;
   readonly requestedFrom?: string;
@@ -189,16 +224,45 @@ async function newVehicle(tenantId = TENANT_A): Promise<string> {
 }
 
 /** Books an appointment through the real route. Leaves it `requested`, RV 1. */
-async function book(window: { from: string; to: string }): Promise<string> {
+async function book(
+  window: { from: string; to: string },
+  overrides: {
+    /** Which branch to book into. Defaults to BRANCH_A1. */
+    readonly branchId?: string;
+    /** Which partner is the requester. Defaults to PARTNER_A. */
+    readonly requesterPartnerId?: string;
+    /** A plate to record against the booked vehicle, for the search box. */
+    readonly plate?: string;
+  } = {}
+): Promise<string> {
+  return (await bookDetailed(window, overrides)).id;
+}
+
+/**
+ * The same booking, returning the vehicle too.
+ *
+ * A sibling rather than a widened `book`: every existing case in this file
+ * treats the result as the appointment id, and changing that shape would have
+ * been a rewrite of the file to add one field.
+ */
+async function bookDetailed(
+  window: { from: string; to: string },
+  overrides: {
+    readonly branchId?: string;
+    readonly requesterPartnerId?: string;
+    readonly plate?: string;
+  } = {}
+): Promise<{ id: string; vehicleId: string }> {
+  const vehicleId = await newVehicle();
   const response = await CREATE_APPOINTMENT(
     new Request(A, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'idempotency-key': crypto.randomUUID() },
       body: JSON.stringify({
         companyId: COMPANY_A1,
-        branchId: BRANCH_A1,
-        vehicleId: await newVehicle(),
-        requesterPartnerId: PARTNER_A,
+        branchId: overrides.branchId ?? BRANCH_A1,
+        vehicleId,
+        requesterPartnerId: overrides.requesterPartnerId ?? PARTNER_A,
         appointmentTypeId: TYPE_A,
         requestedFrom: window.from,
         requestedTo: window.to,
@@ -206,7 +270,15 @@ async function book(window: { from: string; to: string }): Promise<string> {
     })
   );
   expect(response.status).toBe(201);
-  return ((await response.json()) as Detail).appointmentId ?? '';
+  if (overrides.plate !== undefined) {
+    await admin.query(
+      `INSERT INTO veh.plate_history
+         (tenant_id, vehicle_id, country_code, plate_raw, valid_from, created_by)
+       VALUES ($1,$2,'JO',$3,current_date,$4)`,
+      [TENANT_A, vehicleId, overrides.plate, USER_A]
+    );
+  }
+  return { id: ((await response.json()) as Detail).appointmentId ?? '', vehicleId };
 }
 
 async function seedPrincipal(
@@ -246,7 +318,8 @@ beforeAll(async () => {
      VALUES ('apt.appointment.manage','apt','Create and reschedule appointments in the caller scope','medium',$1),
             ('apt.appointment.lifecycle.manage','apt','Cancel an appointment or record a no-show','medium',$1),
             ('apt.appointment.read','apt','Read appointments, the branch calendar and the appointment catalogues','low',$1),
-            ('veh.vehicle.read','veh','Search and read vehicles in the caller tenant','low',$1)
+            ('veh.vehicle.read','veh','Search and read vehicles in the caller tenant','low',$1),
+            ('crm.customer.read','crm','Search and read customers in the tenant','low',$1)
      ON CONFLICT (permission_code) DO NOTHING`,
     [USER_A]
   );
@@ -255,6 +328,21 @@ beforeAll(async () => {
     `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
      VALUES ($1,$2,$3,'branch_a2_apt','Fixture Branch A2 Apt','UTC',$4) ON CONFLICT (id) DO NOTHING`,
     [BRANCH_A2, TENANT_A, COMPANY_A1, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1,$2,$3,'branch_a3_apt','Fixture Branch A3 Apt','UTC',$4) ON CONFLICT (id) DO NOTHING`,
+    [BRANCH_A3, TENANT_A, COMPANY_A1, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+     VALUES ($1,$2,'company_a2_apt','Fixture Company A2 Apt','USD',$3) ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_A2, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+     VALUES ($1,$2,$3,'branch_a4_apt','Fixture Branch A4 Apt','UTC',$4) ON CONFLICT (id) DO NOTHING`,
+    [BRANCH_A4, TENANT_A, COMPANY_A2, USER_A]
   );
   await admin.query(
     `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
@@ -275,6 +363,9 @@ beforeAll(async () => {
   await seedPrincipal(TENANT_A, ROLE_ELSEWHERE, USER_ELSEWHERE, SUBJ_ELSEWHERE, [
     'apt.appointment.read',
   ]);
+  // The two-branch principal. It also holds the write codes so it can book into
+  // both of its own branches through the real route rather than by INSERT.
+  await seedPrincipal(TENANT_A, ROLE_TWO, USER_TWO, SUBJ_TWO, FULL_PERMISSIONS);
   await admin.query(
     `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
      VALUES ($1,$2,'fx_p1_18_apt_decoy','P1-18 decoy role',$3) ON CONFLICT (id) DO NOTHING`,
@@ -314,6 +405,21 @@ beforeAll(async () => {
        VALUES ($1,$2,'branch',$3,$4,$5), ($1,$6,'branch',$3,$7,$5)`,
       [TENANT_A, GRANT_ELSEWHERE, COMPANY_A1, BRANCH_A2, USER_A, GRANT_DECOY, BRANCH_A1]
     );
+    // The two-branch principal (Owner directive, P1-32-PRE-OD-UX): ONE scoped
+    // grant carrying the read over BRANCH_A2 and BRANCH_A3, and a decoy grant in
+    // BRANCH_A1 with no appointment permission at all. `app.branch_ids` is the
+    // union of all three, so a calendar built from row-level security alone
+    // returns BRANCH_A1's bookings and this principal proves it must not.
+    await scoped.query(
+      `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'scoped',$5,$5), ($6,$2,$3,$7,'scoped',$5,$5)`,
+      [GRANT_TWO, TENANT_A, USER_TWO, ROLE_TWO, USER_A, GRANT_TWO_DECOY, ROLE_DECOY]
+    );
+    await scoped.query(
+      `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+       VALUES ($1,$2,'branch',$3,$4,$5), ($1,$2,'branch',$3,$6,$5), ($1,$7,'branch',$3,$8,$5)`,
+      [TENANT_A, GRANT_TWO, COMPANY_A1, BRANCH_A2, USER_A, BRANCH_A3, GRANT_TWO_DECOY, BRANCH_A1]
+    );
     await scoped.query('COMMIT');
   } catch (error) {
     await scoped.query('ROLLBACK');
@@ -328,6 +434,19 @@ beforeAll(async () => {
        VALUES ($1,$2,'organization','Calendar Requester A','active',$3) ON CONFLICT (id) DO NOTHING`,
       [PARTNER_A, TENANT_A, USER_A]
     );
+    await client.query(
+      `INSERT INTO crm.business_partners (id, tenant_id, party_type, display_name, lifecycle_status, created_by)
+       VALUES ($1,$2,'individual',$3,'active',$4) ON CONFLICT (id) DO NOTHING`,
+      [PARTNER_SEARCH, TENANT_A, SEARCH_NAME, USER_A]
+    );
+    await client.query(
+      `INSERT INTO crm.contact_points
+         (tenant_id, partner_id, channel, normalized_value, raw_value, is_primary, created_by)
+       SELECT $1,$2,'mobile',$3,$3,true,$4
+        WHERE NOT EXISTS (
+          SELECT 1 FROM crm.contact_points WHERE tenant_id = $1 AND partner_id = $2)`,
+      [TENANT_A, PARTNER_SEARCH, SEARCH_PHONE, USER_A]
+    );
   });
   await admin.query(
     `INSERT INTO apt.appointment_types (id, scope, tenant_id, code, name, created_by)
@@ -339,7 +458,13 @@ beforeAll(async () => {
   __setPrimaryPoolForTests(runtime);
 });
 
-afterEach(() => __resetAuthenticatorForTests());
+afterEach(() => {
+  __resetAuthenticatorForTests();
+  // `apt.appointment-list` carries the `expensive-read` policy and the Owner
+  // directive cases (P1-32-PRE-OD-UX) each make several list calls; without this
+  // a later case answers 429 and the failure reads as a broken filter.
+  __resetRateLimitForTests();
+});
 afterAll(async () => {
   __setPrimaryPoolForTests(undefined);
   if (runtime) await runtime.end();
@@ -568,5 +693,120 @@ describe('the detail and the If-Match round trip (success)', () => {
     authAs(SUBJ_FULL);
     const response = await detail('not-a-uuid');
     expect(response.status).toBe(422);
+  });
+});
+
+// ===========================================================================
+// The branch-optional calendar and its search box (Owner directive,
+// P1-32-PRE-OD-UX)
+//
+// The falsifiable principal is USER_TWO: `apt.appointment.read` over BRANCH_A2
+// and BRANCH_A3, and a decoy grant in BRANCH_A1 carrying no appointment
+// permission at all. `app.branch_ids` is the permission-blind union of all
+// three, so a calendar built from row-level security alone returns BRANCH_A1's
+// bookings. It must return exactly two branches' worth.
+// ===========================================================================
+describe('the branch-optional calendar', () => {
+  const WINDOW = { from: '2026-09-10T08:00:00.000Z', to: '2026-09-10T09:00:00.000Z' };
+
+  it('omitting branchId returns the two authorized branches and nothing from the third', async () => {
+    authAs(SUBJ_TWO);
+    const inA2 = await book(WINDOW, { branchId: BRANCH_A2 });
+    const inA3 = await book(WINDOW, { branchId: BRANCH_A3 });
+    authAs(SUBJ_FULL);
+    const inA1 = await book(WINDOW);
+
+    // The unrestricted reader sees all three, so the narrowing below is not an
+    // artefact of two empty branches.
+    authAs(SUBJ_FULL);
+    const all = await list(`?companyId=${COMPANY_A1}&limit=100`);
+    expect(all.status).toBe(200);
+    const allIds = (((await all.json()) as PageBody).items ?? []).map((item) => item.id);
+    expect(allIds).toEqual(expect.arrayContaining([inA1, inA2, inA3]));
+
+    authAs(SUBJ_TWO);
+    const narrowed = await list(`?companyId=${COMPANY_A1}&limit=100`);
+    expect(narrowed.status).toBe(200);
+    const rows = ((await narrowed.json()) as PageBody).items ?? [];
+    const ids = rows.map((item) => item.id);
+    expect(ids).toEqual(expect.arrayContaining([inA2, inA3]));
+    // The assertion that fails if the union is taken from the policy instead of
+    // from a per-branch permission decision.
+    expect(ids).not.toContain(inA1);
+    // Every row names its own branch, which is what makes a two-branch calendar
+    // readable at all.
+    expect(rows.every((item) => item.branchId === BRANCH_A2 || item.branchId === BRANCH_A3)).toBe(
+      true
+    );
+  });
+
+  it('a branchId the caller holds no read in is refused exactly as before', async () => {
+    authAs(SUBJ_TWO);
+    const tampered = await list(`?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}`);
+    expect(tampered.status).toBe(403);
+    expect(((await tampered.json()) as PageBody).code).toBe('ERR-IAM-001');
+  });
+
+  it('a company none of the caller branches belong to is refused, not answered empty', async () => {
+    authAs(SUBJ_TWO);
+    const other = await list(`?companyId=${COMPANY_A2}&limit=100`);
+    // A refusal and not an empty page: an empty page would report that the
+    // second company has no bookings, which this caller may not learn.
+    expect(other.status).toBe(403);
+    expect(((await other.json()) as PageBody).code).toBe('ERR-IAM-001');
+  });
+});
+
+describe('the appointment search box', () => {
+  const WINDOW = { from: '2026-09-11T08:00:00.000Z', to: '2026-09-11T09:00:00.000Z' };
+  let searchId = '';
+  let decoyId = '';
+
+  beforeAll(async () => {
+    authAs(SUBJ_FULL);
+    const found = await bookDetailed(WINDOW, {
+      requesterPartnerId: PARTNER_SEARCH,
+      plate: SEARCH_PLATE,
+    });
+    searchId = found.id;
+    decoyId = await book(WINDOW);
+  });
+
+  /** The ids on the calendar for one box, as the full-permission caller. */
+  async function search(box: string): Promise<readonly unknown[]> {
+    authAs(SUBJ_FULL);
+    const response = await list(
+      `?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&limit=100&q=${encodeURIComponent(box)}`
+    );
+    expect(response.status).toBe(200);
+    return (((await response.json()) as PageBody).items ?? []).map((item) => item.id);
+  }
+
+  it('finds the appointment by part of the requester name, folded', async () => {
+    const ids = await search('masri');
+    expect(ids).toContain(searchId);
+    expect(ids).not.toContain(decoyId);
+  });
+
+  it('finds the appointment by a phone tail typed in Arabic-Indic digits', async () => {
+    // The last seven digits of SEARCH_PHONE in Arabic-Indic numerals, folded to
+    // ASCII before the suffix comparison.
+    const ids = await search('٥٤٤٣٣٢٢');
+    expect(ids).toContain(searchId);
+    expect(ids).not.toContain(decoyId);
+  });
+
+  it('finds the appointment by its plate however the spaces and case fall', async () => {
+    for (const typed of ['cd9911', 'CD  9911']) {
+      const ids = await search(typed);
+      expect(ids, typed).toContain(searchId);
+      expect(ids, typed).not.toContain(decoyId);
+    }
+  });
+
+  it('returns an empty page for a box nothing matches, and refuses a one-character box', async () => {
+    expect(await search('zzzznosuchrequester')).toEqual([]);
+    authAs(SUBJ_FULL);
+    expect((await list(`?companyId=${COMPANY_A1}&branchId=${BRANCH_A1}&q=a`)).status).toBe(422);
   });
 });

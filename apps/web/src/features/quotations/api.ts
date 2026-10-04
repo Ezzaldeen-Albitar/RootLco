@@ -2,16 +2,25 @@
 
 import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage } from '@/components/data-table/use-server-table';
+import { violationMessageKey, type ApiFailure } from '@/lib/api/client';
 import { authorizedClient } from '@/lib/api/server-client';
 import {
   STATUS_BY_KIND,
+  branchTargetQuery,
   query,
   readOperation,
+  type BranchTarget,
   type CursorPage,
   type ReadState,
 } from '@/lib/api/read-operation';
-import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
+import {
+  fromFailure,
+  fromStateRefusal,
+  success,
+  type ActionState,
+} from '@/lib/forms/action-result';
 import type {
+  DiscountApprovalDecideBody,
   QuotationCreateBody,
   QuotationIssueBody,
   QuotationItemDecideBody,
@@ -19,6 +28,8 @@ import type {
   QuotationRevisionDecideBody,
 } from '@/lib/contracts/quotations-contract';
 import type {
+  DiscountApproval,
+  DiscountApprovalState,
   ItemDecisionEcho,
   QuotationDetail,
   QuotationRevision,
@@ -78,7 +89,7 @@ const revisionPath = (revisionId: string, suffix = ''): string =>
 
 const expired = (attempt: number): ActionState => ({
   status: 'expired',
-  messageKey: 'state.expired.title',
+  messageKey: 'state.expired.message',
   attempt,
 });
 
@@ -150,10 +161,68 @@ export async function readRevisionDecisions(
  * ------------------------------------------------------------------ */
 
 /**
+ * One branch's discount requests in one status (`quo.discount-approval-list`),
+ * most recently asked for first. The branch is the read's TARGET, re-authorized
+ * server-side, and travels through `branchTargetQuery`.
+ */
+export async function listDiscountApprovals(
+  target: BranchTarget,
+  status: DiscountApprovalState,
+  request: TableRequest,
+  cursor: string | null
+): Promise<ServerPage<DiscountApproval>> {
+  const client = await authorizedClient();
+  if (!client) return { ...EMPTY, status: 'expired', correlationId: null };
+  const result = await client.get<CursorPage<DiscountApproval>>(
+    '/api/v1/discount-approvals' +
+      branchTargetQuery(target, { status, cursor, limit: request.pageSize })
+  );
+  if (!result.ok) {
+    return { ...EMPTY, status: STATUS_BY_KIND[result.kind], correlationId: result.correlationId };
+  }
+  return {
+    status: 'ok',
+    rows: result.data.items,
+    nextCursor: result.data.nextCursor,
+    hasMore: result.data.hasMore,
+    correlationId: result.correlationId,
+  };
+}
+
+/**
+ * A refused line discount, kept with the position of its line (ADR-023, D1).
+ *
+ * The API refuses a fixed discount finer than the quotation currency's minor
+ * unit against `body.lines[<n>].discount`. `fromStateRefusal` keeps only the
+ * leaf of a path, so on its own that arrives as `discount` with the line gone,
+ * and the builder could only say "a discount is wrong" above every line. The
+ * position is added here as `lines.<n>.discount` — the key
+ * `serverLineRefusals` in `components/shared.tsx` reads — so the builder can
+ * mark the discount box of that very line. The leaf entry is left as it was.
+ * Only a catalogue key is ever produced, never server text.
+ */
+const LINE_DISCOUNT_PATH = /^body\.lines(?:\[(\d+)\]|\.(\d+))\.discount$/;
+
+function withLineDiscountRefusals(state: ActionState, failure: ApiFailure): ActionState {
+  const violations = failure.problem?.violations;
+  if (!Array.isArray(violations)) return state;
+  const placed: Record<string, string> = {};
+  for (const violation of violations) {
+    if (typeof violation?.path !== 'string' || typeof violation?.rule !== 'string') continue;
+    const match = LINE_DISCOUNT_PATH.exec(violation.path);
+    if (match === null) continue;
+    const field = `lines.${match[1] ?? match[2]}.discount`;
+    if (!(field in placed)) placed[field] = violationMessageKey(violation.rule);
+  }
+  if (Object.keys(placed).length === 0) return state;
+  return { ...state, fieldErrors: { ...(state.fieldErrors ?? {}), ...placed } };
+}
+
+/**
  * Create a quotation on a work order (`quo.quotation-create`). The server
- * prices every line, authorizes any discount against the company's policy and
- * the actor's approval limit, and refuses the whole document otherwise — that
- * refusal comes back as a denial and is rendered as one.
+ * prices every line and measures any discount against the company's threshold;
+ * a discount that reaches it comes back as a PENDING request on the revision,
+ * recorded against whoever is signed in, for somebody else to approve.
  */
 export async function createQuotation(
   body: QuotationCreateBody,
@@ -162,7 +231,12 @@ export async function createQuotation(
   const client = await authorizedClient();
   if (!client) return { state: expired(attempt), created: null };
   const result = await client.send<QuotationDetail>('POST', '/api/v1/quotations', body);
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) {
+    return {
+      state: withLineDiscountRefusals(fromStateRefusal(result, attempt), result),
+      created: null,
+    };
+  }
   return {
     state: {
       ...success('quotations.create.success', attempt),
@@ -191,7 +265,12 @@ export async function createQuotationRevision(
     body,
     { ifMatch }
   );
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) {
+    return {
+      state: withLineDiscountRefusals(fromStateRefusal(result, attempt), result),
+      created: null,
+    };
+  }
   return {
     state: {
       ...success('quotations.revision.created', attempt),
@@ -219,7 +298,7 @@ export async function issueQuotation(
     body,
     { ifMatch }
   );
-  if (!result.ok) return fromFailure(result, attempt);
+  if (!result.ok) return fromStateRefusal(result, attempt);
   return { ...success('quotations.issue.success', attempt), correlationId: result.correlationId };
 }
 
@@ -263,6 +342,39 @@ export async function decideItem(
   return {
     state: {
       ...success('quotations.decision.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Approve or turn down a discount somebody else asked for
+ * (`quo.discount-approval-decide`). The requester is refused by name, as is an
+ * approver with no limit or one below the discount; each refusal comes back as a
+ * named rule the panel puts in words.
+ */
+export async function decideDiscountApproval(
+  approvalId: string,
+  body: DiscountApprovalDecideBody,
+  attempt = 1
+): Promise<CreateOutcome<DiscountApproval>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<DiscountApproval>(
+    'POST',
+    `/api/v1/discount-approvals/${encodeURIComponent(approvalId)}/decision`,
+    body
+  );
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success(
+        body.decision === 'approved'
+          ? 'quotations.approvals.approvedSuccess'
+          : 'quotations.approvals.rejectedSuccess',
+        attempt
+      ),
       correlationId: result.correlationId,
     },
     created: result.data,

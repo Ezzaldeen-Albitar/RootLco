@@ -46,10 +46,26 @@ export function CaptureFileField({
   label,
   disabled = false,
   accept,
+  id,
+  describedBy,
+  onChosenChange,
 }: {
   readonly name: string;
   readonly label: string;
   readonly disabled?: boolean;
+  /** An element id, so a caller can return focus to the control. */
+  readonly id?: string | undefined;
+  /** The id of the sentence that describes the control, for assistive technology. */
+  readonly describedBy?: string | undefined;
+  /**
+   * Told whether a file is chosen, from the control's own `value` string.
+   *
+   * That string is the browser's placeholder path for the choice and nothing
+   * more: no byte is read and the chosen file itself is never touched, so the
+   * rule this component exists for is unchanged. It lets a caller offer a way to
+   * remove the choice before the form is sent.
+   */
+  readonly onChosenChange?: ((chosen: boolean) => void) | undefined;
   /**
    * The SERVER's content-type list, verbatim, or absent.
    *
@@ -64,6 +80,14 @@ export function CaptureFileField({
       name={name}
       aria-label={label}
       disabled={disabled}
+      {...(id === undefined ? {} : { id })}
+      {...(describedBy === undefined ? {} : { 'aria-describedby': describedBy })}
+      {...(onChosenChange === undefined
+        ? {}
+        : {
+            onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
+              onChosenChange(event.currentTarget.value !== ''),
+          })}
       {...(accept !== undefined && accept.length > 0 ? { accept: accept.join(',') } : {})}
       className="text-body text-text-primary"
     />

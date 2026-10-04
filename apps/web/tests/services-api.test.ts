@@ -167,6 +167,8 @@ describe('the guarded writes carry the version, and the others carry none', () =
     const body = { name: 'Oil and filter', description: null };
     const state = await updateService(SERVICE_ID, body, 3);
     expect(state.status).toBe('success');
+    // The new version the answer carries, so the edit form re-bases on it.
+    expect(state.recordVersion).toBe(4);
     expect(send).toHaveBeenCalledWith('PATCH', `/api/v1/services/${SERVICE_ID}`, body, {
       ifMatch: 3,
     });

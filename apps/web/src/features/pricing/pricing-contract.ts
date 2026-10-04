@@ -14,6 +14,8 @@
  * | `svc.price-list-version-publish`   | POST   | `/price-lists/{priceListId}/versions/{id}/publication`  | `svc.price.publish` |
  * | `svc.price-rule-record`            | POST   | `/price-lists/{priceListId}/versions/{id}/rules`        | `svc.price.manage`  |
  * | `svc.price-list-assignment-create` | POST   | `/price-list-assignments`                               | `svc.price.manage`  |
+ * | `svc.discount-threshold-read`      | GET    | `/discount-thresholds/{companyId}`                      | `svc.price.read`    |
+ * | `svc.discount-threshold-set`       | POST   | `/discount-thresholds/{companyId}`                      | `svc.price.manage`  |
  *
  * Typed from the routes that own the shapes — `apps/api/src/app/api/v1/price-lists/**`,
  * `price-list-assignments/route.ts`, `prices/route.ts` — and from the views in
@@ -269,4 +271,52 @@ export interface PriceLookupCriteria {
   readonly customerClass?: string;
   /** `YYYY-MM-DD`; today, by the server's clock, when omitted. */
   readonly asOf?: string;
+}
+
+/**
+ * `ck_pricing_approval_policies_kind`, mirrored: a discount threshold is an
+ * amount in a currency, or a percentage of the line.
+ */
+export const THRESHOLD_KINDS = ['amount', 'percentage'] as const;
+export type ThresholdKind = (typeof THRESHOLD_KINDS)[number];
+
+/** A threshold value as the route accepts it: non-negative, at most four decimals. */
+export const THRESHOLD_VALUE = /^(?:0|[1-9][0-9]{0,13})(?:\.[0-9]{1,4})?$/;
+
+/** Who recorded a threshold version. `displayName` is `null` when it cannot be shown. */
+export interface DiscountThresholdRecorder {
+  readonly id: string;
+  readonly displayName: string | null;
+}
+
+/** One version of a discount threshold — `DiscountThresholdVersionView`. */
+export interface DiscountThresholdVersion {
+  readonly id: string;
+  readonly versionNo: number;
+  readonly thresholdKind: ThresholdKind;
+  /** Decimal STRING: an amount in `currency`, or a percentage of the line. */
+  readonly thresholdValue: string;
+  readonly currency: string | null;
+  readonly requiredPermission: string;
+  /** `YYYY-MM-DD`: requests from this business date on are measured against it. */
+  readonly effectiveFrom: string;
+  readonly status: 'active' | 'inactive';
+  readonly recordedAt: string;
+  readonly recordedBy: DiscountThresholdRecorder;
+}
+
+/**
+ * The body of `svc.discount-threshold-read` and of `svc.discount-threshold-set`
+ * — `DiscountThresholdView`. `recordVersion` is the `If-Match` the next write
+ * needs, and is sent on every write, the first one included.
+ */
+export interface DiscountThreshold {
+  readonly companyId: string;
+  /** `company`, `tenant_default`, or `none` — every discount then needs approval. */
+  readonly source: 'company' | 'tenant_default' | 'none';
+  readonly current: DiscountThresholdVersion | null;
+  readonly tenantDefault: DiscountThresholdVersion | null;
+  readonly history: readonly DiscountThresholdVersion[];
+  /** The `If-Match` the next write needs: `1` before any version, then one more each time. */
+  readonly recordVersion: number;
 }

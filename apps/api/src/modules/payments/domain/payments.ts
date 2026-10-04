@@ -57,9 +57,9 @@ export type PaymentMethodStatus = (typeof PAYMENT_METHOD_STATUSES)[number];
  * `recorded → partially_allocated → allocated` is driven by
  * `sal.allocate_receipt`, which re-sums after each allocation and sets the status
  * itself. `reversed` is terminal and reachable only when an approved
- * `sal.receipt_reversals` row already exists (`sal.guard_receipt_freeze`), which is
- * why this phase exposes no reversal route: the state is reachable but the
- * approval path that reaches it is out of scope (`P1-22-L-05`).
+ * `sal.receipt_reversals` row already exists (`sal.guard_receipt_freeze`) — that is,
+ * only through `sal.approve_receipt_reversal`, which `sal.receipt-reversal-approve`
+ * reaches since ADR-023 D4 (P1-32-PRE-OD-FD4).
  */
 export const RECEIPT_STATUSES = Object.freeze([
   'recorded',
@@ -68,6 +68,153 @@ export const RECEIPT_STATUSES = Object.freeze([
   'reversed',
 ] as const);
 export type ReceiptStatus = (typeof RECEIPT_STATUSES)[number];
+
+/**
+ * `ck_receipt_reversals_approval_state` (ADR-023 D4, P1-32-PRE-OD-FD4).
+ *
+ * `pending` until decided; `approved` reverses the receipt; `rejected` and
+ * `withdrawn` reverse nothing. Every state but `pending` is terminal, which
+ * `sal.guard_receipt_reversal_decision` enforces for every role that can write
+ * the row.
+ */
+export const RECEIPT_REVERSAL_STATES = Object.freeze([
+  'pending',
+  'approved',
+  'rejected',
+  'withdrawn',
+] as const);
+export type ReceiptReversalState = (typeof RECEIPT_REVERSAL_STATES)[number];
+
+/**
+ * Who may do what with a receipt reversal (ADR-023 D4).
+ *
+ * Requesting and withdrawing are the payment recorder's acts, under the code that
+ * records a receipt. Approving and rejecting are a different person's, under a
+ * code of their own that no credit-note code satisfies — `sal.reversal.approve`,
+ * seeded since Phase 1-11 for exactly this decision and bound to no operation
+ * until D4.
+ */
+export const RECEIPT_REVERSAL_PERMISSIONS = Object.freeze({
+  request: 'sal.payment.record',
+  decide: 'sal.reversal.approve',
+} as const);
+
+/** A reversal request's and a rejection's reason: required, at most this many characters. */
+export const MAX_REVERSAL_REASON = 2000;
+
+/**
+ * The stable rule tokens a refused reversal, decision, allocation or replacement
+ * names (ADR-023 D4, D12). Each is the token the database guard raises before the
+ * first colon of its message for the same rule, the token the screen reads from
+ * `safeDetails.violations[].rule`, and the rule a business-refusal record carries.
+ */
+export const RECEIPT_REVERSAL_RULES = Object.freeze({
+  exists: 'receipt_reversal_exists',
+  receiptReversed: 'receipt_reversal_receipt_reversed',
+  selfApproval: 'receipt_reversal_self_approval',
+  selfRejection: 'receipt_reversal_self_rejection',
+  notRequester: 'receipt_reversal_withdraw_not_requester',
+  decided: 'receipt_reversal_decision_frozen',
+  requestPermissionMissing: 'receipt_reversal_request_permission_missing',
+  approvePermissionMissing: 'receipt_reversal_approve_permission_missing',
+  rejectPermissionMissing: 'receipt_reversal_reject_permission_missing',
+  pendingBlocksAllocation: 'receipt_reversal_pending_blocks_allocation',
+  replacementNotReversed: 'receipt_replacement_not_reversed',
+  replacementExists: 'receipt_replacement_exists',
+} as const);
+
+/**
+ * A third-party payer (ADR-023 D14, P1-32-PRE-OD-FD14).
+ *
+ * Applying one party's receipt to another customer's invoice is refused by default
+ * (`allocation_payer_mismatch`). It is accepted only as a THIRD-PARTY allocation,
+ * which names what the payer is to the customer — from this FIXED vocabulary, held
+ * in code and in `ck_payment_allocations_third_party_relationship`; an organisation
+ * cannot add to it — an authorisation reference and a reason, and which only a
+ * holder of `THIRD_PARTY_PERMISSION` in the receipt's company and branch may make.
+ * Nothing changes hands: the invoice stays its customer's, the receipt stays its
+ * payer's, and whatever is left on the receipt stays the payer's.
+ */
+export const THIRD_PARTY_RELATIONSHIPS = Object.freeze(['insurer', 'employer', 'other'] as const);
+export type ThirdPartyRelationship = (typeof THIRD_PARTY_RELATIONSHIPS)[number];
+
+/**
+ * The authority a third-party allocation needs, beyond `sal.payment.allocate`.
+ * Consulted by `sal.payment-allocate` only for a third-party allocation, and by the
+ * database trigger `sal.guard_allocation_payer` for every one, whoever writes it.
+ */
+export const THIRD_PARTY_PERMISSION = 'sal.payment.third_party';
+
+/** `ck_payment_allocations_third_party_shape`: the authorisation reference's ceiling. */
+export const MAX_THIRD_PARTY_AUTHORISATION_REFERENCE = 100;
+/** `ck_payment_allocations_third_party_shape`: the reason's ceiling. */
+export const MAX_THIRD_PARTY_REASON = 2000;
+
+/**
+ * The stable rule tokens of the payer rule (ADR-023 D14, D12). Each is the token
+ * `sal.guard_allocation_payer` raises before the first colon of its message, the
+ * token the screen reads from `safeDetails.violations[].rule`, and — for the two
+ * refusals of an allocation that may not be made at all — the rule a
+ * business-refusal record carries.
+ */
+export const THIRD_PARTY_RULES = Object.freeze({
+  payerMismatch: 'allocation_payer_mismatch',
+  permissionMissing: 'third_party_permission_missing',
+  samePayer: 'third_party_same_payer',
+  relationshipInvalid: 'third_party_relationship_invalid',
+  referenceRequired: 'third_party_authorisation_reference_required',
+  otherUnexplained: 'third_party_other_unexplained',
+  reasonRequired: 'third_party_reason_required',
+  currencyMismatch: 'allocation_currency_mismatch',
+} as const);
+
+/** What a caller states to make a third-party allocation. */
+export interface ThirdPartyDeclaration {
+  readonly relationship: string;
+  readonly authorisationReference: string;
+  readonly reason: string;
+}
+
+/** Characters as PostgreSQL's `char_length` counts them: code points, not UTF-16 units. */
+const codePoints = (text: string): number => Array.from(text).length;
+
+/** One field of a third-party declaration that does not hold, with the rule it breaks. */
+export interface ThirdPartyViolation {
+  readonly field: 'relationship' | 'authorisationReference' | 'reason';
+  readonly rule: (typeof THIRD_PARTY_RULES)[keyof typeof THIRD_PARTY_RULES];
+}
+
+/**
+ * Every field of a third-party declaration that breaks a rule, in field order, so
+ * a screen can mark each one. The same rules `sal.guard_allocation_payer` holds the
+ * row to; the database stays the authority, and this only names the refusals.
+ *
+ * 'other' must say in the reason what the payer is to the customer: a blank reason
+ * then breaks `third_party_other_unexplained`, worded for that case, rather than
+ * the general `third_party_reason_required`.
+ */
+export function thirdPartyViolations(
+  declaration: ThirdPartyDeclaration
+): readonly ThirdPartyViolation[] {
+  const found: ThirdPartyViolation[] = [];
+  const relationshipKnown = (THIRD_PARTY_RELATIONSHIPS as readonly string[]).includes(
+    declaration.relationship
+  );
+  if (!relationshipKnown) {
+    found.push({ field: 'relationship', rule: THIRD_PARTY_RULES.relationshipInvalid });
+  }
+  const reference = declaration.authorisationReference;
+  if (reference.trim() === '' || codePoints(reference) > MAX_THIRD_PARTY_AUTHORISATION_REFERENCE) {
+    found.push({ field: 'authorisationReference', rule: THIRD_PARTY_RULES.referenceRequired });
+  }
+  const reason = declaration.reason;
+  if (reason.trim() === '' && declaration.relationship === 'other') {
+    found.push({ field: 'reason', rule: THIRD_PARTY_RULES.otherUnexplained });
+  } else if (reason.trim() === '' || codePoints(reason) > MAX_THIRD_PARTY_REASON) {
+    found.push({ field: 'reason', rule: THIRD_PARTY_RULES.reasonRequired });
+  }
+  return found;
+}
 
 /** `ck_payment_methods_code` and `ck_invoice_numbering_configs_sequence_code`. */
 export const PLATFORM_CODE_FORMAT = /^[a-z][a-z0-9_]{1,62}$/;

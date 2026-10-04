@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import type { ServerPageStatus } from '@/components/data-table/use-server-table';
+import { PrintToolbar } from '@/components/print/PrintToolbar';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import {
   ErrorState,
@@ -20,7 +21,7 @@ import {
 import { AcknowledgementDocument } from '@/features/receptions/components/AcknowledgementDocument';
 import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
 import { isLocale } from '@/i18n/config';
-import { getMessages } from '@/i18n/get-messages';
+import { getMessages, translate } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
 
 /**
@@ -140,17 +141,33 @@ export default async function AcknowledgementPage({
     correlationId: page.correlationId,
   });
 
+  /*
+   * Printing carries the sheet, whole, and nothing else (Owner directive,
+   * the delivery sheet's rule of #478). The container opts into the print scope
+   * (`styles/print/_index.scss`): while it holds the document, every direct
+   * child that holds none — the toolbar with Print and the way back — is left
+   * off the paper, and the print sheet releases the viewport so the document
+   * runs onto as many pages as it needs.
+   */
   return frame(
-    <AcknowledgementDocument
-      locale={locale}
-      messages={messages}
-      detail={detail.data}
-      sections={{
-        parties: section(parties),
-        authorizations: section(authorizations),
-        evidence: section(evidence),
-      }}
-    />
+    <div data-print-scope="document" className="flex flex-col gap-4">
+      <PrintToolbar
+        printLabel={translate(messages, 'receptions.acknowledgement.print')}
+        backHref={`/${locale}/receptions/check-in/${receptionId}`}
+        backLabel={translate(messages, 'receptions.acknowledgement.backToVisit')}
+        testId="acknowledgement-toolbar"
+      />
+      <AcknowledgementDocument
+        locale={locale}
+        messages={messages}
+        detail={detail.data}
+        sections={{
+          parties: section(parties),
+          authorizations: section(authorizations),
+          evidence: section(evidence),
+        }}
+      />
+    </div>
   );
 }
 

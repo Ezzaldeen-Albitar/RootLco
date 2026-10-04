@@ -29,14 +29,15 @@
  * numbering, maker≠approver on a credit note, and the financial-event completeness
  * triggers. None of it is re-implemented here.
  *
- * This service owns three rules the database does **not** enforce, and each is
- * named at its call site:
+ * This service states three rules at their call sites. The first is now held by
+ * the database as well; the other two are not:
  *
- *  - **credit-note currency = invoice currency.** Five triggers fire on
- *    `sal.credit_notes` and not one reads `sal.invoices.currency_code`;
- *    `sal.approve_credit_note` compares the amount and never the currency; and
- *    `sal.invoice_open_receivable` subtracts approved credits with no currency
- *    predicate either. `assertCurrencyMatches` is the ONLY defence (P1-22-L-02).
+ *  - **credit-note currency = invoice currency.** Until migration
+ *    `20260930090000_sal_finance_controls.sql` nothing in the database compared the
+ *    two codes (P1-22-L-02). `sal.guard_credit_note_currency` now refuses a
+ *    mismatched insert and `sal.approve_credit_note` compares them again under the
+ *    invoice lock (GAP-13). `assertCurrencyMatches` still answers first, so the
+ *    caller is told which field is wrong rather than receiving a refusal.
  *  - **a numbering sequence must be provisioned before the expensive work.**
  *    `shared.next_display_number` raises `no_data_found` and `app_runtime` holds no
  *    INSERT on `shared.number_sequences`, so an unprovisioned tenant cannot be
@@ -47,14 +48,23 @@
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
+import { withBusinessRefusal } from '@/server/audit/business-refusals';
 import { publishEvent } from '@/server/events/publisher';
-import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
+import { isSqlState, sqlState, SQLSTATE, violatedConstraint } from '@/server/db/repository';
 import { Decimal, MONEY } from '@/modules/pricing';
 import { findSequenceDefinition, sharedServicesModule } from '@/modules/shared-services';
+import { inventoryModule } from '@/modules/inventory';
+import { receptionModule } from '@/modules/reception';
 import type { DbHandle } from '@/server/db/transaction';
-import type { ScopeAuthorizer } from '@/server/auth/authorization';
+import { pageRequest, type Page } from '@/server/db/pagination';
+import {
+  callerApprovalLimitStanding,
+  callerHoldsPermission,
+  type ScopeAuthorizer,
+} from '@/server/auth/authorization';
 import {
   BILLING_SQLSTATE,
+  COUNTER_SALE_ORDER,
   INVOICE_UNIQUE_INDEX,
   violatedIndex,
   type BillingRepository,
@@ -65,6 +75,8 @@ import {
 import { assertMinorUnitScale } from '@/server/http/validation';
 import {
   BillingRuleError,
+  CREDIT_APPROVE_PERMISSION,
+  CREDIT_NOTE_LIMIT_TYPE,
   INVOICE_LINE_TYPES,
   MAX_REASON,
   assertCreditWithinOpenAmount,
@@ -75,6 +87,7 @@ import {
 import {
   FINANCE_VIEW_PERMISSION,
   balanceIsTrustworthy,
+  describeLineItems,
   resolveCommercialSource,
   toCreditNoteView,
   toInvoiceLineView,
@@ -124,6 +137,231 @@ const DEFAULT_INVOICE_SEQUENCE = 'invoice';
  */
 const NO_WARRANTY_SHARE = Decimal.zero(MONEY).toString();
 
+/**
+ * The named refusal of a requester approving their own credit note.
+ *
+ * The sentence on the failure's `message` never reaches a caller — the problem
+ * document is built from the catalogue entry and `safeDetails` alone — so an
+ * `ERR-TRN-001` without this token could not be told apart from "this note was
+ * already decided". The token is what lets a screen say the one thing the
+ * operator can act on: another authorised person has to approve it. Filed under
+ * the path parameter because the approval sends no body; the note is the only
+ * thing the caller named.
+ */
+const SELF_APPROVAL_REFUSAL = {
+  violations: [{ path: 'path.creditNoteId', rule: 'credit_note_self_approval' }],
+} as const;
+
+/** The structural maker ≠ approver rule on `sal.credit_notes`. */
+const CREDIT_NOTE_APPROVED_DISTINCT = 'ck_credit_notes_approved_distinct';
+
+/**
+ * The words `sal.guard_dual_control_approval` raises for maker = approver, and for
+ * nothing else. A trigger's RAISE carries no constraint name, so this token is the
+ * only thing that tells its self-approval `check_violation` apart from the frozen
+ * decision it raises under the same SQLSTATE.
+ */
+const SELF_APPROVAL_TRIGGER_TOKEN = 'maker<>approver';
+
+/**
+ * True only for the database's own self-approval refusal: the structural check
+ * named, or the trigger's maker ≠ approver exception. Every other
+ * `check_violation` — a state that is no longer pending, a credit above the open
+ * receivable, a frozen decision — is NOT a self-approval, and naming it one would
+ * send the operator to find a second approver who could not help.
+ */
+function isSelfApprovalViolation(error: unknown): boolean {
+  if (!isSqlState(error, SQLSTATE.checkViolation)) return false;
+  if (violatedConstraint(error) === CREDIT_NOTE_APPROVED_DISTINCT) return true;
+  const message =
+    typeof error === 'object' && error !== null && 'message' in error
+      ? (error as { message?: unknown }).message
+      : undefined;
+  return typeof message === 'string' && message.includes(SELF_APPROVAL_TRIGGER_TOKEN);
+}
+
+/**
+ * The stable rule codes a refused credit-note decision names (ADR-023, D3, D12).
+ *
+ * Each is the token the screen reads from `safeDetails.violations[].rule` for the
+ * two new decisions, and the rule a business-refusal record carries. The approval
+ * keeps its published answer (`credit_note_self_approval` on a self-approval, no
+ * token on its other two refusals); only its record is new.
+ */
+export const CREDIT_NOTE_REFUSAL_RULES = Object.freeze({
+  selfApproval: 'credit_note_self_approval',
+  selfRejection: 'credit_note_self_rejection',
+  notRequester: 'credit_note_withdraw_not_requester',
+  decided: 'credit_note_decision_frozen',
+  exceedsOpenAmount: 'credit_note_exceeds_open_amount',
+  // ADR-023 D13 — the approval permission and the credit-note approval limit. Each
+  // is also the token `sal.guard_credit_note_decision` raises for the same rule.
+  approvalPermissionMissing: 'credit_approval_permission_missing',
+  noApprovalLimit: 'credit_no_approval_limit',
+  limitSelfCreated: 'credit_limit_self_created',
+  limitCurrencyMismatch: 'credit_limit_currency_mismatch',
+  limitExceeded: 'credit_limit_exceeded',
+} as const);
+
+/**
+ * The D13 limit rules, in the order the database guard raises them, each with the
+ * sentence the operational log keeps. The caller is told the rule token only; the
+ * screen words it.
+ */
+const CREDIT_LIMIT_REFUSALS: Readonly<Record<string, string>> = Object.freeze({
+  [CREDIT_NOTE_REFUSAL_RULES.noApprovalLimit]:
+    'The approver has no credit-note approval limit in this company',
+  [CREDIT_NOTE_REFUSAL_RULES.limitSelfCreated]:
+    'Every credit-note approval limit the approver holds was set by the approver, and none counts',
+  [CREDIT_NOTE_REFUSAL_RULES.limitCurrencyMismatch]:
+    "The approver has no credit-note approval limit in the credit note's currency",
+  [CREDIT_NOTE_REFUSAL_RULES.limitExceeded]:
+    "Approving this credit note would take the invoice's approved credit past the approver's limit",
+});
+
+/**
+ * A refusal of a credit-note APPROVAL by D13, recorded after the rollback (D12).
+ *
+ * `ERR-IAM-001`, like a discount approver's missing or insufficient limit: the
+ * approver lacks the authority, the note is not at fault. The rule is filed under
+ * the path parameter because the approval sends no body. No amount and no limit is
+ * put on the failure or the record.
+ */
+function refuseCreditApproval(creditNoteId: string, rule: string, cause?: unknown): never {
+  return refuseCreditNote(creditNoteId, rule, () => {
+    throw new AppFailure('ERR-IAM-001', {
+      message:
+        CREDIT_LIMIT_REFUSALS[rule] ?? `Credit note approval was refused by the rule ${rule}`,
+      safeDetails: { violations: [{ path: 'path.creditNoteId', rule }] },
+      ...(cause === undefined ? {} : { cause }),
+    });
+  });
+}
+
+/** The D13 rule tokens the decision guard raises on an approval. */
+const CREDIT_APPROVAL_TOKENS: ReadonlySet<string> = new Set([
+  CREDIT_NOTE_REFUSAL_RULES.approvalPermissionMissing,
+  CREDIT_NOTE_REFUSAL_RULES.noApprovalLimit,
+  CREDIT_NOTE_REFUSAL_RULES.limitSelfCreated,
+  CREDIT_NOTE_REFUSAL_RULES.limitCurrencyMismatch,
+  CREDIT_NOTE_REFUSAL_RULES.limitExceeded,
+]);
+
+/**
+ * The D13 token `sal.guard_credit_note_decision` raised on an approval, or `null`.
+ * The permission refusal is `insufficient_privilege`, the four limit refusals
+ * `check_violation`; each carries its token before the first colon.
+ */
+function creditApprovalToken(error: unknown): string | null {
+  if (
+    !isSqlState(error, SQLSTATE.checkViolation) &&
+    !isSqlState(error, SQLSTATE.insufficientPrivilege)
+  ) {
+    return null;
+  }
+  const token = /^([a-z_]+):/.exec(driverMessage(error) ?? '')?.[1] ?? null;
+  return token !== null && CREDIT_APPROVAL_TOKENS.has(token) ? token : null;
+}
+
+/** The message of a driver error, or `undefined`. */
+function driverMessage(error: unknown): string | undefined {
+  const message =
+    typeof error === 'object' && error !== null && 'message' in error
+      ? (error as { message?: unknown }).message
+      : undefined;
+  return typeof message === 'string' ? message : undefined;
+}
+
+/**
+ * The token a guard of `20260930110000_sal_credit_note_decisions.sql` raised,
+ * read from before the first colon of a `check_violation` message, or `null`.
+ * Those guards put a stable identifier there precisely so this is the whole parse.
+ */
+function decisionRefusalToken(error: unknown): string | null {
+  if (!isSqlState(error, SQLSTATE.checkViolation)) return null;
+  return /^([a-z_]+):/.exec(driverMessage(error) ?? '')?.[1] ?? null;
+}
+
+/** True for `sal.approve_credit_note`'s own ceiling refusal under the invoice lock. */
+function isOpenAmountViolation(error: unknown): boolean {
+  return (
+    isSqlState(error, SQLSTATE.checkViolation) &&
+    (driverMessage(error) ?? '').includes('exceeds invoice open receivable')
+  );
+}
+
+/**
+ * Throws what `raise` throws, marked as a refusal of a credit note by business
+ * rule, so the route pipeline records it after the command rolls back (D12).
+ * Only a controlled `AppFailure` is marked: an unexpected fault is a fault, not a
+ * refusal, and is never recorded as one.
+ */
+function refuseCreditNote(creditNoteId: string, rule: string, raise: () => never): never {
+  try {
+    raise();
+  } catch (failure) {
+    if (failure instanceof AppFailure) {
+      withBusinessRefusal(failure, { entityType: 'sal.credit_note', entityId: creditNoteId, rule });
+    }
+    throw failure;
+  }
+}
+
+/**
+ * Throws what `raise` throws, marked as a refusal of a credit-note REQUEST by
+ * business rule (D12). The request has no note yet, so the refused entity is the
+ * invoice it was raised against. Only a controlled `AppFailure` is marked, as in
+ * `refuseCreditNote`.
+ */
+function refuseCreditRequest(invoiceId: string, rule: string, raise: () => never): never {
+  try {
+    raise();
+  } catch (failure) {
+    if (failure instanceof AppFailure) {
+      withBusinessRefusal(failure, { entityType: 'sal.invoice', entityId: invoiceId, rule });
+    }
+    throw failure;
+  }
+}
+
+/** A named `ERR-TRN-001` about the credit note in the path, recorded as a refusal. */
+function decisionConflict(creditNoteId: string, rule: string, message: string): never {
+  return refuseCreditNote(creditNoteId, rule, () => {
+    throw new AppFailure('ERR-TRN-001', {
+      message,
+      safeDetails: { violations: [{ path: 'path.creditNoteId', rule }] },
+    });
+  });
+}
+
+/**
+ * Translates a refusal raised by a decision primitive or its guard.
+ *
+ * The pre-checks answer every rule first, so reaching here means a rule the
+ * pre-checks do not repeat: the reason (a field error, never recorded as a
+ * refusal of the note) or the permission in scope (an authorization denial,
+ * `42501`, through `toDomainFailure`). A rule token the pre-checks do name is
+ * still translated, and recorded, in case the row moved between the two.
+ */
+function refuseDecisionFailure(error: unknown, creditNoteId: string, what: string): never {
+  const token = decisionRefusalToken(error);
+  if (token === 'credit_note_reject_reason_required') {
+    throw new AppFailure('ERR-VAL-001', {
+      message: 'A rejection states why, within the permitted length',
+      safeDetails: { violations: [{ path: 'body.reason', rule: 'too_small' }] },
+      cause: error,
+    });
+  }
+  if (
+    token === CREDIT_NOTE_REFUSAL_RULES.selfRejection ||
+    token === CREDIT_NOTE_REFUSAL_RULES.notRequester ||
+    token === CREDIT_NOTE_REFUSAL_RULES.decided
+  ) {
+    decisionConflict(creditNoteId, token, `${what} was refused by the rule ${token}`);
+  }
+  toDomainFailure(error, what);
+}
+
 export interface CreateInvoiceInput {
   readonly workOrderId: string;
   /**
@@ -134,9 +372,39 @@ export interface CreateInvoiceInput {
    * necessary. The quotation's value always wins when present: it is the protected
    * commercial record of who agreed to pay, and letting a request override it would
    * let an invoice be addressed to someone the quotation never named.
+   *
+   * When neither names a payer, the work order's own customer is billed (DX-3,
+   * finance QA fixes E) — the behaviour the invoice screen describes for an empty
+   * box. A work order with no single customer is refused with
+   * `invoice_payer_required` on this field.
    */
   readonly payerPartnerId?: string | undefined;
   readonly idempotencyKey?: string | undefined;
+}
+
+/**
+ * What a counter sale is created from: a buyer, a branch, and what left the shelf.
+ *
+ * No price, no total, no tax and no discount — deliberately unexpressible, like
+ * `CreateInvoiceInput`. A `notes` field is absent too: `sal.invoices` has no notes
+ * column, and inventing one for a document the customer receives is a schema
+ * decision this slice does not take.
+ */
+export interface CreateCounterSaleInput {
+  readonly companyId: string;
+  readonly branchId: string;
+  /**
+   * The buyer — a business partner of the SELLING tenant and nothing more. No
+   * tenant, no login and no data access is created for it.
+   */
+  readonly customerPartnerId: string;
+  readonly lines: readonly {
+    readonly itemId: string;
+    readonly locationId: string;
+    /** Exact decimal STRING; `numeric(12,3)` is not IEEE-754. */
+    readonly quantity: string;
+  }[];
+  readonly idempotencyKey?: string;
 }
 
 export interface RequestCreditNoteInput {
@@ -420,6 +688,31 @@ export class InvoiceService {
   // -------------------------------------------------------------------------
 
   /**
+   * The customer of a work order, as the reception module dates it: the party
+   * who brought the car (`service_requester`) as at the work order's
+   * `opened_at` — the customer the work order screens show (BR-05). Read through
+   * the reception module's own port rather than with `rec` SQL here.
+   *
+   * `undefined` when there is no such customer, or when more than one party held
+   * the role at that instant: billing one of two would be a guess, so the caller
+   * is asked to name the payer instead.
+   */
+  private async workOrderCustomer(
+    db: DbHandle,
+    scope: {
+      readonly workOrderId: string;
+      readonly receptionVisitId: string;
+      readonly openedAt: Date;
+    }
+  ): Promise<string | undefined> {
+    const [party] = await receptionModule().partyContext.partiesForWorkOrders(db, [
+      { id: scope.workOrderId, receptionVisitId: scope.receptionVisitId, openedAt: scope.openedAt },
+    ]);
+    if (party === undefined || party.hasAdditionalParties) return undefined;
+    return party.partnerId;
+  }
+
+  /**
    * Creates a draft invoice from approved commercial data, in ONE transaction.
    *
    * The whole document — header, restricted header totals, every line, every line's
@@ -516,17 +809,33 @@ export class InvoiceService {
     });
     this.assertSourceLinesAreBillable(source.currencyCode, sourceLines, source.revisionId);
 
-    const payerPartnerId = source.payerPartnerRef ?? input.payerPartnerId;
+    // Who pays, in this order (DX-3, finance QA fixes E): the payer the accepted
+    // quotation names, because it is the protected record of who agreed to pay;
+    // then a payer the request names; then the work order's own customer — which
+    // is what the invoice screen promises when its "different paying customer"
+    // box is left empty. The fallback used to be missing, so a quotation that
+    // named no payer and an empty box were refused as a malformed request.
+    //
+    // The resolved customer is written through the same insert as an explicit
+    // payer, so it meets the same checks: `fk_invoices_payer` holds it to this
+    // tenant's partners exactly as it holds a payer the request names.
+    const payerPartnerId =
+      source.payerPartnerRef ?? input.payerPartnerId ?? (await this.workOrderCustomer(db, scope));
     if (payerPartnerId === undefined) {
       // `sal.invoices.payer_partner_id` is NOT NULL and `quo.quotations.payer_partner_ref`
       // is nullable, so this gap is in the schema rather than in the request. It is a
-      // validation failure because the caller CAN fix it, by naming the payer.
+      // validation failure because the caller CAN fix it, by naming the payer — and
+      // it is reached only when the work order has no single customer to bill
+      // either, so the rule says that rather than calling the empty box malformed.
       throw new AppFailure('ERR-VAL-001', {
         message:
-          `The accepted quotation ${source.quotationId} names no payer, and none was ` +
-          'supplied. sal.invoices.payer_partner_id is NOT NULL, so an invoice cannot be ' +
-          'created without one.',
-        safeDetails: { violations: [{ path: 'body.payerPartnerId', rule: 'invalid_type' }] },
+          `The accepted quotation ${source.quotationId} names no payer, none was supplied, ` +
+          `and work order ${scope.workOrderId} has no single customer to bill. ` +
+          'sal.invoices.payer_partner_id is NOT NULL, so an invoice cannot be created ' +
+          'without one.',
+        safeDetails: {
+          violations: [{ path: 'body.payerPartnerId', rule: 'invoice_payer_required' }],
+        },
       });
     }
 
@@ -656,6 +965,179 @@ export class InvoiceService {
   }
 
   // -------------------------------------------------------------------------
+  // Counter sale (P1-32-PRE-107…110).
+  // -------------------------------------------------------------------------
+
+  /**
+   * Creates a draft counter sale: an invoice for stock sold over the counter, with
+   * no work order and no vehicle.
+   *
+   * ### The caller says what was sold, never what it costs
+   *
+   * `CreateCounterSaleInput` has no price, no total, no tax and no discount, and
+   * the route's body is `.strict()` — so there is no field through which a
+   * client-supplied amount could arrive, exactly as on `sal.invoice-create`. Each
+   * line is priced by `inv.resolve_item_sale_price` inside
+   * `sal.create_counter_sale_invoice`, and an item with no configured price refuses
+   * the whole sale rather than leaving at zero.
+   *
+   * ### Why one database call instead of the header/line sequence above
+   *
+   * Because the money must be COMPUTED rather than copied. A work-order invoice
+   * snapshots amounts an accepted quotation already holds; a counter sale has no
+   * prior document, so the line net, the line tax and the header totals are
+   * arithmetic — and the only engine this platform computes money with is
+   * PostgreSQL `numeric`. Pricing the lines here would be a second engine, in
+   * IEEE-754, on a customer's bill.
+   *
+   * ### Nothing moves yet
+   *
+   * A draft moves no stock. The sale leaves the shelf at ISSUANCE, through
+   * `issueInvoice` below, and a customer who walks away from a draft leaves nothing
+   * to undo.
+   *
+   * ### Creating a counter sale requires `sal.finance.view`
+   *
+   * For the reason `createInvoice` records: `ins_invoice_amounts_gated` and
+   * `ins_invoice_line_amounts_gated` both require it, and this path writes both.
+   */
+  public async createCounterSale(
+    db: DbHandle,
+    input: CreateCounterSaleInput,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<CreatedInvoice> {
+    await authorizeScope({ companyId: input.companyId, branchId: input.branchId });
+
+    if (input.idempotencyKey !== undefined) {
+      const existing = await this.repository.findInvoiceByIdempotencyKey(db, input.idempotencyKey);
+      if (existing) {
+        if (existing.saleKind !== 'counter_sale') {
+          throw new AppFailure('ERR-INT-001', {
+            message:
+              'This idempotency key already created an invoice for a work order. Reuse a key ' +
+              'only for an identical request.',
+          });
+        }
+        // Re-authorized rather than assumed: the key is unique per TENANT, not per
+        // branch, so a replay can name a row this caller must be judged against again.
+        await authorizeScope({ companyId: existing.companyId, branchId: existing.branchId });
+        return { ...(await this.detailOf(db, existing)), replayed: true };
+      }
+    }
+
+    let invoiceId: string;
+    try {
+      invoiceId = await this.repository.createCounterSaleInvoice(db, {
+        companyId: input.companyId,
+        branchId: input.branchId,
+        customerPartnerId: input.customerPartnerId,
+        lines: input.lines,
+        idempotencyKey: input.idempotencyKey ?? null,
+      });
+    } catch (error) {
+      if (
+        isSqlState(error, SQLSTATE.uniqueViolation) &&
+        violatedIndex(error) === INVOICE_UNIQUE_INDEX.idempotency
+      ) {
+        throw new AppFailure('ERR-INT-001', {
+          message:
+            'This idempotency key was used for another sale while this request was in flight. ' +
+            'Re-read the sale rather than retrying.',
+          cause: error,
+        });
+      }
+      toDomainFailure(error, 'Counter sale creation');
+    }
+
+    const created = await this.repository.findInvoice(db, invoiceId);
+    /* c8 ignore next 5 -- written in this transaction under the tenant predicate
+       the read applies; unreachable without a policy change. */
+    if (!created) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'The counter sale was not readable back after it was created',
+      });
+    }
+
+    await appendAudit(db, {
+      action: 'sal.counter_sale.created',
+      entityType: 'sal.invoice',
+      entityId: created.id,
+      companyId: created.companyId,
+      branchId: created.branchId,
+      requestRef: 'sal.counter-sale-create',
+      details: [
+        { field: 'customerPartnerId', classification: 'internal', value: created.payerPartnerId },
+        { field: 'currencyCode', classification: 'internal', value: created.currencyCode },
+        { field: 'lineCount', classification: 'internal', value: String(input.lines.length) },
+        // `restricted`, for the reason `sal.invoice.created` records: audit records
+        // are not gated by `sal.finance.view`, so the figure would travel past the
+        // policy that restricts it. The marker records that a total exists.
+        {
+          field: 'grossTotal',
+          classification: 'restricted',
+          value: created.money?.grossTotal ?? null,
+        },
+      ],
+    });
+
+    await publishEvent(db, {
+      eventType: 'invoice.created',
+      aggregateId: created.id,
+      aggregateVersion: created.recordVersion,
+      producer: 'billing.invoice-service',
+      companyId: created.companyId,
+      branchId: created.branchId,
+      eventKey: `invoice.created:${created.id}`,
+      // The same event a work-order invoice publishes, with `workOrderId: null` and
+      // the sale kind naming what it is. A consumer that keys on the event name is
+      // not asked to learn a second one for a document that is an invoice in every
+      // respect that matters to it. No amounts, for the reason given there.
+      payload: {
+        invoiceId: created.id,
+        workOrderId: null,
+        saleKind: created.saleKind,
+        currency: created.currencyCode,
+        status: created.status,
+        lineCount: input.lines.length,
+      },
+    });
+
+    return { ...(await this.detailOf(db, created)), replayed: false };
+  }
+
+  /**
+   * One branch's counter sales, newest first.
+   *
+   * A list exists here and nowhere else on this module's surface, and the asymmetry
+   * is the point: a work-order invoice is found through its work order, which every
+   * screen already has. A counter sale has no parent document at all, so without
+   * this it could only be found by an id nobody recorded.
+   */
+  public async listCounterSales(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly status?: string | undefined;
+      readonly customerPartnerId?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<InvoiceView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const result = await this.repository.listCounterSales(
+      db,
+      filter,
+      pageRequest(COUNTER_SALE_ORDER, page)
+    );
+    const units = await this.repository.minorUnitsFor(
+      db,
+      result.items.map((row) => row.currencyCode)
+    );
+    return { ...result, items: result.items.map((row) => toInvoiceView(row, units)) };
+  }
+
+  // -------------------------------------------------------------------------
   // Issue.
   // -------------------------------------------------------------------------
 
@@ -738,7 +1220,7 @@ export class InvoiceService {
         });
       }
       return {
-        invoice: toInvoiceView(before),
+        invoice: toInvoiceView(before, await this.unitsOf(db, before)),
         invoiceNumber: before.invoiceNumber,
         replayed: true,
         recordVersion: before.recordVersion,
@@ -771,6 +1253,26 @@ export class InvoiceService {
        disappear between the call and this read. */
     if (!after) {
       throw new AppFailure('ERR-SYS-001', { message: 'Invoice vanished after issue' });
+    }
+
+    // The stock leg of a counter sale, in THIS transaction.
+    //
+    // After the status flip, because `inv.guard_stock_movement_provenance` refuses a
+    // `sale` movement against an invoice that is not `issued` — a draft may still be
+    // voided, and stock that left for a voided document would be gone from the shelf
+    // and from the ledger's explanation of why. Before the audit and the event, so a
+    // sale of stock that is not there rolls the whole issuance back rather than
+    // leaving a numbered invoice announcing a delivery the branch cannot make.
+    //
+    // A work-order invoice posts nothing: its parts left as part issues, one by one,
+    // when they were fitted.
+    if (after.saleKind === 'counter_sale') {
+      const invoiceLineIds = await this.repository.listCounterSaleLineIds(db, after.id);
+      await inventoryModule().stock.postCounterSaleLines(
+        db,
+        { companyId: after.companyId, branchId: after.branchId, invoiceLineIds },
+        authorizeScope
+      );
     }
 
     // No status-history row is written here. `sal.issue_invoice` already inserts the
@@ -821,7 +1323,7 @@ export class InvoiceService {
     });
 
     return {
-      invoice: toInvoiceView(after),
+      invoice: toInvoiceView(after, await this.unitsOf(db, after)),
       invoiceNumber,
       replayed: false,
       recordVersion: after.recordVersion,
@@ -887,7 +1389,7 @@ export class InvoiceService {
 
     if (before.status === 'void_before_issue') {
       return {
-        invoice: toInvoiceView(before),
+        invoice: toInvoiceView(before, await this.unitsOf(db, before)),
         replayed: true,
         recordVersion: before.recordVersion,
       };
@@ -961,7 +1463,7 @@ export class InvoiceService {
 
     const after = await this.repository.findInvoice(db, invoiceId);
     return {
-      invoice: toInvoiceView(after ?? before),
+      invoice: toInvoiceView(after ?? before, await this.unitsOf(db, after ?? before)),
       replayed: false,
       // From the UPDATE's own RETURNING clause, not from the re-read: it is the
       // version the void produced, and `shared.touch_row_metadata` advanced it by
@@ -984,16 +1486,14 @@ export class InvoiceService {
    * reason — an event named `credit-note.issued` fired at request time would tell
    * every consumer the receivable had fallen when it had not.
    *
-   * ### The currency comes from the invoice row, and this is the only check there is
+   * ### The currency comes from the invoice row
    *
    * `currency_code` is read from the locked parent invoice and stored from there.
-   * If the caller named a currency, `assertCurrencyMatches` refuses a mismatch —
-   * and that assertion is the ONLY defence in the entire platform: five triggers
-   * fire on `sal.credit_notes` and none reads `sal.invoices.currency_code`,
-   * `sal.approve_credit_note` compares the amount but never the currency, and
-   * `sal.invoice_open_receivable` subtracts approved credits with no currency
-   * predicate either. A JOD credit note against a USD invoice would be accepted,
-   * approved, and silently subtracted from the USD gross (P1-22-L-02).
+   * If the caller named a currency, `assertCurrencyMatches` refuses a mismatch on
+   * the field that carried it. The database refuses the same mismatch since
+   * `20260930090000_sal_finance_controls.sql` (`sal.guard_credit_note_currency`,
+   * GAP-13); before it, a JOD credit note against a USD invoice would have been
+   * accepted and subtracted from the USD gross (P1-22-L-02).
    *
    * ### The ceiling is checked under the invoice lock
    *
@@ -1084,10 +1584,16 @@ export class InvoiceService {
         message: 'billing: invoice vanished between the lock and the receivable read',
       });
     }
+    // A request above what is still creditable is a refusal by business rule
+    // (ADR-023, D12), recorded once after the rollback exactly as the approval's
+    // ceiling refusal is. No note exists yet, so the record names the INVOICE —
+    // the stored row's id — and the rule; never the amount.
     try {
       assertCreditWithinOpenAmount(amount, Decimal.fromDatabase(open.amount, MONEY));
     } catch (error) {
-      toDomainFailure(error, 'Credit note request');
+      refuseCreditRequest(invoice.id, CREDIT_NOTE_REFUSAL_RULES.exceedsOpenAmount, () =>
+        toDomainFailure(error, 'Credit note request')
+      );
     }
 
     if (input.idempotencyKey !== undefined) {
@@ -1111,7 +1617,10 @@ export class InvoiceService {
           });
         }
         await authorizeScope({ companyId: existing.companyId, branchId: existing.branchId });
-        return { creditNote: toCreditNoteView(existing), replayed: true };
+        return {
+          creditNote: toCreditNoteView(existing, await this.unitsOf(db, existing)),
+          replayed: true,
+        };
       }
     }
 
@@ -1150,7 +1659,7 @@ export class InvoiceService {
       ],
     });
 
-    return { creditNote: toCreditNoteView(note), replayed: false };
+    return { creditNote: toCreditNoteView(note, await this.unitsOf(db, note)), replayed: false };
   }
 
   /**
@@ -1173,18 +1682,33 @@ export class InvoiceService {
    * translated to the same answer.
    *
    * That translation is exact rather than a guess. The primitive raises
-   * `check_violation` for three reasons: a non-`pending` state, refused above; an
-   * amount exceeding the open receivable, refused below under the invoice lock that
-   * makes it unable to change; and self-approval. With the first two eliminated, the
-   * third is what remains.
+   * `check_violation` for several reasons — a non-`pending` state, an amount
+   * exceeding the open receivable, a frozen decision, and self-approval — so only
+   * the self-approval ones are named: the violated constraint is
+   * `ck_credit_notes_approved_distinct`, or the trigger's message carries its
+   * maker ≠ approver token (`isSelfApprovalViolation`). Any other
+   * `check_violation` keeps the generic billing refusal, without the token.
    *
    * ### The currency is checked again
    *
    * `assertCurrencyMatches` runs at request time and again here, because the
    * approval is the moment the credit becomes a real subtraction from the
-   * receivable and nothing in the database compares the two codes at any point. A
-   * row inserted by a path that skipped the request service — `app_runtime` holds
-   * raw INSERT on `sal.credit_notes` — is caught here.
+   * receivable. `sal.guard_credit_note_currency` refuses a mismatched insert and
+   * `sal.approve_credit_note` compares the codes under the invoice lock (GAP-13);
+   * this comparison answers first with a refusal the caller can read.
+   *
+   * ### The approver's authority (ADR-023, D13)
+   *
+   * The operation declares `sal.credit.approve`, authorized in the note's own
+   * company and branch; `sal.credit.manage` only requests. Holding the permission
+   * approves nothing by itself: the approver also needs a credit-note approval
+   * limit, in the note's currency, set by somebody else, that covers the invoice's
+   * cumulative approved credit with this note included — so one large credit split
+   * into small notes cannot pass a low limit (`assertCreditApprovalLimit`). Each
+   * refusal names its rule (`credit_no_approval_limit`, `credit_limit_self_created`,
+   * `credit_limit_currency_mismatch`, `credit_limit_exceeded`) and is recorded after
+   * the rollback (D12). `sal.guard_credit_note_decision` holds the same rules under
+   * the same invoice lock, and a token it raises is translated to the same refusal.
    *
    * Idempotent on an already-`approved` note: no second audit record, no second
    * event.
@@ -1200,16 +1724,18 @@ export class InvoiceService {
         message: `Credit note ${creditNoteId} was not found in scope`,
       });
     }
-    await authorizeScope({ companyId: note.companyId, branchId: note.branchId });
+    await this.authorizeApprovalScope(db, note, authorizeScope);
 
     if (note.approvalState === 'approved') {
-      return { creditNote: toCreditNoteView(note), replayed: true };
+      return { creditNote: toCreditNoteView(note, await this.unitsOf(db, note)), replayed: true };
     }
     if (note.approvalState !== 'pending') {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Credit note ${creditNoteId} is "${note.approvalState}"; only a pending request ` +
-          'can be approved, and a decided one is frozen.',
+      refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.decided, () => {
+        throw new AppFailure('ERR-TRN-001', {
+          message:
+            `Credit note ${creditNoteId} is "${note.approvalState}"; only a pending request ` +
+            'can be approved, and a decided one is frozen.',
+        });
       });
     }
 
@@ -1229,10 +1755,13 @@ export class InvoiceService {
     }
 
     if (note.requestedBy === db.context.principal.userId) {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          'The approver of a credit note must differ from the requester. Ask a second ' +
-          'authorised person to approve this request.',
+      refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.selfApproval, () => {
+        throw new AppFailure('ERR-TRN-001', {
+          message:
+            'The approver of a credit note must differ from the requester. Ask a second ' +
+            'authorised person to approve this request.',
+          safeDetails: SELF_APPROVAL_REFUSAL,
+        });
       });
     }
 
@@ -1253,19 +1782,33 @@ export class InvoiceService {
         Decimal.fromDatabase(open.amount, MONEY)
       );
     } catch (error) {
-      toDomainFailure(error, 'Credit note approval');
+      refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.exceedsOpenAmount, () =>
+        toDomainFailure(error, 'Credit note approval')
+      );
     }
+
+    await this.assertCreditApprovalLimit(db, note);
 
     try {
       await this.repository.approveCreditNote(db, creditNoteId, db.context.correlationId);
     } catch (error) {
-      if (isSqlState(error, SQLSTATE.checkViolation)) {
-        throw new AppFailure('ERR-TRN-001', {
-          message:
-            'The approver of a credit note must differ from the requester. Ask a second ' +
-            'authorised person to approve this request.',
-          cause: error,
+      const token = creditApprovalToken(error);
+      if (token !== null) refuseCreditApproval(note.id, token, error);
+      if (isSelfApprovalViolation(error)) {
+        refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.selfApproval, () => {
+          throw new AppFailure('ERR-TRN-001', {
+            message:
+              'The approver of a credit note must differ from the requester. Ask a second ' +
+              'authorised person to approve this request.',
+            safeDetails: SELF_APPROVAL_REFUSAL,
+            cause: error,
+          });
         });
+      }
+      if (isOpenAmountViolation(error)) {
+        refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.exceedsOpenAmount, () =>
+          toDomainFailure(error, 'Credit note approval')
+        );
       }
       toDomainFailure(error, 'Credit note approval');
     }
@@ -1315,12 +1858,324 @@ export class InvoiceService {
       },
     });
 
-    return { creditNote: toCreditNoteView(approved), replayed: false };
+    return {
+      creditNote: toCreditNoteView(approved, await this.unitsOf(db, approved)),
+      replayed: false,
+    };
+  }
+
+  /**
+   * The requester withdraws their own pending credit note (ADR-023, D3).
+   *
+   * Withdrawal only ever reduces exposure: a pending note credits nothing, and a
+   * withdrawn one never will, so no second person is asked. It is the requester's
+   * act and nobody else's. The database refuses anyone else
+   * (`sal.withdraw_credit_note`, `sal.guard_credit_note_decision`), and this
+   * refuses them first with the named rule `credit_note_withdraw_not_requester`.
+   *
+   * ### Order of the checks
+   *
+   * The note is locked, its scope authorized, and the `If-Match` version compared
+   * with the LOCKED row, as `issueInvoice` does; a stale version is a conflict the
+   * caller resolves by reading again, not a refusal by rule. Then the requester,
+   * then the state: a note already withdrawn answers `replayed: true` with no
+   * second audit record, and any other decided state is refused with
+   * `credit_note_decision_frozen`. Every refusal by rule is recorded after the
+   * rollback (D12).
+   *
+   * No financial event and no outbox event: nothing was credited, so no consumer
+   * has anything to read again.
+   */
+  public async withdrawCreditNote(
+    db: DbHandle,
+    creditNoteId: string,
+    expectedVersion: number,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<CreditNoteResult> {
+    const note = await this.lockDecidableCreditNote(
+      db,
+      creditNoteId,
+      expectedVersion,
+      authorizeScope
+    );
+
+    if (note.requestedBy !== db.context.principal.userId) {
+      decisionConflict(
+        note.id,
+        CREDIT_NOTE_REFUSAL_RULES.notRequester,
+        `Credit note ${creditNoteId} can be withdrawn only by the person who requested it.`
+      );
+    }
+    if (note.approvalState === 'withdrawn') {
+      return { creditNote: toCreditNoteView(note, await this.unitsOf(db, note)), replayed: true };
+    }
+    if (note.approvalState !== 'pending') {
+      decisionConflict(
+        note.id,
+        CREDIT_NOTE_REFUSAL_RULES.decided,
+        `Credit note ${creditNoteId} is "${note.approvalState}"; a decided credit note is frozen.`
+      );
+    }
+
+    try {
+      await this.repository.withdrawCreditNote(db, creditNoteId);
+    } catch (error) {
+      refuseDecisionFailure(error, note.id, 'Credit note withdrawal');
+    }
+
+    const withdrawn = await this.repository.findCreditNote(db, creditNoteId);
+    /* c8 ignore next 5 -- the note is held `FOR UPDATE` in this transaction. */
+    if (!withdrawn) {
+      throw new AppFailure('ERR-SYS-001', { message: 'Credit note vanished after withdrawal' });
+    }
+
+    await appendAudit(db, {
+      action: 'sal.credit_note.withdrawn',
+      entityType: 'sal.credit_note',
+      entityId: withdrawn.id,
+      companyId: withdrawn.companyId,
+      branchId: withdrawn.branchId,
+      requestRef: 'sal.credit-note-withdraw',
+      details: [
+        {
+          field: 'approvalState',
+          classification: 'internal',
+          previousValue: note.approvalState,
+          value: withdrawn.approvalState,
+        },
+        { field: 'invoiceId', classification: 'internal', value: withdrawn.invoiceId },
+        { field: 'currencyCode', classification: 'internal', value: withdrawn.currencyCode },
+        { field: 'amount', classification: 'restricted', value: withdrawn.amount },
+      ],
+    });
+
+    return {
+      creditNote: toCreditNoteView(withdrawn, await this.unitsOf(db, withdrawn)),
+      replayed: false,
+    };
+  }
+
+  /**
+   * A different authorised person rejects a pending credit note, with a reason
+   * (ADR-023, D3).
+   *
+   * The operation declares `sal.credit.approve` (ADR-023 D13: only an authorised
+   * decision-maker rejects) and `sal.finance.view`, and the pipeline authorizes
+   * both in the note's own company and branch. No credit-note limit is needed: a
+   * rejection credits nothing. The person must also not be the requester, who
+   * withdraws instead (`credit_note_self_rejection`). The database holds both rules
+   * itself: `sal.guard_credit_note_decision` checks `sal.credit.approve` in the
+   * note's scope and refuses the requester, so a raw UPDATE is held to them too.
+   *
+   * The reason is required, trimmed and bounded here first, so a blank one is a
+   * field error on `body.reason` rather than a refusal of the note; the database
+   * refuses a blank or over-long reason again. Order and replay as
+   * `withdrawCreditNote`; every refusal by rule is recorded after the rollback.
+   */
+  public async rejectCreditNote(
+    db: DbHandle,
+    creditNoteId: string,
+    input: { readonly reason: string },
+    expectedVersion: number,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<CreditNoteResult> {
+    const reason = requireReason(input.reason, 'body.reason');
+    const note = await this.lockDecidableCreditNote(
+      db,
+      creditNoteId,
+      expectedVersion,
+      authorizeScope
+    );
+
+    if (note.requestedBy === db.context.principal.userId) {
+      decisionConflict(
+        note.id,
+        CREDIT_NOTE_REFUSAL_RULES.selfRejection,
+        `Credit note ${creditNoteId} is rejected by someone other than the person who ` +
+          'requested it; the requester withdraws it instead.'
+      );
+    }
+    if (note.approvalState === 'rejected') {
+      return { creditNote: toCreditNoteView(note, await this.unitsOf(db, note)), replayed: true };
+    }
+    if (note.approvalState !== 'pending') {
+      decisionConflict(
+        note.id,
+        CREDIT_NOTE_REFUSAL_RULES.decided,
+        `Credit note ${creditNoteId} is "${note.approvalState}"; a decided credit note is frozen.`
+      );
+    }
+
+    try {
+      await this.repository.rejectCreditNote(db, creditNoteId, reason);
+    } catch (error) {
+      refuseDecisionFailure(error, note.id, 'Credit note rejection');
+    }
+
+    const rejected = await this.repository.findCreditNote(db, creditNoteId);
+    /* c8 ignore next 5 -- the note is held `FOR UPDATE` in this transaction. */
+    if (!rejected) {
+      throw new AppFailure('ERR-SYS-001', { message: 'Credit note vanished after rejection' });
+    }
+
+    await appendAudit(db, {
+      action: 'sal.credit_note.rejected',
+      entityType: 'sal.credit_note',
+      entityId: rejected.id,
+      companyId: rejected.companyId,
+      branchId: rejected.branchId,
+      requestRef: 'sal.credit-note-reject',
+      details: [
+        {
+          field: 'approvalState',
+          classification: 'internal',
+          previousValue: note.approvalState,
+          value: rejected.approvalState,
+        },
+        { field: 'invoiceId', classification: 'internal', value: rejected.invoiceId },
+        { field: 'currencyCode', classification: 'internal', value: rejected.currencyCode },
+        { field: 'decisionReason', classification: 'internal', value: rejected.decisionReason },
+        { field: 'amount', classification: 'restricted', value: rejected.amount },
+      ],
+    });
+
+    return {
+      creditNote: toCreditNoteView(rejected, await this.unitsOf(db, rejected)),
+      replayed: false,
+    };
   }
 
   // -------------------------------------------------------------------------
   // Internals.
   // -------------------------------------------------------------------------
+
+  /**
+   * The minor unit of a row's currency, so an echo states how many decimals its
+   * amounts are written with, as the reads do (Owner decision D1).
+   */
+  private unitsOf(
+    db: DbHandle,
+    row: { readonly currencyCode: string }
+  ): Promise<ReadonlyMap<string, number>> {
+    return this.repository.minorUnitsFor(db, [row.currencyCode]);
+  }
+
+  /**
+   * Authorizes the note's own company and branch for an approval, and records a
+   * caller who lacks the approval permission there as a refusal (ADR-023 D12, D13).
+   *
+   * The pipeline already refused anybody holding `sal.credit.approve` nowhere at
+   * all. What reaches here is a caller who holds it somewhere else — another
+   * branch, another company — and the deferred scope check refuses them exactly as
+   * before, with the same uniform authorization answer. The only addition is the
+   * record: when the code the caller lacks in this scope is the approval
+   * permission, the failure is marked `credit_approval_permission_missing` so one
+   * security event names the rule after the rollback. The answer is unchanged.
+   */
+  private async authorizeApprovalScope(
+    db: DbHandle,
+    note: CreditNoteRow,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<void> {
+    try {
+      await authorizeScope({ companyId: note.companyId, branchId: note.branchId });
+    } catch (failure) {
+      if (
+        failure instanceof AppFailure &&
+        failure.code === 'ERR-IAM-001' &&
+        !(await callerHoldsPermission(db, CREDIT_APPROVE_PERMISSION, {
+          companyId: note.companyId,
+          branchId: note.branchId,
+        }))
+      ) {
+        withBusinessRefusal(failure, {
+          entityType: 'sal.credit_note',
+          entityId: note.id,
+          rule: CREDIT_NOTE_REFUSAL_RULES.approvalPermissionMissing,
+        });
+      }
+      throw failure;
+    }
+  }
+
+  /**
+   * The approver's credit-note limit, against the invoice's cumulative approved
+   * credit with this note included (ADR-023, D13).
+   *
+   * Called with the note AND the invoice locked, in the order the primitive locks
+   * them, so the total read here already includes any approval of another note on
+   * the same invoice that committed while this one waited — two concurrent
+   * approvals cannot each pass the limit on a total that omits the other. The
+   * database repeats the whole rule in `sal.guard_credit_note_decision` under the
+   * same lock; this mirror exists to name the refusal.
+   *
+   * The limit is resolved by `callerApprovalLimitStanding`: the approver's own
+   * credit-note limit in the note's currency before a role's, never one the
+   * approver created, never a discount limit. The comparison is exact: both figures
+   * are the database's decimal strings, compared as `Decimal`s.
+   */
+  private async assertCreditApprovalLimit(db: DbHandle, note: CreditNoteRow): Promise<void> {
+    const standing = await callerApprovalLimitStanding(
+      db,
+      note.companyId,
+      CREDIT_NOTE_LIMIT_TYPE,
+      note.currencyCode,
+      await this.repository.businessDate(db)
+    );
+    switch (standing.standing) {
+      case 'none':
+        return refuseCreditApproval(note.id, CREDIT_NOTE_REFUSAL_RULES.noApprovalLimit);
+      case 'self-created':
+        return refuseCreditApproval(note.id, CREDIT_NOTE_REFUSAL_RULES.limitSelfCreated);
+      case 'currency-mismatch':
+        return refuseCreditApproval(note.id, CREDIT_NOTE_REFUSAL_RULES.limitCurrencyMismatch);
+      case 'counted': {
+        const cumulative = await this.repository.cumulativeApprovedCreditWith(db, {
+          invoiceId: note.invoiceId,
+          companyId: note.companyId,
+          branchId: note.branchId,
+          creditNoteId: note.id,
+        });
+        if (
+          Decimal.fromDatabase(cumulative, MONEY).greaterThan(
+            Decimal.fromDatabase(standing.amount, MONEY)
+          )
+        ) {
+          refuseCreditApproval(note.id, CREDIT_NOTE_REFUSAL_RULES.limitExceeded);
+        }
+        return;
+      }
+    }
+  }
+
+  /**
+   * Locks a credit note for a withdrawal or a rejection, authorizes its own scope,
+   * and compares the caller's `If-Match` version with the LOCKED row.
+   *
+   * The note's lock is the first one an approval takes too, so a concurrent
+   * approval and rejection of the same note serialise here: whichever comes
+   * second finds the note decided and is refused.
+   */
+  private async lockDecidableCreditNote(
+    db: DbHandle,
+    creditNoteId: string,
+    expectedVersion: number,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<CreditNoteRow> {
+    const note = await this.repository.findCreditNoteForUpdate(db, creditNoteId);
+    if (!note) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Credit note ${creditNoteId} was not found in scope`,
+      });
+    }
+    await authorizeScope({ companyId: note.companyId, branchId: note.branchId });
+    if (note.recordVersion !== expectedVersion) {
+      throw new AppFailure('ERR-CON-001', {
+        message: 'The credit note has changed since it was read; re-read it and retry',
+      });
+    }
+    return note;
+  }
 
   /**
    * Refuses a commercial source whose lines cannot become invoice lines.
@@ -1421,9 +2276,11 @@ export class InvoiceService {
       companyId: fresh.companyId,
       branchId: fresh.branchId,
     });
+    const items = await describeLineItems(db, lines);
+    const units = await this.unitsOf(db, fresh);
     return {
-      invoice: toInvoiceView(fresh),
-      lines: lines.map(toInvoiceLineView),
+      invoice: toInvoiceView(fresh, units),
+      lines: lines.map((line) => toInvoiceLineView(line, items, units)),
       recordVersion: fresh.recordVersion,
     };
   }

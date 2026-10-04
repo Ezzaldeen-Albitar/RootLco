@@ -7,7 +7,11 @@ import { DataTable, type Column } from '@/components/data-table/DataTable';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { CheckboxField, SelectField, TextField } from '@/components/forms/Field';
+import { SearchBox } from '@/components/search/SearchBox';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { WorkOrderPicker } from '@/features/work-orders/components/WorkOrderPicker';
+import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -40,9 +44,7 @@ import {
   type StockTarget,
 } from '../inventory-contract';
 import {
-  BranchPairPicker,
   CategoryPicker,
-  EMPTY_PAIR,
   LocationPicker,
   LocationTypeLabel,
   OutcomeNote,
@@ -50,14 +52,13 @@ import {
   Qty,
   ReservationStatusBadge,
   SECONDARY_BUTTON,
-  UUID,
-  canNameBranch,
-  useBranches,
   useItemCategories,
   useLocations,
-  type BranchPair,
   type Locations,
 } from './shared';
+import { ItemPicker, REFERENCE, ReferenceBox, withoutKey, type ItemChoice } from './pickers';
+import { StockAlertIndicator } from './StockAlertIndicator';
+import { BranchTargetForm, LINK } from './stock-operations';
 
 /**
  * Inventory (P1-30, `W4`): item search (FE-008), stock balance (FE-009) and
@@ -66,9 +67,10 @@ import {
  * ## The item search is tenant-wide; the stock reads are addressed to a branch
  *
  * Items have no company or branch, so the search reads on first paint. Every
- * stock read takes a branch as its TARGET — the pair is chosen once, in the
- * target panel, and re-authorized server-side on every read — so nothing about
- * stock is requested until a branch is named.
+ * stock read takes a branch as its TARGET — the pair is the working context'''s
+ * own named selection, chosen once in the header and re-authorized server-side
+ * on every read — so the stock panels are addressed the moment this screen
+ * mounts, and say so when the selection is not a single branch.
  *
  * ## Availability is the server's
  *
@@ -83,6 +85,17 @@ import {
  * was already past `active`, both come back with `replayed: true`; the screen
  * states that rather than reporting a second booking or a second release.
  *
+ * ## The item and the job are found, not typed (Owner directive, route sweep B2)
+ *
+ * The availability filter, the reservation filters and the reserve form used to
+ * take the item and the work order as typed references. The item is now found in
+ * the catalogue by its stock code or name — every operator of this page holds
+ * `inv.item.read`, the page's own gate and the picker's one code — and the job
+ * with the shared `WorkOrderPicker`, offered with `wo.work_order.read`. Listing
+ * and making reservations need only the stock codes, so a caller without the
+ * work-order read keeps the labelled, shape-checked job reference they had
+ * before. A filter's choice is not unsaved work; a choice in the reserve form is.
+ *
  * ## No cost, and no item or location writer
  *
  * No inventory read publishes a cost, so none is shown. Items, categories and
@@ -95,22 +108,30 @@ export function InventoryScreen({
   locale,
   messages,
   initialWorkOrderId,
+  initialWorkOrder = null,
+  canReadWorkOrders = false,
   canReadStock,
   canOperate,
-  canReadBranches,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   /** From the address, when the screen was reached from a work order; prefills the reservation filters and form. */
   readonly initialWorkOrderId: string | null;
+  /** The page's own read of that work order, when the operator may read it and it answered. */
+  readonly initialWorkOrder?: WorkOrderListEntry | null;
+  /** `wo.work_order.read` — whether the job is found by name or given as a reference. */
+  readonly canReadWorkOrders?: boolean;
   /** `inv.stock.read` — availability, reservations and locations. */
   readonly canReadStock: boolean;
   /** `inv.stock.operate` — reserving and releasing. */
   readonly canOperate: boolean;
-  /** `org.branch.read` — whether a branch list is requested for the target picker. */
-  readonly canReadBranches: boolean;
+  /**
+   * `org.branch.read`. Accepted so the route did not have to change, and no
+   * longer read: the branch is the working context'''s named selection, and that
+   * read is gated on `iam.user.read` rather than on an administration code.
+   */
+  readonly canReadBranches?: boolean;
 }) {
-  const branches = useBranches(canReadBranches && canReadStock);
   const [target, setTarget] = useState<StockTarget | null>(null);
   const [epoch, setEpoch] = useState(0);
   // A write re-reads both stock panels by remounting them, which would also
@@ -157,14 +178,57 @@ export function InventoryScreen({
             >
               {translate(messages, 'inventory.links.movements')}
             </Link>
+            {' · '}
+            <Link
+              href={`/${locale}/inventory/transfers`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'inventory.stockOps.links.transfers')}
+            </Link>
+            {' · '}
+            <Link
+              href={`/${locale}/inventory/goods-receipts`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'inventory.stockOps.links.receipts')}
+            </Link>
+            {' · '}
+            <Link
+              href={`/${locale}/inventory/adjustments`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'inventory.stockOps.links.adjustments')}
+            </Link>
+            {' · '}
+            <Link
+              href={`/${locale}/inventory/counts`}
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              {translate(messages, 'inventory.stockOps.links.counts')}
+            </Link>
           </>
         ) : null}
+        {' · '}
+        <Link
+          href={`/${locale}/inventory/unit-conversions`}
+          className="text-primary underline-offset-2 hover:underline"
+        >
+          {translate(messages, 'inventory.links.unitConversions')}
+        </Link>
+        {' · '}
+        <Link
+          href={`/${locale}/inventory/vehicle-specifications`}
+          className="text-primary underline-offset-2 hover:underline"
+        >
+          {translate(messages, 'inventory.links.vehicleSpecifications')}
+        </Link>
       </p>
 
       {canReadStock ? (
-        <TargetPanel
+        <BranchTargetForm
           messages={messages}
-          branches={branches}
+          formLabelKey="inventory.target.formLabel"
+          explainKey="inventory.target.explain"
           onChosen={(next) => {
             setTarget(next);
             changed(null);
@@ -190,6 +254,15 @@ export function InventoryScreen({
         </p>
       ) : null}
 
+      {/*
+        The branch's low-stock and count-difference signals, beside the stock
+        they are about. Reads only, and nothing is rendered until a branch is
+        named — there is no claim to make about a branch nobody has chosen.
+      */}
+      {canReadStock ? (
+        <StockAlertIndicator messages={messages} locale={locale} target={target} />
+      ) : null}
+
       {canReadStock && target ? (
         <>
           <AvailabilityPanel
@@ -204,6 +277,8 @@ export function InventoryScreen({
             messages={messages}
             target={target}
             initialWorkOrderId={initialWorkOrderId}
+            initialWorkOrder={initialWorkOrder}
+            canReadWorkOrders={canReadWorkOrders}
             canOperate={canOperate}
             onChanged={changed}
           />
@@ -287,14 +362,28 @@ function ItemSearch({
         aria-labelledby="inventory-items-heading"
         className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
       >
-        <TextField
-          label={translate(messages, 'inventory.items.search')}
-          description={translate(messages, 'inventory.items.searchHelp')}
-          spellCheck={false}
-          value={draft.search}
-          onChange={(event) => setDraft((d) => ({ ...d, search: event.target.value }))}
-          error={errorFor('search')}
-        />
+        <div className="sm:col-span-2 lg:col-span-3">
+          {/*
+            One box for the one thing an operator at a parts counter is holding:
+            part of a code, or part of a name. It is the same control every other
+            board searches with, so the question reads the same way everywhere —
+            and the structured filters beside it stay, because they answer a
+            different question. Enter asks at once; the Show button below asks
+            for the whole form, so this box carries no second control of its own.
+          */}
+          <SearchBox
+            messages={messages}
+            label={translate(messages, 'inventory.items.search')}
+            placeholder={translate(messages, 'inventory.items.searchPlaceholder')}
+            example={translate(messages, 'inventory.items.searchHelp')}
+            value={draft.search}
+            onChange={(next) => setDraft((d) => ({ ...d, search: next }))}
+            onSubmit={submit}
+            inlineSubmit={false}
+            maxLength={MAX_NAME}
+            {...(errorFor('search') === undefined ? {} : { error: errorFor('search') as string })}
+          />
+        </div>
         <SelectField
           label={translate(messages, 'inventory.items.type')}
           value={draft.itemType}
@@ -370,10 +459,17 @@ function ItemResults({
       {
         id: 'sku',
         headerKey: 'inventory.items.column.sku',
+        /*
+         * The stock code is the way into the item's own page (P1-32), where its
+         * barcodes and its selling prices live. A code with nowhere to go is how
+         * that surface would have stayed unreachable from the catalogue.
+         */
         cell: (row) => (
-          <code className="font-mono text-caption" dir="ltr">
-            {row.sku}
-          </code>
+          <Link href={`/${locale}/inventory/items/${row.id}`} className={LINK}>
+            <code className="font-mono text-caption" dir="ltr">
+              {row.sku}
+            </code>
+          </Link>
         ),
       },
       {
@@ -428,7 +524,7 @@ function ItemResults({
         ),
       },
     ],
-    [messages]
+    [messages, locale]
   );
 
   return (
@@ -459,61 +555,6 @@ function ItemResults({
 }
 
 /* ------------------------------------------------------------------ *
- * The branch every stock read is addressed to
- * ------------------------------------------------------------------ */
-
-function TargetPanel({
-  messages,
-  branches,
-  onChosen,
-}: {
-  readonly messages: Messages;
-  readonly branches: ReturnType<typeof useBranches>;
-  readonly onChosen: (target: StockTarget) => void;
-}) {
-  const [pair, setPair] = useState<BranchPair>(EMPTY_PAIR);
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
-  const errorFor = (name: string): string | undefined => {
-    const key = errors[name];
-    return key ? translateDynamic(messages, key) : undefined;
-  };
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        const found: Record<string, string> = {};
-        if (!UUID.test(pair.companyId.trim())) found['companyId'] = 'inventory.common.idFormat';
-        if (!UUID.test(pair.branchId.trim())) found['branchId'] = 'inventory.common.idFormat';
-        setErrors(found);
-        if (Object.keys(found).length > 0) return;
-        onChosen({ companyId: pair.companyId.trim(), branchId: pair.branchId.trim() });
-      }}
-      noValidate
-      aria-label={translate(messages, 'inventory.target.formLabel')}
-      className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3"
-    >
-      <p className="text-caption text-text-muted sm:col-span-3">
-        {translate(messages, 'inventory.target.explain')}
-      </p>
-      <BranchPairPicker
-        messages={messages}
-        branches={branches}
-        label={translate(messages, 'inventory.target.branch')}
-        placeholder={translate(messages, 'inventory.target.chooseBranch')}
-        value={pair}
-        onChange={setPair}
-        errors={{ companyId: errorFor('companyId'), branchId: errorFor('branchId') }}
-      />
-      <div className="sm:col-span-3">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={!canNameBranch(branches)}>
-          {translate(messages, 'inventory.target.show')}
-        </button>
-      </div>
-    </form>
-  );
-}
-
-/* ------------------------------------------------------------------ *
  * FE-009 — availability, one row per cell
  * ------------------------------------------------------------------ */
 
@@ -527,18 +568,14 @@ function AvailabilityPanel({
   readonly target: StockTarget;
 }) {
   const locations = useLocations(target);
-  const [draft, setDraft] = useState({ itemId: '', locationId: '', includeQuarantine: false });
+  const [draft, setDraft] = useState({ locationId: '', includeQuarantine: false });
+  // Found in the catalogue: every operator of this page holds `inv.item.read`.
+  const [item, setItem] = useState<ItemChoice | null>(null);
   const [criteria, setCriteria] = useState<AvailabilityCriteria>({});
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
 
   const submit = () => {
-    const found: Record<string, string> = {};
-    const itemId = draft.itemId.trim();
-    if (itemId.length > 0 && !UUID.test(itemId)) found['itemId'] = 'inventory.common.idFormat';
-    setErrors(found);
-    if (Object.keys(found).length > 0) return;
     setCriteria({
-      ...(itemId ? { itemId } : {}),
+      ...(item ? { itemId: item.id } : {}),
       ...(draft.locationId ? { locationId: draft.locationId } : {}),
       ...(draft.includeQuarantine ? { includeQuarantine: 'true' as const } : {}),
     });
@@ -565,15 +602,19 @@ function AvailabilityPanel({
         aria-labelledby="inventory-availability-heading"
         className="grid gap-3 sm:grid-cols-3"
       >
-        <TextField
-          label={translate(messages, 'inventory.availability.itemId')}
-          description={translate(messages, 'inventory.availability.itemIdHelp')}
-          spellCheck={false}
-          dir="ltr"
-          value={draft.itemId}
-          onChange={(event) => setDraft((d) => ({ ...d, itemId: event.target.value }))}
-          error={errors['itemId'] ? translateDynamic(messages, errors['itemId']) : undefined}
-        />
+        <div className="sm:col-span-3">
+          <ItemPicker
+            messages={messages}
+            locale={locale}
+            label={translate(messages, 'inventory.availability.item')}
+            value={item}
+            onChange={setItem}
+            canSearch
+            countsAsUnsaved={false}
+            offerArchived
+            testId="availability-item-picker"
+          />
+        </div>
         <LocationPicker
           messages={messages}
           locations={locations}
@@ -669,6 +710,14 @@ function AvailabilityResults({
           </strong>
         ),
       },
+      {
+        // The item's quantity in transit in this branch, as the server repeats it
+        // on every cell of the item: part of neither `onHand` nor `available`.
+        id: 'inTransit',
+        headerKey: 'inventory.availability.column.inTransit',
+        numeric: true,
+        cell: (row) => <Qty value={row.inTransitQty} />,
+      },
     ],
     [messages]
   );
@@ -696,6 +745,14 @@ function AvailabilityResults({
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, 'inventory.availability.cellNote')}
       </p>
+      <p className="text-caption text-text-muted" lang={locale}>
+        {translate(messages, 'inventory.availability.inTransitNote')}
+      </p>
+      {criteria.includeQuarantine === 'true' ? (
+        <p className="text-caption text-text-muted" lang={locale}>
+          {translate(messages, 'inventory.availability.quarantineNote')}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -709,6 +766,8 @@ function ReservationsPanel({
   messages,
   target,
   initialWorkOrderId,
+  initialWorkOrder,
+  canReadWorkOrders,
   canOperate,
   onChanged,
 }: {
@@ -716,34 +775,47 @@ function ReservationsPanel({
   readonly messages: Messages;
   readonly target: StockTarget;
   readonly initialWorkOrderId: string | null;
+  readonly initialWorkOrder: WorkOrderListEntry | null;
+  readonly canReadWorkOrders: boolean;
   readonly canOperate: boolean;
   readonly onChanged: (notice: WriteNotice | null) => void;
 }) {
   const locations = useLocations(target);
-  const [draft, setDraft] = useState({
-    status: '',
-    workOrderId: initialWorkOrderId ?? '',
-    itemId: '',
-  });
+  /*
+   * The job the page was reached from. With the work-order read it is the
+   * chosen job, as the page read it; without that read it is the reference the
+   * address carried, in the box the caller keeps. A job the page could not read
+   * narrows nothing, and the panel says so rather than filtering by a job it
+   * cannot name.
+   */
+  const opened = canReadWorkOrders ? (initialWorkOrder?.id ?? null) : initialWorkOrderId;
+  const unreadableLink =
+    canReadWorkOrders && initialWorkOrderId !== null && initialWorkOrder === null;
+  const [status, setStatus] = useState('');
+  const [workOrder, setWorkOrder] = useState<WorkOrderListEntry | null>(initialWorkOrder);
+  const [workOrderReference, setWorkOrderReference] = useState(
+    canReadWorkOrders ? '' : (initialWorkOrderId ?? '')
+  );
+  const [item, setItem] = useState<ItemChoice | null>(null);
   const [criteria, setCriteria] = useState<ReservationCriteria>(
-    initialWorkOrderId ? { workOrderId: initialWorkOrderId } : {}
+    opened ? { workOrderId: opened } : {}
   );
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [reserving, setReserving] = useState(false);
 
   const submit = () => {
     const found: Record<string, string> = {};
-    const workOrderId = draft.workOrderId.trim();
-    if (workOrderId.length > 0 && !UUID.test(workOrderId))
-      found['workOrderId'] = 'inventory.common.idFormat';
-    const itemId = draft.itemId.trim();
-    if (itemId.length > 0 && !UUID.test(itemId)) found['itemId'] = 'inventory.common.idFormat';
+    const typed = workOrderReference.trim();
+    if (!canReadWorkOrders && typed.length > 0 && !REFERENCE.test(typed)) {
+      found['workOrderId'] = 'inventory.workOrderReference.format';
+    }
     setErrors(found);
     if (Object.keys(found).length > 0) return;
+    const workOrderId = canReadWorkOrders ? (workOrder?.id ?? '') : typed;
     setCriteria({
-      ...(draft.status ? { status: draft.status as ReservationState } : {}),
+      ...(status ? { status: status as ReservationState } : {}),
       ...(workOrderId ? { workOrderId } : {}),
-      ...(itemId ? { itemId } : {}),
+      ...(item ? { itemId: item.id } : {}),
     });
   };
 
@@ -759,6 +831,11 @@ function ReservationsPanel({
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.reservations.explain')}
       </p>
+      {unreadableLink ? (
+        <p role="status" className="text-caption text-text-muted">
+          {translate(messages, 'inventory.workOrderLink.unreadable')}
+        </p>
+      ) : null}
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -766,37 +843,55 @@ function ReservationsPanel({
         }}
         noValidate
         aria-labelledby="inventory-reservations-heading"
-        className="grid gap-3 sm:grid-cols-3"
+        className="grid gap-3 sm:grid-cols-2"
       >
         <SelectField
           label={translate(messages, 'inventory.reservations.status')}
-          value={draft.status}
-          onChange={(event) => setDraft((d) => ({ ...d, status: event.target.value }))}
+          value={status}
+          onChange={(event) => setStatus(event.target.value)}
           options={RESERVATION_STATES.map((value) => ({
             value,
             label: translateDynamic(messages, `inventory.reservationStatus.${value}`),
           }))}
           placeholder={translate(messages, 'inventory.reservations.anyStatus')}
         />
-        <TextField
-          label={translate(messages, 'inventory.reservations.workOrderId')}
-          spellCheck={false}
-          dir="ltr"
-          value={draft.workOrderId}
-          onChange={(event) => setDraft((d) => ({ ...d, workOrderId: event.target.value }))}
-          error={
-            errors['workOrderId'] ? translateDynamic(messages, errors['workOrderId']) : undefined
-          }
-        />
-        <TextField
-          label={translate(messages, 'inventory.reservations.itemId')}
-          spellCheck={false}
-          dir="ltr"
-          value={draft.itemId}
-          onChange={(event) => setDraft((d) => ({ ...d, itemId: event.target.value }))}
-          error={errors['itemId'] ? translateDynamic(messages, errors['itemId']) : undefined}
-        />
-        <div className="flex flex-wrap items-center gap-3 sm:col-span-3">
+        {canReadWorkOrders ? (
+          <WorkOrderPicker
+            messages={messages}
+            label={translate(messages, 'inventory.reservations.workOrder')}
+            value={workOrder}
+            onChange={setWorkOrder}
+            canSearch
+            countsAsUnsaved={false}
+            testId="reservations-work-order-picker"
+          />
+        ) : (
+          <ReferenceBox
+            label={translate(messages, 'inventory.workOrderReference.label')}
+            help={translate(messages, 'inventory.workOrderReference.filterHelp')}
+            value={workOrderReference}
+            onChange={setWorkOrderReference}
+            error={
+              errors['workOrderId'] ? translateDynamic(messages, errors['workOrderId']) : undefined
+            }
+            countsAsUnsaved={false}
+            testId="reservations-work-order-reference"
+          />
+        )}
+        <div className="sm:col-span-2">
+          <ItemPicker
+            messages={messages}
+            locale={locale}
+            label={translate(messages, 'inventory.reservations.item')}
+            value={item}
+            onChange={setItem}
+            canSearch
+            countsAsUnsaved={false}
+            offerArchived
+            testId="reservations-item-picker"
+          />
+        </div>
+        <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
           <button type="submit" className={PRIMARY_BUTTON}>
             {translate(messages, 'inventory.reservations.show')}
           </button>
@@ -815,9 +910,12 @@ function ReservationsPanel({
 
       {canOperate && reserving ? (
         <ReserveForm
+          locale={locale}
           messages={messages}
           locations={locations}
           initialWorkOrderId={initialWorkOrderId}
+          initialWorkOrder={initialWorkOrder}
+          canReadWorkOrders={canReadWorkOrders}
           onReserved={(echo) => {
             setReserving(false);
             onChanged({
@@ -990,23 +1088,41 @@ function ReservationResults({
 }
 
 function ReserveForm({
+  locale,
   messages,
   locations,
   initialWorkOrderId,
+  initialWorkOrder,
+  canReadWorkOrders,
   onReserved,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly locations: Locations;
   readonly initialWorkOrderId: string | null;
+  readonly initialWorkOrder: WorkOrderListEntry | null;
+  readonly canReadWorkOrders: boolean;
   readonly onReserved: (echo: ReservationEcho) => void;
 }) {
-  const [form, setForm] = useState({
-    itemId: '',
+  const [initial] = useState(() => ({
     locationId: '',
     quantity: '',
-    workOrderId: initialWorkOrderId ?? '',
     expiresAt: '',
-  });
+  }));
+  const [form, setForm] = useState(initial);
+  /*
+   * Unsaved work, declared to the shell. The reservation names one of THIS
+   * branch's locations, so a switch asks first; a confirmed switch remounts the
+   * panel and the form opens empty again. The item and the job declare their
+   * own choices — the job the page was reached from is not a change.
+   */
+  useUnsavedGuard(
+    (Object.keys(initial) as (keyof typeof initial)[]).some((name) => form[name] !== initial[name])
+  );
+  const [item, setItem] = useState<ItemChoice | null>(null);
+  const [workOrder, setWorkOrder] = useState<WorkOrderListEntry | null>(initialWorkOrder);
+  const openedReference = canReadWorkOrders ? '' : (initialWorkOrderId ?? '');
+  const [workOrderReference, setWorkOrderReference] = useState(openedReference);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
@@ -1023,16 +1139,17 @@ function ReserveForm({
 
   const submit = async () => {
     const found: Record<string, string> = {};
-    const itemId = form.itemId.trim();
-    if (!UUID.test(itemId)) found['itemId'] = 'inventory.common.idFormat';
+    if (item === null) found['itemId'] = 'inventory.itemPicker.required';
     if (!form.locationId) found['locationId'] = 'field.required';
     const quantity = form.quantity.trim();
     if (!QUANTITY.test(quantity) || /^0+(?:\.0+)?$/.test(quantity)) {
       found['quantity'] = 'inventory.reserve.quantityFormat';
     }
-    const workOrderId = form.workOrderId.trim();
-    if (workOrderId.length > 0 && !UUID.test(workOrderId))
-      found['workOrderId'] = 'inventory.common.idFormat';
+    const typed = workOrderReference.trim();
+    if (!canReadWorkOrders && typed.length > 0 && !REFERENCE.test(typed)) {
+      found['workOrderId'] = 'inventory.workOrderReference.format';
+    }
+    const workOrderId = canReadWorkOrders ? (workOrder?.id ?? '') : typed;
     let expiresAt: string | null = null;
     const rawExpiry = form.expiresAt.trim();
     if (rawExpiry.length > 0) {
@@ -1041,11 +1158,11 @@ function ReserveForm({
       else expiresAt = parsed.toISOString();
     }
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0 || item === null) return;
 
     setBusy(true);
     const result = await createReservation({
-      itemId,
+      itemId: item.id,
       locationId: form.locationId,
       quantity,
       idempotencyKey: attemptKey,
@@ -1080,16 +1197,21 @@ function ReserveForm({
       <p className="text-caption text-text-muted sm:col-span-2">
         {translate(messages, 'inventory.reserve.explain')}
       </p>
-      <TextField
-        label={translate(messages, 'inventory.reserve.itemId')}
-        description={translate(messages, 'inventory.reserve.itemIdHelp')}
-        required
-        spellCheck={false}
-        dir="ltr"
-        value={form.itemId}
-        onChange={(event) => setForm((f) => ({ ...f, itemId: event.target.value }))}
-        error={errorFor('itemId')}
-      />
+      <div className="sm:col-span-2">
+        <ItemPicker
+          messages={messages}
+          locale={locale}
+          label={translate(messages, 'inventory.reserve.item')}
+          value={item}
+          onChange={(next) => {
+            setItem(next);
+            setErrors((current) => withoutKey(current, 'itemId'));
+          }}
+          canSearch
+          error={errorFor('itemId')}
+          testId="reserve-item-picker"
+        />
+      </div>
       <LocationPicker
         messages={messages}
         locations={locations}
@@ -1110,15 +1232,34 @@ function ReserveForm({
         onChange={(event) => setForm((f) => ({ ...f, quantity: event.target.value }))}
         error={errorFor('quantity')}
       />
-      <TextField
-        label={translate(messages, 'inventory.reserve.workOrderId')}
-        description={translate(messages, 'inventory.reserve.workOrderHelp')}
-        spellCheck={false}
-        dir="ltr"
-        value={form.workOrderId}
-        onChange={(event) => setForm((f) => ({ ...f, workOrderId: event.target.value }))}
-        error={errorFor('workOrderId')}
-      />
+      <div className="sm:col-span-2">
+        {canReadWorkOrders ? (
+          <WorkOrderPicker
+            messages={messages}
+            label={translate(messages, 'inventory.reserve.workOrder')}
+            value={workOrder}
+            onChange={setWorkOrder}
+            canSearch
+            error={errorFor('workOrderId')}
+            pristineId={initialWorkOrder?.id ?? null}
+            testId="reserve-work-order-picker"
+          />
+        ) : (
+          <ReferenceBox
+            label={translate(messages, 'inventory.workOrderReference.label')}
+            help={translate(messages, 'inventory.workOrderReference.reserveHelp')}
+            value={workOrderReference}
+            onChange={(next) => {
+              setWorkOrderReference(next);
+              setErrors((current) => withoutKey(current, 'workOrderId'));
+            }}
+            error={errorFor('workOrderId')}
+            countsAsUnsaved
+            pristine={openedReference}
+            testId="reserve-work-order-reference"
+          />
+        )}
+      </div>
       <TextField
         label={translate(messages, 'inventory.reserve.expiresAt')}
         description={translate(messages, 'inventory.reserve.expiresAtHelp')}

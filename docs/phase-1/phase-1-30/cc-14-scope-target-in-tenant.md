@@ -97,6 +97,14 @@ passing `scopeTargetOption(raw)` — which is the one line a P1-31 read seam owe
 - **The five body-scoped creates** — they keep the 404 their composite foreign key and RLS produce
   (MD-X1, pinned by `tests/backend/p1-18-reception-create.test.ts`). Unifying creates on 403 is a
   separate contract question.
+  _(Note added 2026-09-13: that contract question has since been answered for a different set. The
+  **three P1-31 body-scoped creates** — `sal.delivery-checklist-template-create`,
+  `wty.warranty-policy-create` and `org.employee-create` — now resolve the scope claim before the
+  insert and answer **403 `ERR-IAM-001`**, per **CC-56**,
+  `docs/phase-1/phase-1-31/change-control-2026-09-08.md` § 66, which applies § 2 of this document.
+  **The five P1-30 creates named here are unchanged**, MD-X1 still pins their answer, and § 7's open
+  item below is still open — CC-56 recommends the same resolution for them and leaves the act to the
+  lane that owns them.)_
 
 ## 5. Evidence
 

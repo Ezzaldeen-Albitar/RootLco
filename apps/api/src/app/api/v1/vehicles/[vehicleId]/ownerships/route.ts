@@ -69,11 +69,12 @@ export async function GET(
   request: Request,
   route: { params: Promise<{ vehicleId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     VEHICLE_OWNERSHIP_LIST_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const query = parseOrFail(
         Query,
         searchParamsToObject(new URL(raw.url).searchParams),
@@ -86,7 +87,7 @@ export async function GET(
         }),
       };
     },
-    { params }
+    { params: rawParams }
   );
 }
 
@@ -94,7 +95,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ vehicleId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -102,14 +103,17 @@ export async function POST(
   return handleOperation(
     VEHICLE_OWNERSHIP_TRANSFER_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
-      status: 201,
-      body: await vehicleModule().vehicleRegistration.transferOwnership(
-        db,
-        params.vehicleId,
-        await parseJsonBody(raw, Body)
-      ),
-    }),
-    { params, body }
+    async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        status: 201,
+        body: await vehicleModule().vehicleRegistration.transferOwnership(
+          db,
+          params.vehicleId,
+          await parseJsonBody(raw, Body)
+        ),
+      };
+    },
+    { params: rawParams, body }
   );
 }

@@ -24,6 +24,10 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * preview, creating and issuing; `sal.invoice.issue` the act of issuing;
  * `wo.work_order.read` whether the order's header is read. There is no
  * invoice list: a work order named in the address is the only way in.
+ *
+ * The header and the body share one print scope (finance retest DF-R2-1), as the
+ * counter-sales page does: while the invoice's printable copy is open, the page
+ * title and its description stay off the paper and the copy prints alone.
  */
 export default async function InvoicesPage({
   params,
@@ -73,7 +77,7 @@ export default async function InvoicesPage({
   const initialInvoice = workOrderId !== null ? await readWorkOrderInvoice(workOrderId) : null;
 
   return (
-    <>
+    <div data-print-scope="document">
       <PageHeader
         locale={locale}
         messages={messages}
@@ -95,9 +99,15 @@ export default async function InvoicesPage({
           initialInvoice={initialInvoice}
           canViewFinance={holds(session.permissions, BILLING_PERMISSIONS.financeView)}
           canIssue={holds(session.permissions, BILLING_PERMISSIONS.issue)}
+          canRaiseCredit={
+            holds(session.permissions, BILLING_PERMISSIONS.creditManage) &&
+            holds(session.permissions, BILLING_PERMISSIONS.financeView)
+          }
+          canReadCustomers={holds(session.permissions, BILLING_PERMISSIONS.customerRead)}
+          canSearchWorkOrders={canReadWorkOrder}
         />
       </PageBody>
-    </>
+    </div>
   );
 }
 

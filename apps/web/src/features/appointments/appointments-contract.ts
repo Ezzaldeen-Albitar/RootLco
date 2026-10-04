@@ -65,6 +65,7 @@
 
 import {
   MAX_INSTANT_LENGTH,
+  classifyUtcOffset,
   hasExplicitUtcOffset,
   validateInstant,
   type InstantIssue,
@@ -102,14 +103,14 @@ export const APPOINTMENT_PERMISSIONS = {
    * Administering the appointment intake catalogues — appointment types,
    * cancellation reasons and source channels.
    *
-   * The code is named here because the backend registers it and this layer must
-   * know every code its domain can be denied for; it is NOT consulted by any
-   * screen, because there is no catalogue-administration screen. No canonical
-   * P1-28 task binds one, and who administers the intake catalogues and through
-   * which surface is `P1-28-OD-001` (`docs/phase-1/phase-1-28/canonical-plan.md`
-   * §7). The twelve operations behind it are recorded in
-   * `docs/phase-1/phase-1-28/write-reachability.json`, the writes among them as
-   * DELIBERATELY_ABSENT against that decision.
+   * Consulted by the appointment setup route (`/administration/appointment-setup`)
+   * and by the booking route, which links an empty type catalogue there. For the
+   * appointment catalogues the Owner decided on 2026-09-29 who administers them
+   * and through which surface: the standard tenant administrator, on that screen —
+   * which answers `P1-28-OD-001` for these three catalogues. The twelve operations
+   * behind the code are recorded in `docs/phase-1/phase-1-28/write-reachability.json`,
+   * the writes among them as REACHABLE through the setup screen. The reception
+   * catalogues (`rec.catalogue.manage`) stay withheld under that decision.
    */
   catalogueManage: 'apt.catalogue.manage',
 } as const;
@@ -408,10 +409,16 @@ export function canRecordNoShow(status: AppointmentStatus): boolean {
  * It moved to `components/forms/instant.ts` because the reception odometer needs
  * the identical rule and reaches it through the VEHICLES feature, which may
  * never import this one. Nothing about the rule changed; every appointment
- * screen and every appointment test still imports these four names from here.
- * See that module for why the displacement is capped at ±15:59.
+ * screen and every appointment test still imports these names from here.
+ * See that module for why the displacement is bounded at the civil range.
  */
-export { MAX_INSTANT_LENGTH, hasExplicitUtcOffset, validateInstant, type InstantIssue };
+export {
+  MAX_INSTANT_LENGTH,
+  classifyUtcOffset,
+  hasExplicitUtcOffset,
+  validateInstant,
+  type InstantIssue,
+};
 
 export type WindowIssue = InstantIssue | 'not_after_start';
 
@@ -482,17 +489,27 @@ export interface AppointmentCancelInput {
 }
 
 /**
- * The `.strict()` list query, minus the mandatory branch target (which travels
- * through `BranchTarget` — see the module note). `from`/`to` are inclusive
- * bounds the EFFECTIVE window must overlap; an inverted range is a 422, not an
- * empty page.
+ * The `.strict()` list query, minus the branch scope (which travels through
+ * `BranchScope` — see the module note). `from`/`to` are inclusive bounds the
+ * EFFECTIVE window must overlap; an inverted range is a 422, not an empty page.
  */
 export interface AppointmentListCriteria {
   readonly status?: AppointmentStatus;
   readonly vehicleId?: string;
   readonly from?: string;
   readonly to?: string;
+  /**
+   * One free-text box: part of the requester's name, the tail of their phone
+   * number, part of any plate the vehicle has carried, part of its VIN, or part
+   * of the appointment number. Two characters at least.
+   */
+  readonly q?: string;
 }
+
+/** `MIN_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
+export const MIN_APPOINTMENT_SEARCH = 2;
+/** `MAX_SEARCH_FRAGMENT` in `shared/text/search-terms.ts`. */
+export const MAX_APPOINTMENT_SEARCH = 80;
 
 /* ------------------------------------------------------------------ *
  * Responses, exactly as the services publish them
@@ -524,6 +541,14 @@ export interface AppointmentListEntry {
   readonly id: string;
   readonly displayNumber: string | null;
   readonly lifecycleStatus: AppointmentStatus;
+  /**
+   * Which branch the row belongs to.
+   *
+   * Published since the branch became an optional filter: a calendar that may
+   * span every authorized branch has to be able to name which one each row sits
+   * in, and a board that could not would be quietly mixing two workshops.
+   */
+  readonly branchId: string;
   readonly vehicleId: string;
   readonly vehicleDisplayNumber: string | null;
   readonly requesterPartnerId: string;
@@ -566,3 +591,43 @@ export interface AppointmentDetail {
   readonly createdAt: string;
   readonly updatedAt: string | null;
 }
+
+/* ------------------------------------------------------------------ *
+ * The refusal reasons the lifecycle commands publish
+ * ------------------------------------------------------------------ */
+
+/**
+ * Every rule token `apps/api/src/modules/reception/domain/appointment.ts`
+ * publishes, mirrored so the catalogue can be held against it.
+ *
+ * The four lifecycle commands all refuse with one catalogue code, and the
+ * interface never renders server prose — so before these tokens existed, a
+ * clerk who tried to receive a vehicle against an unconfirmed appointment and a
+ * clerk who tried to cancel one that had already been cancelled read the same
+ * sentence. The token is what selects the sentence, and the sentence is what
+ * names the next step.
+ *
+ * Mirrored rather than imported: this workspace may not import backend source.
+ * The list is therefore a copy, and
+ * `tests/field-error-translation.test.ts` is what stops it becoming a copy that
+ * drifts — it asserts every entry has a sentence in BOTH catalogues, so a token
+ * added here without wording, or a sentence written in one language only, fails
+ * a test rather than reaching a clerk as a raw name.
+ */
+export const APPOINTMENT_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.appointment_not_reschedulable',
+  'form.violation.appointment_not_cancellable',
+  'form.violation.appointment_not_confirmed_for_no_show',
+  'form.violation.appointment_not_confirmed_for_check_in',
+  // The window rules. They used to arrive as the general "something here was not
+  // accepted", which for a missing time zone points a clerk at an entry that
+  // looks perfectly correct on the form, because the zone is not part of what the
+  // form shows them. The three zone rules are separate from each other for the
+  // same reason: an absent offset is supplied, a mistyped one is rewritten, and
+  // one outside the range no place on earth keeps needs the range named.
+  'form.violation.appointment_time_unreadable',
+  'form.violation.appointment_time_zone_missing',
+  'form.violation.appointment_time_zone_unreadable',
+  'form.violation.appointment_time_zone_out_of_range',
+  'form.violation.appointment_window_backwards',
+]);

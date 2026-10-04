@@ -50,6 +50,7 @@ import { defineOperation, type RegisteredOperation } from '@/server/auth/operati
 import {
   evaluatePermissions,
   requirePermissions,
+  requireScopeClaimInTenant,
   requireScopeTargetInTenant,
   requireScopedPermissions,
 } from '@/server/auth/authorization';
@@ -407,5 +408,200 @@ describe('CC-14 scope target resolved inside the tenant', () => {
     );
     expect(outcome).toBeInstanceOf(AppFailure);
     expect((outcome as AppFailure).code).toBe('ERR-IAM-001');
+  });
+});
+
+/**
+ * CC-56 — the same question asked of a WRITE, whose scope arrives in the body.
+ *
+ * `requireScopeClaimInTenant` is the sibling of the probe above, for the requests the
+ * GET path cannot serve. Its company-only arm reads `org.legal_companies` under
+ * `sel_legal_companies_tenant`, which the unit tier cannot judge at all: that policy
+ * narrows by `iam.current_tenant_id()` AND `iam.allowed_company_ids()`, and whether
+ * those two mean what this probe assumes is a question only a real server answers.
+ *
+ * The four cases below are the four the sibling block proves for `org.branches`,
+ * asked of the company arm and of the ORDER the services call it in — soft deletion,
+ * a grant union that hides an in-tenant row, a claim with nothing to resolve, and the
+ * permission decision running first.
+ */
+describe('CC-56 scope claim resolved inside the tenant', () => {
+  it('refuses a soft-deleted company exactly as it refuses one that exists nowhere', async () => {
+    // The positive control first: without it, every refusal below could be the probe
+    // refusing everything.
+    await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) => {
+      await expect(
+        requireScopeClaimInTenant(db, COMMAND_OPERATION, { companyId: COMPANY_A1 })
+      ).resolves.toBeUndefined();
+    });
+
+    // Soft-deleted through the admin pool and restored in a finally, exactly as the
+    // branch case above does, so the shared fixture company survives this suite.
+    await admin.query(`UPDATE org.legal_companies SET deleted_at = now() WHERE id = $1`, [
+      COMPANY_A1,
+    ]);
+    let deleted: unknown;
+    let nowhere: unknown;
+    try {
+      const outcomes = await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) => {
+        // Sequential, for the reason the sibling block states: one pg client.
+        const softDeleted = await requireScopeClaimInTenant(db, COMMAND_OPERATION, {
+          companyId: COMPANY_A1,
+        }).catch((caught: unknown) => caught);
+        const invented = await requireScopeClaimInTenant(db, COMMAND_OPERATION, {
+          companyId: randomUUID(),
+        }).catch((caught: unknown) => caught);
+        return { softDeleted, invented };
+      });
+      deleted = outcomes.softDeleted;
+      nowhere = outcomes.invented;
+    } finally {
+      await admin.query(`UPDATE org.legal_companies SET deleted_at = NULL WHERE id = $1`, [
+        COMPANY_A1,
+      ]);
+    }
+
+    for (const outcome of [deleted, nowhere]) {
+      expect(outcome).toBeInstanceOf(AppFailure);
+      const failure = outcome as AppFailure;
+      expect(failure.code).toBe('ERR-IAM-001');
+      expect(failure.status).toBe(403);
+      expect(failure.safeDetails).toEqual({ requiredPermissions: [COMMAND_PERMISSION] });
+      // Neither names the company it was handed, or the refusal would echo a guess.
+      expect(failure.message).not.toContain(COMPANY_A1);
+    }
+    // Byte-identical, so a soft-deleted company is indistinguishable from an invented
+    // one. This is the disclosure property, not an approximation of it.
+    expect((deleted as AppFailure).message).toBe((nowhere as AppFailure).message);
+
+    // And the restore worked, so no later suite inherits a deleted company.
+    await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) => {
+      await expect(
+        requireScopeClaimInTenant(db, COMMAND_OPERATION, { companyId: COMPANY_A1 })
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  it('refuses an in-tenant company the caller grant union hides', async () => {
+    // The corner that makes "not visible to this caller" the honest reading of the
+    // refusal, rather than "not in this tenant". The company is REAL, is in the
+    // caller's own tenant and is resolvable by the same caller one line above — it is
+    // `iam.allowed_company_ids()` that hides it, exactly as the branch probe's own
+    // mixed-grant case shows for `iam.allowed_branch_ids()`.
+    const outcome = await withTransaction(
+      contextFor({ userId: USER_PERMITTED, companyIds: [randomUUID()] }),
+      async (db) =>
+        requireScopeClaimInTenant(db, COMMAND_OPERATION, { companyId: COMPANY_A1 }).catch(
+          (caught: unknown) => caught
+        )
+    );
+    expect(outcome).toBeInstanceOf(AppFailure);
+    expect((outcome as AppFailure).code).toBe('ERR-IAM-001');
+    expect((outcome as AppFailure).status).toBe(403);
+
+    // Anti-vacuity: the SAME claim, by the SAME user, with no narrowing.
+    await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) => {
+      await expect(
+        requireScopeClaimInTenant(db, COMMAND_OPERATION, { companyId: COMPANY_A1 })
+      ).resolves.toBeUndefined();
+    });
+  });
+
+  it('resolves an empty claim, and refuses a half claim that names a branch and no company', async () => {
+    /*
+     * CC-56 (c). A claim naming a branch and no company used to return without a
+     * statement — a guard failing OPEN on input it cannot resolve. It is now refused
+     * with the uniform refusal a foreign pair receives.
+     *
+     * The half claim names a REAL branch this caller can see: the full pair it belongs
+     * to resolves one line below. So the refusal is about the missing company, not
+     * about the branch, and a probe that still resolved the branch alone would pass the
+     * positive control and fail here.
+     */
+    const outcomes = await withTransaction(contextFor({ userId: USER_PERMITTED }), async (db) => {
+      await expect(requireScopeClaimInTenant(db, COMMAND_OPERATION, {})).resolves.toBeUndefined();
+      await expect(
+        requireScopeClaimInTenant(db, COMMAND_OPERATION, {
+          companyId: COMPANY_A1,
+          branchId: BRANCH_A1,
+        })
+      ).resolves.toBeUndefined();
+      // Sequential, for the reason the sibling blocks state: one pg client.
+      const half = await requireScopeClaimInTenant(db, COMMAND_OPERATION, {
+        branchId: BRANCH_A1,
+      }).catch((caught: unknown) => caught);
+      const invented = await requireScopeClaimInTenant(db, COMMAND_OPERATION, {
+        branchId: randomUUID(),
+      }).catch((caught: unknown) => caught);
+      const foreignPair = await requireScopeClaimInTenant(db, COMMAND_OPERATION, {
+        companyId: randomUUID(),
+        branchId: randomUUID(),
+      }).catch((caught: unknown) => caught);
+      return { half, invented, foreignPair };
+    });
+
+    for (const outcome of [outcomes.half, outcomes.invented, outcomes.foreignPair]) {
+      expect(outcome).toBeInstanceOf(AppFailure);
+      const failure = outcome as AppFailure;
+      expect(failure.code).toBe('ERR-IAM-001');
+      expect(failure.status).toBe(403);
+      expect(failure.safeDetails).toEqual({ requiredPermissions: [COMMAND_PERMISSION] });
+      expect(failure.message).not.toContain(BRANCH_A1);
+    }
+    // The half claim is indistinguishable from a foreign pair: the same message, byte
+    // for byte, so the refusal does not reveal which half was missing.
+    expect((outcomes.half as AppFailure).message).toBe(
+      (outcomes.foreignPair as AppFailure).message
+    );
+    expect((outcomes.invented as AppFailure).message).toBe(
+      (outcomes.foreignPair as AppFailure).message
+    );
+  });
+
+  it('is reached only after the permission decision, and answers with the same shape', async () => {
+    /*
+     * The ORDER is the services' to keep — `authorizeScope` first, the claim second —
+     * and it is observable only when BOTH would refuse. So both refusals are taken
+     * for the same caller and the same invisible company, and the order the services
+     * use is asserted to produce the permission one.
+     *
+     * If the claim ran first, a caller holding none of the operation's codes would be
+     * told the company is invisible instead of being told what it lacks — which is
+     * the trap CC-14 records for the read path and the reason the probe is second
+     * there too.
+     */
+    const invisible = { companyId: randomUUID() };
+
+    const inServiceOrder = await withTransaction(
+      contextFor({ userId: USER_UNPERMITTED }),
+      async (db) => {
+        await requirePermissions(db, COMMAND_OPERATION);
+        await requireScopeClaimInTenant(db, COMMAND_OPERATION, invisible);
+      }
+    ).catch((caught: unknown) => caught);
+
+    expect(inServiceOrder).toBeInstanceOf(AppFailure);
+    const permissionDenial = inServiceOrder as AppFailure;
+    expect(permissionDenial.message).toContain(`missing ${COMMAND_PERMISSION}`);
+    expect(permissionDenial.message).not.toContain('not visible');
+
+    // The claim refusal the reversed order would have produced, for the same caller
+    // and the same company. Both exist, so the assertion above is about ORDER and not
+    // about only one of the two being reachable.
+    const claimFirst = await withTransaction(contextFor({ userId: USER_UNPERMITTED }), async (db) =>
+      requireScopeClaimInTenant(db, COMMAND_OPERATION, invisible).catch((caught: unknown) => caught)
+    );
+    expect(claimFirst).toBeInstanceOf(AppFailure);
+    const claimRefusal = claimFirst as AppFailure;
+    expect(claimRefusal.message).toContain('not visible');
+
+    // CC-56 (a): the two refusals of one operation publish the SAME safe details, so
+    // a caller cannot tell from the document which of them answered. This is what the
+    // route handler's injection buys — the claim probe is handed the operation and
+    // publishes its declared codes, rather than publishing nothing.
+    expect(claimRefusal.status).toBe(permissionDenial.status);
+    expect(claimRefusal.code).toBe(permissionDenial.code);
+    expect(claimRefusal.safeDetails).toEqual(permissionDenial.safeDetails);
+    expect(claimRefusal.safeDetails).toEqual({ requiredPermissions: [COMMAND_PERMISSION] });
   });
 });

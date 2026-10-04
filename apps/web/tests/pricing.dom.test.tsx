@@ -1,9 +1,44 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr as renderLtrBare,
+  renderRtl as renderRtlBare,
+  RETIRED_BOX,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
+import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
+
+/**
+ * The product's Material provider, as the locale layout mounts it: the screen's
+ * date fields are the MIT pickers and need its localisation (ADR-022). Every
+ * render in this file goes through it, in the render's own language.
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderLtr = (ui: ReactElement) => renderLtrBare(withMui(ui, 'en'));
+const renderRtl = (ui: ReactElement) => renderRtlBare(withMui(ui, 'ar'));
 
 /**
  * Price lists and the price lookup, rendered (P1-30, `W2`, FE-002 and FE-006).
@@ -26,6 +61,8 @@ const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
 
 const listPriceLists = vi.fn();
 const createPriceList = vi.fn();
+const readDiscountThreshold = vi.fn();
+const setDiscountThreshold = vi.fn();
 const resolvePrice = vi.fn();
 const listBranches = vi.fn();
 vi.mock('@/features/pricing/api', () => ({
@@ -39,6 +76,8 @@ vi.mock('@/features/pricing/api', () => ({
   publishPriceListVersion: vi.fn(),
   recordPriceRule: vi.fn(),
   createPriceListAssignment: vi.fn(),
+  readDiscountThreshold: (...args: unknown[]) => readDiscountThreshold(...args),
+  setDiscountThreshold: (...args: unknown[]) => setDiscountThreshold(...args),
 }));
 
 const listServices = vi.fn();
@@ -80,6 +119,11 @@ vi.mock('@/components/notifications/action-notifications', () => ({
 const { PricingScreen } = await import('@/features/pricing/components/PricingScreen');
 const PricingPage = (await import('@/app/[locale]/(dashboard)/pricing/page'))
   .default as unknown as RoutePage;
+const { DiscountThresholdScreen } =
+  await import('@/features/pricing/components/DiscountThresholdScreen');
+const DiscountThresholdPage = (
+  await import('@/app/[locale]/(dashboard)/administration/discount-threshold/page')
+).default as unknown as RoutePage;
 
 const LIST_ID = '33333333-3333-4333-8333-333333333333';
 const SERVICE_ID = '55555555-5555-4555-8555-555555555555';
@@ -113,13 +157,51 @@ function renderScreen(over: Record<string, unknown> = {}) {
       messages={en}
       canManage={false}
       canReadBranches={false}
-      canReadServices={false}
+      canReadServices={true}
       {...over}
     />
   );
 }
 
+/** The screen inside a working context holding one branch — the `BRANCH` pair. */
+function renderInBranch(over: Record<string, unknown> = {}) {
+  return renderLtr(
+    inBranch(
+      <PricingScreen
+        locale="en"
+        messages={en}
+        canManage={false}
+        canReadBranches={false}
+        canReadServices={true}
+        {...over}
+      />
+    )
+  );
+}
+
 const lookupForm = () => screen.getByRole('form', { name: EN['pricing.lookup.heading'] as string });
+const priceListGrid = (catalogue: Record<string, string> = EN) =>
+  screen.findByRole('grid', { name: catalogue['pricing.list.caption'] as string });
+
+/** The lookup's service combobox — `EntityPicker`, named by the field's label. */
+const serviceBox = (form: HTMLElement) =>
+  within(form).getByRole('combobox', { name: labelled('pricing.lookup.service') });
+
+/**
+ * The service, FOUND in the catalogue and chosen by code and name — the only
+ * way to name one with the catalogue read. The combobox asks the server as the
+ * operator types; the matches are the server's, in a list of options.
+ */
+async function pickService(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
+  const box = serviceBox(form);
+  // A service already chosen is put back first, as an operator would.
+  const change = within(form).queryByRole('button', {
+    name: EN['pricing.picker.changeService'] as string,
+  });
+  if (change !== null) await user.click(change);
+  await user.type(box, 'OIL');
+  await user.click(await screen.findByRole('option', { name: /OIL-CHANGE/ }));
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -146,10 +228,30 @@ describe('the lists read on first paint and render as returned', () => {
   it('issues the read without waiting for a filter and shows the row', async () => {
     renderScreen();
     await waitFor(() => expect(listPriceLists).toHaveBeenCalled());
-    const table = await screen.findByRole('table');
-    expect(within(table).getByText('RETAIL')).toBeVisible();
+    const table = await priceListGrid();
+    expect(await within(table).findByText('RETAIL')).toBeVisible();
     expect(within(table).getByText('JOD')).toBeVisible();
     expect(within(table).getByText(EN['pricing.status.active'] as string)).toBeVisible();
+    // One bounded answer: no rows-per-page control, and no Next.
+    expect(screen.queryByLabelText(EN['table.rowsPerPage'] as string)).toBeNull();
+    expect(screen.getByRole('button', { name: EN['table.nextPage'] as string })).toBeDisabled();
+  });
+
+  it('a throttled or unanswered read is "unavailable, try again", never an empty list', async () => {
+    const user = userEvent.setup();
+    listPriceLists.mockResolvedValueOnce({
+      status: 'unavailable',
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-u',
+    });
+    renderScreen();
+    expect(await screen.findByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['pricing.list.none'] as string)).toBeNull();
+    await user.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    const table = await priceListGrid();
+    expect(await within(table).findByText('RETAIL')).toBeVisible();
   });
 
   it('marks an inactive list as inactive, beside an active one', async () => {
@@ -157,7 +259,7 @@ describe('the lists read on first paint and render as returned', () => {
       page([row(), row({ id: 'l-2', priceListCode: 'OLD', status: 'inactive' })])
     );
     renderScreen();
-    const table = await screen.findByRole('table');
+    const table = await priceListGrid();
     expect(await within(table).findByText('OLD')).toBeVisible();
     expect(within(table).getByText(EN['pricing.status.inactive'] as string)).toBeVisible();
   });
@@ -214,6 +316,32 @@ describe('creating, offered only to those who may', () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith('/en/pricing/new-id'));
   });
 
+  it('shows an unsupported currency beside the currency box, with the code still typed', async () => {
+    createPriceList.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { currency: 'form.violation.unsupported_currency' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderScreen({ canManage: true });
+    await user.click(screen.getByRole('button', { name: EN['pricing.list.create'] as string }));
+    const form = await screen.findByRole('form', { name: EN['pricing.create.title'] as string });
+    await user.type(within(form).getByLabelText(labelled('pricing.create.code')), 'RETAIL-2');
+    await user.type(within(form).getByLabelText(labelled('pricing.create.name')), 'Retail two');
+    await user.type(within(form).getByLabelText(labelled('pricing.create.currency')), 'JOD');
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.create.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['form.violation.unsupported_currency'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('pricing.create.name'))).toHaveValue('Retail two');
+  });
+
   it('refuses a malformed currency before any request', async () => {
     const user = userEvent.setup();
     renderScreen({ canManage: true });
@@ -228,6 +356,58 @@ describe('creating, offered only to those who may', () => {
     expect(
       await within(form).findByText(EN['pricing.create.currencyFormat'] as string)
     ).toBeVisible();
+    expect(createPriceList).not.toHaveBeenCalled();
+  });
+});
+
+describe('a list typed and not created is unsaved work', () => {
+  afterEach(forgetRememberedBranch);
+
+  async function openCreateBetweenTwo(user: ReturnType<typeof userEvent.setup>) {
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <PricingScreen
+            locale="en"
+            messages={en}
+            canManage
+            canReadBranches={false}
+            canReadServices={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(screen.getByRole('button', { name: EN['pricing.list.create'] as string }));
+    return screen.findByRole('form', { name: EN['pricing.create.title'] as string });
+  }
+
+  it('an untouched create form lets the branch change without asking', async () => {
+    const user = userEvent.setup();
+    await openCreateBetweenTwo(user);
+    await switchWithoutQuestion(user, 'second');
+    await switchWithoutQuestion(user, 'first');
+  });
+
+  it('a typed list asks first; staying keeps it, discarding empties it', async () => {
+    const user = userEvent.setup();
+    const form = await openCreateBetweenTwo(user);
+    const code = within(form).getByLabelText(labelled('pricing.create.code'));
+    const name = within(form).getByLabelText(labelled('pricing.create.name'));
+    await user.type(code, 'RETAIL-2');
+    await user.type(name, 'Retail two');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(code).toHaveValue('RETAIL-2');
+    expect(name).toHaveValue('Retail two');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(code).toHaveValue(''));
+    expect(name).toHaveValue('');
+    await switchWithoutQuestion(user, 'first');
     expect(createPriceList).not.toHaveBeenCalled();
   });
 });
@@ -250,14 +430,12 @@ describe('the lookup renders the server’s figures, never its own', () => {
     await waitFor(() => expect(listBranches).toHaveBeenCalled());
     const form = lookupForm();
 
-    await user.type(within(form).getByLabelText(labelled('pricing.picker.serviceSearch')), 'OIL');
-    await user.click(
-      within(form).getByRole('button', { name: EN['pricing.picker.search'] as string })
-    );
+    await user.type(serviceBox(form), 'OIL');
     await waitFor(() => expect(listServices).toHaveBeenCalled());
-    expect(listServices.mock.calls[0]?.[0]).toEqual({ search: 'OIL' });
-    const service = await within(form).findByLabelText(labelled('pricing.lookup.service'));
-    await user.selectOptions(service, SERVICE_ID);
+    // The server searches, with the term as typed.
+    expect(listServices.mock.calls.at(-1)?.[0]).toEqual({ search: 'OIL' });
+    await user.click(await screen.findByRole('option', { name: 'OIL-CHANGE — Oil change' }));
+    expect(serviceBox(form)).toHaveValue('OIL-CHANGE — Oil change');
     await user.selectOptions(
       within(form).getByLabelText(labelled('pricing.lookup.branch')),
       BRANCH
@@ -281,27 +459,24 @@ describe('the lookup renders the server’s figures, never its own', () => {
     expect(within(result).queryByText(/16 ?%/)).toBeNull();
     expect(within(result).getByText('standard')).toBeVisible();
     expect(within(result).getByText('2026-09-05')).toBeVisible();
-    expect(within(result).getByText('rule-1')).toBeVisible();
+    // The rule has no name, and its identifier is not an answer: not printed.
+    expect(within(result).queryByText('rule-1')).toBeNull();
+    expect(within(result).queryByText(EN['pricing.lookup.rule'] as string)).toBeNull();
     // The price is rendered with its ISO code; no figure other than the server's appears.
     expect(within(result).getByText(/77\.5/)).toBeVisible();
     expect(within(result).getByText(/JOD/)).toBeVisible();
   });
 
-  it('without either list, takes identifiers and never asks for the lists', async () => {
+  it('without either list, resolves for the working branch and never asks the directory', async () => {
     const user = userEvent.setup();
     resolvePrice.mockResolvedValue(okRead(resolved));
-    renderScreen({ canReadBranches: false, canReadServices: false });
+    renderInBranch({ canReadBranches: false, canReadServices: true });
     const form = lookupForm();
     expect(listBranches).not.toHaveBeenCalled();
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      SERVICE_ID
-    );
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.common.companyIdField')),
-      COMPANY
-    );
-    await user.type(within(form).getByLabelText(labelled('pricing.common.branchIdField')), BRANCH);
+    // The branch is the one the header holds, already chosen, and named.
+    expect(within(form).getByLabelText(labelled('pricing.lookup.branch'))).toHaveValue(BRANCH);
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    await pickService(user, form);
     await user.type(within(form).getByLabelText(labelled('pricing.lookup.customerClass')), 'fleet');
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
@@ -313,40 +488,131 @@ describe('the lookup renders the server’s figures, never its own', () => {
       branchId: BRANCH,
       customerClass: 'fleet',
     });
-    expect(listServices).not.toHaveBeenCalled();
   });
 
-  it('refuses a malformed identifier before any request', async () => {
+  it('refuses a lookup with no service chosen, beside the service control, before any request', async () => {
     const user = userEvent.setup();
-    renderScreen();
+    renderInBranch();
     const form = lookupForm();
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      'not-a-service'
-    );
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
     );
     expect(
-      (await within(form).findAllByText(EN['pricing.common.idFormat'] as string)).length
-    ).toBeGreaterThan(0);
+      await within(form).findByText(EN['pricing.picker.serviceRequired'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('pricing.lookup.service'))).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    );
     expect(resolvePrice).not.toHaveBeenCalled();
+  });
+
+  it('with the service catalogue, offers the search and no reference box', () => {
+    renderInBranch({ canReadServices: true });
+    const form = lookupForm();
+    expect(serviceBox(form)).toBeVisible();
+    expect(within(form).getByText(EN['pricing.picker.serviceSearchHelp'] as string)).toBeVisible();
+    expect(within(form).queryByLabelText(labelled('pricing.picker.serviceReference'))).toBeNull();
+  });
+
+  it('a throttled lookup is "unavailable, try again", and trying again asks once more', async () => {
+    const user = userEvent.setup();
+    resolvePrice
+      .mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr-t' })
+      .mockResolvedValueOnce(okRead(resolved));
+    renderInBranch();
+    const form = lookupForm();
+    await pickService(user, form);
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
+    );
+    expect(await screen.findByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    expect(
+      await screen.findByRole('region', { name: EN['pricing.lookup.resultHeading'] as string })
+    ).toBeVisible();
+    expect(resolvePrice).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses an on-date only partly typed, beside the date, before any request', async () => {
+    const user = userEvent.setup();
+    renderInBranch();
+    const form = lookupForm();
+    await pickService(user, form);
+    const asOf = within(form).getByRole('group', { name: labelled('pricing.lookup.asOf') });
+    await user.click(within(asOf).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('0509');
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
+    );
+    await waitFor(() => expect(asOf).toHaveAttribute('aria-invalid', 'true'));
+    expect(asOf).toHaveAccessibleDescription(
+      new RegExp(escape(EN['pricing.common.dateFormat'] as string))
+    );
+    await waitFor(() => expect(asOf.contains(document.activeElement)).toBe(true));
+    expect(resolvePrice).not.toHaveBeenCalled();
+    await user.keyboard('2026');
+    await waitFor(() => expect(asOf).not.toHaveAttribute('aria-invalid'));
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
+    );
+    await waitFor(() => expect(resolvePrice).toHaveBeenCalled());
+    expect(resolvePrice.mock.calls[0]?.[0]).toMatchObject({ asOf: '2026-09-05' });
+  });
+
+  it('without the service catalogue, STILL looks a price up through the labelled service reference', async () => {
+    // `svc.price-resolve` declares `svc.price.read` only, so a caller without
+    // `svc.service.read` keeps the lookup the server answers for them.
+    const user = userEvent.setup();
+    resolvePrice.mockResolvedValue(okRead(resolved));
+    renderInBranch({ canReadServices: false });
+    const form = lookupForm();
+    expect(
+      within(form).getByText(EN['pricing.picker.servicesNotReadable'] as string)
+    ).toBeVisible();
+    const submit = within(form).getByRole('button', {
+      name: EN['pricing.lookup.submit'] as string,
+    });
+    expect(submit).toBeEnabled();
+    const box = within(form).getByLabelText(labelled('pricing.picker.serviceReference'));
+
+    await user.type(box, 'OIL-CHANGE');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['pricing.picker.serviceReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(resolvePrice).not.toHaveBeenCalled();
+
+    // Eight-four-four-four-twelve hex with no RFC version digit or variant: the
+    // server's `z.string().uuid()` refuses it, so the box refuses it first.
+    await user.clear(box);
+    await user.type(box, '12345678-1234-0234-7234-123456789abc');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['pricing.picker.serviceReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(resolvePrice).not.toHaveBeenCalled();
+
+    await user.clear(box);
+    await user.type(box, SERVICE_ID);
+    await user.click(submit);
+    await waitFor(() => expect(resolvePrice).toHaveBeenCalledTimes(1));
+    expect(resolvePrice.mock.calls[0]?.[0]).toEqual({
+      serviceId: SERVICE_ID,
+      companyId: COMPANY,
+      branchId: BRANCH,
+    });
+    expect(listServices).not.toHaveBeenCalled();
   });
 
   it('renders a lookup that resolved nothing as a refusal, with the reference, and no zero', async () => {
     const user = userEvent.setup();
     resolvePrice.mockResolvedValue({ status: 'error', correlationId: 'corr-7' });
-    renderScreen();
+    renderInBranch();
     const form = lookupForm();
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      SERVICE_ID
-    );
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.common.companyIdField')),
-      COMPANY
-    );
-    await user.type(within(form).getByLabelText(labelled('pricing.common.branchIdField')), BRANCH);
+    await pickService(user, form);
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
     );
@@ -358,21 +624,123 @@ describe('the lookup renders the server’s figures, never its own', () => {
   it('renders a refused lookup as refused', async () => {
     const user = userEvent.setup();
     resolvePrice.mockResolvedValue(deniedRead);
-    renderScreen();
+    renderInBranch();
     const form = lookupForm();
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      SERVICE_ID
-    );
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.common.companyIdField')),
-      COMPANY
-    );
-    await user.type(within(form).getByLabelText(labelled('pricing.common.branchIdField')), BRANCH);
+    await pickService(user, form);
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
     );
     expect(await screen.findByText(EN['pricing.lookup.refused'] as string)).toBeVisible();
+  });
+});
+
+describe('the lookup follows the header, not just its first value', () => {
+  /*
+   * The lookup's branch used to be copied from the working context once, on
+   * mount. After a switch the header named one workshop and the form priced for
+   * another. It now follows every change, drops the answer about the previous
+   * branch, and a lookup still in flight cannot land under the new heading.
+   */
+  afterEach(forgetRememberedBranch);
+
+  const priced = okRead({
+    asOf: '2026-09-05',
+    priceRuleId: 'rule-1',
+    unitPrice: '77.5000',
+    currency: 'JOD',
+    taxClassId: 'tc-1',
+    taxRate: '0.160000',
+    taxClassCode: 'standard',
+  });
+
+  function renderTwo() {
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <BranchSwitch to="all" label="everywhere" />
+          <PricingScreen
+            locale="en"
+            messages={en}
+            canManage={false}
+            canReadBranches={false}
+            canReadServices={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+  const branchControl = () =>
+    within(lookupForm()).getByLabelText(labelled('pricing.lookup.branch'));
+  async function lookUp(user: ReturnType<typeof userEvent.setup>) {
+    // The service is not the branch's, so it survives a switch; it is chosen
+    // again from the catalogue rather than typed.
+    await pickService(user, lookupForm());
+    await user.click(
+      within(lookupForm()).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
+    );
+  }
+
+  it('resets the branch to the new working branch and clears the previous answer', async () => {
+    const user = userEvent.setup();
+    resolvePrice.mockResolvedValue(priced);
+    renderTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    expect(branchControl()).toHaveValue(TEST_BRANCH.id);
+    await lookUp(user);
+    expect(
+      await screen.findByRole('region', { name: EN['pricing.lookup.resultHeading'] as string })
+    ).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() => expect(branchControl()).toHaveValue(OTHER_BRANCH.id));
+    expect(
+      screen.queryByRole('region', { name: EN['pricing.lookup.resultHeading'] as string })
+    ).toBeNull();
+    await lookUp(user);
+    await waitFor(() => expect(resolvePrice).toHaveBeenCalledTimes(2));
+    expect(resolvePrice.mock.calls[1]?.[0]).toEqual({
+      serviceId: SERVICE_ID,
+      companyId: OTHER_BRANCH.companyId,
+      branchId: OTHER_BRANCH.id,
+    });
+  });
+
+  it('under "All my branches" the lookup names no branch until one is chosen', async () => {
+    const user = userEvent.setup();
+    renderTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    expect(branchControl()).toHaveValue(TEST_BRANCH.id);
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    await waitFor(() => expect(branchControl()).toHaveValue(''));
+  });
+
+  it('a lookup still in flight when the branch changes is dropped', async () => {
+    const user = userEvent.setup();
+    let answer: (value: unknown) => void = () => undefined;
+    resolvePrice.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    renderTwo();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await lookUp(user);
+    await waitFor(() => expect(resolvePrice).toHaveBeenCalledTimes(1));
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await waitFor(() => expect(branchControl()).toHaveValue(OTHER_BRANCH.id));
+    answer(priced);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(
+      screen.queryByRole('region', { name: EN['pricing.lookup.resultHeading'] as string })
+    ).toBeNull();
+    // Not left looking busy for a reply that no longer counts.
+    expect(
+      within(lookupForm()).getByRole('button', { name: EN['pricing.lookup.submit'] as string })
+    ).toBeEnabled();
   });
 });
 
@@ -388,11 +756,45 @@ describe('Arabic, right to left', () => {
       />
     );
     expect(document.documentElement.dir).toBe('rtl');
-    const table = await screen.findByRole('table');
-    expect(within(table).getByText('RETAIL')).toBeVisible();
+    const table = await priceListGrid(AR);
+    expect(await within(table).findByText('RETAIL')).toBeVisible();
     expect(within(table).getByText(AR['pricing.status.active'] as string)).toBeVisible();
     expect(
       screen.getByRole('button', { name: AR['pricing.lookup.submit'] as string })
+    ).toBeVisible();
+  });
+
+  it('states an unsupported currency in Arabic, beside the same box', async () => {
+    createPriceList.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { currency: 'form.violation.unsupported_currency' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderRtl(
+      <PricingScreen
+        locale="ar"
+        messages={ar}
+        canManage={true}
+        canReadBranches={false}
+        canReadServices={false}
+      />
+    );
+    await user.click(screen.getByRole('button', { name: AR['pricing.list.create'] as string }));
+    const form = await screen.findByRole('form', { name: AR['pricing.create.title'] as string });
+    const arLabelled = (key: string) => new RegExp(`^${escape(AR[key] as string)}`);
+    await user.type(within(form).getByLabelText(arLabelled('pricing.create.code')), 'RETAIL-2');
+    await user.type(within(form).getByLabelText(arLabelled('pricing.create.name')), 'Retail two');
+    await user.type(within(form).getByLabelText(arLabelled('pricing.create.currency')), 'JOD');
+    await user.click(
+      within(form).getByRole('button', { name: AR['pricing.create.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(AR['form.violation.unsupported_currency'] as string)
     ).toBeVisible();
   });
 });
@@ -421,8 +823,8 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     expect(within(form).getByRole('status')).toHaveTextContent(
       EN['pricing.common.branchesLoading'] as string
     );
-    expect(within(form).queryByLabelText(labelled('pricing.common.companyIdField'))).toBeNull();
-    expect(within(form).queryByLabelText(labelled('pricing.common.branchIdField'))).toBeNull();
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
     // The lookup REQUIRES the pair, so submitting while there is no control to
     // put an error on would fail silently.
     expect(submitButton()).toBeDisabled();
@@ -434,16 +836,17 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     expect(submitButton()).toBeEnabled();
   });
 
-  it('with no branch listed, says so and keeps the identifiers', async () => {
+  it('with no branch listed, says so, offers no box to type into, and holds the submit', async () => {
     listBranches.mockResolvedValue(okRead({ items: [] }));
     renderScreen(permitted);
     const form = lookupForm();
     expect(
       await within(form).findByText(EN['pricing.common.branchesNone'] as string)
     ).toBeVisible();
-    expect(within(form).getByLabelText(labelled('pricing.common.companyIdField'))).toBeVisible();
-    expect(within(form).getByLabelText(labelled('pricing.common.branchIdField'))).toBeVisible();
-    expect(submitButton()).toBeEnabled();
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.branch)).toBeNull();
+    // The lookup needs a branch, and there is no control to put that complaint on.
+    expect(submitButton()).toBeDisabled();
   });
 
   it('a failure that could clear offers a retry; a refusal does not', async () => {
@@ -478,18 +881,26 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     listBranches.mockResolvedValue({ status: 'expired', correlationId: 'corr' });
     renderScreen(permitted);
     const form = lookupForm();
-    expect(await within(form).findByText(EN['state.expired.title'] as string)).toBeVisible();
+    expect(await within(form).findByText(EN['state.expired.message'] as string)).toBeVisible();
     expect(within(form).queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
   });
 
-  it('without org.branch.read, the identifiers are the design and no list is requested', async () => {
+  it('without org.branch.read, the working context still lists its branches, and no directory read is made', async () => {
+    renderInBranch({ canReadBranches: false, canReadServices: true });
+    const form = lookupForm();
+    expect(listBranches).not.toHaveBeenCalled();
+    expect(within(form).getByLabelText(labelled('pricing.lookup.branch'))).toHaveValue(BRANCH);
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    expect(submitButton()).toBeEnabled();
+  });
+
+  it('with neither the directory nor a working context, says no branch is available and offers no box', () => {
     renderScreen({ canReadBranches: false, canReadServices: false });
     const form = lookupForm();
     expect(listBranches).not.toHaveBeenCalled();
-    expect(within(form).getByLabelText(labelled('pricing.common.companyIdField'))).toBeVisible();
-    expect(within(form).getByText(EN['pricing.common.identifierHelp'] as string)).toBeVisible();
-    expect(within(form).queryByRole('status')).toBeNull();
-    expect(submitButton()).toBeEnabled();
+    expect(within(form).getByText(EN['pricing.common.branchesNotOffered'] as string)).toBeVisible();
+    expect(within(form).queryByLabelText(RETIRED_BOX.en.company)).toBeNull();
+    expect(submitButton()).toBeDisabled();
   });
 
   it('in Arabic, a read in flight is a wait and not two identifier boxes', async () => {
@@ -509,11 +920,7 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     expect(within(form).getByRole('status')).toHaveTextContent(
       AR['pricing.common.branchesLoading'] as string
     );
-    expect(
-      within(form).queryByLabelText(
-        new RegExp(`^${escape(AR['pricing.common.companyIdField'] as string)}`)
-      )
-    ).toBeNull();
+    expect(within(form).queryByLabelText(RETIRED_BOX.ar.company)).toBeNull();
     release(listed);
     expect(
       await within(
@@ -522,7 +929,7 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     ).toBeVisible();
   });
 
-  it('in Arabic, a zero-row list says so and keeps the identifiers', async () => {
+  it('in Arabic, a zero-row list says so and offers no identifier box', async () => {
     listBranches.mockResolvedValue(okRead({ items: [] }));
     renderRtl(
       <PricingScreen
@@ -537,11 +944,7 @@ describe('CC-15 — the pricing branch picker says which state it is in', () => 
     expect(
       await within(form).findByText(AR['pricing.common.branchesNone'] as string)
     ).toBeVisible();
-    expect(
-      within(form).getByLabelText(
-        new RegExp(`^${escape(AR['pricing.common.branchIdField'] as string)}`)
-      )
-    ).toBeVisible();
+    expect(within(form).queryByLabelText(RETIRED_BOX.ar.branch)).toBeNull();
   });
 });
 
@@ -556,7 +959,7 @@ describe('the /pricing route page decides before it reads', () => {
   it('renders the screen with svc.price.read, and withholds creation without manage', async () => {
     PERMISSIONS = ['svc.price.read'];
     await renderPage(PricingPage, { locale: 'en' });
-    expect(await screen.findByRole('table')).toBeVisible();
+    expect(await priceListGrid()).toBeVisible();
     expect(screen.queryByRole('button', { name: EN['pricing.list.create'] as string })).toBeNull();
   });
 
@@ -569,5 +972,200 @@ describe('the /pricing route page decides before it reads', () => {
   it('a locale it does not serve is not found', async () => {
     PERMISSIONS = ['svc.price.read'];
     await expect(renderPage(PricingPage, { locale: 'xx' })).rejects.toThrow('notFound');
+  });
+});
+
+/**
+ * The company discount threshold (P1-32-PRE-OD-DISC-01).
+ *
+ * The screen reads the threshold of the company in the working context, says where it
+ * comes from — the company, the organisation default, or nowhere, in which case every
+ * discount needs approval — and, for a pricing manager, records the NEXT version with
+ * the current version as `If-Match` (none on the first). It offers no control that
+ * could let anyone approve their own discount.
+ */
+describe('the company discount threshold', () => {
+  const version = (over: Record<string, unknown> = {}) => ({
+    id: '99999999-0000-4000-8000-000000000001',
+    versionNo: 3,
+    thresholdKind: 'amount',
+    thresholdValue: '100.0000',
+    currency: 'JOD',
+    requiredPermission: 'svc.price.manage',
+    effectiveFrom: '2026-09-20',
+    status: 'active',
+    recordedAt: '2026-09-20T09:00:00Z',
+    recordedBy: { id: 'aaaaaaaa-0000-4000-8000-000000000001', displayName: 'Nadia Karim' },
+    ...over,
+  });
+  const view = (over: Record<string, unknown> = {}) => ({
+    companyId: COMPANY,
+    source: 'company',
+    current: version(),
+    tenantDefault: null,
+    recordVersion: 4,
+    history: [
+      version(),
+      version({ id: 'v2', versionNo: 2, status: 'inactive', thresholdValue: '50.0000' }),
+    ],
+    ...over,
+  });
+  const renderThreshold = (canManage: boolean, locale: 'en' | 'ar' = 'en') =>
+    (locale === 'en' ? renderLtr : renderRtl)(
+      inBranch(
+        <DiscountThresholdScreen
+          locale={locale}
+          messages={locale === 'en' ? en : ar}
+          canManage={canManage}
+        />,
+        { locale }
+      )
+    );
+
+  it('reads the working company’s threshold, says it is the company’s own, and lists the versions', async () => {
+    readDiscountThreshold.mockResolvedValue(okRead(view()));
+    renderThreshold(false);
+    const current = await screen.findByTestId('discount-threshold-current');
+    expect(readDiscountThreshold).toHaveBeenCalledWith(COMPANY);
+    expect(current).toHaveTextContent('100.0000');
+    expect(current).toHaveTextContent('JOD');
+    expect(current).toHaveTextContent('Nadia Karim');
+    // The rule that no setting can change is said on the screen.
+    expect(screen.getByText(EN['discountThreshold.separationNote'] as string)).toBeVisible();
+    expect(screen.getByText(EN['discountThreshold.state.replaced'] as string)).toBeVisible();
+    // Without the manage code there is no form.
+    expect(
+      screen.queryByRole('form', { name: EN['discountThreshold.formHeading'] as string })
+    ).toBeNull();
+  });
+
+  it('with nothing configured, says every discount needs approval', async () => {
+    readDiscountThreshold.mockResolvedValue(
+      okRead(view({ source: 'none', current: null, history: [], recordVersion: 1 }))
+    );
+    renderThreshold(false);
+    expect(await screen.findByText(EN['discountThreshold.none'] as string)).toBeVisible();
+  });
+
+  it('records the next version with the read’s record version as If-Match, and offers no self-approval switch', async () => {
+    readDiscountThreshold.mockResolvedValue(okRead(view()));
+    setDiscountThreshold.mockResolvedValue({
+      state: { status: 'success', messageKey: 'discountThreshold.saved', attempt: 1 },
+      created: view({ current: version({ versionNo: 4, thresholdValue: '150.0000' }) }),
+    });
+    const user = userEvent.setup();
+    renderThreshold(true);
+    const form = await screen.findByRole('form', {
+      name: EN['discountThreshold.formHeading'] as string,
+    });
+    expect(within(form).queryByRole('checkbox')).toBeNull();
+    expect(within(form).getByText(EN['discountThreshold.prospectiveNote'] as string)).toBeVisible();
+    const amount = within(form).getByLabelText(labelled('discountThreshold.amount'));
+    await user.clear(amount);
+    await user.type(amount, '150');
+    await user.click(
+      within(form).getByRole('button', { name: EN['discountThreshold.save'] as string })
+    );
+    await waitFor(() =>
+      expect(setDiscountThreshold).toHaveBeenCalledWith(
+        COMPANY,
+        { thresholdKind: 'amount', thresholdValue: '150', currency: 'JOD' },
+        4
+      )
+    );
+    // Saved: the screen reads the threshold again.
+    await waitFor(() => expect(readDiscountThreshold).toHaveBeenCalledTimes(2));
+  });
+
+  it('sends the read’s record version on the first version too, and refuses an empty value and a missing currency at their boxes', async () => {
+    readDiscountThreshold.mockResolvedValue(
+      okRead(view({ source: 'none', current: null, history: [], recordVersion: 1 }))
+    );
+    setDiscountThreshold.mockResolvedValue({
+      state: { status: 'success', messageKey: 'discountThreshold.saved', attempt: 1 },
+      created: view(),
+    });
+    const user = userEvent.setup();
+    renderThreshold(true);
+    const form = await screen.findByRole('form', {
+      name: EN['discountThreshold.formHeading'] as string,
+    });
+    await user.click(
+      within(form).getByRole('button', { name: EN['discountThreshold.save'] as string })
+    );
+    expect(within(form).getByText(EN['discountThreshold.valueRequired'] as string)).toBeVisible();
+    expect(
+      within(form).getByText(EN['discountThreshold.currencyRequired'] as string)
+    ).toBeVisible();
+    expect(setDiscountThreshold).not.toHaveBeenCalled();
+    // The refusal moves the cursor to the first box to fix one frame later
+    // (`useFocusFirstInvalid`). The user sees the cursor land before typing; so
+    // does this test. Typing earlier races that frame: landing after the first
+    // keystroke, it moves the cursor to the currency box, which then takes the
+    // rest of the amount and the save is refused again, with nothing sent.
+    const amount = within(form).getByLabelText(labelled('discountThreshold.amount'));
+    await waitFor(() => expect(amount).toHaveFocus());
+    await user.type(amount, '25');
+    await user.type(within(form).getByLabelText(labelled('discountThreshold.currency')), 'jod');
+    await user.click(
+      within(form).getByRole('button', { name: EN['discountThreshold.save'] as string })
+    );
+    await waitFor(() =>
+      expect(setDiscountThreshold).toHaveBeenCalledWith(
+        COMPANY,
+        { thresholdKind: 'amount', thresholdValue: '25', currency: 'JOD' },
+        1
+      )
+    );
+  });
+
+  it('a percentage sends no currency, and a server refusal is shown at its box, in Arabic too', async () => {
+    readDiscountThreshold.mockResolvedValue(okRead(view()));
+    setDiscountThreshold.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { thresholdValue: 'form.violation.discount_threshold_percentage_range' },
+        correlationId: 'corr-t',
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderThreshold(true, 'ar');
+    const AR_LABEL = (key: string) => new RegExp(`^${escape(AR[key] as string)}`);
+    const form = await screen.findByRole('form', {
+      name: AR['discountThreshold.formHeading'] as string,
+    });
+    await user.selectOptions(
+      within(form).getByLabelText(AR_LABEL('discountThreshold.kind')),
+      'percentage'
+    );
+    expect(within(form).queryByLabelText(AR_LABEL('discountThreshold.currency'))).toBeNull();
+    const value = within(form).getByLabelText(AR_LABEL('discountThreshold.percentage'));
+    await user.clear(value);
+    await user.type(value, '150');
+    await user.click(
+      within(form).getByRole('button', { name: AR['discountThreshold.save'] as string })
+    );
+    await waitFor(() =>
+      expect(setDiscountThreshold).toHaveBeenCalledWith(
+        COMPANY,
+        { thresholdKind: 'percentage', thresholdValue: '150' },
+        4
+      )
+    );
+    expect(
+      await within(form).findByText(
+        AR['form.violation.discount_threshold_percentage_range'] as string
+      )
+    ).toBeVisible();
+  });
+
+  it('the route page refuses without svc.price.read, before any read', async () => {
+    PERMISSIONS = [];
+    await renderPage(DiscountThresholdPage, { locale: 'en' });
+    expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(readDiscountThreshold).not.toHaveBeenCalled();
   });
 });

@@ -108,6 +108,7 @@ export default async function AppointmentDetailPage({
       canManage={holds(session.permissions, APPOINTMENT_PERMISSIONS.manage)}
       canEndLifecycle={canEndLifecycle}
       cancellationReasons={cancellationReasons}
+      canSetUpCatalogue={holds(session.permissions, APPOINTMENT_PERMISSIONS.catalogueManage)}
     />
   );
 }

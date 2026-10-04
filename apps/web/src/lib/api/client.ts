@@ -34,6 +34,7 @@
 import englishCatalogue from '@/i18n/messages/en.json';
 import { report, type LogLevel } from '../observability/client-log';
 import { requiresIdempotencyKey } from './operation-contract';
+import { DEFAULT_READ_RETRIES, DEFAULT_TIMEOUT_MS, MAX_READ_RETRIES } from './read-budget';
 
 export const PROBLEM_CONTENT_TYPE = 'application/problem+json';
 
@@ -117,10 +118,31 @@ export interface ProblemDetails {
   readonly violations?: readonly Violation[];
   /** Seconds until a retry is sensible. Throttling only. */
   readonly retryAfterSeconds?: number;
-  /** Contract-only service name. Not-implemented stubs only. */
-  readonly contract?: string;
+  readonly contract?: string; // Contract-only service name. Not-implemented stubs only.
   /** Permission codes the operation requires. Authorization failures only. */
   readonly requiredPermissions?: readonly string[];
+  readonly capacity?: CapacityDetail; // `ERR-CAP-001` only. See `CapacityDetail` below.
+  /** `ERR-CAP-003` only: every kind a plan change would leave below current usage. */
+  readonly overCapacity?: readonly OverCapacityEntry[];
+  /**
+   * The allowance a work-order draw was measured against. `ERR-INV-001` only.
+   * Quantities are exact decimal strings in the requirement unit; `allowance` and
+   * `requested` are null when no allowance or no exact conversion exists.
+   */
+  readonly materialDraw?: MaterialDrawDetails;
+}
+
+/** Why a work-order draw was refused by its material requirement. */
+export interface MaterialDrawDetails {
+  readonly allowance: string | null;
+  readonly alreadyCommitted: string;
+  readonly requested: string | null;
+  readonly reason:
+    | 'exceeds_requirement'
+    | 'approval_required'
+    | 'missing_conversion'
+    | 'missing_specification'
+    | 'no_requirement';
 }
 
 export type ApiFailureKind =
@@ -155,7 +177,12 @@ export interface ApiSuccess<T> {
 export type ApiResult<T> = ApiSuccess<T> | ApiFailure;
 
 export const CORRELATION_HEADER = 'x-correlation-id';
-export const DEFAULT_TIMEOUT_MS = 15_000;
+/*
+ * The timeout and the retry clamp live in `read-budget.ts`, a module with no
+ * imports, so the browser's read ceiling can be derived from them without the
+ * browser importing this client. Re-exported so every existing import holds.
+ */
+export { DEFAULT_READ_RETRIES, DEFAULT_TIMEOUT_MS, MAX_READ_RETRIES };
 
 export interface ApiClientOptions {
   readonly baseUrl: string;
@@ -272,7 +299,10 @@ export class ApiClient {
     path: string,
     options: { readonly signal?: AbortSignal; readonly retries?: number } = {}
   ): Promise<ApiResult<T>> {
-    const retries = Math.max(0, Math.min(options.retries ?? 1, 2));
+    const retries = Math.max(
+      0,
+      Math.min(options.retries ?? DEFAULT_READ_RETRIES, MAX_READ_RETRIES)
+    );
     let last: ApiFailure | null = null;
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       const result = await this.#request<T>('GET', path, undefined, options.signal);
@@ -489,9 +519,9 @@ export class ApiClient {
       }
       return { ok: true, status: response.status, data: payload as T, correlationId: echoed };
     } catch (error) {
-      // An abort is either the caller cancelling or our own timeout firing.
-      // They are different outcomes: one is expected and silent, the other is a
-      // condition worth showing.
+      // A caller whose signal is aborted CANCELLED, whatever the fetch threw: a
+      // Route Handler's signal aborts with the framework's own reason, not an
+      // AbortError, and a superseded read was logged at `error` as `network`.
       // Three distinguishable outcomes, and the distinction matters: a user
       // pressing Cancel must not be reported as a backend timeout, which would
       // put a service-unavailable state on screen for something that did not
@@ -501,7 +531,7 @@ export class ApiClient {
       const isTimeout =
         timedOutHere || (error instanceof DOMException && error.name === 'TimeoutError');
       const isAbort = error instanceof DOMException && error.name === 'AbortError';
-      const kind = isTimeout ? 'timeout' : isAbort ? 'cancelled' : 'network';
+      const kind = isTimeout ? 'timeout' : isAbort || signal?.aborted ? 'cancelled' : 'network';
       const failure: ApiFailure = {
         ok: false,
         kind,
@@ -753,17 +783,17 @@ export function fieldErrorsOf(failure: ApiFailure): Record<string, string> {
  * rendered anywhere.
  */
 export const FAILURE_MESSAGE_KEY: Record<ApiFailureKind, string> = {
-  unauthenticated: 'state.expired.title',
+  unauthenticated: 'state.expired.message',
   forbidden: 'state.denied.title',
-  'not-found': 'state.notFound.title',
+  'not-found': 'state.notFound.message',
   conflict: 'state.conflict.title',
   validation: 'form.formError',
-  'rate-limited': 'state.error.title',
-  server: 'state.error.title',
-  unavailable: 'state.unavailable.title',
-  timeout: 'state.unavailable.title',
-  cancelled: 'state.error.title',
-  network: 'state.unavailable.title',
+  'rate-limited': 'state.throttled.message',
+  server: 'state.error.message',
+  unavailable: 'state.unavailable.message',
+  timeout: 'state.unavailable.message',
+  cancelled: 'state.cancelled.message',
+  network: 'state.unavailable.message',
 };
 
 /**
@@ -802,7 +832,225 @@ export const CONCURRENT_CHANGE_CODE = 'ERR-CON-001';
  */
 export function failureMessageKey(failure: ApiFailure): string {
   if (failure.kind !== 'conflict') return FAILURE_MESSAGE_KEY[failure.kind];
-  return failure.problem?.code === CONCURRENT_CHANGE_CODE
-    ? 'state.conflict.title'
-    : 'state.conflict.blocked.title';
+  if (failure.problem?.code === CONCURRENT_CHANGE_CODE) return 'state.conflict.title';
+  // Every other 409, `ERR-TRN-001` included (see `STATE_TRANSITION_CODE` below).
+  return 'state.conflict.blocked.title';
+}
+
+/**
+ * The catalog code for "Transition not permitted from the current state" (409).
+ *
+ * The code alone does NOT establish that the record moved on. The backend also
+ * answers `ERR-TRN-001` for a broken bound or invariant: an allocation larger
+ * than the receipt's remainder or the invoice's open balance
+ * (`payment-service.ts`), a billing invariant or a numeric overflow
+ * (`invoice-service.ts`), a reservation the stock ledger refuses. Telling that
+ * operator to refresh would point at a fix that does nothing, so
+ * `failureMessageKey` keeps the blocked sentence for it.
+ *
+ * Only an adapter whose operation uses the code for nothing but a stage refusal
+ * opts in, through `fromStateRefusal` in `lib/forms/action-result.ts`, to the
+ * sentence that says the step is no longer possible and to refresh (Browser QA
+ * part 7, row 1.4b). A refusal that names its precondition still reaches the
+ * form through `violations` first, which is more specific than either.
+ *
+ * Declared below the function that reads it so that no line above moves under
+ * the P1-27 citation anchors.
+ */
+export const STATE_TRANSITION_CODE = 'ERR-TRN-001';
+
+// --- subscription capacity refusals -------------------------------------------
+
+/**
+ * `ProblemDetails.capacity`: which subscription ceiling a write ran into,
+ * `ERR-CAP-001` only.
+ *
+ * Source: `apps/api/src/server/errors/problem.ts`, which copies it from the
+ * failure's `safeDetails`. Absent when the database refusal carried no readable
+ * detail, so every member is checked before it is trusted.
+ */
+export interface CapacityDetail {
+  readonly kind: string;
+  readonly limit: number;
+  readonly used: number;
+}
+
+/**
+ * The subscription allowance for this kind is spent (409).
+ *
+ * Unlike the other 409s this one CAN be explained exactly: the problem document
+ * names the ceiling, its size and how much of it is in use, so the operator is
+ * told the numbers and the remedy rather than "this record cannot take the
+ * change".
+ */
+export const CAPACITY_LIMIT_CODE = 'ERR-CAP-001';
+
+/** The organisation itself is suspended or closed, so it may not grow (409). */
+export const ORGANISATION_INACTIVE_CODE = 'ERR-CAP-002';
+
+/**
+ * An external dependency the request needed was unreachable (503).
+ *
+ * The catalogue entry is explicit that the request performed no work, which is
+ * what lets a caller say "nothing was saved" rather than leaving the operator to
+ * guess. The dependency itself is never named to a caller and is not named here.
+ */
+export const UPSTREAM_DEPENDENCY_CODE = 'ERR-DEP-001';
+
+/**
+ * The plan a change would assign sits below what the organisation already holds
+ * (409).
+ *
+ * Unlike the two above this refusal is not final: an operator who states a
+ * reason may accept it deliberately. The document lists EVERY kind that would be
+ * over its ceiling, which is what lets a screen show the whole picture instead
+ * of the first problem it met.
+ */
+export const PLAN_OVER_CAPACITY_CODE = 'ERR-CAP-003';
+
+/** One kind a plan change would leave over its ceiling. */
+export interface OverCapacityEntry {
+  readonly kind: string;
+  readonly used: number;
+  readonly newLimit: number;
+}
+
+/**
+ * The over-capacity list of an `ERR-CAP-003`, or an empty list when it is
+ * absent, malformed, or names a kind outside the vocabulary.
+ *
+ * Every member is checked before it is trusted, for the reason
+ * `capacityDetailOf` gives: a kind with no message key would render nothing at
+ * all, and a screen that silently showed less than the refusal said would be
+ * worse than one that showed only the sentence.
+ */
+export function overCapacityOf(failure: ApiFailure): readonly OverCapacityEntry[] {
+  if (failure.problem?.code !== PLAN_OVER_CAPACITY_CODE) return [];
+  const list: unknown = failure.problem.overCapacity;
+  if (!Array.isArray(list)) return [];
+  const entries: OverCapacityEntry[] = [];
+  for (const raw of list) {
+    if (raw === null || typeof raw !== 'object') continue;
+    const { kind, used, newLimit } = raw as Record<string, unknown>;
+    if (typeof kind !== 'string' || !CAPACITY_KINDS.includes(kind)) continue;
+    if (!Number.isInteger(used) || !Number.isInteger(newLimit)) continue;
+    entries.push({ kind, used: used as number, newLimit: newLimit as number });
+  }
+  return entries;
+}
+
+/** The capacity kinds the database vocabulary admits (`org.capacity_limit`). */
+export const CAPACITY_KINDS: readonly string[] = Object.freeze(['companies', 'branches', 'users']);
+
+/**
+ * The capacity detail of an `ERR-CAP-001`, or null when it is absent, of an
+ * unknown kind, or malformed. A kind outside the vocabulary is null rather than
+ * rendered, because its message key would not exist.
+ */
+export function capacityDetailOf(failure: ApiFailure): CapacityDetail | null {
+  if (failure.problem?.code !== CAPACITY_LIMIT_CODE) return null;
+  const detail: unknown = failure.problem.capacity;
+  if (detail === undefined || detail === null || typeof detail !== 'object') return null;
+  const { kind, limit, used } = detail as Record<string, unknown>;
+  if (typeof kind !== 'string' || !CAPACITY_KINDS.includes(kind)) return null;
+  if (!Number.isInteger(limit) || !Number.isInteger(used)) return null;
+  return { kind, limit: limit as number, used: used as number };
+}
+
+/**
+ * The platform console's own wording for a refusal.
+ *
+ * The shared sentence for a 403 is written for a company operator, whose remedy
+ * is their own administrator. A platform operator has no company administrator —
+ * the authority over a console grant is the platform owner — so the console
+ * passes this key as its override rather than showing a sentence that sends the
+ * reader to somebody who does not exist.
+ */
+export const PLATFORM_DENIED_MESSAGE_KEY = 'state.denied.platformMessage';
+
+/**
+ * The longest wait a throttle answer is allowed to advise, in seconds.
+ *
+ * An hour. `retryAfterSeconds` is copied from the failure's safe details and is
+ * therefore an untrusted number: a wrong one would tell an operator to wait
+ * three days for a search. Above the bound the advice is dropped and the
+ * no-number sentence is used, which is true whatever the real figure is.
+ */
+export const MAX_ADVISED_WAIT_SECONDS = 3600;
+
+/**
+ * The wait a throttled answer advises, or null when it advised none.
+ *
+ * `retryAfterSeconds` has been declared on `ProblemDetails` since the contract
+ * correction above and had no reader at all: every 429 rendered the generic
+ * "Something went wrong", which is both wrong — nothing went wrong — and
+ * actionless. This is the reader, and it is deliberately strict: a value that is
+ * not a positive whole number of seconds within the bound is treated as absent
+ * rather than rendered, because a sentence that says "Wait 0 seconds" or
+ * "Wait 1e21 seconds" is worse than the one that names no figure.
+ */
+export function retryAfterSecondsOf(failure: ApiFailure): number | null {
+  if (failure.kind !== 'rate-limited') return null;
+  const value: unknown = failure.problem?.retryAfterSeconds;
+  if (!Number.isInteger(value)) return null;
+  const seconds = value as number;
+  if (seconds <= 0 || seconds > MAX_ADVISED_WAIT_SECONDS) return null;
+  return seconds;
+}
+
+/**
+ * The message key for a failure an operator must act on — `failureMessageKey`,
+ * except that the two capacity refusals get their own sentences.
+ *
+ * A separate function rather than a change inside `failureMessageKey`, so that
+ * function keeps exactly the two conflict sentences its callers and its
+ * citations were written against, and only the action-result path — the one
+ * that reaches a form — learns the capacity sentences.
+ */
+export function refusalMessageKey(failure: ApiFailure): string {
+  // The numbered throttle sentence is returned ONLY here, because only this path
+  // is paired with `failureMessageValues`. That pairing is a property of this
+  // function, not of its readers, and the readers were where it failed: the
+  // capacity sentences reached here already carry `{limit}` and `{used}`, and
+  // every banner in the product translated the key while dropping the values, so
+  // the placeholder rendered as written. The renderers now interpolate —
+  // `RecordForm.tsx`, the vehicle, reception, warranty and delivery banners —
+  // and `apps/web/tests/record-form.dom.test.tsx` holds one of them to it.
+  if (failure.kind === 'rate-limited') {
+    return retryAfterSecondsOf(failure) === null
+      ? 'state.throttled.message'
+      : 'state.throttled.messageWithSeconds';
+  }
+  if (failure.kind === 'conflict') {
+    const code = failure.problem?.code;
+    if (code === CAPACITY_LIMIT_CODE) {
+      const detail = capacityDetailOf(failure);
+      return detail === null ? 'capacity.reached.unknown' : `capacity.reached.${detail.kind}`;
+    }
+    if (code === ORGANISATION_INACTIVE_CODE) return 'capacity.organisationInactive';
+    if (code === PLAN_OVER_CAPACITY_CODE) return 'capacity.planBelowUsage';
+  }
+  return failureMessageKey(failure);
+}
+
+/**
+ * The values the refusal message interpolates, or undefined when it takes none.
+ *
+ * Only numbers the backend published, and only for the messages whose catalogue
+ * text carries the matching placeholder: `{limit}` and `{used}` for a capacity
+ * ceiling, `{seconds}` for a throttle answer that advised a wait. The two sets
+ * are returned by the two branches that can produce the keys naming them, so a
+ * sentence can never receive values meant for a different one.
+ */
+export function failureMessageValues(
+  failure: ApiFailure
+): Readonly<Record<string, string>> | undefined {
+  if (failure.kind === 'rate-limited') {
+    const seconds = retryAfterSecondsOf(failure);
+    return seconds === null ? undefined : { seconds: String(seconds) };
+  }
+  if (failure.kind !== 'conflict') return undefined;
+  const detail = capacityDetailOf(failure);
+  if (detail === null) return undefined;
+  return { limit: String(detail.limit), used: String(detail.used) };
 }

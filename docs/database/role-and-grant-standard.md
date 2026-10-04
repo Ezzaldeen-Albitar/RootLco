@@ -425,6 +425,89 @@ by design, for platform-scope rows. The tenant-scoped predicate evaluates to
 NULL for those rows, so a tenant session can neither read nor write them;
 platform provisioning keeps using a platform connection.
 
+### 5.8 Control-plane read of the reference registers (DBCR-P1-32-PRE-OD-REF-001, migration `20260927090000`)
+
+The control-plane role `app_platform` reads the three reference registers so the
+Platform Owner Console can offer a currency, a time zone and a language as
+choices (`platform.reference-values-read`). This reverses the choice recorded in
+`20260916091000_org_subscription_commerce.sql` that no platform path reads the
+currency register. The whole of the added surface:
+
+| Object                                                 | `app_platform` | Policy                                    |
+| ------------------------------------------------------ | -------------- | ----------------------------------------- |
+| `shared.currencies`                                    | SELECT         | `sel_currencies_platform`, `USING (true)` |
+| `shared.timezones`                                     | SELECT         | `sel_timezones_platform`, `USING (true)`  |
+| `shared.languages`                                     | SELECT         | `sel_languages_platform`, `USING (true)`  |
+| INSERT / UPDATE / DELETE on any of the three, any role | —              | —                                         |
+
+The predicate is `true` for the reason the existing `sel_*_all` policies give:
+the registers hold no tenant data. Reference rows are still written only by the
+declared seed and the migration role.
+
+### 5.9 Dual-control requests narrowed to their decision columns (DBCR-P1-32-PRE-OD-FIN-001, migration `20260930090000`)
+
+A pending credit note or receipt reversal is a request one person raises and a
+second person decides. The runtime role used to hold table-level `UPDATE` on both
+tables, so the facts of a pending request — who raised it, for how much and why —
+could be rewritten before the decision (finance review M-01). Rule 5.3 now applies:
+`app_runtime` holds `UPDATE` only on the columns a decision writes, and a trigger
+freezes the request's facts for any role that can still write them.
+
+| Object                  | `app_runtime` UPDATE (was: every column) | Frozen by `sal.guard_dual_control_request_frozen`                                                                         |
+| ----------------------- | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `sal.credit_notes`      | `approval_state`, `issued_at`            | `requested_by`, `amount`, `currency_code`, `reason`, `invoice_id`, `idempotency_key`, `created_at`, `created_by`          |
+| `sal.receipt_reversals` | `approval_state`, `reversed_at`          | `requested_by`, `amount`, `currency_code`, `reason`, `original_receipt_id`, `idempotency_key`, `created_at`, `created_by` |
+
+`approved_by`, `approved_at` and the row metadata are assigned by triggers, which
+needs no privilege of the caller. `SELECT` and `INSERT` are unchanged, no policy
+changes, and `app_readonly` keeps `SELECT` only.
+
+### 5.10 Decision dates written by triggers only (DBCR-P1-32-PRE-OD-FD2A-001, migration `20260930110000`)
+
+The decision columns of 5.9 still let the runtime role write the date a decision
+took effect: `issued_at` on an approved credit note and `reversed_at` on an
+approved receipt reversal, so either could be backdated after the decision. Both
+are now stamped by the decision triggers at the moment of approval and frozen
+afterwards, and the runtime role no longer holds `UPDATE` on either. A rejection
+states its reason, so `decision_reason` is the one column the runtime role gains.
+
+| Object                  | `app_runtime` UPDATE (was)                            | Stamped and frozen by the trigger                                     |
+| ----------------------- | ----------------------------------------------------- | --------------------------------------------------------------------- |
+| `sal.credit_notes`      | `approval_state`, `decision_reason` (was `issued_at`) | `approved_by`, `approved_at`, `issued_at`, `decided_by`, `decided_at` |
+| `sal.receipt_reversals` | `approval_state` (was `reversed_at`)                  | `approved_by`, `approved_at`, `reversed_at`                           |
+
+`SELECT` and `INSERT` are unchanged, no policy changes, and `app_readonly` keeps
+`SELECT` only.
+
+### 5.11 Receipt-reversal decisions (DBCR-P1-32-PRE-OD-FD4-001, migration `20261002090000`)
+
+A receipt reversal can now be rejected with a reason and withdrawn by its requester
+(ADR-023 D4), so the runtime role gains `UPDATE (decision_reason)` on
+`sal.receipt_reversals`, as it already holds on `sal.credit_notes`. Every decider
+and every date is stamped by `sal.guard_receipt_reversal_decision`, and a raw
+`INSERT` is born pending and undecided (`sal.stamp_dual_control_maker`) and held to
+the request rules (`sal.guard_receipt_reversal_request`).
+
+| Object                  | `app_runtime` UPDATE (now)          | Stamped and frozen by the trigger                                       |
+| ----------------------- | ----------------------------------- | ----------------------------------------------------------------------- |
+| `sal.receipt_reversals` | `approval_state`, `decision_reason` | `approved_by`, `approved_at`, `reversed_at`, `decided_by`, `decided_at` |
+
+The three new primitives (`sal.request_receipt_reversal`, `sal.withdraw_receipt_reversal`,
+`sal.reject_receipt_reversal`) and the re-created `sal.record_receipt` are
+`SECURITY INVOKER` with `EXECUTE` for `app_runtime` only. `SELECT` and `INSERT` are
+unchanged, no policy changes, and `app_readonly` keeps `SELECT` only.
+
+### 5.12 Third-party payer allocations (DBCR-P1-32-PRE-OD-FD14-001, migration `20261002100000`)
+
+No table privilege changes. `app_runtime` keeps `SELECT` and `INSERT` on
+`sal.payment_allocations`; the four new third-party columns are written only through that
+`INSERT`, and `sal.guard_allocation_payer` (BEFORE INSERT, `SECURITY INVOKER`, `EXECUTE`
+revoked from PUBLIC) holds every new row to the payer rule of ADR-023 D14: another customer's
+invoice only as a third-party allocation by a holder of `sal.payment.third_party` in the
+receipt's company and branch, the authorising user stamped from the session whatever the
+statement names. `sal.allocate_receipt` is re-created with three more arguments and keeps
+`EXECUTE` for `app_runtime` only. No policy changes, and `app_readonly` keeps `SELECT` only.
+
 ---
 
 ## 6. How later phases attach real logins

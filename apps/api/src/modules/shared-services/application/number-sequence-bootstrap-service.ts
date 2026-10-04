@@ -26,7 +26,7 @@
  * as `ERR-RES-001` from a route the operator will read as a bug.
  */
 import { AppFailure } from '@/server/errors/app-failure';
-import type { PlatformTargetHandle } from '@/server/db/transaction';
+import type { DbHandle, PlatformTargetHandle } from '@/server/db/transaction';
 import type {
   NumberSequenceBootstrapRepository,
   SequenceBootstrapScope,
@@ -57,5 +57,38 @@ export class NumberSequenceBootstrapService {
       });
     }
     return written;
+  }
+
+  /**
+   * Gives a branch created AFTER provisioning the numbering runs it owes.
+   *
+   * Three of the eight registered runs are configured per branch — invoice,
+   * quotation and receipt — and `shared.next_display_number` refuses rather than
+   * degrading when a row is missing. A branch without them is a branch that
+   * cannot issue an invoice, quote a job or receipt a payment, and the failure
+   * would arrive later, one document type at a time, as an error the operator
+   * would read as a bug.
+   *
+   * The verification reads the configured SET back rather than trusting the
+   * affected-row count, because the write is `ON CONFLICT DO NOTHING` and a
+   * replay legitimately writes nothing while leaving the branch correct.
+   */
+  async provisionBranchSequences(db: DbHandle, scope: SequenceBootstrapScope): Promise<void> {
+    await this.repository.provisionBranchSequences(db, scope);
+    const configured = new Set(await this.repository.branchSequenceCodes(db, scope));
+    const missing = SEQUENCE_DEFINITIONS.filter(
+      (definition) => definition.provisioningScope === 'branch'
+    )
+      .map((definition) => definition.code)
+      .filter((code) => !configured.has(code));
+    if (missing.length > 0) {
+      throw new AppFailure('ERR-SYS-001', {
+        message:
+          `The new branch is missing ${missing.length} of its registered number sequences ` +
+          `(${missing.join(', ')}). Every document issued in a branch takes its number from ` +
+          'one of them and they refuse rather than degrade, so the branch is refused rather ' +
+          'than committed half configured.',
+      });
+    }
   }
 }

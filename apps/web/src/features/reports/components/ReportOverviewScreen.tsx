@@ -1,0 +1,918 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
+import { EmptyState } from '@/components/states/States';
+import {
+  useWorkingContext,
+  useWorkingContextChange,
+} from '@/features/working-context/WorkingContextProvider';
+import type { Locale } from '@/i18n/config';
+import type { Messages } from '@/i18n/get-messages';
+import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
+import { runReport } from '../reports-api';
+import { fieldHeading, formatReportTime, groupDisplayLabel, runTitle } from '../report-labels';
+import {
+  OVERVIEW_ROW_LIMIT,
+  OVERVIEW_SECTIONS,
+  overviewReportHref,
+  type OverviewSection,
+} from '../overview-contract';
+import {
+  initialReportScope,
+  reportGroups,
+  type ReportDefinition,
+  type ReportGroup,
+  type ReportRun,
+  type ReportRunState,
+  type ReportScopeOptions,
+  type ReportScopeSelection,
+} from '../reports-contract';
+import {
+  ContextFact,
+  MachineName,
+  REPORT_TABLE_CELL,
+  REPORT_TABLE_HEADER,
+  ReportFailure,
+  ReportLoading,
+} from './ReportShell';
+import { ReportScopeForm } from './ReportScopeForm';
+import { useWorkingReportScope } from './use-working-report-scope';
+
+/**
+ * The operational overview of the four approved report domains (P1-31, FE-010
+ * and FE-016; Owner decision **D-19** of 2026-09-12).
+ *
+ * One branch, one period, four sections: work orders by status; recorded
+ * technician labour duration; stock received and issued per item and unit; and
+ * invoiced, credit-note, receipt, applied, unapplied and outstanding values per
+ * currency and document kind. Each section is one run of that domain's own
+ * approved report, and each figure is a string that run published.
+ *
+ * ## Four reads, and not one number of this screen's own
+ *
+ * The four reports are run together and each one answers for itself. Nothing here
+ * adds, nets, divides, rounds, re-scales, ranks or compares anything: no total
+ * across the four domains, no figure per day, no share of anything, no change
+ * against another period, no score. **D-19** allows only supported, approved
+ * calculations and forbids inventing profit, performance scores or trends — and
+ * every summary on this screen is computed by PostgreSQL over the WHOLE selection
+ * inside the request that asked for it.
+ *
+ * That is also why each read asks for a single row: the groups are not a summary
+ * of the page, so the rows are not needed here at all. The rows belong to the
+ * report screen, which the heading of every section links to, carrying this
+ * selection so the two cannot disagree about what was asked.
+ *
+ * ## A section that cannot answer says so, and the others still answer
+ *
+ * The reads are settled independently. One report the caller may not read leaves
+ * the other three showing their own figures, and the refused one says it was
+ * refused, with the reference the backend logged. A refusal is never drawn as a
+ * zero, an empty table or a dash: "you may not see this" and "there was none of
+ * it" are different facts, and an overview that confused them would be the
+ * `P1-27-QA-002` defect on a screen a manager makes decisions from.
+ *
+ * Four states are kept apart, deliberately:
+ *
+ *  - the report is **not published to this caller**, or is published and the
+ *    platform **cannot run it** — no read is issued at all, and the section says
+ *    the report has nothing behind it rather than that there was nothing to
+ *    report;
+ *  - the read was **refused or failed** — the refusal itself, with its reference;
+ *  - the run **published no summary** — the section says so, and this side
+ *    computes nothing in its place. The one exception is the work-order domain,
+ *    whose older envelope publishes the same counts under the field it deprecated;
+ *    reading that is reading the server's own answer, not deriving one;
+ *  - the run published **an empty summary** — nothing was recorded for this branch
+ *    in these days, which is a measurement and is said as one.
+ *
+ * ## The branch may be fixed by the address, and never by a literal
+ *
+ * FE-016 is this screen with `?branchId=` naming the branch — **D-19** requires
+ * the same overview for the selected branch "with no hard-coded pilot". The branch
+ * is resolved against the caller's own authorized directory; one that is not there
+ * renders the no-branch body rather than a guess, and there is no default branch
+ * anywhere in this feature.
+ */
+export function ReportOverviewScreen({
+  locale,
+  messages,
+  scopeOptions,
+  catalogue,
+  fixedBranchId = null,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly scopeOptions: ReadState<ReportScopeOptions>;
+  readonly catalogue: ReadState<CursorPage<ReportDefinition>>;
+  /** FE-016: the branch named in the address, or nothing. Never a literal. */
+  readonly fixedBranchId?: string | null;
+}) {
+  const [chosen, setChosen] = useState<ReportScopeSelection | null>(null);
+  /*
+   * The working branch and today, read on arrival, unless the address fixed a
+   * branch (FE-016). The same rule and the same helper as the report screen:
+   * one branch the directory holds, `[today, tomorrow)` on its clock, followed
+   * on a switch; nothing under "All my branches", which the server does not
+   * report as a union (route sweep B3).
+   */
+  const working = useWorkingReportScope(scopeOptions.status === 'ok' ? scopeOptions.data : null);
+  const answered = fixedBranchId === null && working.kind === 'ready' ? working.selection : null;
+  /*
+   * The same selection is the same OBJECT from one render to the next.
+   *
+   * The hook answers a fresh object on every render, and the results below read
+   * whenever their selection changes identity — so any re-render of this screen
+   * (a parent's, a context's) ran the four expensive reads again for a branch
+   * and a period that had not changed (route sweep B3 review). Keyed on the four
+   * values, it changes only when one of them does.
+   */
+  const followedCompanyId = answered?.companyId ?? null;
+  const followedBranchId = answered?.branchId ?? null;
+  const followedFrom = answered?.from ?? null;
+  const followedTo = answered?.to ?? null;
+  const followed = useMemo<ReportScopeSelection | null>(
+    () =>
+      followedCompanyId === null ||
+      followedBranchId === null ||
+      followedFrom === null ||
+      followedTo === null
+        ? null
+        : {
+            companyId: followedCompanyId,
+            branchId: followedBranchId,
+            from: followedFrom,
+            to: followedTo,
+          },
+    [followedCompanyId, followedBranchId, followedFrom, followedTo]
+  );
+  /*
+   * Answers this page has already read, by selection, for this visit only.
+   *
+   * The overview reads on arrival and again on every branch switch, and each
+   * visit is four runs of an expensive read limited per minute. Switching to a
+   * branch and back within a minute would spend eight more of those on figures
+   * this page already holds, so a selection read in the last minute is shown
+   * from here instead. Held in state created once, never in browser storage:
+   * figures are not interface preferences, and they are gone when the page is.
+   */
+  const [recent] = useState<RecentAnswers>(() => new Map());
+  /*
+   * When the server said to wait, for this visit only — see `RUN_BUCKET`. Held
+   * beside the answers so a switch of branch or period, which mounts a new set
+   * of results, still knows the wait an earlier set was told.
+   */
+  const [waits] = useState<RunWaits>(() => new Map());
+  const { version } = useWorkingContext();
+  useWorkingContextChange(() => {
+    if (fixedBranchId === null) setChosen(null);
+  });
+  const submitted = chosen ?? followed;
+
+  if (scopeOptions.status !== 'ok') {
+    return (
+      <ReportFailure
+        messages={messages}
+        status={scopeOptions.status}
+        correlationId={scopeOptions.correlationId}
+      />
+    );
+  }
+
+  if (catalogue.status !== 'ok') {
+    // The catalogue is what says whether each of the four can be run at all. A
+    // screen that ran them anyway would turn one refusal into four.
+    return (
+      <ReportFailure
+        messages={messages}
+        status={catalogue.status}
+        correlationId={catalogue.correlationId}
+      />
+    );
+  }
+
+  const { companies, branches } = scopeOptions.data;
+  const reachable = branches.filter((branch) =>
+    companies.some((company) => company.id === branch.companyId)
+  );
+  const fixedBranch =
+    fixedBranchId === null ? null : (reachable.find((b) => b.id === fixedBranchId) ?? null);
+
+  if (companies.length === 0 || reachable.length === 0) {
+    return (
+      <EmptyState
+        messages={messages}
+        titleKey="reports.run.noScopesTitle"
+        descriptionKey="reports.run.noScopesBody"
+      />
+    );
+  }
+
+  if (fixedBranchId !== null && fixedBranch === null) {
+    // A branch named in the address that the caller's directory does not hold.
+    // The same body as "you have no branch", on purpose: whether that branch
+    // exists elsewhere is not something this screen may disclose, and choosing a
+    // different branch would answer a question nobody asked.
+    return (
+      <EmptyState
+        messages={messages}
+        titleKey="reports.run.noScopesTitle"
+        descriptionKey="reports.run.noScopesBody"
+      />
+    );
+  }
+
+  const initial = initialReportScope(
+    scopeOptions.data,
+    fixedBranch === null ? {} : { branchId: fixedBranch.id }
+  );
+  /*
+   * What the caller's catalogue says about the four reports, as one value. An
+   * answer is only ever shown again under the catalogue it was read under: a
+   * refresh after a grant was withdrawn publishes a different catalogue, and the
+   * figures read before it must not outlive it (route sweep B3 review).
+   */
+  const catalogueKey = JSON.stringify(
+    OVERVIEW_SECTIONS.map((section) => definitionFor(catalogue.data.items, section.reportCode))
+  );
+
+  return (
+    <div className="flex flex-col gap-4">
+      {fixedBranchId === null && working.kind === 'oneBranch' ? (
+        <p role="status" className="text-supporting text-text-secondary" lang={locale}>
+          {translate(messages, 'reports.run.oneBranchNote')}
+        </p>
+      ) : null}
+
+      <ReportScopeForm
+        key={`${String(version)}:${followed === null ? '' : JSON.stringify(followed)}`}
+        locale={locale}
+        messages={messages}
+        options={scopeOptions.data}
+        initial={followed ?? initial}
+        submitKey="reports.overview.show"
+        fixedBranchId={fixedBranch === null ? null : fixedBranch.id}
+        onSubmit={setChosen}
+      />
+
+      {submitted === null ? (
+        <EmptyState
+          messages={messages}
+          titleKey="reports.overview.idleTitle"
+          descriptionKey="reports.overview.idleBody"
+        />
+      ) : (
+        // Mounted only after submission, like the report screen: before a branch
+        // and a period are named, the component that would issue the four reads
+        // does not exist.
+        <OverviewResults
+          key={`${catalogueKey}:${JSON.stringify(submitted)}`}
+          locale={locale}
+          messages={messages}
+          definitions={catalogue.data.items}
+          catalogueKey={catalogueKey}
+          selection={submitted}
+          recent={recent}
+          waits={waits}
+          companyName={companies.find((c) => c.id === submitted.companyId)?.legalName ?? null}
+          branchName={reachable.find((b) => b.id === submitted.branchId)?.name ?? null}
+        />
+      )}
+    </div>
+  );
+}
+
+/** What one section knows after the four reads have settled. */
+type SectionOutcome = ReportRunState | 'unreachable';
+
+type Outcomes = Readonly<Record<string, SectionOutcome>>;
+
+/** A selection's answers and when they arrived, for this page visit. */
+type RecentAnswers = Map<string, { readonly at: number; readonly outcomes: Outcomes }>;
+
+/** How long an answer is shown again instead of being read again. */
+const OVERVIEW_REUSE_MS = 60_000;
+
+/**
+ * The one limit every run on this page counts against.
+ *
+ * The server limits the run under its `expensive-read` policy, whose bucket is
+ * keyed on the operation, the tenant and the user
+ * (`apps/api/src/server/http/rate-limit.ts`). All four reports, every branch and
+ * every period are the same run operation, and the tenant and the user are this
+ * session's own — so a wait the server advises holds for every run this page
+ * could send, not only for the selection that was told it. One entry per page
+ * visit, under this name.
+ */
+const RUN_BUCKET = 'reports.run';
+
+/** When the runs may be sent again, as the server advised, for this page visit. */
+type RunWaits = Map<typeof RUN_BUCKET, number>;
+
+/**
+ * Whether a set of answers is worth showing again.
+ *
+ * Only answers that are facts about the selection: figures, a refusal, a
+ * report that is not there, a report the platform cannot run. An answer that
+ * says "try again" — a throttled, unavailable or failed run — is not kept, and
+ * neither is an expired session, whose answer is about the sign-in rather than
+ * the report. Coming back is the retry each of them asked for, once any wait
+ * the server advised has passed (`RUN_BUCKET`).
+ */
+function reusable(outcomes: Outcomes): boolean {
+  return Object.values(outcomes).every(
+    (outcome) =>
+      outcome === 'unreachable' ||
+      outcome.status === 'ok' ||
+      outcome.status === 'denied' ||
+      outcome.status === 'not-found'
+  );
+}
+
+/** The longest wait any throttled answer advised, in seconds, or nothing. */
+function advisedWait(outcomes: Outcomes): number | null {
+  let longest: number | null = null;
+  for (const outcome of Object.values(outcomes)) {
+    if (outcome === 'unreachable' || !('throttled' in outcome)) continue;
+    const seconds = outcome.retryAfterSeconds;
+    if (seconds !== null && (longest === null || seconds > longest)) longest = seconds;
+  }
+  return longest;
+}
+
+/**
+ * What the sections say while the server's wait is still running: each section
+ * that would be read is throttled, with the seconds that are left. Nothing is
+ * sent to learn it.
+ */
+function waitingOutcomes(
+  definitions: readonly ReportDefinition[],
+  until: number,
+  now: number
+): Outcomes {
+  const seconds = Math.ceil((until - now) / 1000);
+  const outcomes: Record<string, SectionOutcome> = {};
+  for (const section of OVERVIEW_SECTIONS) {
+    const definition = definitionFor(definitions, section.reportCode);
+    if (definition === null || !definition.executable) continue;
+    outcomes[section.reportCode] = {
+      status: 'unavailable',
+      correlationId: null,
+      throttled: true,
+      retryAfterSeconds: seconds,
+    };
+  }
+  return outcomes;
+}
+
+/** The answers read for this selection within the reuse window, if any. */
+function recentFor(recent: RecentAnswers, key: string, now: number): Outcomes | null {
+  const entry = recent.get(key);
+  if (entry === undefined || now - entry.at >= OVERVIEW_REUSE_MS) return null;
+  return entry.outcomes;
+}
+
+/**
+ * The first run that answered, in the order the overview shows its sections.
+ *
+ * Its period, zone, filter context and freshness are the banner. All four runs
+ * carry the same selection, so the first answer states it once — and when none
+ * answered there is nothing to state, which is why this may return nothing.
+ */
+function firstPublishedRun(outcomes: Outcomes): ReportRun | null {
+  for (const section of OVERVIEW_SECTIONS) {
+    const outcome = outcomes[section.reportCode];
+    if (outcome === undefined || outcome === 'unreachable') continue;
+    if (outcome.status === 'ok') return outcome.data;
+  }
+  return null;
+}
+
+/** The caller's own catalogue entry for a code, or nothing at all. */
+function definitionFor(
+  definitions: readonly ReportDefinition[],
+  reportCode: string
+): ReportDefinition | null {
+  return definitions.find((definition) => definition.reportCode === reportCode) ?? null;
+}
+
+function OverviewResults({
+  locale,
+  messages,
+  definitions,
+  catalogueKey,
+  selection,
+  recent,
+  waits,
+  companyName,
+  branchName,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly definitions: readonly ReportDefinition[];
+  /** The catalogue the answers are read under — part of the reuse key. */
+  readonly catalogueKey: string;
+  readonly selection: ReportScopeSelection;
+  readonly recent: RecentAnswers;
+  readonly waits: RunWaits;
+  readonly companyName: string | null;
+  readonly branchName: string | null;
+}) {
+  const { companyId, branchId, from, to } = selection;
+  const recentKey = JSON.stringify({ catalogueKey, companyId, branchId, from, to });
+  // Looked up once, when this selection's results mount — which is exactly when
+  // the four reads would otherwise be issued.
+  const [reused] = useState<Outcomes | null>(() => recentFor(recent, recentKey, Date.now()));
+  /*
+   * Mounted inside a wait the server advised: the sections say so from the
+   * start, and the effect below sends nothing until it has passed.
+   */
+  const [outcomes, setOutcomes] = useState<Outcomes | null>(() => {
+    if (reused !== null) return reused;
+    const now = Date.now();
+    const until = waits.get(RUN_BUCKET) ?? 0;
+    return until > now ? waitingOutcomes(definitions, until, now) : null;
+  });
+  /** Moves when a wait the server advised has passed, which is the retry. */
+  const [attempt, setAttempt] = useState(0);
+
+  /*
+   * Keyed on the selection's VALUES, not on the object. The object is stable
+   * above, and this is the second half of the same guarantee: nothing but a
+   * different branch or period — or the end of a wait the server advised —
+   * issues the four reads again.
+   */
+  useEffect(() => {
+    if (reused !== null) return;
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const retryAt = (until: number) => {
+      timer = setTimeout(
+        () => {
+          if (live) setAttempt((previous) => previous + 1);
+        },
+        Math.max(0, until - Date.now())
+      );
+    };
+
+    /*
+     * The server's wait is enforced here, not only reported. Every run on this
+     * page counts against the same limit (`RUN_BUCKET`), so a switch to another
+     * branch or period — or back — inside the wait sends nothing: the sections
+     * say how long is left, and the reads go once it has passed.
+     */
+    const until = waits.get(RUN_BUCKET) ?? 0;
+    if (until > Date.now()) {
+      retryAt(until);
+      return () => {
+        live = false;
+        clearTimeout(timer);
+      };
+    }
+
+    const runnable = OVERVIEW_SECTIONS.filter((section) => {
+      const definition = definitionFor(definitions, section.reportCode);
+      return definition !== null && definition.executable;
+    });
+
+    const read = async () => {
+      /*
+       * Settled, not raced and not chained.
+       *
+       * `Promise.all` would discard three good answers because of one refusal,
+       * and a sequence would make the slowest report decide when the first one is
+       * readable. Each entry below is one report answering for itself; a promise
+       * that REJECTED (rather than answering a refusal) is recorded as a failure
+       * of that section alone.
+       */
+      const settled = await Promise.allSettled(
+        runnable.map((section) =>
+          runReport({
+            reportCode: section.reportCode,
+            companyId,
+            branchId,
+            from,
+            to,
+            cursor: null,
+            limit: OVERVIEW_ROW_LIMIT,
+          })
+        )
+      );
+      const next: Record<string, SectionOutcome> = {};
+      runnable.forEach((section, index) => {
+        const result = settled[index];
+        next[section.reportCode] =
+          result !== undefined && result.status === 'fulfilled'
+            ? result.value
+            : { status: 'error', correlationId: null };
+      });
+      // Remembered even when this view has since moved on: the reads were
+      // spent, and a switch back within the minute should not spend them again.
+      if (reusable(next)) recent.set(recentKey, { at: Date.now(), outcomes: next });
+      // Recorded even when this view has moved on, for the same reason: the
+      // wait is the server's, and it holds for whatever this page sends next.
+      const wait = advisedWait(next);
+      const waitUntil = wait === null ? null : Date.now() + wait * 1000;
+      if (waitUntil !== null) waits.set(RUN_BUCKET, waitUntil);
+      if (!live) return;
+      setOutcomes(next);
+      if (waitUntil !== null) retryAt(waitUntil);
+    };
+
+    void read();
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [definitions, companyId, branchId, from, to, reused, recent, recentKey, waits, attempt]);
+
+  if (outcomes === null) return <ReportLoading messages={messages} />;
+
+  /*
+   * The context banner is the FIRST successful run's own — D-17 requires the
+   * period, the zone it was resolved in and the filter context to travel with the
+   * result. All four runs carry the same selection, and every figure below is
+   * displayed inside the section whose run published it, so one banner states the
+   * period once rather than four times. When no run succeeded there is no banner:
+   * a period drawn from the form would be this screen asserting what the server
+   * answered over.
+   */
+  const context = firstPublishedRun(outcomes);
+
+  return (
+    <section aria-labelledby="report-overview-heading" className="flex flex-col gap-4">
+      <h3 id="report-overview-heading" className="sr-only">
+        {translate(messages, 'reports.overview.resultsHeading')}
+      </h3>
+
+      {context === null ? null : (
+        <>
+          <dl className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3">
+            <ContextFact label={translate(messages, 'reports.context.from')}>
+              <span dir="ltr">{context.period.from}</span>
+            </ContextFact>
+            <ContextFact label={translate(messages, 'reports.context.to')}>
+              <span dir="ltr">{context.period.to}</span>
+            </ContextFact>
+            <ContextFact label={translate(messages, 'reports.context.timezone')}>
+              <MachineName value={context.period.timezone} />
+            </ContextFact>
+            <ContextFact label={translate(messages, 'reports.context.company')}>
+              {companyName === null ? (
+                <MachineName value={context.filters?.companyId ?? selection.companyId} />
+              ) : (
+                <bdi>{companyName}</bdi>
+              )}
+            </ContextFact>
+            <ContextFact label={translate(messages, 'reports.context.branch')}>
+              {context.branch !== undefined ? (
+                <bdi>{context.branch.name}</bdi>
+              ) : branchName === null ? (
+                <MachineName value={context.filters?.branchId ?? selection.branchId} />
+              ) : (
+                <bdi>{branchName}</bdi>
+              )}
+            </ContextFact>
+            <ContextFact label={translate(messages, 'reports.context.freshness')}>
+              {context.freshness === 'live' ? (
+                translate(messages, 'reports.context.freshness.live')
+              ) : (
+                <MachineName value={context.freshness} />
+              )}
+            </ContextFact>
+            <ContextFact label={translate(messages, 'reports.context.generatedAt')}>
+              <time dateTime={context.generatedAt}>
+                {formatReportTime(context.generatedAt, locale, context.period.timezone)}
+              </time>
+            </ContextFact>
+          </dl>
+          <p className="text-caption text-text-muted" lang={locale}>
+            {translate(messages, 'reports.context.periodNote')}
+          </p>
+        </>
+      )}
+
+      {OVERVIEW_SECTIONS.map((section) => (
+        <OverviewSectionPanel
+          key={section.reportCode}
+          locale={locale}
+          messages={messages}
+          section={section}
+          definition={definitionFor(definitions, section.reportCode)}
+          outcome={outcomes[section.reportCode] ?? 'unreachable'}
+          selection={selection}
+        />
+      ))}
+
+      <p className="text-caption text-text-muted" lang={locale}>
+        {translate(messages, 'reports.overview.serverNote')}
+      </p>
+    </section>
+  );
+}
+
+/**
+ * One section: one approved report, its summary, and a way into the report itself.
+ *
+ * The heading is the report's own name and the link carries the whole selection,
+ * so the rows an operator opens are the rows the figure was read over.
+ */
+function OverviewSectionPanel({
+  locale,
+  messages,
+  section,
+  definition,
+  outcome,
+  selection,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly section: OverviewSection;
+  readonly definition: ReportDefinition | null;
+  readonly outcome: SectionOutcome;
+  readonly selection: ReportScopeSelection;
+}) {
+  const headingId = `overview-section-${section.reportCode}`;
+  const title = runTitle(messages, section.titleKey);
+
+  return (
+    <section
+      aria-labelledby={headingId}
+      className="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4"
+    >
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 id={headingId} className="text-label font-medium text-text-primary">
+          {title === null ? <MachineName value={section.reportCode} /> : <bdi>{title}</bdi>}
+        </h4>
+        <Link
+          href={overviewReportHref(locale, section.reportCode, selection)}
+          className="text-body text-primary underline-offset-2 hover:underline"
+        >
+          {translate(messages, 'reports.overview.openReport')}
+        </Link>
+      </div>
+      <p className="text-caption text-text-muted" lang={locale}>
+        {translateDynamic(messages, section.captionKey)}
+      </p>
+      <SectionBody
+        locale={locale}
+        messages={messages}
+        section={section}
+        caption={title ?? section.reportCode}
+        definition={definition}
+        outcome={outcome}
+      />
+    </section>
+  );
+}
+
+/** The four states a section can be in, each said as itself. */
+function SectionBody({
+  locale,
+  messages,
+  section,
+  caption,
+  definition,
+  outcome,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly section: OverviewSection;
+  /** The table's accessible name: the report's own, so four tables are four. */
+  readonly caption: string;
+  readonly definition: ReportDefinition | null;
+  readonly outcome: SectionOutcome;
+}) {
+  if (definition === null) {
+    // Not in the caller's catalogue: unknown code, unpublished, archived, or a
+    // report this caller may not read. The four are deliberately one answer.
+    return (
+      <p className="text-body text-text-secondary" lang={locale}>
+        {translate(messages, 'reports.overview.notPublished')}
+      </p>
+    );
+  }
+
+  if (!definition.executable) {
+    // The platform's own answer. No read was issued for this section.
+    return (
+      <p className="text-body text-text-secondary" lang={locale}>
+        {translate(messages, 'reports.overview.notRunnable')}
+      </p>
+    );
+  }
+
+  if (outcome === 'unreachable') {
+    return (
+      <p className="text-body text-text-secondary" lang={locale}>
+        {translate(messages, 'reports.overview.notRunnable')}
+      </p>
+    );
+  }
+
+  if (outcome.status !== 'ok') {
+    const failure = (
+      <ReportFailure
+        messages={messages}
+        status={outcome.status}
+        correlationId={outcome.correlationId}
+      />
+    );
+    if (!('throttled' in outcome)) return failure;
+    // Throttled: the "unavailable" state, and how long to wait when the
+    // server said. Not a fault, so never the generic failure.
+    return (
+      <div className="flex flex-col gap-2">
+        {failure}
+        <p className="text-supporting text-text-secondary" lang={locale}>
+          {outcome.retryAfterSeconds === null
+            ? translate(messages, 'state.throttled.message')
+            : formatMessage(translate(messages, 'state.throttled.messageWithSeconds'), {
+                seconds: String(outcome.retryAfterSeconds),
+              })}
+        </p>
+      </div>
+    );
+  }
+
+  const run = outcome.data;
+  if (run.groups === undefined && section.reportCode !== 'work_orders_by_status') {
+    /*
+     * The engine published no grouping for this domain.
+     *
+     * Nothing is derived here in its place — not from the rows on this page, not
+     * from the deprecated field that only ever answered for the work-order
+     * domain. A summary this side computed would be a figure with no authority
+     * behind it, which is the one thing D-4 and D-19 both refuse.
+     */
+    return (
+      <p className="text-body text-text-secondary" lang={locale}>
+        {translate(messages, 'reports.overview.noSummary')}
+      </p>
+    );
+  }
+
+  // `reportGroups` reads `groups` when the envelope has one and the deprecated
+  // state counts only when it does not — which is the work-order domain's older
+  // envelope answering the same question with the same numbers.
+  const groups = reportGroups(run);
+  if (groups.length === 0) {
+    return (
+      <p className="text-body text-text-secondary" lang={locale}>
+        {translate(messages, 'reports.overview.noneInPeriod')}
+      </p>
+    );
+  }
+
+  return (
+    <SummaryTable
+      locale={locale}
+      messages={messages}
+      section={section}
+      caption={caption}
+      groups={groups}
+    />
+  );
+}
+
+/**
+ * The section's summary, as the server grouped it.
+ *
+ * One column per group key and one per measure. The declared columns come first,
+ * in the order `overview-contract.ts` names them, so a section's shape does not
+ * depend on which group happened to arrive first; a key or a measure the engine
+ * sent that the contract does not name is appended and shown as what it is,
+ * because dropping it would be this side hiding something the engine published.
+ *
+ * A missing measure renders as an ABSENCE. A zero is a measurement and "this
+ * group has no such measure" is not — an invoice group carries no receipt total
+ * and printing `0` there would state that no money was received.
+ */
+function SummaryTable({
+  locale,
+  messages,
+  section,
+  caption,
+  groups,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly section: OverviewSection;
+  readonly caption: string;
+  readonly groups: readonly ReportGroup[];
+}) {
+  const keyNames = [...section.keyNames];
+  const measureNames = [...section.measureNames];
+  for (const group of groups) {
+    for (const name of Object.keys(group.key)) {
+      if (!keyNames.includes(name)) keyNames.push(name);
+    }
+    for (const name of Object.keys(group.measures)) {
+      if (!measureNames.includes(name)) measureNames.push(name);
+    }
+  }
+  const present = keyNames.filter((name) => groups.some((group) => name in group.key));
+  // A single-key group may carry a LABEL — the state's own name rather than its
+  // code. With more than one key there is no single thing the label could be
+  // naming, so each key is shown as itself.
+  const labelled = present.length === 1;
+
+  return (
+    <div className="overflow-x-auto rounded-md border border-border-subtle">
+      <table className="w-full border-collapse">
+        <caption className="sr-only">{caption}</caption>
+        <thead className="bg-table-header">
+          <tr>
+            {present.map((name) => {
+              const heading = fieldHeading(messages, name);
+              return (
+                <th key={name} scope="col" className={REPORT_TABLE_HEADER}>
+                  {heading === null ? <MachineName value={name} /> : heading}
+                </th>
+              );
+            })}
+            {measureNames.map((name) => {
+              const heading = fieldHeading(messages, name);
+              return (
+                <th key={name} scope="col" className={REPORT_TABLE_HEADER}>
+                  {heading === null ? <MachineName value={name} /> : heading}
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {groups.map((group) => (
+            <tr key={JSON.stringify(group.key)} className="border-t border-border-subtle">
+              {present.map((name) => (
+                <td key={name} className={REPORT_TABLE_CELL}>
+                  <GroupKeyValue
+                    locale={locale}
+                    messages={messages}
+                    group={group}
+                    name={name}
+                    labelled={labelled}
+                  />
+                </td>
+              ))}
+              {measureNames.map((name) => {
+                const measure = group.measures[name];
+                return (
+                  <td key={name} className={REPORT_TABLE_CELL}>
+                    {measure === undefined ? (
+                      <span className="text-text-muted" lang={locale}>
+                        {translate(messages, 'reports.groups.noMeasure')}
+                      </span>
+                    ) : (
+                      // Exactly as sent. Nothing here adds, rounds, re-scales,
+                      // divides or turns seconds into hours.
+                      <span dir="ltr">{measure}</span>
+                    )}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** One group key value: the operator's word for it when there is one. */
+function GroupKeyValue({
+  locale,
+  messages,
+  group,
+  name,
+  labelled,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly group: ReportGroup;
+  readonly name: string;
+  readonly labelled: boolean;
+}) {
+  // The state's name in the reader's language when the group is a work-order
+  // state; the server's own label otherwise (Browser QA part 7, row 6.7).
+  const label = labelled ? groupDisplayLabel(messages, group) : null;
+  if (label !== null) return <bdi>{label}</bdi>;
+  if (!(name in group.key)) {
+    return (
+      <span className="text-text-muted" lang={locale}>
+        {translate(messages, 'reports.cell.missing')}
+      </span>
+    );
+  }
+  const value = group.key[name] ?? null;
+  if (value === null) {
+    return (
+      <span className="text-text-muted" lang={locale}>
+        {translate(messages, 'reports.groups.unnamed')}
+      </span>
+    );
+  }
+  return <MachineName value={value} />;
+}

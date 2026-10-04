@@ -27,6 +27,7 @@ import type { DbHandle } from '@/server/db/transaction';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import type { InventoryRepository, StockLocationRow } from '../data/inventory-repository';
 import { InventoryRuleError, Quantity, assertLegalMovementReference } from '../domain/inventory';
+import { refuseInventoryState } from './inventory-failures';
 
 export interface OpeningBatchView {
   readonly id: string;
@@ -236,25 +237,41 @@ export class InventoryIntakeService {
 
     const location = await this.requireLocation(db, input.locationId);
     if (location.companyId !== batch.companyId || location.branchId !== batch.branchId) {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Stock location ${location.locationCode} is in a different branch from opening batch ` +
+      refuseInventoryState(
+        'stock_location_other_branch',
+        `Stock location ${location.locationCode} is in a different branch from opening batch ` +
           `${input.batchId}`,
-      });
+        { path: 'body.locationId' }
+      );
     }
     if (location.locationType === 'quarantine') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: 'An opening balance may not be counted into a quarantine location',
-      });
+      refuseInventoryState(
+        'stock_location_quarantine',
+        'An opening balance may not be counted into a quarantine location',
+        { path: 'body.locationId' }
+      );
     }
 
     const item = await this.repository.readItem(db, input.itemId);
     if (!item) {
       throw new AppFailure('ERR-RES-001', { message: `Item ${input.itemId} was not found` });
     }
-    if (!item.isStockTracked || item.lifecycleStatus !== 'active') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Item ${item.sku} is not an active stock-tracked item`,
+    // Two causes, two tokens, as `requireStockTrackedItem` already separates them
+    // for the stock operations. Collapsed into one they told the counter "stock is
+    // not counted for this part — ask for stock counting to be turned on for it"
+    // about a RETIRED part, where turning stock counting on is neither the problem
+    // nor the remedy. The lifecycle is checked first because it is the stronger
+    // fact: an archived part is refused whatever its tracking flag says.
+    if (item.lifecycleStatus !== 'active') {
+      refuseInventoryState(
+        'stock_item_archived',
+        `Item ${item.sku} is archived and cannot take an opening balance`,
+        { path: 'body.itemId' }
+      );
+    }
+    if (!item.isStockTracked) {
+      refuseInventoryState('stock_item_not_tracked', `Item ${item.sku} is not stock-tracked`, {
+        path: 'body.itemId',
       });
     }
 
@@ -327,9 +344,10 @@ export class InventoryIntakeService {
 
     const lineCount = await this.repository.countOpeningLines(db, batchId);
     if (lineCount === 0) {
-      throw new AppFailure('ERR-TRN-001', {
-        message: 'An opening batch with no counted lines cannot be approved',
-      });
+      refuseInventoryState(
+        'stock_opening_batch_empty',
+        'An opening batch with no counted lines cannot be approved'
+      );
     }
 
     try {
@@ -642,11 +660,11 @@ export class InventoryIntakeService {
       });
     }
     if (batch.status !== 'draft') {
-      throw new AppFailure('ERR-TRN-001', {
-        message:
-          `Opening batch ${batchId} is ${batch.status}; an approved batch is frozen and its ` +
-          'balances cannot be rewritten',
-      });
+      refuseInventoryState(
+        'stock_opening_batch_frozen',
+        `Opening batch ${batchId} is ${batch.status}; an approved batch is frozen and its ` +
+          'balances cannot be rewritten'
+      );
     }
     return { id: batch.id, companyId: batch.companyId, branchId: batch.branchId };
   }
@@ -659,9 +677,11 @@ export class InventoryIntakeService {
       });
     }
     if (location.status !== 'active') {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Stock location ${location.locationCode} is ${location.status}`,
-      });
+      refuseInventoryState(
+        'stock_location_not_active',
+        `Stock location ${location.locationCode} is ${location.status}`,
+        { path: 'body.locationId' }
+      );
     }
     return location;
   }
@@ -693,9 +713,11 @@ export class InventoryIntakeService {
      * attaching a new part to it would change the record of what was done.
      */
     if (state.isClosed || state.isTerminal) {
-      throw new AppFailure('ERR-TRN-001', {
-        message: `Work order state "${state.code}" is closed or terminal and takes no new parts`,
-      });
+      refuseInventoryState(
+        'stock_work_order_closed',
+        `Work order state "${state.code}" is closed or terminal and takes no new parts`,
+        { path: 'body.workOrderId' }
+      );
     }
     return { companyId: state.companyId, branchId: state.branchId };
   }

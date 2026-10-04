@@ -34,9 +34,13 @@
  *
  * ## What this module deliberately does not do
  *
- * - **It does not compute money.** Every amount is summed by PostgreSQL in
- *   `numeric`, inside the same `round(…, 4)` expression shape the CHECK constraints
- *   on `sal.invoice_amounts` and `sal.invoice_line_amounts` validate. `Money` and
+ * - **It does not compute money.** Every amount is computed by PostgreSQL in
+ *   `numeric`: each line's net and tax are rounded half-up to the currency's minor
+ *   unit where the line is priced (`tg_quotation_items_money` for a quotation line,
+ *   `sal.create_counter_sale_invoice` for a counter sale), and every header total
+ *   is the sum of those rounded lines (ADR-023, D1). The CHECK constraints on
+ *   `sal.invoice_amounts` and `sal.invoice_line_amounts` still validate
+ *   `gross = round(net + tax, 4)` on the result. `Money` and
  *   `Decimal` come from `@/modules/pricing` and expose no `add` and no `multiply`,
  *   so a second arithmetic engine is unexpressible rather than merely discouraged.
  * - **It does not accept an amount from a client.** `CreateInvoiceInput` has no
@@ -50,6 +54,15 @@
  * - **It does not correct an issued invoice.** `sal.guard_invoice_freeze` allows
  *   `issued -> credited` and nothing else, so the instruments after issue are a
  *   credit note and a new invoice. There is no un-issue and no post-issue void.
+ * - **It does not move stock, and it does not price a part.** Since P1-32 an
+ *   invoice may be a COUNTER SALE — `sale_kind = 'counter_sale'`, no work order —
+ *   and issuing one takes the sold quantity off the shelf. Both halves belong to
+ *   `@/modules/inventory`: the price comes from `inv.resolve_item_sale_price`
+ *   inside `sal.create_counter_sale_invoice`, and the movements are posted by
+ *   `inventoryModule().stock.postCounterSaleLines`, which this module CALLS and
+ *   never reimplements. No `inv` table is read or written here. Cancelling an
+ *   issued counter sale returns nothing, because there is no post-issue void at
+ *   all: stock comes back only as a sales return, which that module owns.
  * - **It does not post a general ledger.** `sal.financial_events` is the
  *   source-fact boundary this platform stops at (P1-11): no accounts, no journals,
  *   no double entry. A `financial_events` row is a fact that happened, not a
@@ -68,6 +81,7 @@
 import { composeModule } from '@/server/layering';
 import { BillingRepository } from './data/billing-repository';
 import { BillingReadService } from './application/billing-read-service';
+import { BillingReportPort } from './application/billing-report-port';
 import { InvoiceService } from './application/invoice-service';
 
 // ---- Row-shape types --------------------------------------------------------
@@ -80,22 +94,34 @@ export type {
   CommercialSourceLineRow,
   CommercialSourceRow,
   CreditNoteRow,
+  CreditNoteTotalRow,
+  CreditNoteTraceRow,
+  CreditPositionRow,
   InvoiceAmountsRow,
+  InvoiceDocumentFilter,
   InvoiceLineAmountsRow,
   InvoiceLineRow,
+  InvoiceListRow,
   InvoiceRow,
   NumberingConfigRow,
   OpenReceivableRow,
+  ReportDocumentPage,
   WorkOrderScopeRow,
 } from './data/billing-repository';
 
 // ---- View types -------------------------------------------------------------
 
 export type {
+  CreditNoteDetailView,
+  CreditNoteInvoiceView,
+  CreditNoteSourceReturnView,
   CreditNoteView,
   InvoiceDetailView,
+  InvoiceLineItemView,
   InvoiceLineMoneyView,
   InvoiceLineView,
+  InvoiceListEntryView,
+  InvoicePayerView,
   InvoicePreview,
   InvoicePreviewLine,
   InvoiceTotalsView,
@@ -103,6 +129,8 @@ export type {
   NumberingConfigView,
   OutstandingView,
   PayerSplitView,
+  SettlementView,
+  ThirdPartyPaymentView,
   WorkOrderInvoiceView,
   /**
    * The delivery module's financial blocker. Exported because `@/modules/delivery`
@@ -112,6 +140,14 @@ export type {
 } from './application/billing-read-service';
 
 export type {
+  CreditNoteTotal,
+  InvoiceDocumentEntry,
+  InvoiceDocumentSummary,
+  InvoiceDocumentTotal,
+} from './application/billing-report-port';
+
+export type {
+  CreateCounterSaleInput,
   CreatedInvoice,
   CreateInvoiceInput,
   CreditNoteResult,
@@ -128,6 +164,8 @@ export type {
 export {
   APPROVAL_STATES,
   BillingRuleError,
+  CREDIT_APPROVE_PERMISSION,
+  CREDIT_NOTE_LIMIT_TYPE,
   FINANCIAL_EVENT_SOURCE_TYPES,
   FINANCIAL_EVENT_TYPES,
   INVOICE_HISTORY_STATES,
@@ -141,14 +179,24 @@ export {
   MONEY_SCALE,
   QUANTITY_MAX,
   QUANTITY_MIN,
+  CREDIT_STATUSES,
+  PAYMENT_STATUSES,
+  REFUND_STATUSES,
+  SALE_KINDS,
   assertCreditWithinOpenAmount,
   assertCurrencyMatches,
   assertInvoiceIsDraft,
   assertLegalInvoiceTransition,
+  deriveCreditStatus,
+  derivePaymentStatus,
   isLegalInvoiceTransition,
   parseInstrumentAmount,
   parseInvoiceAmount,
   type ApprovalState,
+  type CreditStatus,
+  type PaymentStatus,
+  type RefundStatus,
+  type SaleKind,
   type FinancialEventSourceType,
   type FinancialEventType,
   type InvoiceHistoryState,
@@ -180,6 +228,10 @@ export const billingModule = composeModule({
     return {
       reads: new BillingReadService(repository),
       invoices: new InvoiceService(repository),
+      // P1-31 P-11 slice 4. The REPORTING port. Separate from `reads` because
+      // that service answers for ONE invoice and its shapes are the invoice
+      // screen's; a period report over many documents shares none of them.
+      reportPort: new BillingReportPort(repository),
     };
   },
 });

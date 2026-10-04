@@ -9,8 +9,9 @@ import * as recEvidenceCapture from '@/features/receptions/evidence-capture';
 import * as recSignatureCapture from '@/features/receptions/signature-capture';
 import * as recSupport from '@/features/receptions/support-api';
 import * as recWorkOrder from '@/features/receptions/work-order-api';
-import * as customerDirectory from '@/lib/customers/directory';
-import * as customerVehicles from '@/lib/customers/vehicles';
+import * as recListCore from '@/features/receptions/reception-list-read.server';
+import * as customerDirectory from '@/lib/customers/directory-read.server';
+import * as customerVehicles from '@/lib/customers/vehicles-read.server';
 
 /**
  * The attachments adapters, taken REAL rather than through the tier mock.
@@ -70,8 +71,10 @@ const attachmentsApi = await vi.importActual<typeof import('@/features/attachmen
  * ## The set is DERIVED and the derivation is checked
  *
  * `exportedP1_28Adapters()` walks the `'use server'` modules of the three
- * feature trees plus the customer→vehicle read the intake flow depends on, and
- * reports every exported async function. `p1-28-qa.test.ts` holds `DRIVES` to
+ * feature trees plus the customer reads the intake flow depends on — and the
+ * server read cores behind `/reads/*`, which hold what three of those actions
+ * held before they retired (P1-32-PRE-OD-READ) — and reports every exported
+ * async function. `p1-28-qa.test.ts` holds `DRIVES` to
  * that set by NAME — not by count, because adding one adapter while driving
  * another would balance a count and hide both.
  *
@@ -189,10 +192,27 @@ export const READ_DRIVES: readonly AdapterDrive[] = Object.freeze([
     channel: 'get',
     call: () => aptCatalogue.listCancellationReasons(),
   },
+  // The appointment setup screen's lists (Owner decision 2026-09-29): one page
+  // per call, so the grid pages on the server's cursor.
   {
-    name: 'listReceptions',
+    name: 'listManagedAppointmentTypes',
     channel: 'get',
-    call: () => recApi.listReceptions(TARGET, {}, REQUEST, null),
+    call: () => aptCatalogue.listManagedAppointmentTypes(25, null),
+  },
+  {
+    name: 'listManagedSourceChannels',
+    channel: 'get',
+    call: () => aptCatalogue.listManagedSourceChannels(25, null),
+  },
+  {
+    name: 'listManagedCancellationReasons',
+    channel: 'get',
+    call: () => aptCatalogue.listManagedCancellationReasons(25, null),
+  },
+  {
+    name: 'readReceptionList',
+    channel: 'get',
+    call: () => recListCore.readReceptionList(TARGET, {}, REQUEST, null),
   },
   { name: 'readReception', channel: 'get', call: () => recApi.readReception(VISIT) },
   {
@@ -263,18 +283,18 @@ export const READ_DRIVES: readonly AdapterDrive[] = Object.freeze([
     call: () => recWorkOrder.readConvertedWorkOrder(WORK_ORDER),
   },
   {
-    name: 'listCustomerVehicles',
+    name: 'readCustomerVehicles',
     channel: 'get',
-    call: () => customerVehicles.listCustomerVehicles(CUSTOMER, REQUEST, null),
+    call: () => customerVehicles.readCustomerVehicles(CUSTOMER, REQUEST, null),
   },
   {
-    name: 'searchCustomerDirectory',
+    name: 'readCustomerDirectory',
     channel: 'get',
     // A real criterion, because the adapter deliberately refuses to issue a
     // request for empty criteria — an unasked query is a wasted slot against a
     // 30-per-minute budget — and a drive that reached no client would make
     // every sweep over it vacuous.
-    call: () => customerDirectory.searchCustomerDirectory(REQUEST, null, { name: 'Nadia' }),
+    call: () => customerDirectory.readCustomerDirectory(REQUEST, null, { name: 'Nadia' }),
   },
   {
     /*
@@ -390,6 +410,59 @@ async function withUnreachableStore<T>(run: () => Promise<T>): Promise<T> {
  * no record version for `If-Match` to protect.
  */
 export const WRITE_DRIVES: readonly AdapterDrive[] = Object.freeze([
+  // The appointment setup screen's writes (Owner decision 2026-09-29).
+  {
+    name: 'createAppointmentType',
+    channel: 'send',
+    call: () => aptCatalogue.createAppointmentType({ code: 'routine', name: 'Routine' }),
+  },
+  {
+    name: 'renameAppointmentType',
+    channel: 'send',
+    versionGuarded: true,
+    call: () => aptCatalogue.renameAppointmentType(TYPE, VERSION, 'Routine check'),
+  },
+  {
+    name: 'setAppointmentTypeStatus',
+    channel: 'send',
+    versionGuarded: true,
+    call: () => aptCatalogue.setAppointmentTypeStatus(TYPE, VERSION, 'inactive'),
+  },
+  {
+    name: 'createSourceChannel',
+    channel: 'send',
+    call: () => aptCatalogue.createSourceChannel({ code: 'phone', name: 'Phone' }),
+  },
+  {
+    name: 'renameSourceChannel',
+    channel: 'send',
+    versionGuarded: true,
+    call: () => aptCatalogue.renameSourceChannel(TYPE, VERSION, 'Telephone'),
+  },
+  {
+    name: 'setSourceChannelStatus',
+    channel: 'send',
+    versionGuarded: true,
+    call: () => aptCatalogue.setSourceChannelStatus(TYPE, VERSION, 'inactive'),
+  },
+  {
+    name: 'createCancellationReason',
+    channel: 'send',
+    call: () =>
+      aptCatalogue.createCancellationReason({ code: 'customer_request', name: 'Customer asked' }),
+  },
+  {
+    name: 'renameCancellationReason',
+    channel: 'send',
+    versionGuarded: true,
+    call: () => aptCatalogue.renameCancellationReason(REASON, VERSION, 'Customer request'),
+  },
+  {
+    name: 'setCancellationReasonStatus',
+    channel: 'send',
+    versionGuarded: true,
+    call: () => aptCatalogue.setCancellationReasonStatus(REASON, VERSION, 'inactive'),
+  },
   {
     name: 'createAppointment',
     channel: 'send',
@@ -691,11 +764,14 @@ export function stripComments(source: string): string {
 /**
  * The modules whose exports ARE the P1-28 adapter surface.
  *
- * Chosen by SHAPE, not by filename: a module that opens with `'use server'` is
- * a Server Action module, and in this codebase that is exactly what an adapter
- * module is. A filename convention (`*-api.ts`) would have missed
- * `lib/customers/vehicles.ts`, which is neither in a feature tree nor named
- * `-api`, and which the intake flow's vehicle picker depends on.
+ * Chosen by SHAPE, not by filename, in two forms. A module that opens with
+ * `'use server'` is a Server Action module, and in this codebase that is what an
+ * adapter module is. A module with no directive that reads the session itself —
+ * calls `authorizedClient()` outside a comment — is a server read core behind a
+ * `/reads/*` route, holding the body a retired action held (P1-32-PRE-OD-READ).
+ * A filename convention (`*-api.ts`) would have missed
+ * `lib/customers/vehicles-read.server.ts`, which is neither in a feature tree nor
+ * named `-api`, and which the intake flow's vehicle picker depends on.
  */
 export function adapterModules(roots: readonly string[] = adapterRoots()): readonly string[] {
   const files: string[] = [];
@@ -708,7 +784,7 @@ export function adapterModules(roots: readonly string[] = adapterRoots()): reado
       }
       if (!entry.name.endsWith('.ts') && !entry.name.endsWith('.tsx')) continue;
       const source = readFileSync(full, 'utf8');
-      if (/^\s*['"]use server['"]/.test(source)) files.push(full);
+      if (/^\s*['"]use server['"]/.test(source) || isServerReadCore(source)) files.push(full);
     }
   };
   for (const root of roots) walk(root);
@@ -738,6 +814,12 @@ function adapterRoots(): readonly string[] {
     join(process.cwd(), 'src', 'features', 'receptions'),
     join(process.cwd(), 'src', 'lib', 'customers'),
   ];
+}
+
+/** A server read core: no directive at all, and it reads the session itself. */
+export function isServerReadCore(source: string): boolean {
+  if (/^\s*['"]use (?:client|server)['"]/.test(source)) return false;
+  return /\bauthorizedClient\(\)/.test(stripComments(source));
 }
 
 /** Every adapter name one module's source declares as an export. */

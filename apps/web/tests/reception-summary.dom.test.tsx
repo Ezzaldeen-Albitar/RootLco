@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -117,6 +117,8 @@ const CAPABILITIES = {
 };
 
 const refresh = vi.fn(async () => {});
+/** The shell's step navigation, which a refusal may use (DEF-T-10). */
+const goToStep = vi.fn();
 
 /**
  * The step props, with `visitId` and `recordVersion` DERIVED from the detail.
@@ -134,6 +136,7 @@ function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
     capabilities: CAPABILITIES,
     writesLocked: false,
     refresh,
+    goToStep,
     ...rest,
     detail,
     visitId: detail.id,
@@ -141,10 +144,27 @@ function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
   } as CheckInStepProps;
 }
 
+/**
+ * Holds the NEXT `refresh()` open until the returned release is called: the
+ * re-read after a command is the slow part on a slow network, and the command
+ * must stay busy through it (the version it sent is spent, and only the re-read
+ * brings the next one).
+ */
+function holdNextRefresh(): () => void {
+  let release: () => void = () => {};
+  refresh.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        release = resolve;
+      })
+  );
+  return () => release();
+}
+
 function withStatus(status: ReceptionStatus, over: Partial<CheckInStepProps> = {}) {
   return stepProps({
     ...over,
-    detail: { ...DETAIL, receptionStatus: status },
+    detail: { ...DETAIL, ...(over.detail ?? {}), receptionStatus: status },
     writesLocked: TERMINAL_RECEPTION_STATUSES.includes(status),
   });
 }
@@ -285,7 +305,9 @@ describe('which commands are offered comes from the transition graph', () => {
     'renders exactly the graph’s affordances for %s',
     async (status) => {
       const { unmount } = renderLtr(<SummaryStep {...withStatus(status)} />);
-      await screen.findByText(EN['receptions.summary.decisionHeading'] as string);
+      await screen.findByRole('heading', {
+        name: EN['receptions.summary.decisionHeading'] as string,
+      });
 
       const expected = receptionAffordances(status);
       const approve = screen.queryByRole('button', {
@@ -426,6 +448,39 @@ describe('approve sends the read’s version and presents the answer’s', () =>
     );
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
+
+  it('stays busy until the re-read after a success lands, so the spent version is never sent twice', async () => {
+    approveReception.mockResolvedValue({
+      status: 'success',
+      approved: {
+        receptionVisitId: 'rv-1',
+        receptionStatus: 'authorized',
+        appliedTransitions: ['inspecting', 'authorized'],
+        recordVersion: 9,
+      },
+      correlationId: 'corr-ok',
+      attempt: 1,
+    });
+    const release = holdNextRefresh();
+    const user = userEvent.setup();
+    renderLtr(<SummaryStep {...stepProps()} />);
+    const approve = await screen.findByRole('button', {
+      name: EN['receptions.summary.approve'] as string,
+    });
+    await user.click(approve);
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId('approved-record-version')).toHaveTextContent('9');
+    // The approval landed but the re-read has not: the button is still busy.
+    expect(approve).toBeDisabled();
+    expect(approve).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(approve);
+    expect(approveReception).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(approve).toBeEnabled());
+    // The success stays said; no stale-version conflict replaced it.
+    expect(screen.getByTestId('approved-record-version')).toHaveTextContent('9');
+    expect(screen.queryByText(EN['receptions.command.conflictStale'] as string)).toBeNull();
+  });
 });
 
 describe('the two conflicts a guarded command meets are told apart', () => {
@@ -447,6 +502,104 @@ describe('the two conflicts a guarded command meets are told apart', () => {
     ).toBeVisible();
     expect(screen.queryByText(EN['receptions.command.conflictStale'] as string)).toBeNull();
     expect(screen.getByText('corr-409', { exact: false })).toBeVisible();
+  });
+
+  /**
+   * DEF-T-10. Approving a visit whose authorization had never been verified
+   * printed the generic blocked sentence, which named nothing and pointed
+   * nowhere. The API now publishes a rule token for that precondition, so the
+   * banner says what is missing and offers the step that records it.
+   */
+  it('names the missing authorization instead of the generic refusal, and offers the step', async () => {
+    approveReception.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.authorization_missing',
+      correlationId: 'corr-auth',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<SummaryStep {...stepProps()} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.summary.approve'] as string })
+    );
+
+    expect(
+      await screen.findByText(EN['form.violation.authorization_missing'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(EN['receptions.command.conflictBlocked'] as string)).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', {
+        name: EN['receptions.command.goToAuthorization'] as string,
+      })
+    );
+    expect(goToStep).toHaveBeenCalledWith('parties-and-authorization');
+  });
+
+  it('names a withdrawn authorization, and keeps the generic sentence for a reason it was never told', async () => {
+    approveReception.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.authorization_withdrawn',
+      correlationId: 'corr-withdrawn',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    const { unmount } = renderLtr(<SummaryStep {...stepProps()} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.summary.approve'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.authorization_withdrawn'] as string)
+    ).toBeVisible();
+    unmount();
+
+    // A rule this screen has never been told about is NOT dressed up as one it
+    // understands: the generic sentence stands, and no step is offered.
+    approveReception.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.unregistered_aggregate',
+      correlationId: 'corr-unknown',
+      attempt: 1,
+    });
+    renderLtr(<SummaryStep {...stepProps()} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.summary.approve'] as string })
+    );
+    expect(
+      await screen.findByText(EN['receptions.command.conflictBlocked'] as string)
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', {
+        name: EN['receptions.command.goToAuthorization'] as string,
+      })
+    ).toBeNull();
+  });
+
+  /**
+   * The two refusals that are not cured by filling anything in offer no step:
+   * the visit has moved on, and sending the operator to a form would invite
+   * work that changes nothing.
+   */
+  it('names an already-approved visit without offering a step', async () => {
+    approveReception.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.already_authorized',
+      correlationId: 'corr-already',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<SummaryStep {...stepProps()} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.summary.approve'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.already_authorized'] as string)
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', {
+        name: EN['receptions.command.goToAuthorization'] as string,
+      })
+    ).toBeNull();
   });
 
   it('says a version conflict is cured by the re-read it has just done', async () => {
@@ -484,16 +637,50 @@ describe('the two conflicts a guarded command meets are told apart', () => {
 /* --- FE-020: the two terminal exits --------------------------------------- */
 
 describe('the terminal exits release the vehicle, and both demand a reason', () => {
+  /*
+   * Both exits are terminal and irreversible, so each asks in `ReasonDialog`:
+   * the panel's button opens an alert dialog with the reason box, Cancel is
+   * focused, and the dialog's own button sends — never the panel's.
+   */
+  async function openExit(
+    user: ReturnType<typeof userEvent.setup>,
+    submitKey: 'receptions.closure.closeSubmit' | 'receptions.closure.refuseSubmit'
+  ) {
+    await user.click(await screen.findByRole('button', { name: EN[submitKey] as string }));
+    return screen.findByRole('alertdialog');
+  }
+
+  const reasonBox = (dialog: HTMLElement) =>
+    within(dialog).getByRole('textbox', { name: EN['receptions.closure.reason'] as string });
+
   it('refuses an empty reason beside the field and sends nothing', async () => {
     const user = userEvent.setup();
     renderLtr(<SummaryStep {...stepProps()} />);
-    await user.click(
-      await screen.findByRole('button', { name: EN['receptions.closure.closeSubmit'] as string })
-    );
-    expect(
-      await screen.findByText(EN['receptions.closure.error.reasonRequired'] as string)
-    ).toBeVisible();
+    const dialog = await openExit(user, 'receptions.closure.closeSubmit');
+    const confirm = within(dialog).getByRole('button', {
+      name: EN['receptions.closure.closeSubmit'] as string,
+    });
+    // Nothing to send while the box is empty, and leaving it says why, on it.
+    expect(confirm).toBeDisabled();
+    await user.click(reasonBox(dialog));
+    await user.tab();
+    expect(reasonBox(dialog)).toHaveAttribute('aria-invalid', 'true');
+    expect(within(dialog).getByText(EN['overlay.reasonRequired'] as string)).toBeVisible();
     expect(closeReceptionWithoutWork).not.toHaveBeenCalled();
+  });
+
+  it('asks with Cancel focused, and Cancel sends nothing', async () => {
+    const user = userEvent.setup();
+    renderLtr(<SummaryStep {...stepProps()} />);
+    const dialog = await openExit(user, 'receptions.closure.refuseSubmit');
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole('button', { name: EN['overlay.cancel'] as string })
+      ).toHaveFocus()
+    );
+    await user.click(within(dialog).getByRole('button', { name: EN['overlay.cancel'] as string }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(refuseReception).not.toHaveBeenCalled();
   });
 
   it('sends close-without-work with the version and the trimmed reason', async () => {
@@ -509,26 +696,21 @@ describe('the terminal exits release the vehicle, and both demand a reason', () 
     });
     const user = userEvent.setup();
     renderLtr(<SummaryStep {...stepProps()} />);
-    const form = screen.getByRole('form', {
-      name: EN['receptions.closure.closeHeading'] as string,
-    });
-    await user.type(
-      within(form).getByLabelText(EN['receptions.closure.reason'] as string, { exact: false }),
-      '  customer took the car away  '
-    );
+    const dialog = await openExit(user, 'receptions.closure.closeSubmit');
+    await user.type(reasonBox(dialog), '  customer took the car away  ');
     await user.click(
-      within(form).getByRole('button', { name: EN['receptions.closure.closeSubmit'] as string })
+      within(dialog).getByRole('button', { name: EN['receptions.closure.closeSubmit'] as string })
     );
     await waitFor(() => expect(closeReceptionWithoutWork).toHaveBeenCalled());
     expect(closeReceptionWithoutWork.mock.calls[0]?.[1]).toBe(7);
     expect(closeReceptionWithoutWork.mock.calls[0]?.[2]).toEqual({
       reason: 'customer took the car away',
     });
-    // The exits are separate commands, and one form must never fire the other.
+    // The exits are separate commands, and one dialog must never fire the other.
     expect(refuseReception).not.toHaveBeenCalled();
   });
 
-  it('sends refuse from its own form, and only that one', async () => {
+  it('sends refuse from its own dialog, and only that one', async () => {
     refuseReception.mockResolvedValue({
       status: 'success',
       closed: { receptionVisitId: 'rv-1', receptionStatus: 'refused', recordVersion: 8 },
@@ -537,15 +719,10 @@ describe('the terminal exits release the vehicle, and both demand a reason', () 
     });
     const user = userEvent.setup();
     renderLtr(<SummaryStep {...stepProps()} />);
-    const form = screen.getByRole('form', {
-      name: EN['receptions.closure.refuseHeading'] as string,
-    });
-    await user.type(
-      within(form).getByLabelText(EN['receptions.closure.reason'] as string, { exact: false }),
-      'the workshop cannot take this vehicle'
-    );
+    const dialog = await openExit(user, 'receptions.closure.refuseSubmit');
+    await user.type(reasonBox(dialog), 'the workshop cannot take this vehicle');
     await user.click(
-      within(form).getByRole('button', { name: EN['receptions.closure.refuseSubmit'] as string })
+      within(dialog).getByRole('button', { name: EN['receptions.closure.refuseSubmit'] as string })
     );
     await waitFor(() => expect(refuseReception).toHaveBeenCalled());
     expect(refuseReception.mock.calls[0]?.[2]).toEqual({
@@ -555,14 +732,10 @@ describe('the terminal exits release the vehicle, and both demand a reason', () 
   });
 
   it('bounds the reason field at the route’s own limit', async () => {
+    const user = userEvent.setup();
     renderLtr(<SummaryStep {...stepProps()} />);
-    const form = screen.getByRole('form', {
-      name: EN['receptions.closure.closeHeading'] as string,
-    });
-    const field = within(form).getByLabelText(EN['receptions.closure.reason'] as string, {
-      exact: false,
-    });
-    expect(field).toHaveAttribute('maxlength', String(MAX_CLOSURE_REASON));
+    const dialog = await openExit(user, 'receptions.closure.closeSubmit');
+    expect(reasonBox(dialog)).toHaveAttribute('maxlength', String(MAX_CLOSURE_REASON));
   });
 
   it('re-reads after a close, so the wizard sees the terminal status', async () => {
@@ -578,17 +751,66 @@ describe('the terminal exits release the vehicle, and both demand a reason', () 
     });
     const user = userEvent.setup();
     renderLtr(<SummaryStep {...stepProps()} />);
-    const form = screen.getByRole('form', {
-      name: EN['receptions.closure.closeHeading'] as string,
-    });
-    await user.type(
-      within(form).getByLabelText(EN['receptions.closure.reason'] as string, { exact: false }),
-      'abandoned'
-    );
+    const dialog = await openExit(user, 'receptions.closure.closeSubmit');
+    await user.type(reasonBox(dialog), 'abandoned');
     await user.click(
-      within(form).getByRole('button', { name: EN['receptions.closure.closeSubmit'] as string })
+      within(dialog).getByRole('button', { name: EN['receptions.closure.closeSubmit'] as string })
     );
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
+  it('keeps the exit busy until the re-read after it lands', async () => {
+    closeReceptionWithoutWork.mockResolvedValue({
+      status: 'success',
+      closed: {
+        receptionVisitId: 'rv-1',
+        receptionStatus: 'closed_without_work',
+        recordVersion: 8,
+      },
+      correlationId: 'corr-ok',
+      attempt: 1,
+    });
+    const release = holdNextRefresh();
+    const user = userEvent.setup();
+    renderLtr(<SummaryStep {...stepProps()} />);
+    const dialog = await openExit(user, 'receptions.closure.closeSubmit');
+    await user.type(reasonBox(dialog), 'abandoned');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['receptions.closure.closeSubmit'] as string })
+    );
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    // The dialog is gone, but the exit that opens it again stays busy until
+    // the re-read has brought the visit's new state and version.
+    const exit = screen.getByRole('button', {
+      name: EN['receptions.closure.closeSubmit'] as string,
+    });
+    expect(exit).toBeDisabled();
+    release();
+    await waitFor(() => expect(exit).toBeEnabled());
+    expect(closeReceptionWithoutWork).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the dialog and the reason when the answer never arrives, and says so', async () => {
+    // A rejected Server Action (the connection dropped): not a pending button
+    // for ever, not an unhandled rejection — the dialog stays with the reason.
+    closeReceptionWithoutWork.mockRejectedValue(new TypeError('Failed to fetch'));
+    const user = userEvent.setup();
+    renderLtr(<SummaryStep {...stepProps()} />);
+    const dialog = await openExit(user, 'receptions.closure.closeSubmit');
+    await user.type(reasonBox(dialog), 'abandoned');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['receptions.closure.closeSubmit'] as string })
+    );
+    expect(
+      await within(dialog).findByText(EN['state.unavailable.message'] as string)
+    ).toBeVisible();
+    expect(reasonBox(dialog)).toHaveValue('abandoned');
+    expect(
+      within(dialog).getByRole('button', { name: EN['receptions.closure.closeSubmit'] as string })
+    ).toBeEnabled();
+    expect(refresh).not.toHaveBeenCalled();
   });
 });
 
@@ -645,7 +867,7 @@ describe('conversion to a work order', () => {
     expect(screen.queryByRole('alert')).toBeNull();
   });
 
-  it('renders the opaque state code as a code, without translating it', async () => {
+  it('renders a state outside the platform vocabulary as its code, never as a composed key', async () => {
     convertReceptionToWorkOrder.mockResolvedValue({
       status: 'success',
       converted: {
@@ -664,7 +886,7 @@ describe('conversion to a work order', () => {
       await screen.findByRole('button', { name: EN['receptions.convert.submit'] as string })
     );
     expect(await screen.findByText('tenant_specific_state')).toBeVisible();
-    expect(screen.getByText(EN['receptions.convert.stateOpaque'] as string)).toBeVisible();
+    expect(document.body.textContent).not.toContain('workOrders.state.');
     // No number is not "no work order": it is a tenant without a sequence.
     expect(screen.getByText(EN['receptions.convert.unnumbered'] as string)).toBeVisible();
   });
@@ -696,6 +918,61 @@ describe('conversion to a work order', () => {
       await screen.findByText(EN['receptions.command.conflictBlocked'] as string)
     ).toBeVisible();
     await waitFor(() => expect(refresh).toHaveBeenCalled());
+  });
+
+  it('stays busy after a conflict until the re-read lands, so the stale version is not sent again', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'state.conflict.title',
+      correlationId: 'corr-412',
+      attempt: 1,
+    });
+    const release = holdNextRefresh();
+    const user = userEvent.setup();
+    renderLtr(<ConversionStep {...withStatus('authorized')} />);
+    const convert = await screen.findByRole('button', {
+      name: EN['receptions.convert.submit'] as string,
+    });
+    await user.click(convert);
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(convert).toBeDisabled();
+    expect(convert).toHaveAttribute('aria-busy', 'true');
+    fireEvent.click(convert);
+    expect(convertReceptionToWorkOrder).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(convert).toBeEnabled());
+    expect(convertReceptionToWorkOrder).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * DEF-T-10 reaches this step too, because the API guards conversion with the
+   * SAME standing-authorization rule as approval: a withdrawn authorization
+   * refuses both commands with the same token. So the sentence has to read
+   * correctly under this button — it names the precondition and the step, never
+   * the command — and the step has to be reachable from here, which it was not
+   * until this screen was handed the wizard's navigation.
+   */
+  it('names a missing authorization on the conversion refusal too, and offers the same step', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.authorization_withdrawn',
+      correlationId: 'corr-conv-auth',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<ConversionStep {...withStatus('authorized')} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.convert.submit'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.authorization_withdrawn'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(EN['receptions.command.conflictBlocked'] as string)).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.command.goToAuthorization'] as string })
+    );
+    expect(goToStep).toHaveBeenCalledWith('parties-and-authorization');
   });
 
   it('reads the work order on intent, and shows its jobs', async () => {
@@ -774,6 +1051,158 @@ describe('conversion to a work order', () => {
     expect(screen.getByText('WO-0001')).toBeVisible();
   });
 
+  it('links to the NEW work order and says its state in words (Browser QA part 7, row 5.3)', async () => {
+    for (const [locale, catalogue, render] of [
+      ['en', en, renderLtr],
+      ['ar', ar, renderRtl],
+    ] as const) {
+      convertReceptionToWorkOrder.mockResolvedValue({
+        status: 'success',
+        converted: {
+          receptionVisitId: 'rv-1',
+          workOrderId: 'wo-new-7',
+          displayNumber: 'WO-0007',
+          state: 'draft',
+          alreadyConverted: false,
+        },
+        correlationId: 'corr-ok',
+        attempt: 1,
+      });
+      const words = catalogue as Record<string, string>;
+      const user = userEvent.setup();
+      const { unmount } = render(
+        <ConversionStep {...withStatus('authorized', { locale, messages: catalogue })} />
+      );
+      await user.click(
+        await screen.findByRole('button', { name: words['receptions.convert.submit'] as string })
+      );
+      const link = await screen.findByRole('link', {
+        name: words['receptions.convert.openWorkOrder'] as string,
+      });
+      expect(link.getAttribute('href')).toBe(`/${locale}/work-orders/wo-new-7`);
+      expect(screen.getByText(words['workOrders.state.draft'] as string)).toBeVisible();
+      // The raw code is not what the operator reads.
+      expect(screen.queryByText('draft')).toBeNull();
+      unmount();
+    }
+  });
+
+  it('offers no link to a work order the operator may not open', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'success',
+      converted: {
+        receptionVisitId: 'rv-1',
+        workOrderId: 'wo-new-7',
+        displayNumber: 'WO-0007',
+        state: 'draft',
+        alreadyConverted: false,
+      },
+      correlationId: 'corr-ok',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(
+      <ConversionStep
+        {...withStatus('authorized', {
+          capabilities: { ...CAPABILITIES, readWorkOrders: false },
+        })}
+      />
+    );
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.convert.submit'] as string })
+    );
+    expect(await screen.findByText('WO-0007')).toBeVisible();
+    expect(
+      screen.queryByRole('link', { name: EN['receptions.convert.openWorkOrder'] as string })
+    ).toBeNull();
+  });
+
+  /*
+   * Browser QA part 7, row 5.3, REVISITED: a visit converted earlier said
+   * "already converted" and nothing else, because the conversion's answer was
+   * the only thing that named the work order. The visit read now publishes it.
+   */
+  it('links a visit converted EARLIER to its work order, by number (row 5.3, revisited)', async () => {
+    for (const [locale, catalogue, render] of [
+      ['en', en, renderLtr],
+      ['ar', ar, renderRtl],
+    ] as const) {
+      const words = catalogue as Record<string, string>;
+      const { unmount } = render(
+        <ConversionStep
+          {...withStatus('converted', {
+            locale,
+            messages: catalogue,
+            detail: {
+              ...DETAIL,
+              receptionStatus: 'converted',
+              workOrderId: 'wo-earlier-3',
+              workOrderDisplayNumber: 'WO-0003',
+            },
+          })}
+        />
+      );
+      expect(
+        await screen.findByText(words['receptions.convert.alreadyDone'] as string)
+      ).toBeVisible();
+      expect(screen.getByText('WO-0003')).toBeVisible();
+      const link = screen.getByRole('link', {
+        name: words['receptions.convert.openWorkOrder'] as string,
+      });
+      expect(link.getAttribute('href')).toBe(`/${locale}/work-orders/wo-earlier-3`);
+      // Nothing may convert it again.
+      expect(
+        screen.queryByRole('button', { name: words['receptions.convert.submit'] as string })
+      ).toBeNull();
+      unmount();
+    }
+  });
+
+  it('names no work order, and links none, when the visit read publishes none', async () => {
+    // A reply that predates the field, or a work order that is gone: the
+    // sentence stands alone rather than linking to nothing.
+    renderLtr(<ConversionStep {...withStatus('converted')} />);
+    expect(await screen.findByText(EN['receptions.convert.alreadyDone'] as string)).toBeVisible();
+    expect(
+      screen.queryByRole('link', { name: EN['receptions.convert.openWorkOrder'] as string })
+    ).toBeNull();
+  });
+
+  it('withholds the earlier work order link from an operator who may not open it', async () => {
+    renderLtr(
+      <ConversionStep
+        {...withStatus('converted', {
+          capabilities: { ...CAPABILITIES, readWorkOrders: false },
+          detail: {
+            ...DETAIL,
+            receptionStatus: 'converted',
+            workOrderId: 'wo-earlier-3',
+            workOrderDisplayNumber: 'WO-0003',
+          },
+        })}
+      />
+    );
+    expect(await screen.findByText('WO-0003')).toBeVisible();
+    expect(
+      screen.queryByRole('link', { name: EN['receptions.convert.openWorkOrder'] as string })
+    ).toBeNull();
+    expect(screen.getByText(EN['receptions.convert.readDenied'] as string)).toBeVisible();
+  });
+
+  it('says a conversion whose answer never arrived is unavailable, and frees the button', async () => {
+    convertReceptionToWorkOrder.mockRejectedValue(new TypeError('Failed to fetch'));
+    const user = userEvent.setup();
+    renderLtr(<ConversionStep {...withStatus('authorized')} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.convert.submit'] as string })
+    );
+    expect(await screen.findByText(EN['state.unavailable.message'] as string)).toBeVisible();
+    expect(
+      screen.getByRole('button', { name: EN['receptions.convert.submit'] as string })
+    ).toBeEnabled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
   it('withdraws the command from an operator without the conversion permission', async () => {
     renderLtr(
       <ConversionStep
@@ -795,7 +1224,9 @@ describe('both directions', () => {
   it('renders the decision surface in Arabic, right to left', async () => {
     renderRtl(<SummaryStep {...stepProps({ locale: 'ar', messages: ar })} />);
     expect(
-      await screen.findByText(AR['receptions.summary.decisionHeading'] as string)
+      await screen.findByRole('heading', {
+        name: AR['receptions.summary.decisionHeading'] as string,
+      })
     ).toBeVisible();
     expect(
       screen.getByRole('button', { name: AR['receptions.summary.approve'] as string })
@@ -823,5 +1254,76 @@ describe('both directions', () => {
       await screen.findByRole('button', { name: AR['receptions.convert.submit'] as string })
     );
     expect(await screen.findByText(AR['receptions.convert.replayed'] as string)).toBeVisible();
+  });
+
+  /**
+   * Owner directive, user-facing errors. Conversion had two refusals of its own
+   * and neither had ever been published: a visit that was never approved and a
+   * visit that had already been converted both reached the operator as the
+   * generic blocked sentence. The first is curable and points at the step that
+   * cures it; the second is not, and offers nothing.
+   */
+  it('names an unapproved visit on conversion, and offers the step that approves it', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.reception_not_authorised',
+      correlationId: 'corr-conv-unapproved',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<ConversionStep {...withStatus('authorized')} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.convert.submit'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.reception_not_authorised'] as string)
+    ).toBeVisible();
+    expect(screen.queryByText(EN['receptions.command.conflictBlocked'] as string)).toBeNull();
+
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.command.goToAuthorization'] as string })
+    );
+    expect(goToStep).toHaveBeenCalledWith('parties-and-authorization');
+  });
+
+  it('names an unapproved visit in Arabic too, in Arabic words and not the English ones', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.reception_not_authorised',
+      correlationId: 'corr-conv-unapproved-ar',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderRtl(<ConversionStep {...withStatus('authorized', { locale: 'ar', messages: ar })} />);
+    await user.click(
+      await screen.findByRole('button', { name: AR['receptions.convert.submit'] as string })
+    );
+    expect(
+      await screen.findByText(AR['form.violation.reception_not_authorised'] as string)
+    ).toBeVisible();
+    // The Arabic catalogue is not the English one wearing an Arabic key.
+    expect(screen.queryByText(EN['form.violation.reception_not_authorised'] as string)).toBeNull();
+  });
+
+  it('names an already-converted visit without offering a step', async () => {
+    convertReceptionToWorkOrder.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.reception_already_converted',
+      correlationId: 'corr-conv-twice',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderLtr(<ConversionStep {...withStatus('authorized')} />);
+    await user.click(
+      await screen.findByRole('button', { name: EN['receptions.convert.submit'] as string })
+    );
+    expect(
+      await screen.findByText(EN['form.violation.reception_already_converted'] as string)
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('button', {
+        name: EN['receptions.command.goToAuthorization'] as string,
+      })
+    ).toBeNull();
   });
 });

@@ -12,42 +12,112 @@ import {
   type ItemsOnly,
   type ReadState,
 } from '@/lib/api/read-operation';
+import { VIOLATION_KEY_PREFIX, type ApiFailure } from '@/lib/api/client';
 import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
 import type {
+  GoodsReceiptCreateBody,
   ItemCategoryCreateBody,
   ItemCreateBody,
+  ItemIdentifierAddBody,
+  ItemSalePriceSetBody,
+  MaterialExceptionCreateBody,
+  MaterialExceptionDecideBody,
+  MaterialRequestCancelBody,
+  MaterialRequestCloseBody,
+  MaterialRequirementApproveBody,
+  MaterialRequirementCancelBody,
   OpeningBatchCreateBody,
   OpeningBatchLineCreateBody,
+  ReorderLevelSetBody,
+  SalesReturnCreateBody,
+  StockAdjustmentApproveBody,
+  StockAdjustmentCreateBody,
+  StockCountCancelBody,
+  StockCountLineRecordBody,
+  StockCountOpenBody,
   StockIssueCreateBody,
   StockLocationCreateBody,
   StockReservationCreateBody,
   StockReservationReleaseBody,
   StockReturnCreateBody,
+  StockTransferCancelBody,
+  StockTransferCreateBody,
+  StockTransferDiscrepancyResolveBody,
+  StockTransferReceiveBody,
+  StockTransferWriteOffDecideBody,
+  UnitConversionSetBody,
+  VehicleSpecificationCreateBody,
 } from '@/lib/contracts/inventory-contract';
 import type { BranchOption } from '@/features/services/services-contract';
-import type {
-  AvailabilityCriteria,
-  CreatedStockLocation,
-  InventoryItem,
-  IssueEcho,
-  ItemCategory,
-  ItemSearchCriteria,
-  MovementCriteria,
-  OpeningBatch,
-  OpeningBatchDetail,
-  OpeningBatchLine,
-  OpeningBatchSummary,
-  PartIssue,
-  RequiredPart,
-  ReservationCriteria,
-  ReservationEcho,
-  ReturnEcho,
-  StockAvailability,
-  StockLocation,
-  StockMovement,
-  StockReservation,
-  StockTarget,
-  UnitOfMeasureOption,
+import {
+  ALERT_PAGE_SIZE,
+  MATERIAL_DRAW_REASONS,
+  materialDrawFiguresOf,
+  type AdjustmentEcho,
+  type AdjustmentState,
+  type AgedInTransitAlerts,
+  type AvailabilityCriteria,
+  type BarcodeResolution,
+  type CountDiscrepancyAlerts,
+  type CreatedStockLocation,
+  type GoodsReceiptDetail,
+  type GoodsReceiptSummary,
+  type InventoryItem,
+  type IssueEcho,
+  type IssuedPart,
+  type ItemCategory,
+  type ItemCostHistory,
+  type ItemIdentifierEcho,
+  type ItemIdentifierList,
+  type ItemLabel,
+  type ItemSalePrice,
+  type ItemSalePriceList,
+  type ItemSearchCriteria,
+  type LowStockAlerts,
+  type MaterialException,
+  type MaterialRequestEcho,
+  type MaterialRequirement,
+  type MaterialRequirementCreateBody,
+  type MaterialRequirementDetail,
+  type MaterialRequirementState,
+  type MovementCriteria,
+  type OpeningBatch,
+  type OpeningBatchDetail,
+  type OpeningBatchLine,
+  type OpeningBatchSummary,
+  type PartIssue,
+  type ReorderLevelEcho,
+  type ReorderLevelList,
+  type RequiredPart,
+  type ReservationCriteria,
+  type ReservationEcho,
+  type ReturnCondition,
+  type ReturnEcho,
+  type ReturnableQuantity,
+  type SalesReturnEcho,
+  type SalesReturnRow,
+  type SalesReturnSourceKind,
+  type StockAdjustment,
+  type StockAvailability,
+  type StockCountDetail,
+  type StockCountSummary,
+  type StockLocation,
+  type StockMovement,
+  type StockReservation,
+  type StockTarget,
+  type SettlementDecision,
+  type StockTransfer,
+  type TransferDirection,
+  type TransferEcho,
+  type TransferSettlement,
+  type TransferSettlementEcho,
+  type UnitConversion,
+  type UnitConversionEcho,
+  type UnitOfMeasureOption,
+  type UnusualConsumptionAlerts,
+  type VehicleSpecification,
+  type VehicleSpecificationEcho,
+  type VehicleSpecificationState,
 } from './inventory-contract';
 
 /**
@@ -112,7 +182,7 @@ const EMPTY = { rows: [], nextCursor: null, hasMore: false } as const;
 
 const expired = (attempt: number): ActionState => ({
   status: 'expired',
-  messageKey: 'state.expired.title',
+  messageKey: 'state.expired.message',
   attempt,
 });
 
@@ -276,7 +346,7 @@ export async function createReservation(
   const client = await authorizedClient();
   if (!client) return { state: expired(attempt), created: null };
   const result = await client.send<ReservationEcho>('POST', '/api/v1/stock-reservations', body);
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) return { state: refusalOf(result, attempt), created: null };
   return {
     state: {
       ...success('inventory.reserve.success', attempt),
@@ -299,7 +369,7 @@ export async function createIssue(
   const client = await authorizedClient();
   if (!client) return { state: expired(attempt), created: null };
   const result = await client.send<IssueEcho>('POST', '/api/v1/stock-issues', body);
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) return { state: refusalOf(result, attempt), created: null };
   return {
     state: { ...success('inventory.issue.success', attempt), correlationId: result.correlationId },
     created: result.data,
@@ -552,6 +622,1294 @@ export async function approveOpeningBatch(
   return {
     state: {
       ...success('inventory.opening.approve.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — stock operations: transfers, goods receipts, cost history,
+ * adjustments and counts
+ * ------------------------------------------------------------------ */
+
+/** The server's catalogue code for a refused state change. */
+const STATE_REFUSED = 'ERR-TRN-001';
+/** The server's catalogue code for a work-order draw its material requirement does not allow. */
+const DRAW_REFUSED = 'ERR-INV-001';
+/** The server's catalogue code for a resource this organisation does not have. */
+const RESOURCE_MISSING = 'ERR-RES-001';
+
+/**
+ * What a `404 ERR-RES-001` means for one particular write (DEF-T-14).
+ *
+ * A generic not-found title is the right sentence when the thing addressed in
+ * the PATH is absent. It is the wrong sentence when the path resolved and
+ * something the BODY named did not: setting a price in a currency the
+ * organisation does not carry answered "Not found" with a correlation
+ * reference and nothing else, on a form whose currency box is free text and
+ * whose screen publishes no list of the currencies that exist.
+ *
+ * This carries the caller's own sentence for that case and the field it belongs
+ * beside. The rule of `client.ts` holds: where the server cannot distinguish a
+ * cause, the cause is not guessed at — the sentence names every candidate the
+ * server named and claims to know which only when the server does.
+ */
+interface MissingResourceNote {
+  readonly messageKey: string;
+  readonly field: string;
+  readonly fieldKey: string;
+}
+
+/**
+ * A failure as the operator should read it.
+ *
+ * `fromFailure` maps a failure KIND to a sentence, and every 409 is one kind.
+ * The server's own message never reaches the wire (`problemFor` publishes the
+ * catalogue entry and the safe details only), so the reason an operator needs
+ * is recovered from what IS published:
+ *
+ * - `ERR-INV-001` carries `materialDraw.reason`, one of five published values,
+ *   and each has its own sentence naming the remedy;
+ * - `ERR-TRN-001` means the record's state refuses the act, and the act is
+ *   known here, so the caller names the sentence that says what the state
+ *   refuses (`stateRefusedKey`).
+ *
+ * A banner that already names a specific violation keeps it: that is the more
+ * precise reason, and replacing it would downgrade the message.
+ *
+ * ## DEF-T-16 — why a material refusal now arrives as a violation
+ *
+ * The material REQUIREMENT writes had neither of those channels. A second
+ * request for the same part on the same service line is `ERR-RES-002`, which is
+ * a conflict that is not `ERR-CON-001`, so it rendered "This change cannot be
+ * saved" and a correlation reference — measured twice, from two fresh sessions,
+ * with nothing created either time. The service now publishes a token from
+ * `MATERIAL_REFUSAL_RULES` in `violations` against `body`, so `fromFailure`
+ * finds it before this function runs and the early return above keeps it. That
+ * is why no branch here names `ERR-RES-002`: adding one would be a second,
+ * quieter copy of a mapping the shared reader already performs.
+ */
+function refusalOf(
+  failure: ApiFailure,
+  attempt: number,
+  stateRefusedKey?: string,
+  missing?: MissingResourceNote
+): ActionState {
+  const state = fromFailure(failure, attempt);
+  if (state.messageKey?.startsWith(VIOLATION_KEY_PREFIX) === true) return state;
+  const code = failure.problem?.code;
+  const draw = failure.problem?.materialDraw;
+  if (
+    code === DRAW_REFUSED &&
+    draw !== undefined &&
+    (MATERIAL_DRAW_REASONS as readonly string[]).includes(draw.reason)
+  ) {
+    // CC-OD-32: "more than the work order is approved to use" left the operator
+    // to guess by how much and against what. The three figures and their unit
+    // say it, and every one of them is a string the server sent — nothing here
+    // adds, subtracts or reformats a quantity, because a quantity computed in
+    // the browser is a second answer to a question the ledger already answered.
+    const figures = materialDrawFiguresOf(draw);
+    if (figures !== null) {
+      return {
+        ...state,
+        messageKey: `inventory.refusal.materialDraw.${draw.reason}.figures`,
+        messageValues: {
+          allowance: figures.allowance,
+          // `used`, not the wire's own name: the plain-language gate refuses a
+          // camel-case identifier inside a sentence an operator reads, and it is
+          // right to — `{alreadyCommitted}` is a field name, not a word.
+          used: figures.alreadyCommitted,
+          requested: figures.requested,
+          unit: figures.unit,
+        },
+      };
+    }
+    return { ...state, messageKey: `inventory.refusal.materialDraw.${draw.reason}` };
+  }
+  if (code === STATE_REFUSED && stateRefusedKey !== undefined) {
+    return { ...state, messageKey: stateRefusedKey };
+  }
+  if (code === RESOURCE_MISSING && missing !== undefined) {
+    return {
+      ...state,
+      messageKey: missing.messageKey,
+      fieldErrors: { ...(state.fieldErrors ?? {}), [missing.field]: missing.fieldKey },
+    };
+  }
+  return state;
+}
+
+/**
+ * One unguarded POST or PUT whose answer the screen holds on to, with the refusal
+ * said plainly. The two version-guarded writes below do NOT go through here: a
+ * guarded send is written out with its literal path so the version-sourcing
+ * gates can attribute it.
+ */
+async function write<T>(
+  method: 'POST' | 'PUT',
+  path: string,
+  body: unknown,
+  successKey: string,
+  attempt: number,
+  options: {
+    readonly stateRefusedKey?: string;
+    readonly idempotencyKey?: string;
+    readonly missing?: MissingResourceNote;
+  } = {}
+): Promise<CreateOutcome<T>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<T>(
+    method,
+    path,
+    body,
+    options.idempotencyKey === undefined ? {} : { idempotencyKey: options.idempotencyKey }
+  );
+  if (!result.ok) {
+    return {
+      state: refusalOf(result, attempt, options.stateRefusedKey, options.missing),
+      created: null,
+    };
+  }
+  return {
+    state: { ...success(successKey, attempt), correlationId: result.correlationId },
+    created: result.data,
+  };
+}
+
+/**
+ * A branch's transfers (`inv.stock-transfer-list`), newest first, read as the
+ * sender (`outbound`) or as the destination (`inbound`). One page of fifty; the
+ * screen says so when `hasMore` is set.
+ */
+export async function listTransfers(
+  target: StockTarget,
+  direction: TransferDirection
+): Promise<ReadState<CursorPage<StockTransfer>>> {
+  return readOperation<CursorPage<StockTransfer>>(
+    '/api/v1/stock-transfers' + branchTargetQuery(target, { direction, limit: 50 })
+  );
+}
+
+/**
+ * Dispatch a transfer (`inv.stock-transfer-create`): the quantity leaves the
+ * source and sits in transit. A replay of the body key answers the transfer
+ * already made with `replayed: true`.
+ */
+export async function createTransfer(
+  body: StockTransferCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<TransferEcho>> {
+  return write<TransferEcho>(
+    'POST',
+    '/api/v1/stock-transfers',
+    body,
+    'inventory.transfers.create.success',
+    attempt,
+    { stateRefusedKey: 'inventory.transfers.create.refused' }
+  );
+}
+
+/**
+ * Receive what arrived (`inv.stock-transfer-receive`). Less than is still in
+ * transit leaves the transfer partly received; the echo carries the server's
+ * `outstandingQuantity`, which the screen shows as stated.
+ */
+export async function receiveTransfer(
+  transferId: string,
+  body: StockTransferReceiveBody,
+  attempt = 1
+): Promise<CreateOutcome<TransferEcho>> {
+  return write<TransferEcho>(
+    'POST',
+    `/api/v1/stock-transfers/${encodeURIComponent(transferId)}/receipt`,
+    body,
+    'inventory.transfers.receive.success',
+    attempt,
+    { stateRefusedKey: 'inventory.transfers.receive.refused' }
+  );
+}
+
+/** Cancel a dispatched transfer (`inv.stock-transfer-cancel`); the quantity returns to the origin. */
+export async function cancelTransfer(
+  transferId: string,
+  body: StockTransferCancelBody,
+  attempt = 1
+): Promise<CreateOutcome<TransferEcho>> {
+  return write<TransferEcho>(
+    'POST',
+    `/api/v1/stock-transfers/${encodeURIComponent(transferId)}/cancellation`,
+    body,
+    'inventory.transfers.cancel.success',
+    attempt,
+    { stateRefusedKey: 'inventory.transfers.cancel.refused' }
+  );
+}
+
+/**
+ * Settle units that did not arrive (`inv.stock-transfer-discrepancy-resolve`):
+ * back to the origin at once, or a write-off that waits for a second person.
+ *
+ * The settlement keeps the HEADER key for its whole life (there is no body key),
+ * so the screen passes one key per opened form: pressing the button again after
+ * a lost answer replays the first settlement instead of returning the units twice.
+ */
+export async function resolveTransferDiscrepancy(
+  transferId: string,
+  body: StockTransferDiscrepancyResolveBody,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<TransferSettlementEcho>> {
+  return write<TransferSettlementEcho>(
+    'POST',
+    `/api/v1/stock-transfers/${encodeURIComponent(transferId)}/discrepancy-resolution`,
+    body,
+    body.kind === 'write_off'
+      ? 'inventory.transfers.resolve.writeOffRequested'
+      : 'inventory.transfers.resolve.returned',
+    attempt,
+    { stateRefusedKey: 'inventory.transfers.resolve.refused', idempotencyKey }
+  );
+}
+
+/**
+ * A branch's write-offs (`inv.stock-transfer-settlement-list`), for transfers it
+ * sent or is receiving, newest first, narrowed to one decision. One page of fifty.
+ */
+export async function listTransferWriteOffs(
+  target: StockTarget,
+  status: SettlementDecision
+): Promise<ReadState<CursorPage<TransferSettlement>>> {
+  return readOperation<CursorPage<TransferSettlement>>(
+    '/api/v1/stock-transfer-settlements' +
+      branchTargetQuery(target, { kind: 'write_off', status, limit: 50 })
+  );
+}
+
+/**
+ * Approve or reject a pending write-off (`inv.stock-transfer-write-off-decide`).
+ * Refused (409) for the requester and for a write-off already decided; the
+ * transport attaches the idempotency key the operation is published with.
+ */
+export async function decideTransferWriteOff(
+  settlementId: string,
+  body: StockTransferWriteOffDecideBody,
+  attempt = 1
+): Promise<CreateOutcome<TransferSettlementEcho>> {
+  return write<TransferSettlementEcho>(
+    'POST',
+    `/api/v1/stock-transfer-settlements/${encodeURIComponent(settlementId)}/decision`,
+    body,
+    body.decision === 'approved'
+      ? 'inventory.transfers.writeOffs.decide.approved'
+      : 'inventory.transfers.writeOffs.decide.rejected',
+    attempt,
+    { stateRefusedKey: 'inventory.transfers.writeOffs.decide.refused' }
+  );
+}
+
+/** A branch's goods receipts (`inv.goods-receipt-list`), newest first, one page of fifty. */
+export async function listGoodsReceipts(
+  target: StockTarget
+): Promise<ReadState<CursorPage<GoodsReceiptSummary>>> {
+  return readOperation<CursorPage<GoodsReceiptSummary>>(
+    '/api/v1/goods-receipts' + branchTargetQuery(target, { limit: 50 })
+  );
+}
+
+/** One receipt with its lines (`inv.goods-receipt-read`); lines say whether they are priced, never the figure. */
+export async function readGoodsReceipt(receiptId: string): Promise<ReadState<GoodsReceiptDetail>> {
+  return readOperation<GoodsReceiptDetail>(
+    `/api/v1/goods-receipts/${encodeURIComponent(receiptId)}`
+  );
+}
+
+/** Create a DRAFT receipt with its lines (`inv.goods-receipt-create`). Nothing is on hand until it is posted. */
+export async function createGoodsReceipt(
+  body: GoodsReceiptCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<GoodsReceiptDetail>> {
+  return write<GoodsReceiptDetail>(
+    'POST',
+    '/api/v1/goods-receipts',
+    body,
+    'inventory.receipts.create.success',
+    attempt,
+    { stateRefusedKey: 'inventory.receipts.create.refused' }
+  );
+}
+
+/**
+ * Post a draft receipt (`inv.goods-receipt-post`). Bodyless; `ifMatch` is the
+ * RECEIPT's `recordVersion` exactly as the last read or write answered it.
+ */
+export async function postGoodsReceipt(
+  receiptId: string,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<GoodsReceiptDetail>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<GoodsReceiptDetail>(
+    'POST',
+    `/api/v1/goods-receipts/${encodeURIComponent(receiptId)}/posting`,
+    undefined,
+    { ifMatch }
+  );
+  if (!result.ok) {
+    return {
+      state: refusalOf(result, attempt, 'inventory.receipts.post.refused'),
+      created: null,
+    };
+  }
+  return {
+    state: {
+      ...success('inventory.receipts.post.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * An item's cost history in one branch (`inv.item-cost-history-read`,
+ * `inv.cost.view`): the latest unit cost, the weighted average the server
+ * computed, and the newest layers.
+ */
+export async function readItemCostHistory(
+  itemId: string,
+  target: StockTarget
+): Promise<ReadState<ItemCostHistory>> {
+  return readOperation<ItemCostHistory>(
+    `/api/v1/items/${encodeURIComponent(itemId)}/cost-history` +
+      branchTargetQuery(target, { limit: 20 })
+  );
+}
+
+/** A branch's stock adjustments (`inv.stock-adjustment-list`), newest first, optionally one status. */
+export async function listAdjustments(
+  target: StockTarget,
+  status: AdjustmentState | null
+): Promise<ReadState<CursorPage<StockAdjustment>>> {
+  return readOperation<CursorPage<StockAdjustment>>(
+    '/api/v1/stock-adjustments' + branchTargetQuery(target, { status, limit: 50 })
+  );
+}
+
+/** Request an adjustment (`inv.stock-adjustment-create`): pending, no stock effect, until a second person approves. */
+export async function createAdjustment(
+  body: StockAdjustmentCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<AdjustmentEcho>> {
+  return write<AdjustmentEcho>(
+    'POST',
+    '/api/v1/stock-adjustments',
+    body,
+    'inventory.adjustments.create.success',
+    attempt,
+    { stateRefusedKey: 'inventory.adjustments.create.refused' }
+  );
+}
+
+/**
+ * Approve or reject a pending adjustment (`inv.stock-adjustment-approve`).
+ * Refused (409) for the requester and for an adjustment already decided.
+ */
+export async function decideAdjustment(
+  adjustmentId: string,
+  body: StockAdjustmentApproveBody,
+  attempt = 1
+): Promise<CreateOutcome<AdjustmentEcho>> {
+  return write<AdjustmentEcho>(
+    'POST',
+    `/api/v1/stock-adjustments/${encodeURIComponent(adjustmentId)}/approval`,
+    body,
+    body.decision === 'approved'
+      ? 'inventory.adjustments.decide.approved'
+      : 'inventory.adjustments.decide.rejected',
+    attempt,
+    { stateRefusedKey: 'inventory.adjustments.decide.refused' }
+  );
+}
+
+/** A branch's stock counts (`inv.stock-count-list`) with the server's variance figures, newest first. */
+export async function listStockCounts(
+  target: StockTarget
+): Promise<ReadState<CursorPage<StockCountSummary>>> {
+  return readOperation<CursorPage<StockCountSummary>>(
+    '/api/v1/stock-counts' + branchTargetQuery(target, { limit: 50 })
+  );
+}
+
+/** One count with its lines, movements during the count and variances (`inv.stock-count-read`). */
+export async function readStockCount(countId: string): Promise<ReadState<StockCountDetail>> {
+  return readOperation<StockCountDetail>(`/api/v1/stock-counts/${encodeURIComponent(countId)}`);
+}
+
+/** Open a count of one location (`inv.stock-count-open`), snapshotting what it holds. */
+export async function openStockCount(
+  body: StockCountOpenBody,
+  attempt = 1
+): Promise<CreateOutcome<StockCountDetail>> {
+  return write<StockCountDetail>(
+    'POST',
+    '/api/v1/stock-counts',
+    body,
+    'inventory.counts.open.success',
+    attempt,
+    { stateRefusedKey: 'inventory.counts.open.refused' }
+  );
+}
+
+/**
+ * Record the counted quantity of one item (`inv.stock-count-line-record`).
+ * `ifMatch` is the COUNT's `recordVersion` as the last read or write answered it;
+ * the answer is the whole count again, with the server's new variance.
+ */
+export async function recordStockCountLine(
+  countId: string,
+  itemId: string,
+  body: StockCountLineRecordBody,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<StockCountDetail>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<StockCountDetail>(
+    'PUT',
+    `/api/v1/stock-counts/${encodeURIComponent(countId)}/lines/${encodeURIComponent(itemId)}`,
+    body,
+    { ifMatch }
+  );
+  if (!result.ok) {
+    return { state: refusalOf(result, attempt, 'inventory.counts.closed'), created: null };
+  }
+  return {
+    state: {
+      ...success('inventory.counts.line.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/** Reconcile a count (`inv.stock-count-reconcile`): each variance raises a PENDING adjustment; nothing posts. */
+export async function reconcileStockCount(
+  countId: string,
+  attempt = 1
+): Promise<CreateOutcome<StockCountDetail>> {
+  return write<StockCountDetail>(
+    'POST',
+    `/api/v1/stock-counts/${encodeURIComponent(countId)}/reconciliation`,
+    undefined,
+    'inventory.counts.reconcile.success',
+    attempt,
+    { stateRefusedKey: 'inventory.counts.closed' }
+  );
+}
+
+/** Cancel an open count (`inv.stock-count-cancel`) without raising any adjustment. */
+export async function cancelStockCount(
+  countId: string,
+  body: StockCountCancelBody,
+  attempt = 1
+): Promise<CreateOutcome<StockCountDetail>> {
+  return write<StockCountDetail>(
+    'POST',
+    `/api/v1/stock-counts/${encodeURIComponent(countId)}/cancellation`,
+    body,
+    'inventory.counts.cancel.success',
+    attempt,
+    { stateRefusedKey: 'inventory.counts.closed' }
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — identifiers, scanning, labels, selling prices and returns.
+ *
+ * Three of these reads name the ITEM in the path and take no query at all:
+ * `inv.item_master` has no company or branch column, so an identifier, a label
+ * and a price list are tenant-wide and the item is the authorization subject.
+ * `inv.barcode-resolve` is tenant-wide too and takes a branch ONLY when the
+ * caller also wants the item's stock there — which the server additionally
+ * gates on `inv.stock.read` at that concrete branch, because holding
+ * `inv.item.read` is not authority to read stock.
+ *
+ * The two returns reads are branch-shaped in different ways.
+ * `inv.sales-return-list` is addressed to a branch like every other stock list.
+ * `inv.returnable-quantity-read` names a SOURCE, not a branch: the server
+ * resolves the company and branch from the source row itself, so a caller
+ * cannot learn what a branch it holds no authority in has sold.
+ *
+ * Nothing here is version-guarded. The identifier and return writes are marked
+ * idempotent, so the transport attaches the header key — and the screens derive
+ * that key ONCE per user confirmation, which is what makes a doubled scanner
+ * frame replay the first write instead of writing twice.
+ * ------------------------------------------------------------------ */
+
+const itemPath = (itemId: string, suffix: string) =>
+  `/api/v1/items/${encodeURIComponent(itemId)}${suffix}`;
+
+/**
+ * An item's codes (`inv.item-identifier-list`), live ones first.
+ *
+ * `includeRetired` asks for the retired rows as well, so a person can see that a
+ * code was withdrawn rather than wonder where it went.
+ */
+export async function listIdentifiers(
+  itemId: string,
+  includeRetired = false
+): Promise<ReadState<ItemIdentifierList>> {
+  return readOperation<ItemIdentifierList>(
+    itemPath(itemId, '/identifiers') + query({ includeRetired: includeRetired ? 'true' : null })
+  );
+}
+
+/**
+ * What a label printer needs for one item (`inv.item-label-data`): the stock
+ * code, the name, the code to print with its symbology hint, and the unit and
+ * pack quantity that code stands for. No price — the read is tenant-wide and a
+ * price is narrowed to a branch, so there is no single figure it could publish.
+ */
+export async function readItemLabel(itemId: string): Promise<ReadState<ItemLabel>> {
+  return readOperation<ItemLabel>(itemPath(itemId, '/label'));
+}
+
+/**
+ * Resolve a scanned code to its item (`inv.barcode-resolve`).
+ *
+ * `at` asks for the item's stock at one branch as well; omit it and
+ * `availability` comes back null. A code carried by more than one item is
+ * REFUSED rather than resolved to either — the screen says which, and offers no
+ * choice, because choosing would put the wrong part on a customer's bill in
+ * exactly the case the operator cannot see.
+ */
+export async function resolveBarcode(
+  value: string,
+  at: (StockTarget & { readonly locationId?: string }) | null = null
+): Promise<ReadState<BarcodeResolution>> {
+  const path = `/api/v1/barcodes/${encodeURIComponent(value)}`;
+  return readOperation<BarcodeResolution>(
+    at === null ? path : path + branchTargetQuery(at, { locationId: at.locationId ?? null })
+  );
+}
+
+/**
+ * An item's configured selling prices (`inv.item-sale-price-list`), most
+ * specific first: branch rows, then company rows, then the tenant-wide row. Each
+ * is the server's exact decimal string, labelled with what it applies to.
+ */
+export async function listSalePrices(itemId: string): Promise<ReadState<ItemSalePriceList>> {
+  return readOperation<ItemSalePriceList>(itemPath(itemId, '/sale-prices'));
+}
+
+/**
+ * How much of a source may still come back (`inv.returnable-quantity-read`).
+ *
+ * Three figures, always: what left, what has already come back, and the
+ * remainder. ADVISORY — the binding ceiling is re-checked under the source row
+ * lock when the return is received, so two counters reading the same remainder
+ * still produce one winner.
+ */
+export async function readReturnable(
+  sourceKind: SalesReturnSourceKind,
+  sourceId: string
+): Promise<ReadState<ReturnableQuantity>> {
+  return readOperation<ReturnableQuantity>(
+    '/api/v1/returnable-quantities' + query({ sourceKind, sourceId })
+  );
+}
+
+/**
+ * A branch's issued parts (`inv.part-issue-list`), newest first, found by what
+ * the clerk is holding: part of the item's name or code, the job's number, a
+ * plate or a chassis number. The term travels in this Server Action's argument
+ * and never in the page address.
+ */
+export async function listIssuedParts(
+  target: StockTarget,
+  criteria: { readonly q?: string | undefined },
+  cursor: string | null
+): Promise<ReadState<CursorPage<IssuedPart>>> {
+  return readOperation<CursorPage<IssuedPart>>(
+    '/api/v1/part-issues' + branchTargetQuery(target, { q: criteria.q, cursor, limit: 10 })
+  );
+}
+
+/** A branch's received returns (`inv.sales-return-list`), newest first. */
+export async function listSalesReturns(
+  target: StockTarget,
+  filter: { readonly condition?: ReturnCondition | undefined } = {}
+): Promise<ReadState<CursorPage<SalesReturnRow>>> {
+  return readOperation<CursorPage<SalesReturnRow>>(
+    '/api/v1/sales-returns' +
+      branchTargetQuery(target, { condition: filter.condition ?? null, limit: 50 })
+  );
+}
+
+/**
+ * Attach a code to an item (`inv.item-identifier-add`).
+ *
+ * The value is the code printed on the part or its packaging; nothing here
+ * invents a manufacturer code. The database generates the normalised form and
+ * checks the retail check digit, so a mistyped GTIN is refused with the field
+ * named rather than stored. `idempotencyKey` is derived once per user
+ * confirmation, so a doubled scanner frame replays the first write.
+ */
+export async function addIdentifier(
+  itemId: string,
+  body: ItemIdentifierAddBody,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<ItemIdentifierEcho>> {
+  return write<ItemIdentifierEcho>(
+    'POST',
+    itemPath(itemId, '/identifiers'),
+    body,
+    'inventory.identifiers.add.success',
+    attempt,
+    { stateRefusedKey: 'inventory.identifiers.add.refused', idempotencyKey }
+  );
+}
+
+/**
+ * Withdraw a code (`inv.item-identifier-retire`). No body: the item and the
+ * identifier are the path, and the caller is the actor. A retired code stops
+ * matching a scan and stays visible as withdrawn.
+ */
+export async function retireIdentifier(
+  itemId: string,
+  identifierId: string,
+  attempt = 1
+): Promise<CreateOutcome<ItemIdentifierEcho>> {
+  return write<ItemIdentifierEcho>(
+    'POST',
+    itemPath(itemId, `/identifiers/${encodeURIComponent(identifierId)}/retirement`),
+    undefined,
+    'inventory.identifiers.retire.success',
+    attempt,
+    { stateRefusedKey: 'inventory.identifiers.retire.refused' }
+  );
+}
+
+/**
+ * Allocate this tenant's next internal code for an item
+ * (`inv.item-barcode-assign`). No body at all: the code comes from the tenant's
+ * own counter under an advisory lock, never from the client — which is why an
+ * internal code can never collide with, or be mistaken for, a manufacturer one.
+ */
+export async function assignInternalBarcode(
+  itemId: string,
+  attempt = 1
+): Promise<CreateOutcome<ItemIdentifierEcho>> {
+  return write<ItemIdentifierEcho>(
+    'POST',
+    itemPath(itemId, '/internal-barcode'),
+    undefined,
+    'inventory.identifiers.internal.success',
+    attempt,
+    { stateRefusedKey: 'inventory.identifiers.internal.refused' }
+  );
+}
+
+/**
+ * Set what the tenant sells an item for (`inv.item-sale-price-set`).
+ *
+ * Exactly one live row exists per (item, company, branch) signature, so this
+ * SETS rather than appends and a repeated call changes nothing. The price is the
+ * exact decimal string the operator typed; nothing on this side rounds, scales
+ * or reformats it.
+ *
+ * DEF-T-14: the 404 this write can answer is usually NOT about the item in the
+ * path. `inv.item_sale_prices` has a foreign key on each of the company, the
+ * branch, the tax class and the currency, and the service maps every one of
+ * them to `ERR-RES-001` with one message. The generic not-found title said none
+ * of that, so a price refused for a currency the organisation does not carry
+ * read as "Not found" and a correlation reference.
+ *
+ * The item is the fifth candidate and is named as one: `setSalePrice` calls
+ * `requireItem` FIRST (`inventory-catalog-service.ts`), which raises the same
+ * `ERR-RES-001` when the item in the path is gone — a screen left open across a
+ * retirement reaches it. The server distinguishes none of the five in anything
+ * this client may read, so the sentence below names all five rather than
+ * asserting a cause. The currency box still carries a field message, because
+ * that box is free text and no operation publishes the currencies the
+ * organisation uses; that message says what is true only once the reader has
+ * ruled the other candidates out, and claims nothing before then.
+ */
+export async function setSalePrice(
+  itemId: string,
+  body: ItemSalePriceSetBody,
+  attempt = 1
+): Promise<CreateOutcome<ItemSalePrice>> {
+  return write<ItemSalePrice>(
+    'POST',
+    itemPath(itemId, '/sale-prices'),
+    body,
+    'inventory.prices.set.success',
+    attempt,
+    {
+      stateRefusedKey: 'inventory.prices.set.refused',
+      missing: {
+        messageKey: 'inventory.prices.set.notInOrganisation',
+        field: 'currencyCode',
+        fieldKey: 'inventory.prices.set.currencyNotCarried',
+      },
+    }
+  );
+}
+
+/**
+ * Receive a returned part (`inv.sales-return-create`).
+ *
+ * The source bounds the quantity — the server re-checks the ceiling under the
+ * source row lock and refuses a return beyond it (409) — and the condition
+ * decides the shelf: `restockable` goes back into sellable stock, `damaged` into
+ * the quarantine location the body names, where it is unavailable because of
+ * where it sits. A return against an issued counter sale raises a PENDING credit
+ * note, which a second person still approves; the echo carries its identifier.
+ * `idempotencyKey` is derived once per confirmation, so a repeated scan of the
+ * part being handed back replays the first receipt.
+ */
+export async function createSalesReturn(
+  body: SalesReturnCreateBody,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<SalesReturnEcho>> {
+  return write<SalesReturnEcho>(
+    'POST',
+    '/api/v1/sales-returns',
+    body,
+    'inventory.returns.create.success',
+    attempt,
+    { stateRefusedKey: 'inventory.returns.create.refused', idempotencyKey }
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — material demand control, and the two facts it depends on
+ * ------------------------------------------------------------------ */
+
+/**
+ * A branch material requirements (`inv.material-requirement-list`), newest
+ * first, narrowed to one work order by the parts screen.
+ *
+ * Every figure on a row is the server exact decimal string in the requirement
+ * unit. Nothing here adds or subtracts: `remainingQuantity` is published, and a
+ * remainder recomputed on this side would disagree with the server the moment a
+ * draw landed between the read and the render.
+ */
+export async function listMaterialRequirements(
+  target: StockTarget,
+  filter: {
+    readonly workOrderId?: string | undefined;
+    readonly status?: MaterialRequirementState | undefined;
+  } = {}
+): Promise<ReadState<CursorPage<MaterialRequirement>>> {
+  return readOperation<CursorPage<MaterialRequirement>>(
+    '/api/v1/material-requirements' +
+      branchTargetQuery(target, {
+        workOrderId: filter.workOrderId ?? null,
+        status: filter.status ?? null,
+        limit: 100,
+      })
+  );
+}
+
+/**
+ * One requirement and its exceptions (`inv.material-requirement-read`).
+ *
+ * The figures bind only when a draw reads them under the requirement lock, so
+ * this read is what the screen SHOWS and never what it decides with: a draw
+ * beyond the allowance is refused by the server, and the refusal is what the
+ * operator is told.
+ */
+export async function readMaterialRequirement(
+  requirementId: string
+): Promise<ReadState<MaterialRequirementDetail>> {
+  return readOperation<MaterialRequirementDetail>(
+    `/api/v1/material-requirements/${encodeURIComponent(requirementId)}`
+  );
+}
+
+/**
+ * Ask for material for one service line (`inv.material-requirement-create`).
+ *
+ * `basis: 'specification'` asks the server to derive the allowance from the
+ * confirmed specification for the work order vehicle. It is not refused when
+ * there is none: the requirement is stored as `approval_required` naming the
+ * fact that is missing, which is what the panel then renders.
+ * `basis: 'entered'` carries an allowance the operator read somewhere and the
+ * source they read it from — a capacity with no source is not accepted here,
+ * and no field on this side is prefilled with a guess.
+ */
+export async function createMaterialRequirement(
+  body: MaterialRequirementCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialRequirementDetail>> {
+  return write<MaterialRequirementDetail>(
+    'POST',
+    '/api/v1/material-requirements',
+    body,
+    'inventory.material.create.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.create.refused' }
+  );
+}
+
+/**
+ * Decide a requirement someone else asked for
+ * (`inv.material-requirement-approve`).
+ *
+ * The requester may not decide it whatever codes they hold: the service refuses
+ * them and a database constraint refuses them again. The panel hides the control
+ * from the person who asked AND renders the server refusal if it ever arrives,
+ * because a hidden control is a courtesy and the constraint is the rule.
+ */
+export async function decideMaterialRequirement(
+  requirementId: string,
+  body: MaterialRequirementApproveBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialRequirementDetail>> {
+  return write<MaterialRequirementDetail>(
+    'POST',
+    `/api/v1/material-requirements/${encodeURIComponent(requirementId)}/approval`,
+    body,
+    'inventory.material.decide.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.decide.refused' }
+  );
+}
+
+/**
+ * Look again for the fact a requirement lacks
+ * (`inv.material-requirement-recheck`). No body: the requirement is the path
+ * and the caller is the actor. It either finds the newly confirmed
+ * specification or the newly stated conversion and moves to `pending_approval`,
+ * or stays where it is with the same reason.
+ */
+export async function recheckMaterialRequirement(
+  requirementId: string,
+  attempt = 1
+): Promise<CreateOutcome<MaterialRequirementDetail>> {
+  return write<MaterialRequirementDetail>(
+    'POST',
+    `/api/v1/material-requirements/${encodeURIComponent(requirementId)}/recheck`,
+    undefined,
+    'inventory.material.recheck.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.recheck.refused' }
+  );
+}
+
+/**
+ * Withdraw a requirement (`inv.material-requirement-cancel`). Refused while
+ * anything is still committed against it — release or return the stock first.
+ */
+export async function cancelMaterialRequirement(
+  requirementId: string,
+  body: MaterialRequirementCancelBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialRequirementDetail>> {
+  return write<MaterialRequirementDetail>(
+    'POST',
+    `/api/v1/material-requirements/${encodeURIComponent(requirementId)}/cancellation`,
+    body,
+    'inventory.material.cancel.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.cancel.refused' }
+  );
+}
+
+/**
+ * Ask for a FINITE extra quantity (`inv.material-exception-create`).
+ *
+ * An approved exception raises the allowance by exactly the quantity asked for,
+ * in the requirement own unit. There is no unbounded exception and no second
+ * allowance: the server states the resulting allowance on approval.
+ */
+export async function requestMaterialException(
+  requirementId: string,
+  body: MaterialExceptionCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialException>> {
+  return write<MaterialException>(
+    'POST',
+    `/api/v1/material-requirements/${encodeURIComponent(requirementId)}/exceptions`,
+    body,
+    'inventory.material.exception.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.exception.refused' }
+  );
+}
+
+/**
+ * Decide an exception (`inv.material-exception-decide`) — a different approver
+ * again, refused for the person who asked.
+ */
+export async function decideMaterialException(
+  exceptionId: string,
+  body: MaterialExceptionDecideBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialException>> {
+  return write<MaterialException>(
+    'POST',
+    `/api/v1/material-exceptions/${encodeURIComponent(exceptionId)}/decision`,
+    body,
+    'inventory.material.exceptionDecision.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.exceptionDecision.refused' }
+  );
+}
+
+/**
+ * Finish a material request (`inv.material-request-close`). The echo names the
+ * reservations the closure released; a repeat answers the request already
+ * closed with `replayed` and releases nothing a second time.
+ */
+export async function closeMaterialRequest(
+  requestId: string,
+  body: MaterialRequestCloseBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialRequestEcho>> {
+  return write<MaterialRequestEcho>(
+    'POST',
+    `/api/v1/material-requests/${encodeURIComponent(requestId)}/closure`,
+    body,
+    'inventory.material.request.close.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.request.close.refused' }
+  );
+}
+
+/** Withdraw a material request (`inv.material-request-cancel`), with its reason. */
+export async function cancelMaterialRequest(
+  requestId: string,
+  body: MaterialRequestCancelBody,
+  attempt = 1
+): Promise<CreateOutcome<MaterialRequestEcho>> {
+  return write<MaterialRequestEcho>(
+    'POST',
+    `/api/v1/material-requests/${encodeURIComponent(requestId)}/cancellation`,
+    body,
+    'inventory.material.request.cancel.success',
+    attempt,
+    { stateRefusedKey: 'inventory.material.request.cancel.refused' }
+  );
+}
+
+/**
+ * The tenant unit conversions (`inv.unit-conversion-list`), optionally the ones
+ * that apply to one item — its own rows and the tenant-wide ones.
+ */
+export async function listUnitConversions(
+  filter: {
+    readonly itemId?: string | undefined;
+    readonly includeRetired?: boolean | undefined;
+  } = {}
+): Promise<ReadState<CursorPage<UnitConversion>>> {
+  return readOperation<CursorPage<UnitConversion>>(
+    '/api/v1/unit-conversions' +
+      query({
+        itemId: filter.itemId ?? null,
+        includeRetired: filter.includeRetired === true ? 'true' : null,
+        limit: 100,
+      })
+  );
+}
+
+/**
+ * State an exact conversion (`inv.unit-conversion-set`).
+ *
+ * One row says "1 from-unit = factor to-units" and nothing else. There is no
+ * implied reverse — 1 / factor is not exact in general — so a conversion the
+ * other way is a row of its own, stated by the same form. Stating a conversion
+ * whose signature is already live retires the row it replaces in the same
+ * transaction, so a changed factor is a new attributable fact and the old one
+ * stays readable.
+ */
+export async function setUnitConversion(
+  body: UnitConversionSetBody,
+  attempt = 1
+): Promise<CreateOutcome<UnitConversionEcho>> {
+  return write<UnitConversionEcho>(
+    'POST',
+    '/api/v1/unit-conversions',
+    body,
+    'inventory.conversions.set.success',
+    attempt,
+    { stateRefusedKey: 'inventory.conversions.set.refused' }
+  );
+}
+
+/**
+ * Retire a conversion (`inv.unit-conversion-retire`). No body: the conversion is
+ * the path and the caller is the actor. A retired row stops resolving and stays
+ * readable as the fact it was.
+ */
+export async function retireUnitConversion(
+  conversionId: string,
+  attempt = 1
+): Promise<CreateOutcome<UnitConversionEcho>> {
+  return write<UnitConversionEcho>(
+    'POST',
+    `/api/v1/unit-conversions/${encodeURIComponent(conversionId)}/retirement`,
+    undefined,
+    'inventory.conversions.retire.success',
+    attempt,
+    { stateRefusedKey: 'inventory.conversions.retire.refused' }
+  );
+}
+
+/** The tenant vehicle service specifications (`inv.vehicle-specification-list`), newest first. */
+export async function listVehicleSpecifications(
+  filter: {
+    readonly makeId?: string | undefined;
+    readonly modelId?: string | undefined;
+    readonly serviceCondition?: string | undefined;
+    readonly status?: VehicleSpecificationState | undefined;
+  } = {}
+): Promise<ReadState<CursorPage<VehicleSpecification>>> {
+  return readOperation<CursorPage<VehicleSpecification>>(
+    '/api/v1/vehicle-fluid-specifications' +
+      query({
+        makeId: filter.makeId ?? null,
+        modelId: filter.modelId ?? null,
+        serviceCondition: filter.serviceCondition ?? null,
+        status: filter.status ?? null,
+        limit: 100,
+      })
+  );
+}
+
+/**
+ * Record a service capacity (`inv.vehicle-specification-create`), UNCONFIRMED.
+ *
+ * Recording resolves nothing. Only a confirmed specification answers for a
+ * vehicle, and there is no zero capacity and no default: a vehicle no confirmed
+ * specification answers for gets a requirement that says exactly that.
+ */
+export async function createVehicleSpecification(
+  body: VehicleSpecificationCreateBody,
+  attempt = 1
+): Promise<CreateOutcome<VehicleSpecificationEcho>> {
+  return write<VehicleSpecificationEcho>(
+    'POST',
+    '/api/v1/vehicle-fluid-specifications',
+    body,
+    'inventory.specifications.create.success',
+    attempt,
+    { stateRefusedKey: 'inventory.specifications.create.refused' }
+  );
+}
+
+/**
+ * Confirm a specification (`inv.vehicle-specification-confirm`). No body: the
+ * specification is the path and the caller is the confirmer. From here a
+ * derived requirement for a matching vehicle takes its allowance from it.
+ */
+export async function confirmVehicleSpecification(
+  specificationId: string,
+  attempt = 1
+): Promise<CreateOutcome<VehicleSpecificationEcho>> {
+  return write<VehicleSpecificationEcho>(
+    'POST',
+    `/api/v1/vehicle-fluid-specifications/${encodeURIComponent(specificationId)}/confirmation`,
+    undefined,
+    'inventory.specifications.confirm.success',
+    attempt,
+    { stateRefusedKey: 'inventory.specifications.confirm.refused' }
+  );
+}
+
+/** Retire a specification (`inv.vehicle-specification-retire`). It stops answering for any vehicle. */
+export async function retireVehicleSpecification(
+  specificationId: string,
+  attempt = 1
+): Promise<CreateOutcome<VehicleSpecificationEcho>> {
+  return write<VehicleSpecificationEcho>(
+    'POST',
+    `/api/v1/vehicle-fluid-specifications/${encodeURIComponent(specificationId)}/retirement`,
+    undefined,
+    'inventory.specifications.retire.success',
+    attempt,
+    { stateRefusedKey: 'inventory.specifications.retire.refused' }
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Operational stock alerts (Owner directive) — four READS, no writes
+ * ------------------------------------------------------------------ */
+
+/*
+ * HOW MANY FINDINGS ONE CARD ASKS FOR is declared in `inventory-contract.ts`,
+ * not here, and it is imported above.
+ *
+ * This file carries `'use server'`, and such a module may export async
+ * functions and types and nothing else: every other export is handed to the
+ * client as a server reference, which is a thing a number cannot be. The gate
+ * `validate:use-server-exports` says so, and it said so about this constant.
+ * The figure is a contract value in any case — it describes what the cards ask
+ * the server for — so the contract is where it belongs.
+ */
+
+/**
+ * `inv.low-stock-alert-read` — what this branch is running out of.
+ *
+ * Branch-targeted like every other stock read: the pair is the read's TARGET
+ * and is re-authorized server-side, so it travels through `branchTargetQuery`.
+ * Nothing here computes: the shortfall and the preferred order quantity are the
+ * server's own strings, and the preferred quantity is a SUGGESTION that orders
+ * nothing.
+ */
+export async function readLowStockAlerts(
+  target: StockTarget,
+  limit: number = ALERT_PAGE_SIZE
+): Promise<ReadState<LowStockAlerts>> {
+  return readOperation<LowStockAlerts>(
+    '/api/v1/inventory-alerts/low-stock' + branchTargetQuery(target, { limit })
+  );
+}
+
+/** `inv.count-discrepancy-alert-read` — where the shelf and the ledger disagreed. */
+export async function readCountDiscrepancyAlerts(
+  target: StockTarget,
+  limit: number = ALERT_PAGE_SIZE
+): Promise<ReadState<CountDiscrepancyAlerts>> {
+  return readOperation<CountDiscrepancyAlerts>(
+    '/api/v1/inventory-alerts/count-discrepancies' + branchTargetQuery(target, { limit })
+  );
+}
+
+/**
+ * `inv.unusual-consumption-alert-read` — items leaving far faster than they have.
+ *
+ * The rule's numbers travel with the answer, so the card states the rule in the
+ * reader's own language rather than printing the server's English sentence.
+ * None of those numbers is sent: the server's published defaults decide the
+ * window, and a screen that invented one would be asking a different question
+ * from the one the card explains.
+ */
+export async function readUnusualConsumptionAlerts(
+  target: StockTarget,
+  limit: number = ALERT_PAGE_SIZE
+): Promise<ReadState<UnusualConsumptionAlerts>> {
+  return readOperation<UnusualConsumptionAlerts>(
+    '/api/v1/inventory-alerts/unusual-consumption' + branchTargetQuery(target, { limit })
+  );
+}
+
+/** `inv.aged-in-transit-alert-read` — consignments that left and have not arrived. */
+export async function readAgedInTransitAlerts(
+  target: StockTarget,
+  limit: number = ALERT_PAGE_SIZE
+): Promise<ReadState<AgedInTransitAlerts>> {
+  return readOperation<AgedInTransitAlerts>(
+    '/api/v1/inventory-alerts/aged-in-transit' + branchTargetQuery(target, { limit })
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * Reorder levels — what the low-stock rule reads (DEF-T-08)
+ * ------------------------------------------------------------------ */
+
+/**
+ * `inv.reorder-level-list` — every configured level, `inv.stock.read`.
+ *
+ * NOT branch-targeted: a level may name no company at all, so the list is a
+ * tenant read and the whole organisation's levels come back on one page.
+ *
+ * ## No company or branch is sent from here (DEF-T-15)
+ *
+ * The route also accepts `companyId` and `branchId` as narrowing filters, and
+ * this adapter used to name both in the object it handed to `query()`. It could
+ * never work: `query()` refuses those names OUTRIGHT — the scope-key guard runs
+ * before the null-and-undefined skip, so naming the key threw whatever the value
+ * was. The throw escaped this `'use server'` module, the screen's own action
+ * answered HTTP 500, and the setup screen rendered its reorder-level section
+ * around a value that never arrived — no table, no empty-case sentence and no
+ * message. Every other reader of a level was unaffected, which is why the write
+ * and the attention screen looked right while this one list stayed blank.
+ *
+ * The guard is correct and stays: scope is resolved server-side from the
+ * session. So the narrowing is simply not asked for. No screen narrows by
+ * company or branch today, and one that needs to has to go through a named
+ * resource-selector helper rather than through `query()`.
+ *
+ * Retired rows are left out unless asked for. A retired level is history — it
+ * explains why an alert used to fire — and mixing it into the live list would
+ * invite a reader to think it still governs something.
+ */
+export async function listReorderLevels(
+  filter: {
+    readonly itemId?: string | undefined;
+    readonly includeRetired?: boolean | undefined;
+  } = {}
+): Promise<ReadState<ReorderLevelList>> {
+  return readOperation<ReorderLevelList>(
+    '/api/v1/reorder-levels' +
+      query({
+        itemId: filter.itemId ?? null,
+        includeRetired: filter.includeRetired === true ? 'true' : null,
+        limit: 100,
+      })
+  );
+}
+
+/**
+ * `inv.reorder-level-set` — the quantity at or below which an item counts as low.
+ *
+ * Exactly one live row exists per signature, so this SETS rather than appends
+ * and a repeated call answers `replayed: true` having changed nothing. Both
+ * quantities are the exact decimal strings the operator typed; nothing here
+ * rounds, scales or reformats them.
+ */
+export async function setReorderLevel(
+  body: ReorderLevelSetBody,
+  attempt = 1
+): Promise<CreateOutcome<ReorderLevelEcho>> {
+  return write<ReorderLevelEcho>(
+    'POST',
+    '/api/v1/reorder-levels',
+    body,
+    'inventory.reorderLevels.set.success',
+    attempt,
+    { stateRefusedKey: 'inventory.reorderLevels.set.refused' }
+  );
+}
+
+/**
+ * `inv.reorder-level-retire` — stop a level governing, keep it as history.
+ *
+ * Version-guarded, so it is written out with its literal path rather than going
+ * through `write`: `ifMatch` is the LEVEL's own `recordVersion` exactly as the
+ * last read or write answered it, never a list's and never defaulted. Retiring
+ * an already-retired level changes nothing and answers `replayed: true`.
+ */
+export async function retireReorderLevel(
+  reorderLevelId: string,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<ReorderLevelEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<ReorderLevelEcho>(
+    'POST',
+    `/api/v1/reorder-levels/${encodeURIComponent(reorderLevelId)}/retirement`,
+    undefined,
+    { ifMatch }
+  );
+  if (!result.ok) {
+    return {
+      state: refusalOf(result, attempt, 'inventory.reorderLevels.retire.refused'),
+      created: null,
+    };
+  }
+  return {
+    state: {
+      ...success('inventory.reorderLevels.retire.success', attempt),
       correlationId: result.correlationId,
     },
     created: result.data,

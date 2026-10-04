@@ -53,6 +53,13 @@ export interface UserDetailView extends UserView {
     readonly status: string;
     readonly validFrom: string;
     readonly validTo: string | null;
+    /**
+     * The grant's own version, for the `If-Match` that `iam.grant-revoke`
+     * requires. Without it a caller reading this view can see a grant it may
+     * revoke and still have no way to name the row state it is revoking, which
+     * leaves the version guard satisfiable only by guessing.
+     */
+    readonly recordVersion: number;
   }[];
 }
 
@@ -119,6 +126,7 @@ export class UserAdministrationService extends ApplicationService {
         status: grant.status,
         validFrom: grant.validFrom,
         validTo: grant.validTo,
+        recordVersion: grant.recordVersion,
       })),
     };
   }

@@ -198,6 +198,15 @@ _exactly_ 8.4.31, and npm's only suggested remedy was downgrading Next to 9.3.3.
 **brace-expansion advisory: CLOSED on 2026-08-01. The exception has been removed and
 the tree carries zero advisories.**
 
+**braces advisory GHSA-vfj7-8cjw-p6xm (development tree): patched locally, because no
+upstream fix exists.** From P1-32-PRE-OD-DEP3, every dependent resolves to a
+RootLco-owned patched copy, `braces@3.0.3-rootlco.1` in `scripts/vendor/braces/`. npm
+audit does not verify that copy. It reports nothing for it only because the prerelease
+label falls outside the advisory range, so the evidence is
+`tests/ci/braces-patched-copy.test.ts`, not the audit. No exception was added. The
+record, including the replacement condition, is
+`docs/engineering/dependency-maintenance/ghsa-vfj7-8cjw-p6xm-braces/README.md`.
+
 ### The one development exception, and why it is gone
 
 `GHSA-mh99-v99m-4gvg` in `brace-expansion` was the only development-tree waiver this

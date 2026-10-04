@@ -671,6 +671,32 @@ describe('iam.tenant-settings-update', () => {
     );
     expect((error as AppFailure).code).toBe('ERR-CON-001');
   });
+
+  it('refuses a language the platform does not hold, on the language field', async () => {
+    const before = await withTransaction(asAdmin(), (db) => organization.readTenant(db));
+    const error = await withTransaction(asAdmin(), (db) =>
+      organization
+        .updateTenant(db, before.recordVersion, { defaultLocale: 'zz' })
+        .catch((e: unknown) => e)
+    );
+    expect((error as AppFailure).code).toBe('ERR-VAL-001');
+    expect((error as AppFailure).safeDetails.violations).toEqual([
+      { path: 'body.defaultLocale', rule: 'unknown_reference' },
+    ]);
+  });
+
+  it('refuses a time zone the platform does not hold, on the time zone field', async () => {
+    const before = await withTransaction(asAdmin(), (db) => organization.readTenant(db));
+    const error = await withTransaction(asAdmin(), (db) =>
+      organization
+        .updateTenant(db, before.recordVersion, { defaultTimezone: 'Etc/Never_Seeded' })
+        .catch((e: unknown) => e)
+    );
+    expect((error as AppFailure).code).toBe('ERR-VAL-001');
+    expect((error as AppFailure).safeDetails.violations).toEqual([
+      { path: 'body.defaultTimezone', rule: 'unknown_reference' },
+    ]);
+  });
 });
 
 // ===========================================================================

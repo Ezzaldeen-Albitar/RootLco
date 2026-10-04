@@ -799,6 +799,54 @@ describe('rec.receiving-employee-list and authoritative selection', () => {
     expect(problem.violations?.[0]?.rule).not.toBe('ineligible_reference');
   });
 
+  /**
+   * `RECEPTION_PLAN_RULES` put two causes on the wire that used to travel as
+   * `invalid_value`. The token is what picks the sentence a clerk reads, so it is
+   * asserted here rather than only the code — and both halves are asserted in one
+   * case, because the interesting fact is which layer answers each one.
+   *
+   * A walk-in note of nothing but spaces passes the route schema: `min(1)` counts
+   * characters, not content, so the refusal is the module's and the token is its
+   * own. A state of charge past the band does NOT reach the module — the route
+   * bounds it with the same numbers, so the caller is answered by the schema. The
+   * domain guard behind it is defence in depth, kept because the module is callable
+   * from more than one route, and it is asserted as unreachable rather than left
+   * looking like a token a client should expect. A client written to the module's
+   * list alone would wait for a token that never arrives.
+   */
+  it('names a blank walk-in note as its own rule, and lets the schema answer the band', async () => {
+    authAs(SUBJ_CLERK);
+    const vehicle = await newVehicle();
+
+    const blankNote = await createReception(
+      walkInBody(vehicle, { origin: { kind: 'walk_in', note: '   ' } })
+    );
+    expect(blankNote.status).toBe(422);
+    const blankProblem = (await blankNote.json()) as Body;
+    expect(blankProblem.code).toBe('ERR-VAL-001');
+    // The path is the REQUEST, not the note. The service passes `body` to its
+    // rule mapper because the same call decides several rules over several
+    // fields, and the mapper is given the path by the call site. The token is
+    // what carries the cause, which is exactly why the token had to stop being
+    // the general one.
+    expect(blankProblem.violations?.[0]?.path).toBe('body');
+    expect(blankProblem.violations?.[0]?.rule).toBe('blank');
+
+    const outOfBand = await createReception(walkInBody(vehicle, { evSocPercent: 101 }));
+    expect(outOfBand.status).toBe(422);
+    const bandProblem = (await outOfBand.json()) as Body;
+    expect(bandProblem.violations?.[0]?.path).toBe('body.evSocPercent');
+    expect(bandProblem.violations?.[0]?.rule).toBe('too_big');
+    expect(bandProblem.violations?.[0]?.rule).not.toBe('out_of_range');
+
+    // Neither refusal wrote a visit.
+    expect(
+      await countOf(`SELECT count(*)::text AS n FROM rec.reception_visits WHERE vehicle_id = $1`, [
+        vehicle,
+      ])
+    ).toBe(0);
+  });
+
   it('refuses a forged identifier that names no account anywhere', async () => {
     authAs(SUBJ_CLERK);
     const vehicle = await newVehicle();

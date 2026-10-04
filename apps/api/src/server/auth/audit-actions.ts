@@ -117,6 +117,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'A password reset was requested for an account. Recorded only where an authenticated administrator requested it; the unauthenticated path has no context and records a security event instead.',
   },
+  {
+    code: 'iam.password.changed',
+    class: 'security',
+    entityType: 'iam.user_account',
+    description:
+      'A signed-in account holder changed their own password after the identity provider verified the current one. The record carries who and when; no password, no hash and no reset token is ever written into it.',
+  },
 
   // ---- Roles and permission mappings -------------------------------------
   {
@@ -256,6 +263,27 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
   // operations declaring `privileged` that appended nothing for exactly that
   // reason. A declared class with no append call is a silent no-op.
   {
+    code: 'iam.tenant_administrator.invited',
+    class: 'privileged',
+    entityType: 'org.tenant',
+    description:
+      'The Platform Owner Console established an administrator for an existing organisation, or sent an outstanding invitation again. Recorded against the ORGANISATION rather than the account, because both outcomes are acts upon the organisation and a re-invitation writes no account at all; the account established, when there is one, is a detail of the record. Written in the operator home tenant carrying target_tenant_id, which is where an operator can find it.',
+  },
+  {
+    code: 'org.company.created',
+    class: 'privileged',
+    entityType: 'org.legal_company',
+    description:
+      'A legal company was added to an organisation. Until the Owner directive the only writer of org.legal_companies was the provisioning function, so an organisation could never gain a second legal entity after it was created.',
+  },
+  {
+    code: 'org.branch.created',
+    class: 'privileged',
+    entityType: 'org.branch',
+    description:
+      'A branch was added to a legal company. Until the Owner directive the only writer of org.branches was the provisioning function, which creates the pilot branch and nothing after it.',
+  },
+  {
     code: 'org.company.updated',
     class: 'privileged',
     entityType: 'org.legal_company',
@@ -289,6 +317,20 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'org.department',
     description:
       'A department was renamed, retired or reinstated. Its company, branch and code are immutable, so this never moves a department between branches.',
+  },
+  {
+    code: 'org.employee.created',
+    class: 'privileged',
+    entityType: 'org.employee',
+    description:
+      'An employee identity was added to a branch register. Distinct from creating a login account: an employee may have none, which is why org.employees exists rather than a column on an existing table.',
+  },
+  {
+    code: 'org.employee.status_changed',
+    class: 'privileged',
+    entityType: 'org.employee',
+    description:
+      'An employee was retired or reinstated. There is no delete on this register, so this is the only way an employee stops being nameable on a new handover; every handover already recorded keeps its own display-name snapshot.',
   },
 
   // ---- Attachments (P1-15) ------------------------------------------------
@@ -1362,7 +1404,35 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     // unqueryable from the document the discount was actually applied to.
     entityType: 'quo.quotation_revision',
     description:
-      'A discount over the configured approval threshold was authorized against the actor’s own iam.approval_limits ceiling. Written once per revision that needed elevated authority, naming the policy that applied (or recording that none was configured, which means threshold zero), the permission required, the document-level discount total, and the ceiling checked — because "authorized" with no reason is not an auditable fact.',
+      'A discount over the configured approval threshold was authorized against the APPROVER’s own iam.approval_limits ceiling. Since P1-32-PRE-OD-DISC-01 it is written when somebody other than the requester approves the recorded request — once per revision that needed approval — naming the policy version the request was measured against (or recording that none was configured, which means threshold zero), the permission required, the document-level discount total, who asked, who approved, and the ceiling checked — because "authorized" with no reason is not an auditable fact.',
+  },
+  {
+    code: 'svc.discount_threshold.versioned',
+    class: 'privileged',
+    entityType: 'svc.pricing_approval_policy',
+    description:
+      'A company’s discount approval threshold changed: the current version was retired and the next one recorded, effective for discount requests made from that business date on. Requests already made keep the version they were measured against, so the change neither approves a pending request nor undoes an approval.',
+  },
+  {
+    code: 'quo.discount_approval.requested',
+    class: 'financial',
+    entityType: 'quo.discount_approval',
+    description:
+      'A quotation revision’s discount reached the company threshold, so it was recorded as a request waiting for approval by somebody other than the signed-in requester. Names the policy version it was measured against, or records that none was configured (threshold zero). The revision cannot be issued until the request is approved.',
+  },
+  {
+    code: 'quo.discount_approval.approved',
+    class: 'approval',
+    entityType: 'quo.discount_approval',
+    description:
+      'A person other than the requester approved a recorded discount request, holding the permission its policy version names and a discount approval limit — never one they set themselves — that covers the whole discount. The revision may now be issued.',
+  },
+  {
+    code: 'quo.discount_approval.rejected',
+    class: 'approval',
+    entityType: 'quo.discount_approval',
+    description:
+      'A person other than the requester turned down a recorded discount request, with a reason. The revision carrying it can no longer be issued; a new revision is how the quotation moves on.',
   },
   {
     code: 'quo.quotation.created',
@@ -1538,6 +1608,281 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'Stored stock balances were re-derived from the movement ledger and compared. A non-zero incoherent count is evidence that inv.guard_stock_balance_coherence was bypassed rather than a routine finding, which is why the result is reported and never silently repaired.',
   },
 
+  // P1-32 preparatory slice: transfers, goods receipts, adjustments and counts.
+  // Quantity movements stay `privileged`, for the reason stated at the head of
+  // this block. The adjustment DECISIONS are `approval`, like the opening-batch
+  // approval, because the fact each records is a second person's decision.
+  {
+    code: 'inv.stock_transfer.dispatched',
+    class: 'privileged',
+    entityType: 'inv.stock_transfer',
+    description:
+      'A stock transfer was dispatched: the quantity left its source location and entered the branch transit location. It is at neither end until received, so it is excluded from available stock at both and reported as in transit.',
+  },
+  {
+    code: 'inv.stock_transfer.received',
+    class: 'privileged',
+    entityType: 'inv.stock_transfer',
+    description:
+      'Units of a dispatched stock transfer were received: what arrived left transit and entered the destination location. A receipt records only what arrived; a remainder stays in transit until a further receipt, a return to the origin, or a write-off approved by a second person settles it.',
+  },
+  {
+    code: 'inv.stock_transfer.cancelled',
+    class: 'privileged',
+    entityType: 'inv.stock_transfer',
+    description:
+      'A dispatched stock transfer was cancelled and its quantity returned from transit to the origin. The four movements remain in the ledger with a zero net effect; nothing is deleted or reversed in place.',
+  },
+  {
+    code: 'inv.goods_receipt.created',
+    class: 'privileged',
+    entityType: 'inv.goods_receipt',
+    description:
+      'A draft goods receipt was created with its counted lines. Creates no stock and no cost history: both appear only when the receipt is posted.',
+  },
+  {
+    code: 'inv.goods_receipt.posted',
+    class: 'privileged',
+    entityType: 'inv.goods_receipt',
+    description:
+      'A goods receipt was posted, adding one receipt movement per line and appending one restricted cost layer per priced line. Earlier cost layers and the item standard cost are never rewritten.',
+  },
+  {
+    code: 'inv.stock_adjustment.requested',
+    class: 'privileged',
+    entityType: 'inv.stock_adjustment',
+    description:
+      'A stock adjustment was requested. It stays pending and moves no stock until a different person approves it; any value impact is held in the restricted adjustment detail.',
+  },
+  {
+    code: 'inv.stock_adjustment.approved',
+    class: 'approval',
+    entityType: 'inv.stock_adjustment',
+    description:
+      'A pending stock adjustment was approved by someone other than its requester, posting its adjustment movement. Reservations the correction made unsatisfiable are released and recorded separately.',
+  },
+  {
+    code: 'inv.stock_adjustment.rejected',
+    class: 'approval',
+    entityType: 'inv.stock_adjustment',
+    description:
+      'A pending stock adjustment was rejected by someone other than its requester. Moves no stock; the decision reason is recorded here because the adjustment row has no column for it.',
+  },
+  {
+    code: 'inv.stock_count.opened',
+    class: 'privileged',
+    entityType: 'inv.stock_count',
+    description:
+      'A stock count of one location was opened, snapshotting the on-hand quantity of every item held there. Trading continues during the count; the ledger is not frozen.',
+  },
+  {
+    code: 'inv.stock_count.line_recorded',
+    class: 'privileged',
+    entityType: 'inv.stock_count',
+    description:
+      'The physically counted quantity of one item was recorded on an open stock count. Moves no stock.',
+  },
+  {
+    code: 'inv.stock_count.reconciled',
+    class: 'privileged',
+    entityType: 'inv.stock_count',
+    description:
+      'A stock count was reconciled: movements posted during the count were folded into the expected quantity and a pending adjustment was raised for each non-zero variance. Posts no stock; each adjustment still needs a second person to approve it.',
+  },
+  {
+    code: 'inv.stock_count.cancelled',
+    class: 'privileged',
+    entityType: 'inv.stock_count',
+    description:
+      'An open stock count was cancelled with a reason. Raises no adjustment and moves no stock.',
+  },
+
+  // P1-32 preparatory slice 2: item barcodes and packaging identifiers. Catalogue
+  // reference data, like the item it identifies, so `privileged` and no stock.
+  {
+    code: 'inv.item_identifier.added',
+    class: 'privileged',
+    entityType: 'inv.item_identifier',
+    description:
+      'A barcode or packaging identifier entered by a user was attached to an item, with the unit and pack quantity one scan of it represents. Retail codes carry a verified check digit. Moves no stock.',
+  },
+  {
+    code: 'inv.item_identifier.retired',
+    class: 'privileged',
+    entityType: 'inv.item_identifier',
+    description:
+      'An item identifier was retired. The row is kept as history and its value is freed for a new identifier; a label that still carries it no longer resolves.',
+  },
+  {
+    code: 'inv.item_barcode.assigned',
+    class: 'privileged',
+    entityType: 'inv.item_identifier',
+    description:
+      'An internal barcode was allocated to an item from the tenant counter, once per item. An allocated number is never reused, including after retirement.',
+  },
+  {
+    code: 'inv.item_sale_price.set',
+    class: 'privileged',
+    entityType: 'inv.item_sale_price',
+    description:
+      'The price at which the tenant sells an item was set for a tenant, a company or a branch. Configuration, not a transaction: it moves no stock and no money, and it is what a later counter sale resolves. The figure itself is recorded as a restricted value, because audit records carry no sal.finance.view gate.',
+  },
+  {
+    code: 'inv.sales_return.received',
+    class: 'privileged',
+    entityType: 'inv.sales_return',
+    description:
+      'A part came back and was taken into stock: into a sellable location when restockable, into a quarantine location when damaged. Bounded by inv.guard_sales_return_ceiling, which locks the source and counts the legacy inv.part_returns rows too. A return against an issued counter sale also raises a pending credit note, whose identity is recorded here and whose amount is not.',
+  },
+  // ---- P1-32 preparatory slice 3b — material demand control ----
+  {
+    code: 'inv.material_requirement.requested',
+    class: 'privileged',
+    entityType: 'inv.material_requirement',
+    description:
+      'Material was asked for on a work-order service line: an entered allowance with its source, or one derived from the confirmed vehicle specification. A derivation that found no confirmed specification, or an item with no exact conversion into the allowance unit, is recorded as approval_required with the reason and no usable allowance.',
+  },
+  {
+    code: 'inv.material_requirement.approved',
+    class: 'approval',
+    entityType: 'inv.material_requirement',
+    description:
+      'A person other than the requester approved a material requirement, so reservations and issues for the work order may draw on it up to its allowance plus approved exceptions.',
+  },
+  {
+    code: 'inv.material_requirement.rejected',
+    class: 'approval',
+    entityType: 'inv.material_requirement',
+    description:
+      'A person other than the requester rejected a material requirement with a reason. It still governs the item on its work order, so nothing may be drawn on it.',
+  },
+  {
+    code: 'inv.material_exception.requested',
+    class: 'privileged',
+    entityType: 'inv.material_requirement_exception',
+    description:
+      'A finite additional quantity beyond an approved material allowance was asked for, with a reason. It adds nothing until a different person approves it.',
+  },
+  {
+    code: 'inv.material_exception.approved',
+    class: 'approval',
+    entityType: 'inv.material_requirement_exception',
+    description:
+      'A person other than the requester approved a material exception under inv.material.exception.approve, and the resulting allowance was recorded on the exception.',
+  },
+  {
+    code: 'inv.material_exception.rejected',
+    class: 'approval',
+    entityType: 'inv.material_requirement_exception',
+    description:
+      'A person other than the requester rejected a material exception. The allowance is unchanged.',
+  },
+  {
+    code: 'inv.material_requirement.rechecked',
+    class: 'privileged',
+    entityType: 'inv.material_requirement',
+    description:
+      'A material requirement that was waiting on a missing specification or unit conversion was checked again once the fact existed, and moved on: it took the confirmed specification capacity and is awaiting a decision, or it still records the reason nothing can be approved.',
+  },
+  {
+    code: 'inv.material_requirement.cancelled',
+    class: 'privileged',
+    entityType: 'inv.material_requirement',
+    description:
+      'A material requirement was cancelled with a reason while nothing was requested, reserved, or issued and not returned against it. It allows no draw and still governs the item on its work order.',
+  },
+  {
+    code: 'inv.material_request.closed',
+    class: 'privileged',
+    entityType: 'inv.material_request',
+    description:
+      'A material request was closed: what it issued stays counted against the requirement, and what it still asked for or held stopped counting. Its active reservations were released by the same act and each release is recorded on its own.',
+  },
+  {
+    code: 'inv.material_request.cancelled',
+    class: 'privileged',
+    entityType: 'inv.material_request',
+    description:
+      'A material request that issued nothing was cancelled with a reason, releasing its active reservations and giving its whole quantity back to the requirement allowance.',
+  },
+  {
+    code: 'inv.unit_conversion.set',
+    class: 'privileged',
+    entityType: 'inv.item_unit_conversion',
+    description:
+      'An exact unit conversion was stated with its source, tenant-wide within one kind of unit or for one item across kinds. A live conversion with the same signature was retired in the same transaction, so a changed factor is a new row and the old one remains.',
+  },
+  {
+    code: 'inv.unit_conversion.retired',
+    class: 'privileged',
+    entityType: 'inv.item_unit_conversion',
+    description:
+      'A unit conversion was retired. Requirements and draws that need it are refused as missing a conversion until another is stated.',
+  },
+  {
+    code: 'inv.vehicle_specification.recorded',
+    class: 'privileged',
+    entityType: 'inv.vehicle_fluid_specification',
+    description:
+      'A service capacity was recorded for a make, an optional model, model years and engine variant, with its unit and the source it was read from. A recorded specification resolves nothing until it is confirmed.',
+  },
+  {
+    code: 'inv.vehicle_specification.confirmed',
+    class: 'privileged',
+    entityType: 'inv.vehicle_fluid_specification',
+    description:
+      'A recorded service capacity was confirmed by an attributable person, so material requirements derived for matching vehicles take their allowance from it.',
+  },
+  {
+    code: 'inv.vehicle_specification.retired',
+    class: 'privileged',
+    entityType: 'inv.vehicle_fluid_specification',
+    description:
+      'A service capacity was retired. It no longer resolves; requirements already derived from it keep the figure they were approved with.',
+  },
+  {
+    code: 'inv.stock_transfer.discrepancy_resolved',
+    class: 'privileged',
+    entityType: 'inv.stock_transfer_settlement',
+    description:
+      'Units of a transfer that did not arrive were settled with a reason: returned to the origin at once, or put forward for write-off, which moves nothing until a different person approves it.',
+  },
+  {
+    code: 'inv.stock_transfer.write_off_approved',
+    class: 'approval',
+    entityType: 'inv.stock_transfer_settlement',
+    description:
+      'A person other than the requester approved a transfer write-off, and the written-off units left the transit location.',
+  },
+  {
+    code: 'inv.stock_transfer.write_off_rejected',
+    class: 'approval',
+    entityType: 'inv.stock_transfer_settlement',
+    description:
+      'A person other than the requester rejected a transfer write-off. The units stay in transit, to be received or returned.',
+  },
+
+  // ---- Owner directive — operational stock alerts ----
+  //
+  // Only the CONFIGURATION is audited. The five alert reads are not: each is an
+  // arithmetic statement over rows the caller already holds a read permission
+  // for, and recording every glance at a dashboard would bury the trail of the
+  // decisions that actually change what the alerts say.
+  {
+    code: 'inv.item_reorder_level.set',
+    class: 'privileged',
+    entityType: 'inv.item_reorder_level',
+    description:
+      'The quantity at or below which an item counts as low was set, for the whole organisation, a company, a branch or one stock location, together with the optional preferred order quantity. Configuration, not a transaction: it moves no stock and no money, and it is what the low-stock read compares an available balance against. A call that would leave both quantities unchanged is answered as a replay and records nothing.',
+  },
+  {
+    code: 'inv.item_reorder_level.retired',
+    class: 'privileged',
+    entityType: 'inv.item_reorder_level',
+    description:
+      'A reorder level was retired, keeping the row as the record of what the branch once thought it needed. The item stops appearing in the low-stock read unless a wider level still applies to it, and the signature is freed so a replacement can be set at once.',
+  },
+
   // ---- Phase 1-22 — Billing and payment (sal) ----
   //
   // Every action in this block is `financial` except the credit-note approval,
@@ -1553,11 +1898,18 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A draft invoice was created from approved commercial data. Creates no receivable: sal.guard_invoice_freeze refuses an INSERT whose status is not `draft`, so the document carries no number and no issue timestamp until sal.issue_invoice allocates one, and uq_invoices_work_order_active permits at most one live invoice per work order.',
   },
   {
+    code: 'sal.counter_sale.created',
+    class: 'financial',
+    entityType: 'sal.invoice',
+    description:
+      'A draft counter sale was created: an invoice for stock sold over the counter, with no work order. Every line is priced by inv.resolve_item_sale_price inside sal.create_counter_sale_invoice — no amount can be sent — and no stock moves until the sale is issued.',
+  },
+  {
     code: 'sal.invoice.issued',
     class: 'financial',
     entityType: 'sal.invoice',
     description:
-      'A draft invoice was issued and consumed exactly one number from its branch sequence. The point of no return: post-issue correction is impossible by design, and the only remaining instruments are a credit note and a new invoice. sal.issue_invoice is idempotent on an already-issued invoice and returns the existing number rather than allocating a second one.',
+      'A draft invoice was issued and consumed exactly one number from its branch sequence. The point of no return: post-issue correction is impossible by design, and the only remaining instruments are a credit note and a new invoice. sal.issue_invoice is idempotent on an already-issued invoice and returns the existing number rather than allocating a second one. For a counter sale this is also the moment the stock leaves the shelf, in the same transaction; cancelling the document later never puts it back, because an issued invoice cannot be voided at all.',
   },
   {
     code: 'sal.invoice.voided',
@@ -1578,7 +1930,21 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     class: 'approval',
     entityType: 'sal.credit_note',
     description:
-      'A credit note was approved under dual control and became a real reduction of the receivable. sal.guard_dual_control_approval stamps the approver from the session and refuses approved_by = requested_by, so the maker cannot approve their own request; the amount ceiling is re-checked against sal.invoice_open_receivable inside the approving transaction.',
+      'A credit note was approved under dual control and became a real reduction of the receivable. sal.guard_dual_control_approval stamps the approver from the session and refuses approved_by = requested_by, so the maker cannot approve their own request; the amount ceiling is re-checked against sal.invoice_open_receivable inside the approving transaction. Since ADR-023 D13 the approver also holds sal.credit.approve in the note’s company and branch and a credit_note approval limit in the note’s currency, set by somebody else, covering every approved credit on the invoice including this one.',
+  },
+  {
+    code: 'sal.credit_note.withdrawn',
+    class: 'financial',
+    entityType: 'sal.credit_note',
+    description:
+      'The requester withdrew their own pending credit note (ADR-023, D3). Only the person who raised it may withdraw it, which sal.guard_credit_note_decision enforces from the session; the decider and the time are stamped by that trigger. A withdrawn note credits nothing and is terminal, so the open receivable and the derived credit status are unchanged, and it can never be approved afterwards.',
+  },
+  {
+    code: 'sal.credit_note.rejected',
+    class: 'approval',
+    entityType: 'sal.credit_note',
+    description:
+      'A pending credit note was rejected by someone other than its requester, with a stated reason (ADR-023, D3). sal.guard_credit_note_decision refuses the requester, requires sal.credit.approve (ADR-023 D13) in the note’s company and branch and a reason that is not blank, and stamps the decider and the time. A rejected note credits nothing and is terminal.',
   },
   {
     code: 'sal.receipt.recorded',
@@ -1593,6 +1959,54 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'sal.payment_allocation',
     description:
       'A receipt amount was applied against a specific invoice. Written only by sal.allocate_receipt, which takes the receipt lock before the invoice lock and is the ONLY path that bounds the allocation sum — no constraint, trigger or exclusion limits it, and app_runtime holds raw INSERT on the table, so a direct insert would be accepted with no bound at all (BR-SAL-002).',
+  },
+  // ADR-023 D14 (P1-32-PRE-OD-FD14): a receipt applied to another customer's invoice
+  // as an explicit, authorised third-party payment, written beside the allocation's
+  // own record in the same transaction.
+  {
+    code: 'sal.payment.third_party_allocated',
+    class: 'financial',
+    entityType: 'sal.payment_allocation',
+    description:
+      'A receipt was applied to an invoice whose customer is not the party who paid it, as a third-party payment (ADR-023, D14) — an insurer, an employer or another named relationship. sal.guard_allocation_payer refuses such an allocation unless it names the relationship, an authorisation reference and a reason, and unless the actor holds sal.payment.third_party in the receipt’s company and branch; it stamps the authorising user from the session. Records who paid, whose invoice it is, the relationship, the authorisation and the reason. Nothing changes hands: the invoice stays its customer’s, the receipt stays its payer’s, and what is left on the receipt stays the payer’s.',
+  },
+  // ADR-023 D4 (P1-32-PRE-OD-FD4): the full reversal of a receipt, requested by a
+  // payment recorder and decided by a different holder of sal.reversal.approve,
+  // and the receipt that replaces a reversed one.
+  {
+    code: 'sal.receipt_reversal.requested',
+    class: 'financial',
+    entityType: 'sal.receipt_reversal',
+    description:
+      'A payment recorder asked for a whole receipt to be reversed, stating why (ADR-023, D4). sal.guard_receipt_reversal_request requires sal.payment.record in the receipt’s company and branch, binds the amount and currency to the receipt’s own and refuses a receipt that is reversed or already has a pending or approved reversal; the requester is stamped from the session. A pending reversal reverses nothing, and the receipt takes no new allocation until it is decided.',
+  },
+  {
+    code: 'sal.receipt_reversal.approved',
+    class: 'approval',
+    entityType: 'sal.receipt_reversal',
+    description:
+      'A pending receipt reversal was approved by someone other than its requester (ADR-023, D4). sal.guard_receipt_reversal_decision requires sal.reversal.approve in the receipt’s company and branch — no credit-note code satisfies it — and stamps the approver and the reversal time; sal.approve_receipt_reversal reversed the receipt and wrote the receipt_reversed financial event in the same transaction. The original receipt and its allocations are retained; the allocations stop counting, so every invoice it paid opens again by exactly what it applied. Not a refund.',
+  },
+  {
+    code: 'sal.receipt_reversal.rejected',
+    class: 'approval',
+    entityType: 'sal.receipt_reversal',
+    description:
+      'A pending receipt reversal was rejected by someone other than its requester, with a stated reason (ADR-023, D4). sal.guard_receipt_reversal_decision requires sal.reversal.approve in the receipt’s company and branch and a reason that is not blank, and stamps the decider and the time. The receipt is untouched and the rejection is terminal.',
+  },
+  {
+    code: 'sal.receipt_reversal.withdrawn',
+    class: 'financial',
+    entityType: 'sal.receipt_reversal',
+    description:
+      'The requester withdrew their own pending receipt reversal (ADR-023, D4). Only the person who raised it may withdraw it, which sal.guard_receipt_reversal_decision enforces from the session. The receipt is untouched, takes allocations again, and a corrected reversal may be requested.',
+  },
+  {
+    code: 'sal.receipt.replacement_recorded',
+    class: 'financial',
+    entityType: 'sal.receipt',
+    description:
+      'A receipt was recorded as the replacement of a receipt an approved reversal reversed (ADR-023, D4). Every rule of an ordinary receipt applies; sal.guard_receipt_replacement and uq_receipts_replaces allow one replacement per reversed receipt, in its own company and branch, and the link is frozen once recorded. Like every receipt it records no settlement claim and no payment credential.',
   },
 
   // ---- Phase 1-22 — Delivery and custody (sal) ----
@@ -1626,7 +2040,7 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     class: 'privileged',
     entityType: 'sal.delivery_signature',
     description:
-      'A handover signature was bound to a delivery by document-version reference. The reference only: no signature bytes enter the audit record, the event payload or any log line, and this platform makes no biometric or legal-validation claim about the image. The version can be bound but never downloaded, because no application path can move one to `accepted` (P1-22-L-04).',
+      'A handover signature was bound to a delivery by document-version reference. The reference only: no signature bytes enter the audit record, the event payload or any log line, and this platform makes no biometric or legal-validation claim about the image. The bound version is downloadable through the shared attachment path only once it is `accepted`, which per `AttachmentService.requestDownload` means it "passed `scanning` with an exclusively clean verdict"; while it is not, a download is refused with ERR-DOC-001. P1-22-L-04 recorded that acceptance was unreachable, which stopped being true when the scan path shipped; corrected by P1-31 prerequisite P-14.',
   },
   {
     code: 'sal.delivery.completed',
@@ -1636,6 +2050,56 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'The vehicle was handed over, custody was released and a final odometer reading was captured. sal.complete_delivery enforces receiver, mandatory checklist and at least one signature — and checks no work-order state, no quality control and NO FINANCIAL BALANCE, so the financial blocker recorded here is enforced by the application alone. An override of it is recorded with its reason in the details.',
   },
 
+  // ---- Phase 1-31 P-9 — the delivery checklist TEMPLATE (sal) ----
+  //
+  // `privileged` like the rest of the delivery block, and for a sharper reason than
+  // the handover actions: `sal.complete_delivery` counts mandatory checklist items by
+  // (tenant, company) across every template, so one row written by these actions can
+  // block or unblock the handover of every vehicle in a company. Configuration with
+  // that reach is recorded.
+  {
+    code: 'sal.delivery_checklist_template.created',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template',
+    description:
+      'A delivery checklist template was created for one company, with its items in the same transaction. The template and its items had no write path anywhere in the product until P1-31 (PPD-12), so a tenant provisioned through the product had an empty handover checklist and no way to fill it. The record names how many items arrived and how many of them are mandatory.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.renamed',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template',
+    description:
+      'A delivery checklist template was renamed. The template code is not editable and is not part of this action: recorded handover outcomes point at ITEMS by id, and a re-coded template would be a different configuration wearing the old one identity.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.status_changed',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template',
+    description:
+      'A delivery checklist template was retired or restored. Retiring does NOT stop its mandatory items gating a handover: sal.complete_delivery filters the ITEM deleted_at column and never joins the parent template, so an inactive template with a mandatory item still blocks every delivery in that company until each one records a passed or waived outcome.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.item_added',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template_item',
+    description:
+      'An item was added to a delivery checklist template. A mandatory item is a company-wide gate rather than a template-scoped one, because a delivery record carries no template reference, so the record names the mandatory flag explicitly.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.item_updated',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template_item',
+    description:
+      'The label, mandatory flag or order of a delivery checklist item was changed, with the previous value of each recorded beside the new one. The item code is not editable, because every recorded outcome points at the row by id.',
+  },
+  {
+    code: 'sal.delivery_checklist_template.item_removed',
+    class: 'privileged',
+    entityType: 'sal.delivery_checklist_template_item',
+    description:
+      'A delivery checklist item was withdrawn. A soft delete performed by UPDATE, because the table carries no DELETE grant for any application role and the results foreign key is ON DELETE RESTRICT; every outcome already recorded against the item stays readable, and the item stops gating completion.',
+  },
+
   // ---- Phase 1-22 — Warranty (wty) ----
   {
     code: 'wty.warranty.issued',
@@ -1643,6 +2107,169 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'wty.warranty_record',
     description:
       'A warranty record was generated from a committed delivery. Every term is configuration: duration, odometer limit and covered scope come from the wty.warranty_coverage row effective at the delivery date, and the backend defaults none of them. Records generation only — P1-22 implements no claim intake or adjudication, because no claim table exists in any schema (P1-22-L-01).',
+  },
+
+  // ---- Phase 1-31 P-11 — report CONFIGURATION administration (rpt) ----
+  //
+  // The first audit actions this catalogue has ever carried in the rpt namespace,
+  // because until this slice nothing in the product wrote an rpt table at all.
+  // Every one is `privileged` for the same reason: the rows these actions write
+  // decide what the report surface SHOWS. Publishing a configuration puts a
+  // definition in front of every reader in the tenant, archiving one takes it away
+  // from all of them, and the export permission recorded on a definition is the
+  // authority a later export of its contents will be checked against. None of
+  // these records a figure, a customer or an amount — the reporting ENGINE does
+  // not exist, and this catalogue does not pretend otherwise.
+  {
+    code: 'rpt.report_configuration.created',
+    class: 'privileged',
+    entityType: 'rpt.report_configuration',
+    description:
+      'A report configuration was created, as a draft. The report configuration tables had no write path anywhere in the product until P1-31, so every tenant catalogue was empty and permanently so: the two published reads filter on published status and nothing could set it. The record names the report code, the scope level and the export permission code, because that last value decides who may export the report contents once an export surface exists.',
+  },
+  {
+    code: 'rpt.report_configuration.updated',
+    class: 'privileged',
+    entityType: 'rpt.report_configuration',
+    description:
+      'The name or the scope level of a report configuration changed. The report code is not editable and is not part of this action: an immutability trigger freezes it, and every published definition is addressed by that code. The export permission code is not part of it either, on purpose — re-pointing it changes who may export the contents, which is a privilege decision rather than an edit.',
+  },
+  {
+    code: 'rpt.report_configuration.status_changed',
+    class: 'privileged',
+    entityType: 'rpt.report_configuration',
+    description:
+      'A report configuration was published, withdrawn or returned to draft. This is the value both published report reads filter on, so it is what decides whether a definition is visible to a report reader at all. It does not cascade to the versions: the catalogue selects a version on the version own status, so cascading would change what the catalogue resolves for reasons the operator did not choose.',
+  },
+  {
+    code: 'rpt.report_configuration.version_created',
+    class: 'privileged',
+    entityType: 'rpt.report_configuration_version',
+    description:
+      'A draft version of a report configuration was created, with the filter allowlist it declares. The record names how many top-level keys that allowlist carries rather than the document itself: the vocabulary of the allowlist is owner-defined and undecided, so copying a tenant-authored structure into the audit trail would record something nothing can yet interpret.',
+  },
+  {
+    code: 'rpt.report_configuration.version_published',
+    class: 'privileged',
+    entityType: 'rpt.report_configuration_version',
+    description:
+      'A draft version of a report configuration was published, fixing the definition in force. It is effectively irreversible: a database trigger refuses any later update of a published version, so there is no unpublish and no edit, and a configuration may hold at most one published version at a time. Publishing a version does not publish its configuration, and does not make the report runnable — no data source is bound to a report code anywhere in the approved schema.',
+  },
+
+  // ---- Phase 1-31 P-10 — warranty POLICY and COVERAGE administration (wty) ----
+  //
+  // `privileged` for a sharper reason than the generation action above: the rows these
+  // actions write are what generation READS. One coverage window decides the duration
+  // and the distance allowance of every warranty issued in every branch of a company
+  // for the days it covers, and archiving a company's only active policy stops
+  // warranties being issued there at all. Configuration with that reach is recorded.
+  {
+    code: 'wty.warranty_policy.created',
+    class: 'privileged',
+    entityType: 'wty.warranty_policy',
+    description:
+      'A warranty policy was created for one company, with its effective-dated coverage in the same transaction. Neither table had a write path anywhere in the product until P1-31 (PPD-04), so a tenant provisioned through the product could never issue a warranty: generation refuses a company with no active policy and nothing could create one. The record names how many coverage windows arrived with the header, because a policy with none cannot issue anything.',
+  },
+  {
+    code: 'wty.warranty_policy.renamed',
+    class: 'privileged',
+    entityType: 'wty.warranty_policy',
+    description:
+      'A warranty policy was renamed. The policy code is not editable and is not part of this action: every warranty record cites its policy by id for the life of the warranty, and a re-coded policy would be a different configuration wearing the old one identity.',
+  },
+  {
+    code: 'wty.warranty_policy.status_changed',
+    class: 'privileged',
+    entityType: 'wty.warranty_policy',
+    description:
+      'A warranty policy was archived or restored. Archiving removes it from the active-policy set that generation resolves against, so archiving a company only active policy makes every subsequent generation that names no policy refuse as unconfigured. It does NOT touch the coverage rows: the issue primitive filters coverage on the coverage own status and never reads the policy status, so the application rule that refuses an archived policy is the only defence at issue time.',
+  },
+  {
+    code: 'wty.warranty_policy.coverage_added',
+    class: 'privileged',
+    entityType: 'wty.warranty_coverage',
+    description:
+      'An effective-dated coverage window was added to a warranty policy. The record names the covered scope, the duration in months, the distance allowance and both ends of the window, because those four values ARE the terms every warranty issued under this policy in that window will carry. At most one active window may cover a scope on any day, which the database enforces with an exclusion constraint (BR-WTY-001).',
+  },
+  {
+    code: 'wty.warranty_policy.coverage_status_changed',
+    class: 'privileged',
+    entityType: 'wty.warranty_coverage',
+    description:
+      'A warranty coverage window was archived or reactivated. Archiving is what withdraws those terms from future generation while leaving every warranty already issued under them readable and intact. A reactivation can be refused when a newer window has since covered the same days for the same scope, because two active windows would make the terms a customer receives depend on which row the database returned first.',
+  },
+  {
+    code: 'rpt.report.exported',
+    class: 'export',
+    entityType: 'rpt.report_configuration',
+    description: 'A bounded CSV report was generated under explicit scoped export permissions.',
+  },
+
+  // ---- Platform Owner Console (P1-32-PRE-023/024) -------------------------
+  //
+  // Every one of these is written by an explicit `appendAudit` call in the
+  // platform module's services, in the OPERATOR's home tenant, carrying
+  // `target_tenant_id` as a detail. The class is the declaration the route
+  // makes; the append is what makes it true. PRE-P1-29 Wave B shipped two
+  // control-plane operations that declared `privileged` and appended nothing
+  // for the life of the product, so the pair is written together here and in
+  // the service, and the backend proof asserts on the RECORD rather than on
+  // the declaration.
+  {
+    code: 'org.subscription_plan.created',
+    class: 'privileged',
+    entityType: 'org.subscription_plan',
+    description:
+      'A subscription plan version was added to the platform catalogue, with its entitlement document, capacity limits and — where the Platform Owner has configured one — its list price and term.',
+  },
+  {
+    code: 'org.subscription_plan.updated',
+    class: 'privileged',
+    entityType: 'org.subscription_plan',
+    description:
+      'A subscription plan version was amended. The plan code is immutable, so this never renames a plan: it changes what the version grants, what it costs, or whether it may still be assigned.',
+  },
+  {
+    code: 'org.tenant_subscription.changed',
+    class: 'privileged',
+    entityType: 'org.tenant_subscription',
+    description:
+      "An organisation's subscription was assigned, renewed, upgraded, downgraded or cancelled. The act and its justification are also recorded in org.tenant_subscription_events, which is the queryable trail; this record is the operator's own.",
+  },
+  {
+    code: 'org.subscription_charge.recorded',
+    class: 'privileged',
+    entityType: 'org.subscription_charge',
+    description:
+      'The Platform Owner recorded a subscription fee against an organisation. Platform revenue, never tenant revenue: this is money the organisation owes for using the product.',
+  },
+  {
+    code: 'org.subscription_charge.voided',
+    class: 'privileged',
+    entityType: 'org.subscription_charge',
+    description:
+      'A subscription charge was voided with a reason. Voiding is terminal and a settled charge cannot be voided, so this can only ever cancel an amount nobody has paid.',
+  },
+  {
+    code: 'org.subscription_receipt.recorded',
+    class: 'privileged',
+    entityType: 'org.subscription_receipt',
+    description:
+      'Money received against a subscription charge was recorded. Append-only: a correction is a further charge, never an edit, and the charge settles itself when the receipts reach its amount.',
+  },
+  {
+    code: 'platform.operator.authority_granted',
+    class: 'security',
+    entityType: 'iam.user_account',
+    description:
+      'Platform authority codes were granted to an existing operator account by an out-of-band operator act on a privileged connection. No product path writes iam.platform_grants, so this record and the genesis one are the only trail there is.',
+  },
+  {
+    code: 'platform.operator.authority_revoked',
+    class: 'security',
+    entityType: 'iam.user_account',
+    description:
+      'Every platform authority code an operator account held was revoked, and its recorded sessions were ended, by an out-of-band operator act on a privileged connection. Nothing is deleted: the grants keep their rows and carry revoked_at and revoked_by, so the trail states who took the authority away and when.',
   },
 ]);
 

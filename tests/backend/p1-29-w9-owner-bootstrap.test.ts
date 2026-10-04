@@ -429,8 +429,92 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // 48 before the P1-30 corrective slices; 65 with the seventeen commercial
     // codes F-01 proved no tenant could otherwise ever hold; 67 with
     // inv.item.manage and inv.adjustment.approve, without which no item
-    // could be catalogued and no stock could ever appear.
-    expect(expected).toHaveLength(67);
+    // could be catalogued and no stock could ever appear; 73 with the SIX
+    // P1-31 delivery, warranty and reporting codes of prerequisite P-1 — six
+    // of the nine A0 named. Three were deliberately excluded at that point:
+    // `wty.policy.manage` and `rpt.report.configure` because no operation declared
+    // them (CC-01, CC-02), and `rpt.export` — which two shipped operations do
+    // declare — withheld on least-privilege grounds by Owner decision (CC-04).
+    // `rpt.export` is the only one of the three still withheld.
+    // 74 with `wty.warranty.read`, minted by P1-31 prerequisite P-7 and carried
+    // because withholding it while the warranty detail read was re-pointed off
+    // `wty.warranty.issue` would REMOVE a capability this bundle already confers
+    // (CC-07). It is the only code any P1-31 slice mints.
+    // 75 with `wty.policy.manage`, which P1-31 prerequisite P-10 moved OUT of the
+    // exclusions: CC-01 withheld it because no operation declared it and said the
+    // slice that published one would own the widening, and P-10 published five.
+    // Withholding it now would leave a fresh administrator unable to issue any
+    // warranty at all, because generation refuses a company with no active policy.
+    // It was already a catalogue row; nothing is minted by that widening.
+    // 76 with `rpt.report.configure`, which P1-31 prerequisite P-11 moved OUT of
+    // the exclusions on the same rule: CC-02 withheld it because no operation
+    // declared it, and P-11 published seven. Withholding it now would leave a
+    // fresh administrator with an empty report catalogue it could never fill,
+    // because both published report reads filter on `status = 'published'` and no
+    // other code can set that value. It too was already a catalogue row.
+    // 78 with the two codes P1-31 prerequisite P-17 MINTS for the employee
+    // register. Both are carried on the same P-1 rule the eight above are: four
+    // shipped operations declare them, and withholding either would leave a
+    // fresh administrator unable to record ANY handover, because
+    // `sal.delivery-create` refuses an employee that does not exist and nothing
+    // else in the product can create one.
+    // 83 with the five P1-32 material codes (P1-32-PRE-134): since every reservation
+    // and issue for a work order draws on an approved material requirement, a fresh
+    // administrator that could not ask for, approve or delegate one could never issue
+    // a part to a job. All five are catalogue rows minted by slice 3a.
+    // 85 with the two codes the Owner directive of 2026-09-16 carries for
+    // `org.company-create` and `org.branch-create`: without them no one in a
+    // freshly provisioned organisation could add a company or a branch.
+    // 88 with the three the Owner directive of 2026-09-17 carries, each declared
+    // by shipped operations and each measured by a QA campaign as permanently
+    // closed for EVERYONE in a provisioned organisation rather than merely
+    // withheld from its first administrator: `wo.work_order.line.manage` (a work
+    // order could never say what work is on it), `crm.customer.profile.write` (a
+    // customer could never be given a telephone number) and
+    // `rec.reception.evidence.manage` (no pre-service condition could be
+    // recorded). All three were already catalogue rows; nothing is minted.
+    // The campaign measured a fourth, `inv.cost.view`, the same way (DEF-T-03: no
+    // unit cost can be recorded by anyone in a provisioned organisation), and it
+    // stays OUT: its exclusion is a recorded decision (P1-30 change control CC-12,
+    // open; register gap E-14) that only the Owner may reverse.
+    // 89 with `sal.credit.manage`, carried by Owner decision after the QA campaign
+    // measured that nobody in a provisioned organisation could read, request or
+    // approve a credit note (result matrix part 5 row 6.19). Declared by the four
+    // credit-note operations and already a catalogue row; nothing is minted.
+    // 90 with `org.settings.manage`, carried by the Owner decision of 2026-09-27
+    // that closes residual W9-R2: the administrator edits its own organisation's
+    // settings. Declared by the tenant, company and branch settings writes, branch
+    // status and the template operations; already a catalogue row.
+    // 94 with the four appointment codes, carried by the Owner decision of
+    // 2026-09-29: the administrator reads, books, reschedules, cancels and sets up
+    // appointments for its own organisation. Declared by the twenty-one reception
+    // operations of the appointment surface; all four were already catalogue rows.
+    // 95 with `sal.credit.approve`, MINTED by Owner decision D13 of 2026-09-30
+    // (ADR-023): approving and rejecting a credit note is its own authority, within a
+    // credit-note approval limit somebody else sets. Declared by the approval and the
+    // rejection; the standard administrator is the one role that decided credit notes
+    // before, through sal.credit.manage.
+    // 96 with `sal.reversal.approve` (Owner decision D4 of 2026-09-30, ADR-023):
+    // approving and rejecting a receipt reversal somebody else requested. Seeded
+    // since Phase 1-11 and declared by those two operations only.
+    // 97 with `sal.payment.third_party`, MINTED by Owner decision D14 of 2026-09-30
+    // (ADR-023): a receipt applied to another customer's invoice as an explicit,
+    // authorised third-party payment. Consulted, not declared, by the allocation.
+    expect(expected).toHaveLength(97);
+    expect(expected).toContain('sal.payment.third_party');
+    expect(expected).toContain('sal.reversal.approve');
+    expect(expected).toContain('sal.credit.approve');
+    expect(expected).toContain('sal.credit.manage');
+    expect(expected).toContain('org.settings.manage');
+    for (const code of [
+      'apt.appointment.read',
+      'apt.appointment.manage',
+      'apt.appointment.lifecycle.manage',
+      'apt.catalogue.manage',
+    ]) {
+      expect(expected).toContain(code);
+    }
+    expect(expected).not.toContain('inv.cost.view');
     expect(expected.some((c) => c.includes('*'))).toBe(false);
     expect(expected.some((c) => c.startsWith('platform.'))).toBe(false);
     expect(new Set(expected).size).toBe(expected.length);
@@ -577,7 +661,9 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
         [result.body.ownerAccountId, 'active']
       )
     ).toBe(2);
-    expect(await codesOfRole(result.body.tenantAdministratorRoleId)).toHaveLength(67);
+    expect(await codesOfRole(result.body.tenantAdministratorRoleId)).toHaveLength(
+      TENANT_ADMINISTRATOR_ROLE.permissionCodes.length
+    );
   });
 
   it('W9-B9 an active tenant cannot reopen the bootstrap write window', async () => {
@@ -627,7 +713,19 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
       ])) ?? -1,
     ];
     const before = await counts();
-    expect(before).toEqual([1, 1, 2, 70, 2]);
+    // The mapping count is the two bootstrap roles' sets summed, DERIVED rather
+    // than transcribed: it was the literal 70 and had to be corrected when the
+    // P1-31 P-1 widening moved the administrator set from 67 to 73. A literal
+    // here says nothing about which role changed, and it drifts silently in the
+    // direction of whoever edits it last — as it would have again when the
+    // Owner's CC-04 decision took `rpt.export` back out.
+    expect(before).toEqual([
+      1,
+      1,
+      2,
+      FIRST_OWNER_ROLE.permissionCodes.length + TENANT_ADMINISTRATOR_ROLE.permissionCodes.length,
+      2,
+    ]);
 
     asHolder();
     const replay = await provision('b10', {}, key);
@@ -767,18 +865,17 @@ describe('W9 — the created human, through the real application paths', () => {
     // A code the administrator does not hold cannot be delegated: the finite
     // set is the boundary, enforced by the database, not by this suite.
     //
-    // `org.settings.manage` and not `iam.approval.manage`: the P1-30 corrective
-    // slice moved the latter INTO the bundle (W3's quotation screen walks
-    // `iam.approval-limit-list`, which is exactly the rule the exclusion list
-    // states). `org.settings.manage` remains excluded for its own stated reason
-    // — no walked route declares it, and the Workspace card renders read-only
-    // without it — so the boundary is still proved against a real exclusion
-    // rather than against a code that merely happens to be absent today.
+    // `iam.login.view_all`, a real recorded exclusion (no walked route on the
+    // journey declares it). Neither `iam.approval.manage` nor `org.settings.manage`
+    // can serve: the P1-30 corrective slice moved the first INTO the bundle, and
+    // the Owner decision of 2026-09-27 moved the second in too (W9-R2). So the
+    // boundary is still proved against a code the bundle deliberately withholds
+    // rather than against one that merely happens to be absent today.
     asBearer();
     const beyond = await call(rolePermissionAddRoute, {
       path: `/iam/roles/${role.body.id}/permissions`,
       params: { roleId: role.body.id },
-      body: { permissionCode: 'org.settings.manage', effect: 'allow' },
+      body: { permissionCode: 'iam.login.view_all', effect: 'allow' },
       bearer: accessToken,
       idempotencyKey: randomUUID(),
     });

@@ -296,6 +296,15 @@ describe('svc.service-list — filters', () => {
     // A real prefix still matches, so the escaping did not break ordinary search.
     expect(await ids(await list({ search: 'FX-P120-A' }))).toContain(SERVICE_A);
   });
+
+  it('finds a code typed with Arabic-Indic or Eastern Arabic-Indic digits', async () => {
+    authAs(SVC_FULL);
+    // The server folds the term's digits, so an Arabic keyboard finds the code.
+    const arabicIndic = await ids(await list({ search: 'FX-P١٢٠-A' }));
+    expect(arabicIndic).toContain(SERVICE_A);
+    expect(arabicIndic).not.toContain(SERVICE_A_ALT);
+    expect(await ids(await list({ search: 'FX-P۱۲۰-A' }))).toContain(SERVICE_A);
+  });
 });
 
 describe('svc.service-list — denial and bounds', () => {
@@ -543,6 +552,16 @@ describe('svc.service-create', () => {
     // the catalog is served from.
     authAs(SVC_FULL);
     expect(await ids(await list({ search: code }))).toContain(created.id);
+  });
+
+  it('a name stored with Arabic-Indic digits is found by the same digits typed in ASCII', async () => {
+    const digits = String(Date.now() % 100000);
+    const stored = digits.replace(/[0-9]/g, (d) => String.fromCharCode(0x0660 + Number(d)));
+    const created = await managedService({ name: `Fold ${stored} fixture` });
+    authAs(SVC_FULL);
+    // Both sides are folded: the stored name by `shared.fold_digits`, the term by the service.
+    expect(await ids(await list({ search: `Fold ${digits}` }))).toContain(created.id);
+    expect(await ids(await list({ search: `Fold ${stored}` }))).toContain(created.id);
   });
 
   it('refuses a duplicate service code as a conflict, not a 500', async () => {

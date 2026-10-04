@@ -38,7 +38,10 @@ const Params = z.object({ companyId: schemas.uuid }).strict();
 export const Body = z
   .object({
     legalName: z.string().trim().min(1).max(200).optional(),
-    baseCurrencyCode: z.string().length(3).optional(),
+    baseCurrencyCode: z
+      .string()
+      .regex(/^[A-Z]{3}$/, 'must be a three-letter currency code')
+      .optional(),
     // Nullable AND optional: these are legitimately clearable, and the two
     // states differ. `undefined` means "leave it"; `null` means "remove it".
     registrationNumber: z.string().trim().min(1).max(100).nullable().optional(),
