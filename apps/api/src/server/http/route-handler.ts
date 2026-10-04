@@ -640,8 +640,9 @@ function respondWithFailure(
  *  - marked with `withBusinessRefusal` — a `business-rule.refused` event, for any
  *    operation, exactly as before;
  *  - marked with `withPermissionRefusal` — an `authorization.denied` event, for
- *    the four operations in `PERMISSION_REFUSAL_OPERATIONS` ONLY. Every other
- *    permission refusal stays the log line `requirePermissions` already wrote.
+ *    the four operations in `PERMISSION_REFUSAL_OPERATIONS` ONLY. On any other
+ *    operation this mark is not written, and a permission refusal no service
+ *    marked as a business rule stays the log line `requirePermissions` wrote.
  *
  * Every other failure passes through untouched. The operation id is this
  * pipeline's own registration, never anything the caller or the service

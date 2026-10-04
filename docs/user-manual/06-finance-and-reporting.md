@@ -568,9 +568,15 @@ authority, never borrowed from the permission to raise one or from a discount li
   needs in that branch — from a screen or by calling the service directly — the attempt is refused
   exactly as before and is also recorded once in the same log, after the refusal: who tried, which
   action, in which branch, which permission was missing, and when. Nothing about the note, the
-  receipt, the amount or the customer is recorded with it, and nothing financial changes. Attempts
-  made before this change were not recorded and cannot be recovered. Other refusals for want of a
-  permission elsewhere in the application are not recorded in the log.
+  receipt, the amount or the customer is recorded with it, and nothing financial changes. Some of
+  these attempts were already recorded before this change, as a refusal by rule: approving a credit
+  note, or approving or rejecting a receipt reversal, in a branch where you did not hold the approval
+  permission. Those earlier records stay as they were. Other attempts made before this change, such
+  as rejecting a credit note without the permission, were not recorded and cannot be recovered.
+  Elsewhere in the application a refusal for want of a permission is recorded, as a refusal by rule,
+  only for requesting or withdrawing a receipt reversal, deciding a discount, and allocating a
+  payment made by somebody other than the invoice's customer; other such refusals are not recorded
+  in the log.
 
 **An organisation created before this change** keeps the set it was given until the platform
 operator runs the administrator backfill for it. That run adds the permission only to an

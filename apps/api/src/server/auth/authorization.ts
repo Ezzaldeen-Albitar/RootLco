@@ -170,7 +170,8 @@ export async function evaluatePermissions(
  * discovered scope (`scope`). The mark changes nothing the caller receives. The
  * route pipeline persists it to `iam.security_events` after the rollback for the
  * four financial approval decisions only (ADR-023, D12 extension); for every
- * other operation the denial remains a log line and is not persisted.
+ * other operation this mark is not persisted, and the denial remains a log line
+ * unless the service marks it as a `*_permission_missing` business rule.
  */
 export async function requirePermissions(
   db: DbHandle,

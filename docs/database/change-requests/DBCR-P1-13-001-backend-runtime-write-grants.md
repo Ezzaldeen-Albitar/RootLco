@@ -211,7 +211,11 @@ Status note, 2026-10-03 (P1-32-PRE-OD-FD12X): this change request is applied (mi
 `20260725090000`), so a security event the application records now persists. What the application
 records is narrower than every denial: control-plane rate-limit breaches, refusals by business rule
 (`business-rule.refused`, ADR-023 D12) and permission refusals on the four financial approval
-decisions (`authorization.denied`, the D12 extension approved by the Owner on 2026-10-03). Every
+decisions (`authorization.denied`, the D12 extension approved by the Owner on 2026-10-03). A
+refusal for want of a permission that a service names as a `*_permission_missing` business rule is
+recorded in that class: the credit-note approval and receipt-reversal decisions before the
+extension (those rows stay `business-rule.refused`), the receipt-reversal request and a guard
+permission token on its withdrawal, the discount decision and the third-party allocation. Every
 other authorization denial is still logged and counted only, and is not persisted.
 
 Fail-closed behaviour is implemented in `src/server/db/require-capability.ts`. There is no

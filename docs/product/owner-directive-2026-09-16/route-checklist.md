@@ -3893,9 +3893,14 @@ Residual items, one line each:
 Owner decision 2026-10-03. A refusal for want of a permission on approving or rejecting a credit
 note, or approving or rejecting a receipt reversal, is now persisted in the security trail as ONE
 `authorization.denied` event after the refused command rolls back, whether the call came from a
-screen or directly from the API. Before this change such a refusal was logged by the server but not
-persisted; no record exists for an attempt made before the deploy. No migration, no new permission
-code, no screen change.
+screen or directly from the API. Before this change, since FD2C and FD4, a refusal by the deferred
+scope check or the database guard for want of the deciding code on a credit-note approval or a
+receipt-reversal approval or rejection was already persisted as `business-rule.refused`
+(`credit_approval_permission_missing`, `receipt_reversal_approve_permission_missing`,
+`receipt_reversal_reject_permission_missing`); those rows stay in that class. Only the route-gate
+refusals, the refusals for want of `sal.finance.view` alone and the permission refusals of a
+credit-note rejection were log lines; no record exists for such an attempt made before the deploy.
+No migration, no new permission code, no screen change.
 
 | Route                                                   | Behaviour now                                                                                                                                                                                         |
 | ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -3914,4 +3919,11 @@ untouched.
 Residual items, one line each:
 
 - No API route or screen reads security events yet; a security reviewer reads them only through the database under row-level security (follow-up, not in this slice).
-- Every other permission refusal in the platform, including the receipt-reversal request and withdrawal, remains a server log line and is not persisted.
+- Outside the four operations, a permission refusal is persisted only as the `business-rule.refused` record an earlier slice already writes: the receipt-reversal request (`receipt_reversal_request_permission_missing`), a guard permission token on a receipt-reversal withdrawal, the discount decision (`discount_approval_permission_missing`) and the third-party allocation (`third_party_permission_missing`); every other permission refusal remains a server log line.
+- The route-gate rows always record branch `none`: the gate runs before the document is loaded and the four routes declare no `authorizationTarget`, so the trusted branch is recorded only for the `scope` and `database` sources. This is the documented design and nothing leaks.
+- No row is recorded for refusals outside `run()` or before the gate: a missing `Idempotency-Key` or `If-Match` (428/422) on these idempotent or version-guarded routes, a branch-narrowing `ERR-IAM-001` in `server/context/resolve-context.ts:135`, and the empty-target deferred refusal in `authorization.ts` `requireScopedPermissions` (unreachable: the services always pass the document's company and branch). None is a refusal of the action for a missing permission code.
+- A guard's "dual control: no user context" `42501` would be recorded as `authorization.denied` with `missing` undetermined; it is unreachable with an authenticated session.
+- The credit-note database paths are proven by unit fakes only, not on a database: the approve guard token `credit_approval_permission_missing`, the reject token `credit_note_reject_permission_missing` and a bare `42501`. Only the receipt-reversal approve guard is database-backed (`tests/backend/od-finance-permission-refusals.test.ts:473`); the credit-note cases belong in `tests/backend`.
+- Earlier `*_permission_missing` rows for these four operations stay `business-rule.refused`, so a query by `event_type` now splits one kind of refusal across two classes.
+- `od-finance-receipt-reversal.test.ts` "another branch" asserts zero rows only for the one rule code, not zero `business-rule.refused` rows on that correlation id; the new backend file asserts the stronger condition for the same scenario.
+- The database tier (`tests/backend`, `tests/db`) was run by the implementer on a disposable database only (83 + 236 tests); the reviewer did not reproduce it locally. Hosted "Database migrations and RLS tests" and integration-tests ran on the PR.

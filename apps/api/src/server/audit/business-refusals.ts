@@ -51,16 +51,31 @@
  * of the four financial approval decisions — approving or rejecting a credit
  * note, approving or rejecting a receipt reversal — is recorded through this same
  * seam, as its own event type (`authorization.denied`), never as a
- * `business-rule.refused`. Before this extension such a refusal was written to the
- * server log and was NOT persisted; no record exists for an attempt made before
- * it was deployed, and none is claimed.
+ * `business-rule.refused`.
+ *
+ * Before this extension part of such refusals was already persisted, in the
+ * other class: since FD2C and FD4, a refusal by the deferred scope check or the
+ * database guard for want of the deciding code on approving a credit note, or
+ * on approving or rejecting a receipt reversal, was marked `withBusinessRefusal`
+ * with `credit_approval_permission_missing`,
+ * `receipt_reversal_approve_permission_missing` or
+ * `receipt_reversal_reject_permission_missing`. Those rows stay
+ * `business-rule.refused`. Only the route-gate refusals, the refusals for want of
+ * `sal.finance.view` alone and the permission refusals of a credit-note
+ * rejection were log lines; no record exists for such an attempt made before the
+ * extension was deployed, and none is claimed.
  *
  * The mark lives in the same `WeakMap`, so one failure carries ONE mark and
  * therefore yields ONE row of ONE class: whichever mark was set last wins. The
  * authorization layer marks every permission refusal it raises
  * (`requirePermissions`); a service marks a refusal the database raised for the
  * same reason. Only the operations in `PERMISSION_REFUSAL_OPERATIONS` are ever
- * written — every other 403 in the product stays a log line, as before.
+ * written as `authorization.denied`. Elsewhere a permission refusal is persisted
+ * only where a service marks it as a business rule, exactly as before — the
+ * receipt-reversal request (`receipt_reversal_request_permission_missing`), a
+ * guard permission token on a receipt-reversal withdrawal, the discount decision
+ * (`discount_approval_permission_missing`) and the third-party allocation
+ * (`third_party_permission_missing`); every other 403 stays a log line.
  *
  * The detail names the operation, the branch the decision was made against, the
  * missing permission codes and where the refusal came from, and nothing else: no

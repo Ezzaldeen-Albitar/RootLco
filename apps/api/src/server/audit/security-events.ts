@@ -13,8 +13,10 @@
  * operation, and refusals for want
  * of a permission (`authorization.denied`) on the four financial approval
  * decisions only (D12 extension, Owner decision 2026-10-03 — see
- * `business-refusals.ts`). Every other authorization denial is still a log line
- * and a metric, and is not persisted. The behaviour is:
+ * `business-refusals.ts`). A permission refusal a service names as a
+ * `*_permission_missing` business rule is recorded in that class. Every other
+ * authorization denial is still a log line and a metric, and is not persisted.
+ * The behaviour is:
  *
  *  - always emit the structured log record — searchable by correlation ID;
  *  - attempt the durable write only when the capability is present

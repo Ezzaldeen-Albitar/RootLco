@@ -58,6 +58,17 @@ Authorization denials in particular: a permission refusal is persisted only for 
 approval decisions — approving or rejecting a credit note, approving or rejecting a receipt
 reversal (ADR-023 D12 extension, approved by the Owner on 2026-10-03; one `authorization.denied`
 row per refused attempt, its detail limited to the operation, the branch, the missing permission
-codes and where the refusal was decided). Before that extension such a refusal was logged by the
-server but not persisted, and no record exists for an attempt made before it was deployed. Every
-other authorization denial is still a log line and a metric only.
+codes and where the refusal was decided). Before that extension, since FD2C and FD4, a refusal by
+the deferred scope check or the database guard for want of the deciding code on a credit-note
+approval or a receipt-reversal approval or rejection was already persisted as a
+`business-rule.refused` row (`credit_approval_permission_missing`,
+`receipt_reversal_approve_permission_missing`, `receipt_reversal_reject_permission_missing`), and
+those rows stay in that class; only the route-gate refusals, the refusals for want of
+`sal.finance.view` alone and the permission refusals of a credit-note rejection were log lines, and
+no record exists for such an attempt made before the extension was deployed. Outside the four, a
+permission refusal is persisted only as the `business-rule.refused` row an earlier slice writes —
+the receipt-reversal request (`receipt_reversal_request_permission_missing`), a guard permission
+token on a receipt-reversal withdrawal, the discount decision
+(`discount_approval_permission_missing`) and the third-party allocation
+(`third_party_permission_missing`). Every other authorization denial is still a log line and a
+metric only.

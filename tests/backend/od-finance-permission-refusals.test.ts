@@ -5,8 +5,12 @@
  *
  * The four: `sal.credit-note-approve`, `sal.credit-note-reject`,
  * `sal.receipt-reversal-approve`, `sal.receipt-reversal-reject`. Before this
- * extension such a refusal was written to the server log and was NOT persisted;
- * nothing here claims a record of an attempt made before it.
+ * extension a scope or database-guard refusal for want of the deciding code on
+ * the credit-note approval and the receipt-reversal decisions was already
+ * persisted as `business-rule.refused` (`*_permission_missing`, FD2C/FD4), and
+ * those rows stay in that class; the route-gate, `sal.finance.view`-only and
+ * credit-note-rejection refusals were log lines. Nothing here claims a record of
+ * such an attempt made before the extension.
  *
  * Every case counts a side effect and is written so it FAILS when the control it
  * names is removed. For each operation and each reachable source of the refusal —
