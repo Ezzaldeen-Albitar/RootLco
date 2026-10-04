@@ -296,6 +296,32 @@ running it is CC-OD-30.
 - Develop CI is green at `ec91239b`, as reported by the coordinator.
 - The clean-room limit was raised from 60 to 90 minutes (#493, Owner-authorised).
 - The web-quality job limit is raised from 30 to 45 minutes (Owner-authorised 2026-10-03).
+- Web DOM test speed (`feature/owner-directive-web-dom-test-speed`, Owner-authorised 2026-10-03,
+  no assertion, case, coverage setting, timeout or retry changed). Cause, measured: every mount of
+  the Material foundation builds a new Emotion cache, which writes each rule as its own `<style>`
+  tag, and unmounting left those tags in `<head>`; jsdom's insert cost grows with `<head>`. The DOM
+  setup now removes, after each case's unmount, only the styles an unmounted foundation tree could
+  own (cache keys `mui` and `muirtl`, and the cascade-layer order statement). `payments.dom.test.tsx`
+  is split by its top-level groups into `payments-branch-and-list`, `payments-recording`,
+  `payments-allocation` and `payments-print-and-reversal` (`.dom.test.tsx`), with the shared
+  fixtures in `tests/support/payments-screen.tsx`; the sorted list of 113 full test names is
+  identical before and after. Local, one worker, the payments cases alone, before → after: summed
+  test time 564.9 s → 128.1 s; wall 582 s → 201 s; last-quarter to first-quarter mean per case
+  3.67 → 1.07; `<head>` at the last case 17,797 children (17,679 Emotion sheets) → 1 (0). Hosted,
+  PR #506 head `19b3beb6`, PR CI run 37188602832, web-quality job 111395880479 (runner region
+  westcentralus): job 17 min 30 s, web component tier step 10 min 40 s, summed test time 1516 s,
+  the four payments files 130.4 s, 7340 tests in 193 files. For comparison, develop `5d3dcbec`
+  (run 37180153256, job 111370958978, centralus): job 28 min 0 s, step 20 min 50 s, summed 3369 s,
+  payments 1091.7 s; the `c8940b1c` baseline: payments 941 s, web tier mean 1106 s, job mean
+  1492 s. Runner speed varies by up to 1.56 times between runs, so one run per side is an
+  indication, not a mean. Coverage totals are identical to develop `5d3dcbec`'s hosted artifact
+  (lines 92.56 %, statements 89.86 %, functions 92.89 %, branches 83.96 %). The three M-09
+  lost-answer cases took 3.4–3.9 s on that run (3.4–3.6 s locally), so their own 60 s budget is
+  removed and they run under the default 30 s one; no timeout was raised anywhere. At the next head,
+  `85b7a839` (PR CI run 37189940805, web-quality job 111399906756, centralus, the same region as
+  the develop run above): job 11 min 53 s, step 6 min 45 s, summed test time 967 s, the payments
+  files 88.0 s, the M-09 cases 2.4–2.7 s under the default budget, coverage totals unchanged; the
+  P1-27 web run record is taken from that run (7340 tests, 193 files).
 - The coordinator reports that the four finance migrations (`20260930090000`, `20260930100000`, `20260930110000`, `20261001090000`) were backed up, rehearsed on a restored copy and applied forward on 2026-10-01. ADR-023 requires that step (`:289-299`); its execution has no record in the repository, so it is not counted as verified.
 
 ### Checkpoints this matrix relies on
