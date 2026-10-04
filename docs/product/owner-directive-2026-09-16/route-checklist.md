@@ -1138,7 +1138,9 @@ Every `useUnsavedGuard` owner in `apps/web/src` (`grep -rn "useUnsavedGuard(" ap
 the declaration itself excluded). The risk: after a confirmed "Discard and change branch", a form
 keeps its typed input and submits the previous branch's input into the new one. `QA1B-04`
 audited 46 call sites; QA round three added three (`QA1B-06`: the two parts draw forms; `QA1B-07`:
-the price rule form), so there were 49; the appointments slice adds the reschedule form. Each owner has one mechanism:
+the price rule form), so there were 49; the appointments slice adds the reschedule form, and the
+reception wizard step guard the media waiver reason and the signature repudiation reason. Each
+owner has one mechanism:
 
 - **a** — remounted or reset by the branch itself: keyed on the branch pair or the
   working-context version, unmounted by the screen's branch handler, or reset through
@@ -1190,7 +1192,9 @@ Line numbers are those of the call on the branch head that last changed this tab
 | features/receptions/components/CheckInStartScreen.tsx                            | 629                     | b       | `onDiscard` resets origin and note, appointment, customer and its typed search, vehicle, intake facts, hand-over and complaints (`QA1B-02`)                                                                                                           |
 | features/receptions/components/steps/EvidencePanels.tsx (`useStepForm`)          | 726                     | c→b     | reception intake slice: every capture form of the wizard (complaint, inspection, finding, leak, damage map and mark, warning light, contents, party role, authorization, refusal) holds its draft here; `onDiscard` puts the form back as it opened   |
 | features/receptions/components/steps/ReadingsStep.tsx (OdometerForm)             | 367                     | c→b     | reception intake slice: the typed reading, unit, moment and source; `onDiscard` empties them                                                                                                                                                          |
+| features/receptions/components/steps/MediaStep.tsx (RequirementRow)              | 385                     | c→b     | reception wizard step guard: a typed waiver reason in an open waiver form; `onDiscard` empties the reason and closes the form                                                                                                                         |
 | features/receptions/components/steps/SignatureStep.tsx                           | 200                     | c→b     | reception intake slice: the chosen signer, purpose and party; `onDiscard` empties them and resets the form (the chosen file with it)                                                                                                                  |
+| features/receptions/components/steps/SignatureStep.tsx (SignatureRow)            | 459                     | c→b     | reception wizard step guard: a typed repudiation reason in an open repudiation form; `onDiscard` empties the reason and closes the form                                                                                                               |
 | features/receptions/intake/components/IntakeCustomerCreate.tsx                   | 104                     | c→b     | reception intake slice: typed customer details; `onDiscard` empties them (the status back to its default)                                                                                                                                             |
 | features/receptions/intake/components/IntakeVehicleStep.tsx (VehicleCreate)      | 614                     | c→b     | reception intake slice: typed vehicle details; `onDiscard` empties them                                                                                                                                                                               |
 | features/receptions/intake/components/IntakeVehicleStep.tsx (LinkForm)           | 901                     | c→b     | reception intake slice: the chosen relationship role; `onDiscard` empties it                                                                                                                                                                          |
@@ -3939,3 +3943,22 @@ Residual items, one line each:
 - Earlier `*_permission_missing` rows for these four operations stay `business-rule.refused`, so a query by `event_type` now splits one kind of refusal across two classes.
 - `od-finance-receipt-reversal.test.ts` "another branch" asserts zero rows only for the one rule code, not zero `business-rule.refused` rows on that correlation id; the new backend file asserts the stronger condition for the same scenario.
 - The database tier (`tests/backend`, `tests/db`) was run by the implementer on a disposable database only (83 + 236 tests); the reviewer did not reproduce it locally. Hosted "Database migrations and RLS tests" and integration-tests ran on the PR.
+
+### Check-in wizard step guard and a concern severity stored as not stated (P1-32-PRE-OD-RWS)
+
+A numbered step button or a step's own `goToStep` asks before it discards typed input in the open
+step (`apps/web/tests/reception-wizard-step-guard.dom.test.tsx`): every `useStepForm` capture
+form, the odometer reading, the signature capture choices, the media step's waiver reason and the
+signature step's repudiation reason. The closure reasons on the summary step are asked in a modal
+`ReasonDialog`, which blocks the step buttons while it is open. A concern recorded without a
+severity is stored as `not_stated` (`supabase/migrations/20261004090000_*`).
+
+Residual items, one line each:
+
+- Chosen (not typed) files are not declared as unsaved work, so a step change drops them without asking: the media step capture form (`CaptureFileField`, `MediaStep.tsx:511`) and the signature step capture file, which the dirty flag at `SignatureStep.tsx:199` does not count. The slice wording is "typed input", so this is recorded rather than blocking; the Owner should confirm whether a chosen file counts.
+- Cancel on the media step waiver form and on the signature repudiation form only closes the form and keeps the typed reason; the guard is off while the form is closed, and reopening shows the old text again. There is no data-loss path, only stale text.
+- Coverage was not evaluated in CI for head 77521094: in unit-coverage job 111484537631 the coverage-gate step stopped with ENOENT on `coverage/unit/coverage-summary.json` because the unit step failed first on the expected P1-27 doc-counts case. The coverage floors for the new code are unverified until the records step turns the unit tier green.
+- The database and backend tiers were not run locally by the implementer: `tests/db/rec-complaint-severity-not-stated.test.ts` (4 cases) and the 2 new cases in `tests/backend/p1-18-reception-evidence.test.ts` were read but not executed. On head 77521094 the reviewer observed the hosted database (111484470302), migration-replay (111484537580), integration (111484537510) and security-matrix (111484537590) jobs green; that observation does not cover a later head.
+- Historical ambiguity is stated in the migration header, the column comment and `docs/database/data-dictionary.md`: rows written before `20261004090000` hold `medium` for an omitted severity and cannot be told apart from a stated `medium`. No rows are rewritten (the migration is DDL and COMMENT only), so historical `medium` counts stay inflated; the Owner should be told.
+- Severity consumers: the only readers are the reception read projection (`reception-read-repository.ts:926`, untyped jsonb) and the web vocabulary display (`check-in/evidence.ts:240`), which has English and Arabic labels for `not_stated`. No SQL view, function, trigger, seed, report, filter or sort reads `rec.complaints.severity`. The web write schema (`apps/web/src/features/receptions/api.ts:167`) still admits only the four stated values, which is consistent because the form omits the key for "Not stated".
+- The `goToStep` case asserts only that the dialog opens; Stay and Discard are covered through the numbered buttons. Both paths go through the same `requestStep`, so the risk is low.

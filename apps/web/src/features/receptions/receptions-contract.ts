@@ -748,8 +748,24 @@ export const COMPLAINT_CATEGORIES = [
 ] as const;
 export type ComplaintCategory = (typeof COMPLAINT_CATEGORIES)[number];
 
+/**
+ * The severities a customer can state — the choices the capture form offers.
+ *
+ * A customer who gave none is the form's blank choice, labelled "Not stated":
+ * the write then leaves `severity` off and the service stores
+ * `COMPLAINT_SEVERITY_NOT_STATED` (Owner decision of 2026-10-03), never
+ * `'medium'`. A read can therefore return any of `STORED_COMPLAINT_SEVERITIES`,
+ * and every one of them has a label in both catalogues.
+ */
 export const COMPLAINT_SEVERITIES = ['low', 'medium', 'high', 'critical'] as const;
 export type ComplaintSeverity = (typeof COMPLAINT_SEVERITIES)[number];
+/** What a complaint recorded without a severity holds (`ck_complaints_severity`). */
+export const COMPLAINT_SEVERITY_NOT_STATED = 'not_stated' as const;
+/** Every value a complaint read can carry in `severity`. */
+export const STORED_COMPLAINT_SEVERITIES = [
+  COMPLAINT_SEVERITY_NOT_STATED,
+  ...COMPLAINT_SEVERITIES,
+] as const;
 
 export const FINDING_CATEGORIES = [
   'scratch',

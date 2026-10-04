@@ -5,6 +5,7 @@ import Button from '@mui/material/Button';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Messages } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -377,6 +378,14 @@ function RequirementRow({
 }) {
   const [reason, setReason] = useState('');
   const [showOverride, setShowOverride] = useState(false);
+  // A typed waiver reason is unsaved work, like every other capture form of the
+  // wizard: leaving the page, switching branch or changing step asks first, and
+  // a confirmed discard closes the form empty. A form the operator closed with
+  // Cancel is no longer on screen and holds nothing they were asked about.
+  useUnsavedGuard(showOverride && reason !== '', () => {
+    setReason('');
+    setShowOverride(false);
+  });
   const code = requirement.requirementCode;
   const bound = contract.bindings.filter((entry) => entry.requirementCode === code);
   const override = contract.overrides.find((entry) => entry.requirementCode === code);

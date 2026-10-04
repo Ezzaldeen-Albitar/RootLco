@@ -113,8 +113,9 @@ export function ComplaintsStep({
           kind: 'complaint',
           category: draft.category as ComplaintCategory,
           // Omitted rather than blanked: the route schema is `.strict()` and
-          // `severity` is `optional()`, so an untouched control leaves the key
-          // off the body entirely.
+          // `severity` is `optional()`, so the blank choice ("Not stated")
+          // leaves the key off the body and the service stores `not_stated` —
+          // never a severity the customer did not give.
           ...(draft.severity === '' ? {} : { severity: draft.severity as ComplaintSeverity }),
           complaintText: draft.complaintText.trim(),
           ...(draft.reporter === null ? {} : { reportedByPartnerId: draft.reporter.id }),
@@ -212,7 +213,9 @@ export function ComplaintsStep({
                 value,
                 label: translateDynamic(messages, `receptions.complaintSeverity.${value}`),
               }))}
-              placeholder={translate(messages, 'form.select.placeholder')}
+              // The blank choice is a real answer — the customer gave no
+              // severity — so it says so instead of "Choose…".
+              placeholder={translate(messages, 'receptions.complaintSeverity.not_stated')}
               error={form.fieldError('severity')}
             />
             <FormTextField

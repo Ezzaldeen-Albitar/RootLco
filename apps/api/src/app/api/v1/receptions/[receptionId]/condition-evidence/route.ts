@@ -32,7 +32,6 @@ import {
 } from '@/server/http/validation';
 import {
   COMPLAINT_CATEGORIES,
-  COMPLAINT_SEVERITIES,
   DAMAGE_MARK_TYPES,
   EVIDENCE_KINDS,
   FINDING_CATEGORIES,
@@ -48,6 +47,7 @@ import {
   MAX_NOTE,
   MAX_ZONE,
   MIN_COORD,
+  STORED_COMPLAINT_SEVERITIES,
   receptionModule,
 } from '@/modules/reception';
 
@@ -61,7 +61,8 @@ const Complaint = z
   .object({
     kind: z.literal('complaint'),
     category: z.enum(COMPLAINT_CATEGORIES),
-    severity: z.enum(COMPLAINT_SEVERITIES).optional(),
+    // Omitted when the customer gave none, and then stored as `not_stated`.
+    severity: z.enum(STORED_COMPLAINT_SEVERITIES).optional(),
     complaintText: z.string().min(1).max(MAX_COMPLAINT_TEXT),
     reportedByPartnerId: schemas.uuid.nullable().optional(),
     evidenceDocumentId: schemas.uuid.nullable().optional(),
