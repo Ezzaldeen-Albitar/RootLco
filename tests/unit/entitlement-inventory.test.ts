@@ -44,34 +44,34 @@ const PAST = '1700000000000000';
 const FUTURE = '1900000000000000';
 
 const OPERATIONS = [
-  { id: 'crm.customer-list', module: 'crm', permissions: ['crm.customer.read'], public: false },
+  { id: 'crm.synthetic-one', module: 'crm', permissions: ['crm.customer.read'], public: false },
   {
-    id: 'apt.appointment-list',
+    id: 'apt.synthetic-two',
     module: 'reception',
     permissions: ['apt.appointment.read'],
     public: false,
   },
   {
-    id: 'rec.reception-list',
+    id: 'rec.synthetic-three',
     module: 'reception',
     permissions: ['rec.reception.read', 'crm.customer.read'],
     public: false,
   },
   {
-    id: 'quo.quotation-list',
+    id: 'quo.synthetic-four',
     module: 'quotation',
     permissions: ['quo.quotation.read'],
     public: false,
   },
   {
-    id: 'wo.work-order-list',
+    id: 'wo.synthetic-five',
     module: 'work-order',
     permissions: ['wo.work_order.read'],
     public: false,
   },
-  { id: 'inv.item-list', module: 'inventory', permissions: ['inv.item.read'], public: false },
-  { id: 'iam.user-list', module: 'iam', permissions: ['iam.user.read'], public: false },
-  { id: 'meta.ping', module: 'meta', permissions: [], public: true },
+  { id: 'inv.synthetic-six', module: 'inventory', permissions: ['inv.item.read'], public: false },
+  { id: 'iam.synthetic-seven', module: 'iam', permissions: ['iam.user.read'], public: false },
+  { id: 'meta.synthetic-eight', module: 'meta', permissions: [], public: true },
 ];
 
 const CODES = [
@@ -334,13 +334,11 @@ describe('entitlement inventory: classification into candidate modules', () => {
   });
 
   it('places appointment operations inside the reception API module under appointments', () => {
-    expect(classifyOperation({ id: 'apt.appointment-list', module: 'reception' })).toBe(
+    expect(classifyOperation({ id: 'apt.synthetic-two', module: 'reception' })).toBe(
       'appointments'
     );
-    expect(classifyOperation({ id: 'rec.reception-list', module: 'reception' })).toBe('reception');
-    expect(classifyOperation({ id: 'ovw.dashboard-summary-read', module: 'overview' })).toBe(
-      'core'
-    );
+    expect(classifyOperation({ id: 'rec.synthetic-three', module: 'reception' })).toBe('reception');
+    expect(classifyOperation({ id: 'ovw.synthetic-nine', module: 'overview' })).toBe('core');
     expect(classifyOperation({ id: 'new.thing', module: 'new-module' })).toBe(null);
   });
 
@@ -441,10 +439,10 @@ describe('entitlement inventory: effective codes follow has_permission', () => {
 
 describe('entitlement inventory: reachable operations', () => {
   it('needs every declared code and leaves public operations out', () => {
-    expect(reachableOperations(['crm.customer.read'], OPERATIONS)).toEqual(['crm.customer-list']);
+    expect(reachableOperations(['crm.customer.read'], OPERATIONS)).toEqual(['crm.synthetic-one']);
     expect(reachableOperations(['crm.customer.read', 'rec.reception.read'], OPERATIONS)).toEqual([
-      'crm.customer-list',
-      'rec.reception-list',
+      'crm.synthetic-one',
+      'rec.synthetic-three',
     ]);
     expect(reachableOperations([], OPERATIONS)).toEqual([]);
   });
@@ -526,7 +524,7 @@ describe('entitlement inventory: the proof that no access changes', () => {
       entitlements: withheld,
     });
     expect(outcome?.identical).toBe(false);
-    expect(outcome?.removed).toEqual(['crm.customer-list', 'rec.reception-list']);
+    expect(outcome?.removed).toEqual(['crm.synthetic-one', 'rec.synthetic-three']);
     expect(outcome?.added).toEqual([]);
   });
 
