@@ -296,6 +296,19 @@ running it is CC-OD-30.
 - Develop CI is green at `ec91239b`, as reported by the coordinator.
 - The clean-room limit was raised from 60 to 90 minutes (#493, Owner-authorised).
 - The web-quality job limit is raised from 30 to 45 minutes (Owner-authorised 2026-10-03).
+- Web DOM test speed (`feature/owner-directive-web-dom-test-speed`, Owner-authorised 2026-10-03,
+  no assertion, case, coverage setting, timeout or retry changed). Cause, measured: every mount of
+  the Material foundation builds a new Emotion cache, which writes each rule as its own `<style>`
+  tag, and unmounting left those tags in `<head>`; jsdom's insert cost grows with `<head>`. The DOM
+  setup now removes, after each case's unmount, only the styles an unmounted foundation tree could
+  own (cache keys `mui` and `muirtl`, and the cascade-layer order statement). `payments.dom.test.tsx`
+  is split by its top-level groups into `payments-branch-and-list`, `payments-recording`,
+  `payments-allocation` and `payments-print-and-reversal` (`.dom.test.tsx`), with the shared
+  fixtures in `tests/support/payments-screen.tsx`; the sorted list of 113 full test names is
+  identical before and after. Local, one worker, the payments cases alone, before → after: summed
+  test time 564.9 s → 128.1 s; wall 582 s → 201 s; last-quarter to first-quarter mean per case
+  3.67 → 1.07; `<head>` at the last case 17,797 children (17,679 Emotion sheets) → 1 (0). Hosted
+  figures for the pull request: not yet recorded.
 - The coordinator reports that the four finance migrations (`20260930090000`, `20260930100000`, `20260930110000`, `20261001090000`) were backed up, rehearsed on a restored copy and applied forward on 2026-10-01. ADR-023 requires that step (`:289-299`); its execution has no record in the repository, so it is not counted as verified.
 
 ### Checkpoints this matrix relies on

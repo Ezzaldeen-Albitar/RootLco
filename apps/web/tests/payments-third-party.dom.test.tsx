@@ -43,7 +43,9 @@ import type { BranchPermissions } from '@/features/working-context/working-conte
  * <payer> (<relationship>) for <customer>" with the authorisation, in English and
  * in Arabic.
  *
- * Kept apart from `payments.dom.test.tsx`, whose cases already run for twenty
+ * Kept apart from the payments screen's own DOM files (`payments-branch-and-list`,
+ * `payments-recording`, `payments-allocation`, `payments-print-and-reversal`, once
+ * one `payments.dom.test.tsx`), whose cases already ran for twenty
  * seconds each under coverage: every case here is one short journey.
  */
 

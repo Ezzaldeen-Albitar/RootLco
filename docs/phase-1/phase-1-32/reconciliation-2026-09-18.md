@@ -232,7 +232,7 @@ loading/empty/error/permission states ([`canonical-plan.md`](./canonical-plan.md
 - **Canonical requirement.** [`canonical-plan.md`](./canonical-plan.md) line 303.
 - **What exists now.** One print authority with five business consumers and the gallery sample
   (§ 2); component suites `gallery-and-print.dom.test.tsx`, `delivery-document.dom.test.tsx`,
-  `reception-acknowledgement.dom.test.tsx`, `invoices.dom.test.tsx`, `payments.dom.test.tsx`.
+  `reception-acknowledgement.dom.test.tsx`, `invoices.dom.test.tsx`, `payments-print-and-reversal.dom.test.tsx`.
 - **State: implementation present, verification owed.** Two gaps stand: **no browser print emulation
   against any business document** (only against the gallery sample), and **CC-32** is open
   (`../phase-1-31/change-control-2026-09-08.md:1976`) — the printed delivery sheet carries a

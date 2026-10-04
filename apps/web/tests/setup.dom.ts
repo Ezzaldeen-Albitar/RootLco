@@ -13,8 +13,42 @@ import { filterMuiLayerSheetErrors, type JsdomVirtualConsole } from './support/j
  */
 expect.extend(axeMatchers);
 
+/**
+ * The Emotion cache keys `UiFoundationProvider` creates — `mui` left to right,
+ * `muirtl` right to left. `AppRouterCacheProvider` builds a NEW cache on every
+ * mount, so each case that mounts the provider writes every Material rule again
+ * as fresh `<style>` tags, and unmounting leaves them behind.
+ */
+const PER_MOUNT_CACHE_KEYS: ReadonlySet<string> = new Set(['mui', 'muirtl']);
+
+/**
+ * Removes the `<head>` styles that only an unmounted foundation tree could own:
+ * the per-mount cache sheets above, and the cascade-layer order statement
+ * Material's `ThemeProvider` prepends once per mount (`data-mui-layer-order`).
+ *
+ * Without this they pile up for the whole file — measured at about 17,800
+ * `<head>` children by the last case of the payments file — and every later
+ * insert pays for the size of `<head>`. jsdom never applies these sheets, so
+ * nothing a case can observe depends on them once their tree is gone.
+ *
+ * Runs only AFTER `cleanup()`, so no tree rendered through Testing Library is
+ * still mounted. Emotion's module-level default cache (key `css`), used by any
+ * styled component rendered without the provider, is deliberately NOT touched:
+ * it outlives each case and remembers what it inserted, so removing its tags
+ * would drop styles a later case still renders with.
+ */
+function removeUnmountedFoundationStyles(): void {
+  for (const style of document.head.querySelectorAll<HTMLStyleElement>('style')) {
+    const key = (style.dataset.emotion ?? '').split(' ')[0] ?? '';
+    if (PER_MOUNT_CACHE_KEYS.has(key) || style.hasAttribute('data-mui-layer-order')) {
+      style.remove();
+    }
+  }
+}
+
 afterEach(() => {
   cleanup();
+  removeUnmountedFoundationStyles();
 });
 
 /**

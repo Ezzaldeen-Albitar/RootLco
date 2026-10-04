@@ -1201,7 +1201,7 @@ Line numbers are those of the call on the branch head that last changed this tab
 | features/crm/customers/components/CustomerCreateScreen.tsx                       | —                       | c       | no guard: the create request names no branch; a switch asks nothing and keeps the input                                                                                                                                                               |
 
 Tests that pin the table (a confirmed discard leaves the form empty after the switch): payments
-(`payments.dom.test.tsx`); parts — the item reference with the quantity, and since round three a
+(`payments-branch-and-list.dom.test.tsx`); parts — the item reference with the quantity, and since round three a
 quantity typed alone in either draw form (`inventory-parts.dom.test.tsx`); invoices
 (`invoices.dom.test.tsx`); quotations (`quotations.dom.test.tsx`); pricing — the whole rule, and
 since round three an amount typed alone with and without the catalogue read
@@ -3100,7 +3100,7 @@ Known limitations of this slice, one line each:
   (cosmetic).
 - The printed invoice leaves out the work-order line when no work-order number is known; the base
   printed the work-order reference there.
-- The picker helpers in `tests/payments.dom.test.tsx`, `tests/invoices.dom.test.tsx` and
+- The picker helpers in `tests/support/payments-screen.tsx`, `tests/invoices.dom.test.tsx` and
   `tests/quotations.dom.test.tsx` wait for the search to be asked and answered, then for the option,
   each under a 10 s ceiling (`tests/support/picker-option.ts`); the one-second default had failed
   web-quality job 109551243343 on a loaded runner, and a case with a directory that answers after
@@ -3726,9 +3726,9 @@ Residual items from the contract review of fix round 2, one line each:
 - The round-1 unsaved-work defect was re-checked and is fixed in substance: the guard in `ReceiptReversal.tsx` counts a typed amount, another currency, another method and (for a reader who may search customers) another payer than the prefilled one; discarding restores the prefilled form, and `useWorkingContextChange` puts the receipt's payer back after the picker empties itself on a context change; the reviewer's scratch mutants (method term, payer term, the context-change restore) were each killed, and the unmutated control passed.
 - Discarding a chosen payer (`setChosen(prefilled)` in the discard callback) has no case of its own, since the payer case covers staying only; `useWorkingContextChange` restores the same payer after the switch anyway, so the line is redundant on the live path and no behaviour is left uncovered.
 - A search typed into the payer picker after "Change" but not chosen is not counted as unsaved work unless the picker clears the choice; this matches the base record form, where only a chosen payer counts.
-- The apps/web lint warning at `tests/payments.dom.test.tsx` (`_args` is unused, in the shared mocks near the top) already exists at base `f031221b`; `lint:web` sets no warning limit, so the gate is unaffected.
+- The apps/web lint warning at `tests/payments.dom.test.tsx` (`_args` is unused, in the shared mocks near the top) already exists at base `f031221b`; `lint:web` sets no warning limit, so the gate is unaffected. That file has since been split into four `payments-*.dom.test.tsx` files, and the unused parameter is gone.
 - The round-1 residual items above (withdrawal without the recording-code check, the early return on an already-approved reversal, approval without `If-Match`, the READ COMMITTED reliance of the allocation freeze, the unmarked refused withdrawal, legacy rejected rows hiding their decider, no Playwright journey, the documentation-only inverse migration) are carried unchanged.
-- Not re-run by the reviewer in round 2: the database and backend tiers; their evidence on `cf132684` is the hosted "Database migrations and RLS tests", integration-tests, migration-replay and security-matrix jobs; the executor's falsification of the five database guards was not re-run by the reviewer; round 2 changed only `ReceiptReversal.tsx`, `payments.dom.test.tsx` and this checklist, so the API, the migration and the wrappers are unchanged since round 1's review.
+- Not re-run by the reviewer in round 2: the database and backend tiers; their evidence on `cf132684` is the hosted "Database migrations and RLS tests", integration-tests, migration-replay and security-matrix jobs; the executor's falsification of the five database guards was not re-run by the reviewer; round 2 changed only `ReceiptReversal.tsx`, `payments.dom.test.tsx` (since split into four files) and this checklist, so the API, the migration and the wrappers are unchanged since round 1's review.
 - The method case was split in two (stay; discard) after the single case, with three branch switches, exceeded the 30-second per-case budget under hosted coverage; the budget was not raised.
 
 ### Third-party payer allocations, refused by default (P1-32-PRE-OD-FD14)
