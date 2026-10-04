@@ -610,13 +610,15 @@ describe('applying a receipt to an invoice', () => {
    * times ran past the per-test budget on the hosted runner. The remembered
    * attempts are cleared around every test (see the file's hooks).
    *
-   * Even two openings are the costliest cases in this file: late in the file one
-   * measured 13-15 s on a development machine (about 3.5 s run alone), and this
-   * file runs about 2.3 times slower on the hosted runner, which puts a case near
-   * the project's 30 s budget there. So each case carries its own documented
-   * budget, sized for the hosted runner with margin. No case is retried.
+   * Even two openings are the costliest cases in this file. They once carried
+   * their own 60 s budget, because late in the old single payments file one
+   * measured 13-15 s locally and over 30 s on the hosted runner — the cost of
+   * Material style tags piling up in `<head>` across the file, which
+   * `setup.dom.ts` now removes after each case. Measured after that fix, run
+   * alone and late in this file: about 3.5 s locally and under 4 s on the hosted
+   * runner, so they run under the project's default 30 s budget again. No case
+   * is retried.
    */
-  const LOST_ANSWER_CASE_TIMEOUT_MS = 60_000;
 
   describe('an allocation whose answer was lost (M-09)', () => {
     const findForm = () =>
@@ -651,72 +653,60 @@ describe('applying a receipt to an invoice', () => {
 
     const keyOf = (call: number) => String(allocatePayment.mock.calls[call]?.[2]);
 
-    it(
-      'retries the same request under the same key, even from a reopened form',
-      async () => {
-        allocatePayment.mockRejectedValueOnce(new Error('the answer was lost'));
-        const user = userEvent.setup();
-        await openReceipt(user);
-        await send(user, '41.0000');
-        await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(1));
-        const lostKey = keyOf(0);
-        expect(lostKey).toMatch(UUID_SHAPE);
+    it('retries the same request under the same key, even from a reopened form', async () => {
+      allocatePayment.mockRejectedValueOnce(new Error('the answer was lost'));
+      const user = userEvent.setup();
+      await openReceipt(user);
+      await send(user, '41.0000');
+      await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(1));
+      const lostKey = keyOf(0);
+      expect(lostKey).toMatch(UUID_SHAPE);
 
-        await reopen(user);
-        await send(user, '41.0000');
-        await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(2));
-        expect(keyOf(1)).toBe(lostKey);
-      },
-      LOST_ANSWER_CASE_TIMEOUT_MS
-    );
+      await reopen(user);
+      await send(user, '41.0000');
+      await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(2));
+      expect(keyOf(1)).toBe(lostKey);
+    });
 
-    it(
-      'a definite answer spends the remembered key: the next allocation is a new one',
-      async () => {
-        allocatePayment.mockRejectedValueOnce(new Error('the answer was lost'));
-        const user = userEvent.setup();
-        await openReceipt(user);
-        await send(user, '41.0000');
-        await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(1));
-        const lostKey = keyOf(0);
+    it('a definite answer spends the remembered key: the next allocation is a new one', async () => {
+      allocatePayment.mockRejectedValueOnce(new Error('the answer was lost'));
+      const user = userEvent.setup();
+      await openReceipt(user);
+      await send(user, '41.0000');
+      await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(1));
+      const lostKey = keyOf(0);
 
-        // Retried from the same form, whose invoice and amount are kept; this time
-        // the answer arrives and is definite (the default mock books it).
-        await submitAndConfirm(user, await findForm());
-        await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(2));
-        expect(keyOf(1)).toBe(lostKey);
-        await waitFor(() => expect(readOutstanding).toHaveBeenCalled());
+      // Retried from the same form, whose invoice and amount are kept; this time
+      // the answer arrives and is definite (the default mock books it).
+      await submitAndConfirm(user, await findForm());
+      await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(2));
+      expect(keyOf(1)).toBe(lostKey);
+      await waitFor(() => expect(readOutstanding).toHaveBeenCalled());
 
-        // Even the same amount on the same invoice is now a new allocation.
-        await reopen(user);
-        await send(user, '41.0000');
-        await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(3));
-        expect(keyOf(2)).toMatch(UUID_SHAPE);
-        expect(keyOf(2)).not.toBe(lostKey);
-      },
-      LOST_ANSWER_CASE_TIMEOUT_MS
-    );
+      // Even the same amount on the same invoice is now a new allocation.
+      await reopen(user);
+      await send(user, '41.0000');
+      await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(3));
+      expect(keyOf(2)).toMatch(UUID_SHAPE);
+      expect(keyOf(2)).not.toBe(lostKey);
+    });
 
-    it(
-      'a different request after a lost answer is a new allocation under a new key',
-      async () => {
-        allocatePayment.mockResolvedValueOnce({
-          state: { status: 'unavailable', messageKey: 'state.unavailable.message', attempt: 1 },
-          created: null,
-        });
-        const user = userEvent.setup();
-        await openReceipt(user);
-        await send(user, '42.0000');
-        await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(1));
-        const lostKey = keyOf(0);
+    it('a different request after a lost answer is a new allocation under a new key', async () => {
+      allocatePayment.mockResolvedValueOnce({
+        state: { status: 'unavailable', messageKey: 'state.unavailable.message', attempt: 1 },
+        created: null,
+      });
+      const user = userEvent.setup();
+      await openReceipt(user);
+      await send(user, '42.0000');
+      await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(1));
+      const lostKey = keyOf(0);
 
-        await reopen(user);
-        await send(user, '43.0000');
-        await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(2));
-        expect(keyOf(1)).not.toBe(lostKey);
-      },
-      LOST_ANSWER_CASE_TIMEOUT_MS
-    );
+      await reopen(user);
+      await send(user, '43.0000');
+      await waitFor(() => expect(allocatePayment).toHaveBeenCalledTimes(2));
+      expect(keyOf(1)).not.toBe(lostKey);
+    });
   });
 
   it('a refused allocation is stated with its reference and nothing is claimed', async () => {
