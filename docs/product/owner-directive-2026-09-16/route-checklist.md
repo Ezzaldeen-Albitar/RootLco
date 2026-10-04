@@ -3131,7 +3131,9 @@ Known limitations of this slice, one line each:
   done, because the model binds documents to their price-list currency, not to the base currency.
 - The reversal half of residual SB1 (a reversal in another currency than its receipt) is still a
   residual and still pinned as one; no reversal request exists yet (GAP-06, an Owner decision).
-- Business-rule refusals are still not recorded as security events (GAP-18, an Owner decision).
+- ~~Business-rule refusals are still not recorded as security events (GAP-18, an Owner decision).~~
+  Closed by P1-32-PRE-OD-FD2A (ADR-023 D12, `business-rule.refused`); permission refusals on the
+  four financial approval decisions by P1-32-PRE-OD-FD12X (D12 extension, below).
 - The race cases force both orders behind a held row lock; the negative control (the same cases
   with the lock removed) was not re-run for them.
 - Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
@@ -3885,3 +3887,43 @@ Residual items, one line each:
 - Two parties holding `service_requester` on the visit at the work order's opening make the fallback refuse rather than pick one; the screen does not yet say which two.
 - The `readOutstanding` Server Action in `features/billing/api.ts` stays, tested, with no screen calling it; the payments screen keeps its own action-backed balance read.
 - The buyer-name lookup is still a Server Action; a held lookup no longer blocks the balance, but it still occupies the action queue for any later action on the page until it settles.
+
+### Permission refusals on finance approvals (P1-32-PRE-OD-FD12X, ADR-023 D12 extension)
+
+Owner decision 2026-10-03. A refusal for want of a permission on approving or rejecting a credit
+note, or approving or rejecting a receipt reversal, is now persisted in the security trail as ONE
+`authorization.denied` event after the refused command rolls back, whether the call came from a
+screen or directly from the API. Before this change, since FD2C and FD4, a refusal by the deferred
+scope check or the database guard for want of the deciding code on a credit-note approval or a
+receipt-reversal approval or rejection was already persisted as `business-rule.refused`
+(`credit_approval_permission_missing`, `receipt_reversal_approve_permission_missing`,
+`receipt_reversal_reject_permission_missing`); those rows stay in that class. Only the route-gate
+refusals, the refusals for want of `sal.finance.view` alone and the permission refusals of a
+credit-note rejection were log lines; no record exists for such an attempt made before the deploy.
+No migration, no new permission code, no screen change.
+
+| Route                                                   | Behaviour now                                                                                                                                                                                         |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/credit-notes/{creditNoteId}/approval`     | Still 403 for a caller without `sal.credit.approve` or `sal.finance.view` in the note's branch; one `authorization.denied` row (operation, branch, missing codes, source); nothing financial changes. |
+| `POST /api/v1/credit-notes/{creditNoteId}/rejection`    | The same, for the rejection; a refusal by its database guard is recorded as source `database`.                                                                                                        |
+| `POST /api/v1/receipt-reversals/{reversalId}/approval`  | The same, with `sal.reversal.approve`; the receipt stays recorded and no financial event is written.                                                                                                  |
+| `POST /api/v1/receipt-reversals/{reversalId}/rejection` | The same, for the rejection.                                                                                                                                                                          |
+
+Preserved: the answer each caller receives is unchanged (status, code and the declared
+`requiredPermissions`); the refusal happens before the record is attempted, so a failed record can
+never let the action through; business-rule refusals (self-approval, the D13 limits, state rules)
+stay `business-rule.refused` and one attempt is never recorded as both; reading the trail still needs
+`iam.audit.view` in the tenant under row-level security; discount-approval and credit-note rules are
+untouched.
+
+Residual items, one line each:
+
+- No API route or screen reads security events yet; a security reviewer reads them only through the database under row-level security (follow-up, not in this slice).
+- Outside the four operations, a permission refusal is persisted only as the `business-rule.refused` record an earlier slice already writes: the receipt-reversal request (`receipt_reversal_request_permission_missing`), a guard permission token on a receipt-reversal withdrawal, the discount decision (`discount_approval_permission_missing`) and the third-party allocation (`third_party_permission_missing`); every other permission refusal remains a server log line.
+- The route-gate rows always record branch `none`: the gate runs before the document is loaded and the four routes declare no `authorizationTarget`, so the trusted branch is recorded only for the `scope` and `database` sources. This is the documented design and nothing leaks.
+- No row is recorded for refusals outside `run()` or before the gate: a missing `Idempotency-Key` or `If-Match` (428/422) on these idempotent or version-guarded routes, a branch-narrowing `ERR-IAM-001` in `server/context/resolve-context.ts:135`, and the empty-target deferred refusal in `authorization.ts` `requireScopedPermissions` (unreachable: the services always pass the document's company and branch), and a denial by `resolveAuthorizedBranches` itself, which none of the four operations uses. None is a refusal of the action for a missing permission code.
+- A guard's "dual control: no user context" `42501` would be recorded as `authorization.denied` with `missing` undetermined; it is unreachable with an authenticated session.
+- The credit-note database paths are proven by unit fakes only, not on a database: the approve guard token `credit_approval_permission_missing`, the reject token `credit_note_reject_permission_missing` and a bare `42501`. Only the receipt-reversal approve guard is database-backed (`tests/backend/od-finance-permission-refusals.test.ts:473`); the receipt-reversal reject guard is also proven by unit fakes only. These cases belong in `tests/backend`.
+- Earlier `*_permission_missing` rows for these four operations stay `business-rule.refused`, so a query by `event_type` now splits one kind of refusal across two classes.
+- `od-finance-receipt-reversal.test.ts` "another branch" asserts zero rows only for the one rule code, not zero `business-rule.refused` rows on that correlation id; the new backend file asserts the stronger condition for the same scenario.
+- The database tier (`tests/backend`, `tests/db`) was run by the implementer on a disposable database only (83 + 236 tests); the reviewer did not reproduce it locally. Hosted "Database migrations and RLS tests" and integration-tests ran on the PR.

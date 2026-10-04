@@ -12950,9 +12950,11 @@
       "tests": [
         "tests/backend/od-finance-credit-decisions.test.ts",
         "tests/backend/od-finance-credit-limits.test.ts",
+        "tests/backend/od-finance-permission-refusals.test.ts",
         "tests/backend/p1-22-credit-note.test.ts",
         "tests/backend/p1-22-currency-coherence.test.ts",
         "tests/backend/p1-31-provisioning-bundle.test.ts",
+        "tests/unit/od-finance-permission-refusals.test.ts",
         "tests/unit/od-finance-refusal-records.test.ts"
       ],
       "classification": "Covered",
@@ -13115,7 +13117,9 @@
       "tests": [
         "tests/backend/od-finance-credit-decisions.test.ts",
         "tests/backend/od-finance-credit-limits.test.ts",
-        "tests/backend/p1-31-provisioning-bundle.test.ts"
+        "tests/backend/od-finance-permission-refusals.test.ts",
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
+        "tests/unit/od-finance-permission-refusals.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/credit-notes/[creditNoteId]/rejection/route.ts"
@@ -13162,7 +13166,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/od-finance-credit-decisions.test.ts",
-        "tests/backend/p1-31-provisioning-bundle.test.ts"
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
+        "tests/unit/od-finance-permission-refusals.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/credit-notes/[creditNoteId]/withdrawal/route.ts"
@@ -14747,8 +14752,10 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-finance-permission-refusals.test.ts",
         "tests/backend/od-finance-receipt-reversal.test.ts",
         "tests/backend/p1-31-provisioning-bundle.test.ts",
+        "tests/unit/od-finance-permission-refusals.test.ts",
         "tests/unit/od-finance-receipt-reversal.test.ts"
       ],
       "classification": "Covered",
@@ -14795,8 +14802,10 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-finance-permission-refusals.test.ts",
         "tests/backend/od-finance-receipt-reversal.test.ts",
-        "tests/backend/p1-31-provisioning-bundle.test.ts"
+        "tests/backend/p1-31-provisioning-bundle.test.ts",
+        "tests/unit/od-finance-permission-refusals.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/receipt-reversals/[reversalId]/rejection/route.ts"
@@ -14841,7 +14850,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/od-finance-receipt-reversal.test.ts"],
+      "tests": [
+        "tests/backend/od-finance-receipt-reversal.test.ts",
+        "tests/unit/od-finance-permission-refusals.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/payments/[paymentId]/reversals/route.ts"
     },

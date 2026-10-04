@@ -437,10 +437,20 @@ describe('D13 — the refusals, each named and recorded once', () => {
     authAs(SAL_PERMISSION_ELSEWHERE);
     const response = await approve(note.id);
     expect(response.status).toBe(403);
-    expect((await bodyOf<ProblemBody>(response)).code).toBe('ERR-IAM-001');
+    expect((await bodyOf<ProblemBody>(response.clone())).code).toBe('ERR-IAM-001');
     expect(await stateOf(note.id)).toBe('pending');
-    expect(await refusals(note.id, 'credit_approval_permission_missing')).toBe(1);
-    expect(await refusals(note.id)).toBe(1);
+    // A PERMISSION refusal since the D12 extension (Owner decision 2026-10-03):
+    // recorded once as `authorization.denied`, and no longer as the business rule
+    // `credit_approval_permission_missing`. `od-finance-permission-refusals` holds
+    // the full contract.
+    expect(await refusals(note.id)).toBe(0);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM iam.security_events
+          WHERE correlation_id = $1 AND event_type = 'authorization.denied'`,
+        [response.headers.get('x-correlation-id')]
+      )
+    ).toBe(1);
   });
 
   it('refuses an approver with no credit-note limit', async () => {

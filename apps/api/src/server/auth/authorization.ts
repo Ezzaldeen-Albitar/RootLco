@@ -27,6 +27,7 @@ import type { RequestContext } from '../context/request-context';
 import { contextLogFields } from '../context/request-context';
 import { log } from '../observability/logger';
 import { metrics, METRICS } from '../observability/metrics';
+import { withPermissionRefusal } from '../audit/business-refusals';
 import type { RegisteredOperation, ScopeRequirement } from './operation-registry';
 
 /** Target the permission is evaluated against, when narrower than the tenant. */
@@ -162,10 +163,15 @@ export async function evaluatePermissions(
 /**
  * Enforces authorization, throwing the uniform denial on failure.
  *
- * A denial is a security-event candidate: it is logged at warn with the
- * correlation ID and counted. Persisting it to `iam.security_events` requires a
- * write privilege the runtime role does not currently hold — see
- * `security-events.ts` and DBCR-P1-13-001.
+ * A denial is logged at warn with the correlation ID and counted, for every
+ * operation. It is also MARKED as a permission refusal (`withPermissionRefusal`),
+ * naming the codes that evaluated false, the branch of the target and whether
+ * this was the pipeline's gate (`route`) or the deferred check against a
+ * discovered scope (`scope`). The mark changes nothing the caller receives. The
+ * route pipeline persists it to `iam.security_events` after the rollback for the
+ * four financial approval decisions only (ADR-023, D12 extension); for every
+ * other operation this mark is not persisted, and the denial remains a log line
+ * unless the service marks it as a `*_permission_missing` business rule.
  */
 export async function requirePermissions(
   db: DbHandle,
@@ -185,12 +191,17 @@ export async function requirePermissions(
     context: { failedPermissions: decision.failedPermissions },
   });
 
-  throw new AppFailure('ERR-IAM-001', {
+  const denial = new AppFailure('ERR-IAM-001', {
     message: `Denied ${operation.id}: missing ${decision.failedPermissions.join(', ')}`,
     // The required codes are safe to disclose — they are documented API metadata,
     // and telling a caller which permission they lack is a usability win with no
     // information gain for an attacker. The *resource* is never mentioned.
     safeDetails: { requiredPermissions: operation.permissions },
+  });
+  throw withPermissionRefusal(denial, {
+    source: options.forceScoped === true ? 'scope' : 'route',
+    missing: decision.failedPermissions,
+    branchId: target.branchId ?? null,
   });
 }
 
