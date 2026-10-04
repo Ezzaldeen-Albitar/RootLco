@@ -317,7 +317,11 @@ running it is CC-OD-30.
   indication, not a mean. Coverage totals are identical to develop `5d3dcbec`'s hosted artifact
   (lines 92.56 %, statements 89.86 %, functions 92.89 %, branches 83.96 %). The three M-09
   lost-answer cases took 3.4–3.9 s on that run (3.4–3.6 s locally), so their own 60 s budget is
-  removed and they run under the default 30 s one; no timeout was raised anywhere.
+  removed and they run under the default 30 s one; no timeout was raised anywhere. At the next head,
+  `85b7a839` (PR CI run 37189940805, web-quality job 111399906756, centralus, the same region as
+  the develop run above): job 11 min 53 s, step 6 min 45 s, summed test time 967 s, the payments
+  files 88.0 s, the M-09 cases 2.4–2.7 s under the default budget, coverage totals unchanged; the
+  P1-27 web run record is taken from that run (7340 tests, 193 files).
 - The coordinator reports that the four finance migrations (`20260930090000`, `20260930100000`, `20260930110000`, `20261001090000`) were backed up, rehearsed on a restored copy and applied forward on 2026-10-01. ADR-023 requires that step (`:289-299`); its execution has no record in the repository, so it is not counted as verified.
 
 ### Checkpoints this matrix relies on
