@@ -833,13 +833,16 @@ above was captured by the server when the revision was created; this screen show
    : "Required for document evidence, and only then." <!-- quotations.decide.documentHelp -->
 7. **Reference note** (optional) <!-- quotations.decide.note --> — a call or message reference, for
    example. A note belongs to a kind of evidence, so choose one in **Evidence** when you type a note.
-8. When the decision is **Approved**, two more boxes appear for who accepted on the customer's side
-   (ADR-023 D11): **Name of the person who accepted** <!-- quotations.decide.contactName --> —
-   "Optional. Kept on the acceptance record when this decision completes the customer's
-   acceptance." <!-- quotations.decide.contactNameHelp --> — and **Their telephone number** <!-- quotations.decide.contactPhone -->
+8. When the decision is **Approved** and it completes the customer's acceptance — the whole
+   revision, or the last open line while every other line is approved — two more boxes appear for
+   who accepted on the customer's side (ADR-023 D11): **Name of the person who accepted** <!-- quotations.decide.contactName --> —
+   "Optional. Kept on the customer's acceptance record, which this decision completes." <!-- quotations.decide.contactNameHelp -->
+   — and **Their telephone number** <!-- quotations.decide.contactPhone -->
    — "Optional. Recording the call itself is not required." <!-- quotations.decide.contactPhoneHelp -->
    Both are typed: the customer record holds the customer's telephone numbers and addresses, not
-   the people who speak for a company. Arabic-Indic digits are accepted.
+   the people who speak for a company. Arabic-Indic digits are accepted. On a line whose approval
+   leaves another line open the boxes are not offered, because no acceptance record is written
+   yet; type the contact with the decision on the last open line.
 9. Press **Record decision** <!-- quotations.decide.submit --> . It stays busy until the decisions
    and the quotation have been read again. A decision half filled in is unsaved work.
 
@@ -882,6 +885,10 @@ acceptance records were kept." <!-- quotations.acceptance.notRecorded -->
 - "Choose the kind of evidence this note refers to, or clear the note." <!-- quotations.decide.kindForNote -->
 - "Enter a telephone number with 3 to 20 digits." <!-- quotations.decide.contactPhoneInvalid -->
   / "The name is limited to 200 characters." <!-- quotations.decide.contactNameTooLong -->
+- "A contact is kept only with the decision that completes the customer's acceptance. Clear the
+  name and telephone number, or record the remaining lines first." <!-- form.violation.acceptance_contact_not_completing -->
+  — another line was still open when the decision reached the service, so the contact could not be
+  kept; nothing was recorded.
 - "The decisions could not be loaded right now." <!-- quotations.decisions.unavailable --> — a read
   failure. "No decision has been recorded yet." <!-- quotations.decisions.none --> is the message
   that means empty.

@@ -8,7 +8,9 @@
  * normalised before anything is written, and refused on a rejection; a replay —
  * the same idempotency key, or the same decision sent again — never writes a
  * second record; a rejection writes none; a per-line acceptance records the
- * contact of the decision that completed it; the record cannot be changed by the
+ * contact of the decision that completed it, and a contact on a line approval
+ * that does not complete the acceptance is refused with nothing written, rather
+ * than accepted and stored nowhere; the record cannot be changed by the
  * runtime; the read publishes it with no id where a name belongs, and says
  * nothing (null) for a revision accepted before records existed; and another
  * tenant can neither read nor create one. No permission code is new: the routes
@@ -549,16 +551,44 @@ describe('only an acceptance writes a record', () => {
     expect(body.acceptance).toBeNull();
   });
 
-  it('line by line, the decision that completes the acceptance supplies the contact', async () => {
+  it('line by line, a contact on an approval that does not complete is refused, and the completing one supplies it', async () => {
     const q = await issuedQuotation(2);
     authAs(SVC_FULL);
     const [first, second] = q.itemIds as [string, string];
+    // One line would still be open, so no record would be written: a contact given
+    // here would be answered 201 and stored nowhere. It is refused, and nothing
+    // is written.
+    const refused = await decideItem(first, {
+      decision: 'approved',
+      channel: 'phone',
+      contactName: 'First Caller',
+      presentedRevisionId: q.revisionId,
+    });
+    expect(refused.status).toBe(422);
+    const problem = await json<{ violations?: { path: string; rule: string }[] }>(refused);
+    expect(problem.violations).toEqual([
+      { path: 'body.contactName', rule: 'acceptance_contact_not_completing' },
+    ]);
+    expect(await decisionCount(q.revisionId)).toBe(0);
+    expect(await recordsFor(q.revisionId)).toHaveLength(0);
+    // A telephone number alone is refused the same way.
+    const refusedPhone = await decideItem(first, {
+      decision: 'approved',
+      channel: 'phone',
+      contactPhone: '0791234567',
+      presentedRevisionId: q.revisionId,
+    });
+    expect(refusedPhone.status).toBe(422);
+    expect(
+      (await json<{ violations?: { path: string; rule: string }[] }>(refusedPhone)).violations
+    ).toEqual([{ path: 'body.contactPhone', rule: 'acceptance_contact_not_completing' }]);
+    expect(await decisionCount(q.revisionId)).toBe(0);
+
     expect(
       (
         await decideItem(first, {
           decision: 'approved',
           channel: 'phone',
-          contactName: 'First Caller',
           presentedRevisionId: q.revisionId,
         })
       ).status

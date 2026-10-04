@@ -709,6 +709,7 @@ function DecisionsPanel({
           messages={messages}
           quotation={quotation}
           revision={revision}
+          decisions={state !== null && state.status === 'ok' ? state.data : null}
           onRecorded={async () => {
             await Promise.all([decisions.reload(), onRecorded()]);
           }}
@@ -927,6 +928,29 @@ function AcceptanceRecordNote({
   );
 }
 
+/**
+ * Whether a decision on `target` would complete the acceptance of `revision`, so
+ * a contact typed with it reaches the acceptance record. The whole revision always
+ * does; one line does only when it is the last undecided line and every other
+ * line is approved. Unknown decisions (not read, or refused) answer `false`: the
+ * server refuses a contact on an approval that does not complete the acceptance,
+ * so the form never offers one it cannot keep.
+ */
+function contactReachesRecord(
+  target: string,
+  revision: Pick<QuotationRevision, 'lines'>,
+  decisions: Pick<RevisionDecisions, 'decisions'> | null
+): boolean {
+  if (target === 'revision') return true;
+  if (decisions === null) return false;
+  if (!revision.lines.some((line) => line.id === target)) return false;
+  const byItem = new Map(decisions.decisions.map((entry) => [entry.quotationItemId, entry]));
+  if (byItem.has(target)) return false;
+  return revision.lines.every(
+    (line) => line.id === target || byItem.get(line.id)?.decision === 'approved'
+  );
+}
+
 /** `ck_acceptance_records_contact_phone`, mirrored: what the server stores. */
 const STORED_CONTACT_PHONE = /^\+?[0-9]{3,20}$/;
 
@@ -945,11 +969,14 @@ function DecisionForm({
   messages,
   quotation,
   revision,
+  decisions,
   onRecorded,
 }: {
   readonly messages: Messages;
   readonly quotation: QuotationDetail;
   readonly revision: QuotationRevision;
+  /** The revision's decisions as last read, or `null` while unread or refused. */
+  readonly decisions: RevisionDecisions | null;
   /** Reads the decisions and the quotation again; resolves once both are on screen. */
   readonly onRecorded: () => Promise<void>;
 }) {
@@ -969,15 +996,17 @@ function DecisionForm({
   const [documentVersionId, setDocumentVersionId] = useState('');
   /*
    * Who spoke for the customer (ADR-023 D11). Typed, because the customer
-   * record holds contact channels rather than people; both optional. Offered on
-   * an approval only — the server keeps them on the acceptance record when this
-   * decision completes the acceptance, and refuses them on a rejection. A value
-   * typed before the decision changed stays in its box, but only an approval
-   * sends it.
+   * record holds contact channels rather than people; both optional. Offered only
+   * on an approval that completes the acceptance — the whole revision, or the last
+   * undecided line while every other line is approved — because the server keeps
+   * them on the acceptance record that decision writes and refuses them on any
+   * other decision. A value typed before the target or decision changed stays in
+   * its box, but only a completing approval sends it.
    */
   const [contactName, setContactName] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const approving = decision === 'approved';
+  const offerContact = approving && contactReachesRecord(target, revision, decisions);
   // Question f: the cursor goes to the first thing to fix, and a complaint is
   // withdrawn once its field changes (route sweep B3).
   const {
@@ -1052,8 +1081,8 @@ function DecisionForm({
     // dropped before, which would leave an acceptance without the reference the
     // operator gave.
     if (!kind && referenceNote.length > 0) found['evidenceKind'] = 'quotations.decide.kindForNote';
-    const name = approving ? contactName.trim() : '';
-    const phone = approving ? contactPhone.trim() : '';
+    const name = offerContact ? contactName.trim() : '';
+    const phone = offerContact ? contactPhone.trim() : '';
     if (name.length > MAX_CONTACT_NAME)
       found['contactName'] = 'quotations.decide.contactNameTooLong';
     if (phone.length > 0 && !acceptablePhone(phone)) {
@@ -1175,7 +1204,7 @@ function DecisionForm({
           {translate(messages, 'quotations.decide.noPayer')}
         </p>
       )}
-      {approving ? (
+      {offerContact ? (
         <>
           <FormTextField
             label={translate(messages, 'quotations.decide.contactName')}

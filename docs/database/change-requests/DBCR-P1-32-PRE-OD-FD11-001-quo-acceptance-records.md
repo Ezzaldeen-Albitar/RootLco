@@ -70,7 +70,10 @@ approves the last open line — writes the record in the same transaction, with 
 already validated against the payer, the contact, the channel and the evidence kind, reference note
 and document version given with that decision. A replay finds the quotation already accepted and
 writes nothing; the unique constraint refuses a second row regardless. A rejection writes none, and a
-contact sent with a rejection is refused rather than lost. The decisions read publishes the record
+contact sent with a rejection is refused rather than lost. A contact sent with a line approval that
+does not complete the acceptance (another line still open, counted under the revision lock before
+anything is written) is refused the same way — `acceptance_contact_not_completing` on the field that
+carries it — because no record would be written to keep it. The decisions read publishes the record
 with the recorder named through the identity directory (which names nobody to a caller without
 `iam.user.read`).
 
@@ -79,6 +82,11 @@ with the recorder named through the identity directory (which names nobody to a 
 Revisions accepted before this migration have no record. Who spoke for the customer and on what
 reference was never captured for them, and inventing it would be the fabrication D11 forbids. Readers
 say "not recorded".
+
+Only the completing decision is carried onto the record (customer, channel, evidence, contact). When
+earlier line decisions attributed the payer or carried evidence and the final line decision did not,
+the record shows the customer as not attributed and no reference; those per-line facts still survive
+on `quo.approval_decisions` and `quo.approval_evidence`. This is the documented design, not a loss.
 
 ## 5. Measured effect
 

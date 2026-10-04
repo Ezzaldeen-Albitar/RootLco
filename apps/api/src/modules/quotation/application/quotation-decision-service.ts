@@ -51,8 +51,10 @@ import {
   DECISIONS,
   EVIDENCE_KINDS,
   QuotationRuleError,
+  assertContactReachesRecord,
   assertEvidenceShape,
   hasExpired,
+  lineDecisionCompletesAcceptance,
   normalizeAcceptanceContact,
   rollUpDecisions,
   type AcceptanceContact,
@@ -372,6 +374,17 @@ export class QuotationDecisionService {
       return this.settleExisting(existing, input);
     }
 
+    // A contact is kept only on the acceptance record, which only the decision
+    // completing the acceptance writes. Counted under the revision lock, before
+    // anything is written, so a contact on any other approval is refused rather
+    // than answered 201 and stored nowhere.
+    if (input.contactName !== undefined || input.contactPhone !== undefined) {
+      const tally = await this.repository.tallyDecisions(db, locked.id);
+      this.refuseContact(() =>
+        assertContactReachesRecord(input, lineDecisionCompletesAcceptance(input.decision, tally))
+      );
+    }
+
     const evidenceRef = await this.resolveEvidenceRef(db, quotation, input.evidence);
     const decisionId = await this.repository.recordItemDecision(db, {
       itemId: item.id,
@@ -589,12 +602,19 @@ export class QuotationDecisionService {
    * half-recorded decision behind.
    */
   private acceptanceContact(input: DecideInput): AcceptanceContact {
-    try {
-      return normalizeAcceptanceContact(
+    return this.refuseContact(() =>
+      normalizeAcceptanceContact(
         input.decision,
         { contactName: input.contactName, contactPhone: input.contactPhone },
         normalizePhoneDigits
-      );
+      )
+    );
+  }
+
+  /** Runs a contact rule, turning its refusal into a field violation naming the box. */
+  private refuseContact<T>(rule: () => T): T {
+    try {
+      return rule();
     } catch (cause) {
       if (cause instanceof AcceptanceContactError) {
         throw new AppFailure('ERR-VAL-001', {

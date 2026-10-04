@@ -181,7 +181,12 @@ const STORED_CONTACT_PHONE = /^\+?[0-9]{3,20}$/;
 export class AcceptanceContactError extends QuotationRuleError {
   public constructor(
     public readonly field: 'contactName' | 'contactPhone',
-    public readonly rule: 'blank' | 'too_big' | 'invalid_phone' | 'acceptance_contact_on_rejection',
+    public readonly rule:
+      | 'blank'
+      | 'too_big'
+      | 'invalid_phone'
+      | 'acceptance_contact_on_rejection'
+      | 'acceptance_contact_not_completing',
     message: string
   ) {
     super(message);
@@ -253,4 +258,45 @@ export function normalizeAcceptanceContact(
     }
   }
   return { contactName, contactPhone };
+}
+
+/**
+ * Whether recording `decision` on ONE still-undecided line completes the
+ * acceptance of its revision: an approval, no line rejected, and every other line
+ * already approved. `tally` is read under the revision lock, before this decision
+ * is written.
+ */
+export function lineDecisionCompletesAcceptance(
+  decision: string,
+  tally: {
+    readonly itemCount: number;
+    readonly approvedCount: number;
+    readonly rejectedCount: number;
+  }
+): boolean {
+  return (
+    decision === 'approved' &&
+    tally.rejectedCount === 0 &&
+    tally.itemCount > 0 &&
+    tally.approvedCount + 1 === tally.itemCount
+  );
+}
+
+/**
+ * A contact reaches the acceptance record only on the decision that completes the
+ * acceptance; on any other approval it would be accepted and then stored nowhere,
+ * so the record would later say no contact was given although one was. Such a
+ * contact is refused, naming the box that carries it, rather than silently lost.
+ */
+export function assertContactReachesRecord(
+  input: { readonly contactName?: string | undefined; readonly contactPhone?: string | undefined },
+  completesAcceptance: boolean
+): void {
+  if (completesAcceptance) return;
+  if (input.contactName === undefined && input.contactPhone === undefined) return;
+  throw new AcceptanceContactError(
+    input.contactName !== undefined ? 'contactName' : 'contactPhone',
+    'acceptance_contact_not_completing',
+    'A contact is recorded only with the decision that completes the acceptance'
+  );
 }

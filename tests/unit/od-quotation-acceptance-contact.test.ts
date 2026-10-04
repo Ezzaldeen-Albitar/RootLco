@@ -6,7 +6,8 @@
  * telephone number is normalised the way every other number in the platform is
  * (Arabic-Indic digits folded, a leading + kept, other characters dropped) and
  * refused outside 3 to 20 digits; nothing is filled in when nothing was given; and a
- * contact on a rejection is refused rather than silently lost. The two decision
+ * contact on a rejection, or on an approval of one line that does not complete the
+ * acceptance, is refused rather than silently lost. The two decision
  * routes accept exactly these two optional fields beside their existing body and
  * refuse anything else, because their schemas are strict.
  */
@@ -15,6 +16,8 @@ import { normalizePhoneDigits } from '@api/shared/text/normalization';
 import {
   AcceptanceContactError,
   MAX_CONTACT_NAME,
+  assertContactReachesRecord,
+  lineDecisionCompletesAcceptance,
   normalizeAcceptanceContact,
 } from '@api/modules/quotation/domain/quotation';
 import { Body as RevisionDecideBody } from '@api/app/api/v1/quotation-revisions/[revisionId]/decisions/route';
@@ -93,6 +96,76 @@ describe('the acceptance contact', () => {
     });
     // A rejection with no contact is the ordinary case and is untouched.
     expect(contact({}, 'rejected')).toEqual({ contactName: null, contactPhone: null });
+  });
+});
+
+describe('a contact only on the decision that completes the acceptance', () => {
+  it('a line approval completes only when every other line is approved and none rejected', () => {
+    expect(
+      lineDecisionCompletesAcceptance('approved', {
+        itemCount: 2,
+        approvedCount: 1,
+        rejectedCount: 0,
+      })
+    ).toBe(true);
+    expect(
+      lineDecisionCompletesAcceptance('approved', {
+        itemCount: 1,
+        approvedCount: 0,
+        rejectedCount: 0,
+      })
+    ).toBe(true);
+    // Another line still open.
+    expect(
+      lineDecisionCompletesAcceptance('approved', {
+        itemCount: 3,
+        approvedCount: 1,
+        rejectedCount: 0,
+      })
+    ).toBe(false);
+    expect(
+      lineDecisionCompletesAcceptance('approved', {
+        itemCount: 2,
+        approvedCount: 0,
+        rejectedCount: 0,
+      })
+    ).toBe(false);
+    // A rejected line means no acceptance at all.
+    expect(
+      lineDecisionCompletesAcceptance('approved', {
+        itemCount: 2,
+        approvedCount: 0,
+        rejectedCount: 1,
+      })
+    ).toBe(false);
+    expect(
+      lineDecisionCompletesAcceptance('rejected', {
+        itemCount: 1,
+        approvedCount: 0,
+        rejectedCount: 0,
+      })
+    ).toBe(false);
+    expect(
+      lineDecisionCompletesAcceptance('approved', {
+        itemCount: 0,
+        approvedCount: 0,
+        rejectedCount: 0,
+      })
+    ).toBe(false);
+  });
+
+  it('refuses a contact on an approval that does not complete, naming the box', () => {
+    expect(
+      refusal(() => assertContactReachesRecord({ contactName: 'First Caller' }, false))
+    ).toEqual({ field: 'contactName', rule: 'acceptance_contact_not_completing' });
+    expect(
+      refusal(() => assertContactReachesRecord({ contactPhone: '0791234567' }, false))
+    ).toEqual({ field: 'contactPhone', rule: 'acceptance_contact_not_completing' });
+  });
+
+  it('lets a completing contact through, and a decision with no contact either way', () => {
+    expect(() => assertContactReachesRecord({ contactName: 'Sami Nasser' }, true)).not.toThrow();
+    expect(() => assertContactReachesRecord({}, false)).not.toThrow();
   });
 });
 

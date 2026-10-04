@@ -32,7 +32,9 @@ import { getMessages } from '@/i18n/get-messages';
  * when, who recorded it and on what reference — with names, never ids — and is
  * labelled a record, not a signature; a revision accepted before records were
  * kept says it has none; every part that was not given says so. The decision
- * form offers the contact on an approval only, sends it trimmed, refuses a
+ * form offers the contact only on an approval that completes the acceptance (the
+ * whole revision, or the last open line while every other line is approved),
+ * sends it trimmed, refuses a
  * telephone number the server would refuse before any request (red field, text
  * beside it, cursor on it, withdrawn once corrected), shows the server's own
  * refusal beside the field, never sends a contact with a rejection, and declares
@@ -484,6 +486,142 @@ describe('the decision form records who accepted', () => {
       await within(form).findByText(EN['quotations.decide.kindForNote'] as string)
     ).toBeVisible();
     expect(decideRevision).not.toHaveBeenCalled();
+  });
+});
+
+describe('the contact is offered only where it reaches the acceptance record', () => {
+  const LINE_2 = 'aaaaaaa1-0000-4000-8000-000000000002';
+  const twoLines = () =>
+    quotation({
+      currentRevision: {
+        ...quotation().currentRevision,
+        lines: [line, { ...line, id: LINE_2, lineNumber: 2, description: 'Brake pads' }],
+      },
+    });
+  const approvedLine = (itemId: string, lineNumber: number) => ({
+    decisionId: `ddddddd1-0000-4000-8000-00000000000${lineNumber}`,
+    quotationRevisionId: ISSUED_ID,
+    quotationItemId: itemId,
+    lineNumber,
+    description: null,
+    decision: 'approved',
+    channel: 'phone',
+    decidedAt: '2026-10-02T09:00:00Z',
+    recordedBy: RECORDER_ID,
+    evidence: [],
+  });
+
+  async function approveTarget(user: ReturnType<typeof userEvent.setup>, target: string) {
+    const form = await screen.findByRole('form', {
+      name: EN['quotations.decide.heading'] as string,
+    });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('quotations.decide.decision')),
+      'approved'
+    );
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('quotations.decide.channel')),
+      'phone'
+    );
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('quotations.decide.target')),
+      target
+    );
+    return form;
+  }
+
+  beforeEach(() => {
+    decideItem.mockResolvedValue({
+      state: success('quotations.decision.success'),
+      created: { decision: 'approved' },
+    });
+  });
+
+  it('hides the contact on a line whose approval leaves another line undecided, and sends none', async () => {
+    const user = userEvent.setup();
+    readRevisionDecisions.mockResolvedValue(okRead(decisions({ itemCount: 2 })));
+    renderDetail({ canDecide: true }, 'en', twoLines());
+    // A contact typed against the whole revision ...
+    const form = await approveTarget(user, 'revision');
+    await user.type(
+      within(form).getByLabelText(labelled('quotations.decide.contactName')),
+      'First Caller'
+    );
+    // ... is not offered once the target is one line of two, both undecided.
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('quotations.decide.target')),
+      LINE_1
+    );
+    expect(within(form).queryByTestId('quotation-decide-contact-name')).toBeNull();
+    expect(within(form).queryByTestId('quotation-decide-contact-phone')).toBeNull();
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.decide.submit'] as string })
+    );
+    await waitFor(() => expect(decideItem).toHaveBeenCalled());
+    expect(decideItem.mock.calls[0]?.[0]).toBe(LINE_1);
+    expect(decideItem.mock.calls[0]?.[1]).not.toHaveProperty('contactName');
+    expect(decideItem.mock.calls[0]?.[1]).not.toHaveProperty('contactPhone');
+  });
+
+  it('offers the contact on the last open line while every other line is approved, and sends it', async () => {
+    const user = userEvent.setup();
+    readRevisionDecisions.mockResolvedValue(
+      okRead(decisions({ itemCount: 2, decidedCount: 1, decisions: [approvedLine(LINE_1, 1)] }))
+    );
+    renderDetail({ canDecide: true }, 'en', twoLines());
+    const form = await approveTarget(user, LINE_2);
+    await user.type(
+      await within(form).findByLabelText(labelled('quotations.decide.contactName')),
+      'Second Caller'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.decide.submit'] as string })
+    );
+    await waitFor(() => expect(decideItem).toHaveBeenCalled());
+    expect(decideItem.mock.calls[0]?.[0]).toBe(LINE_2);
+    expect(decideItem.mock.calls[0]?.[1]).toMatchObject({ contactName: 'Second Caller' });
+  });
+
+  it('hides the contact on a line that is already decided', async () => {
+    const user = userEvent.setup();
+    readRevisionDecisions.mockResolvedValue(
+      okRead(decisions({ itemCount: 2, decidedCount: 1, decisions: [approvedLine(LINE_1, 1)] }))
+    );
+    renderDetail({ canDecide: true }, 'en', twoLines());
+    const form = await approveTarget(user, LINE_1);
+    expect(within(form).queryByTestId('quotation-decide-contact-name')).toBeNull();
+  });
+
+  it('shows the server’s refusal of a contact that no longer completes the acceptance beside its box', async () => {
+    const user = userEvent.setup();
+    // Read as the last open line; another operator decided meanwhile, and the
+    // server refuses the contact rather than storing it nowhere.
+    readRevisionDecisions.mockResolvedValue(
+      okRead(decisions({ itemCount: 2, decidedCount: 1, decisions: [approvedLine(LINE_1, 1)] }))
+    );
+    decideItem.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { contactName: 'form.violation.acceptance_contact_not_completing' },
+        attempt: 1,
+      },
+    });
+    renderDetail({ canDecide: true }, 'en', twoLines());
+    const form = await approveTarget(user, LINE_2);
+    const name = await within(form).findByLabelText(labelled('quotations.decide.contactName'));
+    await user.type(name, 'Second Caller');
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.decide.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(
+        EN['form.violation.acceptance_contact_not_completing'] as string
+      )
+    ).toBeVisible();
+    expect(name).toHaveAttribute('aria-invalid', 'true');
+    expect(name).toHaveValue('Second Caller');
+    expect(AR['form.violation.acceptance_contact_not_completing']).toBeTruthy();
   });
 });
 
