@@ -619,12 +619,24 @@ describe('D4 — a different authorised person approves', () => {
     expect((await reject(reversal.id, reversal.version, { reason: 'no' })).status).toBe(403);
 
     authAs(SAL_PERMISSION_ELSEWHERE);
-    expect((await approve(reversal.id)).status).toBe(403);
+    const elsewhere = await approve(reversal.id);
+    expect(elsewhere.status).toBe(403);
+    // A PERMISSION refusal since the D12 extension (Owner decision 2026-10-03):
+    // recorded once as `authorization.denied`, and no longer as the business rule
+    // `receipt_reversal_approve_permission_missing`. `od-finance-permission-refusals`
+    // holds the full contract.
     expect(
       await refusalEvents(
         'sal.receipt_reversal',
         reversal.id,
         'receipt_reversal_approve_permission_missing'
+      )
+    ).toBe(0);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM iam.security_events
+          WHERE correlation_id = $1 AND event_type = 'authorization.denied'`,
+        [elsewhere.headers.get('x-correlation-id')]
       )
     ).toBe(1);
 

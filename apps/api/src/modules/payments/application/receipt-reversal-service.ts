@@ -42,7 +42,7 @@
  */
 import { AppFailure } from '@/server/errors/app-failure';
 import { appendAudit } from '@/server/audit/audit';
-import { withBusinessRefusal } from '@/server/audit/business-refusals';
+import { withBusinessRefusal, withPermissionRefusal } from '@/server/audit/business-refusals';
 import { isSqlState, sqlState, SQLSTATE, violatedConstraint } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
@@ -351,7 +351,7 @@ export class ReceiptReversalService {
     }
     // Receipt first, then the reversal: the primitive's order.
     const receipt = await this.lockReceipt(db, located.originalReceiptId);
-    await this.authorizeDeciding(db, located, authorizeScope);
+    await this.authorizeDeciding(located, authorizeScope);
     const reversal = await this.repository.findReversalForUpdate(db, reversalId);
     /* c8 ignore next 5 -- the reversal was found above and rows are never deleted. */
     if (!reversal) {
@@ -391,7 +391,7 @@ export class ReceiptReversalService {
     try {
       await this.repository.approveReversal(db, reversal.id, db.context.correlationId);
     } catch (error) {
-      this.refuseDecisionFailure(error, entity, 'Approving a receipt reversal');
+      this.refuseDecisionFailure(error, entity, 'Approving a receipt reversal', reversal.branchId);
     }
 
     const approved = await this.mustFind(db, reversal.id);
@@ -467,7 +467,7 @@ export class ReceiptReversalService {
     try {
       await this.repository.rejectReversal(db, reversal.id, reason);
     } catch (error) {
-      this.refuseDecisionFailure(error, entity, 'Rejecting a receipt reversal');
+      this.refuseDecisionFailure(error, entity, 'Rejecting a receipt reversal', reversal.branchId);
     }
     const rejected = await this.mustFind(db, reversal.id);
     await appendAudit(db, {
@@ -538,7 +538,7 @@ export class ReceiptReversalService {
     try {
       await this.repository.withdrawReversal(db, reversal.id);
     } catch (error) {
-      this.refuseDecisionFailure(error, entity, 'Withdrawing a receipt reversal');
+      this.refuseDecisionFailure(error, entity, 'Withdrawing a receipt reversal', null);
     }
     const withdrawn = await this.mustFind(db, reversal.id);
     await appendAudit(db, {
@@ -577,8 +577,9 @@ export class ReceiptReversalService {
 
   /**
    * Locks a reversal for a rejection or a withdrawal, authorizes its own scope and
-   * compares the caller's `If-Match` with the LOCKED row. A rejection records a
-   * caller who lacks the deciding code in that scope as a refusal (D12).
+   * compares the caller's `If-Match` with the LOCKED row. A rejection refused for
+   * want of a deciding code in that scope is recorded as a permission refusal
+   * (ADR-023, D12 extension) — see `authorizeDeciding`.
    */
   private async lockReversal(
     db: DbHandle,
@@ -594,7 +595,7 @@ export class ReceiptReversalService {
       });
     }
     if (deciding) {
-      await this.authorizeDeciding(db, reversal, authorizeScope, true);
+      await this.authorizeDeciding(reversal, authorizeScope);
     } else {
       await authorizeScope({ companyId: reversal.companyId, branchId: reversal.branchId });
     }
@@ -636,47 +637,39 @@ export class ReceiptReversalService {
   }
 
   /**
-   * Authorizes the reversal's own company and branch for a decision, and records a
-   * caller who lacks `sal.reversal.approve` THERE — holding it elsewhere, or
-   * holding only the credit-note codes — as a refusal (D12). The answer is the
-   * uniform authorization denial either way.
+   * Authorizes the reversal's own company and branch for a decision. A caller who
+   * lacks a declared code THERE — `sal.reversal.approve` held elsewhere or not at
+   * all, or `sal.finance.view` missing — is refused with the uniform authorization
+   * denial, and that refusal is a PERMISSION refusal recorded as one (ADR-023, D12
+   * extension): `requirePermissions` marks it with the codes missing in this scope
+   * and the reversal's branch, and the pipeline writes one `authorization.denied`
+   * event after the rollback. It is no longer marked as the business rule
+   * `receipt_reversal_approve_permission_missing` / `_reject_permission_missing` —
+   * an attempt yields one record of one class. The answer is unchanged.
    */
   private async authorizeDeciding(
-    db: DbHandle,
     reversal: ReceiptReversalRow,
-    authorizeScope: ScopeAuthorizer,
-    rejecting = false
+    authorizeScope: ScopeAuthorizer
   ): Promise<void> {
-    const scope = { companyId: reversal.companyId, branchId: reversal.branchId };
-    try {
-      await authorizeScope(scope);
-    } catch (failure) {
-      if (
-        failure instanceof AppFailure &&
-        failure.code === 'ERR-IAM-001' &&
-        !(await callerHoldsPermission(db, RECEIPT_REVERSAL_PERMISSIONS.decide, scope))
-      ) {
-        withBusinessRefusal(failure, {
-          entityType: 'sal.receipt_reversal',
-          entityId: reversal.id,
-          rule: rejecting
-            ? RECEIPT_REVERSAL_RULES.rejectPermissionMissing
-            : RECEIPT_REVERSAL_RULES.approvePermissionMissing,
-        });
-      }
-      throw failure;
-    }
+    await authorizeScope({ companyId: reversal.companyId, branchId: reversal.branchId });
   }
 
   /**
    * Translates a refusal a decision primitive or its guard raised. The checks above
    * answer every rule first; a token reaching here means the row moved between the
    * two, and is translated and recorded the same way.
+   *
+   * `decidingBranch` is the reversal's branch on an approval or a rejection and
+   * `null` on a withdrawal. On a decision, a refusal for want of a permission —
+   * the guard's `*_permission_missing` token, or a bare `insufficient_privilege` —
+   * is marked as a permission refusal the database decided (ADR-023, D12
+   * extension), recorded as `authorization.denied` rather than as a rule.
    */
   private refuseDecisionFailure(
     error: unknown,
     entity: { readonly type: 'sal.receipt_reversal'; readonly id: string },
-    what: string
+    what: string,
+    decidingBranch: string | null
   ): never {
     const token = reversalRefusalToken(error);
     if (token === 'receipt_reversal_reject_reason_required') {
@@ -695,17 +688,39 @@ export class ReceiptReversalService {
     ) {
       refuse(entity, 'path.reversalId', token, `${what} was refused by the rule ${token}`, error);
     }
-    if (
+    const permissionToken =
       token === RECEIPT_REVERSAL_RULES.approvePermissionMissing ||
-      token === RECEIPT_REVERSAL_RULES.rejectPermissionMissing
-    ) {
-      throw withBusinessRefusal(
-        new AppFailure('ERR-IAM-001', {
-          message: `${what} was refused: the decider lacks the permission in this scope`,
-          cause: error,
-        }),
-        { entityType: entity.type, entityId: entity.id, rule: token }
-      );
+      token === RECEIPT_REVERSAL_RULES.rejectPermissionMissing;
+    if (permissionToken) {
+      const failure = new AppFailure('ERR-IAM-001', {
+        message: `${what} was refused: the decider lacks the permission in this scope`,
+        cause: error,
+      });
+      throw decidingBranch === null
+        ? withBusinessRefusal(failure, {
+            entityType: entity.type,
+            entityId: entity.id,
+            rule: token,
+          })
+        : withPermissionRefusal(failure, {
+            source: 'database',
+            missing: [RECEIPT_REVERSAL_PERMISSIONS.decide],
+            branchId: decidingBranch,
+          });
+    }
+    if (decidingBranch !== null && isSqlState(error, SQLSTATE.insufficientPrivilege)) {
+      try {
+        toDomainFailure(error, what);
+      } catch (failure) {
+        if (failure instanceof AppFailure) {
+          withPermissionRefusal(failure, {
+            source: 'database',
+            missing: [],
+            branchId: decidingBranch,
+          });
+        }
+        throw failure;
+      }
     }
     toDomainFailure(error, what);
   }
