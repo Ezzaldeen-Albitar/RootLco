@@ -160,6 +160,15 @@ in `scripts/lib/development-profile.mjs`, matched on raw paths first:
   `tests/backend/**` and `tests/db/**` import or spawn, transitively, and fails on one whose
   change would not run this block (the platform operator and backfill scripts and the
   owner-acceptance fixture setup were the gap it closed).
+- **`integration-tests`** also runs for `scripts/p1-23-mutation-matrix.mjs` and
+  `scripts/p1-24-mutation-matrix.mjs`, the hostile mutation matrices for the route
+  authorization gate, the denial document and the finance blocker, which no clean-room
+  profile, aggregate or unit test runs (fix round 2). A test reads, for every conditional
+  job, the reusable workflow `pr-ci.yml` calls, keeps the steps that job's `task` selects,
+  derives every repository script those steps reach (npm entry points and literal
+  `scripts/...` paths, transitively), and fails on a non-escalation script whose change would
+  not run that job. Two files the history scanner names only as allow-list data are pinned
+  as exemptions, each proven to be that data entry.
 - **Money and permissions**: any API source change runs integration, database security and
   CodeQL; the money screens (billing, payments, pricing, quotations, inventory, warranty,
   delivery, reports) run both web jobs; `validate:exact-money`, authorization coverage, the
@@ -297,14 +306,57 @@ standing promotion pull request, observed passively.
 
 ### Known limitations
 
-Recorded at the independent review of the change (fix round 1, 2026-10-05). None of these is
-hidden by a skip; each is either mitigated as stated or owed at the next checkpoint.
+Recorded at the independent reviews of the change (fix round 1, 2026-10-05; fix round 2,
+2026-10-06). None of these is hidden by a skip; each is either mitigated as stated or owed at
+the next checkpoint.
 
+- **Fix round 1, re-checked at the round-2 review against the head and a probe.** All four
+  fixes hold. (1) `scripts/platform/**` and `scripts/dev/**` run the serial database block
+  and `authenticated-browser` (probe: `grant-platform-authority.mjs` gives the block and the
+  browser job required). (2) The activation order (review, snapshot, `develop` PUT, update,
+  merge at once) is consistent here, in `branch-ruleset.md` and in
+  `github-required-checks.md`, and VL-CI-002 and VL-CI-004 are split. (3)
+  `verification-ledger.test.ts` refuses a passed checkpoint row that lacks `records-only=true`
+  or `first-parent(D')==D`, or that git contradicts. (4) `keepStricter` fails closed: a null,
+  garbage or pre-policy-shape base gives STRICT records, a full clean room, every job required
+  and `recordsOnly=false`, and `profileFailures` also refuses a non-strict mode when the base
+  is unavailable.
+- **This change is judged STRICT by its own base.** `develop` before this change has no policy
+  module, so `keepStricter` resolves this pull request to the full set and STRICT records. It
+  refreshes its own records under the old gate; there is no bootstrap exception.
+- **Rename blind spot.** Change detection uses `git diff --name-only BASE...HEAD` without
+  `--no-renames`, which drops the source path of a rename (seen on `cb40d9e5`: the R100 source
+  under `supabase/migrations` is absent from the name-only list). Under the development
+  profile a move out of a triggered directory is classified by its destination only. Mostly
+  mitigated: shrinks in the `supabase/migrations`, `tests/db` and `tests/backend` derived
+  markers stay fatal, and `typecheck:api` and `verify:contracts` always run. Adding
+  `--no-renames` for base `develop` would close it.
+- **A checkpoint row's dispatch run is checked for URL shape only.** Nothing mechanically ties
+  the cited run's `head_sha` or its protected-gate Go to D. The workflow's pin step enforces
+  candidate == `github.sha` at dispatch time; the register test cannot.
+- **The npm cache fix is UNVERIFIED until observed.** On `609d8628` a non-installing job
+  logged automatic npm caching with `cache` empty (setup-node v7 caches on its own when
+  `package.json` names npm as its `packageManager`), and the version-1 key was pre-filled by an
+  empty entry. Fix round 2 passes `package-manager-cache` beside `cache` and bumps
+  `npm-cache.version`; a hosted installing job's log must show a non-trivial cache size before
+  the fix is stated as working.
 - **Self-certification is inherent to the `pull_request` trigger.** The head's `pr-ci.yml`,
   `keepStricter` and `evaluate-ci-gate.mjs` all come from the pull request's merge ref, so a
   pull request that edits all three can ignore the base copy. Escalation of those paths holds
-  only if the head code honours it. The real mitigations are the independent review (required
-  approvals are 0) and the next checkpoint.
+  only if the head code honours it; every such path escalates to the full set. The real
+  mitigations are the independent review (required approvals are 0) and the next checkpoint.
+- **`main`'s protection, as read at the round-2 review.** Rulesets 19896793 (`main`, updated
+  2026-07-31) and 19896821 (`develop`, updated 2026-07-29) were read only, are unchanged, and
+  both still require `ci-gate` plus the four `ci.yml` contexts with no bypass actors. Only
+  `ci.yml` jobs (a pull request into `main` or a push to `main`) and `pr-ci.yml`'s gate (base
+  `main` only) can emit those contexts. The review's probe ran 12000 `main`, push, dispatch
+  and no-option classifications against the `origin/develop` classifier: 0 job mismatches,
+  all full and strict. On base `main` the evaluator refuses a skipped `web-quality` or browser
+  tier, a neutral or cancelled job, a development classification, a development clean room,
+  deferred records and missing profile evidence; on a push to `main` it refuses deferred
+  records. No new concurrency group can cancel a `main` or deployment run: the protected group
+  falls back to `github.ref` on a push and never cancels, merge integrity is grouped per
+  commit with cancel off, and the deploy workflows are untouched.
 - **STRICT on `main` is no longer byte-identical; it is stricter.** These now run on `main`,
   release and nightly paths: the always-fatal `RUN_RECORD_HEAD_NOT_ANCESTOR` and
   `RUN_RECORD_FILES_WRONG_FOR_ITS_HEAD` checks (`tierFilesAt` recomputes with today's walk rule
@@ -312,6 +364,7 @@ hidden by a skip; each is either mitigated as stated or owed at the next checkpo
   `verify:classifications` in every clean room (release verification included), and the
   `cleanRoomProfileFailures` check on a protected push to `main`. That can fail a future
   promotion that `bd6b9179` would have accepted. Nothing on `main` is weakened.
+  `verify:classifications` exists at `main` `1262de74`; an older ref may not have it.
 - **Unit-tier assertions are narrowed on all paths, `main` and nightly included.** The
   `p1-27-doc-counts`, evidence-manifest and closing-values tests now compare against
   `measuredAtCommit`, use `>=` for the live tree, and filter `DERIVED_VALUE_BEHIND_TREE` and
@@ -322,14 +375,18 @@ hidden by a skip; each is either mitigated as stated or owed at the next checkpo
   protected-verification dispatch on `main` records `checkpoint-deferred` while the resolver
   actually applies STRICT. `protected-develop-verification.yml` requests deferral for every
   dispatch instead of keying the request on `refs/heads/develop`.
-- **The reviewed head is behind `develop`.** The head reviewed in fix round 1 (`f8befe80`) is
-  behind `develop` `d8d5fa9a` (#513: a new migration and records). The merge is clean and no
-  file overlaps, but strict forces an update, so the merged head is not the reviewed head. The
-  new hosted run is re-triaged before merging.
+- **This pull request stays blocked until `develop`'s ruleset is PUT.** Strict up-to-date
+  then requires the head to contain the `develop` tip at merge time. At the round-2 review it
+  did: `ae1bbc75` merges `develop` `d8d5fa9a`, and a re-merge gives the identical tree
+  `b3901b77`. If `develop` moves before activation, a new records and run cycle is owed, and
+  the new hosted run is re-triaged before merging.
 - **Never executed live, and UNVERIFIED until observed:** the base-`main` path of the new
-  `pr-ci.yml` (`ci-gate` name, full profile, clean-room-profile evidence; probe B is the first
-  proof), `develop-merge-integrity.yml` (its first run is this change's own merge), and the
+  `pr-ci.yml` (`ci-gate` name, full profile, clean-room-profile evidence; probe B is the next
+  synchronize run of the standing promotion pull request, observed passively only),
+  `develop-merge-integrity.yml` (its first run is this change's own merge), and the
   checkpoint dispatch path (the pin step, the candidate-SHA concurrency group, case-b deferral).
+- **Commit author identity.** Every commit of this change is authored as `verify`, the
+  pre-existing local convention on `develop`; it is not new here.
 - **Per-pull-request records edits persist for some changes.** The D1 and D2 assertions of
   `apps/web/tests/p1-27-doc-reconciliation.test.ts` still compare against the live tree, so a
   pull request into `develop` that adds web tests, `scripts/ci` scripts or CRM and vehicle

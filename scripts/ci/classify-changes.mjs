@@ -39,6 +39,7 @@ import {
   API_SOURCE_JOBS,
   BASELINE_CONSUMERS,
   DATABASE_JOBS,
+  INTEGRATION_TESTS_TRIGGERS,
   MONEY_WEB_GLOBS,
   MONEY_WEB_JOBS,
   RECORDS_FILE_ALLOW_LIST,
@@ -403,6 +404,9 @@ export function classifyDevelopment(files, full = classifyFull(files)) {
       need('authenticated-browser', 'authenticated-browser trigger');
     }
     if (matchesAny(file, SERIAL_BLOCK_TRIGGERS)) databaseBlock = true;
+    if (matchesAny(file, INTEGRATION_TESTS_TRIGGERS)) {
+      need('integration-tests', 'integration-tests trigger');
+    }
     if (file.startsWith(`${API_SRC_PATH}/`)) {
       for (const job of API_SOURCE_JOBS) need(job, 'API source');
     }

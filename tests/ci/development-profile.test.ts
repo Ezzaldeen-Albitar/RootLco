@@ -44,6 +44,7 @@ import {
   CHECKPOINT_WORKFLOW_REF,
   DEVELOPMENT_GATE_NAME,
   ESCALATION_PATHS,
+  INTEGRATION_TESTS_TRIGGERS,
   MAIN_GATE_NAME,
   MONEY_API_GLOBS,
   MONEY_WEB_GLOBS,
@@ -56,7 +57,13 @@ import {
   matchesAny,
   resolveRecordsMode,
 } from '../../scripts/lib/development-profile.mjs';
-import { evaluateExpression, stepsOf, topLevelJobs, unwrap } from './workflow-expression';
+import {
+  type ExpressionValue,
+  evaluateExpression,
+  stepsOf,
+  topLevelJobs,
+  unwrap,
+} from './workflow-expression';
 
 const ROOT = join(__dirname, '../..');
 /** The develop tip this policy was designed against. Main's path is pinned to it. */
@@ -839,7 +846,97 @@ describe('the development profile never lets a change skip what it needs', () =>
     expect(probe.runDatabaseBlock).toBe(true);
     expect(probe.jobs['authenticated-browser']?.required).toBe(true);
   });
+
+  it('runs each conditional job when a repository script its own workflow runs changes', () => {
+    /*
+     * The derivation above starts from the suites. This one starts from the
+     * JOBS: for every conditional job it reads the reusable workflow pr-ci.yml
+     * calls, keeps the steps that job's `task` input selects, and derives the
+     * repository scripts those steps reach — npm entry points and literal
+     * `scripts/...` paths, transitively. A non-escalation script reached that
+     * way must make that job required under the development profile, or a pull
+     * request into develop that edits it never runs it before the checkpoint
+     * (TDP-2026-10 fix round 2: the P1-23 and P1-24 mutation matrices run only
+     * in integration-tests).
+     */
+    // Every exemption from the closure is proven to be the data entry it names.
+    for (const { script, namedBy, proof } of NAMED_AS_DATA) {
+      expect(proof(), `${namedBy} names ${script} only as data`).toBe(true);
+    }
+    const callers = topLevelJobs(readRepo('.github/workflows/pr-ci.yml'));
+    const reachedBy = new Map<string, Map<string, string>>();
+    const uncovered: string[] = [];
+    for (const job of DEVELOPMENT_CONDITIONAL_JOBS) {
+      const caller = callers.find((candidate) => candidate.id === job);
+      expect(caller, `${job} is a job of pr-ci.yml`).toBeDefined();
+      const body = caller?.body ?? '';
+      const uses = /^ {4}uses:\s*\.\/(\.github\/workflows\/[\w.-]+\.yml)\s*$/m.exec(body)?.[1];
+      expect(uses, `${job} calls a reusable workflow`).toBeDefined();
+      const task = /^ {6}task:\s*([\w-]+)\s*$/m.exec(body)?.[1] ?? null;
+      const text = stepsSelectedBy(readRepo(uses as string), task);
+      const entries = [
+        ...npmEntryScripts(text),
+        ...[...text.matchAll(/(?:\.\/)?(scripts\/[\w./-]+\.(?:mjs|cjs|js))/g)].map(
+          (m) => m[1] as string
+        ),
+      ];
+      const reached = scriptClosure(entries);
+      reachedBy.set(job, reached);
+      for (const [script, via] of reached) {
+        if (isEscalationPath(script)) continue;
+        if (dev([script]).jobs[job]?.required !== true) {
+          uncovered.push(`${script} (reached from ${via}) does not run ${job}`);
+        }
+      }
+    }
+
+    // The derivation must find what the defect it exists for was about.
+    for (const known of [
+      'scripts/p1-23-mutation-matrix.mjs',
+      'scripts/p1-24-mutation-matrix.mjs',
+    ]) {
+      expect(reachedBy.get('integration-tests')?.has(known), `${known} is reached`).toBe(true);
+    }
+    expect(uncovered, uncovered.join('\n')).toEqual([]);
+
+    // The probe from the review: a permissions validator alone, into develop.
+    for (const matrix of [
+      'scripts/p1-23-mutation-matrix.mjs',
+      'scripts/p1-24-mutation-matrix.mjs',
+    ]) {
+      expect(dev([matrix]).jobs['integration-tests']?.required, matrix).toBe(true);
+    }
+  });
 });
+
+/**
+ * The text of the steps a reusable workflow runs for one `task` input: every
+ * step of every job, minus a step whose `if:` keys on `inputs.task` without
+ * naming this task. Comment lines are dropped, so a command named only in a
+ * comment is not a reference. With no task, every step is kept.
+ */
+function stepsSelectedBy(workflow: string, task: string | null): string {
+  const kept: string[] = [];
+  for (const job of topLevelJobs(workflow)) {
+    for (const chunk of job.body.split(/\n(?= {6}- )/)) {
+      const condition = /^ {8}if:\s*(.+?)\s*$/m.exec(chunk)?.[1] ?? '';
+      if (
+        task !== null &&
+        condition.includes('inputs.task') &&
+        !condition.includes(`inputs.task == '${task}'`)
+      ) {
+        continue;
+      }
+      kept.push(
+        chunk
+          .split('\n')
+          .filter((line) => !line.trimStart().startsWith('#'))
+          .join('\n')
+      );
+    }
+  }
+  return kept.join('\n');
+}
 
 /**
  * The `node <script>` targets of every `npm run <name>` a workflow invokes,
@@ -868,6 +965,34 @@ function npmEntryScripts(workflow: string): string[] {
   }
   return out;
 }
+
+/**
+ * The closure below follows a string literal that IS a scripts path, because a
+ * spawned CLI is named that way. Two files name scripts as DATA and run none of
+ * them: the history scanner, as the `file:` of an allowed historical finding,
+ * and this policy's own trigger table. Each pair is pinned here with a proof
+ * that the naming file holds that path exactly once, as that data entry; the
+ * job derivation test asserts every proof, so an exemption cannot outlive its entry
+ * or hide a real spawn. Only the pinned pair is not followed — any other
+ * reference to the same script still is.
+ */
+const NAMED_AS_DATA: ReadonlyArray<{ script: string; namedBy: string; proof: () => boolean }> = [
+  ...['scripts/check-tracked-secrets.mjs', 'scripts/dev/owner-acceptance/context.mjs'].map(
+    (script) => ({
+      script,
+      namedBy: 'scripts/ci/scan-history.mjs',
+      proof: () => {
+        const source = readRepo('scripts/ci/scan-history.mjs');
+        return source.split(`'${script}'`).length === 2 && source.includes(`file: '${script}',`);
+      },
+    })
+  ),
+  ...INTEGRATION_TESTS_TRIGGERS.map((script) => ({
+    script,
+    namedBy: 'scripts/lib/development-profile.mjs',
+    proof: () => readRepo('scripts/lib/development-profile.mjs').split(`'${script}'`).length === 2,
+  })),
+];
 
 /**
  * Every tracked `scripts/**` file reachable from `entries`, mapped to the
@@ -952,6 +1077,7 @@ function scriptClosure(entries: string[]): Map<string, string> {
     visit(sourceFile);
     for (const reference of references) {
       for (const candidate of [reference, `${reference}.ts`, `${reference}.mjs`]) {
+        if (NAMED_AS_DATA.some((d) => d.script === candidate && d.namedBy === file)) break;
         if (trackedSet.has(candidate)) {
           queue.push({ file: candidate, via });
           break;
@@ -1301,5 +1427,47 @@ describe('replaying the classifier over the merged pull requests #481 to #512', 
     expect(mix.escalated + mix.development).toBe(30);
     // Published, not asserted: the measured mix replaces the design's estimate.
     console.log(`TDP-2026-10 classifier replay over #481–#512: ${JSON.stringify(mix)}`);
+  });
+});
+
+describe('the shared setup action caches npm only in a job that installs', () => {
+  /*
+   * TDP-2026-10 fix round 2. setup-node v7 caches npm on its own whenever
+   * package.json names npm as its package manager and `package-manager-cache`
+   * is left at its default, even with `cache` empty. A job that does not
+   * install then saves an empty entry under the installing jobs' key, and every
+   * installing job restores it as an exact hit and downloads everything again.
+   * Both inputs are evaluated here for an installing and a non-installing job.
+   */
+  const action = readRepo('.github/actions/setup-project/action.yml');
+  const step = action
+    .split(/\n(?= {4}- )/)
+    .find((chunk) => /^ {4}- name: Set up Node\s*$/m.test(chunk));
+  const input = (name: string): string | undefined =>
+    new RegExp(String.raw`^ {8}${name}:\s*(.+?)\s*$`, 'm').exec(step ?? '')?.[1];
+  const evaluateFor = (install: 'true' | 'false', name: string): ExpressionValue => {
+    const raw = input(name);
+    if (raw === undefined) return null;
+    return /^\$\{\{/.test(raw)
+      ? evaluateExpression(unwrap(raw), { 'inputs.install': install })
+      : raw;
+  };
+
+  it('finds the step, and package.json is what turns automatic caching on', () => {
+    expect(step, 'the Set up Node step of setup-project').toBeDefined();
+    expect(step).toContain('uses: actions/setup-node@');
+    const manifest = JSON.parse(readRepo('package.json')) as { packageManager?: string };
+    expect(manifest.packageManager ?? '').toMatch(/^npm@/);
+  });
+
+  it('a job that does not install neither names npm nor lets setup-node cache on its own', () => {
+    expect(evaluateFor('false', 'cache')).toBe('');
+    expect(evaluateFor('false', 'package-manager-cache')).toBe(false);
+  });
+
+  it('a job that installs caches npm under the versioned key', () => {
+    expect(evaluateFor('true', 'cache')).toBe('npm');
+    expect(evaluateFor('true', 'package-manager-cache')).toBe(true);
+    expect(step).toContain('.github/actions/setup-project/npm-cache.version');
   });
 });

@@ -319,6 +319,19 @@ export const SERIAL_BLOCK_TRIGGERS = Object.freeze([
   'scripts/check-*-classification.mjs',
 ]);
 
+/**
+ * Repository scripts only the integration-tests job runs (TDP-2026-10 fix
+ * round 2): the P1-23 and P1-24 hostile mutation matrices, which validate the
+ * route authorization gate, the denial document and the finance blocker. No
+ * clean-room profile, aggregate or unit test runs them, and their category
+ * (`scripts`) does not trigger the job. A test derives every script each
+ * conditional job's workflow reaches and fails on one that does not run it.
+ */
+export const INTEGRATION_TESTS_TRIGGERS = Object.freeze([
+  'scripts/p1-23-mutation-matrix.mjs',
+  'scripts/p1-24-mutation-matrix.mjs',
+]);
+
 /** Any API source change: the database, integration and analysis jobs. */
 export const API_SOURCE_JOBS = Object.freeze([
   'integration-tests',
