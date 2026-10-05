@@ -678,6 +678,8 @@ function ClosurePanel({
         reasonError={reasonError}
         maxLength={MAX_CLOSURE_REASON}
         testId={`closure-dialog-${kind}`}
+        // A typed closure reason is unsaved work: leaving the page asks first.
+        countsAsUnsaved
       />
     </div>
   );

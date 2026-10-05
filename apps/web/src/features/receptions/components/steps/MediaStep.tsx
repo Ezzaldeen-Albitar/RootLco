@@ -386,6 +386,31 @@ function RequirementRow({
     setReason('');
     setShowOverride(false);
   });
+  /*
+   * A CHOSEN file is unsaved work too (Owner question 19, the review of #508).
+   *
+   * Only the open step is mounted, so a step change unmounts this row and the
+   * file control with it: a photograph picked and not yet sent was dropped
+   * without a question. Whether a file is chosen comes from the control's own
+   * `value` (`CaptureFileField` reads no bytes and makes no preview, so there
+   * is no object URL to release); a confirmed discard remounts the control
+   * empty, the way the delivery receiver panel removes a chosen document.
+   */
+  const [fileChosen, setFileChosen] = useState(false);
+  const [fileKey, setFileKey] = useState(0);
+  useUnsavedGuard(fileChosen, () => {
+    setFileChosen(false);
+    setFileKey((current) => current + 1);
+  });
+  /*
+   * Cancel closes the waiver form EMPTY, the same as a confirmed discard: a
+   * form that reopened showing the words it was cancelled with would be
+   * presenting text the operator had already thrown away.
+   */
+  const cancelOverride = () => {
+    setReason('');
+    setShowOverride(false);
+  };
   const code = requirement.requirementCode;
   const bound = contract.bindings.filter((entry) => entry.requirementCode === code);
   const override = contract.overrides.find((entry) => entry.requirementCode === code);
@@ -500,6 +525,10 @@ function RequirementRow({
       {canCapture && !requirement.overridden ? (
         <form
           action={async (formData: FormData) => {
+            // The file has been handed to the action, and React resets the
+            // form's controls once the action settles, so nothing chosen is
+            // left on the screen to lose.
+            setFileChosen(false);
             onDone({
               kind: 'capture',
               requirementCode: code,
@@ -509,8 +538,10 @@ function RequirementRow({
           className="flex flex-wrap items-center gap-2"
         >
           <CaptureFileField
+            key={`evidence-file-${String(fileKey)}`}
             name="evidenceFile"
             label={translate(messages, 'receptions.capture.chooseFile')}
+            onChosenChange={setFileChosen}
           />
           <Button type="submit" variant="contained" disabled={pending}>
             {translate(messages, 'receptions.capture.submit')}
@@ -564,7 +595,7 @@ function RequirementRow({
               <Button type="submit" variant="contained" disabled={reason.trim() === ''}>
                 {translate(messages, 'receptions.capture.overrideSubmit')}
               </Button>
-              <Button type="button" variant="outlined" onClick={() => setShowOverride(false)}>
+              <Button type="button" variant="outlined" onClick={cancelOverride}>
                 {translate(messages, 'form.cancel')}
               </Button>
             </div>

@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { inBranch, renderLtr, renderRtl } from './render';
 import type { CheckInStepProps } from '@/features/receptions/check-in/wizard';
 import type { ReceptionDetail, ReceptionStatus } from '@/features/receptions/receptions-contract';
 import {
@@ -680,6 +680,25 @@ describe('the terminal exits release the vehicle, and both demand a reason', () 
     );
     await user.click(within(dialog).getByRole('button', { name: EN['overlay.cancel'] as string }));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(refuseReception).not.toHaveBeenCalled();
+  });
+
+  it('counts a typed closure reason as unsaved work, so leaving the page asks first', async () => {
+    const leavingIsQuestioned = () => {
+      const event = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const user = userEvent.setup();
+    renderLtr(inBranch(<SummaryStep {...stepProps()} />));
+    const dialog = await openExit(user, 'receptions.closure.refuseSubmit');
+    expect(leavingIsQuestioned()).toBe(false);
+    await user.type(reasonBox(dialog), 'Customer declined the visit');
+    expect(leavingIsQuestioned()).toBe(true);
+
+    await user.click(within(dialog).getByRole('button', { name: EN['overlay.cancel'] as string }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(leavingIsQuestioned()).toBe(false);
     expect(refuseReception).not.toHaveBeenCalled();
   });
 

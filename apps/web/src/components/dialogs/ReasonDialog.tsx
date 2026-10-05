@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { DecisionActions, DecisionDialog } from './ConfirmDialog';
@@ -50,6 +51,13 @@ export interface ReasonDialogProps {
   readonly reasonError?: string | undefined;
   readonly maxLength?: number | undefined;
   readonly testId?: string | undefined;
+  /**
+   * Whether a typed reason is declared as unsaved work while the dialog is
+   * open, so leaving the page asks first. Opt-in, and off unless a caller
+   * states it, so every dialog that does not ask for it behaves as it did.
+   * A confirmed discard is the dialog's own Cancel.
+   */
+  readonly countsAsUnsaved?: boolean | undefined;
 }
 
 export function ReasonDialog(props: ReasonDialogProps) {
@@ -71,8 +79,10 @@ function OpenReasonDialog({
   reasonError,
   maxLength,
   testId,
+  countsAsUnsaved = false,
 }: ReasonDialogProps) {
   const [reason, setReason] = useState('');
+  useUnsavedGuard(countsAsUnsaved && reason !== '', onCancel);
   const [touched, setTouched] = useState(false);
   // The reason as it was last sent: a server refusal is about that text only.
   const [sent, setSent] = useState<string | null>(null);

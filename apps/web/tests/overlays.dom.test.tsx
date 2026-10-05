@@ -18,7 +18,7 @@ import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { REDUCED_MOTION_QUERY } from '@/components/ui-foundation/use-reduced-motion';
 import type { Locale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
-import { BOTH_DIRECTIONS, renderLtr, renderRtl } from './render';
+import { BOTH_DIRECTIONS, inBranch, renderLtr, renderRtl } from './render';
 
 const messages = getMessages('en');
 
@@ -579,10 +579,12 @@ describe('the Material UI reason dialog', () => {
     onConfirm,
     destructive = false,
     reasonError,
+    countsAsUnsaved,
   }: {
     readonly onConfirm: (reason: string) => void;
     readonly destructive?: boolean;
     readonly reasonError?: string;
+    readonly countsAsUnsaved?: boolean;
   }) {
     const [open, setOpen] = useState(true);
     return (
@@ -603,6 +605,7 @@ describe('the Material UI reason dialog', () => {
           confirmLabel="Refuse"
           destructive={destructive}
           reasonError={reasonError}
+          countsAsUnsaved={countsAsUnsaved}
         />
       </>
     );
@@ -722,5 +725,34 @@ describe('the Material UI reason dialog', () => {
       await user.tab();
       expect(dialog.contains(document.activeElement), `escaped after ${index + 1} tabs`).toBe(true);
     }
+  });
+
+  /** Whether the browser would be told to ask before this page is left, now. */
+  function leavingIsQuestioned(): boolean {
+    const event = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(event);
+    return event.defaultPrevented;
+  }
+
+  it('declares a typed reason as unsaved work only when the caller opts in', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<MuiReasonHost onConfirm={vi.fn()} countsAsUnsaved />));
+    const box = await screen.findByRole('textbox', { name: /Reason/ });
+    // An open, empty box holds nothing to lose.
+    expect(leavingIsQuestioned()).toBe(false);
+    await user.type(box, 'Customer withdrew');
+    expect(leavingIsQuestioned()).toBe(true);
+
+    // Cancel drops the reason, and with it the question.
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(leavingIsQuestioned()).toBe(false);
+  });
+
+  it('leaves every caller that does not opt in exactly as it was', async () => {
+    const user = userEvent.setup();
+    renderLtr(inBranch(<MuiReasonHost onConfirm={vi.fn()} />));
+    await user.type(await screen.findByRole('textbox', { name: /Reason/ }), 'Customer withdrew');
+    expect(leavingIsQuestioned()).toBe(false);
   });
 });

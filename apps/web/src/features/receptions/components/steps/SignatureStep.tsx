@@ -167,9 +167,21 @@ export function SignatureStep({
    * unsaved work. A capture whose answer never arrives is said as that.
    */
   const [draft, setDraft] = useState(EMPTY_SIGNATURE);
+  /*
+   * Whether a signature file is chosen and not yet sent — unsaved work like the
+   * three choices beside it (Owner question 19, the review of #508). Read from
+   * the control's own `value`; `CaptureFileField` reads no bytes and makes no
+   * preview, so there is no object URL to release. A confirmed discard remounts
+   * the control empty.
+   */
+  const [fileChosen, setFileChosen] = useState(false);
+  const [fileKey, setFileKey] = useState(0);
   const [state, capture, capturing] = useActionState(
     async (previous: ActionState, form: FormData): Promise<ActionState> => {
       const attempt = (previous.attempt ?? 0) + 1;
+      // The file is in the action's hands now, and React resets the form's
+      // controls once the action settles, whatever it answers.
+      setFileChosen(false);
       const found: Record<string, string> = {};
       if (String(form.get('signerRole') ?? '') === '') found['signerRole'] = 'form.required';
       if (String(form.get('purpose') ?? '') === '') found['purpose'] = 'form.required';
@@ -196,9 +208,12 @@ export function SignatureStep({
   );
   const formRef = useFocusFirstInvalid(state);
   const corrections = useClearOnCorrect(state);
-  const dirty = draft.signerRole !== '' || draft.purpose !== '' || draft.signerPartnerId !== '';
+  const dirty =
+    draft.signerRole !== '' || draft.purpose !== '' || draft.signerPartnerId !== '' || fileChosen;
   useUnsavedGuard(dirty, () => {
     setDraft(EMPTY_SIGNATURE);
+    setFileChosen(false);
+    setFileKey((current) => current + 1);
     formRef.current?.reset();
   });
   const fieldError = (name: string): string | undefined => {
@@ -344,8 +359,10 @@ export function SignatureStep({
               error={fieldError('signerPartnerId')}
             />
             <CaptureFileField
+              key={`signatureFile-${String(fileKey)}`}
               name="signatureFile"
               label={translate(messages, 'receptions.signature.chooseFile')}
+              onChosenChange={setFileChosen}
             />
             {fieldError('signatureFile') ? (
               <p role="alert" className="text-supporting text-error">

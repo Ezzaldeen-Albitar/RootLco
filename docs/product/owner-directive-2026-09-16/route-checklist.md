@@ -1139,8 +1139,9 @@ the declaration itself excluded). The risk: after a confirmed "Discard and chang
 keeps its typed input and submits the previous branch's input into the new one. `QA1B-04`
 audited 46 call sites; QA round three added three (`QA1B-06`: the two parts draw forms; `QA1B-07`:
 the price rule form), so there were 49; the appointments slice adds the reschedule form, and the
-reception wizard step guard the media waiver reason and the signature repudiation reason. Each
-owner has one mechanism:
+reception wizard step guard the media waiver reason and the signature repudiation reason, and the
+chosen-files slice the media step's chosen file and the summary step's closure reason (the
+opt-in `countsAsUnsaved` of `ReasonDialog`). Each owner has one mechanism:
 
 - **a** — remounted or reset by the branch itself: keyed on the branch pair or the
   working-context version, unmounted by the screen's branch handler, or reset through
@@ -1156,6 +1157,7 @@ Line numbers are those of the call on the branch head that last changed this tab
 | File (`apps/web/src/…`)                                                          | Line                    | Mech.   | Evidence                                                                                                                                                                                                                                              |
 | -------------------------------------------------------------------------------- | ----------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | components/forms/RecordForm.tsx                                                  | 399                     | c→b     | `onDiscard` sets values back to how the form opened, clears dirty and bumps `discards`, which is part of the select and checkbox `key`. Hosts: customer profile, vehicle history and relations, readings, intake vehicle step                         |
+| components/dialogs/ReasonDialog.tsx                                              | 85                      | c→b     | chosen-files slice: opt-in (`countsAsUnsaved`), declared only by the check-in summary's closure dialogs; a typed reason while the dialog is open; `onDiscard` is the dialog's own Cancel. Every other caller is unchanged (tested)                    |
 | components/search/SearchPicker.tsx                                               | 152                     | a       | `useWorkingContextChange` empties the term and the choice; the term is keyed on `context.version` (covers CustomerPicker, InvoicePicker, AccountPicker, ItemPicker)                                                                                   |
 | features/work-orders/components/WorkOrderPicker.tsx                              | 176                     | a       | the same `useWorkingContextChange` reset; term keyed on `context.version`                                                                                                                                                                             |
 | features/inventory/components/pickers.tsx (ReferenceBox)                         | 238                     | a       | controlled by its host form: InventoryScreen ReserveForm (a, below); the parts draw forms (a, below); Movements passes `countsAsUnsaved={false}`                                                                                                      |
@@ -1192,9 +1194,10 @@ Line numbers are those of the call on the branch head that last changed this tab
 | features/receptions/components/CheckInStartScreen.tsx                            | 629                     | b       | `onDiscard` resets origin and note, appointment, customer and its typed search, vehicle, intake facts, hand-over and complaints (`QA1B-02`)                                                                                                           |
 | features/receptions/components/steps/EvidencePanels.tsx (`useStepForm`)          | 726                     | c→b     | reception intake slice: every capture form of the wizard (complaint, inspection, finding, leak, damage map and mark, warning light, contents, party role, authorization, refusal) holds its draft here; `onDiscard` puts the form back as it opened   |
 | features/receptions/components/steps/ReadingsStep.tsx (OdometerForm)             | 367                     | c→b     | reception intake slice: the typed reading, unit, moment and source; `onDiscard` empties them                                                                                                                                                          |
-| features/receptions/components/steps/MediaStep.tsx (RequirementRow)              | 385                     | c→b     | reception wizard step guard: a typed waiver reason in an open waiver form; `onDiscard` empties the reason and closes the form                                                                                                                         |
-| features/receptions/components/steps/SignatureStep.tsx                           | 200                     | c→b     | reception intake slice: the chosen signer, purpose and party; `onDiscard` empties them and resets the form (the chosen file with it)                                                                                                                  |
-| features/receptions/components/steps/SignatureStep.tsx (SignatureRow)            | 459                     | c→b     | reception wizard step guard: a typed repudiation reason in an open repudiation form; `onDiscard` empties the reason and closes the form                                                                                                               |
+| features/receptions/components/steps/MediaStep.tsx (RequirementRow)              | 385                     | c→b     | reception wizard step guard: a typed waiver reason in an open waiver form; `onDiscard` empties the reason and closes the form; Cancel now closes it empty too                                                                                         |
+| features/receptions/components/steps/MediaStep.tsx (RequirementRow, chosen file) | 401                     | c→b     | chosen-files slice: a file chosen in the capture form and not yet sent (`CaptureFileField` `onChosenChange`); `onDiscard` remounts the control empty                                                                                                  |
+| features/receptions/components/steps/SignatureStep.tsx                           | 213                     | c→b     | reception intake slice: the chosen signer, purpose and party; chosen-files slice: the chosen signature file counts too; `onDiscard` empties them, remounts the file control and resets the form                                                       |
+| features/receptions/components/steps/SignatureStep.tsx (SignatureRow)            | 476                     | c→b     | reception wizard step guard: a typed repudiation reason in an open repudiation form; `onDiscard` empties the reason and closes the form                                                                                                               |
 | features/receptions/intake/components/IntakeCustomerCreate.tsx                   | 104                     | c→b     | reception intake slice: typed customer details; `onDiscard` empties them (the status back to its default)                                                                                                                                             |
 | features/receptions/intake/components/IntakeVehicleStep.tsx (VehicleCreate)      | 614                     | c→b     | reception intake slice: typed vehicle details; `onDiscard` empties them                                                                                                                                                                               |
 | features/receptions/intake/components/IntakeVehicleStep.tsx (LinkForm)           | 901                     | c→b     | reception intake slice: the chosen relationship role; `onDiscard` empties it                                                                                                                                                                          |
@@ -3955,8 +3958,8 @@ severity is stored as `not_stated` (`supabase/migrations/20261004090000_*`).
 
 Residual items, one line each:
 
-- Chosen (not typed) files are not declared as unsaved work, so a step change drops them without asking: the media step capture form (`CaptureFileField`, `MediaStep.tsx:511`) and the signature step capture file, which the dirty flag at `SignatureStep.tsx:199` does not count. The slice wording is "typed input", so this is recorded rather than blocking; the Owner should confirm whether a chosen file counts.
-- Cancel on the media step waiver form and on the signature repudiation form only closes the form and keeps the typed reason; the guard is off while the form is closed, and reopening shows the old text again. There is no data-loss path, only stale text.
+- Chosen (not typed) files are not declared as unsaved work, so a step change drops them without asking: the media step capture form (`CaptureFileField`, `MediaStep.tsx:511`) and the signature step capture file, which the dirty flag at `SignatureStep.tsx:199` does not count. The slice wording is "typed input", so this is recorded rather than blocking; the Owner should confirm whether a chosen file counts. Closed by P1-32-PRE-OD-RCF (below).
+- Cancel on the media step waiver form and on the signature repudiation form only closes the form and keeps the typed reason; the guard is off while the form is closed, and reopening shows the old text again. There is no data-loss path, only stale text. The media waiver half is closed by P1-32-PRE-OD-RCF (below); the signature repudiation half stays open.
 - Coverage was not evaluated in CI for head 77521094: in unit-coverage job 111484537631 the coverage-gate step stopped with ENOENT on `coverage/unit/coverage-summary.json` because the unit step failed first on the expected P1-27 doc-counts case. The coverage floors for the new code are unverified until the records step turns the unit tier green.
 - The database and backend tiers were not run locally by the implementer: `tests/db/rec-complaint-severity-not-stated.test.ts` (4 cases) and the 2 new cases in `tests/backend/p1-18-reception-evidence.test.ts` were read but not executed. On head 77521094 the reviewer observed the hosted database (111484470302), migration-replay (111484537580), integration (111484537510) and security-matrix (111484537590) jobs green; that observation does not cover a later head.
 - Historical ambiguity is stated in the migration header, the column comment and `docs/database/data-dictionary.md`: rows written before `20261004090000` hold `medium` for an omitted severity and cannot be told apart from a stated `medium`. No rows are rewritten (the migration is DDL and COMMENT only), so historical `medium` counts stay inflated; the Owner should be told.
@@ -4018,3 +4021,35 @@ Known limitations of this slice, one line each:
 - A builder caller without `inv.item.read` is not offered a part line; there is no typed-reference fallback for parts.
 - The invoice preview does not yet show a part line's unit; the invoice detail does. Prints are unchanged (D10).
 - Invoices are not linked to part issues and unquoted part issues are not billed (D5/D15).
+
+### Chosen files count as unsaved work in the check-in wizard (P1-32-PRE-OD-RCF)
+
+Follow-up to P1-32-PRE-OD-RWS (Owner question 19; the Owner requirement "unsaved-work
+protection"). A file chosen in the media step's capture form or the signature step's capture form
+and not yet sent is declared through the existing `useUnsavedGuard`, read from
+`CaptureFileField`'s existing `onChosenChange`: a step change asks first, Stay keeps the file, a
+confirmed discard remounts the control empty, and leaving the page asks too. `CaptureFileField`
+reads no bytes and makes no preview, so there is no object URL to release; the DOM cases hold the
+screen to that. Cancel on the media waiver form now closes it empty, the same as a confirmed
+discard.
+
+Every wizard step was re-checked for input held outside a guarded form. Every `useStepForm`
+form, the odometer reading, the signature choices and both reason forms were already declared;
+the pickers declare their own choice. The one remaining input was the summary step's closure
+reason in `ReasonDialog`: the modal blocks a step change and a branch switch, but leaving the page
+dropped a typed reason without asking. `ReasonDialog` gains an opt-in `countsAsUnsaved` (off by
+default, so the discount-approval, credit-note, invoice, receipt-reversal, work-order closure and
+design-gallery callers are unchanged), and only the check-in summary passes it.
+
+Tests: `apps/web/tests/reception-wizard-step-guard.dom.test.tsx` (a chosen media file and a chosen
+signature file: dialog on a step change, Stay keeps it, the provider's discard empties the control
+in place, the page-leave question follows it, no object URL is created; waiver Cancel reopens
+empty; the chosen-file question in Arabic, right to left), `apps/web/tests/overlays.dom.test.tsx`
+(the opt-in, and a caller without it unchanged) and `apps/web/tests/reception-summary.dom.test.tsx`
+(the closure reason asks before the page is left). Each was falsified once by removing the
+behaviour it protects.
+
+Residual items, one line each:
+
+- Cancel on the signature repudiation form still keeps the typed reason for the next opening (stale text, no data-loss path); it was outside this slice.
+- Cancel on the summary's closure dialog still drops a typed reason without asking, because Cancel is the operator's own answer; only leaving the page asks.

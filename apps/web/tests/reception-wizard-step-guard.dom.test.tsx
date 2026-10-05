@@ -1,7 +1,7 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useState, type ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { inBranch, renderLtr, renderRtl } from './render';
@@ -14,7 +14,7 @@ import type {
   ReceptionDetail,
   SignatureEntry,
 } from '@/features/receptions/receptions-contract';
-import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
+import { useUnsavedGuard, useUnsavedWork } from '@/features/working-context/WorkingContextProvider';
 
 /**
  * The check-in wizard asks before a step change throws typed work away
@@ -27,9 +27,10 @@ import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvid
  * the real complaint form, the one the browser checkpoint lost words from,
  * the media step's waiver reason and the signature step's repudiation reason.
  *
- * Known limitation, recorded rather than guarded: a CHOSEN file (the media
- * capture form, the signature capture form) is not typed input and is not
- * declared as unsaved work, so a step change drops it without asking.
+ * A CHOSEN file is unsaved work too (the review of #508): the media capture
+ * form and the signature capture form both declare a file picked and not yet
+ * sent, so a step change, a confirmed discard and leaving the page treat it
+ * exactly like typed words.
  */
 
 const EN = en as Record<string, string>;
@@ -194,21 +195,96 @@ const STEPS: readonly CheckInStepDefinition[] = [
   },
 ];
 
-function renderShell(steps: readonly CheckInStepDefinition[] = STEPS, locale: 'en' | 'ar' = 'en') {
+function renderShell(
+  steps: readonly CheckInStepDefinition[] = STEPS,
+  locale: 'en' | 'ar' = 'en',
+  beside: ReactNode = null
+) {
   const render = locale === 'en' ? renderLtr : renderRtl;
   return render(
     inBranch(
-      <CheckInWizardShell
-        locale={locale}
-        messages={locale === 'en' ? en : ar}
-        initialDetail={DETAIL}
-        steps={steps}
-        capabilities={CAPABILITIES}
-        session={{ userId: 'user-1', displayName: 'Front Desk' }}
-      />,
+      <>
+        <CheckInWizardShell
+          locale={locale}
+          messages={locale === 'en' ? en : ar}
+          initialDetail={DETAIL}
+          steps={steps}
+          capabilities={CAPABILITIES}
+          session={{ userId: 'user-1', displayName: 'Front Desk' }}
+        />
+        {beside}
+      </>,
       { locale }
     )
   );
+}
+
+/**
+ * The provider's own discard, pressed directly: what a confirmed branch switch
+ * or page leave does to every dirty declaration, without leaving the step.
+ */
+function DiscardEverything() {
+  const work = useUnsavedWork();
+  return (
+    <button type="button" onClick={() => work.discard()}>
+      discard every declaration
+    </button>
+  );
+}
+
+/** Whether the browser would be told to ask before this page is left, now. */
+function leavingIsQuestioned(): boolean {
+  const event = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(event);
+  return event.defaultPrevented;
+}
+
+const MEDIA_STEP: CheckInStepDefinition = {
+  id: 'media-and-photographs',
+  titleKey: 'receptions.steps.media.title',
+  descriptionKey: 'receptions.steps.media.description',
+  Component: MediaStep,
+};
+
+const SIGNATURE_STEP: CheckInStepDefinition = {
+  id: 'signature',
+  titleKey: 'receptions.steps.signature.title',
+  descriptionKey: 'receptions.steps.signature.description',
+  Component: SignatureStep,
+};
+
+const photo = () => new File([new Uint8Array([1, 2, 3])], 'vin-plate.jpg', { type: 'image/jpeg' });
+
+/*
+ * `CaptureFileField` reads no bytes and makes no preview, so a chosen file has
+ * no object URL to release. These cases install the two functions jsdom lacks
+ * and hold the screen to that: a preview added later without its release would
+ * fail here first.
+ */
+const createObjectURL = vi.fn(() => 'blob:preview');
+const revokeObjectURL = vi.fn();
+beforeEach(() => {
+  Object.defineProperty(URL, 'createObjectURL', { value: createObjectURL, configurable: true });
+  Object.defineProperty(URL, 'revokeObjectURL', { value: revokeObjectURL, configurable: true });
+});
+afterEach(() => {
+  Reflect.deleteProperty(URL, 'createObjectURL');
+  Reflect.deleteProperty(URL, 'revokeObjectURL');
+});
+
+function mockSignatureReads() {
+  listPartyRoles.mockResolvedValue({
+    status: 'ok',
+    rows: [],
+    nextCursor: null,
+    hasMore: false,
+    correlationId: 'corr-parties',
+  });
+  readSignatures.mockResolvedValue({
+    status: 'ok',
+    data: { receptionVisitId: 'rv-1', signatures: [] },
+    correlationId: 'corr-sig',
+  });
 }
 
 const stepButton = (index: number, titleKey: string, catalogue = EN) =>
@@ -452,6 +528,146 @@ describe('the check-in wizard asks before a step change discards typed work', ()
     await user.click(await screen.findByTestId('signature-repudiate-open-sig-1'));
     expect(reasonBox()).toHaveValue('');
     expect(recordSignatureEvent).not.toHaveBeenCalled();
+  });
+
+  it('treats a chosen media file as unsaved work: Stay keeps it, Discard clears it', async () => {
+    readCaptureContract.mockResolvedValue({
+      status: 'ok',
+      data: UNMET_VIN,
+      correlationId: 'corr-capture',
+    });
+    const user = userEvent.setup();
+    renderShell([MEDIA_STEP, STEPS[1]!], 'en', <DiscardEverything />);
+    const fileControl = () =>
+      screen.getByLabelText<HTMLInputElement>(EN['receptions.capture.chooseFile']!);
+
+    await user.upload(await waitFor(fileControl), photo());
+    expect(fileControl().files).toHaveLength(1);
+    // Leaving the page asks too.
+    expect(leavingIsQuestioned()).toBe(true);
+
+    await user.click(stepButton(2, 'receptions.steps.readings.title'));
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', {
+        name: EN['receptions.wizard.discard.stay']!,
+      })
+    );
+    // Stay keeps the step and the chosen file.
+    expect(screen.queryByText('second step body')).not.toBeInTheDocument();
+    expect(fileControl().files).toHaveLength(1);
+    expect(fileControl().files?.[0]?.name).toBe('vin-plate.jpg');
+
+    // A confirmed discard empties the control where it stands.
+    await user.click(screen.getByRole('button', { name: 'discard every declaration' }));
+    expect(fileControl()).toHaveValue('');
+    expect(fileControl().files ?? []).toHaveLength(0);
+    expect(leavingIsQuestioned()).toBe(false);
+    await user.click(stepButton(2, 'receptions.steps.readings.title'));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByText('second step body')).toBeInTheDocument();
+
+    // Discard from the step question moves on, and the step comes back empty.
+    await user.click(stepButton(1, 'receptions.steps.media.title'));
+    await user.upload(await waitFor(fileControl), photo());
+    await user.click(stepButton(2, 'receptions.steps.readings.title'));
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', {
+        name: EN['receptions.wizard.discard.confirm']!,
+      })
+    );
+    expect(screen.getByText('second step body')).toBeInTheDocument();
+    await user.click(stepButton(1, 'receptions.steps.media.title'));
+    expect(await waitFor(fileControl)).toHaveValue('');
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('treats a chosen signature file as unsaved work: Stay keeps it, Discard clears it', async () => {
+    mockSignatureReads();
+    const user = userEvent.setup();
+    renderShell([SIGNATURE_STEP, STEPS[1]!], 'en', <DiscardEverything />);
+    const fileControl = () =>
+      screen.getByLabelText<HTMLInputElement>(EN['receptions.signature.chooseFile']!);
+
+    // Nothing chosen and nothing selected: nothing to ask about.
+    await waitFor(fileControl);
+    expect(leavingIsQuestioned()).toBe(false);
+
+    await user.upload(fileControl(), photo());
+    expect(leavingIsQuestioned()).toBe(true);
+    await user.click(stepButton(2, 'receptions.steps.readings.title'));
+    await user.click(
+      within(screen.getByRole('alertdialog')).getByRole('button', {
+        name: EN['receptions.wizard.discard.stay']!,
+      })
+    );
+    expect(screen.queryByText('second step body')).not.toBeInTheDocument();
+    expect(fileControl().files).toHaveLength(1);
+
+    await user.click(screen.getByRole('button', { name: 'discard every declaration' }));
+    expect(fileControl()).toHaveValue('');
+    expect(fileControl().files ?? []).toHaveLength(0);
+    expect(leavingIsQuestioned()).toBe(false);
+    await user.click(stepButton(2, 'receptions.steps.readings.title'));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByText('second step body')).toBeInTheDocument();
+
+    expect(createObjectURL).not.toHaveBeenCalled();
+    expect(revokeObjectURL).not.toHaveBeenCalled();
+  });
+
+  it('closes the waiver form empty on Cancel, so reopening it shows no old reason', async () => {
+    readCaptureContract.mockResolvedValue({
+      status: 'ok',
+      data: UNMET_VIN,
+      correlationId: 'corr-capture',
+    });
+    const user = userEvent.setup();
+    renderShell([MEDIA_STEP, STEPS[1]!]);
+    const reasonBox = () =>
+      screen.getByRole('textbox', { name: EN['receptions.capture.overrideReason']! });
+
+    await user.click(await screen.findByTestId('capture-override-open-vin'));
+    await user.type(reasonBox(), 'The bay is flooded');
+    expect(leavingIsQuestioned()).toBe(true);
+
+    await user.click(screen.getByRole('button', { name: EN['form.cancel']! }));
+    expect(
+      screen.queryByRole('textbox', { name: EN['receptions.capture.overrideReason']! })
+    ).not.toBeInTheDocument();
+    expect(leavingIsQuestioned()).toBe(false);
+
+    await user.click(screen.getByTestId('capture-override-open-vin'));
+    expect(reasonBox()).toHaveValue('');
+    expect(overrideCaptureRequirement).not.toHaveBeenCalled();
+  });
+
+  it('asks about a chosen file in Arabic, right to left', async () => {
+    readCaptureContract.mockResolvedValue({
+      status: 'ok',
+      data: UNMET_VIN,
+      correlationId: 'corr-capture',
+    });
+    const user = userEvent.setup();
+    renderShell([MEDIA_STEP, STEPS[1]!], 'ar');
+    const fileControl = () =>
+      screen.getByLabelText<HTMLInputElement>(AR['receptions.capture.chooseFile']!);
+
+    await user.upload(await waitFor(fileControl), photo());
+    await user.click(stepButton(2, 'receptions.steps.readings.title', AR));
+
+    const dialog = screen.getByRole('alertdialog', {
+      name: AR['receptions.wizard.discard.title']!,
+    });
+    expect(dialog.closest('[dir]')?.getAttribute('dir') ?? document.documentElement.dir).toBe(
+      'rtl'
+    );
+    await user.click(
+      within(dialog).getByRole('button', { name: AR['receptions.wizard.discard.stay']! })
+    );
+    expect(fileControl().files).toHaveLength(1);
   });
 
   it('asks in Arabic, right to left, from the same catalogue', async () => {
