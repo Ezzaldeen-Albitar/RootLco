@@ -27,9 +27,11 @@ database is a separate, rehearsed step.
   lines of one lineage are refused; a draft voided before issue releases what it held and a
   credited invoice keeps it; one draft per work order, one live unsourced invoice per work order,
   never both kinds, and the revision frozen; under concurrency exactly one of two transactions
-  invoicing the same quantity commits, three times over; another tenant and another branch see no
-  line), `tests/backend/od-invoice-approved-quantities.test.ts` (the routes end to end, including two
-  creates racing and a replayed key), `tests/db/p1-15-shared-services-runtime-capabilities.test.ts`
+  invoicing the same quantity commits, three times over; a caller without `sal.finance.view` reads
+  every quantity and the billing status and no remaining amount; another tenant and another branch
+  see no line, and another tenant cannot write an invoice line naming one),
+  `tests/backend/od-invoice-approved-quantities.test.ts` (the routes end to end, including two
+  creates racing, a replayed key, and two quotations on one work order), `tests/db/p1-15-shared-services-runtime-capabilities.test.ts`
   (migration census) and `tests/db/foundation.test.ts` (function and trigger inventories).
 - **Rollback classification:** **ROLLBACK-SAFE WHILE NO WORK ORDER HOLDS TWO LIVE INVOICES** — the
   inverse is in the migration footer; it refuses to run once one does, because it restores
@@ -118,8 +120,14 @@ outstanding.
 
 Recorded in ADR-023 under D5/D15: credit notes do not release quantity; approved lines of an expired
 or superseded revision are not billed; a re-priced line below what was invoiced and two approved
-lines of one lineage are refused rather than guessed; several quotations with approved lines on one
-work order remain a refusal.
+lines of one lineage are refused rather than guessed.
+
+Also recorded there, as an Owner decision this change does not take: two quotations on one work order
+that both have approved work still to bill are refused until one is cancelled, and the delivery
+blocker stays on unless overridden. That refuses more than base, which billed the one quotation
+accepted as a whole and ignored a partly approved one. A quotation whose approved work is all
+invoiced no longer competes, so another quotation's approved lines are then billed on a further
+invoice, which base never allowed.
 
 ## 5. Measured effect
 

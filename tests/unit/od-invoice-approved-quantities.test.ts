@@ -13,6 +13,8 @@
  *  - `invoiceSourceRefusalOf` reads exactly the leading token of a guard's message.
  *  - `resolveCommercialSource` takes a revision with at least one approved line —
  *    a partly approved or partly refused one included — and refuses none or two.
+ *    Only a quotation with something left to bill competes, so one whose approved
+ *    lines are all invoiced does not block another's approved work.
  *  - `billableLines` bills only `billable` lines, at what remains of each, and
  *    refuses one whose remaining amounts were withheld rather than billing zero.
  *  - `openReceivableForWorkOrder` judges EVERY live invoice and answers the most
@@ -158,6 +160,43 @@ describe('resolveCommercialSource — a revision with an approved line', () => {
         )
       )
     ).toBe('ERR-CON-001');
+  });
+
+  it('lets only a quotation with something left to bill compete', () => {
+    // Q1's approved lines are all invoiced; Q2 has an approved line still to bill.
+    const spent = candidate({ billableCount: 0 });
+    const pending = candidate({
+      quotationId: 'q2',
+      revisionId: 'r2',
+      approvedCount: 1,
+      billableCount: 1,
+    });
+    expect(resolveCommercialSource([spent, pending], 'wo')).toBe(pending);
+    // Nothing left to bill anywhere: one approved source still answers (as
+    // "nothing to bill"), two still conflict.
+    expect(resolveCommercialSource([spent], 'wo')).toBe(spent);
+    expect(
+      codeOf(() =>
+        resolveCommercialSource(
+          [spent, candidate({ quotationId: 'q2', revisionId: 'r2', billableCount: 0 })],
+          'wo'
+        )
+      )
+    ).toBe('ERR-CON-001');
+  });
+
+  it('refuses a wholly accepted quotation beside a partly approved one, both with work to bill (Owner open point)', () => {
+    // Base billed the wholly accepted one and ignored the other; D5 makes both
+    // sources of approved work, and choosing between them is left to the Owner.
+    const accepted = candidate();
+    const partly = candidate({
+      quotationId: 'q2',
+      revisionId: 'r2',
+      approvedCount: 1,
+      rejectedCount: 1,
+      billableCount: 1,
+    });
+    expect(codeOf(() => resolveCommercialSource([accepted, partly], 'wo'))).toBe('ERR-CON-001');
   });
 });
 

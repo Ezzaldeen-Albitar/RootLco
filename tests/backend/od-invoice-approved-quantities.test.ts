@@ -22,6 +22,10 @@
  *    exactly one is created, the other is a 409; a replayed key answers the first.
  *  - The work-order invoice read lists every live invoice and says whether approved
  *    work remains; the delivery port reports unbilled approved work.
+ *  - TWO QUOTATIONS: a wholly accepted one beside a partly approved one, both with
+ *    work to bill, is refused for preview and create and the delivery blocker stays
+ *    on (an Owner open point — base billed the accepted one); once one quotation's
+ *    approved work is all invoiced, it no longer blocks the other's.
  *  - ISOLATION: another tenant previews nothing of it.
  *
  * Money is compared as exact decimal STRINGS.
@@ -718,6 +722,92 @@ describe('cancelling, racing and replaying', () => {
       (await bodyOf<Created>(first)).invoice.id
     );
     expect(await liveInvoiceCount(order.workOrderId)).toBe(1);
+  });
+});
+
+/** The billing port the delivery gate's financial blocker reads, as delivery reads it. */
+async function receivableOf(workOrderId: string) {
+  return withTransaction(
+    contextFor({
+      userId: SAL_FULL.userId,
+      tenantId: TENANT_A,
+      companyIds: [COMPANY_A1],
+      branchIds: [BRANCH_A1],
+      operation: 'sal.delivery-eligibility-read',
+      module: 'delivery',
+    }),
+    (db) => billingModule().reads.openReceivableForWorkOrder(db, workOrderId)
+  );
+}
+
+describe('two quotations on one work order', () => {
+  /**
+   * Owner open point (ADR-023 D5/D15, DBCR section 4). Base billed Q1, the one
+   * quotation accepted as a whole, and ignored Q2. Under D5 both carry approved
+   * work still to bill, so both compete and the work order is refused until one
+   * is cancelled. This case pins that answer so a change of policy is a visible
+   * change of test, not a silent one.
+   */
+  it('a wholly accepted quotation beside a partly approved one: preview and create refused, delivery stays blocked', async () => {
+    const order = await createOpenWorkOrder();
+    const q1 = await quote(order.workOrderId, [service('1')]);
+    await approveAll(q1.revision);
+    const q2 = await quote(order.workOrderId, [
+      part(await pricedPart(), '2'),
+      part(await pricedPart(), '1'),
+    ]);
+    await decideItem(q2.revision, (q2.revision.lines[0] as Line).id, 'approved');
+
+    const previewed = await preview(order.workOrderId);
+    expect(previewed.status).toBe(409);
+    expect((await bodyOf<Problem>(previewed)).code).toBe('ERR-CON-001');
+    const made = await createInvoice(order.workOrderId);
+    expect(made.status).toBe(409);
+    expect((await bodyOf<Problem>(made)).code).toBe('ERR-CON-001');
+    expect(await liveInvoiceCount(order.workOrderId)).toBe(0);
+
+    // The delivery gate's financial blocker: no live invoice (null, which the gate
+    // treats as outstanding) while approved work waits to be billed.
+    expect(await receivableOf(order.workOrderId)).toBeNull();
+    expect(await workOrderInvoices(order.workOrderId)).toMatchObject({
+      invoice: null,
+      invoices: [],
+      approvedWorkToInvoice: true,
+    });
+  });
+
+  it('a quotation whose approved work is all invoiced does not block the approved work of another quotation', async () => {
+    const order = await createOpenWorkOrder();
+    const q1 = await quote(order.workOrderId, [service('1')]);
+    await approveAll(q1.revision);
+    const one = await created(order.workOrderId);
+    await issueInvoice(one);
+
+    const q2 = await quote(order.workOrderId, [
+      part(await pricedPart(), '2'),
+      part(await pricedPart(), '1'),
+    ]);
+    const [approvedLine, undecidedLine] = q2.revision.lines as [Line, Line];
+    await decideItem(q2.revision, approvedLine.id, 'approved');
+    // Approved work no invoice holds keeps the delivery blocker on ...
+    expect(await receivableOf(order.workOrderId)).toMatchObject({
+      hasOutstanding: true,
+      unbilledApprovedWork: true,
+    });
+
+    // ... and it can be billed: Q1 has nothing left, so Q2 is the one source.
+    const view = await previewOk(order.workOrderId);
+    expect(view.quotationRevisionId).toBe(q2.revision.id);
+    expect(view.lines.map((line) => line.sourceQuotationItemId)).toEqual([approvedLine.id]);
+    expect(byItem(view.revisionLines, undecidedLine.id)).toMatchObject({
+      billingStatus: 'not_approved',
+    });
+    const two = await created(order.workOrderId);
+    expect((await detailOf(two.invoice.id)).lines).toMatchObject([
+      { sourceQuotationItemId: approvedLine.id, quantity: '2.000' },
+    ]);
+    expect((await workOrderInvoices(order.workOrderId)).approvedWorkToInvoice).toBe(false);
+    expect(await liveInvoiceCount(order.workOrderId)).toBe(2);
   });
 });
 

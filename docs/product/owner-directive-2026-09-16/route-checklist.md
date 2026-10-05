@@ -4156,6 +4156,15 @@ Known limitations of this slice, one line each:
 - Approved lines of an expired or superseded revision are not billed; the current revision is the only source.
 - A line whose approved total fell below what was already invoiced is refused (`repriced_below_invoiced`); a credit for the difference is not decided here.
 - Two approved lines selling the same service or part after part of it was invoiced under an earlier revision are refused (`lineage_ambiguous`); the quotation must be revised.
-- Several quotations with approved lines on one work order remain a refusal, as before.
+- Two quotations on one work order that both have approved work still to bill are refused (409) and the delivery blocker stays on unless overridden. This refuses more than base did, which billed the one quotation accepted as a whole and ignored a partly approved one; which quotation wins is an Owner decision (ADR-023 D5/D15).
+- A quotation whose approved work is all invoiced no longer competes, so another quotation's approved lines are then billed on a further invoice; base allowed one live invoice per work order. Owner confirmation needed (ADR-023 D5/D15).
 - The remaining part of a raised line is billed at the difference of totals, not pro rata, and its discount is not restated on the invoice or the printed copy.
 - An unbilled approved line now keeps the delivery financial blocker present until it is invoiced or the blocker is overridden.
+- `sal.guard_invoice_line_source` and `sal.guard_invoice_line_amount_source` are safe only under READ COMMITTED: the re-read after the work order lock relies on each plpgsql statement taking a fresh snapshot. Nothing runs at another isolation level today (`apps/api/src/server/db` sets none), but no test holds it.
+- Lineage is the line kind with its service or catalogue item. A superseding revision that swaps in a different service or item for the same job starts a new lineage and is billed in full beside the earlier invoice. Not among the ADR-023 open points; needs Owner confirmation.
+- The approved-work flag (`hasApprovedWorkToInvoice`) counts only `billable` lines: approved work refused as `lineage_ambiguous` or `repriced_below_invoiced` does not keep the delivery blocker on.
+- The quantity already billed ignores `sal.invoices.deleted_at`: a soft-deleted header still holds quantity although the work-order invoice read no longer lists it. Reachable only through raw SQL, never the API, and it errs toward billing less.
+- Two concurrent creates with the same idempotency key can get `invoice_draft_open` (the draft index) instead of a replay, depending on which unique index is checked first. Unchanged from before this slice.
+- The preview's nothing-to-bill message always says "already invoiced", even when what remains is `lineage_ambiguous` or `repriced_below_invoiced`; the reasons table under it gives the real reason. Wording only.
+- `BILLING_STATUSES` in `apps/web/src/features/billing/billing-contract.ts` is not registered in `apps/web/tests/server-vocabularies.test.ts`. The web and API lists match and every reason has English and Arabic wording today, but nothing stops them drifting.
+- Approved lines of a partly decided revision that lapses to `expired` are no longer billable. ADR-023 records this as an open point; base said expiry should not block billing work the customer authorised.

@@ -24,7 +24,10 @@
  *  - under concurrency, exactly one of two transactions invoicing the same
  *    remaining quantity commits — the work order row lock serialises them and the
  *    loser re-reads after it;
- *  - another tenant sees no line of the revision through the function.
+ *  - a caller without sal.finance.view reads every quantity and the billing
+ *    status, and no remaining amount;
+ *  - another tenant sees no line of the revision through the function, and cannot
+ *    write an invoice line naming one.
  */
 import type { Client } from 'pg';
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -56,6 +59,7 @@ import {
   seedDraftInvoice,
   seedP111Base,
   P9,
+  P11,
 } from './p1-11-helpers';
 
 type Q = { query: Client['query'] };
@@ -497,6 +501,49 @@ describe('a partly approved revision', () => {
   });
 });
 
+describe('the money of a line, and who may see it', () => {
+  it('answers quantities and status to a caller without sal.finance.view, and no amounts', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const s = await scene(c, 'fdmoney', { first: 'approved' });
+      const invoice = await seedDraftInvoice(c, {
+        wo: s.wo,
+        payer: P9.SR,
+        quotationRevision: s.revision,
+      });
+      // One of the two approved units, at half the line's 100.00 net and 10.00 tax.
+      await billLine(c, invoice, {
+        lineNumber: 1,
+        item: s.first,
+        quantity: '1',
+        net: '50',
+        tax: '5',
+      });
+      const quantities = {
+        approved_quantity: '2.000',
+        invoiced_quantity: '1.000',
+        remaining_quantity: '1.000',
+        billing_status: 'billable',
+      };
+      expect(await billable(c, s.revision, s.first)).toMatchObject({
+        ...quantities,
+        remaining_net: '50.0000',
+        remaining_tax: '5.0000',
+        remaining_discount: '0.0000',
+      });
+
+      // The same line, the same transaction, an active tenant-A user with no
+      // sal.finance.view grant: every quantity and the status, and no amount.
+      await c.query(`SELECT set_config('app.user_id', $1, true)`, [P11.NOPERM_USER]);
+      expect(await billable(c, s.revision, s.first)).toMatchObject({
+        ...quantities,
+        remaining_net: null,
+        remaining_tax: null,
+        remaining_discount: null,
+      });
+    });
+  });
+});
+
 // ---------------------------------------------------------------------------
 // D15: across superseding revisions
 // ---------------------------------------------------------------------------
@@ -863,11 +910,34 @@ describe('two writers of one draft at once', () => {
 describe('tenant isolation', () => {
   it('shows another tenant no line of the revision, and refuses its invoice line', async () => {
     const s = await withCommittedTx(runtime, ctxA, (c) => scene(c, 'fdiso'));
+    const invoice = await withCommittedTx(runtime, ctxA, (c) =>
+      seedDraftInvoice(c, { wo: s.wo, payer: P9.SR, quotationRevision: s.revision })
+    );
     await withRolledBackTx(runtime, { tenantId: TENANT_B, userId: USER_B }, async (c) => {
       const { rows } = await c.query(`SELECT * FROM sal.billable_quotation_lines($1)`, [
         s.revision,
       ]);
       expect(rows).toEqual([]);
+      // Tenant B writing a line onto tenant A's draft, naming tenant A's approved
+      // quotation line, is refused: tenant A's invoice is not in its scope.
+      await expectRefusal(c, '23503', /parent invoice .* not found in scope/, INSERT_LINE, [
+        TENANT_A,
+        COMPANY_A1,
+        BRANCH_A1,
+        invoice,
+        1,
+        'service',
+        '1',
+        s.first,
+        USER_B,
+      ]);
+    });
+    // And nothing was billed: the line is still wholly billable for tenant A.
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      expect(await billable(c, s.revision, s.first)).toMatchObject({
+        invoiced_quantity: '0.000',
+        billing_status: 'billable',
+      });
     });
     // A caller of tenant A narrowed to another branch sees nothing either.
     await withRolledBackTx(

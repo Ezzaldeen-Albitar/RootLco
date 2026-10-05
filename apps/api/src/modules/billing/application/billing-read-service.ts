@@ -715,6 +715,19 @@ const toNumberingConfigView = (row: NumberingConfigRow): NumberingConfigView => 
  *    choice between two prices the customer agreed to, made silently, inside a
  *    financial document. The caller must cancel the superfluous quotation.
  *
+ * Only a quotation that still has something to bill competes (`billableCount > 0`):
+ * one whose approved lines are all invoiced already is not a second price for the
+ * work that remains, so it does not make another quotation's approved work
+ * ambiguous. When no quotation has anything left to bill, the approved ones compete
+ * as before, so a single source still previews as "nothing to bill" and two still
+ * conflict.
+ *
+ * Narrower than base, and an Owner open point (ADR-023 D5/D15, DBCR section 4):
+ * base billed the one quotation accepted as a whole and ignored another with only
+ * some lines approved. Here both have approved lines to bill, so both compete and
+ * the work order is refused until one is cancelled — choosing the wholly accepted
+ * one is a policy this backend does not take silently.
+ *
  * Approval is read from the decision counts, not from `quo.quotations.status`: that
  * column is a cached roll-up and no constraint ties it to `quo.approval_decisions`.
  */
@@ -722,7 +735,9 @@ export function resolveCommercialSource(
   candidates: readonly CommercialSourceRow[],
   workOrderId: string
 ): CommercialSourceRow {
-  const approved = candidates.filter((candidate) => candidate.approvedCount > 0);
+  const withApproved = candidates.filter((candidate) => candidate.approvedCount > 0);
+  const withRemaining = withApproved.filter((candidate) => candidate.billableCount > 0);
+  const approved = withRemaining.length > 0 ? withRemaining : withApproved;
 
   if (approved.length === 0) {
     throw new AppFailure('ERR-RES-001', {
