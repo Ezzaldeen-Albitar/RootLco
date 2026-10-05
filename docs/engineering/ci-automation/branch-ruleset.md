@@ -1,6 +1,12 @@
 # Branch ruleset
 
-## Current state
+## Live state, read 2026-10-05
+
+Read from the GitHub API on 2026-10-05; no ruleset was changed by the pull request that added this section. Each branch has one ruleset and no classic branch protection: `main` (19896793) and `develop` (19896821). Both require the same five contexts from GitHub Actions — `ci-gate` plus the four `ci.yml` job names listed below — with 0 required approvals, review-thread resolution, and no bypass actors. `main` requires branches to be up to date; `develop` did not.
+
+**TDP-2026-10** (temporary, Owner approval 2026-10-05; policy text in [pr-gate.md](./pr-gate.md)). A pull request into `develop` now emits `ci-gate (development)` and does not run `ci.yml`; a pull request into `main` emits `ci-gate` and runs `ci.yml`, exactly as before. The **develop** change, made as a separate recorded step after the change merges and is reviewed, replaces only `develop`'s required contexts with `ci-gate (development)` and turns on "require branches to be up to date"; every other field of that ruleset is kept, and a diff of the before and after JSON must show only those two values. `main`'s ruleset is read, never written: its before and after JSON must be byte-identical. Restoration order: put `develop`'s saved ruleset back first, then revert the policy's merge in a pull request into `develop`, then merge it ([pr-gate.md](./pr-gate.md#review-point-and-restoration)).
+
+## State before the ci-gate cutover
 
 `develop` requires four status checks, and they are **job names**:
 
@@ -73,3 +79,5 @@ replacement is proven.
 with the matrix, the event, or an input. A required check whose name depends on
 the run cannot be required reliably — which is the same trap as requiring job
 names, one level up.
+
+**The one exception, and why it is safe (TDP-2026-10).** While the temporary policy is in force the gate's display name depends on ONE thing: the pull request's base branch. A pull request into `main` always reports `ci-gate`; any other run reports `ci-gate (development)`. Each name is required by exactly one ruleset, a develop-based run can never emit `main`'s name, and `tests/ci/workflow-context-producers.test.ts` evaluates the expression for every event and base and fails if any other job in any workflow could produce one of `main`'s five contexts.

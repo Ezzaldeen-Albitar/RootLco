@@ -377,8 +377,12 @@ describe('the tier is wired, and the wiring is what must not disappear', () => {
     const protectedWorkflow = workflowSources.get('protected-develop-verification.yml') as string;
     const trigger = protectedWorkflow.slice(0, protectedWorkflow.indexOf('concurrency:'));
     expect(trigger, 'the protected push trigger is gone').toMatch(/push:/);
-    expect(trigger, 'the protected branches are no longer named').toMatch(
-      /branches:\s*\[develop,\s*main\]/
+    // TDP-2026-10 (temporary): a push to develop no longer runs this workflow —
+    // develop-merge-integrity.yml checks each develop merge, and this workflow
+    // is DISPATCHED on develop at every checkpoint. A push to main is unchanged.
+    expect(trigger, 'the protected branch is no longer named').toMatch(/branches:\s*\[main\]/);
+    expect(trigger, 'the develop checkpoint dispatch takes no checkpoint id').toContain(
+      'checkpoint-id:'
     );
   });
 

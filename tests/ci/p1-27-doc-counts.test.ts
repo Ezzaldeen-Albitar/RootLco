@@ -116,8 +116,32 @@ describe('the case count is honest about what it cannot see', () => {
 
 describe('the live repository agrees with its own documents', () => {
   it('has no disagreement between a stated count and the tree', () => {
-    const result = evaluate();
-    expect(result.problems, 'a phase document states a count the tree contradicts').toEqual([]);
+    /*
+     * TDP-2026-10. Only the FATAL partition is asserted here. A growth-only
+     * count the tree has grown past since the last checkpoint
+     * (`DOC_MARKER_BEHIND_TREE`) is owned by the gate, which refuses it in
+     * STRICT and defers it only on a corroborated checkpoint request — the same
+     * division `p1-27-closing-values.test.ts` makes for the run record, and for
+     * the same reason: these cases run INSIDE the change that moved the count.
+     * Every shrink, malformed or underivable marker, every P1-27 page and every
+     * checked claim is still asserted whole.
+     */
+    const result = evaluate() as { classified: Array<{ id: string; text: string }> };
+    const fatal = result.classified
+      .filter((p) => p.id !== 'DOC_MARKER_BEHIND_TREE')
+      .map((p) => p.text);
+    expect(fatal, 'a phase document states a count the tree contradicts').toEqual([]);
+  });
+
+  it('classifies every problem it reports, so the partition above cannot hide one', () => {
+    const result = evaluate() as {
+      problems: string[];
+      pending: string[];
+      classified: Array<{ id: string; text: string }>;
+    };
+    // STRICT by default: nothing is pending, and every classified problem is reported.
+    expect(result.pending).toEqual([]);
+    expect(result.problems).toEqual(result.classified.map((p) => p.text));
   });
 
   it('actually owns some claims, so the case above is not vacuous', () => {
@@ -542,17 +566,36 @@ describe('P1-27-QA-005 — a stated figure is compared as a number, not as a sub
     expect(figure(overstated, pattern, 'the fixture')).not.toBe(70);
   });
 
-  it('states the number of web test files the live tree actually holds', () => {
+  it('states the number of web test files the recorded run measured, and the tree has not lost one', () => {
+    /*
+     * TDP-2026-10, rebound in two halves. This compared the page to the LIVE
+     * walk, so a pull request that added one web test failed the unit tier
+     * until a records commit refreshed the page — the cause of most red code
+     * heads measured before the policy. The page is now held to the count at
+     * the commit the web run was RECORDED at (exact, fatal), and the live tree
+     * is held to at least that count (a lost file is still fatal). Growth since
+     * the record is the gate's to defer to the next checkpoint, not this case's.
+     */
     const live = liveWebTestFiles().length;
     expect(live, 'the web suite was not walked at all').toBeGreaterThan(20);
+    const runs = JSON.parse(readRepo(`${PHASE}/evidence/local-run-ledger.json`)) as {
+      tiers: Record<string, { measuredAtCommit: string } | undefined>;
+    };
+    const at = runs.tiers.web?.measuredAtCommit as string;
+    expect(at, 'the web run record names no commit').toMatch(/^[0-9a-f]{40}$/);
+    const atRecord = webTestFilesAt(at).length;
+    const stated = figure(
+      CLEAN_ROOM,
+      /live web suite holds \*\*(\d+) web test files\*\*/,
+      'the live file count'
+    );
+    expect(stated, `apps/web/tests held ${atRecord} test files at ${at.slice(0, 8)}`).toBe(
+      atRecord
+    );
     expect(
-      figure(
-        CLEAN_ROOM,
-        /live web suite holds \*\*(\d+) web test files\*\*/,
-        'the live file count'
-      ),
-      `apps/web/tests holds ${live} test files`
-    ).toBe(live);
+      live,
+      'the tree holds FEWER web test files than the record — a file was lost'
+    ).toBeGreaterThanOrEqual(stated);
   });
 
   it('states the executed web total the committed baseline carries, wherever it repeats it', () => {
@@ -595,12 +638,19 @@ describe('P1-27-QA-005 — a stated figure is compared as a number, not as a sub
     expect(executed, 'the record and the recorded run disagree').toBe(
       (webRun as { tests: number }).tests
     );
-    // And the run that produced it counted the files this tree holds. A total
-    // recorded when the suite was smaller is exactly the defect above.
+    // And the run that produced it counted the files its own commit holds. A
+    // total recorded when the suite was smaller is exactly the defect above.
+    // TDP-2026-10: held to the RECORD'S commit exactly, and the live tree to at
+    // least that many — growth since the record is the gate's to defer.
+    const recordedAt = (webRun as { measuredAtCommit?: string }).measuredAtCommit as string;
     expect(
       (webRun as { files: number }).files,
-      'the recorded run measured a different set of files from the tree'
-    ).toBe(liveWebTestFiles().length);
+      'the recorded run measured a different set of files from its own commit'
+    ).toBe(webTestFilesAt(recordedAt).length);
+    expect(
+      liveWebTestFiles().length,
+      'the tree holds fewer web test files than the recorded run — a file was lost'
+    ).toBeGreaterThanOrEqual((webRun as { files: number }).files);
     expect(
       /*
        * The FIGURE, and only the figure. This case is about the page not
@@ -1235,21 +1285,43 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
      * head so a current-count gate goes green. A superseded figure that is
      * rewritten to match today is no longer evidence of anything.
      */
-    const baseline = JSON.parse(readRepo('.github/ci-baselines/schema-baseline.json')) as {
+    /*
+     * TDP-2026-10: the record is held to the baseline AS IT STOOD at the commit
+     * the unit run was recorded at — exact, fatal — and the live baseline is
+     * held to at least that many migrations. A migration added since the last
+     * checkpoint moves the live baseline and is re-recorded by the checkpoint
+     * records pull request; a migration REMOVED is still a failure here.
+     */
+    const runs = JSON.parse(readRepo(`${PHASE}/evidence/local-run-ledger.json`)) as {
+      tiers: Record<string, { measuredAtCommit?: string } | undefined>;
+    };
+    const recordedAt = runs.tiers.unit?.measuredAtCommit as string;
+    expect(recordedAt, 'the unit run record names no commit').toMatch(/^[0-9a-f]{40}$/);
+    const baseline = JSON.parse(
+      git('show', `${recordedAt}:.github/ci-baselines/schema-baseline.json`)
+    ) as {
       schemaHash?: string;
       migrationCount?: number;
     };
     expect(baseline.schemaHash, 'the schema baseline pins no hash').toMatch(/^[0-9a-f]{64}$/);
     const quoted = /schema hash\s*`([0-9a-f]{64})`/i.exec(CLOSURE_RECORD)?.[1];
     expect(quoted, 'the closure record quotes no schema hash').toBe(baseline.schemaHash);
+    const stated = figure(
+      CLOSURE_RECORD,
+      /\|\s*Migrations\s*\|\s*\*\*(\d+)\*\*/,
+      'the closure record migrations row'
+    );
     expect(
-      figure(
-        CLOSURE_RECORD,
-        /\|\s*Migrations\s*\|\s*\*\*(\d+)\*\*/,
-        'the closure record migrations row'
-      ),
+      stated,
       'the closure record and the schema baseline disagree about the migration count'
     ).toBe(baseline.migrationCount);
+    const live = JSON.parse(readRepo('.github/ci-baselines/schema-baseline.json')) as {
+      migrationCount?: number;
+    };
+    expect(
+      live.migrationCount,
+      'the live schema baseline holds FEWER migrations than the record — a migration was lost'
+    ).toBeGreaterThanOrEqual(stated);
   });
 
   it('keeps the two apart: the historical row is NOT the current baseline', () => {
@@ -1278,7 +1350,9 @@ describe('P1-27-QA-005 — the two evidence pages agree with each other and the 
     expect(historical).toBe(
       filesAt(supersededHead(), 'supabase/migrations').filter((p) => p.endsWith('.sql')).length
     );
-    expect(current).toBe(baseline.migrationCount);
+    // TDP-2026-10: the current record is held to the baseline at the unit run's
+    // recorded commit (the case above), and the live baseline to at least it.
+    expect(baseline.migrationCount).toBeGreaterThanOrEqual(current);
   });
 
   it('the historical hash is not the current baseline, and is not refreshed to match it', () => {

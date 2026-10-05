@@ -9,7 +9,11 @@ import {
   CLASSES,
   CLEAN_ROOM,
   CI_EVIDENCE,
+  DRIFT_FAILURES,
   FAILURES,
+  RECORDS_MODE,
+  isDriftBinding,
+  selfCheckFacts,
   HOSTED_PROVENANCE_FIELDS,
   RUN_RECORD_REQUIRED_FIELDS,
   SEALED_DOCUMENTS,
@@ -158,9 +162,132 @@ describe('P1-27 closing values — the gate is not vacuous', () => {
      * failure the input cannot produce must be reported.
      */
     const impossible = [
-      { id: 'X', what: 'an unmutated tree', expect: 'RUN_RECORD_STALE', mutate: () => {} },
+      {
+        id: 'X',
+        what: 'an unmutated tree',
+        expect: 'RUN_RECORD_EXECUTABLE_DRIFT',
+        mutate: () => {},
+      },
     ];
     expect(selfCheck(impossible)).not.toEqual([]);
+  });
+});
+
+/**
+ * TDP-2026-10. The two old catch-all ids were split so a checkpoint-deferred
+ * run can tell "the tree has moved on since the record" from everything else.
+ *
+ * STRICT must give the SAME VERDICT on every input it gave one on before: the
+ * old self-check table (ids A to L and R1 to R8, as they stood at bd6b9179) is
+ * replayed here with the id each old expectation now maps to, and every case
+ * must still be refused while the baseline still passes.
+ */
+describe('P1-27 closing values — TDP-2026-10 records modes', () => {
+  type Case = { id: string; what: string; expect: string; mutate: (f: unknown) => void };
+  const cases = SELF_CHECK_CASES as Case[];
+  const OLD_TO_NEW: Record<string, string> = {
+    A: 'DERIVED_VALUE_DISAGREES',
+    H: 'RUN_RECORD_EXECUTABLE_DRIFT',
+    I: 'RUN_RECORD_FILES_SHRANK',
+  };
+
+  it('keeps every bd6b9179 self-check case, refused in STRICT', () => {
+    const before = [
+      ...['A', 'B', 'C', 'D', 'E', 'E2', 'F', 'G', 'H', 'I'],
+      ...['R1', 'R2', 'R3', 'R4', 'R5', 'R6', 'R7', 'R8', 'J', 'K0', 'K', 'L0', 'L'],
+    ];
+    for (const id of before) {
+      const row = cases.find((c) => c.id === id);
+      expect(row, `self-check case ${id} was removed`).toBeDefined();
+      const mapped = OLD_TO_NEW[id];
+      if (mapped) expect(row?.expect, `case ${id} maps to a new id`).toBe(mapped);
+      const facts = selfCheckFacts();
+      row?.mutate(facts);
+      expect(judge(facts).ok, `case ${id} is no longer refused in STRICT`).toBe(false);
+    }
+    expect(judge(selfCheckFacts()).ok, 'the STRICT baseline is no longer clean').toBe(true);
+    expect(selfCheck()).toEqual([]);
+
+    // The two cases whose MUTATION moved, replayed as they stood at bd6b9179:
+    // growth that the old gate refused is still refused in STRICT.
+    const oldA = selfCheckFacts() as { derived: { counts: Record<string, number> } };
+    oldA.derived.counts['apps/web/tests'] = 71;
+    expect(judge(oldA).ok, 'old case A is accepted in STRICT').toBe(false);
+    expect(judge(oldA).failureIds).toContain('DERIVED_VALUE_BEHIND_TREE');
+    const oldI = selfCheckFacts() as { runs: { tiers: { web: { files: number } } } };
+    oldI.runs.tiers.web.files = 65;
+    expect(judge(oldI).ok, 'old case I is accepted in STRICT').toBe(false);
+    expect(judge(oldI).failureIds).toContain('RUN_RECORD_FILES_BEHIND_TREE');
+  });
+
+  it('declares exactly three drift ids, and keeps the RUN_RECORD_ prefix on every run id', () => {
+    expect([...DRIFT_FAILURES].sort()).toEqual([
+      'DERIVED_VALUE_BEHIND_TREE',
+      'RUN_RECORD_EXECUTABLE_DRIFT',
+      'RUN_RECORD_FILES_BEHIND_TREE',
+    ]);
+    for (const id of DRIFT_FAILURES) expect(Object.keys(FAILURES)).toContain(id);
+    for (const id of Object.keys(FAILURES).filter((k) => k.includes('RUN_RECORD'))) {
+      expect(id.startsWith('RUN_RECORD_'), id).toBe(true);
+    }
+    expect(Object.keys(FAILURES)).not.toContain('RUN_RECORD_STALE');
+    expect(Object.keys(FAILURES)).not.toContain('RUN_RECORD_FILE_COUNT_DISAGREES');
+  });
+
+  it('defers ONLY drift under CHECKPOINT_DEFERRED, and refuses a shrink in both modes', () => {
+    for (const row of cases) {
+      const facts = selfCheckFacts();
+      row.mutate(facts);
+      const strict = judge(facts);
+      const deferred = judge(JSON.parse(JSON.stringify(facts)), { mode: RECORDS_MODE.DEFERRED });
+      expect(strict.failureIds, `${row.id} in STRICT`).toContain(row.expect);
+      expect(strict.pending, `${row.id} pending in STRICT`).toEqual([]);
+      if ((DRIFT_FAILURES as readonly string[]).includes(row.expect)) {
+        expect(deferred.pendingIds, `${row.id} is not deferred`).toContain(row.expect);
+        expect(deferred.failureIds, `${row.id} is still fatal`).not.toContain(row.expect);
+      } else {
+        expect(deferred.failureIds, `${row.id} stopped being fatal`).toContain(row.expect);
+      }
+    }
+    // The two shrink directions, named.
+    for (const id of ['A', 'I']) {
+      const row = cases.find((c) => c.id === id) as Case;
+      const facts = selfCheckFacts();
+      row.mutate(facts);
+      expect(judge(facts, { mode: RECORDS_MODE.DEFERRED }).ok, `${id} deferred`).toBe(false);
+    }
+  });
+
+  it('treats only growth-only bindings as drift', () => {
+    expect(isDriftBinding({ kind: 'derived', table: 'counts', name: 'apps/web/tests' })).toBe(true);
+    expect(isDriftBinding({ kind: 'derived', table: 'counts', name: 'supabase/migrations' })).toBe(
+      true
+    );
+    expect(
+      isDriftBinding({ kind: 'git', op: 'lsTree', sha: 'HEAD', pathspec: 'supabase/migrations' })
+    ).toBe(true);
+    expect(isDriftBinding({ kind: 'baseline', tier: 'web', field: 'minTests' })).toBe(true);
+    for (const fatal of [
+      { kind: 'run', tier: 'web', field: 'tests' },
+      { kind: 'run', tier: 'unit', field: 'files' },
+      { kind: 'git', op: 'trackedFiles', dir: 'docs/phase-1/phase-1-27' },
+      { kind: 'git', op: 'revParse', ref: 'HEAD' },
+      { kind: 'git', op: 'executableDiffCount', since: 'a', until: 'b' },
+      { kind: 'git', op: 'lsTree', sha: 'abc', pathspec: 'supabase/migrations' },
+      { kind: 'derived', table: 'counts', name: 'tests/ci' },
+      { kind: 'schemaBaseline', field: 'migrationCount' },
+    ]) {
+      expect(isDriftBinding(fatal), JSON.stringify(fatal)).toBe(false);
+    }
+  });
+
+  it('judges STRICT unless a mode is passed', () => {
+    const facts = selfCheckFacts();
+    cases.find((c) => c.id === 'H')?.mutate(facts);
+    const result = judge(facts);
+    expect(result.mode).toBe('strict');
+    expect(result.failureIds).toContain('RUN_RECORD_EXECUTABLE_DRIFT');
+    expect(result.pending).toEqual([]);
   });
 });
 
@@ -248,7 +375,17 @@ describe('P1-27 closing values — the live pages', () => {
      * classification of every value, the five counts — is stable under its own
      * execution and is asserted whole.
      */
-    const classification = result.problems.filter((p: string) => !p.startsWith('RUN_RECORD_'));
+    /*
+     * TDP-2026-10 adds ONE id to the exclusion, for the same reason: a
+     * growth-only derived count (the web test files, the migrations, a raised
+     * floor) that the tree has grown past since the last checkpoint is owned by
+     * the gate, which defers it only on a corroborated checkpoint request and
+     * refuses it everywhere else. A DECREASE is still `DERIVED_VALUE_DISAGREES`
+     * and is still asserted here.
+     */
+    const classification = result.problems.filter(
+      (p: string) => !p.startsWith('RUN_RECORD_') && !p.startsWith('DERIVED_VALUE_BEHIND_TREE')
+    );
     expect(classification, 'the live pages carry a value the gate refuses').toEqual([]);
     const { EXCLUDED_VALUES, ...required } = result.counters;
     expect(required).toEqual({

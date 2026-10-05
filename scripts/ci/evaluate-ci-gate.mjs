@@ -43,17 +43,32 @@
  * second is what happens when someone adds one. A gate that only checks the
  * jobs it already knows about cannot detect either.
  *
+ * TDP-2026-10 (temporary, Owner-approved 2026-10-05). A pull request INTO
+ * `develop` is judged under the `development` profile, `declaredJobsFor` below:
+ * `web-quality` and `authenticated-browser` become conditional on the change
+ * classification, and the gate additionally checks that BOTH the head and the
+ * base classifier copies were consulted. Every other event — a pull request into
+ * `main`, a push, a dispatch, a missing value — is `full`, and `full` is
+ * `DECLARED_JOBS` exactly as it was.
+ *
  * Usage:
  *   node scripts/ci/evaluate-ci-gate.mjs \
  *     --needs needs.json --classification classification.json \
  *     [--evidence evidence-dir] [--expected-sha SHA] [--actual-sha SHA] \
- *     [--trusted-context true|false] [--markdown out.md] [--json out.json]
+ *     [--trusted-context true|false] [--event NAME] [--base-ref REF] \
+ *     [--markdown out.md] [--json out.json]
  *
  * Exit codes: 0 Go · 1 No-Go · 2 IO/shape error.
  */
 import { readFileSync, writeFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  TDP_ID,
+  TDP_REVIEW_DATE,
+  decideGateProfile,
+  gateCheckRunName,
+} from '../lib/development-profile.mjs';
 
 /**
  * The authoritative list of jobs the gate governs.
@@ -102,6 +117,29 @@ export const DECLARED_JOBS = [
 ];
 
 /**
+ * The jobs a profile governs, and how.
+ *
+ * `full` IS `DECLARED_JOBS` — the same array, so nothing about the gate `main`
+ * relies on can drift through this function. `development` (TDP-2026-10) is a
+ * copy in which the two web jobs are CONDITIONAL: they must run whenever the
+ * change classification requires them, and a skip is accepted only as an
+ * EXPECTED_SKIP that both the head and the base classifier recorded.
+ * `authenticated-browser` keeps its security eligibility, and in this profile a
+ * fork that REQUIRES it is a No-Go rather than a recorded refusal: a maintainer
+ * must push the branch to this repository.
+ *
+ * @param {'full'|'development'} profile
+ */
+export function declaredJobsFor(profile) {
+  if (profile !== 'development') return DECLARED_JOBS;
+  return DECLARED_JOBS.map((job) =>
+    job.id === 'web-quality' || job.id === 'authenticated-browser'
+      ? { ...job, alwaysRequired: false, conditional: true }
+      : { ...job }
+  );
+}
+
+/**
  * The results that may be accepted for a job, derived from the job.
  *
  * This is consulted — see the cross-check at the end of the per-job loop. Its
@@ -118,7 +156,9 @@ export const DECLARED_JOBS = [
  * @param {{alwaysRequired?: boolean, securityEligibility?: string}} job
  */
 export function acceptableResults(job) {
-  if (job.alwaysRequired || job.securityEligibility) return new Set(['success']);
+  if (job.alwaysRequired || (job.securityEligibility && !job.conditional)) {
+    return new Set(['success']);
+  }
   return new Set(['success', 'skipped']);
 }
 
@@ -135,18 +175,27 @@ export const STATE = Object.freeze({
  * @param {Record<string, {result?: string, outputs?: object}>} needs the `needs` context
  * @param {object|null} classification output of classify-changes.mjs
  * @param {{expectedSha?: string, actualSha?: string}} shas
- * @param {{trustedContext?: boolean}} context
+ * @param {{trustedContext?: boolean, event?: string, baseRef?: string,
+ *          evidence?: Record<string, any>, now?: Date}} context
  *   `trustedContext` is the caller's explicit statement about whether this run
  *   was allowed to give a job privileged execution. `undefined` means nobody
  *   said, and that is NOT the same as `true` or `false`: it fails a skip closed.
+ *   `event` and `baseRef` choose the profile (TDP-2026-10); anything missing is
+ *   `full`. `evidence`, when given, is checked for the clean room's own record
+ *   of the profile it ran.
  */
 export function evaluate(needs, classification, shas = {}, context = {}) {
   const failures = [];
   const notes = [];
   const jobs = [];
   const trusted = context.trustedContext;
+  const profile = decideGateProfile({ event: context.event, baseRef: context.baseRef });
+  const DECLARED = declaredJobsFor(profile);
 
-  const declaredIds = new Set(DECLARED_JOBS.map((j) => j.id));
+  failures.push(...profileFailures(profile, classification, context));
+  failures.push(...cleanRoomProfileFailures(profile, classification, needs, context));
+
+  const declaredIds = new Set(DECLARED.map((j) => j.id));
   const presentIds = new Set(Object.keys(needs ?? {}));
 
   // ---- the gate must know about exactly the jobs that exist ---------------
@@ -168,7 +217,7 @@ export function evaluate(needs, classification, shas = {}, context = {}) {
   }
 
   // ---- per-job outcome ---------------------------------------------------
-  for (const declared of DECLARED_JOBS) {
+  for (const declared of DECLARED) {
     const need = needs?.[declared.id];
     if (!need) {
       // A key present with a falsy value (`null`, `0`, `""`) is NOT the same as
@@ -200,6 +249,40 @@ export function evaluate(needs, classification, shas = {}, context = {}) {
       accepted = true;
       state = STATE.PASSED;
       reason = 'succeeded';
+    } else if (result === 'skipped' && declared.securityEligibility && declared.conditional) {
+      // ---- TDP-2026-10: the security-gated job under the development profile --
+      //
+      // Conditional on the classification, and the classification is consulted
+      // FIRST: a skip the change did not require is an expected skip whoever
+      // opened the pull request. A skip the change DID require is a failure —
+      // and for a fork that is a No-Go rather than a recorded refusal, because
+      // under this profile nothing else proves the tier before the checkpoint.
+      const decision = classification?.jobs?.[declared.id];
+      if (decision && !decision.required && bothRecordedNotRequired(classification, declared.id)) {
+        accepted = true;
+        state = STATE.EXPECTED_SKIP;
+        reason = `expected skip — ${decision.reason}`;
+        notes.push(`\`${declared.id}\` skipped: ${decision.reason}`);
+      } else if (trusted === false) {
+        state = STATE.FAILED;
+        reason =
+          'a fork pull request whose change requires this job, under the development profile';
+        failures.push(
+          `job \`${declared.id}\` is required by this change and this run may not give it ` +
+            `privileged execution (requires ${declared.securityEligibility}). Under ${TDP_ID} that ` +
+            'is a No-Go, not NOT_ELIGIBLE_FOR_SECURITY_REASON: a maintainer must push the branch ' +
+            'to this repository so the job can run.'
+        );
+      } else {
+        state = STATE.FAILED;
+        reason = decision
+          ? `skipped, but change detection required it (${decision.reason})`
+          : 'skipped, and change detection made no decision about this job';
+        failures.push(
+          `job \`${declared.id}\` was skipped although the change classification required it, ` +
+            'or recorded no decision both classifier copies agree on'
+        );
+      }
     } else if (result === 'skipped' && declared.securityEligibility) {
       // ---- the security-gated case, decided BEFORE the generic skip rules ---
       //
@@ -258,6 +341,16 @@ export function evaluate(needs, classification, shas = {}, context = {}) {
           reason = `skipped, but change detection required it (${decision.reason})`;
           failures.push(
             `job \`${declared.id}\` was skipped although change detection required it: ${decision.reason}`
+          );
+        } else if (
+          profile === 'development' &&
+          !bothRecordedNotRequired(classification, declared.id)
+        ) {
+          reason =
+            'skipped, but the head and base classifications do not both record it as not required';
+          failures.push(
+            `job \`${declared.id}\` was skipped, and ${TDP_ID} accepts a skip only when BOTH ` +
+              'classifier copies recorded it as not required'
           );
         } else {
           accepted = true;
@@ -329,12 +422,164 @@ export function evaluate(needs, classification, shas = {}, context = {}) {
     // that says Go has to be readable as "and here is what was, and was not,
     // eligible to be proved on this run".
     trustedContext: trusted === undefined ? 'unstated' : trusted,
-    securityGated: DECLARED_JOBS.filter((j) => j.securityEligibility).map((j) => ({
+    profile,
+    checkRunName: gateCheckRunName({ event: context.event, baseRef: context.baseRef }),
+    policy: policyNotice(profile, context.now),
+    securityGated: DECLARED.filter((j) => j.securityEligibility).map((j) => ({
       id: j.id,
       requires: j.securityEligibility,
       state: jobs.find((row) => row.id === j.id)?.state ?? STATE.FAILED,
     })),
   };
+}
+
+/* ------------------------------------------------------------------ *
+ * TDP-2026-10 — the profile checks
+ * ------------------------------------------------------------------ */
+
+/**
+ * Whether BOTH classifier copies — the head's and the base branch's — recorded
+ * this job as not required. A missing record is not a "not required".
+ */
+export function bothRecordedNotRequired(classification, id) {
+  const head = classification?.decisions?.head?.jobs;
+  const base = classification?.decisions?.base;
+  if (!head || !base || base.available === false || !base.jobs) return false;
+  return head[id] === false && base.jobs[id] === false;
+}
+
+/**
+ * The classification must describe the profile this event selects, and under
+ * the development profile it must carry BOTH decisions and be their union.
+ */
+export function profileFailures(profile, classification, context = {}) {
+  const failures = [];
+  if (profile === 'full') {
+    if (classification?.profile === 'development') {
+      failures.push(
+        'the change classification was made under the development profile, but this run ' +
+          `(event \`${context.event ?? '∅'}\`, base \`${context.baseRef ?? '∅'}\`) is judged ` +
+          'under the FULL profile — a development classification cannot justify anything here'
+      );
+    }
+    return failures;
+  }
+  if (!classification) {
+    failures.push(`${TDP_ID}: no change classification, so no development-profile decision exists`);
+    return failures;
+  }
+  if (classification.profile !== 'development') {
+    failures.push(
+      `${TDP_ID}: this is a pull request into develop but the classification's profile is ` +
+        `\`${classification.profile ?? '∅'}\``
+    );
+  }
+  const head = classification.decisions?.head;
+  const base = classification.decisions?.base;
+  if (!head || !head.jobs) {
+    failures.push(`${TDP_ID}: the head classifier's decision is not recorded`);
+  }
+  if (!base) {
+    failures.push(`${TDP_ID}: the base classifier's decision is not recorded`);
+  }
+  if (!head?.jobs || !base) return failures;
+  for (const [id, decision] of Object.entries(classification.jobs ?? {})) {
+    if (base.available === false) {
+      if (!decision.required) {
+        failures.push(
+          `${TDP_ID}: the base classification was unavailable, so every job must be required, ` +
+            `but \`${id}\` is not`
+        );
+      }
+      continue;
+    }
+    const union = Boolean(head.jobs[id]) || Boolean(base.jobs?.[id]);
+    if (!(id in head.jobs) || !(id in (base.jobs ?? {}))) {
+      if (!decision.required) {
+        failures.push(`${TDP_ID}: \`${id}\` is not decided by both classifier copies`);
+      }
+    } else if (Boolean(decision.required) !== union) {
+      failures.push(
+        `${TDP_ID}: \`${id}\` is recorded as ${decision.required ? 'required' : 'not required'}, ` +
+          'which is not the stricter of the head and base decisions'
+      );
+    }
+  }
+  if (base.available === false && classification.cleanRoomProfile !== 'full') {
+    failures.push(
+      `${TDP_ID}: the base classification was unavailable, so the clean room must be full`
+    );
+  }
+  return failures;
+}
+
+/**
+ * The clean room records the profile it actually ran
+ * (`clean-room-profile.json`). Under the full profile it must be `full`; under
+ * the development profile it must be at least what the classification asked for.
+ * Checked only when the caller supplies the evidence and the clean room
+ * reported success.
+ */
+export function cleanRoomProfileFailures(profile, classification, needs, context = {}) {
+  const failures = [];
+  if (context.evidence === undefined) return failures;
+  if (needs?.['hosted-clean-room']?.result !== 'success') return failures;
+  const ran = context.evidence['clean-room-profile'];
+  if (!ran || typeof ran !== 'object') {
+    failures.push(
+      '`hosted-clean-room` succeeded but uploaded no `clean-room-profile.json`, so the gate ' +
+        'cannot tell which profile it proved'
+    );
+    return failures;
+  }
+  if (profile === 'full') {
+    if (ran.profile !== 'full') {
+      failures.push(
+        `the clean room ran the \`${ran.profile}\` profile; a run judged under the FULL ` +
+          'profile accepts only the full clean room'
+      );
+    }
+    if (
+      (context.event === 'pull_request' || context.event === 'push') &&
+      ran.recordsMode !== 'strict'
+    ) {
+      failures.push(
+        `the clean room judged the run records in \`${ran.recordsMode}\` mode; a ` +
+          `\`${context.event}\` run under the full profile must judge them STRICT`
+      );
+    }
+    return failures;
+  }
+  const wanted = classification?.cleanRoomProfile;
+  if (ran.profile !== 'full' && ran.profile !== wanted) {
+    failures.push(
+      `the clean room ran the \`${ran.profile}\` profile, but the classification required ` +
+        `\`${wanted ?? '∅'}\``
+    );
+  }
+  if (ran.profile === 'development') {
+    if (classification?.runDatabaseBlock && ran.runDatabaseBlock !== true) {
+      failures.push('the classification required the serial database block and it did not run');
+    }
+    if (classification?.runContainerBlock && ran.runContainerBlock !== true) {
+      failures.push('the classification required the container block and it did not run');
+    }
+  }
+  if (classification?.recordsMode === 'strict' && ran.recordsMode !== 'strict') {
+    failures.push('the classification required STRICT records and the clean room did not apply it');
+  }
+  return failures;
+}
+
+/**
+ * The temporary policy states itself, with its review date, whenever it
+ * applies. There is no automatic expiry; once the date has passed the gate
+ * WARNS (never fails) so the review cannot be forgotten silently.
+ */
+export function policyNotice(profile, now = new Date()) {
+  if (profile !== 'development') return null;
+  const today = new Date(now).toISOString().slice(0, 10);
+  return { id: TDP_ID, reviewDate: TDP_REVIEW_DATE, overdue: today > TDP_REVIEW_DATE };
 }
 
 /** Reads whatever evidence files the jobs uploaded into the gate's working directory. */
@@ -386,6 +631,11 @@ export function toMarkdown(result, classification, evidence = {}) {
 
   lines.push('| Item | Value |');
   lines.push('| --- | --- |');
+  if (result.profile) {
+    lines.push(
+      `| Profile | ${result.profile}${result.checkRunName ? ` (check run \`${result.checkRunName}\`)` : ''} |`
+    );
+  }
   lines.push(`| Head SHA | \`${result.shas.actualSha ?? '—'}\` |`);
   lines.push(`| Base SHA | \`${result.shas.baseSha ?? '—'}\` |`);
   lines.push(`| Changed files | ${classification?.files?.length ?? '—'} |`);
@@ -396,6 +646,23 @@ export function toMarkdown(result, classification, evidence = {}) {
     `| Documentation only | ${classification ? (classification.documentationOnly ? 'yes' : 'no') : '—'} |`
   );
   lines.push('');
+
+  if (result.policy) {
+    lines.push(
+      `> **${result.policy.id} — temporary development-path policy.** This pull request into ` +
+        '`develop` was judged under the development profile. Full verification is still owed at ' +
+        'the next checkpoint, at every phase gate and on the final promotion pull request. ' +
+        `Review due by **${result.policy.reviewDate}**.`
+    );
+    if (result.policy.overdue) {
+      lines.push('>');
+      lines.push(
+        `> ⚠️ **The ${result.policy.id} review date has passed.** The policy does not expire by ` +
+          'itself; review it now (docs/engineering/ci-automation/pr-gate.md).'
+      );
+    }
+    lines.push('');
+  }
 
   lines.push('### Jobs');
   lines.push('');
@@ -554,9 +821,21 @@ function main(argv) {
       actualSha: arg('--actual-sha'),
       baseSha: arg('--base-sha'),
     },
-    { trustedContext }
+    {
+      trustedContext,
+      // An empty string is not an event: it reads as absent, which is `full`.
+      event: arg('--event') || undefined,
+      baseRef: arg('--base-ref') || undefined,
+      evidence,
+    }
   );
   result.shas.baseSha = arg('--base-sha');
+  if (result.policy?.overdue) {
+    console.log(
+      `::warning::${result.policy.id} review date ${result.policy.reviewDate} has passed — ` +
+        'review the temporary development-path policy (docs/engineering/ci-automation/pr-gate.md).'
+    );
+  }
 
   const md = toMarkdown(result, classification, evidence);
   const mdOut = arg('--markdown');

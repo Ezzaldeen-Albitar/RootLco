@@ -86,3 +86,27 @@ A required check that is never reported is indistinguishable, at a glance, from 
 check that is passing — both leave the merge button blocked with no red X. The failure mode
 is a pull request that cannot merge for reasons the UI never states plainly. Recording the
 exact names here means the next person does not have to rediscover it.
+
+## Dated note — 2026-10-05: the temporary development-path policy (TDP-2026-10)
+
+This note records live state read from the GitHub API on 2026-10-05 and a change made in a
+pull request; it changes no ruleset by itself. Each branch has one ruleset and no classic
+branch protection. Both rulesets require five contexts from GitHub Actions: `ci-gate` and the
+four `ci.yml` display names in the table above. Required approvals are 0 on both, there are no
+bypass actors, and `main` requires branches to be up to date while `develop` did not.
+
+Under TDP-2026-10 (Owner approval 2026-10-05), the pull-request gate's check run is named by
+its base branch:
+
+- a pull request into `main` emits `ci-gate`, exactly as before, and `ci.yml` still runs on a
+  pull request into `main` and on a push to `main`, so all five of `main`'s contexts are still
+  produced, at the final head, by the same jobs;
+- a pull request into `develop` emits `ci-gate (development)` and does not run `ci.yml`.
+
+`main`'s ruleset is not changed by this policy and must not be. `develop`'s ruleset is changed
+in a separate, recorded step, after the change merges and is reviewed, to require only
+`ci-gate (development)` with branches required to be up to date. Until that step,
+`develop`'s ruleset still requires the four `ci.yml` names, which a pull request into
+`develop` no longer produces. `tests/ci/workflow-context-producers.test.ts` holds `main`'s five
+contexts to their only permitted producers. The policy, its review point and the restoration
+order are in `docs/engineering/ci-automation/pr-gate.md`.
