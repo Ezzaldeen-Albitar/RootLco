@@ -285,7 +285,11 @@ export const AUTHENTICATED_BROWSER_TRIGGERS = Object.freeze([
   'supabase/**',
   'apps/web/tests/e2e/**',
   'apps/web/public/**',
-  'scripts/dev/owner-acceptance/**',
+  // The owner-acceptance setup the job runs, the development configuration it
+  // imports, and the platform scripts it reads (TDP-2026-10 fix round 1). A
+  // test derives every script the job reaches and fails on one not listed.
+  'scripts/dev/**',
+  'scripts/platform/**',
 ]);
 
 /** The ONLY exemptions from the trigger above (Owner-adopted, 2026-10-05). */
@@ -305,6 +309,14 @@ export const SERIAL_BLOCK_TRIGGERS = Object.freeze([
   'vitest.config.backend.ts',
   'vitest.config.db-fixture.ts',
   'apps/api/src/**/data/**',
+  // Scripts the database and backend suites import or spawn: the platform
+  // operator and backfill scripts, the owner-acceptance fixture setup and its
+  // development configuration, and the classification guards tests/db spawns
+  // (TDP-2026-10 fix round 1). A test derives every script tests/backend and
+  // tests/db reach and fails on one that does not run this block.
+  'scripts/platform/**',
+  'scripts/dev/**',
+  'scripts/check-*-classification.mjs',
 ]);
 
 /** Any API source change: the database, integration and analysis jobs. */
@@ -368,7 +380,8 @@ export const AUTH_E2E_BASE = Object.freeze([
   'apps/api/src/server/**',
   'apps/api/src/modules/iam/**',
   'supabase/**',
-  'scripts/dev/owner-acceptance/**',
+  'scripts/dev/**',
+  'scripts/platform/**',
   'apps/web/tests/e2e/**',
 ]);
 export const AUTH_E2E_SPEC_MAP = Object.freeze({

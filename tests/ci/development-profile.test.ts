@@ -15,9 +15,10 @@
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, posix } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
+import ts from 'typescript';
 import { afterAll, describe, expect, it } from 'vitest';
 
 import {
@@ -569,6 +570,18 @@ describe('the development profile never lets a change skip what it needs', () =>
     expect(required(unavailable)).toEqual(all);
     expect(unavailable.cleanRoomProfile).toBe('full');
     expect(unavailable.escalated).toBe(true);
+    // …and judges the run records STRICT: a head that cannot be compared must
+    // not defer its own record drift, even when its own answer says to.
+    expect(unavailable.recordsMode).toBe('strict');
+    const tamperedHead = dev(['docs/phase-1/phase-1-27/evidence/local-run-ledger.json']);
+    tamperedHead.recordsMode = 'checkpoint-deferred';
+    for (const kept2 of [
+      keepStricter(tamperedHead, null, { baseAvailable: false }),
+      keepStricter(tamperedHead, { jobs: {} }),
+    ] as Classification[]) {
+      expect(kept2.recordsMode).toBe('strict');
+      expect((kept2 as Classification & { recordsOnly?: boolean }).recordsOnly).toBe(false);
+    }
     // A base that predates the policy is not comparable either.
     const legacy = keepStricter(dev(['docs/a.md']), { jobs: {} }) as Classification;
     expect(required(legacy)).toEqual(all);
@@ -764,7 +777,190 @@ describe('the development profile never lets a change skip what it needs', () =>
     expect(reads.size, 'the scan found no root read at all').toBeGreaterThan(10);
     expect(uncovered, uncovered.join('\n')).toEqual([]);
   });
+
+  it('runs the job that exercises every repository script a database, backend or browser run reaches', () => {
+    /*
+     * The suites that need a database read repository scripts: tests/backend
+     * imports the platform operator scripts and the tenant backfills, tests/db
+     * spawns the classification guards, and the authenticated-browser job runs
+     * the owner-acceptance setup, which imports the development configuration.
+     * A change to one of those scripts must run the job that exercises it, or
+     * the only test of it is deferred to the checkpoint. This derives the
+     * scripts each job reaches — imports, spawned paths and npm entry points,
+     * transitively — and requires the development profile to run that job.
+     */
+    const dbEntries = tracked.filter(
+      (p) =>
+        ((p.startsWith('tests/backend/') || p.startsWith('tests/db/')) &&
+          /\.(ts|mts|mjs)$/.test(p)) ||
+        /^vitest\.config\.(backend|db|db-fixture)\.ts$/.test(p)
+    );
+    const browserWorkflow = readRepo('.github/workflows/_reusable-authenticated-browser.yml');
+    const browserEntries = [
+      ...tracked.filter((p) => p.startsWith('apps/web/tests/e2e/') && /\.(ts|mts|mjs)$/.test(p)),
+      ...npmEntryScripts(browserWorkflow),
+      ...[...browserWorkflow.matchAll(/(?:\.\/)?(scripts\/[\w./-]+\.(?:mjs|cjs|js))/g)].map(
+        (m) => m[1] as string
+      ),
+    ];
+    const dbScripts = scriptClosure(dbEntries);
+    const browserScripts = scriptClosure(browserEntries);
+
+    // The derivation must find what the defect it exists for was about.
+    for (const known of [
+      'scripts/platform/genesis-platform-operator.mjs',
+      'scripts/platform/backfill-tenant-administrator-bundle.mjs',
+      'scripts/dev/owner-acceptance/export-fixture-setup.mjs',
+    ]) {
+      expect(dbScripts.has(known), `${known} is reached by the database suites`).toBe(true);
+    }
+    for (const known of [
+      'scripts/dev/owner-acceptance/create-owner-account.mjs',
+      'scripts/dev/dev-config.mjs',
+    ]) {
+      expect(browserScripts.has(known), `${known} is reached by the browser job`).toBe(true);
+    }
+
+    const uncovered: string[] = [];
+    for (const [script, via] of dbScripts) {
+      if (dev([script]).runDatabaseBlock !== true) {
+        uncovered.push(`${script} (reached from ${via}) does not run the serial database block`);
+      }
+    }
+    for (const [script, via] of browserScripts) {
+      if (dev([script]).jobs['authenticated-browser']?.required !== true) {
+        uncovered.push(`${script} (reached from ${via}) does not run authenticated-browser`);
+      }
+    }
+    expect(uncovered, uncovered.join('\n')).toEqual([]);
+
+    // The probe from the review: a platform permission script into develop.
+    const probe = dev(['scripts/platform/grant-platform-authority.mjs']);
+    expect(probe.runDatabaseBlock).toBe(true);
+    expect(probe.jobs['authenticated-browser']?.required).toBe(true);
+  });
 });
+
+/**
+ * The `node <script>` targets of every `npm run <name>` a workflow invokes,
+ * following one `npm run` inside a package script to the next.
+ */
+function npmEntryScripts(workflow: string): string[] {
+  const scripts = (JSON.parse(readRepo('package.json')) as { scripts: Record<string, string> })
+    .scripts;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const queue = [...workflow.matchAll(/npm run (?:--silent )?([\w:.-]+)/g)].map(
+    (m) => m[1] as string
+  );
+  while (queue.length > 0) {
+    const name = queue.shift() as string;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const command = scripts[name];
+    if (command === undefined) continue;
+    for (const m of command.matchAll(/\bnode (scripts\/[\w./-]+\.(?:mjs|cjs|js))/g)) {
+      out.push(m[1] as string);
+    }
+    for (const m of command.matchAll(/npm run (?:--silent )?([\w:.-]+)/g)) {
+      queue.push(m[1] as string);
+    }
+  }
+  return out;
+}
+
+/**
+ * Every tracked `scripts/**` file reachable from `entries`, mapped to the
+ * entry it was first reached from. Followed: static and dynamic imports and
+ * `require` with a relative specifier, `join`/`resolve` calls whose literal
+ * segments spell a `scripts/` path, and a string literal that IS a `scripts/`
+ * path (a spawned CLI). Parsed as TypeScript, so a path in a comment is not a
+ * reference. Only files under `tests/` and `scripts/` are followed onward.
+ */
+function scriptClosure(entries: string[]): Map<string, string> {
+  const trackedSet = new Set(tracked);
+  const found = new Map<string, string>();
+  const visited = new Set<string>();
+  const queue = entries.map((entry) => ({ file: entry, via: entry }));
+  const normalise = (path: string): string => {
+    const parts: string[] = [];
+    for (const part of path.split('/')) {
+      if (part === '..') parts.pop();
+      else if (part !== '.' && part !== '') parts.push(part);
+    }
+    return parts.join('/');
+  };
+  const asScriptPath = (text: string): string | undefined => {
+    const m = /^(?:\.{1,2}\/)*(scripts\/[\w./-]+\.(?:mjs|cjs|js|ts))$/.exec(text);
+    return m ? normalise(m[1] as string) : undefined;
+  };
+  while (queue.length > 0) {
+    const { file, via } = queue.shift() as { file: string; via: string };
+    if (visited.has(file) || !trackedSet.has(file)) continue;
+    visited.add(file);
+    if (file.startsWith('scripts/') && !found.has(file)) found.set(file, via);
+    if (!file.startsWith('scripts/') && !file.startsWith('tests/') && file !== via) continue;
+    const references: string[] = [];
+    const sourceFile = ts.createSourceFile(
+      file,
+      readRepo(file),
+      ts.ScriptTarget.Latest,
+      true,
+      file.endsWith('.ts') || file.endsWith('.mts') ? ts.ScriptKind.TS : ts.ScriptKind.JS
+    );
+    const relative = (specifier: string) => {
+      if (specifier.startsWith('.'))
+        references.push(normalise(`${posix.dirname(file)}/${specifier}`));
+    };
+    const visit = (node: ts.Node): void => {
+      if (
+        (ts.isImportDeclaration(node) || ts.isExportDeclaration(node)) &&
+        node.moduleSpecifier &&
+        ts.isStringLiteral(node.moduleSpecifier)
+      ) {
+        relative(node.moduleSpecifier.text);
+      } else if (ts.isCallExpression(node)) {
+        const callee = node.expression;
+        const first = node.arguments[0];
+        const isImport = callee.kind === ts.SyntaxKind.ImportKeyword;
+        const isRequire = ts.isIdentifier(callee) && callee.text === 'require';
+        if ((isImport || isRequire) && first && ts.isStringLiteralLike(first)) {
+          relative(first.text);
+        }
+        const name = ts.isIdentifier(callee)
+          ? callee.text
+          : ts.isPropertyAccessExpression(callee)
+            ? callee.name.text
+            : '';
+        if (name === 'join' || name === 'resolve') {
+          const segments = node.arguments
+            .filter((a): a is ts.StringLiteral => ts.isStringLiteralLike(a))
+            .map((a) => a.text)
+            .filter((s) => s !== '..' && s !== '.');
+          const at = segments.indexOf('scripts');
+          if (at !== -1) {
+            const joined = asScriptPath(segments.slice(at).join('/'));
+            if (joined) references.push(joined);
+          }
+        }
+      } else if (ts.isStringLiteralLike(node)) {
+        const path = asScriptPath(node.text);
+        if (path) references.push(path);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+    for (const reference of references) {
+      for (const candidate of [reference, `${reference}.ts`, `${reference}.mjs`]) {
+        if (trackedSet.has(candidate)) {
+          queue.push({ file: candidate, via });
+          break;
+        }
+      }
+    }
+  }
+  return found;
+}
 
 /* ======================================================================== */
 
@@ -938,6 +1134,17 @@ describe('the gate under each profile — evaluator fixtures (a) to (i)', () => 
       }
     );
     expect(noClassification.decision).toBe('No-Go');
+    // A base copy that could not be compared: STRICT records is Go, a head
+    // that deferred its own records anyway is No-Go.
+    const unavailable = keepStricter(classify(['docs/a.md'], PR_DEVELOP), null, {
+      baseAvailable: false,
+    }) as Classification;
+    const context = { trustedContext: true, ...PR_DEVELOP, evidence: fullRoom };
+    expect(evaluate(needs(), unavailable, {}, context).decision).toBe('Go');
+    expect(
+      evaluate(needs(), { ...unavailable, recordsMode: 'checkpoint-deferred' }, {}, context)
+        .decision
+    ).toBe('No-Go');
   });
 
   it('(f) base develop, browser tier skipped, trusted, both copies not required: Go with EXPECTED_SKIP', () => {

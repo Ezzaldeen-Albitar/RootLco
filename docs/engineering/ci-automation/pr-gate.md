@@ -143,16 +143,23 @@ in `scripts/lib/development-profile.mjs`, matched on raw paths first:
   replay, database security and the serial block; the container, build-size, CodeQL and
   backend-coverage baselines to their jobs; every mapped baseline also to `web-quality`.
 - **`authenticated-browser`** runs for any change under `apps/web/src/**`,
-  `apps/api/src/**`, `supabase/**`, `apps/web/tests/e2e/**`, `apps/web/public/**` or
-  `scripts/dev/owner-acceptance/**`, except `**/*.scss`, `**/*.css` and
+  `apps/api/src/**`, `supabase/**`, `apps/web/tests/e2e/**`, `apps/web/public/**`,
+  `scripts/dev/**` or `scripts/platform/**`, except `**/*.scss`, `**/*.css` and
   `apps/web/src/i18n/messages/**` (Owner-adopted allow-list, pinned by a test). A test maps
-  every authenticated spec to a path that triggers it.
+  every authenticated spec to a path that triggers it, and a second test derives every
+  repository script the job reaches (the npm entry points the job runs, the end-to-end tests,
+  and their imports and spawned paths, transitively) and fails on one that is not a trigger.
 - **`web-quality`** runs for `apps/web/**`, `apps/api/src/**`, `supabase/**`, `docs/api/**`,
   `docs/phase-1/**`, `docs/database/**`, the route checklist the route-scope test reads,
   `scripts/**`, `.github/ci-baselines/**` and `.prettierignore`. A test scans the web tests for
   repository-root reads and fails on one that is not a trigger.
 - **The serial block** runs for `supabase/**`, `scripts/db/**`, `tests/db/**`,
-  `tests/backend/**`, the database Vitest configurations and `apps/api/src/**/data/**`.
+  `tests/backend/**`, the database Vitest configurations, `apps/api/src/**/data/**`,
+  `scripts/platform/**`, `scripts/dev/**` and the classification guards
+  `scripts/check-*-classification.mjs`. The same derivation test walks every script
+  `tests/backend/**` and `tests/db/**` import or spawn, transitively, and fails on one whose
+  change would not run this block (the platform operator and backfill scripts and the
+  owner-acceptance fixture setup were the gap it closed).
 - **Money and permissions**: any API source change runs integration, database security and
   CodeQL; the money screens (billing, payments, pricing, quotations, inventory, warranty,
   delivery, reports) run both web jobs; `validate:exact-money`, authorization coverage, the
@@ -160,7 +167,9 @@ in `scripts/lib/development-profile.mjs`, matched on raw paths first:
 
 **Base and head.** Change detection runs the head's classifier and the BASE branch's copy of
 it on the same diff and keeps the stricter answer for every job, block and profile. A base
-copy that is missing, fails, or predates the policy resolves to the full set. Both decisions
+copy that is missing, fails, or predates the policy resolves to the full set and to STRICT run
+records, never to the head's records mode, and `ci-gate` refuses such a classification if it
+says otherwise. Both decisions
 are recorded in `classification.json`, and `ci-gate` checks that both are present and that
 the result is their union. A skip is accepted only as `EXPECTED_SKIP` when both copies
 recorded the job as not required.
@@ -224,10 +233,15 @@ it passes.
 4. One records pull request into `develop` runs `npm run record:p1-27-run -- <tier> --hosted-run <run>`
    per tier and refreshes the pages and manifests as before. It edits the run ledger, so its
    gate judges records STRICT; change detection reports whether it stayed inside the records
-   allow-list (`records-only`). It merges as D'.
+   allow-list (`records-only`). It carries nothing else, and nothing merges into `develop`
+   between D and it. It merges as D'.
 5. The checkpoint passes only with: protected-gate Go at D, the records pull request's STRICT
-   gate green with the unit and web tiers at D', and green merge-integrity runs. Both run links
-   and both commits go in the hosted checkpoint register.
+   gate green with the unit and web tiers at D', `records-only` true for the records pull
+   request, D' directly on D (the first parent of D' is D), and green merge-integrity runs.
+   Both run links, both commits, the first parent of D' and the records-only value go in the
+   hosted checkpoint register, and `tests/ci/verification-ledger.test.ts` refuses a passed
+   row that lacks them or that git contradicts: it recomputes the first parent of D' and the
+   files between D and D' against the records allow-list.
 6. One local runtime rebuild with browser and reconciliation QA at D'. It is recorded as a
    local result and never presented as a GitHub check.
 
@@ -256,6 +270,82 @@ The verification ledger and the hosted checkpoint register live in
 `tests/ci/verification-ledger.test.ts`: five states only, a full checkpoint pass must cite a
 complete register row, a targeted hosted pass a run at a SHA, a pending row where it is owed,
 and no column but State may claim a pass. The register is append-only.
+
+### Activation
+
+The order below is the only feasible one. Until step 3, `develop`'s ruleset requires `ci-gate`
+and the four `ci.yml` names; the change's own pull request produces `ci-gate (development)` and
+no `ci.yml` run, there are no bypass actors, and no admin bypass is allowed, so the change
+cannot merge before the ruleset changes.
+
+1. The independent review of the change (VL-CI-002).
+2. Save `develop`'s ruleset (19896821) as the before snapshot, outside the repository.
+3. PUT `develop`'s ruleset: the required contexts become `ci-gate (development)`, and strict
+   (branches must be up to date) is turned on. Nothing else changes; `main`'s ruleset is only
+   read.
+4. Update the change pull request to the `develop` tip if strict requires it, and let its gate
+   finish on that head.
+5. Merge it at once.
+
+Between steps 3 and 5 every other open pull request into `develop` is blocked: its runs come
+from the workflow on its merge ref, which still emits `ci-gate` and the `ci.yml` names. Nothing
+else merges into `develop` in that window. After step 5 each of those pull requests must be
+updated to the `develop` tip, which strict requires anyway, and its next run emits
+`ci-gate (development)`. The live probes (VL-CI-004) need the merged workflows and follow step
+5: probe A is the next real pull request into `develop`, probe B the next synchronize run of the
+standing promotion pull request, observed passively.
+
+### Known limitations
+
+Recorded at the independent review of the change (fix round 1, 2026-10-05). None of these is
+hidden by a skip; each is either mitigated as stated or owed at the next checkpoint.
+
+- **Self-certification is inherent to the `pull_request` trigger.** The head's `pr-ci.yml`,
+  `keepStricter` and `evaluate-ci-gate.mjs` all come from the pull request's merge ref, so a
+  pull request that edits all three can ignore the base copy. Escalation of those paths holds
+  only if the head code honours it. The real mitigations are the independent review (required
+  approvals are 0) and the next checkpoint.
+- **STRICT on `main` is no longer byte-identical; it is stricter.** These now run on `main`,
+  release and nightly paths: the always-fatal `RUN_RECORD_HEAD_NOT_ANCESTOR` and
+  `RUN_RECORD_FILES_WRONG_FOR_ITS_HEAD` checks (`tierFilesAt` recomputes with today's walk rule
+  over an old tree), `markerSelfCheck` inside the doc-counts `evaluate()`,
+  `verify:classifications` in every clean room (release verification included), and the
+  `cleanRoomProfileFailures` check on a protected push to `main`. That can fail a future
+  promotion that `bd6b9179` would have accepted. Nothing on `main` is weakened.
+- **Unit-tier assertions are narrowed on all paths, `main` and nightly included.** The
+  `p1-27-doc-counts`, evidence-manifest and closing-values tests now compare against
+  `measuredAtCommit`, use `>=` for the live tree, and filter `DERIVED_VALUE_BEHIND_TREE` and
+  `DOC_MARKER_BEHIND_TREE`. `main`'s net gate is unchanged only because the STRICT validators
+  still run in its full clean room (`verify:workspaces` → `verify:policies`, with
+  `ROOTLCO_RECORDS_MODE=strict`).
+- **`clean-room-profile.json` records the REQUESTED records mode, not the effective one.** A
+  protected-verification dispatch on `main` records `checkpoint-deferred` while the resolver
+  actually applies STRICT. `protected-develop-verification.yml` requests deferral for every
+  dispatch instead of keying the request on `refs/heads/develop`.
+- **The reviewed head is behind `develop`.** The head reviewed in fix round 1 (`f8befe80`) is
+  behind `develop` `d8d5fa9a` (#513: a new migration and records). The merge is clean and no
+  file overlaps, but strict forces an update, so the merged head is not the reviewed head. The
+  new hosted run is re-triaged before merging.
+- **Never executed live, and UNVERIFIED until observed:** the base-`main` path of the new
+  `pr-ci.yml` (`ci-gate` name, full profile, clean-room-profile evidence; probe B is the first
+  proof), `develop-merge-integrity.yml` (its first run is this change's own merge), and the
+  checkpoint dispatch path (the pin step, the candidate-SHA concurrency group, case-b deferral).
+- **Per-pull-request records edits persist for some changes.** The D1 and D2 assertions of
+  `apps/web/tests/p1-27-doc-reconciliation.test.ts` still compare against the live tree, so a
+  pull request into `develop` that adds web tests, `scripts/ci` scripts or CRM and vehicle
+  features must still edit `deliverable-manifest.md`.
+- **Paths outside the triggers get no web tier and no authenticated browser.** For example
+  `tests/**` outside `tests/ci`, `CONTRIBUTING.md`, `docs/engineering/**`, and `docs/product/**`
+  other than the route checklist. The styles and translations exemption from the browser tier
+  follows planner decision 4. An escape surfaces only at the checkpoint.
+- **`records-only` was computed and exported but consumed by nothing.** Fix round 1 makes it,
+  and D' sitting directly on D, explicit conditions of a passed checkpoint, recorded in the
+  register and recomputed from git by `tests/ci/verification-ledger.test.ts` (see
+  [Checkpoints](#checkpoints)). Change detection's output is still not consumed by `ci-gate`.
+- **Local gaps.** `actionlint` and the workflow-security validator were not run locally (the
+  hosted `static-quality` job ran them). Plain `prettier --check` exits 2 on
+  `.github/actions/setup-project/npm-cache.version`, which has no parser, and is clean with
+  `--ignore-unknown`.
 
 ### Proof that `main` is unchanged
 

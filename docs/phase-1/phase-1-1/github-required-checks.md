@@ -104,9 +104,9 @@ its base branch:
 - a pull request into `develop` emits `ci-gate (development)` and does not run `ci.yml`.
 
 `main`'s ruleset is not changed by this policy and must not be. `develop`'s ruleset is changed
-in a separate, recorded step, after the change merges and is reviewed, to require only
-`ci-gate (development)` with branches required to be up to date. Until that step,
-`develop`'s ruleset still requires the four `ci.yml` names, which a pull request into
-`develop` no longer produces. `tests/ci/workflow-context-producers.test.ts` holds `main`'s five
+in a separate, recorded step to require only `ci-gate (development)` with branches required
+to be up to date. That step comes BEFORE the change merges, not after: until it, `develop`'s
+ruleset requires `ci-gate` and the four `ci.yml` names, which the change's own pull request
+does not produce, so the change cannot merge first. The activation order is the only feasible one, because `develop`'s current ruleset requires contexts this change no longer produces on a pull request into `develop`, there are no bypass actors, and no admin bypass is allowed: (1) the independent review of the change (VL-CI-002); (2) save `develop`'s ruleset as the before snapshot, outside the repository; (3) PUT `develop`'s ruleset with the required context `ci-gate (development)` and strict on; (4) update the change pull request to the `develop` tip if strict requires it and let its gate finish; (5) merge it at once. Between steps 3 and 5 every other open pull request into `develop` is blocked, because its runs still come from the old workflow and emit `ci-gate`; after the merge each one must be updated to the `develop` tip (which strict requires anyway), and its next run emits `ci-gate (development)`. No other pull request merges into `develop` in that window. The live probes (VL-CI-004) follow the merge. `tests/ci/workflow-context-producers.test.ts` holds `main`'s five
 contexts to their only permitted producers. The policy, its review point and the restoration
 order are in `docs/engineering/ci-automation/pr-gate.md`.

@@ -510,6 +510,12 @@ export function profileFailures(profile, classification, context = {}) {
       `${TDP_ID}: the base classification was unavailable, so the clean room must be full`
     );
   }
+  if (base.available === false && classification.recordsMode !== 'strict') {
+    failures.push(
+      `${TDP_ID}: the base classification was unavailable, so the run records must be judged ` +
+        `STRICT, but the classification says \`${classification.recordsMode ?? '∅'}\``
+    );
+  }
   return failures;
 }
 

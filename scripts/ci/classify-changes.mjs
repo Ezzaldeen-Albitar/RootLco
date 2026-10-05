@@ -439,7 +439,8 @@ export function classifyDevelopment(files, full = classifyFull(files)) {
  * so it is never trusted alone: the base branch's copy classifies the same diff
  * and every job, block and profile takes the stricter answer. A base copy that
  * is missing, that failed, or that predates the development profile cannot be
- * compared, and that resolves to the FULL set rather than to the head's answer.
+ * compared, and that resolves to the FULL set and STRICT run records rather
+ * than to the head's answer.
  *
  * Both decisions are recorded in the result, and `ci-gate` checks they are
  * present and that this result really is their union.
@@ -467,9 +468,12 @@ export function keepStricter(head, base, { baseAvailable = true, baseNote = '' }
       cleanRoomProfile: 'full',
       runDatabaseBlock: true,
       runContainerBlock: true,
-      // The base copy has no records mode to vote with; see the policy record
-      // (TDP-2026-10, deviations) for why the head's answer stands here.
-      recordsMode: head.recordsMode,
+      // Fail closed. The base copy has no records mode to vote with, and the
+      // head's answer is the one thing this branch refuses to trust alone — a
+      // head that edited its own classifier could defer its own record drift.
+      recordsMode: 'strict',
+      // Nor can the head alone certify that it is a records-only change.
+      recordsOnly: false,
       decisions: {
         head: headDecision,
         base: { available: false, note: baseNote || 'not comparable' },

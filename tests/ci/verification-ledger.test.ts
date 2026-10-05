@@ -10,7 +10,10 @@
  *
  *   - a row is in exactly one of five states;
  *   - "Passed full checkpoint verification" must cite a checkpoint whose register
- *     row carries the dispatch run, D, the records run and D';
+ *     row carries the dispatch run, D, the records run and D', whose records
+ *     pull request stayed inside the records allow-list, and whose D' sits
+ *     directly on D (first parent of D' is D) — both recorded AND recomputed
+ *     from git, so code that the full run never saw cannot be covered by it;
  *   - "Passed targeted hosted checks" must carry a run id at a 40-character SHA;
  *   - "Full hosted verification pending" must say where it is owed;
  *   - no column but State may claim a pass;
@@ -21,6 +24,8 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
+
+import { RECORDS_FILE_ALLOW_LIST, matchesAny } from '../../scripts/lib/development-profile.mjs';
 
 const ROOT = join(__dirname, '../..');
 const LEDGER_FILE = 'docs/product/owner-directive-2026-09-16/capability-status.md';
@@ -52,6 +57,8 @@ const REGISTER_COLUMNS = [
   'Merge-integrity runs covered',
   'Records pull request and its STRICT run',
   "Records revision D'",
+  "First parent of D'",
+  'Records-only (change detection)',
   'Local QA row',
   'State',
 ];
@@ -108,8 +115,65 @@ function citesRun(cell: string | undefined): boolean {
   });
 }
 
+/**
+ * What git says about a checkpoint's two commits. `null` when git cannot answer
+ * (an object the checkout does not hold), which the rules treat as a refusal.
+ */
+type History = {
+  firstParent: (sha: string) => string | null;
+  changedFiles: (from: string, to: string) => string[] | null;
+};
+
+/**
+ * The conditions a checkpoint must meet to count as passed, beyond its run
+ * links: the records pull request changed only records files, and D' is that
+ * records pull request's merge directly onto D — no other merge in between.
+ * Both are recorded in the register AND recomputed from git, so neither rests
+ * on a claim.
+ */
+function checkpointProblems(where: string, entry: Row, history?: History): string[] {
+  const problems: string[] = [];
+  const d = SHA40.exec(entry['Integration revision D'] ?? '')?.[0];
+  const dPrime = SHA40.exec(entry["Records revision D'"] ?? '')?.[0];
+  if (!d) problems.push(`${where} carries no 40-character D`);
+  if (!citesRun(entry['Dispatch run and protected-gate decision'])) {
+    problems.push(`${where} carries no dispatch run URL`);
+  }
+  if (!citesRun(entry['Records pull request and its STRICT run'])) {
+    problems.push(`${where} carries no records-pull-request run`);
+  }
+  if (!dPrime) problems.push(`${where} carries no 40-character D'`);
+  const recordedParent = SHA40.exec(entry["First parent of D'"] ?? '')?.[0];
+  if (!recordedParent || recordedParent !== d) {
+    problems.push(`${where}: the first parent of D' is not recorded as D`);
+  }
+  if ((entry['Records-only (change detection)'] ?? '').replace(/`/g, '') !== 'true') {
+    problems.push(`${where}: the records pull request is not recorded as records-only`);
+  }
+  if (history && d && dPrime) {
+    const parent = history.firstParent(dPrime);
+    if (parent === null) {
+      problems.push(`${where}: git cannot resolve the first parent of D' ${dPrime}`);
+    } else if (parent !== d) {
+      problems.push(`${where}: the first parent of D' is ${parent}, not D ${d}`);
+    }
+    const files = history.changedFiles(d, dPrime);
+    if (files === null) {
+      problems.push(`${where}: git cannot list the files between D and D'`);
+    } else {
+      const outside = files.filter((f) => !matchesAny(f, RECORDS_FILE_ALLOW_LIST));
+      if (files.length === 0 || outside.length > 0) {
+        problems.push(
+          `${where}: D..D' is not records-only (${outside.slice(0, 3).join(', ') || 'no files'})`
+        );
+      }
+    }
+  }
+  return problems;
+}
+
 /** Every rule a ledger and its register must satisfy. Returns the violations. */
-function judgeLedger(ledger: Row[], register: Row[]): string[] {
+function judgeLedger(ledger: Row[], register: Row[], history?: History): string[] {
   const problems: string[] = [];
   const registerById = new Map(register.map((r) => [r['Checkpoint'] ?? '', r]));
   const seen = new Set<string>();
@@ -146,18 +210,7 @@ function judgeLedger(ledger: Row[], register: Row[]): string[] {
       if (!cp || !entry) {
         problems.push(`${id}: a full checkpoint pass must cite a checkpoint in the register`);
       } else {
-        if (!SHA40.test(entry['Integration revision D'] ?? '')) {
-          problems.push(`${id}: ${cp} carries no 40-character D`);
-        }
-        if (!citesRun(entry['Dispatch run and protected-gate decision'])) {
-          problems.push(`${id}: ${cp} carries no dispatch run URL`);
-        }
-        if (!citesRun(entry['Records pull request and its STRICT run'])) {
-          problems.push(`${id}: ${cp} carries no records-pull-request run`);
-        }
-        if (!SHA40.test(entry["Records revision D'"] ?? '')) {
-          problems.push(`${id}: ${cp} carries no 40-character D'`);
-        }
+        problems.push(...checkpointProblems(`${id}: ${cp}`, entry, history));
         if (entry['State'] !== 'Passed full checkpoint verification') {
           problems.push(`${id}: ${cp} is not itself recorded as passed`);
         }
@@ -169,6 +222,9 @@ function judgeLedger(ledger: Row[], register: Row[]): string[] {
     if (!CHECKPOINT_ID.test(cp)) problems.push(`register: "${cp}" is not CP-YYYYMMDD-N`);
     if (!(STATES as readonly string[]).includes(entry['State'] ?? '')) {
       problems.push(`register ${cp}: state "${entry['State']}" is not one of the five`);
+    }
+    if (entry['State'] === 'Passed full checkpoint verification') {
+      problems.push(...checkpointProblems(`register ${cp}`, entry, history));
     }
     for (const [column, value] of Object.entries(entry)) {
       if (column === 'State') continue;
@@ -202,6 +258,33 @@ function judgeAppendOnly(base: Row[], head: Row[]): string[] {
 
 const source = readFileSync(join(ROOT, LEDGER_FILE), 'utf8');
 
+/** The repository's own history, answering for the register's commits. */
+const gitHistory: History = {
+  firstParent: (sha) => {
+    try {
+      return execFileSync('git', ['rev-parse', '--verify', '--quiet', `${sha}^1`], {
+        cwd: ROOT,
+        encoding: 'utf8',
+      }).trim();
+    } catch {
+      return null;
+    }
+  },
+  changedFiles: (from, to) => {
+    try {
+      return execFileSync('git', ['diff', '--name-only', from, to], {
+        cwd: ROOT,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+      })
+        .split('\n')
+        .filter(Boolean);
+    } catch {
+      return null;
+    }
+  },
+};
+
 describe('the TDP-2026-10 verification ledger', () => {
   const ledger = tableUnder(source, 'Verification ledger');
   const register = tableUnder(source, 'Hosted checkpoint register');
@@ -211,16 +294,18 @@ describe('the TDP-2026-10 verification ledger', () => {
     expect(register.header).toEqual(REGISTER_COLUMNS);
   });
 
-  it('carries the three seed rows the policy owes', () => {
+  it('carries the four seed rows the policy owes', () => {
     const ids = ledger.rows.map((r) => r['ID']);
-    for (const id of ['VL-CI-001', 'VL-CI-002', 'VL-CI-003']) expect(ids).toContain(id);
+    for (const id of ['VL-CI-001', 'VL-CI-002', 'VL-CI-003', 'VL-CI-004']) {
+      expect(ids).toContain(id);
+    }
     expect(ledger.rows.find((r) => r['ID'] === 'VL-CI-001')?.['State']).toBe(
       'Full hosted verification pending'
     );
   });
 
-  it('satisfies every rule', () => {
-    expect(judgeLedger(ledger.rows, register.rows)).toEqual([]);
+  it('satisfies every rule, with each passed checkpoint recomputed from git', () => {
+    expect(judgeLedger(ledger.rows, register.rows, gitHistory)).toEqual([]);
   });
 
   it('keeps every register row every earlier version of the file held', () => {
@@ -277,8 +362,15 @@ describe('the ledger rules refuse what they exist to refuse', () => {
     'Records pull request and its STRICT run':
       '#600, https://github.com/Ezzaldeen-Albitar/RootLco/actions/runs/123456790',
     "Records revision D'": 'b'.repeat(40),
+    "First parent of D'": D,
+    'Records-only (change detection)': 'true',
     'Local QA row': 'row 13',
     State: 'Passed full checkpoint verification',
+  };
+  /** A history in which D' is a records-only merge directly onto D. */
+  const honest: History = {
+    firstParent: (sha) => (sha === 'b'.repeat(40) ? D : null),
+    changedFiles: () => ['docs/phase-1/phase-1-27/evidence/local-run-ledger.json'],
   };
 
   it('accepts a well-formed pending row', () => {
@@ -326,6 +418,48 @@ describe('the ledger rules refuse what they exist to refuse', () => {
           },
         ]
       )
+    ).not.toEqual([]);
+  });
+
+  it("refuses a full checkpoint pass whose records PR carried code or whose D' is not on D", () => {
+    const row = {
+      ...pending,
+      State: 'Passed full checkpoint verification',
+      'Result link and tested revision': 'CP-20261006-1',
+    };
+    expect(judgeLedger([row], [checkpoint], honest)).toEqual([]);
+    // The two conditions must be recorded...
+    expect(
+      judgeLedger([row], [{ ...checkpoint, 'Records-only (change detection)': 'false' }], honest)
+    ).not.toEqual([]);
+    expect(
+      judgeLedger([row], [{ ...checkpoint, 'Records-only (change detection)': '—' }], honest)
+    ).not.toEqual([]);
+    expect(
+      judgeLedger([row], [{ ...checkpoint, "First parent of D'": 'c'.repeat(40) }], honest)
+    ).not.toEqual([]);
+    // ...and git must agree with what is recorded: a feature merge between D and
+    // the records pull request, or a records pull request that also carried code.
+    expect(
+      judgeLedger([row], [checkpoint], { ...honest, firstParent: () => 'c'.repeat(40) })
+    ).not.toEqual([]);
+    expect(
+      judgeLedger([row], [checkpoint], {
+        ...honest,
+        changedFiles: () => [
+          'docs/phase-1/phase-1-27/evidence/local-run-ledger.json',
+          'apps/api/src/modules/billing/application/x.ts',
+        ],
+      })
+    ).not.toEqual([]);
+    // A history that cannot answer is a refusal, not a pass.
+    expect(
+      judgeLedger([row], [checkpoint], { firstParent: () => null, changedFiles: () => null })
+    ).not.toEqual([]);
+    // A register row recorded as passed is held to the same rules even before a
+    // ledger row cites it.
+    expect(
+      judgeLedger([], [{ ...checkpoint, 'Records-only (change detection)': 'false' }], honest)
     ).not.toEqual([]);
   });
 
