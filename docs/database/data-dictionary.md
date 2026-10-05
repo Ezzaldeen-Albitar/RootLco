@@ -5224,7 +5224,7 @@ P1-32-PRE-OD-FD5 (ADR-023 D5/D15) adds no column. On a work-order invoice that n
 revision, every live line must name a line of that revision in `source_quotation_item_id`, of the
 same kind, that `sal.billable_quotation_lines` answers `billable`, with a quantity no greater than
 what remains approved and not yet invoiced for its lineage — the line kind with its service or
-catalogue item, pooled over the work order's live invoices under any revision
+catalogue item, pooled over the work order's live invoices under any revision of any of its quotations
 (`sal.guard_invoice_line_source`, BEFORE INSERT OR UPDATE, under the work order row lock). Its
 amounts may not exceed what remains of the approved line (`sal.guard_invoice_line_amount_source` on
 `sal.invoice_line_amounts`). An invoice voided before issue releases what its lines held; issued and

@@ -25,7 +25,9 @@
  *  - TWO QUOTATIONS: a wholly accepted one beside a partly approved one, both with
  *    work to bill, is refused for preview and create and the delivery blocker stays
  *    on (an Owner open point — base billed the accepted one); once one quotation's
- *    approved work is all invoiced, it no longer blocks the other's.
+ *    approved work is all invoiced, it no longer blocks the other's. What is
+ *    already invoiced is pooled by work order (an Owner open point): a second
+ *    quotation's line of a service the first invoiced is not billed again.
  *  - ISOLATION: another tenant previews nothing of it.
  *
  * Money is compared as exact decimal STRINGS.
@@ -808,6 +810,62 @@ describe('two quotations on one work order', () => {
     ]);
     expect((await workOrderInvoices(order.workOrderId)).approvedWorkToInvoice).toBe(false);
     expect(await liveInvoiceCount(order.workOrderId)).toBe(2);
+  });
+
+  /**
+   * Owner open point (ADR-023 D5/D15, DBCR section 4): what is already invoiced is
+   * pooled by WORK ORDER and lineage, not by quotation. Q2's approved service line
+   * sells the service Q1 already invoiced, so it counts as already invoiced: it is
+   * not billed, it does not hold the delivery blocker, and once Q2's part is billed
+   * nothing is left — with two quotations and nothing left, the preview is the
+   * conflict. Scoping the pool to one quotation would bill the service again and
+   * fail this case.
+   */
+  it('a second quotation selling a service the first already invoiced: that line counts as invoiced, the rest is billed', async () => {
+    const order = await createOpenWorkOrder();
+    const q1 = await quote(order.workOrderId, [service('1')]);
+    await approveAll(q1.revision);
+    const one = await created(order.workOrderId);
+    await issueInvoice(one);
+
+    const q2 = await quote(order.workOrderId, [service('1'), part(await pricedPart(), '2')]);
+    const [serviceLine, partLine] = q2.revision.lines as [Line, Line];
+    await approveAll(q2.revision);
+    expect(await receivableOf(order.workOrderId)).toMatchObject({ unbilledApprovedWork: true });
+
+    const view = await previewOk(order.workOrderId);
+    expect(view.quotationRevisionId).toBe(q2.revision.id);
+    expect(view.lines.map((line) => [line.sourceQuotationItemId, line.quantity])).toEqual([
+      [partLine.id, '2.000'],
+    ]);
+    expect(byItem(view.revisionLines, serviceLine.id)).toMatchObject({
+      decision: 'approved',
+      approvedQuantity: '1.000',
+      invoicedQuantity: '1.000',
+      remainingQuantity: '0.000',
+      billingStatus: 'fully_invoiced',
+    });
+    expect(byItem(view.revisionLines, partLine.id)).toMatchObject({ billingStatus: 'billable' });
+
+    const two = await created(order.workOrderId);
+    expect(
+      (await detailOf(two.invoice.id)).lines.map((line) => [
+        line.sourceQuotationItemId,
+        line.quantity,
+      ])
+    ).toEqual([[partLine.id, '2.000']]);
+    await issueInvoice(two);
+
+    // Q2's service line was never billed from Q2, yet no approved work remains and
+    // the delivery blocker no longer counts unbilled work.
+    expect(await workOrderInvoices(order.workOrderId)).toMatchObject({
+      approvedWorkToInvoice: false,
+    });
+    expect(await receivableOf(order.workOrderId)).toMatchObject({ unbilledApprovedWork: false });
+    expect(await liveInvoiceCount(order.workOrderId)).toBe(2);
+    const after = await preview(order.workOrderId);
+    expect(after.status).toBe(409);
+    expect((await bodyOf<Problem>(after)).code).toBe('ERR-CON-001');
   });
 });
 

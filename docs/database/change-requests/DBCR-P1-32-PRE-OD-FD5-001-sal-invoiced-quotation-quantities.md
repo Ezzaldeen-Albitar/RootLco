@@ -129,6 +129,17 @@ accepted as a whole and ignored a partly approved one. A quotation whose approve
 invoiced no longer competes, so another quotation's approved lines are then billed on a further
 invoice, which base never allowed.
 
+What counts as already invoiced is pooled by work order, not by quotation (Owner open point, ADR-023
+D5/D15). An approved line of a second quotation selling a service or part that a first quotation of
+the same work order already invoiced counts that invoiced quantity against itself: up to it, the line
+is shown as already invoiced, is not billed, and does not hold the delivery blocker. When the second
+quotation's other approved lines are invoiced, approved work to invoice turns false although that
+line was never billed from the second quotation; when it has no other approved line, both quotations
+have nothing left and the preview answers a conflict (409) rather than "nothing to bill". Scoping the
+pool to one quotation's revisions would bill that line, at the risk of billing work quoted twice; that
+is the Owner's choice, not this change's. `tests/backend/od-invoice-approved-quantities.test.ts`
+pins the pooled answer.
+
 ## 5. Measured effect
 
 Measured on a database created empty in a throwaway `postgres:17` container on a loopback port of

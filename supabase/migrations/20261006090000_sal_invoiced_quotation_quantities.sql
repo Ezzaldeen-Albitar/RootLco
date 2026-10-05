@@ -4,7 +4,8 @@
 -- D5 and D15 of 2026-09-30, ADR-023).
 -- Owner module: sal (two unique indexes replacing one, one index, one read
 --   function and three trigger functions with their triggers on
---   sal.invoices, sal.invoice_lines and sal.invoice_line_amounts)
+--   sal.invoices, sal.invoice_lines and sal.invoice_line_amounts; the
+--   sal.invoices table comment is restated because it named the dropped index)
 --
 -- Rollback classification: ROLLBACK-SAFE while no work order holds two live
 --   invoices; roll-forward-only once one does, because the inverse restores
@@ -40,7 +41,13 @@
 --
 --   Quantities are pooled per work order and lineage: what was invoiced for a
 --   lineage under any revision counts against the approved quantity of that
---   lineage in the revision billed now. When the revision billed now holds
+--   lineage in the revision billed now. The pool is the WORK ORDER, not the
+--   quotation: an approved line of a second quotation selling a service or
+--   part a first quotation of the same work order already invoiced counts as
+--   already invoiced, is not billed and does not hold the delivery blocker.
+--   Whether two quotations of one work order may bill the same service twice
+--   is an Owner open point (ADR-023 D5/D15); pooling by work order is the
+--   choice that can never bill more. When the revision billed now holds
 --   MORE THAN ONE approved line of a lineage and some of that lineage was
 --   invoiced under another revision, which line the earlier quantity belongs
 --   to cannot be told apart, and those lines are refused as
@@ -251,7 +258,7 @@ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = '' AS $$
    ORDER BY j.line_number
 $$;
 COMMENT ON FUNCTION sal.billable_quotation_lines(uuid, uuid) IS
-  'P1-32-PRE-OD-FD5 (ADR-023 D5/D15): every line of a quotation revision with its decision and its quoted, approved, invoiced and remaining quantities; the remaining net, tax and discount only to a caller holding sal.finance.view; and a billing_status (billable, not_current, not_approved, rejected, lineage_ambiguous, fully_invoiced, repriced_below_invoiced). Invoiced quantity is pooled per work order and lineage — (item_kind, service_id or item_ref) — across every revision; void_before_issue invoices release it, issued and credited invoices keep it. p_exclude_invoice_line_id leaves one invoice line out, for the guards that judge it. Used by the application and by the sal invoice source guards alike.';
+  'P1-32-PRE-OD-FD5 (ADR-023 D5/D15): every line of a quotation revision with its decision and its quoted, approved, invoiced and remaining quantities; the remaining net, tax and discount only to a caller holding sal.finance.view; and a billing_status (billable, not_current, not_approved, rejected, lineage_ambiguous, fully_invoiced, repriced_below_invoiced). Invoiced quantity is pooled per work order and lineage — (item_kind, service_id or item_ref) — across every revision of every quotation of the work order (an Owner open point, ADR-023 D5/D15); void_before_issue invoices release it, issued and credited invoices keep it. p_exclude_invoice_line_id leaves one invoice line out, for the guards that judge it. Used by the application and by the sal invoice source guards alike.';
 REVOKE EXECUTE ON FUNCTION sal.billable_quotation_lines(uuid, uuid) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION sal.billable_quotation_lines(uuid, uuid) TO app_runtime;
 
@@ -450,6 +457,11 @@ CREATE TRIGGER tg_invoice_line_amounts_source BEFORE INSERT OR UPDATE ON sal.inv
   FOR EACH ROW EXECUTE FUNCTION sal.guard_invoice_line_amount_source();
 
 -- ----------------------------------------------------------------------------
+-- 6. The table's own description, restated: it named the dropped index.
+-- ----------------------------------------------------------------------------
+COMMENT ON TABLE sal.invoices IS 'Phase 1-11 invoice master (branch-scoped, structural). Money is in the restricted sal.invoice_amounts 1:1 detail (H-priv-1). Since P1-32-PRE-OD-FD5 (ADR-023 D5/D15) a work order may hold several live invoices: at most one draft (uq_invoices_work_order_draft); at most one live invoice that names no quotation revision (uq_invoices_work_order_unsourced); the two kinds never coexist and the revision named is frozen (sal.guard_invoice_work_order_source); and every line of an invoice that names a revision bills only what remains approved of its source quotation line, in quantity and amount (sal.guard_invoice_line_source, sal.guard_invoice_line_amount_source, judged by sal.billable_quotation_lines). status is lifecycle only; payment state is derived (M-fin-1). Roll-forward-only.';
+
+-- ----------------------------------------------------------------------------
 -- Exact inverse (rehearsal copy only — refused once a work order holds two
 -- live invoices)
 --
@@ -472,4 +484,5 @@ CREATE TRIGGER tg_invoice_line_amounts_source BEFORE INSERT OR UPDATE ON sal.inv
 --   DROP INDEX sal.uq_invoices_work_order_draft;
 --   CREATE UNIQUE INDEX uq_invoices_work_order_active ON sal.invoices (tenant_id, company_id, branch_id, work_order_id)
 --     WHERE work_order_id IS NOT NULL AND status <> 'void_before_issue' AND deleted_at IS NULL;
+--   COMMENT ON TABLE sal.invoices IS 'Phase 1-11 invoice master (branch-scoped, structural). Money is in the restricted sal.invoice_amounts 1:1 detail (H-priv-1). One live invoice per work order (uq_invoices_work_order_active). status is lifecycle only; payment state is derived (M-fin-1). Roll-forward-only.';
 -- ----------------------------------------------------------------------------

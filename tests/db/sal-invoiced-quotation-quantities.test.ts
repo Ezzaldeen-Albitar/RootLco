@@ -7,7 +7,8 @@
  *
  *  - the read function and the three guards exist, SECURITY INVOKER with an empty
  *    search_path and no EXECUTE for PUBLIC; uq_invoices_work_order_active is gone
- *    and its two replacements are there;
+ *    and its two replacements are there; the table's own description names the
+ *    replacements and guards, and no index or function that does not exist;
  *  - a fully approved revision bills each line once; a second invoice for the same
  *    lines is refused whatever its quantity;
  *  - a partly approved revision bills its approved lines only: an undecided or a
@@ -25,7 +26,8 @@
  *    remaining quantity commits — the work order row lock serialises them and the
  *    loser re-reads after it;
  *  - a caller without sal.finance.view reads every quantity and the billing
- *    status, and no remaining amount;
+ *    status, and no remaining amount (the function's `sees_money` condition is
+ *    what that case holds);
  *  - another tenant sees no line of the revision through the function, and cannot
  *    write an invoice line naming one.
  */
@@ -317,6 +319,40 @@ describe('the objects the migration adds and replaces', () => {
     expect(rows[0]?.definition).toMatch(/UNIQUE INDEX .*status = 'draft'/);
     expect(rows[1]?.definition).toMatch(/UNIQUE INDEX .*quotation_revision_id IS NULL/);
     expect(rows[1]?.definition).toMatch(/status <> 'void_before_issue'/);
+  });
+
+  it("restates sal.invoices' own description: every index and function it names exists", async () => {
+    const { rows } = await admin.query<{ description: string | null }>(
+      `SELECT obj_description('sal.invoices'::regclass, 'pg_class') AS description`
+    );
+    const description = rows[0]?.description ?? '';
+    const indexes = [...description.matchAll(/\b(?:uq|ix)_[a-z0-9_]+/g)].map((m) => m[0]);
+    const functions = [...description.matchAll(/\bsal\.([a-z0-9_]+)/g)]
+      .map((m) => m[1] ?? '')
+      .filter((name) => !['invoices', 'invoice_amounts'].includes(name));
+    // The description cites the rule that replaced one live invoice per work order.
+    expect(indexes.sort()).toEqual([
+      'uq_invoices_work_order_draft',
+      'uq_invoices_work_order_unsourced',
+    ]);
+    expect(functions.sort()).toEqual([
+      'billable_quotation_lines',
+      'guard_invoice_line_amount_source',
+      'guard_invoice_line_source',
+      'guard_invoice_work_order_source',
+    ]);
+    const existingIndexes = await admin.query<{ name: string }>(
+      `SELECT indexname AS name FROM pg_indexes
+        WHERE schemaname = 'sal' AND tablename = 'invoices' AND indexname = ANY($1::text[])`,
+      [indexes]
+    );
+    expect(existingIndexes.rows.map((r) => r.name).sort()).toEqual(indexes);
+    const existingFunctions = await admin.query<{ name: string }>(
+      `SELECT DISTINCT p.proname AS name FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE n.nspname = 'sal' AND p.proname = ANY($1::text[])`,
+      [functions]
+    );
+    expect(existingFunctions.rows.map((r) => r.name).sort()).toEqual(functions);
   });
 });
 
