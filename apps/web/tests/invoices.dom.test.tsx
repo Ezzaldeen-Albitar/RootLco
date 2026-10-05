@@ -288,6 +288,8 @@ const preview = {
       description: 'Front brake service',
       serviceId: 's',
       itemId: null,
+      item: null,
+      unit: null,
       quantity: '2.000',
       unitPrice: '100.0000',
       discount: '50.0000',
@@ -788,6 +790,63 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     expect(within(panel).getByText('0.100000')).toBeVisible();
     expect(within(panel).getByText('2.000')).toBeVisible();
     expect(within(panel).queryByText(/10\s?%/)).toBeNull();
+  });
+
+  /** The preview with one PART line, as the quotation line quoted it (ADR-023 D6). */
+  const partPreview = (description: string | null) => ({
+    ...structuredClone(preview),
+    lines: [
+      {
+        ...structuredClone(preview.lines[0]),
+        lineType: 'part',
+        description,
+        serviceId: null,
+        itemId: 'part-1',
+        item: { id: 'part-1', code: 'BRK-01', name: 'Brake pads' },
+        unit: { code: 'each', name: 'Each' },
+        quantity: '1.500',
+      },
+    ],
+  });
+
+  it('names a part line by the part, its stock code left to right and its unit, never "no description" or an identifier (D6)', async () => {
+    readInvoicePreview.mockImplementation(async () => okRead(partPreview(null)));
+    renderScreen();
+    const panel = region('invoices.preview.heading');
+    const name = await within(panel).findByText('Brake pads');
+    const row = name.closest('tr') as HTMLElement;
+    expect(name).toBeVisible();
+    expect(within(row).getByText('BRK-01')).toHaveAttribute('dir', 'ltr');
+    expect(within(row).getByText('Each').tagName).toBe('BDI');
+    expect(within(row).getByText('1.500')).toBeVisible();
+    expect(within(row).getByText(EN['invoices.lineType.part'] as string)).toBeVisible();
+    expect(within(row).queryByText(EN['invoices.preview.noDescription'] as string)).toBeNull();
+    expect(row.textContent).not.toContain('part-1');
+    expect(row.textContent).not.toContain('each');
+  });
+
+  it('keeps a note typed on a part line beneath the part, and reads the same in Arabic (D6)', async () => {
+    readInvoicePreview.mockImplementation(async () => okRead(partPreview('Front axle')));
+    renderRtl(
+      <InvoiceScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        workOrderRefused={null}
+        initialInvoice={okRead({ workOrderId: WORK_ORDER_ID, invoice: null }) as never}
+        canViewFinance={true}
+        canIssue={false}
+      />
+    );
+    const panel = screen.getByRole('region', { name: AR['invoices.preview.heading'] as string });
+    const name = await within(panel).findByText('Brake pads');
+    const row = name.closest('tr') as HTMLElement;
+    expect(within(row).getByText('Front axle')).toBeVisible();
+    expect(within(row).getByText('BRK-01')).toHaveAttribute('dir', 'ltr');
+    expect(within(row).getByText('Each')).toBeVisible();
+    expect(within(row).getByText(AR['invoices.lineType.part'] as string)).toBeVisible();
+    expect(row.closest('[dir="rtl"]')).not.toBeNull();
   });
 
   it('without finance view reads no preview and offers no create', async () => {

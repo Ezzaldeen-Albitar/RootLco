@@ -35,13 +35,17 @@ import { getMessages } from '@/i18n/get-messages';
  *    code the part search needs; without it the builder is the service builder it
  *    was, and a service line is sent exactly as before (no `kind`);
  *  - a part is FOUND by its stock code or name and chosen, never typed, and the
- *    line says what unit its quantity is in and how it is priced; the body names
- *    the item and the quantity and nothing that prices it;
+ *    line says what unit its quantity is in — by the unit's NAME, isolated, as the
+ *    saved tables say it — and how it is priced, a note the part box points at; the
+ *    body names the item and the quantity and nothing that prices it;
+ *  - the editor's explanation covers part lines where they are offered, and only
+ *    services where they are not;
  *  - a part line with no part chosen is refused before anything is sent, on the
  *    part box, with the cursor there;
  *  - the server's refusal of a part with no selling price for the branch is said
  *    in words on that line's part box, focused, with the typed quantity kept, and
- *    withdrawn once another part is chosen — in English and in Arabic;
+ *    withdrawn once another part is chosen — in English and in Arabic; and so is
+ *    the refusal of a part whose price or tax changed while it was being saved;
  *  - choosing a part is unsaved work: a branch switch asks first;
  *  - the quotation shows a part line by the part's name, its stock code isolated
  *    left to right, and the unit its quantity is in, never an identifier.
@@ -98,8 +102,10 @@ vi.mock('@/features/services/api', () => ({
 }));
 
 const listItems = vi.fn();
+const listUnitsOfMeasure = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
   listItems: (...args: unknown[]) => listItems(...args),
+  listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
 }));
 
 vi.mock('@/features/work-orders/api', () => ({ readWorkOrderDetail: vi.fn() }));
@@ -175,6 +181,11 @@ beforeEach(() => {
     hasMore: false,
     correlationId: 'corr',
   }));
+  listUnitsOfMeasure.mockResolvedValue({
+    status: 'ok',
+    data: { items: [{ id: 'u', scope: 'tenant', code: 'each', name: 'Each', dimension: 'count' }] },
+    correlationId: 'corr',
+  });
 });
 
 const screenProps = (over: Record<string, unknown> = {}) => ({
@@ -245,6 +256,13 @@ describe('a line may quote a part, found and chosen', () => {
     expect(
       within(form).queryByText(EN['quotations.lines.partsExplain'] as string, { exact: false })
     ).toBeNull();
+    // Without parts on offer, the explanation speaks of services only.
+    expect(
+      within(form).getByText(EN['quotations.lines.explainServices'] as string, { exact: false })
+    ).toBeVisible();
+    expect(
+      within(form).queryByText(EN['quotations.lines.explain'] as string, { exact: false })
+    ).toBeNull();
     await user.type(
       within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
       '55555555-5555-4555-8555-555555555555'
@@ -270,14 +288,22 @@ describe('a line may quote a part, found and chosen', () => {
     );
     // The part box replaces the service box on this line.
     expect(within(form).queryByLabelText(labelled('pricing.picker.serviceReference'))).toBeNull();
+    // The explanation covers part lines where they are offered.
+    expect(
+      within(form).getByText(EN['quotations.lines.explain'] as string, { exact: false })
+    ).toBeVisible();
     const box = await choosePart(user, form, 'brake', /BRK-01 — Brake pads/);
     expect(box).toHaveValue('BRK-01 — Brake pads');
-    expect(
-      within(form).getByText(new RegExp(escape('Counted in each.')), { exact: false })
-    ).toBeVisible();
-    expect(
-      within(form).getByText(new RegExp(escape(EN['quotations.lines.partPriceHelp'] as string)))
-    ).toBeVisible();
+    // The unit by its NAME, as the saved tables show it, isolated from the sentence.
+    const unit = within(form).getByText('Each');
+    expect(unit.tagName).toBe('BDI');
+    const help = unit.closest('p') as HTMLElement;
+    expect(help.textContent).toContain('Counted in Each.');
+    expect(help.textContent).not.toContain('each.');
+    expect(help.textContent).toContain(EN['quotations.lines.partPriceHelp'] as string);
+    // The part box points at the note, so it is heard with the box.
+    expect(help.id).not.toBe('');
+    expect((box.getAttribute('aria-describedby') ?? '').split(' ')).toContain(help.id);
     await user.type(within(form).getByLabelText(labelled('quotations.lines.quantity')), '2.5');
     await user.click(
       within(form).getByRole('button', { name: EN['quotations.build.submit'] as string })
@@ -356,6 +382,50 @@ describe('a part with no selling price is refused in words, on its line', () => 
     );
     expect(
       await within(form).findByText(AR['form.violation.no_authorised_sale_price'] as string)
+    ).toBeVisible();
+    expect(form.closest('[dir="rtl"]')).not.toBeNull();
+  });
+});
+
+describe('a part whose price or tax changed while it was saved is refused on its line', () => {
+  it('says so on the part box in words, keeps the quantity, and shows no developer text', async () => {
+    const user = userEvent.setup();
+    createQuotation.mockResolvedValue(refusal('form.violation.part_price_changed'));
+    renderLtr(<QuotationsScreen locale="en" messages={en} {...screenProps()} />);
+    const form = await openBuilder(user);
+    await user.click(
+      within(form).getByRole('radio', { name: EN['quotations.lines.kindPart'] as string })
+    );
+    const box = await choosePart(user, form, 'brake', /BRK-01 — Brake pads/);
+    const quantity = within(form).getByLabelText(labelled('quotations.lines.quantity'));
+    await user.type(quantity, '2');
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.build.submit'] as string })
+    );
+    const sentence = EN['form.violation.part_price_changed'] as string;
+    expect(await within(form).findByText(sentence)).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(quantity).toHaveValue('2');
+    expect(form.textContent).not.toMatch(/part_price_changed|itemId/);
+  });
+
+  it('says it in Arabic, with the unit named and isolated in the Arabic sentence', async () => {
+    const user = userEvent.setup();
+    createQuotation.mockResolvedValue(refusal('form.violation.part_price_changed'));
+    renderRtl(<QuotationsScreen locale="ar" messages={ar} {...screenProps()} />);
+    const form = await openBuilder(user, AR);
+    await user.click(
+      within(form).getByRole('radio', { name: AR['quotations.lines.kindPart'] as string })
+    );
+    await choosePart(user, form, 'brake', /BRK-01 — Brake pads/, AR);
+    expect(within(form).getByText('Each').tagName).toBe('BDI');
+    await user.type(within(form).getByLabelText(labelledIn(AR, 'quotations.lines.quantity')), '1');
+    await user.click(
+      within(form).getByRole('button', { name: AR['quotations.build.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(AR['form.violation.part_price_changed'] as string)
     ).toBeVisible();
     expect(form.closest('[dir="rtl"]')).not.toBeNull();
   });

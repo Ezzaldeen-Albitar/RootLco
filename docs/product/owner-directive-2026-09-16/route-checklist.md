@@ -4019,7 +4019,7 @@ Known limitations of this slice, one line each:
 - Tax remains blocked on the accounting questionnaire; a price with no tax class is a zero rate for part lines exactly as for services (CC-OD-48, README question 11).
 - The API accepts `sourceRequiredPartRef` (a required part of the same work order naming the same item, checked by the service and the database), but the builder offers no "quote from a required part" control yet.
 - A builder caller without `inv.item.read` is not offered a part line; there is no typed-reference fallback for parts.
-- The invoice preview does not yet show a part line's unit; the invoice detail does. Prints are unchanged (D10).
+- The invoice preview does not yet show a part line's unit; the invoice detail does. Prints are unchanged (D10). (Corrected by P1-32-PRE-OD-FD6F below: the preview now names the part and its unit.)
 - Invoices are not linked to part issues and unquoted part issues are not billed (D5/D15).
 
 ### Chosen files count as unsaved work in the check-in wizard (P1-32-PRE-OD-RCF)
@@ -4089,3 +4089,43 @@ Residual items, one line each:
 - A local full `npm run test:web` run had 3 `waitFor` timeouts under load (quotation-detail expiry, reception-checkin consumed once, reception-condition-evidence F8 name); the same 3 files pass alone and the reviewer recorded hosted Web quality as successful on head 21e79d5a, so they are treated as local contention, not a regression.
 - No end-to-end spec under `apps/web/tests/e2e` references the changed selectors, so no end-to-end selector drift was found.
 - The verifier's temporary probe file inside the worktree (vitest cannot resolve bare imports from outside it) was deleted afterwards; nothing of it is committed.
+
+### D6 follow-up: a price that moves while a part is quoted, part names on the invoice preview (P1-32-PRE-OD-FD6F, ADR-023 D6)
+
+Follow-up to P1-32-PRE-OD-FD6 (#510). The service reads a part's selling price and tax rate and
+then writes the line; `quo.guard_quotation_part_line` re-reads both as the row is written. When a
+price row is added, replaced or withdrawn, or the price's tax rate is replaced, in between, the
+guard's `part_line_price` / `part_line_tax` refusal used to reach the caller as `500 ERR-SYS-001`.
+It is now answered `422 ERR-VAL-001` on that line's item (`part_price_changed`), with a correlation
+id and nothing of the quotation written; saving again quotes the part at the price that applies
+then. Every other token of the guard is still a fault. No price, tax rule or permission changes.
+
+The invoice preview now names a part line by the part's name, its stock code (left to right) and
+its unit name, from the quotation line's own snapshot (the read it already makes); a note typed on
+the line shows beneath. The quotation builder says the unit by its name, as the saved tables do,
+isolated in `<bdi>`; the part box points at the unit and pricing note with `aria-describedby`; the
+editor's explanation covers part lines where they are offered and only services where they are
+not.
+
+| Route                                    | Read (code)                                                       | Write (code)                                             | Element                           | State                                                        |
+| ---------------------------------------- | ----------------------------------------------------------------- | -------------------------------------------------------- | --------------------------------- | ------------------------------------------------------------ |
+| `/quotations` builder — part line        | `inv.item-search`, `inv.uom-list` (`inv.item.read`)               | `quo.quotation-create` (`quo.quotation.manage`)          | part box refusal, unit name, help | fixed (FD6F): `part_price_changed` on the part box           |
+| `/quotations/[quotationId]` new revision | `inv.item-search`, `inv.uom-list` (`inv.item.read`)               | `quo.quotation-revision-create` (`quo.quotation.manage`) | same line editor                  | fixed (FD6F)                                                 |
+| `/invoices` preview lines                | `sal.invoice-preview` (`sal.invoice.manage` + `sal.finance.view`) | —                                                        | part name, stock code, unit       | fixed (FD6F): names, never an identifier or "no description" |
+
+Tests: `tests/backend/od-quotation-part-lines.test.ts` (a branch selling price committed by
+another connection between the price read and the line write, and a tax rate replaced between the
+tax read and the write on a revision: `422` on the item with a correlation id, nothing written, and
+saving again quotes the new price; the preview names the part and its unit),
+`tests/unit/od-quotation-part-lines.test.ts` (`partPriceRaceRule`: exactly the price and tax
+tokens), `apps/web/tests/quotation-part-lines.dom.test.tsx` and `apps/web/tests/invoices.dom.test.tsx`
+(English and Arabic). Each was falsified by removing the behaviour it protects.
+
+Known limitations of this slice, one line each:
+
+- The API does not require `inv.item.read` to quote a part line, the same precedent as a service line not requiring `svc.service.read`: the builder offers a part line only to holders of `inv.item.read`, but a caller with `quo.quotation.manage` alone can name an item id it already knows. Unchanged here; recorded as a known limitation.
+- `sal.invoice_lines.tax_class_id` stays NULL on every work-order invoice line, part lines included; the rate and tax amount are the quotation line's captured figures. Tax remains blocked on the accounting questionnaire (CC-OD-48); unchanged here.
+- The same read-then-write window exists for an item archived, renamed or given another unit between the read and the write (`part_line_item`, `part_line_snapshot`); those refusals still answer `500` and are not mapped by this slice.
+- The invoice preview names a service line by its typed note only: the preview read carries the service id but not its name, and no read was added for it. The invoice detail is unchanged.
+- The builder reads the unit names once per part box from the unit list; until that read answers (or if it fails), a chosen part says its unit's code.
+- Prints are unchanged (D10).

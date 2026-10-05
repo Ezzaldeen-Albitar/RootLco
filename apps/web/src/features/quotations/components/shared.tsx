@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback } from 'react';
+import { useCallback, useId, useRef, type ReactNode } from 'react';
 import Button from '@mui/material/Button';
 import { regexes } from 'zod';
 
@@ -9,7 +9,7 @@ import { FormMoneyField } from '@/components/forms/mui/FormMoneyField';
 import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { EntityPicker } from '@/components/pickers/EntityPicker';
-import { listItems } from '@/features/inventory/api';
+import { listItems, listUnitsOfMeasure } from '@/features/inventory/api';
 import {
   MAX_NAME,
   MIN_ITEM_SEARCH,
@@ -18,7 +18,7 @@ import {
 import { ServicePicker } from '@/features/pricing/components/shared';
 import { directionOf, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
+import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { formatDayInZone, isCalendarDay } from '@/lib/branch-time';
 import type { ActionState } from '@/lib/forms/action-result';
@@ -365,11 +365,15 @@ export function TotalsList({
 /** What a line quotes: a service, or a part from the item catalogue (ADR-023 D6). */
 export type LineKind = 'service' | 'part';
 
-/** A part as the line editor holds it once chosen: its words and the unit it is counted in. */
+/**
+ * A part as the line editor holds it once chosen: its words and the unit it is
+ * counted in, by the unit's NAME — the word the quotation and invoice tables show
+ * for the same unit once the line is saved.
+ */
 export interface ChosenPart {
   readonly id: string;
   readonly label: string;
-  readonly unitCode: string;
+  readonly unitName: string;
 }
 
 export interface DraftLine {
@@ -594,6 +598,10 @@ export function LinesEditor({
     const found = errors[key];
     return found ? translateDynamic(messages, found) : undefined;
   };
+  // The part help names the unit and how the part is priced; the part box points
+  // at it (`aria-describedby`), so a screen reader hears it with the box.
+  const helpBase = useId();
+  const partHelpId = (key: number) => `${helpBase}-line-${key}-part-help`;
   const update = (key: number, patch: Partial<DraftLine>) =>
     onChange(lines.map((line) => (line.key === key ? { ...line, ...patch } : line)));
 
@@ -603,7 +611,11 @@ export function LinesEditor({
         {translate(messages, 'quotations.lines.heading')}
       </legend>
       <p className="text-caption text-text-muted">
-        {translate(messages, 'quotations.lines.explain')}
+        {/* A line quotes a service or, for a holder of the item read, a part. */}
+        {translate(
+          messages,
+          canReadItems ? 'quotations.lines.explain' : 'quotations.lines.explainServices'
+        )}
         {canReadItems ? ` ${translate(messages, 'quotations.lines.partsExplain')}` : null}
       </p>
       {errorFor('lines') ? (
@@ -643,6 +655,7 @@ export function LinesEditor({
                 value={line.item}
                 onChange={(item) => update(line.key, { item })}
                 error={errorFor(`line-${line.key}-itemId`)}
+                describedBy={partHelpId(line.key)}
                 testId={`quotation-line-${index + 1}-part`}
               />
             ) : (
@@ -658,10 +671,16 @@ export function LinesEditor({
               />
             )}
             {line.kind === 'part' ? (
-              <p className="mt-1 text-caption text-text-muted">
-                {line.item
-                  ? `${translateWithValues(messages, 'quotations.lines.partUnit', { unit: line.item.unitCode })} `
-                  : null}
+              <p id={partHelpId(line.key)} className="mt-1 text-caption text-text-muted">
+                {line.item ? (
+                  <>
+                    {withIsolatedValue(
+                      translate(messages, 'quotations.lines.partUnit'),
+                      'unit',
+                      line.item.unitName
+                    )}{' '}
+                  </>
+                ) : null}
                 {translate(messages, 'quotations.lines.partPriceHelp')}
               </p>
             ) : null}
@@ -744,6 +763,7 @@ export function PartPicker({
   value,
   onChange,
   error,
+  describedBy,
   testId,
 }: {
   readonly messages: Messages;
@@ -752,20 +772,43 @@ export function PartPicker({
   readonly value: ChosenPart | null;
   readonly onChange: (next: ChosenPart | null) => void;
   readonly error?: string | undefined;
+  /** The id of the text that explains the box — the line's unit and pricing note. */
+  readonly describedBy?: string | undefined;
   readonly testId: string;
 }) {
+  // The unit NAMES, read once per picker from the unit list (`inv.uom-list`, under the
+  // same `inv.item.read` the part search needs), because a catalogue row carries only
+  // its unit's code. A failed read is not kept, so the next search asks again; until
+  // one answers, a part says its unit's code rather than nothing.
+  const unitNames = useRef<Promise<ReadonlyMap<string, string>> | null>(null);
   const load = useCallback(
     async (term: string, cursor: string | null): Promise<ReadState<CursorPage<ChosenPart>>> => {
-      const page = await listItems(
-        { search: term, lifecycleStatus: 'active' },
-        { ...INITIAL_REQUEST, pageSize: 10 },
-        cursor
+      unitNames.current ??= listUnitsOfMeasure().then(
+        (state): ReadonlyMap<string, string> => {
+          if (state.status === 'ok') {
+            return new Map(state.data.items.map((unit) => [unit.id, unit.name] as const));
+          }
+          unitNames.current = null;
+          return new Map();
+        },
+        (): ReadonlyMap<string, string> => {
+          unitNames.current = null;
+          return new Map();
+        }
       );
+      const [page, names] = await Promise.all([
+        listItems(
+          { search: term, lifecycleStatus: 'active' },
+          { ...INITIAL_REQUEST, pageSize: 10 },
+          cursor
+        ),
+        unitNames.current,
+      ]);
       if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
       return {
         status: 'ok',
         data: {
-          items: page.rows.map(chosenPartOf),
+          items: page.rows.map((row) => chosenPartOf(row, names)),
           nextCursor: page.nextCursor,
           hasMore: page.hasMore,
         },
@@ -794,12 +837,41 @@ export function PartPicker({
       resultsLabel={translate(messages, 'inventory.itemPicker.results')}
       change={translate(messages, 'inventory.itemPicker.change')}
       countsAsUnsaved={false}
+      describedBy={describedBy}
       testId={testId}
     />
   );
 }
 
-/** A catalogue row as a part choice: its stock code and name, and its unit. */
-export function chosenPartOf(item: InventoryItem): ChosenPart {
-  return { id: item.id, label: `${item.sku} — ${item.name}`, unitCode: item.unitOfMeasure.code };
+/**
+ * A catalogue row as a part choice: its stock code and name, and its unit by name
+ * (`unitNames`, keyed by unit id), or by its code while the name is not known.
+ */
+export function chosenPartOf(
+  item: InventoryItem,
+  unitNames: ReadonlyMap<string, string> = new Map()
+): ChosenPart {
+  return {
+    id: item.id,
+    label: `${item.sku} — ${item.name}`,
+    unitName: unitNames.get(item.unitOfMeasure.id) ?? item.unitOfMeasure.code,
+  };
+}
+
+/**
+ * A translated sentence with one placeholder filled by text isolated in `<bdi>`, so
+ * a value in the other script — a unit named in English inside an Arabic sentence —
+ * cannot reorder the punctuation around it. A template without the placeholder is
+ * returned as written.
+ */
+function withIsolatedValue(template: string, name: string, value: string): ReactNode {
+  const parts = template.split(`{${name}}`);
+  if (parts.length !== 2) return template;
+  return (
+    <>
+      {parts[0]}
+      <bdi>{value}</bdi>
+      {parts[1]}
+    </>
+  );
 }

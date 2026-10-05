@@ -684,7 +684,9 @@ and `inv.item.read` to quote a part. In the example, Mr. Faris Al-Hamdan (exampl
    be issued." <!-- quotations.build.discountApprovalHelp --> There is no field for naming anyone
    else as the person who asked.
 4. Under **Lines** <!-- quotations.lines.heading --> : "One line per service. The quantity may have
-   up to three decimal places; a discount is an amount in the quotation currency with up to four." <!-- quotations.lines.explain -->
+   up to three decimal places; a discount is an amount in the quotation currency with up to four." <!-- quotations.lines.explainServices -->
+   With `inv.item.read` it reads "One line per service or part. …" <!-- quotations.lines.explain -->
+   instead.
    For each line press **Add a line** <!-- quotations.lines.add --> and give:
    - **Service** (required) <!-- quotations.picker.service --> — type the beginning of a service
      code or name and choose it from the list that opens under the box; **Choose another service** <!-- pricing.picker.changeService -->
@@ -695,7 +697,8 @@ and `inv.item.read` to quote a part. In the example, Mr. Faris Al-Hamdan (exampl
      or **A part from the item catalogue** <!-- quotations.lines.kindPart --> . For a part, **Part** <!-- quotations.picker.item -->
      replaces the service box: type the beginning of the stock code or name and choose it from the
      list; **Choose a different item** <!-- inventory.itemPicker.change --> puts it back. The line
-     then says the unit its quantity is counted in, and that it is "Priced at the part's selling
+     then says the unit its quantity is counted in, by the unit's name as the quotation shows it
+     once saved, and that it is "Priced at the part's selling
      price for this branch. The price, unit, discount and tax are kept on the quotation as they are
      when it is saved; a later price change does not alter them." <!-- quotations.lines.partPriceHelp -->
      You never type a price: the server takes the part's selling price for the work order's branch;
@@ -763,6 +766,10 @@ for another approver. The draft cannot be issued until they approve it." <!-- qu
   item prices to set one, then try again." <!-- form.violation.no_authorised_sale_price --> — shown
   on that line's part box after you press **Create quotation**; nothing is created. "This part is no
   longer in use and cannot be quoted. Choose another part." <!-- form.violation.item_archived -->
+- "The selling price or tax of this part changed while you were quoting. Save again to quote it at
+  its current price." <!-- form.violation.part_price_changed --> — shown on that line's part box
+  when someone changed the part's selling price or tax while you were saving; nothing is created,
+  what you typed stays, and saving again quotes the part at the price that applies then.
 
 **Screenshot** — no screenshot available at this version.
 
