@@ -88,6 +88,26 @@ const SHA40 = /\b[0-9a-f]{40}\b/;
 const CHECKPOINT_ID = /^CP-\d{8}-\d+$/;
 const EMPTY = (v: string | undefined) => !v || v === '—' || v === '-';
 
+/**
+ * Whether a cell cites a workflow run of THIS repository by URL. Parsed as a
+ * URL and compared by host and path, rather than matched as a substring, so a
+ * look-alike host or a path elsewhere cannot satisfy it.
+ */
+function citesRun(cell: string | undefined): boolean {
+  return (cell ?? '').split(/\s+/).some((token) => {
+    try {
+      const url = new URL(token.replace(/[),.;]+$/, ''));
+      return (
+        url.protocol === 'https:' &&
+        url.host === 'github.com' &&
+        /^\/Ezzaldeen-Albitar\/RootLco\/actions\/runs\/\d+$/.test(url.pathname)
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
 /** Every rule a ledger and its register must satisfy. Returns the violations. */
 function judgeLedger(ledger: Row[], register: Row[]): string[] {
   const problems: string[] = [];
@@ -129,14 +149,10 @@ function judgeLedger(ledger: Row[], register: Row[]): string[] {
         if (!SHA40.test(entry['Integration revision D'] ?? '')) {
           problems.push(`${id}: ${cp} carries no 40-character D`);
         }
-        if (
-          !/https:\/\/github\.com\/\S+\/actions\/runs\/\d+/.test(
-            entry['Dispatch run and protected-gate decision'] ?? ''
-          )
-        ) {
+        if (!citesRun(entry['Dispatch run and protected-gate decision'])) {
           problems.push(`${id}: ${cp} carries no dispatch run URL`);
         }
-        if (!/\/actions\/runs\/\d+/.test(entry['Records pull request and its STRICT run'] ?? '')) {
+        if (!citesRun(entry['Records pull request and its STRICT run'])) {
           problems.push(`${id}: ${cp} carries no records-pull-request run`);
         }
         if (!SHA40.test(entry["Records revision D'"] ?? '')) {
@@ -298,6 +314,18 @@ describe('the ledger rules refuse what they exist to refuse', () => {
     );
     expect(
       judgeLedger([row], [{ ...checkpoint, 'Dispatch run and protected-gate decision': 'Go' }])
+    ).not.toEqual([]);
+    expect(
+      judgeLedger(
+        [row],
+        [
+          {
+            ...checkpoint,
+            'Dispatch run and protected-gate decision':
+              'https://github.com.example.net/Ezzaldeen-Albitar/RootLco/actions/runs/123456789 — Go',
+          },
+        ]
+      )
     ).not.toEqual([]);
   });
 
