@@ -102,6 +102,10 @@ export const BODYLESS = Object.freeze({
     'the approval carries nothing but the receipt reversal in the path and the caller as approver',
   'sal.receipt-reversal-withdraw':
     'the withdrawal carries nothing but the receipt reversal in the path, its version as If-Match and the caller as requester',
+  // ADR-023 D3 (P1-32-PRE-OD-FD8): the requester is the caller and the discount
+  // request is the path parameter; its version travels as If-Match.
+  'quo.discount-approval-withdraw':
+    'the withdrawal carries nothing but the discount request in the path, its version as If-Match and the caller as requester',
   // The withdrawal names the template and the item in the path and the caller as the
   // actor; there is no field a body could carry. It entered this scope because it is a
   // `sal` DELETE (P1-31 P-9), not because a P1-30 screen sends it.

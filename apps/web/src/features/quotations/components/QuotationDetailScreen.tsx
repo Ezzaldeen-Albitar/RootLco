@@ -45,6 +45,7 @@ import {
   readQuotation,
   readRevision,
   readRevisionDecisions,
+  withdrawDiscountApproval,
 } from '../api';
 import {
   DECISIONS,
@@ -283,6 +284,8 @@ export function QuotationDetailScreen({
                 locale={locale}
                 messages={messages}
                 approval={current.discountApproval}
+                canManage={canManage}
+                onWithdrawn={reload}
               />
             ) : null}
           </>
@@ -409,19 +412,84 @@ const APPROVAL_STATUS_KEY = {
   approved: 'quotations.discountApproval.status.approved',
   rejected: 'quotations.discountApproval.status.rejected',
   superseded: 'quotations.discountApproval.status.superseded',
+  withdrawn: 'quotations.discountApproval.status.withdrawn',
 } as const;
 
+/**
+ * The discount request on the current revision: where it stands, why another person
+ * must approve it, and — for the person who asked, while it is pending — the way to
+ * withdraw it (ADR-023, D3).
+ *
+ * Withdrawing asks first (`ConfirmDialog`) and sends the REQUEST's `recordVersion`
+ * as read; the server refuses anybody but the requester and a request already
+ * decided, by name, and a stale version as a conflict answered by reading the
+ * quotation again. The button follows the server's `canWithdraw` and the
+ * `quo.quotation.manage` code the route declares. The two D8 notes say when the
+ * requester's own threshold or price change is why another person must approve
+ * the discount whatever its size.
+ */
 function DiscountApprovalNote({
   locale,
   messages,
   approval,
+  canManage,
+  onWithdrawn,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly approval: DiscountApproval;
+  /** `quo.quotation.manage` — the code the withdrawal route declares. */
+  readonly canManage: boolean;
+  /** Reads the quotation again; resolves once that answer is on screen. */
+  readonly onWithdrawn: () => Promise<void>;
 }) {
+  const [asking, setAsking] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [outcome, setOutcome] = useState<ActionState | null>(null);
   const requester =
     approval.requestedBy.displayName ?? translate(messages, 'quotations.approvals.someoneElse');
+
+  const withdraw = async () => {
+    setBusy(true);
+    try {
+      let result: ActionState;
+      try {
+        result = (await withdrawDiscountApproval(approval.id, approval.recordVersion)).state;
+      } catch {
+        setAsking(false);
+        setOutcome(unreachable(1));
+        return;
+      }
+      notifyActionResult(result, messages);
+      if (result.status === 'success') {
+        setOutcome(null);
+        // Busy — and the question up — until the quotation is read again.
+        await onWithdrawn();
+        setAsking(false);
+        return;
+      }
+      setAsking(false);
+      setOutcome(
+        result.status === 'conflict' &&
+          (result.messageKey === undefined || result.messageKey === 'state.conflict.title')
+          ? { ...result, messageKey: 'quotations.detail.conflict' }
+          : result
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const loadLatest = async () => {
+    setBusy(true);
+    try {
+      setOutcome(null);
+      await onWithdrawn();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section
       aria-labelledby="quotation-discount-approval-heading"
@@ -465,7 +533,30 @@ function DiscountApprovalNote({
             <bdi>{approval.decisionReason}</bdi>
           </Figure>
         ) : null}
+        {approval.withdrawnBy ? (
+          <Figure label={translate(messages, 'quotations.discountApproval.withdrawnBy')}>
+            <bdi>
+              {approval.withdrawnBy.displayName ??
+                translate(messages, 'quotations.approvals.someoneElse')}
+            </bdi>
+            {approval.withdrawnAt ? (
+              <span className="block text-caption text-text-muted">
+                <When value={approval.withdrawnAt} locale={locale} />
+              </span>
+            ) : null}
+          </Figure>
+        ) : null}
       </dl>
+      {approval.requesterSetPolicy ? (
+        <p className="text-caption text-text-secondary" data-testid="discount-approval-own-policy">
+          {translate(messages, 'quotations.discountApproval.ownPolicy')}
+        </p>
+      ) : null}
+      {approval.requesterSetPrice ? (
+        <p className="text-caption text-text-secondary" data-testid="discount-approval-own-price">
+          {translate(messages, 'quotations.discountApproval.ownPrice')}
+        </p>
+      ) : null}
       {approval.status === 'pending' ? (
         <p className="text-caption text-text-secondary">
           {translate(
@@ -487,6 +578,59 @@ function DiscountApprovalNote({
           {translate(messages, 'quotations.discountApproval.rejectedNext')}
         </p>
       ) : null}
+      {approval.status === 'withdrawn' ? (
+        <p className="text-caption text-text-secondary">
+          {translate(messages, 'quotations.discountApproval.withdrawnNext')}
+        </p>
+      ) : null}
+      {approval.canWithdraw && canManage ? (
+        <div className="flex flex-col gap-2" data-testid="discount-approval-withdraw">
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'quotations.discountApproval.withdraw.explain')}
+          </p>
+          <div>
+            <Button
+              type="button"
+              variant="outlined"
+              color="error"
+              disabled={busy}
+              aria-busy={busy || undefined}
+              onClick={() => {
+                setOutcome(null);
+                setAsking(true);
+              }}
+            >
+              {translate(messages, 'quotations.discountApproval.withdraw.action')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+      <OutcomeNote messages={messages} outcome={outcome} />
+      {outcome?.status === 'conflict' ? (
+        <div>
+          <Button
+            type="button"
+            variant="outlined"
+            size="small"
+            disabled={busy}
+            onClick={() => void loadLatest()}
+          >
+            {translate(messages, 'quotations.detail.reload')}
+          </Button>
+        </div>
+      ) : null}
+      <ConfirmDialog
+        open={asking && approval.canWithdraw && canManage}
+        messages={messages}
+        title={translate(messages, 'quotations.discountApproval.withdraw.confirmTitle')}
+        description={translate(messages, 'quotations.discountApproval.withdraw.confirmExplain')}
+        confirmLabel={translate(messages, 'quotations.discountApproval.withdraw.action')}
+        destructive
+        pending={busy}
+        onCancel={() => setAsking(false)}
+        onConfirm={() => void withdraw()}
+        testId="discount-approval-withdraw-dialog"
+      />
     </section>
   );
 }
@@ -1446,7 +1590,9 @@ function IssuePanel({
               ? 'quotations.issue.discountRejected'
               : blockedBy === 'superseded'
                 ? 'quotations.issue.discountSuperseded'
-                : 'quotations.issue.discountPending'
+                : blockedBy === 'withdrawn'
+                  ? 'quotations.issue.discountWithdrawn'
+                  : 'quotations.issue.discountPending'
           )}
         </p>
       ) : (

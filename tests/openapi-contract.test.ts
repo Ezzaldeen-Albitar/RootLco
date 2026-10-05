@@ -328,6 +328,7 @@ import '@/app/api/v1/quotation-revisions/[revisionId]/decisions/route';
 // P1-32-PRE-OD-DISC-01 — discount approval and the company discount threshold.
 import '@/app/api/v1/discount-approvals/route';
 import '@/app/api/v1/discount-approvals/[approvalId]/decision/route';
+import '@/app/api/v1/discount-approvals/[approvalId]/withdrawal/route';
 import '@/app/api/v1/discount-thresholds/[companyId]/route';
 
 // Phase 1-21 — inventory.

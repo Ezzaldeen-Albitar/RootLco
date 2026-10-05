@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 32,
-    "publicApi": 32,
-    "operationDepth": 32,
+    "registered": 33,
+    "publicApi": 33,
+    "operationDepth": 33,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -84,6 +84,54 @@
         "isolation",
         "route",
         "service",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "quo.discount-approval-withdraw",
+      "surface": "public-api",
+      "method": "POST",
+      "path": "/discount-approvals/{approvalId}/withdrawal",
+      "public": false,
+      "files": ["tests/backend/od-discount-self-exemption.test.ts"],
+      "referenced": true,
+      "derived": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation"
+      ],
+      "declared": ["denial", "stale-version"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "provided": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "stale-version",
         "success"
       ],
       "missing": [],

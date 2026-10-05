@@ -4187,3 +4187,38 @@ Fix round 3 (review of `c00885d8`), residual items, one line each:
 - The other round-1 and round-2 residuals listed above remain open: READ COMMITTED dependence, a lineage swap, the approved-work flag counting only `billable` lines, `deleted_at` ignored on the billed read, the same-key race answering `invoice_draft_open`, the nothing-to-bill wording, `BILLING_STATUSES` not in `server-vocabularies.test.ts`, and the expiry of a partly decided revision. The SQL, API, web, English and Arabic status vocabularies match at `c00885d8`.
 - Evidence for round 2 (`c00885d8`): the DB and backend tiers ran on hosted CI only, not on the development machine (port 54322 is off-limits and no disposable database was available); they passed in hosted jobs 111848125798 (DB 2028/2028, backend 4121/4121) and 111848270949 (backend 4121/4121). Round 3 did not run them on the development machine either.
 - Evidence for round 2 (`c00885d8`): a full local `npm run test:web` had 3 failures under machine load (`cancellable-reads`, `platform-console-writes`, `reception-condition-evidence.dom`); the three files passed when re-run alone (304/304) and hosted web-quality ran 198/198 files, so they are treated as local load flakes outside this slice.
+
+### No self-benefit from one's own policy changes; discount request withdrawal (P1-32-PRE-OD-FD8, ADR-023 D8/D3)
+
+Owner decisions D8 and D3 (ADR-023): a person's own change to a discount threshold, an approval
+limit or a price never exempts their own quotation from discount approval, with provenance and
+snapshots kept and no sole-administrator exception; and the requester may withdraw their own
+pending discount request. One forward migration
+(`20261007090000_quo_discount_self_exemption_and_withdrawal.sql`), one new operation, one new audit
+action (`quo.discount_approval.withdrawn`), no new permission code.
+
+| Route                                                 | Operation                                               | Who                                                            | What changed                                                                                                                                                                                                               |
+| ----------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /discount-approvals/{id}/withdrawal`            | `quo.discount-approval-withdraw`                        | the requester (`quo.quotation.manage` in the request's branch) | Withdraws the requester's own pending request (`If-Match` = the request's version; idempotent, a retry answers `replayed: true`); a withdrawn request is never decided and its draft is never issued; revising asks again. |
+| `POST /quotations`, `POST /quotations/{id}/revisions` | `quo.quotation-create`, `quo.quotation-revision-create` | unchanged                                                      | A discount whose requester set the threshold version or a price the lines use needs another person's approval whatever the threshold; the request names why (`requesterSetPolicy`, `requesterSetPrice`).                   |
+| `POST /discount-approvals/{id}/decision`              | `quo.discount-approval-decide`                          | unchanged                                                      | A limit the requester set never counts (`discount_no_approval_limit`); a withdrawn request is refused (`discount_approval_withdrawn`).                                                                                     |
+| `POST /quotations/{id}/issue`                         | `quo.quotation-issue`                                   | unchanged                                                      | A withdrawn request is refused by name (`discount_approval_withdrawn`); a draft without a request whose writer set what it relies on is refused (`discount_approval_required`).                                            |
+| `/quotations/{id}` (discount approval section)        | the four above                                          | as above                                                       | **Withdraw request** with a confirmation, the withdrawn state with who and when, and the two D8 reasons, in English and Arabic.                                                                                            |
+
+`DiscountApprovalView` gains additive fields: `requesterSetPolicy`, `requesterSetPrice`,
+`canWithdraw`, `withdrawnBy`, `withdrawnAt`, and the state `withdrawn`. No new web route.
+
+Wrapper extensions: none. The withdrawal uses the shared `ConfirmDialog` as it is.
+
+Preserved: separation of duties on every decision; the quotation's pinned threshold version; the
+approval of an amount and the frozen lines; rejection by another person with a reason; the credit-note
+and receipt-reversal rules; tenant and branch isolation (another tenant 404, another branch 403);
+plain refusal sentences in English and Arabic, right to left; money stays a decimal string.
+
+Known limitations, one line each:
+
+- Reading chosen: an independent approver whenever the evaluation relied on the requester's own change, not a reconstruction of the earlier version (never grants more).
+- A price its writer set, quoted with no discount, needs no second person (Owner decision needed).
+- Ending a colleague's own limit so a larger role limit applies, granting a role, and assigning a price list are not attributed.
+- Provenance of rows written before the migration is their last recorded writer; who published an existing price-list version is unknown; older lines carry no snapshot.
+- A legacy draft whose writer set what it relies on cannot be issued until it is revised; no request is backfilled.

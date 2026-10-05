@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 227 operations (PATCH 4, POST 216, PUT 7).
+ * currently 228 operations (PATCH 4, POST 217, PUT 7).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 21, export 2, financial 19, none 222, privileged 234, security 14.
+ * Currently approval 22, export 2, financial 19, none 222, privileged 234, security 14.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 512 of them. */
+/** Every operation the contract publishes. 513 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -832,6 +832,13 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     template: '/discount-approvals/{approvalId}/decision',
     method: 'POST',
     operationId: 'quo.discount-approval-decide',
+    idempotent: true,
+    auditClass: 'approval',
+  },
+  {
+    template: '/discount-approvals/{approvalId}/withdrawal',
+    method: 'POST',
+    operationId: 'quo.discount-approval-withdraw',
     idempotent: true,
     auditClass: 'approval',
   },

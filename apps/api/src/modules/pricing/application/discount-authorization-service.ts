@@ -52,13 +52,18 @@ import { CurrencyMismatchError, Money } from '../domain/money';
 import { DISCOUNT_LIMIT_TYPE, PricingRuleError, assertPercentageRange } from '../domain/pricing';
 import type { PricingRepository } from '../data/pricing-repository';
 
-/** Reads the caller's ceiling. Satisfied by `callerApprovalCeiling` (foundation). */
+/**
+ * Reads the caller's ceiling. Satisfied by `callerApprovalCeiling` (foundation).
+ * `excludeCreatedBy` is the requester whose discount is being approved: a limit they
+ * created never counts for the approver (ADR-023, D8).
+ */
 export interface ApprovalCeilingReader {
   callerApprovalCeiling(
     db: DbHandle,
     companyId: string,
     limitType: string,
-    asOf: string
+    asOf: string,
+    excludeCreatedBy: string | null
   ): Promise<{ amount: string; currencyCode: string } | null>;
 }
 
@@ -170,8 +175,9 @@ export type DiscountApprovalStanding =
     };
 
 /**
- * Memo for one read of many requests: the caller's ceiling per company, read once.
- * Keyed by `companyId|asOf`.
+ * Memo for one read of many requests: the caller's ceiling per company and
+ * requester, read once. Keyed by `companyId|asOf|requestedBy` — a limit the requester
+ * set never counts, so the ceiling can differ from one requester to the next.
  */
 export type ApprovalCeilingMemo = Map<
   string,
@@ -347,14 +353,21 @@ export class DiscountAuthorizationService {
       return { canApprove: false, block: 'discount_approval_permission_missing' };
     }
 
-    const key = `${request.companyId}|${request.asOf}`;
+    /**
+     * The ceiling never counts a limit the approver created, nor — ADR-023, D8 — one
+     * the REQUESTER created: raising a colleague's limit (or a role's the colleague
+     * holds) must not get one's own discount through. Such a limit is no limit that
+     * counts, and the screen says so (`discount_no_approval_limit`).
+     */
+    const key = `${request.companyId}|${request.asOf}|${request.requestedBy}`;
     let pending = memo?.get(key);
     if (pending === undefined) {
       pending = this.ceilings.callerApprovalCeiling(
         db,
         request.companyId,
         DISCOUNT_LIMIT_TYPE,
-        request.asOf
+        request.asOf,
+        request.requestedBy
       );
       memo?.set(key, pending);
     }

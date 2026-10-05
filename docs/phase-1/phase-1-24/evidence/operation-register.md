@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 512   |
+| Public operations        | 513   |
 | Domains (modules)        | 21    |
-| OpenAPI paths            | 402   |
-| OpenAPI operations       | 512   |
+| OpenAPI paths            | 403   |
+| OpenAPI operations       | 513   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 134   |
-| Audit actions catalogued | 297   |
+| Audit actions catalogued | 298   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 34    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 512        |
+| Covered           | 513        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -46,7 +46,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | platform        | 20         | 20      | 12     | 12      | 11         | 1               |
 | pricing         | 11         | 11      | 6      | 6       | 6          | 3               |
 | quality         | 15         | 15      | 7      | 8       | 7          | 2               |
-| quotation       | 12         | 12      | 6      | 6       | 6          | 2               |
+| quotation       | 13         | 13      | 7      | 7       | 7          | 3               |
 | reception       | 71         | 71      | 43     | 43      | 36         | 22              |
 | reporting       | 11         | 11      | 6      | 6       | 3          | 3               |
 | service-catalog | 9          | 9       | 6      | 6       | 6          | 2               |
@@ -311,6 +311,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `qms.rework-sign-off`                               | POST   | `/api/v1/rework-links/{reworkLinkId}/sign-off`                                          | branch  | `qms.rework.sign_off`                                                | qms.rework.signed_off                          | yes  | yes | audit authorization cross-tenant denial idempotency isolation route service stale-version success                             | Covered |
 | `quo.discount-approval-decide`                      | POST   | `/api/v1/discount-approvals/{approvalId}/decision`                                      | branch  | `quo.quotation.read`                                                 | quo.discount_approval.approved                 | yes  | —   | audit authorization concurrency cross-tenant denial idempotency isolation route service success                               | Covered |
 | `quo.discount-approval-list`                        | GET    | `/api/v1/discount-approvals`                                                            | branch  | `quo.quotation.read`                                                 | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
+| `quo.discount-approval-withdraw`                    | POST   | `/api/v1/discount-approvals/{approvalId}/withdrawal`                                    | branch  | `quo.quotation.manage`                                               | quo.discount_approval.withdrawn                | yes  | yes | audit authorization cross-tenant denial idempotency isolation route service stale-version success                             | Covered |
 | `quo.quotation-create`                              | POST   | `/api/v1/quotations`                                                                    | branch  | `quo.quotation.manage`<br>`wo.work_order.read`                       | quo.quotation.created                          | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox rollback route service success                           | Covered |
 | `quo.quotation-detail`                              | GET    | `/api/v1/quotations/{quotationId}`                                                      | branch  | `quo.quotation.read`                                                 | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `quo.quotation-issue`                               | POST   | `/api/v1/quotations/{quotationId}/issue`                                                | branch  | `quo.quotation.manage`                                               | quo.quotation_revision.issued                  | yes  | yes | audit authorization concurrency cross-tenant denial idempotency isolation outbox rollback route service stale-version success | Covered |

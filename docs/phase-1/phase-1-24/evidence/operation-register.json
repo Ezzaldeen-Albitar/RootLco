@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 512,
-    "openapiPaths": 402,
-    "openapiOperations": 512,
+    "operations": 513,
+    "openapiPaths": 403,
+    "openapiOperations": 513,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 34,
     "permissionCodes": 134,
-    "auditActions": 297
+    "auditActions": 298
   },
   "counts": {
-    "Covered": 512
+    "Covered": 513
   },
   "operations": [
     {
@@ -9859,7 +9859,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-20-quotation.test.ts"],
+      "tests": [
+        "tests/backend/od-discount-self-exemption.test.ts",
+        "tests/backend/p1-20-quotation.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/discount-approvals/[approvalId]/decision/route.ts"
     },
@@ -9892,6 +9895,50 @@
       "tests": ["tests/backend/p1-20-quotation.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/discount-approvals/route.ts"
+    },
+    {
+      "id": "quo.discount-approval-withdraw",
+      "domain": "quotation",
+      "method": "POST",
+      "route": "/api/v1/discount-approvals/{approvalId}/withdrawal",
+      "permissions": ["quo.quotation.manage"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "approval",
+      "auditAction": "quo.discount_approval.withdrawn",
+      "idempotent": true,
+      "versionGuarded": true,
+      "openapi": "POST /api/v1/discount-approvals/{approvalId}/withdrawal",
+      "documentedResponses": ["200", "401", "403", "404", "409", "422", "428", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "stale-version",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "stale-version",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-discount-self-exemption.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/discount-approvals/[approvalId]/withdrawal/route.ts"
     },
     {
       "id": "quo.quotation-create",

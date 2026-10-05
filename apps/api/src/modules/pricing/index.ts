@@ -134,8 +134,8 @@ export const pricingModule = composeModule({
       // DiscountAuthorizationService still depends only on the narrow
       // ApprovalCeilingReader port, so it can be tested without any of this.
       discounts: new DiscountAuthorizationService(repository, {
-        callerApprovalCeiling: (db, companyId, limitType, asOf) =>
-          callerApprovalCeiling(db, companyId, limitType, asOf),
+        callerApprovalCeiling: (db, companyId, limitType, asOf, excludeCreatedBy) =>
+          callerApprovalCeiling(db, companyId, limitType, asOf, excludeCreatedBy),
       }),
       thresholds: new DiscountThresholdService(repository),
     };

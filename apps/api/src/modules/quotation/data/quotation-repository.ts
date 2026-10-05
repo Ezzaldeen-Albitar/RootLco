@@ -245,7 +245,27 @@ export interface DiscountApprovalRow {
   readonly approvedCurrencyCode: string | null;
   readonly supersededAt: Date | null;
   readonly supersededByRevisionId: string | null;
+  /**
+   * ADR-023, D8: the requester recorded the discount policy version the quotation is
+   * held to, so the discount needs another person whatever the threshold. Computed
+   * by the database when the request was written.
+   */
+  readonly requesterSetPolicy: boolean;
+  /** ADR-023, D8: the requester had last changed or published a line's price. */
+  readonly requesterSetPrice: boolean;
+  /** ADR-023, D3: the requester who withdrew the pending request, and when. */
+  readonly withdrawnBy: string | null;
+  readonly withdrawnAt: Date | null;
   readonly recordVersion: number;
+}
+
+/**
+ * Whether a person set what a revision's discount evaluation relies on (ADR-023,
+ * D8): the discount policy version its quotation is held to, or the price of a line.
+ */
+export interface RevisionSelfChangeBasis {
+  readonly ownPolicy: boolean;
+  readonly ownPrice: boolean;
 }
 
 /**
@@ -439,7 +459,8 @@ const DISCOUNT_APPROVAL_COLUMNS = `a.id, a.company_id, a.branch_id, a.quotation_
        a.threshold_currency_code, a.required_permission_code, a.requested_by, a.requested_at,
        a.decided_by, a.decided_at, a.decision_reason,
        a.approved_discount_total::text AS approved_discount_total, a.approved_currency_code,
-       a.superseded_at, a.superseded_by_revision_id, a.record_version`;
+       a.superseded_at, a.superseded_by_revision_id, a.requester_set_policy,
+       a.requester_set_price, a.withdrawn_by, a.withdrawn_at, a.record_version`;
 
 const DISCOUNT_APPROVAL_FROM = `quo.discount_approvals a
          JOIN quo.quotations q
@@ -476,6 +497,10 @@ interface DiscountApprovalSql {
   approved_currency_code: string | null;
   superseded_at: Date | null;
   superseded_by_revision_id: string | null;
+  requester_set_policy: boolean;
+  requester_set_price: boolean;
+  withdrawn_by: string | null;
+  withdrawn_at: Date | null;
   record_version: number;
 }
 
@@ -508,6 +533,10 @@ const toDiscountApproval = (row: DiscountApprovalSql): DiscountApprovalRow => ({
   approvedCurrencyCode: row.approved_currency_code,
   supersededAt: row.superseded_at,
   supersededByRevisionId: row.superseded_by_revision_id,
+  requesterSetPolicy: row.requester_set_policy,
+  requesterSetPrice: row.requester_set_price,
+  withdrawnBy: row.withdrawn_by,
+  withdrawnAt: row.withdrawn_at,
   recordVersion: row.record_version,
 });
 
@@ -1595,6 +1624,48 @@ export class QuotationRepository extends Repository {
           ? null
           : { amount: row.approver_limit_amount, currency: row.approver_limit_currency_code },
     };
+  }
+
+  /**
+   * The requester withdraws their own PENDING request (ADR-023, D3).
+   *
+   * Only the status moves; `quo.guard_discount_approval` stamps `withdrawn_by` and
+   * `withdrawn_at` from the signed-in person and refuses anyone but the requester
+   * (`discount_withdraw_not_requester`) and any request that is not pending, and
+   * `upd_discount_approvals_scope` admits the row only when the signed-in person
+   * withdrew it. `false` means the row was no longer pending.
+   */
+  public async withdrawDiscountApproval(db: DbHandle, approvalId: string): Promise<boolean> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ id: string }>(
+      db,
+      `UPDATE quo.discount_approvals
+          SET status = 'withdrawn'
+        WHERE tenant_id = $1 AND id = $2 AND status = 'pending'
+        RETURNING id`,
+      [context.principal.tenantId, approvalId]
+    );
+    return row !== null;
+  }
+
+  /**
+   * Whether `personId` set what a revision's discount evaluation relies on (ADR-023,
+   * D8), asked of the database (`quo.revision_self_change_basis`) from the provenance
+   * it snapshotted on the quotation's pinned policy version and on each line — the
+   * same answer the issue guard and the request guard use.
+   */
+  public async revisionSelfChangeBasis(
+    db: DbHandle,
+    revisionId: string,
+    personId: string
+  ): Promise<RevisionSelfChangeBasis> {
+    this.assertContext(db);
+    const row = await this.runOne<{ own_policy: boolean; own_price: boolean }>(
+      db,
+      `SELECT b.own_policy, b.own_price FROM quo.revision_self_change_basis($1, $2) b`,
+      [revisionId, personId]
+    );
+    return { ownPolicy: row?.own_policy === true, ownPrice: row?.own_price === true };
   }
 
   /**

@@ -4100,6 +4100,16 @@ request although its discount needs one under its quotation's pinned policy
 `quo.backfill_discount_approvals` recorded for a draft written under the single-request flow,
 requested by that draft's creator.
 
+P1-32-PRE-OD-FD8 (ADR-023 D8 and D3). `requester_set_policy` and `requester_set_price` say why
+another person must approve whatever the threshold: the requester recorded the policy version the
+quotation is held to, or had last changed or published a line's price; both are computed by
+`quo.guard_discount_approval` when the request is written and frozen. An approval's limit never
+counts when the approver OR the requester created it, and the limit relied on is recorded in
+`approver_limit_id` (restricted). The requester may withdraw a PENDING request: status `withdrawn`,
+with `withdrawn_by` (a foreign key into `iam.user_accounts`, always the requester) and
+`withdrawn_at` stamped by the guard; a withdrawn request is terminal — never approved, rejected or
+superseded — and its revision cannot be issued.
+
 | #   | Column                         | Type                     | Nullable |
 | --- | ------------------------------ | ------------------------ | -------- |
 | 1   | `id`                           | uuid                     | no       |
@@ -4136,6 +4146,11 @@ requested by that draft's creator.
 | 32  | `created_by`                   | uuid                     | no       |
 | 33  | `updated_at`                   | timestamp with time zone | yes      |
 | 34  | `updated_by`                   | uuid                     | yes      |
+| 35  | `requester_set_policy`         | boolean                  | no       |
+| 36  | `requester_set_price`          | boolean                  | no       |
+| 37  | `approver_limit_id`            | uuid                     | yes      |
+| 38  | `withdrawn_by`                 | uuid                     | yes      |
+| 39  | `withdrawn_at`                 | timestamp with time zone | yes      |
 
 #### quo.quotation_items
 
@@ -4147,6 +4162,13 @@ code and name, and the tax class the price named. All six are NULL on a service 
 tax class — with that class's effective rate (zero for none, as a counter sale), the item's current
 words and unit, and a linked required part of the quotation's own work order; it freezes the
 snapshot, and a part line's unit price, tax rate and currency, on UPDATE. Cost is never read.
+
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds the provenance snapshot of the price a line was priced from,
+copied by `quo.snapshot_quotation_item_price_provenance` when the line is written and kept while it
+keeps its source: who had last changed the price rule or item selling price (`price_changed_by`,
+`price_changed_at`) and, for a rule, who had published its price-list version (`price_published_by`,
+`price_published_at`). A writer's value is ignored; a later change to the source does not move it.
+NULL for lines written before migration 20261007090000.
 
 | #   | Column                     | Type                     | Nullable |
 | --- | -------------------------- | ------------------------ | -------- |
@@ -4183,6 +4205,10 @@ snapshot, and a part line's unit price, tax rate and currency, on UPDATE. Cost i
 | 31  | `quoted_unit_code`         | text                     | yes      |
 | 32  | `quoted_unit_name`         | text                     | yes      |
 | 33  | `quoted_tax_class_ref`     | uuid                     | yes      |
+| 34  | `price_changed_by`         | uuid                     | yes      |
+| 35  | `price_changed_at`         | timestamp with time zone | yes      |
+| 36  | `price_published_by`       | uuid                     | yes      |
+| 37  | `price_published_at`       | timestamp with time zone | yes      |
 
 #### quo.quotation_revisions
 
@@ -4334,6 +4360,11 @@ set `discount_policy_pinned_at` means no policy was in force: the threshold is z
 
 #### svc.price_list_versions
 
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `published_by` and `published_at`: who published the version,
+stamped from the signed-in person by `svc.stamp_price_list_version_publication` when it becomes
+published and never changed. NULL for a draft, when nobody was signed in, and for a version
+published before migration 20261007090000 (no row recorded who).
+
 | #   | Column           | Type                     | Nullable |
 | --- | ---------------- | ------------------------ | -------- |
 | 1   | `id`             | uuid                     | no       |
@@ -4351,6 +4382,8 @@ set `discount_policy_pinned_at` means no policy was in force: the threshold is z
 | 13  | `updated_by`     | uuid                     | yes      |
 | 14  | `deleted_at`     | timestamp with time zone | yes      |
 | 15  | `deleted_by`     | uuid                     | yes      |
+| 16  | `published_by`   | uuid                     | yes      |
+| 17  | `published_at`   | timestamp with time zone | yes      |
 
 #### svc.price_lists
 
@@ -4373,6 +4406,11 @@ set `discount_policy_pinned_at` means no policy was in force: the threshold is z
 
 #### svc.price_rules
 
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `price_changed_by` and `price_changed_at`: who last changed the
+values that price a line from this rule (amount, tax class, narrowing, priority, status, deletion),
+stamped from the signed-in person by `svc.stamp_price_rule_provenance` (NULL when nobody was signed
+in). Rows written before migration 20261007090000 carry their last recorded writer.
+
 | #   | Column                  | Type                     | Nullable |
 | --- | ----------------------- | ------------------------ | -------- |
 | 1   | `id`                    | uuid                     | no       |
@@ -4393,8 +4431,16 @@ set `discount_policy_pinned_at` means no policy was in force: the threshold is z
 | 16  | `updated_by`            | uuid                     | yes      |
 | 17  | `deleted_at`            | timestamp with time zone | yes      |
 | 18  | `deleted_by`            | uuid                     | yes      |
+| 19  | `price_changed_by`      | uuid                     | yes      |
+| 20  | `price_changed_at`      | timestamp with time zone | yes      |
 
 #### svc.pricing_approval_policies
+
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `set_by` and `set_at`: who recorded this threshold version and
+when, stamped from the signed-in person by `svc.stamp_pricing_approval_policy_provenance` (NULL when
+nobody was signed in) and never changed. A quotation whose requester recorded the version it is held
+to needs another person's approval for any discount (`quo.revision_self_change_basis`). Rows written
+before migration 20261007090000 carry `created_by` / `created_at`.
 
 | #   | Column                     | Type                     | Nullable |
 | --- | -------------------------- | ------------------------ | -------- |
@@ -4418,6 +4464,8 @@ set `discount_policy_pinned_at` means no policy was in force: the threshold is z
 | 18  | `deleted_at`               | timestamp with time zone | yes      |
 | 19  | `deleted_by`               | uuid                     | yes      |
 | 20  | `version_no`               | integer                  | no       |
+| 21  | `set_by`                   | uuid                     | yes      |
+| 22  | `set_at`                   | timestamp with time zone | yes      |
 
 `version_no` (P1-32-PRE-OD-DISC-01, -04) numbers the versions of one (company, policy type)
 policy from 1, unique over every row of the scope including deleted and inactive ones
@@ -4690,24 +4738,28 @@ Generated from the live catalog after `20260917092000_inv_item_sale_prices.sql`.
 
 #### inv.item_sale_prices
 
-| #   | Column           | Type                     | Nullable |
-| --- | ---------------- | ------------------------ | -------- |
-| 1   | `id`             | uuid                     | no       |
-| 2   | `tenant_id`      | uuid                     | no       |
-| 3   | `item_id`        | uuid                     | no       |
-| 4   | `company_id`     | uuid                     | yes      |
-| 5   | `branch_id`      | uuid                     | yes      |
-| 6   | `currency_code`  | text                     | no       |
-| 7   | `unit_price`     | numeric                  | no       |
-| 8   | `tax_class_id`   | uuid                     | yes      |
-| 9   | `status`         | text                     | no       |
-| 10  | `record_version` | integer                  | no       |
-| 11  | `created_at`     | timestamp with time zone | no       |
-| 12  | `created_by`     | uuid                     | no       |
-| 13  | `updated_at`     | timestamp with time zone | yes      |
-| 14  | `updated_by`     | uuid                     | yes      |
-| 15  | `deleted_at`     | timestamp with time zone | yes      |
-| 16  | `deleted_by`     | uuid                     | yes      |
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `price_changed_by` and `price_changed_at`: who last changed the selling price, its currency, tax class, status or deletion, stamped from the signed-in person by `inv.stamp_item_sale_price_provenance` (NULL when nobody was signed in). Setting the same price again changes nothing. Rows written before migration 20261007090000 carry their last recorded writer.
+
+| #   | Column             | Type                     | Nullable |
+| --- | ------------------ | ------------------------ | -------- |
+| 1   | `id`               | uuid                     | no       |
+| 2   | `tenant_id`        | uuid                     | no       |
+| 3   | `item_id`          | uuid                     | no       |
+| 4   | `company_id`       | uuid                     | yes      |
+| 5   | `branch_id`        | uuid                     | yes      |
+| 6   | `currency_code`    | text                     | no       |
+| 7   | `unit_price`       | numeric                  | no       |
+| 8   | `tax_class_id`     | uuid                     | yes      |
+| 9   | `status`           | text                     | no       |
+| 10  | `record_version`   | integer                  | no       |
+| 11  | `created_at`       | timestamp with time zone | no       |
+| 12  | `created_by`       | uuid                     | no       |
+| 13  | `updated_at`       | timestamp with time zone | yes      |
+| 14  | `updated_by`       | uuid                     | yes      |
+| 15  | `deleted_at`       | timestamp with time zone | yes      |
+| 16  | `deleted_by`       | uuid                     | yes      |
+| 17  | `price_changed_by` | uuid                     | yes      |
+| 18  | `price_changed_at` | timestamp with time zone | yes      |
 
 ### Sales returns (`inv`, P1-32 preparatory slice 2)
 

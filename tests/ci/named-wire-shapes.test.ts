@@ -215,8 +215,11 @@ describe('every route body serialises a named type', () => {
     // 512 with the receipt reversal (P1-32-PRE-OD-FD4, ADR-023 D4): four commands
     // serialising the NAMED `ReceiptReversalResult` and the replacement serialising
     // the NAMED `ReceiptView`, so `named` moves by five and `composed` does not.
-    expect(summary.bodies).toBe(512);
-    expect(summary.named).toBe(460);
+    // 513 with the discount request withdrawal (P1-32-PRE-OD-FD8, ADR-023 D3): one
+    // command serialising the NAMED `DiscountApprovalWithdrawal`, so `named` moves by
+    // one and `composed` does not.
+    expect(summary.bodies).toBe(513);
+    expect(summary.named).toBe(461);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

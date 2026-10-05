@@ -55,6 +55,23 @@
  * on it rather than deadlocking; two decisions on one request serialize on the same
  * lock, and the second finds the request decided and is refused by name
  * (`discount_approval_already_decided`).
+ *
+ * ## Withdrawing one's own request (ADR-023, D3)
+ *
+ * The requester may withdraw their own PENDING request (`withdraw`); nobody else
+ * may, and a decided, superseded or already withdrawn request cannot be. A withdrawn
+ * request is terminal: it is never approved, rejected or superseded, its revision
+ * cannot be issued, and revising the quotation is how the discount is asked for
+ * again — or dropped. The database holds the same rules
+ * (`quo.guard_discount_approval`, migration 20261007090000) and stamps who withdrew
+ * it and when.
+ *
+ * ## Why somebody else must approve even under the threshold (ADR-023, D8)
+ *
+ * A request records whether its requester set what its evaluation relies on — the
+ * discount policy version the quotation is held to (`requesterSetPolicy`) or a price
+ * a line was priced at (`requesterSetPrice`). Either makes any discount need another
+ * person's approval, and an approver's limit never counts when the requester set it.
  */
 import { iamDirectory } from '@/modules/iam';
 import {
@@ -67,6 +84,7 @@ import { appendAudit } from '@/server/audit/audit';
 import { withBusinessRefusal } from '@/server/audit/business-refusals';
 import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { pageRequest, type Page } from '@/server/db/pagination';
+import { isSqlState, SQLSTATE } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import { AppFailure } from '@/server/errors/app-failure';
 import {
@@ -81,6 +99,7 @@ export const DISCOUNT_APPROVAL_STATES = Object.freeze([
   'approved',
   'rejected',
   'superseded',
+  'withdrawn',
 ] as const);
 export type DiscountApprovalState = (typeof DISCOUNT_APPROVAL_STATES)[number];
 
@@ -98,6 +117,17 @@ export type ListableDiscountApprovalState = (typeof LISTABLE_DISCOUNT_APPROVAL_S
 /** The two decisions an approver may record. */
 export const DISCOUNT_APPROVAL_DECISIONS = Object.freeze(['approved', 'rejected'] as const);
 export type DiscountApprovalDecision = (typeof DISCOUNT_APPROVAL_DECISIONS)[number];
+
+/**
+ * The rules a refused withdrawal is named by (ADR-023, D3), each also the token
+ * `quo.guard_discount_approval` raises for the same rule. Every refused attempt is
+ * recorded once through the business-refusal record (D12).
+ */
+export const DISCOUNT_WITHDRAWAL_REFUSALS = Object.freeze({
+  notRequester: 'discount_withdraw_not_requester',
+  decided: 'discount_approval_already_decided',
+  superseded: 'discount_approval_superseded',
+} as const);
 
 /**
  * Why the signed-in person cannot approve a request, without an amount:
@@ -183,7 +213,33 @@ export interface DiscountApprovalView {
   readonly decisionReason: string | null;
   /** When a newer revision replaced this request, or `null`. */
   readonly supersededAt: string | null;
+  /**
+   * ADR-023, D8: the requester recorded the discount policy version the quotation is
+   * held to, so the discount needs another person's approval whatever the threshold.
+   */
+  readonly requesterSetPolicy: boolean;
+  /**
+   * ADR-023, D8: the requester had last changed or published the price of one of the
+   * revision's lines, so the discount needs another person's approval whatever the
+   * threshold.
+   */
+  readonly requesterSetPrice: boolean;
+  /**
+   * Whether the signed-in person could withdraw this request now: it is pending and
+   * they asked for it (ADR-023, D3). The route also needs `quo.quotation.manage`.
+   */
+  readonly canWithdraw: boolean;
+  /** The requester who withdrew the request, or `null`. */
+  readonly withdrawnBy: DiscountApprovalPerson | null;
+  readonly withdrawnAt: string | null;
   readonly recordVersion: number;
+}
+
+/** A withdrawal's answer: the request, and whether it was already withdrawn (a replay). */
+export interface DiscountApprovalWithdrawal {
+  readonly discountApproval: DiscountApprovalView;
+  /** `true` when the request had already been withdrawn; nothing was written again. */
+  readonly replayed: boolean;
 }
 
 export interface DecideDiscountInput {
@@ -221,6 +277,45 @@ const RECORDED_DECISION_REFUSALS: ReadonlySet<string> = new Set<DiscountApproval
   'discount_no_approval_limit',
   'discount_limit_currency_mismatch',
   'discount_over_approval_limit',
+]);
+
+/**
+ * Throws a named refusal of a withdrawal, marked as a refusal by business rule so the
+ * route pipeline records it once after the command rolls back (D12). The rule is
+ * filed under the path parameter: a withdrawal sends no body.
+ */
+function refuseWithdrawal(
+  approvalId: string,
+  rule: string,
+  message: string,
+  cause?: unknown
+): never {
+  const failure = new AppFailure('ERR-TRN-001', {
+    message,
+    ...(cause === undefined ? {} : { cause }),
+    safeDetails: { violations: [{ path: 'path.approvalId', rule }] },
+  });
+  withBusinessRefusal(failure, { entityType: 'quo.discount_approval', entityId: approvalId, rule });
+  throw failure;
+}
+
+/**
+ * The token `quo.guard_discount_approval` put before the first colon of its
+ * `check_violation` message, or `null` for any other error.
+ */
+function guardToken(error: unknown): string | null {
+  if (!isSqlState(error, SQLSTATE.checkViolation)) return null;
+  const message =
+    typeof error === 'object' && error !== null && 'message' in error
+      ? (error as { message?: unknown }).message
+      : undefined;
+  return typeof message === 'string' ? (/^([a-z_]+):/.exec(message)?.[1] ?? null) : null;
+}
+
+const WITHDRAWAL_GUARD_TOKENS: ReadonlySet<string> = new Set<string>([
+  DISCOUNT_WITHDRAWAL_REFUSALS.notRequester,
+  DISCOUNT_WITHDRAWAL_REFUSALS.decided,
+  DISCOUNT_WITHDRAWAL_REFUSALS.superseded,
 ]);
 
 /** Marks a refused decision for the record, when it is one of the recorded blocks. */
@@ -279,6 +374,7 @@ export async function describeDiscountApprovals(
   for (const row of rows) {
     ids.add(row.requestedBy);
     if (row.decidedBy !== null) ids.add(row.decidedBy);
+    if (row.withdrawnBy !== null) ids.add(row.withdrawnBy);
   }
   const names = await iamDirectory().directory.resolveDisplayIdentities(db, [...ids]);
   const person = (id: string): DiscountApprovalPerson => ({
@@ -360,6 +456,11 @@ export async function describeDiscountApprovals(
       decidedAt: row.decidedAt === null ? null : row.decidedAt.toISOString(),
       decisionReason: row.decisionReason,
       supersededAt: row.supersededAt === null ? null : row.supersededAt.toISOString(),
+      requesterSetPolicy: row.requesterSetPolicy,
+      requesterSetPrice: row.requesterSetPrice,
+      canWithdraw: row.status === 'pending' && row.requestedBy === caller,
+      withdrawnBy: row.withdrawnBy === null ? null : person(row.withdrawnBy),
+      withdrawnAt: row.withdrawnAt === null ? null : row.withdrawnAt.toISOString(),
       recordVersion: row.recordVersion,
     });
   }
@@ -448,6 +549,15 @@ export class DiscountApprovalService {
         `Discount approval ${approvalId} was replaced by a newer revision and cannot be decided`
       );
     }
+    if (approval.status === 'withdrawn') {
+      // ADR-023, D3: a request its requester withdrew is never approved or rejected.
+      refuse(
+        'ERR-TRN-001',
+        'body',
+        'discount_approval_withdrawn',
+        `Discount approval ${approvalId} was withdrawn by its requester and cannot be decided`
+      );
+    }
     if (approval.status !== 'pending') {
       refuse(
         'ERR-TRN-001',
@@ -515,6 +625,139 @@ export class DiscountApprovalService {
 
     await this.auditDecision(db, after, decided.limit);
     return describeDiscountApproval(db, after, await this.repository.businessDate(db));
+  }
+
+  /**
+   * The requester withdraws their own PENDING discount request (ADR-023, D3).
+   *
+   * Withdrawal only reduces exposure — a pending request grants nothing and a
+   * withdrawn one never will — so it asks no second person. The path names no
+   * branch, so the declared code (`quo.quotation.manage`, the code that wrote the
+   * revision) is authorized against the request's own company and branch once it is
+   * read. Then, under the quotation lock and the request's:
+   *
+   *  - `If-Match` must carry the request's `recordVersion` (409 otherwise);
+   *  - only the requester withdraws (`discount_withdraw_not_requester`);
+   *  - a request already withdrawn answers `replayed: true` with no second audit
+   *    record;
+   *  - a superseded or decided request cannot be withdrawn
+   *    (`discount_approval_superseded`, `discount_approval_already_decided`).
+   *
+   * Each refusal by rule is recorded once after the rollback (D12). The database
+   * holds the same rules and stamps the withdrawal (`quo.guard_discount_approval`).
+   */
+  public async withdraw(
+    db: DbHandle,
+    approvalId: string,
+    expectedVersion: number,
+    authorizeScope: ScopeAuthorizer
+  ): Promise<DiscountApprovalWithdrawal> {
+    const probe = await this.repository.findDiscountApproval(db, approvalId);
+    if (probe === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Discount approval ${approvalId} is not visible`,
+      });
+    }
+    await authorizeScope({ companyId: probe.companyId, branchId: probe.branchId });
+
+    // Lock order: the quotation, then the approval.
+    const quotation = await this.repository.lockQuotation(db, probe.quotationId);
+    const approval =
+      quotation === null ? null : await this.repository.lockDiscountApproval(db, approvalId);
+    if (approval === null) {
+      throw new AppFailure('ERR-RES-001', {
+        message: `Discount approval ${approvalId} is not visible`,
+      });
+    }
+    if (approval.recordVersion !== expectedVersion) {
+      throw new AppFailure('ERR-CON-001', {
+        message: 'The discount request has changed since it was read; re-read it and retry',
+      });
+    }
+    if (approval.requestedBy !== db.context.principal.userId) {
+      refuseWithdrawal(
+        approval.id,
+        DISCOUNT_WITHDRAWAL_REFUSALS.notRequester,
+        `Discount approval ${approvalId} can be withdrawn only by the person who requested it`
+      );
+    }
+    const asOf = await this.repository.businessDate(db);
+    if (approval.status === 'withdrawn') {
+      return {
+        discountApproval: await describeDiscountApproval(db, approval, asOf),
+        replayed: true,
+      };
+    }
+    if (approval.status === 'superseded') {
+      refuseWithdrawal(
+        approval.id,
+        DISCOUNT_WITHDRAWAL_REFUSALS.superseded,
+        `Discount approval ${approvalId} was replaced by a newer revision and cannot be withdrawn`
+      );
+    }
+    if (approval.status !== 'pending') {
+      refuseWithdrawal(
+        approval.id,
+        DISCOUNT_WITHDRAWAL_REFUSALS.decided,
+        `Discount approval ${approvalId} is ${approval.status} and can no longer be withdrawn`
+      );
+    }
+
+    let moved: boolean;
+    try {
+      moved = await this.repository.withdrawDiscountApproval(db, approval.id);
+    } catch (error) {
+      const token = guardToken(error);
+      if (token !== null && WITHDRAWAL_GUARD_TOKENS.has(token)) {
+        refuseWithdrawal(
+          approval.id,
+          token,
+          `Discount approval withdrawal was refused by the rule ${token}`,
+          error
+        );
+      }
+      throw error;
+    }
+    if (!moved) {
+      refuseWithdrawal(
+        approval.id,
+        DISCOUNT_WITHDRAWAL_REFUSALS.decided,
+        `Discount approval ${approvalId} was decided by another request`
+      );
+    }
+    const after = await this.repository.findDiscountApproval(db, approval.id);
+    if (after === null) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: `Discount approval ${approval.id} is not readable after its withdrawal`,
+      });
+    }
+
+    await appendAudit(db, {
+      action: 'quo.discount_approval.withdrawn',
+      entityType: 'quo.discount_approval',
+      entityId: after.id,
+      companyId: after.companyId,
+      branchId: after.branchId,
+      requestRef: 'quo.discount-approval-withdraw',
+      details: [
+        {
+          field: 'status',
+          classification: 'internal',
+          previousValue: approval.status,
+          value: after.status,
+        },
+        {
+          field: 'quotationRevisionId',
+          classification: 'internal',
+          value: after.quotationRevisionId,
+        },
+        { field: 'discountTotal', classification: 'restricted', value: after.discountTotal },
+        { field: 'currency', classification: 'public', value: after.currencyCode },
+        { field: 'requestedBy', classification: 'internal', value: after.requestedBy },
+      ],
+    });
+
+    return { discountApproval: await describeDiscountApproval(db, after, asOf), replayed: false };
   }
 
   /**

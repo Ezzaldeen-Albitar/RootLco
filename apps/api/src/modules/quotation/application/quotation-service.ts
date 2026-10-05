@@ -456,7 +456,13 @@ export class QuotationService {
 
     const items = await this.insertItems(db, revision, priced.items);
 
-    const approval = await this.recordDiscountRequest(db, revision, discount, asOf, []);
+    const approval = await this.recordDiscountRequest(
+      db,
+      revision,
+      await this.withoutSelfExemption(db, revision, discount, pinned),
+      asOf,
+      []
+    );
 
     await appendAudit(db, {
       action: 'quo.quotation.created',
@@ -600,7 +606,13 @@ export class QuotationService {
       open.map((row) => row.id),
       revision.id
     );
-    const approval = await this.recordDiscountRequest(db, revision, discount, asOf, superseded);
+    const approval = await this.recordDiscountRequest(
+      db,
+      revision,
+      await this.withoutSelfExemption(db, revision, discount, pinned),
+      asOf,
+      superseded
+    );
 
     await appendAudit(db, {
       action: 'quo.quotation_revision.created',
@@ -812,6 +824,13 @@ export class QuotationService {
       refuseIssue(
         'discount_approval_rejected',
         `Revision ${revision.revisionNumber} carries a discount that was turned down`
+      );
+    }
+    if (approvalRow.status === 'withdrawn') {
+      refuseIssue(
+        'discount_approval_withdrawn',
+        `Revision ${revision.revisionNumber} carries a discount request its requester withdrew. ` +
+          'Revise the quotation to ask again or to drop the discount.'
       );
     }
     if (approvalRow.status === 'superseded') {
@@ -1726,6 +1745,47 @@ export class QuotationService {
   }
 
   /**
+   * ADR-023, D8 — a person's own policy or price change never exempts their own
+   * quotation from discount approval.
+   *
+   * Asked AFTER the lines are written, because the database snapshots on each line
+   * who had last changed or published the price it was priced from. When the
+   * requester (the signed-in person writing the revision) recorded the discount
+   * policy version the quotation is held to, or set a price a line was priced at,
+   * any discount at all needs approval by somebody else: the threshold their own
+   * change produced is not relied on. Approval still follows the quotation's pinned
+   * version — its permission and its snapshot — and the request records why
+   * (`requester_set_policy`, `requester_set_price`, computed by the database).
+   *
+   * The reading chosen is the one that never grants more: the version in force
+   * before the person's change cannot always be reconstructed (a price changes in
+   * place, and the earlier policy version may be theirs too), so an independent
+   * approver is required instead. A discount of zero gives nothing away and is left
+   * alone. The issue guard holds the same rule for a revision with no request
+   * (`quo.revision_discount_needs_approval`).
+   */
+  private async withoutSelfExemption(
+    db: DbHandle,
+    revision: RevisionRow,
+    summary: DiscountSummary,
+    pinned: PinnedDiscountPolicy
+  ): Promise<DiscountSummary> {
+    if (summary.requiresApproval || Decimal.parse(summary.total, MONEY).isZero) return summary;
+    const basis = await this.repository.revisionSelfChangeBasis(
+      db,
+      revision.id,
+      db.context.principal.userId
+    );
+    if (!basis.ownPolicy && !basis.ownPrice) return summary;
+    return {
+      ...summary,
+      requiresApproval: true,
+      permissionCode: pinned.permissionCode,
+      threshold: pinned.threshold,
+    };
+  }
+
+  /**
    * Records that a revision's discount needs approval, and audits the request
    * (P1-32-PRE-OD-DISC-01).
    *
@@ -1810,6 +1870,18 @@ export class QuotationService {
           field: 'thresholdValue',
           classification: 'internal',
           value: approval.thresholdValue ?? '0',
+        },
+        // ADR-023, D8: why another person must approve even under the threshold —
+        // computed by the database from the provenance it snapshotted.
+        {
+          field: 'requesterSetPolicy',
+          classification: 'internal',
+          value: String(approval.requesterSetPolicy),
+        },
+        {
+          field: 'requesterSetPrice',
+          classification: 'internal',
+          value: String(approval.requesterSetPrice),
         },
         ...(supersedes.length === 0
           ? []

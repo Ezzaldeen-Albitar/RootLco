@@ -489,6 +489,13 @@ export async function callerHoldsPermissionAnywhere(
  * against it. A ceiling set by somebody else is unaffected, and the same row
  * still authorizes every other holder of the role.
  *
+ * ## Nor does a ceiling the requester set (ADR-023, D8)
+ *
+ * `excludeCreatedBy` names the person whose request is being approved. A ceiling
+ * they created — on the approver, or on a role the approver holds — never counts
+ * either: raising a colleague's limit must not get one's own discount through. The
+ * database guard `quo.guard_discount_approval` excludes the same rows.
+ *
  * `null` means the actor has **no** ceiling, which callers must treat as no
  * authority and never as unlimited.
  */
@@ -496,7 +503,8 @@ export async function callerApprovalCeiling(
   db: DbHandle,
   companyId: string,
   limitType: string,
-  asOf: string
+  asOf: string,
+  excludeCreatedBy: string | null = null
 ): Promise<{ amount: string; currencyCode: string } | null> {
   const result = await db.query<{ amount: string; currency_code: string }>(
     `SELECT al.amount::text AS amount, al.currency_code
@@ -505,6 +513,7 @@ export async function callerApprovalCeiling(
         AND al.effective_from <= $5::date
         AND (al.effective_to IS NULL OR al.effective_to > $5::date)
         AND al.created_by <> $4
+        AND ($6::uuid IS NULL OR al.created_by <> $6::uuid)
         AND (al.user_id = $4
              OR (al.user_id IS NULL AND al.role_id IN (
                    SELECT g.role_id
@@ -523,7 +532,14 @@ export async function callerApprovalCeiling(
                       ))))
       ORDER BY (al.user_id IS NOT NULL) DESC, al.amount DESC
       LIMIT 1`,
-    [db.context.principal.tenantId, companyId, limitType, db.context.principal.userId, asOf]
+    [
+      db.context.principal.tenantId,
+      companyId,
+      limitType,
+      db.context.principal.userId,
+      asOf,
+      excludeCreatedBy,
+    ]
   );
   const row = result.rows[0];
   return row ? { amount: row.amount, currencyCode: row.currency_code } : null;

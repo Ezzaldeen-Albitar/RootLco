@@ -55,6 +55,7 @@ const createQuotationRevision = vi.fn();
 const issueQuotation = vi.fn();
 const decideRevision = vi.fn();
 const decideItem = vi.fn();
+const withdrawDiscountApproval = vi.fn();
 vi.mock('@/features/quotations/api', () => ({
   readQuotation: (...args: unknown[]) => readQuotation(...args),
   listRevisions: (...args: unknown[]) => listRevisions(...args),
@@ -64,6 +65,7 @@ vi.mock('@/features/quotations/api', () => ({
   issueQuotation: (...args: unknown[]) => issueQuotation(...args),
   decideRevision: (...args: unknown[]) => decideRevision(...args),
   decideItem: (...args: unknown[]) => decideItem(...args),
+  withdrawDiscountApproval: (...args: unknown[]) => withdrawDiscountApproval(...args),
   listQuotations: vi.fn(),
   createQuotation: vi.fn(),
 }));
@@ -182,6 +184,11 @@ function discountApproval(over: Record<string, unknown> = {}) {
     decidedAt: null,
     decisionReason: null,
     supersededAt: null,
+    requesterSetPolicy: false,
+    requesterSetPrice: false,
+    canWithdraw: false,
+    withdrawnBy: null,
+    withdrawnAt: null,
     recordVersion: 1,
     ...over,
   };
@@ -1321,6 +1328,192 @@ describe('the /quotations/[quotationId] route page renders the read as what it w
     PERMISSIONS = ['quo.quotation.read'];
     await expect(renderPage({ locale: 'xx', quotationId: QUOTATION_ID })).rejects.toThrow(
       'notFound'
+    );
+  });
+});
+
+/**
+ * The requester withdraws their own pending discount request (ADR-023 D3), and the
+ * note says when another person must approve because the requester set the threshold
+ * or a price themselves (ADR-023 D8).
+ */
+describe('the requester withdraws their own discount request, and the note says why another person approves', () => {
+  const OWN_PENDING = {
+    requestedByCaller: true,
+    canWithdraw: true,
+    cannotApproveReason: 'own_request',
+    recordVersion: 3,
+  };
+  const withdrawButton = () =>
+    within(screen.getByTestId('discount-approval-note')).queryByRole('button', {
+      name: EN['quotations.discountApproval.withdraw.action'] as string,
+    });
+
+  it('asks first, sends the request’s own version, and reads the quotation again', async () => {
+    withdrawDiscountApproval.mockResolvedValue({
+      state: success('quotations.discountApproval.withdrawSuccess'),
+      created: { discountApproval: discountApproval({ status: 'withdrawn' }), replayed: false },
+    });
+    const user = userEvent.setup();
+    renderDetail({}, draftWith(OWN_PENDING));
+    const note = screen.getByTestId('discount-approval-note');
+    expect(
+      within(note).getByText(EN['quotations.discountApproval.withdraw.explain'] as string)
+    ).toBeVisible();
+
+    // Cancelling sends nothing.
+    await user.click(withdrawButton() as HTMLElement);
+    let dialog = await screen.findByRole('alertdialog');
+    expect(
+      within(dialog).getByText(EN['quotations.discountApproval.withdraw.confirmTitle'] as string)
+    ).toBeVisible();
+    expect(
+      within(dialog).getByText(EN['quotations.discountApproval.withdraw.confirmExplain'] as string)
+    ).toBeVisible();
+    await user.click(within(dialog).getByRole('button', { name: EN['overlay.cancel'] as string }));
+    expect(withdrawDiscountApproval).not.toHaveBeenCalled();
+
+    await user.click(withdrawButton() as HTMLElement);
+    dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: EN['quotations.discountApproval.withdraw.action'] as string,
+      })
+    );
+    await waitFor(() => expect(withdrawDiscountApproval).toHaveBeenCalledTimes(1));
+    expect(withdrawDiscountApproval).toHaveBeenCalledWith(
+      '66666666-6666-4666-8666-666666666666',
+      3
+    );
+    await waitFor(() => expect(readQuotation).toHaveBeenCalledWith(QUOTATION_ID));
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    expect(notifyActionResult).toHaveBeenCalledWith(
+      expect.objectContaining({ messageKey: 'quotations.discountApproval.withdrawSuccess' }),
+      expect.anything()
+    );
+  });
+
+  it('offers no withdrawal for somebody else’s request, nor without the quotation write code', () => {
+    const first = renderDetail({}, draftWith({ canWithdraw: false }));
+    expect(withdrawButton()).toBeNull();
+    first.unmount();
+    renderDetail({ canManage: false }, draftWith(OWN_PENDING));
+    expect(withdrawButton()).toBeNull();
+  });
+
+  it('puts a refusal by rule in words, and a stale version as a conflict with a way out', async () => {
+    withdrawDiscountApproval.mockResolvedValueOnce({
+      state: {
+        status: 'conflict',
+        messageKey: 'form.violation.discount_approval_already_decided',
+        correlationId: 'corr-w1',
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderDetail({}, draftWith(OWN_PENDING));
+    await user.click(withdrawButton() as HTMLElement);
+    let dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: EN['quotations.discountApproval.withdraw.action'] as string,
+      })
+    );
+    const note = screen.getByTestId('discount-approval-note');
+    expect(
+      await within(note).findByText(
+        EN['form.violation.discount_approval_already_decided'] as string
+      )
+    ).toBeVisible();
+    expect(refresh).not.toHaveBeenCalled();
+
+    withdrawDiscountApproval.mockResolvedValueOnce({
+      state: { status: 'conflict', correlationId: 'corr-w2', attempt: 1 },
+      created: null,
+    });
+    await user.click(withdrawButton() as HTMLElement);
+    dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', {
+        name: EN['quotations.discountApproval.withdraw.action'] as string,
+      })
+    );
+    expect(await within(note).findByText(EN['quotations.detail.conflict'] as string)).toBeVisible();
+    await user.click(
+      within(note).getByRole('button', { name: EN['quotations.detail.reload'] as string })
+    );
+    await waitFor(() => expect(readQuotation).toHaveBeenCalledWith(QUOTATION_ID));
+  });
+
+  it('a withdrawn request says so and who withdrew it, and the draft is not offered for issue', () => {
+    renderDetail(
+      {},
+      draftWith({
+        status: 'withdrawn',
+        requestedByCaller: true,
+        cannotApproveReason: 'not_pending',
+        withdrawnBy: { id: 'aaaaaaaa-0000-4000-8000-000000000001', displayName: 'Omar Saleh' },
+        withdrawnAt: '2026-09-21T10:00:00Z',
+      })
+    );
+    const note = screen.getByTestId('discount-approval-note');
+    expect(
+      within(note).getByText(EN['quotations.discountApproval.status.withdrawn'] as string)
+    ).toBeVisible();
+    expect(
+      within(note).getByText(EN['quotations.discountApproval.withdrawnBy'] as string)
+    ).toBeVisible();
+    expect(
+      within(note).getByText(EN['quotations.discountApproval.withdrawnNext'] as string)
+    ).toBeVisible();
+    expect(withdrawButton()).toBeNull();
+    expect(screen.getByTestId('issue-blocked-by-discount')).toHaveTextContent(
+      EN['quotations.issue.discountWithdrawn'] as string
+    );
+  });
+
+  it('says when the requester’s own threshold or price is why another person approves', () => {
+    const first = renderDetail({}, draftWith({ requesterSetPolicy: true }));
+    expect(screen.getByTestId('discount-approval-own-policy')).toHaveTextContent(
+      EN['quotations.discountApproval.ownPolicy'] as string
+    );
+    expect(screen.queryByTestId('discount-approval-own-price')).toBeNull();
+    first.unmount();
+    renderDetail({}, draftWith({ requesterSetPrice: true }));
+    expect(screen.getByTestId('discount-approval-own-price')).toHaveTextContent(
+      EN['quotations.discountApproval.ownPrice'] as string
+    );
+    expect(screen.queryByTestId('discount-approval-own-policy')).toBeNull();
+  });
+
+  it('speaks Arabic: the withdrawal and the reason are in Arabic', () => {
+    const AR = ar as Record<string, string>;
+    renderRtlBare(
+      withMui(
+        inBranch(
+          <QuotationDetailScreen
+            locale="ar"
+            messages={ar}
+            quotation={draftWith({ ...OWN_PENDING, requesterSetPolicy: true }) as never}
+            canManage
+            canDecide={false}
+            canReadLimits={false}
+            canReadServices={false}
+          />,
+          { locale: 'ar' }
+        ),
+        'ar'
+      )
+    );
+    const note = screen.getByTestId('discount-approval-note');
+    expect(
+      within(note).getByRole('button', {
+        name: AR['quotations.discountApproval.withdraw.action'] as string,
+      })
+    ).toBeVisible();
+    expect(screen.getByTestId('discount-approval-own-policy')).toHaveTextContent(
+      AR['quotations.discountApproval.ownPolicy'] as string
     );
   });
 });
