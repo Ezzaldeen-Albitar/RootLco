@@ -350,3 +350,68 @@ export function derivePaymentStatus(paid: Decimal, open: Decimal): PaymentStatus
   if (open.greaterThan(Decimal.zero(MONEY))) return received ? 'partly_paid' : 'open';
   return received ? 'paid' : 'nothing_due';
 }
+
+// ---- What a quotation line may still bill (ADR-023 D5/D15) -----------------
+
+/**
+ * The answers `sal.billable_quotation_lines` gives for one line of a quotation
+ * revision (P1-32-PRE-OD-FD5), transcribed from the function:
+ *
+ *  - `billable` — approved, and approved quantity remains that no live invoice
+ *    holds;
+ *  - `not_current` — the revision is not the current issued (or roll-up
+ *    rejected) revision of a live quotation, so nothing on it is billed;
+ *  - `not_approved` — the customer has not decided the line;
+ *  - `rejected` — the customer refused it;
+ *  - `lineage_ambiguous` — two approved lines sell the same thing and part of it
+ *    was invoiced under an earlier revision, so which line that belongs to cannot
+ *    be told apart; refused rather than guessed;
+ *  - `fully_invoiced` — every approved unit is on a live invoice;
+ *  - `repriced_below_invoiced` — the approved line now totals less than what was
+ *    already invoiced for it, so what remains cannot be billed without a credit.
+ */
+export const BILLING_STATUSES = Object.freeze([
+  'billable',
+  'not_current',
+  'not_approved',
+  'rejected',
+  'lineage_ambiguous',
+  'fully_invoiced',
+  'repriced_below_invoiced',
+] as const);
+export type BillingStatus = (typeof BILLING_STATUSES)[number];
+/** Why a line is not billed — every status but `billable`. */
+export type NotBillableReason = Exclude<BillingStatus, 'billable'>;
+
+/** Narrows a status read from the database; an unknown one is a contract fault. */
+export function isBillingStatus(value: string): value is BillingStatus {
+  return (BILLING_STATUSES as readonly string[]).includes(value);
+}
+
+/**
+ * The refusals the sal invoice source guards raise, each as the leading token of
+ * its message (`token: …`), so a refusal names its rule without parsing prose.
+ * `invoice_amount_exceeds_approved`, `invoice_quantity_exceeds_approved` and
+ * `invoice_line_not_billable` are what a concurrent creator meets after the work
+ * order row lock: the quantity it read was invoiced first by someone else.
+ */
+export const INVOICE_SOURCE_REFUSALS = Object.freeze([
+  'invoice_source_frozen',
+  'invoice_source_foreign',
+  'invoice_source_mixed',
+  'invoice_source_line_required',
+  'invoice_source_line_foreign',
+  'invoice_line_type_mismatch',
+  'invoice_line_not_billable',
+  'invoice_quantity_exceeds_approved',
+  'invoice_amount_exceeds_approved',
+] as const);
+export type InvoiceSourceRefusal = (typeof INVOICE_SOURCE_REFUSALS)[number];
+
+/** The guard token a database message leads with, or `null` when it names none. */
+export function invoiceSourceRefusalOf(message: string | undefined): InvoiceSourceRefusal | null {
+  const token = /^([a-z_]+):/.exec(message ?? '')?.[1];
+  return token !== undefined && (INVOICE_SOURCE_REFUSALS as readonly string[]).includes(token)
+    ? (token as InvoiceSourceRefusal)
+    : null;
+}

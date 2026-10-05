@@ -537,6 +537,10 @@ const ALLOWED_ROUTINES = new Set([
   'sal.allocate_receipt',
   'sal.approve_credit_note',
   'sal.approve_receipt_reversal',
+  // P1-32-PRE-OD-FD5 (ADR-023, D5/D15): what each line of a revision may still bill,
+  // read by the application and by the three invoice source guards below. All four
+  // SECURITY INVOKER, empty search_path, EXECUTE revoked from PUBLIC.
+  'sal.billable_quotation_lines',
   'sal.complete_delivery',
   'sal.create_counter_sale_invoice',
   // P1-32-PRE-OD-FD14 (ADR-023, D14): the payer rule on every new allocation.
@@ -556,8 +560,11 @@ const ALLOWED_ROUTINES = new Set([
   'sal.guard_invoice_amount_frozen',
   'sal.guard_invoice_freeze',
   'sal.guard_invoice_line_amount_frozen',
+  'sal.guard_invoice_line_amount_source',
   'sal.guard_invoice_line_frozen',
+  'sal.guard_invoice_line_source',
   'sal.guard_invoice_totals_reconcile',
+  'sal.guard_invoice_work_order_source',
   'sal.guard_receipt_currency_active',
   'sal.guard_receipt_freeze',
   // P1-32-PRE-OD-FD4 (ADR-023, D4): the replacement link guard and the three
@@ -1023,9 +1030,11 @@ describe('database foundation', () => {
       'tg_invoice_line_amounts_frozen',
       'tg_invoice_line_amounts_immutable',
       'tg_invoice_line_amounts_reconcile',
+      'tg_invoice_line_amounts_source',
       'tg_invoice_line_amounts_touch_metadata',
       'tg_invoice_lines_frozen',
       'tg_invoice_lines_immutable',
+      'tg_invoice_lines_source',
       'tg_invoice_lines_touch_metadata',
       'tg_invoice_numbering_configs_immutable',
       'tg_invoice_numbering_configs_touch_metadata',
@@ -1034,6 +1043,7 @@ describe('database foundation', () => {
       'tg_invoices_freeze',
       'tg_invoices_immutable',
       'tg_invoices_touch_metadata',
+      'tg_invoices_work_order_source',
       'tg_item_categories_immutable',
       'tg_item_categories_no_cycle',
       'tg_item_categories_touch_metadata',

@@ -1151,10 +1151,10 @@ describe('sal.invoice-create', () => {
     const first = await draftInvoiceFor(billable);
 
     // A DIFFERENT key, so this is the work-order uniqueness rule answering and not the
-    // idempotency store. `uq_invoices_work_order_active` permits at most one live
-    // invoice per work order, which makes staged or progress billing structurally
-    // impossible — and this must be a 409 with a code, never the bare `23505` five
-    // layers down and never a 500.
+    // idempotency store. `uq_invoices_work_order_draft` permits at most one DRAFT
+    // invoice per work order (and, since ADR-023 D5/D15, a later invoice may bill only
+    // approved quantity no live invoice holds — none remains here) — and this must be
+    // a 409 with a code, never the bare `23505` five layers down and never a 500.
     authAs(SAL_FULL);
     const second = await createInvoice({ workOrderId: billable.workOrderId }, randomUUID());
     expect(second.status).toBe(409);

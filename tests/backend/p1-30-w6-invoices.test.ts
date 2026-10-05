@@ -537,9 +537,14 @@ describe('FE-014 → FE-015 → FE-019 on one work order', () => {
     authAs(SAL_FULL);
     const response = await workOrderInvoice(billable.workOrderId);
     expect(response.status).toBe(200);
+    // Since ADR-023 D5/D15 (P1-32-PRE-OD-FD5) the envelope also lists every live
+    // invoice and says whether approved work remains to bill — all of it here.
     expect(await bodyOf<{ invoice: unknown }>(response)).toEqual({
       workOrderId: billable.workOrderId,
       invoice: null,
+      invoices: [],
+      invoicesTruncated: false,
+      approvedWorkToInvoice: true,
     });
     authAs(SAL_READER);
     const refused = await workOrderInvoice(billable.workOrderId);

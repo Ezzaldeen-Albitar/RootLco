@@ -4129,3 +4129,33 @@ Known limitations of this slice, one line each:
 - The invoice preview names a service line by its typed note only: the preview read carries the service id but not its name, and no read was added for it. The invoice detail is unchanged.
 - The builder reads the unit names once per part box from the unit list; until that read answers (or if it fails), a chosen part says its unit's code.
 - Prints are unchanged (D10).
+
+### Invoice approved quantities only, tracked across revisions (P1-32-PRE-OD-FD5, ADR-023 D5/D15)
+
+A work-order invoice bills only the quotation lines the customer approved on the current revision,
+each only for what no live invoice of the work order already bills; undecided and refused lines are
+never billed and are listed with why. What was billed counts across superseding revisions, so a
+later revision that raises an approved quantity bills only the increase, and a superseded revision is
+never billed again. A work order may therefore carry several live invoices; the database refuses any
+line beyond what remains approved under the work order row lock, keeps one draft per work order, and
+two creators racing for the same quantity get one invoice and one refusal
+(`DBCR-P1-32-PRE-OD-FD5-001`; `tests/db/sal-invoiced-quotation-quantities.test.ts`,
+`tests/backend/od-invoice-approved-quantities.test.ts`, `tests/unit/od-invoice-approved-quantities.test.ts`,
+`apps/web/tests/invoice-approved-quantities.dom.test.tsx`).
+
+| Route                                 | Read (code)                                                       | Write (code)                                                     | Element                                                         | State                                                                                                        |
+| ------------------------------------- | ----------------------------------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `/invoices?workOrderId=` preview      | `sal.invoice-preview` (`sal.invoice.manage` + `sal.finance.view`) | —                                                                | approved, already invoiced, to invoice; lines not invoiced, why | fixed (FD5): every line left off says why, in English and Arabic; nothing left says so and offers no form    |
+| `/invoices?workOrderId=` create       | —                                                                 | `sal.invoice-create` (`sal.invoice.manage` + `sal.finance.view`) | create form                                                     | fixed (FD5): bills the remaining approved quantities only; 409 with a rule for a draft open or nothing left  |
+| `/invoices?workOrderId=` invoices     | `sal.work-order-invoice-read` (`sal.invoice.manage`)              | —                                                                | invoice list by number, remaining-work panel                    | fixed (FD5): several live invoices, each opened by its number; remaining work offered while no draft is open |
+| `/invoices?workOrderId=` printed copy | `sal.invoice-preview` (`sal.invoice.manage` + `sal.finance.view`) | —                                                                | descriptions, line discount, before-discount total              | fixed (FD5): revision figures printed only where the invoice billed them whole; otherwise "Not available"    |
+
+Known limitations of this slice, one line each:
+
+- Credit notes do not release quantity: a credited line is never invoiced again (the Owner text is silent; the choice bills less, never more).
+- Approved lines of an expired or superseded revision are not billed; the current revision is the only source.
+- A line whose approved total fell below what was already invoiced is refused (`repriced_below_invoiced`); a credit for the difference is not decided here.
+- Two approved lines selling the same service or part after part of it was invoiced under an earlier revision are refused (`lineage_ambiguous`); the quotation must be revised.
+- Several quotations with approved lines on one work order remain a refusal, as before.
+- The remaining part of a raised line is billed at the difference of totals, not pro rata, and its discount is not restated on the invoice or the printed copy.
+- An unbilled approved line now keeps the delivery financial blocker present until it is invoiced or the blocker is overridden.

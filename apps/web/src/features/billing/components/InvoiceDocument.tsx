@@ -137,12 +137,29 @@ export function InvoiceDocument({
   const matched = descriptions.kind === 'matched' ? descriptions.preview : null;
   const previewMoney = (amount: string): MoneyView | null =>
     matched === null ? null : { amount, currency: matched.currency, minorUnit: matched.minorUnit };
+  /*
+   * Since ADR-023 D5/D15 an invoice may bill PART of its revision — some lines, or
+   * what remains of one — so the revision's figures are this invoice's only where
+   * it billed them whole. A line's discount is printed only when the line billed its
+   * quotation line's whole quoted quantity; the revision's subtotal and discount only
+   * when the invoice billed every line of the revision whole. Otherwise the copy says
+   * they are not available, never a figure of another document.
+   */
+  const revisionLineOf = (line: InvoiceDetail['lines'][number]) =>
+    matched === null || line.sourceQuotationItemId === null
+      ? undefined
+      : matched.revisionLines.find(
+          (row) => row.sourceQuotationItemId === line.sourceQuotationItemId
+        );
+  const billedWhole = (line: InvoiceDetail['lines'][number]): boolean =>
+    revisionLineOf(line)?.quotedQuantity === line.quantity;
+  const wholeRevision =
+    matched !== null &&
+    matched.revisionLines.length === detail.lines.length &&
+    detail.lines.every(billedWhole);
   const lineDiscount = (line: InvoiceDetail['lines'][number]): MoneyView | null => {
-    if (matched === null || line.sourceQuotationItemId === null) return null;
-    const found = matched.lines.find(
-      (row) => row.sourceQuotationItemId === line.sourceQuotationItemId
-    );
-    return found
+    const found = revisionLineOf(line);
+    return matched !== null && found !== undefined && billedWhole(line)
       ? { amount: found.discount, currency: matched.currency, minorUnit: matched.minorUnit }
       : null;
   };
@@ -159,10 +176,8 @@ export function InvoiceDocument({
         </>
       ) : null;
     }
-    if (descriptions.kind !== 'matched' || line.sourceQuotationItemId === null) return null;
-    const found = descriptions.preview.lines.find(
-      (row) => row.sourceQuotationItemId === line.sourceQuotationItemId
-    );
+    if (descriptions.kind !== 'matched') return null;
+    const found = revisionLineOf(line);
     return found?.description ? <bdi>{found.description}</bdi> : null;
   };
   const amountsVisible = invoice.totals !== null;
@@ -320,7 +335,9 @@ export function InvoiceDocument({
             <dt className="text-text-muted">{translate(messages, 'invoices.print.subtotal')}</dt>
             <dd className="text-end" data-testid="invoice-print-subtotal">
               <PreviewFigure
-                value={matched ? previewMoney(matched.subtotal) : null}
+                value={
+                  wholeRevision && matched ? previewMoney(matched.revisionTotals.subtotal) : null
+                }
                 locale={locale}
                 messages={messages}
               />
@@ -328,7 +345,11 @@ export function InvoiceDocument({
             <dt className="text-text-muted">{translate(messages, 'invoices.print.discount')}</dt>
             <dd className="text-end" data-testid="invoice-print-discount-total">
               <PreviewFigure
-                value={matched ? previewMoney(matched.discountTotal) : null}
+                value={
+                  wholeRevision && matched
+                    ? previewMoney(matched.revisionTotals.discountTotal)
+                    : null
+                }
                 locale={locale}
                 messages={messages}
               />

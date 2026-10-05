@@ -161,13 +161,20 @@ export const BILLING_SQLSTATE = {
  *
  * PostgreSQL reports the *index* name in the error's `constraint` field for a
  * unique-index violation, which is the only thing that distinguishes "this work
- * order already has a live invoice" from "this idempotency key is taken" from "the
- * sequence handed out a number that is already in use". All three are 409s, and all
- * three need different messages, because only one tells the caller to stop retrying
+ * order already has a draft invoice" from "this idempotency key is taken" from "the
+ * sequence handed out a number that is already in use". All are 409s, and they
+ * need different messages, because only one tells the caller to stop retrying
  * with the same key and only one is a platform fault rather than a client one.
  */
 export const INVOICE_UNIQUE_INDEX = {
-  workOrderActive: 'uq_invoices_work_order_active',
+  /**
+   * `uq_invoices_work_order_draft` — at most one DRAFT invoice per work order
+   * (P1-32-PRE-OD-FD5). With `uq_invoices_work_order_unsourced` and the sal invoice
+   * source guards it replaced `uq_invoices_work_order_active` (ADR-023 D5/D15).
+   */
+  workOrderDraft: 'uq_invoices_work_order_draft',
+  /** `uq_invoices_work_order_unsourced` — one live invoice naming no revision. */
+  workOrderUnsourced: 'uq_invoices_work_order_unsourced',
   idempotency: 'uq_invoices_idempotency',
   /**
    * `uq_invoices_number`, partial on `invoice_number IS NOT NULL`.
@@ -572,15 +579,22 @@ export interface WorkOrderScopeRow {
 }
 
 /**
- * One candidate commercial source for a work order, with its totals summed by
- * PostgreSQL.
+ * One candidate commercial source for a work order — the CURRENT revision of one
+ * of its live quotations, issued or (by the roll-up of a refused line) rejected —
+ * with its totals summed by PostgreSQL.
  *
  * A *candidate*, not the answer: `ix_quotations_work_order` is not unique, so a
  * work order may carry several quotations and nothing in the DDL prevents two of
- * them from being accepted. The decision counts are returned so the caller can
- * derive the outcome with the platform's own `rollUpDecisions` rather than a
- * second definition of "accepted", and so an ambiguous source is reported rather
- * than silently resolved by picking one.
+ * them from carrying approved lines. The decision counts are returned so the
+ * caller can tell a revision with approved lines from one without, and so an
+ * ambiguous source is reported rather than silently resolved by picking one.
+ *
+ * Two sets of totals (ADR-023 D5/D15, P1-32-PRE-OD-FD5). The `revision*` totals
+ * are the whole revision as quoted — what the preview reported before quantities
+ * were tracked, and what the printed copy of an invoice that billed the whole
+ * revision states. The unprefixed totals are what a NEW invoice would bill now:
+ * the lines `sal.billable_quotation_lines` answers `billable`, at what remains of
+ * each. For an approved revision nothing has invoiced yet the two are equal.
  *
  * Totals are ROUND-THEN-SUM, matching `sal.issue_invoice`, which sums the already
  * rounded `sal.invoice_line_amounts` (L-fin-3). Sum-then-round would produce a
@@ -597,26 +611,45 @@ export interface CommercialSourceRow {
   readonly itemCount: number;
   readonly approvedCount: number;
   readonly rejectedCount: number;
-  /** `Σ (line gross − tax + discount)`: each line's rounded net plus its discount. */
+  /** How many lines may be billed now (`billing_status = 'billable'`). */
+  readonly billableCount: number;
+  /** `Σ (remaining net + remaining discount)` over the billable lines. */
   readonly subtotal: string;
-  /** `Σ captured_discount`. Already `numeric(18,4)`, so no rounding step. */
+  /** `Σ remaining discount`: a line's captured discount while nothing of it is invoiced, else zero. */
   readonly discountTotal: string;
-  /** `Σ captured_tax_amount`, validated by `tg_quotation_items_money`. */
+  /** `Σ remaining tax` over the billable lines. */
   readonly taxTotal: string;
-  /** `Σ (line gross − tax)`, the rounded line nets — what becomes `net_total`. */
+  /** `Σ remaining net` over the billable lines — what becomes the new invoice's `net_total`. */
   readonly netTotal: string;
-  /** `Σ captured_line_total` = `netTotal + taxTotal`, as `ck_invoice_amounts_gross` requires. */
+  /** `netTotal + taxTotal`, as `ck_invoice_amounts_gross` requires. */
   readonly grossTotal: string;
+  /** `Σ (line gross − tax + discount)` over every line: each line's rounded net plus its discount. */
+  readonly revisionSubtotal: string;
+  /** `Σ captured_discount` over every line. */
+  readonly revisionDiscountTotal: string;
+  /** `Σ captured_tax_amount` over every line, validated by `tg_quotation_items_money`. */
+  readonly revisionTaxTotal: string;
+  /** `Σ (line gross − tax)` over every line, the rounded line nets. */
+  readonly revisionNetTotal: string;
+  /** `Σ captured_line_total` over every line. */
+  readonly revisionGrossTotal: string;
 }
 
 /**
- * One approved commercial line, in the shape `sal.invoice_line_amounts` stores.
+ * One line of a source revision: what it was quoted as, what the customer
+ * decided, and what of it may still be billed (ADR-023 D5/D15).
  *
- * `netAmount`, `taxAmount` and `grossAmount` are computed in `numeric` by the
- * query, from the captured values `quo` froze when the revision was issued. Tax
- * comes from `captured_tax_rate`/`captured_tax_amount` — configuration the
+ * The quoted figures — `quantity`, `discount`, `netAmount`, `taxAmount`,
+ * `grossAmount` — are the line as `quo` froze it when the revision was issued.
+ * Tax comes from `captured_tax_rate`/`captured_tax_amount` — configuration the
  * pricing layer resolved at quotation time and `tg_quotation_items_money`
  * validated — so nothing here defaults, guesses or computes a rate.
+ *
+ * The billing figures come from `sal.billable_quotation_lines`, the same read the
+ * database guards judge an invoice line by: the decision, the approved, invoiced
+ * and remaining quantities, and — on a `billable` line, to a caller holding
+ * `sal.finance.view` — the remaining net, tax, gross and discount, computed in
+ * `numeric`. An invoice line copies the REMAINING figures, never the quoted ones.
  */
 export interface CommercialSourceLineRow {
   readonly quotationItemId: string;
@@ -641,6 +674,21 @@ export interface CommercialSourceLineRow {
   readonly netAmount: string;
   readonly taxAmount: string;
   readonly grossAmount: string;
+  /** The customer's decision on this line, or `null` while it is undecided. */
+  readonly decision: string | null;
+  /** `sal.billable_quotation_lines.billing_status`: `billable` or why not. */
+  readonly billingStatus: string;
+  /** `numeric(12,3)` strings. Approved is the quoted quantity of an approved line, else zero. */
+  readonly approvedQuantity: string;
+  readonly invoicedQuantity: string;
+  readonly remainingQuantity: string;
+  /** Part of this line's lineage was invoiced under an earlier revision. */
+  readonly carried: boolean;
+  /** What a new invoice line bills; `null` unless billable and visible. */
+  readonly remainingNet: string | null;
+  readonly remainingTax: string | null;
+  readonly remainingGross: string | null;
+  readonly remainingDiscount: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1028,22 +1076,26 @@ export class BillingRepository extends Repository {
   }
 
   /**
-   * The at-most-one live invoice for a work order.
+   * The live invoices of a work order — the open draft first, then the newest.
    *
-   * `uq_invoices_work_order_active` is a partial unique index over
-   * `(tenant, company, branch, work_order_id) WHERE status <> 'void_before_issue'
-   * AND deleted_at IS NULL`, so this predicate reproduces the index exactly and the
-   * result cannot be more than one row. Used twice: to refuse a duplicate create
-   * before the INSERT collides, and as the delivery module's financial blocker,
-   * which needs "the invoice for this work order, if any" and must not read
-   * `sal.invoices` itself.
+   * A work order may carry several live invoices since ADR-023 D5/D15
+   * (P1-32-PRE-OD-FD5): each bills approved quantity no other live invoice holds.
+   * `uq_invoices_work_order_draft` keeps at most ONE of them a draft, so ordering
+   * the draft first makes `rows[0]` the invoice still being assembled whenever one
+   * exists. "Live" is the predicate the replaced `uq_invoices_work_order_active`
+   * used — not `void_before_issue`, not deleted.
+   *
+   * `limit` bounds a screen's read; the delivery gate passes none, because a
+   * blocker that judged only some of the invoices would clear a work order whose
+   * other invoice is unpaid.
    */
-  public async liveInvoiceForWorkOrder(
+  public async liveInvoicesForWorkOrder(
     db: DbHandle,
-    scope: { readonly workOrderId: string; readonly companyId: string; readonly branchId: string }
-  ): Promise<InvoiceRow | null> {
+    scope: { readonly workOrderId: string; readonly companyId: string; readonly branchId: string },
+    limit?: number
+  ): Promise<readonly InvoiceRow[]> {
     const context = this.assertContext(db);
-    const row = await this.runOne<InvoiceSql>(
+    const result = await this.run<InvoiceSql>(
       db,
       `SELECT ${INVOICE_COLUMNS},
               a.net_total::text   AS net_total,
@@ -1056,10 +1108,47 @@ export class BillingRepository extends Repository {
           AND a.deleted_at IS NULL
         WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
           AND i.work_order_id = $4
-          AND i.status <> 'void_before_issue' AND i.deleted_at IS NULL`,
+          AND i.status <> 'void_before_issue' AND i.deleted_at IS NULL
+        ORDER BY (i.status = 'draft') DESC, i.created_at DESC, i.id DESC
+        LIMIT $5`,
+      [
+        context.principal.tenantId,
+        scope.companyId,
+        scope.branchId,
+        scope.workOrderId,
+        limit ?? null,
+      ]
+    );
+    return result.rows.map(toInvoice);
+  }
+
+  /**
+   * Whether the work order has approved quotation work no live invoice holds yet
+   * (ADR-023 D5/D15): any line of the current revision of a live quotation that
+   * `sal.billable_quotation_lines` answers `billable`.
+   *
+   * Quantities only, so it answers for a caller without `sal.finance.view` too —
+   * and for that caller a line whose approved total fell below what was invoiced
+   * still counts, which can only make the answer more cautious.
+   */
+  public async hasApprovedWorkToInvoice(
+    db: DbHandle,
+    scope: { readonly workOrderId: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<boolean> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ pending: boolean }>(
+      db,
+      `SELECT EXISTS (
+         SELECT 1
+           FROM quo.quotations q
+          CROSS JOIN LATERAL sal.billable_quotation_lines(q.current_revision_id) b
+          WHERE q.tenant_id = $1 AND q.company_id = $2 AND q.branch_id = $3
+            AND q.work_order_id = $4 AND q.deleted_at IS NULL AND q.status <> 'cancelled'
+            AND q.current_revision_id IS NOT NULL
+            AND b.billing_status = 'billable') AS pending`,
       [context.principal.tenantId, scope.companyId, scope.branchId, scope.workOrderId]
     );
-    return row ? toInvoice(row) : null;
+    return row?.pending === true;
   }
 
   /**
@@ -1724,31 +1813,40 @@ export class BillingRepository extends Repository {
    *
    * ### Which revision, and why acceptance is not read from a status column
    *
-   * `r.id = q.current_revision_id AND r.status = 'issued'` picks at most one
-   * revision per quotation — `uq_quotation_revisions_one_issued` already guarantees
-   * one issued revision per quotation, and the `current_revision_id` equality pins
-   * it to the one the quotation itself points at rather than a superseded sibling.
+   * `r.id = q.current_revision_id` picks the one revision each quotation points at
+   * rather than a superseded sibling, and `r.status IN ('issued', 'rejected')`
+   * admits it once the customer has been asked: `issued` while decisions are
+   * outstanding or all approved, `rejected` when the roll-up refused the revision
+   * because ONE line was refused — its approved lines are still approved (ADR-023
+   * D5: approved items are invoiceable; rejected and unapproved ones are not).
    *
-   * `q.status` is filtered only to exclude `cancelled`. Acceptance is DERIVED from
-   * the per-item decisions on every read (BR-QUO-001): `quo.quotations.status` is a
-   * cached roll-up and no constraint ties it to `quo.approval_decisions`, so
-   * trusting it would mean billing from a value that could have drifted from the
-   * decisions it summarises. The three counts are the underlying facts and the
-   * caller derives the outcome from them with the platform's own `rollUpDecisions`.
+   * `q.status` is filtered only to exclude `cancelled`. What may be billed is
+   * DERIVED from the per-item decisions on every read (BR-QUO-001):
+   * `quo.quotations.status` is a cached roll-up and no constraint ties it to
+   * `quo.approval_decisions`. The three counts are the underlying facts.
    *
-   * Expiry is deliberately not a filter. `quo.expireLapsed` expires revisions whose
-   * decision is still incomplete, so an accepted revision that has since passed
-   * `expires_at` was accepted before it lapsed — refusing to bill it would refuse
-   * work the customer authorised.
+   * Expiry is deliberately not a filter on an issued revision.
+   * `quo.expireLapsed` moves a revision whose decisions are incomplete to
+   * `expired`, which is not admitted: what a customer approved before a revision
+   * lapsed is not billed from it (an open point recorded under ADR-023 D5/D15).
+   *
+   * ### What a new invoice would bill (ADR-023 D5/D15)
+   *
+   * The unprefixed totals sum `sal.billable_quotation_lines` over its `billable`
+   * lines — the same read `sal.guard_invoice_line_source` and
+   * `sal.guard_invoice_line_amount_source` judge an invoice line by, so the
+   * preview, the create path and the database cannot disagree about what remains.
+   * The `revision*` totals sum every line as quoted.
    *
    * ### Round-then-sum, not sum-then-round
    *
    * `sal.issue_invoice` recomputes the header from `Σ` of the *already rounded*
-   * per-line `sal.invoice_line_amounts` (L-fin-3). The aggregate below sums the
-   * quotation lines' own rounded amounts (ADR-023, D1: document totals are sums
-   * of rounded lines), so the preview equals what issue will write. A line's
-   * subtotal is `captured_line_total − captured_tax_amount + captured_discount`,
-   * so `grossTotal = subtotal − discountTotal + taxTotal` holds by construction.
+   * per-line `sal.invoice_line_amounts` (L-fin-3). The aggregates below sum the
+   * quotation lines' own rounded amounts, or what remains of them (ADR-023, D1:
+   * document totals are sums of rounded lines), so the preview equals what issue
+   * will write. A quoted line's subtotal is
+   * `captured_line_total − captured_tax_amount + captured_discount`, so
+   * `grossTotal = subtotal − discountTotal + taxTotal` holds by construction.
    *
    * `count(it.id)` rather than `count(*)`: the join to items is a LEFT JOIN, so
    * `count(*)` would report 1 for a revision with no items and the caller could not
@@ -1769,41 +1867,63 @@ export class BillingRepository extends Repository {
       item_count: number;
       approved_count: number;
       rejected_count: number;
+      billable_count: number;
       subtotal: string;
       discount_total: string;
       tax_total: string;
       net_total: string;
       gross_total: string;
+      revision_subtotal: string;
+      revision_discount_total: string;
+      revision_tax_total: string;
+      revision_net_total: string;
+      revision_gross_total: string;
     }>(
       db,
       `SELECT q.id AS quotation_id, r.id AS revision_id, r.company_id, r.branch_id,
               r.currency_code, q.payer_partner_ref,
-              count(it.id)::int AS item_count,
-              count(d.id) FILTER (WHERE d.decision = 'approved')::int AS approved_count,
-              count(d.id) FILTER (WHERE d.decision = 'rejected')::int AS rejected_count,
-              COALESCE(sum(it.captured_line_total - it.captured_tax_amount
-                           + it.captured_discount), 0)::text AS subtotal,
-              COALESCE(sum(it.captured_discount), 0)::text AS discount_total,
-              COALESCE(sum(it.captured_tax_amount), 0)::text AS tax_total,
-              COALESCE(sum(it.captured_line_total - it.captured_tax_amount), 0)::text
-                AS net_total,
-              COALESCE(sum(it.captured_line_total), 0)::text AS gross_total
+              quoted.item_count, quoted.approved_count, quoted.rejected_count,
+              quoted.revision_subtotal, quoted.revision_discount_total,
+              quoted.revision_tax_total, quoted.revision_net_total,
+              quoted.revision_gross_total,
+              billing.billable_count, billing.subtotal, billing.discount_total,
+              billing.tax_total, billing.net_total, billing.gross_total
          FROM quo.quotations q
          JOIN quo.quotation_revisions r
            ON r.tenant_id = q.tenant_id AND r.company_id = q.company_id
           AND r.branch_id = q.branch_id AND r.quotation_id = q.id
-         LEFT JOIN quo.quotation_items it
-           ON it.tenant_id = r.tenant_id AND it.company_id = r.company_id
-          AND it.branch_id = r.branch_id AND it.quotation_revision_id = r.id
-          AND it.deleted_at IS NULL
-         LEFT JOIN quo.approval_decisions d
-           ON d.tenant_id = it.tenant_id AND d.company_id = it.company_id
-          AND d.branch_id = it.branch_id AND d.quotation_revision_id = it.quotation_revision_id
-          AND d.quotation_item_id = it.id
+        CROSS JOIN LATERAL (
+          SELECT count(it.id)::int AS item_count,
+                 count(d.id) FILTER (WHERE d.decision = 'approved')::int AS approved_count,
+                 count(d.id) FILTER (WHERE d.decision = 'rejected')::int AS rejected_count,
+                 COALESCE(sum(it.captured_line_total - it.captured_tax_amount
+                              + it.captured_discount), 0)::text AS revision_subtotal,
+                 COALESCE(sum(it.captured_discount), 0)::text AS revision_discount_total,
+                 COALESCE(sum(it.captured_tax_amount), 0)::text AS revision_tax_total,
+                 COALESCE(sum(it.captured_line_total - it.captured_tax_amount), 0)::text
+                   AS revision_net_total,
+                 COALESCE(sum(it.captured_line_total), 0)::text AS revision_gross_total
+            FROM quo.quotation_items it
+            LEFT JOIN quo.approval_decisions d
+              ON d.tenant_id = it.tenant_id AND d.company_id = it.company_id
+             AND d.branch_id = it.branch_id AND d.quotation_revision_id = it.quotation_revision_id
+             AND d.quotation_item_id = it.id
+           WHERE it.tenant_id = r.tenant_id AND it.company_id = r.company_id
+             AND it.branch_id = r.branch_id AND it.quotation_revision_id = r.id
+             AND it.deleted_at IS NULL) quoted
+        CROSS JOIN LATERAL (
+          SELECT count(*)::int AS billable_count,
+                 COALESCE(sum(b.remaining_net + b.remaining_discount), 0)::text AS subtotal,
+                 COALESCE(sum(b.remaining_discount), 0)::text AS discount_total,
+                 COALESCE(sum(b.remaining_tax), 0)::text AS tax_total,
+                 COALESCE(sum(b.remaining_net), 0)::text AS net_total,
+                 COALESCE(sum(b.remaining_net + b.remaining_tax), 0)::text AS gross_total
+            FROM sal.billable_quotation_lines(r.id) b
+           WHERE b.billing_status = 'billable') billing
         WHERE q.tenant_id = $1 AND q.company_id = $2 AND q.branch_id = $3
           AND q.work_order_id = $4 AND q.deleted_at IS NULL AND q.status <> 'cancelled'
-          AND r.id = q.current_revision_id AND r.status = 'issued' AND r.deleted_at IS NULL
-        GROUP BY q.id, r.id, r.company_id, r.branch_id, r.currency_code, q.payer_partner_ref
+          AND r.id = q.current_revision_id AND r.status IN ('issued', 'rejected')
+          AND r.deleted_at IS NULL
         ORDER BY r.id ASC`,
       [context.principal.tenantId, scope.companyId, scope.branchId, scope.workOrderId]
     );
@@ -1817,27 +1937,35 @@ export class BillingRepository extends Repository {
       itemCount: r.item_count,
       approvedCount: r.approved_count,
       rejectedCount: r.rejected_count,
+      billableCount: r.billable_count,
       subtotal: r.subtotal,
       discountTotal: r.discount_total,
       taxTotal: r.tax_total,
       netTotal: r.net_total,
       grossTotal: r.gross_total,
+      revisionSubtotal: r.revision_subtotal,
+      revisionDiscountTotal: r.revision_discount_total,
+      revisionTaxTotal: r.revision_tax_total,
+      revisionNetTotal: r.revision_net_total,
+      revisionGrossTotal: r.revision_gross_total,
     }));
   }
 
   /**
-   * The approved commercial lines of one revision, in the shape the invoice stores.
+   * Every line of one source revision: as quoted, as decided, and what of it may
+   * still be billed (ADR-023 D5/D15).
    *
-   * The per-line amounts are the quotation line's own, copied rather than
-   * recomputed, and the aggregate sums the same expressions, so a line list and a
-   * total can never disagree: `gross = captured_line_total`,
-   * `tax = captured_tax_amount`, `net = gross − tax` (ADR-023, D1). Since
-   * `tg_quotation_items_money` fixes `captured_line_total = line net + tax`, each
-   * rounded half-up to the currency's minor unit, `net` IS the rounded line net —
-   * and for a line written under the earlier four-decimal rule it is exactly
-   * `round(unit × qty − discount, 4)`, the figure this query used to compute. The
-   * invoice line therefore inherits the amount the quotation line was issued with
-   * and never a recomputation of it.
+   * The quoted per-line amounts are the quotation line's own, copied rather than
+   * recomputed: `gross = captured_line_total`, `tax = captured_tax_amount`,
+   * `net = gross − tax` (ADR-023, D1). Since `tg_quotation_items_money` fixes
+   * `captured_line_total = line net + tax`, each rounded half-up to the
+   * currency's minor unit, `net` IS the rounded line net.
+   *
+   * The billing columns are `sal.billable_quotation_lines`' own. A line nothing
+   * has invoiced yet remains billable at exactly its quoted amounts, so a fully
+   * approved revision is billed exactly as it was before quantities were tracked;
+   * a line part of whose lineage an earlier revision billed remains billable at
+   * what is left of its total.
    *
    * `item_kind` is carried through unmapped. `quo` uses `service`/`part` and
    * `ck_invoice_lines_line_type` admits `service`/`part`/`fee`; the two vocabularies
@@ -1868,6 +1996,16 @@ export class BillingRepository extends Repository {
       net_amount: string;
       tax_amount: string;
       gross_amount: string;
+      decision: string | null;
+      billing_status: string;
+      approved_quantity: string;
+      invoiced_quantity: string;
+      remaining_quantity: string;
+      carried: boolean;
+      remaining_net: string | null;
+      remaining_tax: string | null;
+      remaining_gross: string | null;
+      remaining_discount: string | null;
     }>(
       db,
       `SELECT it.id AS quotation_item_id, it.line_number, it.item_kind, it.service_id,
@@ -1880,8 +2018,18 @@ export class BillingRepository extends Repository {
               it.captured_tax_rate::text   AS tax_rate,
               (it.captured_line_total - it.captured_tax_amount)::text AS net_amount,
               it.captured_tax_amount::text AS tax_amount,
-              it.captured_line_total::text AS gross_amount
+              it.captured_line_total::text AS gross_amount,
+              b.decision, b.billing_status,
+              b.approved_quantity::text  AS approved_quantity,
+              b.invoiced_quantity::text  AS invoiced_quantity,
+              b.remaining_quantity::text AS remaining_quantity,
+              b.carried,
+              b.remaining_net::text      AS remaining_net,
+              b.remaining_tax::text      AS remaining_tax,
+              (b.remaining_net + b.remaining_tax)::text AS remaining_gross,
+              b.remaining_discount::text AS remaining_discount
          FROM quo.quotation_items it
+         JOIN sal.billable_quotation_lines($4) b ON b.quotation_item_id = it.id
         WHERE it.tenant_id = $1 AND it.company_id = $2 AND it.branch_id = $3
           AND it.quotation_revision_id = $4 AND it.deleted_at IS NULL
         ORDER BY it.line_number ASC`,
@@ -1916,6 +2064,16 @@ export class BillingRepository extends Repository {
       netAmount: r.net_amount,
       taxAmount: r.tax_amount,
       grossAmount: r.gross_amount,
+      decision: r.decision,
+      billingStatus: r.billing_status,
+      approvedQuantity: r.approved_quantity,
+      invoicedQuantity: r.invoiced_quantity,
+      remainingQuantity: r.remaining_quantity,
+      carried: r.carried,
+      remainingNet: r.remaining_net,
+      remainingTax: r.remaining_tax,
+      remainingGross: r.remaining_gross,
+      remainingDiscount: r.remaining_discount,
     }));
   }
 
@@ -1936,8 +2094,9 @@ export class BillingRepository extends Repository {
    * `sal.issue_invoice` is the only thing that sets either.
    *
    * A 23505 here is one of two distinct conflicts —
-   * `uq_invoices_work_order_active` or `uq_invoices_idempotency` — and the caller
-   * separates them with `violatedIndex`.
+   * `uq_invoices_work_order_draft` (or, for an invoice naming no revision,
+   * `uq_invoices_work_order_unsourced`) or `uq_invoices_idempotency` — and the
+   * caller separates them with `violatedIndex`.
    */
   public async insertDraftInvoice(
     db: DbHandle,

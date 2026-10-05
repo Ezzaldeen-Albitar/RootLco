@@ -28,8 +28,9 @@
  * `openReceivableForWorkOrder` below, and that is not bureaucracy. The open
  * receivable is only meaningful paired with the invoice header's currency
  * (`sal.invoice_open_receivable` has no currency predicate at all), "the live
- * invoice" is defined by a partial unique index a second reader would have to
- * reproduce, and a draft's zero must never be confused with a settled zero. One
+ * invoices" — several since ADR-023 D5/D15 — and what approved work remains
+ * unbilled are definitions a second reader would have to reproduce, and a draft's
+ * zero must never be confused with a settled zero. One
  * reader, one definition.
  *
  * ## What this module deliberately does not do
@@ -126,6 +127,8 @@ export type {
   InvoicePayerView,
   InvoicePreview,
   InvoicePreviewLine,
+  InvoicePreviewRevisionLine,
+  InvoicePreviewRevisionTotals,
   InvoiceTotalsView,
   InvoiceView,
   NumberingConfigView,

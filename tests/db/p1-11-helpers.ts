@@ -302,13 +302,15 @@ export async function addInvoiceLine(
     unitPrice?: number | string;
     warrantyPay?: number | string;
     currency?: string;
+    /** The quotation line it bills — required on an invoice that names a revision (ADR-023 D5/D15). */
+    sourceQuotationItem?: string;
   }
 ): Promise<{ line: string; amount: string }> {
   const tax = opts.tax ?? 0;
   const line = (
     await c.query(
-      `INSERT INTO sal.invoice_lines (tenant_id, company_id, branch_id, invoice_id, line_number, line_type, quantity, currency_code, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
+      `INSERT INTO sal.invoice_lines (tenant_id, company_id, branch_id, invoice_id, line_number, line_type, quantity, currency_code, created_by, source_quotation_item_id)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
       [
         T,
         CO,
@@ -319,6 +321,7 @@ export async function addInvoiceLine(
         opts.quantity ?? 1,
         opts.currency ?? 'USD',
         U,
+        opts.sourceQuotationItem ?? null,
       ]
     )
   ).rows[0].id;

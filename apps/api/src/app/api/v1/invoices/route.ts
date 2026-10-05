@@ -105,9 +105,12 @@
  * already-issued, which is what would otherwise bypass the numbering allocator and the
  * completeness event.
  *
- * `uq_invoices_work_order_active` permits AT MOST ONE live invoice per work order, so
- * staged or progress billing is structurally impossible and a second attempt is `23505`
- * — surfaced as a conflict, never a 500.
+ * An invoice bills only the APPROVED quotation quantity no other live invoice of the
+ * work order holds (ADR-023 D5/D15, P1-32-PRE-OD-FD5): a work order may be invoiced
+ * again for approved work still unbilled, and never twice for the same work —
+ * `sal.guard_invoice_line_source` refuses that under the work order row lock. At most
+ * one DRAFT exists per work order (`uq_invoices_work_order_draft`), so a second attempt
+ * while one is open, or a concurrent one, is a conflict — never a 500.
  *
  * ## Why `sal.finance.view` is required to CREATE
  *
