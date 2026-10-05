@@ -167,3 +167,158 @@ export function rollUpDecisions(input: {
   if (input.approvedCount === input.itemCount) return 'accepted';
   return null;
 }
+
+// ---- Acceptance record (P1-32-PRE-OD-FD11, ADR-023 D11) --------------------
+
+/** `ck_acceptance_records_contact_name`: trimmed, at most 200 characters. */
+export const MAX_CONTACT_NAME = 200;
+/** The longest telephone number accepted as typed, before normalisation. */
+export const MAX_CONTACT_PHONE_INPUT = 40;
+/** `ck_acceptance_records_contact_phone`, mirrored. */
+const STORED_CONTACT_PHONE = /^\+?[0-9]{3,20}$/;
+
+/** A contact rule broken, named by the request field and a stable rule token. */
+export class AcceptanceContactError extends QuotationRuleError {
+  public constructor(
+    public readonly field: 'contactName' | 'contactPhone',
+    public readonly rule:
+      | 'blank'
+      | 'too_big'
+      | 'invalid_phone'
+      | 'acceptance_contact_on_rejection'
+      | 'acceptance_contact_not_completing'
+      | 'acceptance_contact_already_recorded',
+    message: string
+  ) {
+    super(message);
+  }
+}
+
+/** Who spoke for the customer, as the record stores it. Both may be absent. */
+export interface AcceptanceContact {
+  readonly contactName: string | null;
+  readonly contactPhone: string | null;
+}
+
+/**
+ * The contact an acceptance record stores, from what the employee typed.
+ *
+ * The CRM model records a customer's contact CHANNELS (`crm.contact_points`), not
+ * the people who speak for a customer, so there is no person to choose: the name is
+ * what the employee was told, and the telephone number is how that person was
+ * reached. Neither is required — a customer who accepted in person is their own
+ * contact — and neither is ever filled in for them.
+ *
+ * A name is trimmed and refused when nothing is left; a telephone number is
+ * normalised exactly as everywhere else (Arabic-Indic digits folded, an optional
+ * leading `+`, every other character dropped) and refused when that leaves fewer
+ * than three or more than twenty digits. A contact belongs to an acceptance, so a
+ * rejection that names one is refused rather than silently losing it.
+ */
+export function normalizeAcceptanceContact(
+  decision: string,
+  input: { readonly contactName?: string | undefined; readonly contactPhone?: string | undefined },
+  normalizePhone: (value: string) => string | null
+): AcceptanceContact {
+  const given = input.contactName !== undefined || input.contactPhone !== undefined;
+  if (given && decision !== 'approved') {
+    throw new AcceptanceContactError(
+      input.contactName !== undefined ? 'contactName' : 'contactPhone',
+      'acceptance_contact_on_rejection',
+      'A contact is recorded with an acceptance only'
+    );
+  }
+
+  let contactName: string | null = null;
+  if (input.contactName !== undefined) {
+    contactName = input.contactName.trim();
+    if (contactName === '') {
+      throw new AcceptanceContactError('contactName', 'blank', 'The contact name is blank');
+    }
+    if (contactName.length > MAX_CONTACT_NAME) {
+      throw new AcceptanceContactError('contactName', 'too_big', 'The contact name is too long');
+    }
+  }
+
+  let contactPhone: string | null = null;
+  if (input.contactPhone !== undefined) {
+    if (input.contactPhone.length > MAX_CONTACT_PHONE_INPUT) {
+      throw new AcceptanceContactError(
+        'contactPhone',
+        'too_big',
+        'The telephone number is too long'
+      );
+    }
+    contactPhone = normalizePhone(input.contactPhone);
+    if (contactPhone === null || !STORED_CONTACT_PHONE.test(contactPhone)) {
+      throw new AcceptanceContactError(
+        'contactPhone',
+        'invalid_phone',
+        'The telephone number needs between 3 and 20 digits'
+      );
+    }
+  }
+  return { contactName, contactPhone };
+}
+
+/**
+ * Whether recording `decision` on ONE still-undecided line completes the
+ * acceptance of its revision: an approval, no line rejected, and every other line
+ * already approved. `tally` is read under the revision lock, before this decision
+ * is written.
+ */
+export function lineDecisionCompletesAcceptance(
+  decision: string,
+  tally: {
+    readonly itemCount: number;
+    readonly approvedCount: number;
+    readonly rejectedCount: number;
+  }
+): boolean {
+  return (
+    decision === 'approved' &&
+    tally.rejectedCount === 0 &&
+    tally.itemCount > 0 &&
+    tally.approvedCount + 1 === tally.itemCount
+  );
+}
+
+/**
+ * A contact reaches the acceptance record only on the decision that completes the
+ * acceptance; on any other approval it would be accepted and then stored nowhere,
+ * so the record would later say no contact was given although one was. Such a
+ * contact is refused, naming the box that carries it, rather than silently lost.
+ */
+export function assertContactReachesRecord(
+  input: { readonly contactName?: string | undefined; readonly contactPhone?: string | undefined },
+  completesAcceptance: boolean
+): void {
+  if (completesAcceptance) return;
+  if (input.contactName === undefined && input.contactPhone === undefined) return;
+  throw new AcceptanceContactError(
+    input.contactName !== undefined ? 'contactName' : 'contactPhone',
+    'acceptance_contact_not_completing',
+    'A contact is recorded only with the decision that completes the acceptance'
+  );
+}
+
+/**
+ * A decision already recorded is answered as it stands — a per-line replay
+ * settles on the stored row, a whole-revision call that finds every line decided
+ * writes no line — so a contact sent with it reaches no record: the acceptance,
+ * if there is one, was completed by an earlier call and its record is permanent.
+ * Such a contact is refused, naming the box, rather than answered as recorded and
+ * dropped. `writesDecision` is whether this call records at least one new line.
+ */
+export function assertContactNotOnReplay(
+  input: { readonly contactName?: string | undefined; readonly contactPhone?: string | undefined },
+  writesDecision: boolean
+): void {
+  if (writesDecision) return;
+  if (input.contactName === undefined && input.contactPhone === undefined) return;
+  throw new AcceptanceContactError(
+    input.contactName !== undefined ? 'contactName' : 'contactPhone',
+    'acceptance_contact_already_recorded',
+    'This decision was already recorded, so a contact sent with it cannot be kept'
+  );
+}

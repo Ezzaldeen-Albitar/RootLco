@@ -249,6 +249,7 @@ function decisions(over: Record<string, unknown> = {}) {
     decidedCount: 0,
     outcome: null,
     decisions: [],
+    acceptance: null,
     ...over,
   };
 }

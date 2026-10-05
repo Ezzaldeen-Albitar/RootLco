@@ -158,6 +158,44 @@ export interface EvidenceAuditRow {
 }
 
 /**
+ * The acceptance record of one accepted revision (P1-32-PRE-OD-FD11, ADR-023 D11).
+ *
+ * One row per revision at most (`uq_acceptance_records_revision`), never updated.
+ * `recordedBy` and `acceptedAt` were stamped by the database from the session.
+ */
+export interface AcceptanceRecordRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly quotationId: string;
+  readonly quotationRevisionId: string;
+  readonly customerPartnerId: string | null;
+  readonly contactName: string | null;
+  readonly contactPhone: string | null;
+  readonly channel: string;
+  readonly evidenceKind: string | null;
+  readonly referenceNote: string | null;
+  readonly evidenceDocumentVersionId: string | null;
+  readonly acceptedAt: Date;
+  readonly recordedBy: string;
+}
+
+/** What the decision roll-up writes; the recorder and the time are the session's. */
+export interface NewAcceptanceRecordInput {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly quotationId: string;
+  readonly quotationRevisionId: string;
+  readonly customerPartnerId: string | null;
+  readonly contactName: string | null;
+  readonly contactPhone: string | null;
+  readonly channel: string;
+  readonly evidenceKind: string | null;
+  readonly referenceNote: string | null;
+  readonly evidenceDocumentVersionId: string | null;
+}
+
+/**
  * A recorded discount request and its decision (P1-32-PRE-OD-DISC-01).
  *
  * `quotationNumber` and `revisionNumber` are joined for display; everything else is
@@ -333,6 +371,44 @@ const ITEM_COLUMNS = `id, company_id, branch_id, quotation_revision_id, line_num
        captured_tax_amount::text AS captured_tax_amount,
        captured_line_total::text AS captured_line_total,
        record_version`;
+
+const ACCEPTANCE_RECORD_COLUMNS = `id, company_id, branch_id, quotation_id, quotation_revision_id,
+       customer_partner_id, contact_name, contact_phone, channel, evidence_kind, reference_note,
+       evidence_document_version_id, accepted_at, recorded_by`;
+
+interface AcceptanceRecordSql {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  quotation_id: string;
+  quotation_revision_id: string;
+  customer_partner_id: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  channel: string;
+  evidence_kind: string | null;
+  reference_note: string | null;
+  evidence_document_version_id: string | null;
+  accepted_at: Date;
+  recorded_by: string;
+}
+
+const toAcceptanceRecord = (row: AcceptanceRecordSql): AcceptanceRecordRow => ({
+  id: row.id,
+  companyId: row.company_id,
+  branchId: row.branch_id,
+  quotationId: row.quotation_id,
+  quotationRevisionId: row.quotation_revision_id,
+  customerPartnerId: row.customer_partner_id,
+  contactName: row.contact_name,
+  contactPhone: row.contact_phone,
+  channel: row.channel,
+  evidenceKind: row.evidence_kind,
+  referenceNote: row.reference_note,
+  evidenceDocumentVersionId: row.evidence_document_version_id,
+  acceptedAt: row.accepted_at,
+  recordedBy: row.recorded_by,
+});
 
 const DISCOUNT_APPROVAL_COLUMNS = `a.id, a.company_id, a.branch_id, a.quotation_id,
        q.quotation_number, a.quotation_revision_id, r.revision_number, a.status, a.origin,
@@ -1229,6 +1305,67 @@ export class QuotationRepository extends Repository {
       [context.principal.tenantId, revisionId, toStatus]
     );
     return row?.record_version ?? null;
+  }
+
+  // ---- Acceptance records (P1-32-PRE-OD-FD11, ADR-023 D11) -----------------
+
+  /**
+   * Writes the acceptance record of a revision that has just been accepted.
+   *
+   * Called only from the decision roll-up, in the decision's transaction, after
+   * the quotation has moved to `accepted`. `recorded_by` and `accepted_at` are
+   * the session's own: `quo.guard_acceptance_record` overwrites whatever the
+   * statement carries and `ins_acceptance_records_scope` refuses any other
+   * recorder, so the value passed here is the signed-in user and nothing else.
+   */
+  public async insertAcceptanceRecord(
+    db: DbHandle,
+    input: NewAcceptanceRecordInput
+  ): Promise<AcceptanceRecordRow> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<AcceptanceRecordSql>(
+      db,
+      `INSERT INTO quo.acceptance_records
+         (tenant_id, company_id, branch_id, quotation_id, quotation_revision_id,
+          customer_partner_id, contact_name, contact_phone, channel, evidence_kind,
+          reference_note, evidence_document_version_id, recorded_by, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $13)
+       RETURNING ${ACCEPTANCE_RECORD_COLUMNS}`,
+      [
+        context.principal.tenantId,
+        input.companyId,
+        input.branchId,
+        input.quotationId,
+        input.quotationRevisionId,
+        input.customerPartnerId,
+        input.contactName,
+        input.contactPhone,
+        input.channel,
+        input.evidenceKind,
+        input.referenceNote,
+        input.evidenceDocumentVersionId,
+        context.principal.userId,
+      ]
+    );
+    if (row === null) {
+      throw new Error('quotation: acceptance record insert returned no row');
+    }
+    return toAcceptanceRecord(row);
+  }
+
+  /** The acceptance record of one revision, or `null` when none was recorded. */
+  public async findAcceptanceRecordForRevision(
+    db: DbHandle,
+    revisionId: string
+  ): Promise<AcceptanceRecordRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<AcceptanceRecordSql>(
+      db,
+      `SELECT ${ACCEPTANCE_RECORD_COLUMNS} FROM quo.acceptance_records
+        WHERE tenant_id = $1 AND quotation_revision_id = $2`,
+      [context.principal.tenantId, revisionId]
+    );
+    return row ? toAcceptanceRecord(row) : null;
   }
 
   /**

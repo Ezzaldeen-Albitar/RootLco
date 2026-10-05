@@ -422,6 +422,7 @@ describe('P1-30 W3 — the quotation reads answer a real actor with real rows', 
     const after = await json<{
       outcome: unknown;
       decisions: Record<string, unknown>[];
+      acceptance: Record<string, unknown> | null;
     }>(await revisionDecisions());
     expect(after.outcome).toBe('accepted');
     expect(after.decisions.length).toBe(1);
@@ -429,6 +430,9 @@ describe('P1-30 W3 — the quotation reads answer a real actor with real rows', 
     const evidence = after.decisions[0]?.['evidence'] as Record<string, unknown>[];
     expect(evidence.length).toBe(1);
     expect(keysOf(evidence[0])).toEqual(mirror('DecisionEvidence'));
+    // The acceptance record (ADR-023 D11) is the mirror's shape, and so is its recorder.
+    expect(keysOf(after.acceptance)).toEqual(mirror('AcceptanceRecord'));
+    expect(keysOf(after.acceptance?.['recordedBy'])).toEqual(mirror('AcceptanceRecorder'));
     // The quotation status rolled up to the same outcome, and issue captured
     // the totals from the lines: 200 + 20 tax = 220.
     const detail = await json<{

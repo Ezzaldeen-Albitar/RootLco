@@ -166,6 +166,10 @@ export const DISCOUNT = /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,4})?$/;
 export const MAX_ITEM_DESCRIPTION = 2000;
 export const MAX_ITEMS_PER_REVISION = 200;
 export const MAX_REFERENCE_NOTE = 2000;
+/** `ck_acceptance_records_contact_name` and the route bound, mirrored. */
+export const MAX_CONTACT_NAME = 200;
+/** The longest telephone number the route accepts as typed, before normalisation. */
+export const MAX_CONTACT_PHONE_INPUT = 40;
 /** The most rows the decisions read answers with; it has no cursor. */
 export const DECISIONS_BOUND = 200;
 /** The most rows the approval-limit list answers with; it has no cursor or count. */
@@ -369,6 +373,41 @@ export interface RevisionDecisions {
   readonly decidedCount: number;
   readonly outcome: 'accepted' | 'rejected' | null;
   readonly decisions: readonly LineDecision[];
+  /**
+   * The revision's acceptance record (ADR-023 D11), or `null`. `null` beside an
+   * `accepted` outcome is a revision accepted before records existed: it was not
+   * backfilled, and the screen says so rather than inventing one.
+   */
+  readonly acceptance: AcceptanceRecord | null;
+}
+
+/** The employee who recorded an acceptance — `AcceptanceRecorderView`. */
+export interface AcceptanceRecorder {
+  readonly id: string;
+  /** `null` for a caller who may not read users; the screen never prints the id. */
+  readonly displayName: string | null;
+}
+
+/**
+ * The acceptance record of an accepted revision — `AcceptanceRecordView`.
+ * A record of what the employee was told and did, not a signature. Every
+ * optional part is `null` when it was not given.
+ */
+export interface AcceptanceRecord {
+  readonly id: string;
+  readonly quotationRevisionId: string;
+  /** The quotation's payer, when the employee said the payer decided. */
+  readonly customerPartnerId: string | null;
+  readonly contactName: string | null;
+  /** Normalised: an optional leading `+` and ASCII digits. */
+  readonly contactPhone: string | null;
+  readonly channel: DecisionChannel;
+  readonly evidenceKind: EvidenceKind | null;
+  readonly referenceNote: string | null;
+  readonly documentVersionId: string | null;
+  readonly acceptedAt: string;
+  readonly recordedBy: AcceptanceRecorder;
+  readonly recordedByCaller: boolean;
 }
 
 /** The body of `quo.quotation-item-decide` — `DecisionView`, the write's echo. */

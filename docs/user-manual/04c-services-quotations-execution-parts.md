@@ -831,8 +831,19 @@ above was captured by the server when the revision was created; this screen show
    , **Portal record** <!-- quotations.evidenceKind.portal --> or **Email** <!-- quotations.evidenceKind.email -->
    . Document evidence also needs a **Document version identifier** <!-- quotations.decide.documentVersionId -->
    : "Required for document evidence, and only then." <!-- quotations.decide.documentHelp -->
-7. **Reference note** (optional) <!-- quotations.decide.note --> .
-8. Press **Record decision** <!-- quotations.decide.submit --> . It stays busy until the decisions
+7. **Reference note** (optional) <!-- quotations.decide.note --> — a call or message reference, for
+   example. A note belongs to a kind of evidence, so choose one in **Evidence** when you type a note.
+8. When the decision is **Approved** and it completes the customer's acceptance — the whole
+   revision, or the last open line while every other line is approved — two more boxes appear for
+   who accepted on the customer's side (ADR-023 D11): **Name of the person who accepted** <!-- quotations.decide.contactName --> —
+   "Optional. Kept on the customer's acceptance record, which this decision completes." <!-- quotations.decide.contactNameHelp -->
+   — and **Their telephone number** <!-- quotations.decide.contactPhone -->
+   — "Optional. Recording the call itself is not required." <!-- quotations.decide.contactPhoneHelp -->
+   Both are typed: the customer record holds the customer's telephone numbers and addresses, not
+   the people who speak for a company. Arabic-Indic digits are accepted. On a line whose approval
+   leaves another line open the boxes are not offered, because no acceptance record is written
+   yet; type the contact with the decision on the last open line.
+9. Press **Record decision** <!-- quotations.decide.submit --> . It stays busy until the decisions
    and the quotation have been read again. A decision half filled in is unsaved work.
 
 **Result** — "The decision was recorded." <!-- quotations.decision.success --> Under **Customer
@@ -841,6 +852,21 @@ decisions** <!-- quotations.decisions.heading --> you see **Outcome** <!-- quota
 or **Awaiting the customer** <!-- quotations.outcome.pending --> — with **Lines decided** <!-- quotations.decisions.decided -->
 . The outcome is derived by the service from the line decisions: "The decisions recorded on the
 current revision, line by line, and the outcome the server derives from them." <!-- quotations.decisions.explain -->
+
+When the decision you record completes the customer's acceptance — the whole revision approved, or
+the last open line approved — the service also keeps an **Acceptance record** <!-- quotations.acceptance.heading -->
+: "How the customer accepted this revision, as the person who recorded it was told. It is a record,
+not a signature." <!-- quotations.acceptance.explain --> It shows **Accepted** <!-- quotations.acceptance.acceptedAt -->
+(the time, taken from the server), **Customer** <!-- quotations.acceptance.customer --> (the paying
+customer, when you ticked that the paying customer made the decision), **Who accepted** <!-- quotations.acceptance.contact -->
+(the name and telephone number you typed), **How it reached us** <!-- quotations.acceptance.channel -->
+, **Recorded by** <!-- quotations.acceptance.recordedBy --> (you — the server takes it from your
+sign-in, never from the form) and **Reference** <!-- quotations.acceptance.reference --> (the
+evidence and note you gave). Anything you did not give says so — for example "No contact was
+given" <!-- quotations.acceptance.contactNotGiven --> — and nothing is filled in for you. The record
+cannot be edited; a correction is a new revision and its own acceptance. A revision accepted before
+acceptance records were kept shows "No acceptance record: this revision was accepted before
+acceptance records were kept." <!-- quotations.acceptance.notRecorded -->
 
 **Restrictions**
 
@@ -856,6 +882,17 @@ current revision, line by line, and the outcome the server derives from them." <
 - "Document evidence needs a document version identifier." <!-- quotations.decide.documentNeeded -->
   / "A document version belongs only to document evidence." <!-- quotations.decide.documentOnlyForDocument -->
 - "The note is limited to 2000 characters." <!-- quotations.decide.noteTooLong -->
+- "Choose the kind of evidence this note refers to, or clear the note." <!-- quotations.decide.kindForNote -->
+- "Enter a telephone number with 3 to 20 digits." <!-- quotations.decide.contactPhoneInvalid -->
+  / "The name is limited to 200 characters." <!-- quotations.decide.contactNameTooLong -->
+- "A contact is kept only with the decision that completes the customer's acceptance. Clear the
+  name and telephone number, or record the remaining lines first." <!-- form.violation.acceptance_contact_not_completing -->
+  — the line approval did not complete the acceptance, so the contact could not be kept; nothing
+  was recorded.
+- "This decision had already been recorded, so the name and telephone number could not be kept with
+  it. Clear them and check the acceptance shown on the quotation." <!-- form.violation.acceptance_contact_already_recorded -->
+  — someone else decided the same line, or the whole quotation, while the form was open. Their
+  decision stands, and the acceptance shows what they recorded; nothing new was recorded.
 - "The decisions could not be loaded right now." <!-- quotations.decisions.unavailable --> — a read
   failure. "No decision has been recorded yet." <!-- quotations.decisions.none --> is the message
   that means empty.

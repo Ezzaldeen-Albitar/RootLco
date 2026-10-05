@@ -934,6 +934,7 @@ describe('S-09 quo.quotation-revision-decisions-read', () => {
         recordedBy: string;
         evidence: readonly { evidenceKind: string; referenceNote: string | null }[];
       }[];
+      acceptance: { recordedBy: { id: string; displayName: string | null } } | null;
     };
     expect(body.decidedCount).toBe(body.itemCount);
     // Recomputed by rollUpDecisions from the item rows — there is no stored
@@ -950,10 +951,17 @@ describe('S-09 quo.quotation-revision-decisions-read', () => {
     expect(body.decisions[0]?.evidence[0]?.evidenceKind).toBe('verbal');
     expect(body.decisions[0]?.evidence[0]?.referenceNote).toBe('A2 fixture approval');
 
-    // No storage key and no actor NAME: recordedBy is an id for navigation only.
+    // No storage key and no actor directory. A line decision's recordedBy is an id
+    // for navigation only and carries no name. The acceptance record (ADR-023 D11)
+    // names its recorder only through the identity directory, which names nobody to
+    // a caller without iam.user.read — this caller — so holding quo.quotation.read
+    // still publishes no staff name.
     const raw = JSON.stringify(body);
     expect(raw).not.toContain('storageKey');
-    expect(raw).not.toContain('displayName');
+    for (const line of body.decisions) expect(typeof line.recordedBy).toBe('string');
+    expect(JSON.stringify(body.decisions)).not.toContain('displayName');
+    expect(body.acceptance?.recordedBy.id).toBe(SVC_FULL.userId);
+    expect(body.acceptance?.recordedBy.displayName).toBeNull();
   });
 
   it('reports a decision recorded WITHOUT evidence as an empty array, never a null row', async () => {
