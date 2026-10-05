@@ -1277,8 +1277,10 @@ describe('P1-28-FE-017 — the waiver is a separate authority with a recorded re
     expect(STEP).toContain('overrideCaptureRequirement(visitId, {');
     expect(STEP).toContain('reason,');
     // The submit is refused locally while the reason is empty, so the operator
-    // is not spending a privileged audited write to learn that.
-    expect(STEP).toContain("disabled={reason.trim() === ''}");
+    // is not spending a privileged audited write to learn that. It is also held
+    // while the contract re-reads (fix round 2 of #511), which adds to the
+    // empty-reason guard and never replaces it.
+    expect(STEP).toContain("disabled={pending || reason.trim() === ''}");
     for (const key of [
       'receptions.capture.overrideOpen',
       'receptions.capture.overrideReason',
@@ -1303,13 +1305,16 @@ describe('P1-28-FE-017 — the waiver is a separate authority with a recorded re
     expect(STEP).toContain("translate(messages, 'receptions.capture.overrideWithheld')");
     expect(STEP).toContain('canOverride={capabilities.overrideEvidence && !writesLocked}');
 
-    // The open control carries no `disabled`; the only disables on this screen
-    // are the submit-while-pending and the empty-reason guard.
+    // The open control is never greyed out for a capability. The only disable
+    // it carries is the transient hold while the contract re-reads (fix round 2
+    // of #511), so a waiver cannot be opened against a contract about to be
+    // replaced; any other `disabled` on it would be a permission shown as grey.
     const openControl = /data-testid=\{`capture-override-open-\$\{code\}`\}[\s\S]{0,200}?>/.exec(
       STEP
     );
     expect(openControl, 'the waiver control is no longer rendered').not.toBeNull();
-    expect(openControl?.[0]).not.toContain('disabled');
+    expect(openControl?.[0]).toContain('disabled={pending}');
+    expect(openControl?.[0]).not.toMatch(/disabled(?!=\{pending\})/);
   });
 
   it('cannot silently satisfy a requirement — a waiver reads as a waiver', () => {
