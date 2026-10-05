@@ -4054,11 +4054,25 @@ capture contract, and the media step used to replace every requirement row with 
 while it did, so a file chosen on a different row was dropped without a question. The rows now
 stay mounted over the contract last read for the same visit while the re-read is in flight, with
 their actions held back until it lands; the first read, a read for another visit and every failed
-read still show the read's own state. New cases in
+read still show the read's own state (both halves were incomplete; see fix round 2). New cases in
 `apps/web/tests/reception-wizard-step-guard.dom.test.tsx`: a file chosen on the VIN row survives a
 waiver on the damage row and still asks; a media send that recorded nothing and a successful
 signature capture leave nothing to ask about. Each was falsified once (the early return restored,
 and each form action's `setFileChosen(false)` removed).
+
+Fix round 2 (review of #511). Round 1 held back only capture and finalize during a re-read: the
+waiver open control and the waiver submit stayed live, so a second waiver could be sent against the
+contract read before the first, and a re-read that failed still replaced every row with its state,
+dropping a file chosen on another row and its unsaved-work question. Every row action (capture,
+finalize, waiver open, waiver submit) is now held back until a fresh contract lands, and a re-read
+for the same visit that fails keeps the rows mounted with their actions held, its failure state and
+retry shown above them; only the first read and a read for another visit show the read's state in
+place of the rows. New cases in `apps/web/tests/reception-wizard-step-guard.dom.test.tsx`: another
+row's waiver submit is disabled during a re-read and a click on it sends nothing; a file chosen on
+the VIN row survives a failed re-read after the damage waiver and still asks. Each was falsified
+once (`pending` removed from the waiver submit; the loading-only re-read condition restored). The
+source checks in `apps/web/tests/p1-28-reception-media.test.ts` now require the empty-reason guard
+alongside the hold, and allow the open control only the re-read hold, never a capability.
 
 Residual items, one line each:
 
@@ -4070,3 +4084,8 @@ Residual items, one line each:
 - `ReasonDialog` registers a guard entry for every caller, including those that do not opt in; it is never dirty, but it notifies the registry's listeners on mount and unmount (the design gallery and the six other callers do not opt in).
 - The case asserting that no object URL is created or released cannot fail today, because `CaptureFileField` makes no preview; it only guards a preview added later.
 - Cancel on the summary's closure dialog still drops a typed reason without asking, because Cancel is the operator's own answer; only leaving the page asks.
+- The fix-round-1 cases were falsified by the verifier, each mutation turning exactly its own case red (1 failed | 16 passed): the re-read condition forced false, the media `setFileChosen(false)` removed, the signature `setFileChosen(false)` removed; sources were restored.
+- Probe (Arabic): a chosen file opens the step-change dialog under `dir=rtl`, and after Discard and a return to the step the control holds no file and leaving is not questioned.
+- A local full `npm run test:web` run had 3 `waitFor` timeouts under load (quotation-detail expiry, reception-checkin consumed once, reception-condition-evidence F8 name); the same 3 files pass alone and the reviewer recorded hosted Web quality as successful on head 21e79d5a, so they are treated as local contention, not a regression.
+- No end-to-end spec under `apps/web/tests/e2e` references the changed selectors, so no end-to-end selector drift was found.
+- The verifier's temporary probe file inside the worktree (vitest cannot resolve bare imports from outside it) was deleted afterwards; nothing of it is committed.

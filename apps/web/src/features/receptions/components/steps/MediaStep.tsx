@@ -186,10 +186,15 @@ export function MediaStep({
    * Replacing the whole list with the loading state then unmounted every
    * requirement row, and a file chosen on a DIFFERENT row went with it,
    * without a question (the review of #511): choosing files on several rows
-   * and sending them one at a time lost every file after the first. So while a
-   * re-read is in flight the rows stay mounted over the contract last read,
-   * their actions held back until the answer lands. The first read, a read for
-   * another visit and every failure still show the read's own state.
+   * and sending them one at a time lost every file after the first. So once the
+   * contract has been read for this visit, a re-read keeps the rows mounted
+   * over the contract last read, and EVERY row action (capture, finalize, the
+   * waiver's open and submit) is held back until a fresh contract lands. A
+   * re-read that FAILS keeps them too (fix round 2 of #511): the failure and its
+   * retry are shown above the rows rather than in their place, so a file
+   * chosen on another row and its unsaved-work question survive a dropped
+   * network. The first read and a read for another visit still show the read's
+   * own state in place of the rows.
    */
   const [lastRead, setLastRead] = useState<{
     readonly visitId: string;
@@ -198,12 +203,13 @@ export function MediaStep({
   if (read !== null && (lastRead?.contract !== read || lastRead.visitId !== visitId)) {
     setLastRead({ visitId, contract: read });
   }
-  const rereading =
-    status === 'loading' && read === null && lastRead !== null && lastRead.visitId === visitId;
-  const contract = read ?? (rereading ? lastRead.contract : null);
-  const refreshing = pending || rereading;
+  const heldOver =
+    status !== 'idle' && read === null && lastRead !== null && lastRead.visitId === visitId;
+  const rereading = heldOver && status === 'loading';
+  const contract = read ?? (heldOver ? lastRead.contract : null);
+  const refreshing = pending || heldOver;
 
-  if ((status !== 'idle' && !rereading) || contract === null) {
+  if ((status !== 'idle' && !heldOver) || contract === null) {
     return (
       <section aria-labelledby="check-in-evidence-heading" className="flex flex-col gap-3">
         <h3 id="check-in-evidence-heading" className="text-section-title font-medium">
@@ -232,6 +238,16 @@ export function MediaStep({
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, 'receptions.capture.intro')}
       </p>
+
+      {heldOver && !rereading ? (
+        <EvidenceStates
+          messages={messages}
+          locale={locale}
+          status={status}
+          correlationId={correlationId}
+          onRetry={table.refresh}
+        />
+      ) : null}
 
       <ul className="flex flex-col gap-3">
         {contract.requirements.map((requirement) => (
@@ -620,7 +636,7 @@ function RequirementRow({
               onChange={setReason}
             />
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" variant="contained" disabled={reason.trim() === ''}>
+              <Button type="submit" variant="contained" disabled={pending || reason.trim() === ''}>
                 {translate(messages, 'receptions.capture.overrideSubmit')}
               </Button>
               <Button type="button" variant="outlined" onClick={cancelOverride}>
@@ -634,6 +650,7 @@ function RequirementRow({
               type="button"
               variant="outlined"
               data-testid={`capture-override-open-${code}`}
+              disabled={pending}
               onClick={() => setShowOverride(true)}
             >
               {translate(messages, 'receptions.capture.overrideOpen')}
