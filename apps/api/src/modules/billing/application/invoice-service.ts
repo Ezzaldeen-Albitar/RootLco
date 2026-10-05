@@ -25,7 +25,9 @@
  *
  * The schema owns: born-draft (`sal.guard_invoice_freeze` on INSERT), the
  * forward-only status graph, the frozen-once-issued line and amount rules, the
- * header↔lines reconciliation at COMMIT, one live invoice per work order, gapless
+ * header↔lines reconciliation at COMMIT, one draft invoice per work order and only
+ * approved, not-yet-invoiced quantity on a work-order invoice line (ADR-023
+ * D5/D15, under the work order row lock), gapless
  * numbering, maker≠approver on a credit note, and the financial-event completeness
  * triggers. None of it is re-implemented here.
  *
@@ -78,12 +80,15 @@ import {
   assertCreditWithinOpenAmount,
   assertCurrencyMatches,
   assertInvoiceIsDraft,
+  invoiceSourceRefusalOf,
   issuePostsStock,
   parseInstrumentAmount,
 } from '../domain/billing';
 import {
   FINANCE_VIEW_PERMISSION,
   balanceIsTrustworthy,
+  billableLines,
+  describeInvoiceSource,
   describeLineItems,
   resolveCommercialSource,
   toCreditNoteView,
@@ -653,12 +658,44 @@ function refuseDuplicateInvoice(error: unknown, workOrderId: string): never {
     }
     throw new AppFailure('ERR-CON-001', {
       message:
-        `A live invoice for work order ${workOrderId} was created concurrently. ` +
-        'uq_invoices_work_order_active permits one per work order.',
+        `A draft invoice for work order ${workOrderId} was created concurrently. ` +
+        'uq_invoices_work_order_draft permits one draft per work order.',
+      safeDetails: {
+        violations: [{ path: 'body.workOrderId', rule: INVOICE_DRAFT_OPEN_RULE }],
+      },
       cause: error,
     });
   }
+  refuseSourceFailure(error, workOrderId);
   toDomainFailure(error, 'Invoice creation');
+}
+
+/** The rule a create refused because the work order already has a draft invoice. */
+export const INVOICE_DRAFT_OPEN_RULE = 'invoice_draft_open';
+/** The rule a create refused because nothing approved remains to bill (ADR-023 D5/D15). */
+export const INVOICE_NOTHING_TO_BILL_RULE = 'invoice_nothing_to_bill';
+
+/**
+ * Translates a refusal by one of the sal invoice source guards (ADR-023 D5/D15).
+ *
+ * The create path bills exactly what `sal.billable_quotation_lines` answered a
+ * moment earlier, so the guards refuse it only when another request invoiced the
+ * same approved quantity first: `sal.guard_invoice_line_source` re-reads under the
+ * work order row lock, after that request committed. That is a conflict the caller
+ * resolves by re-reading — never a 500 and never a second bill — and the guard's
+ * token travels as the violated rule. Returns quietly for any other failure.
+ */
+function refuseSourceFailure(error: unknown, workOrderId: string): void {
+  if (!isSqlState(error, SQLSTATE.checkViolation)) return;
+  const rule = invoiceSourceRefusalOf(driverMessage(error));
+  if (rule === null) return;
+  throw new AppFailure('ERR-CON-001', {
+    message:
+      `Work order ${workOrderId} could not be invoiced: what the request would bill is no ` +
+      'longer approved and unbilled. Re-read what remains to bill and try again.',
+    safeDetails: { violations: [{ path: 'body.workOrderId', rule }] },
+    cause: error,
+  });
 }
 
 /**
@@ -774,10 +811,19 @@ export class InvoiceService {
    *    would refuse the duplicate anyway, but as `23505` — and from the outside that
    *    is indistinguishable from any other conflict, so a retrying client could not
    *    tell whether it had invoiced the job twice.
-   * 4. **Refuse a second live invoice.** `uq_invoices_work_order_active` is the
-   *    guarantee; this pre-check is what turns it into a 409 with a message instead
-   *    of a `23505` five layers down.
-   * 5. **Read and validate the commercial source, then write.**
+   * 4. **Refuse a second draft.** `uq_invoices_work_order_draft` is the guarantee;
+   *    this pre-check is what turns it into a 409 with a rule instead of a `23505`
+   *    five layers down.
+   * 5. **Read and validate the commercial source, then write what remains of it.**
+   *    Since ADR-023 D5/D15 (P1-32-PRE-OD-FD5) a work order may be invoiced more than
+   *    once, and each invoice bills only the approved quantity no other live invoice
+   *    holds — each line at what remains of it, as `sal.billable_quotation_lines`
+   *    answers. Nothing remaining is a 409 (`invoice_nothing_to_bill`), never an
+   *    invoice of zero. The database holds the same rule on every line it is given
+   *    (`sal.guard_invoice_line_source`, `sal.guard_invoice_line_amount_source`), under
+   *    the work order row lock, so two requests racing for the same remaining
+   *    quantity cannot both win: the loser is re-judged after the winner commits and
+   *    answered 409 with the guard's rule.
    *
    * ### Creating an invoice requires `sal.finance.view`
    *
@@ -819,17 +865,25 @@ export class InvoiceService {
       }
     }
 
-    const live = await this.repository.liveInvoiceForWorkOrder(db, {
-      workOrderId: scope.workOrderId,
-      companyId: scope.companyId,
-      branchId: scope.branchId,
-    });
-    if (live) {
+    const [open] = await this.repository.liveInvoicesForWorkOrder(
+      db,
+      {
+        workOrderId: scope.workOrderId,
+        companyId: scope.companyId,
+        branchId: scope.branchId,
+      },
+      1
+    );
+    if (open?.status === 'draft') {
+      // `uq_invoices_work_order_draft` permits one draft per work order; this pre-check
+      // is what turns it into a 409 with a rule instead of a `23505` five layers down.
       throw new AppFailure('ERR-CON-001', {
         message:
-          `Work order ${scope.workOrderId} already has a live invoice (${live.status}). ` +
-          'uq_invoices_work_order_active permits one per work order; void the existing draft ' +
-          'or credit the issued invoice.',
+          `Work order ${scope.workOrderId} already has a draft invoice. Issue or cancel it ` +
+          'before invoicing more of the approved work.',
+        safeDetails: {
+          violations: [{ path: 'body.workOrderId', rule: INVOICE_DRAFT_OPEN_RULE }],
+        },
       });
     }
 
@@ -847,6 +901,19 @@ export class InvoiceService {
       branchId: source.branchId,
     });
     this.assertSourceLinesAreBillable(source.currencyCode, sourceLines, source.revisionId);
+    // ADR-023 D5/D15: only approved quantity no live invoice holds is billed, each line
+    // at what remains of it. Nothing left is a conflict, not a zero invoice.
+    const billed = billableLines(sourceLines);
+    if (billed.length === 0) {
+      throw new AppFailure('ERR-CON-001', {
+        message:
+          `Everything approved on quotation revision ${source.revisionId} of work order ` +
+          `${scope.workOrderId} is already invoiced, or what remains cannot be billed.`,
+        safeDetails: {
+          violations: [{ path: 'body.workOrderId', rule: INVOICE_NOTHING_TO_BILL_RULE }],
+        },
+      });
+    }
 
     // Who pays, in this order (DX-3, finance QA fixes E): the payer the accepted
     // quotation names, because it is the protected record of who agreed to pay;
@@ -908,7 +975,7 @@ export class InvoiceService {
         taxTotal: source.taxTotal,
       });
 
-      for (const line of sourceLines) {
+      for (const { line, money } of billed) {
         const inserted = await this.repository.insertInvoiceLine(db, {
           invoiceId: created.id,
           companyId: created.companyId,
@@ -920,7 +987,8 @@ export class InvoiceService {
           // customer comparing the two documents expects.
           lineNumber: line.lineNumber,
           lineType: line.itemKind,
-          quantity: line.quantity,
+          // What remains approved and not yet invoiced — never the quoted quantity.
+          quantity: line.remainingQuantity,
           currencyCode: created.currencyCode,
           sourceQuotationItemId: line.quotationItemId,
         });
@@ -931,8 +999,8 @@ export class InvoiceService {
           companyId: created.companyId,
           branchId: created.branchId,
           unitPrice: line.unitPrice,
-          netAmount: line.netAmount,
-          taxAmount: line.taxAmount,
+          netAmount: money.net,
+          taxAmount: money.tax,
           warrantyPayAmount: NO_WARRANTY_SHARE,
         });
       }
@@ -950,6 +1018,7 @@ export class InvoiceService {
         correlationId: db.context.correlationId,
       });
     } catch (error) {
+      refuseSourceFailure(error, scope.workOrderId);
       toDomainFailure(error, 'Invoice creation');
     }
 
@@ -965,7 +1034,7 @@ export class InvoiceService {
         { field: 'quotationRevisionId', classification: 'internal', value: source.revisionId },
         { field: 'payerPartnerId', classification: 'internal', value: created.payerPartnerId },
         { field: 'currencyCode', classification: 'internal', value: created.currencyCode },
-        { field: 'lineCount', classification: 'internal', value: String(sourceLines.length) },
+        { field: 'lineCount', classification: 'internal', value: String(billed.length) },
         // `restricted`, so `iam.audit_mask` stores a fixed marker rather than the
         // figure. Deliberate: `iam.audit_records` is not gated by `sal.finance.view`,
         // so writing the gross total in clear would route restricted money around the
@@ -996,7 +1065,7 @@ export class InvoiceService {
         quotationRevisionId: source.revisionId,
         currency: created.currencyCode,
         status: created.status,
-        lineCount: sourceLines.length,
+        lineCount: billed.length,
       },
     });
 
@@ -2319,6 +2388,7 @@ export class InvoiceService {
     return {
       invoice: toInvoiceView(fresh, units),
       lines: lines.map((line) => toInvoiceLineView(line, items, units)),
+      source: await describeInvoiceSource(db, this.repository, fresh, units),
       recordVersion: fresh.recordVersion,
     };
   }

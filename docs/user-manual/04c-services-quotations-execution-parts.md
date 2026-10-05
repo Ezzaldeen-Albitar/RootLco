@@ -46,8 +46,8 @@ until you answer a question first.
    visit. There is no create-work-order button anywhere in the application. Part 4B covers the
    reception visit and the conversion.
 5. **Parts** are issued to a work order from stock, and returned to the location they came from.
-6. An **invoice** is made from the **accepted quotation revision**. Part 6 covers invoices and
-   payments.
+6. An **invoice** bills the **approved lines** of the current quotation revision that no other
+   invoice bills yet (Owner decisions D5 and D15). Part 6 covers invoices and payments.
 
 Two consequences meet you immediately:
 
@@ -1383,8 +1383,10 @@ work** screen at `/{locale}/technicians/me`, covered in part 4B.
 ### 4C.5.2 What the acceptance actually unlocks — IMPLEMENTED (UI)
 
 Accepting a quotation revision does not move the work order by itself, and it does not create jobs.
-What it does is make the work billable. The invoice screen says so in the negative when it is
-missing: "This work order has no accepted quotation revision, so there is nothing to bill yet." <!-- invoices.preview.noAcceptedRevision -->
+What it does is make the work billable — line by line: each line the customer approves is billable,
+and a line still undecided or refused is not (Owner decision D5). The invoice screen says so in the
+negative when nothing is approved: "This work order has no approved quotation line, so there is
+nothing to bill yet." <!-- invoices.preview.noAcceptedRevision -->
 
 So the operator's sequence is: build the quotation → issue it → record the customer's decision →
 carry out the work on the work order → issue parts as needed → close quality → invoice. The

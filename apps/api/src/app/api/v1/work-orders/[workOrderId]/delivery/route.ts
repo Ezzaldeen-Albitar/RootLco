@@ -15,7 +15,8 @@
  *
  * This publishes the existing read; it adds no query and no second mapper. It is
  * the same shape as `sal.work-order-invoice-read`, which published
- * `BillingRepository.liveInvoiceForWorkOrder` from the identical position in P1-30
+ * `BillingRepository.liveInvoiceForWorkOrder` (since P1-32-PRE-OD-FD5
+ * `liveInvoicesForWorkOrder`, several live invoices) from the identical position in P1-30
  * A2, and it is deliberately not a different one.
  *
  * ## At most one row, by partial unique index

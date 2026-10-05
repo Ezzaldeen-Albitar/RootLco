@@ -250,6 +250,12 @@ function line(over: Record<string, unknown> = {}) {
     quantity: '2.000',
     currency: 'USD',
     sourceQuotationItemId: ITEM_ID,
+    // The quotation line it was copied from, as quoted (ADR-023 D5/D15).
+    source: {
+      description: 'Front brake service',
+      quotedQuantity: '2.000',
+      discount: { amount: '50.0000', currency: 'USD' },
+    },
     recordVersion: 1,
     money: {
       unitPrice: { amount: '100.0000', currency: 'USD' },
@@ -266,9 +272,25 @@ function line(over: Record<string, unknown> = {}) {
 }
 // The detail read's version deliberately differs from the work-order read's (3):
 // issue and cancel must send THIS one.
-function detail(over: Record<string, unknown> = {}, lineOver: Record<string, unknown> = {}) {
+function detail(
+  over: Record<string, unknown> = {},
+  lineOver: Record<string, unknown> = {},
+  top: Record<string, unknown> = {}
+) {
   const inv = invoice({ recordVersion: 5, ...over });
-  return { invoice: inv, lines: [line(lineOver)], recordVersion: inv.recordVersion };
+  return {
+    invoice: inv,
+    lines: [line(lineOver)],
+    // The revision the invoice was made from, as quoted (ADR-023 D5/D15).
+    source: {
+      quotationRevisionId: REVISION_ID,
+      lineCount: 1,
+      subtotal: { amount: '200.0000', currency: 'USD' },
+      discountTotal: { amount: '50.0000', currency: 'USD' },
+    },
+    recordVersion: inv.recordVersion,
+    ...top,
+  };
 }
 const preview = {
   workOrderId: WORK_ORDER_ID,
@@ -297,8 +319,42 @@ const preview = {
       netAmount: '150.0000',
       taxAmount: '15.0000',
       grossAmount: '165.0000',
+      approvedQuantity: '2.000',
+      invoicedQuantity: '0.000',
+      partlyInvoicedEarlier: false,
     },
   ],
+  // Every line of the revision as quoted (ADR-023 D5/D15): here the one line, approved
+  // and not yet invoiced, so the revision and what would be billed are the same.
+  revisionLines: [
+    {
+      sourceQuotationItemId: ITEM_ID,
+      lineNumber: 1,
+      lineType: 'service',
+      description: 'Front brake service',
+      item: null,
+      unit: null,
+      decision: 'approved',
+      quotedQuantity: '2.000',
+      approvedQuantity: '2.000',
+      invoicedQuantity: '0.000',
+      remainingQuantity: '2.000',
+      billingStatus: 'billable',
+      unitPrice: '100.0000',
+      discount: '50.0000',
+      taxRate: '0.100000',
+      netAmount: '150.0000',
+      taxAmount: '15.0000',
+      grossAmount: '165.0000',
+    },
+  ],
+  revisionTotals: {
+    subtotal: '200.0000',
+    discountTotal: '50.0000',
+    taxTotal: '15.0000',
+    netTotal: '150.0000',
+    grossTotal: '165.0000',
+  },
 };
 const outstanding = {
   invoiceId: INVOICE_ID,
@@ -316,6 +372,20 @@ const outstanding = {
 };
 
 const okRead = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 'corr' });
+
+/**
+ * `sal.work-order-invoice-read` for a work order with `current` as its only live
+ * invoice (or none). Since ADR-023 D5/D15 the read also lists every live invoice and
+ * whether approved work remains to bill; these cases have no more of either.
+ */
+const orderRead = (current: unknown) =>
+  okRead({
+    workOrderId: WORK_ORDER_ID,
+    invoice: current,
+    invoices: current === null ? [] : [current],
+    invoicesTruncated: false,
+    approvedWorkToInvoice: false,
+  });
 
 /**
  * What `sal.credit-note-detail` traces a note to (finance checkpoint, DF-B4):
@@ -348,7 +418,7 @@ function renderScreen(over: Record<string, unknown> = {}) {
       workOrderId={WORK_ORDER_ID}
       workOrder={workOrder as never}
       workOrderRefused={null}
-      initialInvoice={okRead({ workOrderId: WORK_ORDER_ID, invoice: null }) as never}
+      initialInvoice={orderRead(null) as never}
       canViewFinance={true}
       canIssue={false}
       {...over}
@@ -399,9 +469,7 @@ const region = (key: string) => screen.getByRole('region', { name: EN[key] as st
 beforeEach(() => {
   vi.clearAllMocks();
   PERMISSIONS = [];
-  readWorkOrderInvoice.mockImplementation(async () =>
-    okRead({ workOrderId: WORK_ORDER_ID, invoice: null })
-  );
+  readWorkOrderInvoice.mockImplementation(async () => orderRead(null));
   readInvoicePreview.mockImplementation(async () => okRead(structuredClone(preview)));
   readInvoice.mockImplementation(async () => okRead(detail()));
   readOutstanding.mockImplementation(async () => okRead({ ...outstanding }));
@@ -788,7 +856,8 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     expect(within(panel).getAllByText(money('50.0000'))).toHaveLength(2);
     expect(within(panel).getByText(money('200.0000'))).toBeVisible();
     expect(within(panel).getByText('0.100000')).toBeVisible();
-    expect(within(panel).getByText('2.000')).toBeVisible();
+    // Approved, and what this invoice would bill (ADR-023 D5/D15): both 2.000 here.
+    expect(within(panel).getAllByText('2.000')).toHaveLength(2);
     expect(within(panel).queryByText(/10\s?%/)).toBeNull();
   });
 
@@ -834,7 +903,7 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
         workOrderId={WORK_ORDER_ID}
         workOrder={workOrder as never}
         workOrderRefused={null}
-        initialInvoice={okRead({ workOrderId: WORK_ORDER_ID, invoice: null }) as never}
+        initialInvoice={orderRead(null) as never}
         canViewFinance={true}
         canIssue={false}
       />
@@ -878,9 +947,7 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     });
     renderScreen();
     const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice() })
-    );
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(invoice()));
     await user.click(
       within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
     );
@@ -1027,7 +1094,7 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
             workOrderId={WORK_ORDER_ID}
             workOrder={workOrder as never}
             workOrderRefused={null}
-            initialInvoice={okRead({ workOrderId: WORK_ORDER_ID, invoice: null }) as never}
+            initialInvoice={orderRead(null) as never}
             canViewFinance={true}
             canIssue={false}
             canReadCustomers={false}
@@ -1076,7 +1143,7 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
             workOrderId={WORK_ORDER_ID}
             workOrder={workOrder as never}
             workOrderRefused={null}
-            initialInvoice={okRead({ workOrderId: WORK_ORDER_ID, invoice: null }) as never}
+            initialInvoice={orderRead(null) as never}
             canViewFinance={true}
             canIssue={false}
             canReadCustomers={false}
@@ -1133,9 +1200,7 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
       },
       created: null,
     });
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice() })
-    );
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(invoice()));
     await user.click(
       within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
     );
@@ -1184,9 +1249,7 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     });
     renderScreen();
     const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice() })
-    );
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(invoice()));
     await user.click(
       within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
     );
@@ -1196,10 +1259,8 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
 
 describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
   const live = () => {
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice() })
-    );
-    return { initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice() }) };
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(invoice()));
+    return { initialInvoice: orderRead(invoice()) };
   };
 
   /** The issue question, answered: nothing is sent before it. */
@@ -1551,10 +1612,7 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
       )
     );
     renderScreen({
-      initialInvoice: okRead({
-        workOrderId: WORK_ORDER_ID,
-        invoice: invoice({ status: 'issued', invoiceNumber: 'FXINV-000007' }),
-      }),
+      initialInvoice: orderRead(invoice({ status: 'issued', invoiceNumber: 'FXINV-000007' })),
       canIssue: true,
     });
     await screen.findAllByText('FXINV-000007');
@@ -1591,9 +1649,7 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
     expect(within(dialog).getByText(EN['overlay.reasonRequired'] as string)).toBeVisible();
     expect(cancelInvoice).not.toHaveBeenCalled();
     await user.type(reason, 'wrong customer');
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: null })
-    );
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(null));
     await user.click(confirm());
     await waitFor(() =>
       expect(cancelInvoice).toHaveBeenCalledWith(INVOICE_ID, { reason: 'wrong customer' }, 5)
@@ -1607,21 +1663,18 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
 
 describe('FE-020 — the printable copy', () => {
   const live = () => {
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice() })
-    );
-    return { initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice() }) };
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(invoice()));
+    return { initialInvoice: orderRead(invoice()) };
   };
 
-  it('takes descriptions from the preview only when its revision matches, and prints', async () => {
+  it('describes the copy from the invoice’s own source lines, reads no preview, and prints', async () => {
     const user = userEvent.setup();
     const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     renderScreen({ ...live() });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
-    expect(readInvoicePreview).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
-    await waitFor(() => expect(readInvoicePreview).toHaveBeenCalledWith(WORK_ORDER_ID));
     const document = await screen.findByRole('article');
+    expect(readInvoicePreview).not.toHaveBeenCalled();
     expect(within(document).getByText('Front brake service')).toBeVisible();
     expect(
       within(document).getByText(EN['invoices.print.descriptionsFromQuotation'] as string)
@@ -1670,7 +1723,7 @@ describe('FE-020 — the printable copy', () => {
     );
   });
 
-  it('DF-B1: prints each line discount and the discount total as issued, from the matched revision', async () => {
+  it('DF-B1: prints each line discount and the discount total as issued, from the invoice’s source', async () => {
     const user = userEvent.setup();
     renderScreen({ ...live() });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
@@ -1697,10 +1750,11 @@ describe('FE-020 — the printable copy', () => {
     expect(within(issued).getByText(money('165.0000'))).toBeTruthy();
   });
 
-  it('DF-B1: a discount the matched revision cannot vouch for is said to be unavailable, never zero', async () => {
+  it('DF-B1: a discount the detail cannot vouch for is said to be unavailable, never zero', async () => {
     const user = userEvent.setup();
-    readInvoicePreview.mockImplementation(async () =>
-      okRead({ ...structuredClone(preview), quotationRevisionId: 'other-revision' })
+    // The caller may see amounts, but the detail carries no source revision.
+    readInvoice.mockImplementation(async () =>
+      okRead(detail({}, { source: null }, { source: null }))
     );
     renderScreen({ ...live() });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
@@ -1764,12 +1818,10 @@ describe('FE-020 — the printable copy', () => {
   it('DF-B1: the as-of moment is written on the invoice branch clock when the context knows it', async () => {
     const user = userEvent.setup();
     const inBranchInvoice = { companyId: TEST_BRANCH.companyId, branchId: TEST_BRANCH.id };
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice(inBranchInvoice) })
-    );
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(invoice(inBranchInvoice)));
     readInvoice.mockImplementation(async () => okRead(detail(inBranchInvoice)));
     renderScreen({
-      initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice(inBranchInvoice) }),
+      initialInvoice: orderRead(invoice(inBranchInvoice)),
     });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
     await waitFor(() => expect(readOutstanding).toHaveBeenCalled());
@@ -1821,10 +1873,10 @@ describe('FE-020 — the printable copy', () => {
     );
   });
 
-  it('with a preview of another revision, prints without descriptions and says so', async () => {
+  it('with a detail that carries no source, prints without descriptions and says so', async () => {
     const user = userEvent.setup();
-    readInvoicePreview.mockImplementation(async () =>
-      okRead({ ...structuredClone(preview), quotationRevisionId: 'other-revision' })
+    readInvoice.mockImplementation(async () =>
+      okRead(detail({}, { source: null }, { source: null }))
     );
     renderScreen({ ...live() });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
@@ -1837,17 +1889,27 @@ describe('FE-020 — the printable copy', () => {
     ).toBeVisible();
   });
 
-  it('a refused preview is said on the paper view with its reference, never as a mismatch', async () => {
+  it('a work-order preview naming another revision, or refused, never changes the copy (D5/D15)', async () => {
     const user = userEvent.setup();
-    readInvoicePreview.mockImplementation(async () => denied());
+    // A later quotation now has the work to bill, or two are fully invoiced and the
+    // preview is a conflict: the copy is still this invoice's own.
+    readInvoicePreview.mockImplementation(async () =>
+      okRead({ ...structuredClone(preview), quotationRevisionId: 'other-revision' })
+    );
     renderScreen({ ...live() });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
     await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
     const document = await screen.findByRole('article');
+    expect(within(document).getByText('Front brake service')).toBeVisible();
+    expect(within(document).getByTestId('invoice-print-line-discount')).toHaveTextContent(
+      money('50.0000')
+    );
+    expect(within(document).getByTestId('invoice-print-subtotal')).toHaveTextContent(
+      money('200.0000')
+    );
     expect(
-      within(document).getByText(EN['invoices.print.previewRefused'] as string, { exact: false })
+      within(document).getByText(EN['invoices.print.descriptionsFromQuotation'] as string)
     ).toBeVisible();
-    expect(within(document).getByText('ref-403')).toBeVisible();
     expect(
       within(document).queryByText(EN['invoices.print.descriptionsUnavailable'] as string)
     ).toBeNull();
@@ -1855,7 +1917,9 @@ describe('FE-020 — the printable copy', () => {
 
   it('without finance view reads no preview, prints no amount, and says so', async () => {
     const user = userEvent.setup();
-    readInvoice.mockImplementation(async () => okRead(detail({ totals: null }, { money: null })));
+    readInvoice.mockImplementation(async () =>
+      okRead(detail({ totals: null }, { money: null, source: null }, { source: null }))
+    );
     renderScreen({ ...live(), canViewFinance: false });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
     await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
@@ -1907,9 +1971,7 @@ describe('the /invoices route page decides before it reads', () => {
       'wo.work_order.read',
       'sal.invoice.issue',
     ];
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice() })
-    );
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(invoice()));
     await renderPage({ locale: 'en' }, { workOrderId: WORK_ORDER_ID });
     expect(readWorkOrderDetail).toHaveBeenCalledWith(WORK_ORDER_ID);
     expect(screen.getByText('WO-000042')).toBeVisible();
@@ -3319,16 +3381,14 @@ describe('raising and approving a credit note', () => {
   describe('from the invoice itself', () => {
     const issued = () => invoice({ status: 'issued', invoiceNumber: 'INV-000123' });
     beforeEach(() => {
-      readWorkOrderInvoice.mockImplementation(async () =>
-        okRead({ workOrderId: WORK_ORDER_ID, invoice: issued() })
-      );
+      readWorkOrderInvoice.mockImplementation(async () => orderRead(issued()));
       readInvoice.mockImplementation(async () =>
         okRead(detail({ status: 'issued', invoiceNumber: 'INV-000123' }))
       );
     });
     const issuedScreen = (over: Record<string, unknown> = {}) =>
       renderScreen({
-        initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: issued() }),
+        initialInvoice: orderRead(issued()),
         ...over,
       });
     const balanceRead = async () => {
@@ -3397,7 +3457,7 @@ describe('raising and approving a credit note', () => {
     it('offers nothing on a draft, even with the permission', async () => {
       readInvoice.mockImplementation(async () => okRead(detail()));
       renderScreen({
-        initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: invoice() }),
+        initialInvoice: orderRead(invoice()),
         canRaiseCredit: true,
       });
       await balanceRead();
@@ -3518,7 +3578,7 @@ describe('names, not references, and dates that read in order (browser QA 5.1b, 
     });
   const issuedDetail = () => {
     const inv = { ...issuedInvoice(), recordVersion: 5 };
-    return { invoice: inv, lines: [line()], recordVersion: 5 };
+    return { ...detail(), invoice: inv, lines: [line()], recordVersion: 5 };
   };
   const listEntry = (payerName: string | null) => ({
     ...issuedInvoice(),
@@ -3528,9 +3588,7 @@ describe('names, not references, and dates that read in order (browser QA 5.1b, 
   });
 
   beforeEach(() => {
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: issuedInvoice() })
-    );
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(issuedInvoice()));
     readInvoice.mockImplementation(async () => okRead(issuedDetail()));
   });
 
@@ -3542,7 +3600,7 @@ describe('names, not references, and dates that read in order (browser QA 5.1b, 
         workOrderId={WORK_ORDER_ID}
         workOrder={workOrder as never}
         workOrderRefused={null}
-        initialInvoice={okRead({ workOrderId: WORK_ORDER_ID, invoice: issuedInvoice() }) as never}
+        initialInvoice={orderRead(issuedInvoice()) as never}
         canViewFinance={true}
         canIssue={false}
         {...over}
@@ -3633,7 +3691,7 @@ describe('Arabic, right to left', () => {
         workOrderId={WORK_ORDER_ID}
         workOrder={workOrder as never}
         workOrderRefused={null}
-        initialInvoice={okRead({ workOrderId: WORK_ORDER_ID, invoice: null }) as never}
+        initialInvoice={orderRead(null) as never}
         canViewFinance={true}
         canIssue={false}
       />
@@ -3681,9 +3739,7 @@ describe('finance retest fixes C', () => {
 
   async function pageWithInvoice(locale: 'en' | 'ar') {
     PERMISSIONS = ['sal.invoice.manage', 'sal.finance.view', 'wo.work_order.read'];
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: issuedForWorkOrder() })
-    );
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(issuedForWorkOrder()));
     readInvoice.mockImplementation(async () =>
       okRead(detail({ status: 'issued', invoiceNumber: 'INV-000001' }))
     );
@@ -3747,9 +3803,7 @@ describe('finance retest fixes C', () => {
       issuedAt: '2026-10-01T07:00:00Z',
       payerPartnerId: OTHER_PAYER,
     });
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: billed })
-    );
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(billed));
     readInvoice.mockImplementation(async () =>
       okRead(detail({ status: 'issued', invoiceNumber: 'INV-000001', payerPartnerId: OTHER_PAYER }))
     );
@@ -3762,15 +3816,15 @@ describe('finance retest fixes C', () => {
     );
     const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     const user = userEvent.setup();
-    renderScreen({ initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: billed }) });
+    renderScreen({ initialInvoice: orderRead(billed) });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
     await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
     const panel = document.getElementById('invoice-print-heading')?.closest('section');
     expect(panel).not.toBeNull();
     const section = panel as HTMLElement;
     // Still finding the name: a loading state, no copy, and nothing to print.
-    await waitFor(() => expect(readInvoicePreview).toHaveBeenCalled());
-    expect(within(section).getByRole('status')).toBeVisible();
+    expect(await within(section).findByRole('status')).toBeVisible();
+    expect(readInvoicePreview).not.toHaveBeenCalled();
     expect(screen.queryByRole('article')).toBeNull();
     expect(
       within(section).queryByRole('button', { name: EN['invoices.print.print'] as string })
@@ -3792,9 +3846,7 @@ describe('finance retest fixes C', () => {
   });
 
   it('writes the balance with the minor unit the server published, where the locale data disagrees', async () => {
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: issuedForWorkOrder() })
-    );
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(issuedForWorkOrder()));
     readInvoice.mockImplementation(async () =>
       okRead(detail({ status: 'issued', invoiceNumber: 'INV-000001' }))
     );
@@ -3805,7 +3857,7 @@ describe('finance retest fixes C', () => {
       })
     );
     renderScreen({
-      initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: issuedForWorkOrder() }),
+      initialInvoice: orderRead(issuedForWorkOrder()),
     });
     const balance = await screen.findByRole('region', {
       name: EN['invoices.outstanding.heading'] as string,
@@ -3846,15 +3898,13 @@ describe('finance QA fixes D — the printed copy', () => {
   };
 
   it('prints who paid for whom, with the authorisation, inside the settlement (D14)', async () => {
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: issued() })
-    );
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(issued()));
     readInvoice.mockImplementation(async () =>
       okRead(detail({ status: 'issued', invoiceNumber: 'INV-000001' }))
     );
     readOutstanding.mockImplementation(async () => okRead(paidByInsurer));
     const user = userEvent.setup();
-    renderScreen({ initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: issued() }) });
+    renderScreen({ initialInvoice: orderRead(issued()) });
     const balance = await screen.findByRole('region', {
       name: EN['invoices.outstanding.heading'] as string,
     });
@@ -3877,9 +3927,7 @@ describe('finance QA fixes D — the printed copy', () => {
 
   it('a payer lookup that never answers settles as not available after the bounded wait, and finding it again names the payer', async () => {
     const billed = issued({ payerPartnerId: OTHER_PAYER });
-    readWorkOrderInvoice.mockImplementation(async () =>
-      okRead({ workOrderId: WORK_ORDER_ID, invoice: billed })
-    );
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(billed));
     readInvoice.mockImplementation(async () =>
       okRead(detail({ status: 'issued', invoiceNumber: 'INV-000001', payerPartnerId: OTHER_PAYER }))
     );
@@ -3894,7 +3942,7 @@ describe('finance QA fixes D — the printed copy', () => {
     );
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
-      renderScreen({ initialInvoice: okRead({ workOrderId: WORK_ORDER_ID, invoice: billed }) });
+      renderScreen({ initialInvoice: orderRead(billed) });
       await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
       fireEvent.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
       const section = document.getElementById('invoice-print-heading')?.closest('section');

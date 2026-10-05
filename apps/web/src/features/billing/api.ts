@@ -81,7 +81,11 @@ const workOrderPath = (workOrderId: string, suffix: string) =>
 const invoicePath = (invoiceId: string, suffix = '') =>
   `/api/v1/invoices/${encodeURIComponent(invoiceId)}${suffix}`;
 
-/** The live invoice of a work order, or `null` when it has none (`sal.work-order-invoice-read`). */
+/**
+ * The live invoices of a work order (`sal.work-order-invoice-read`): the one to act
+ * on (`null` when it has none), every live one, and whether approved work remains
+ * to invoice (ADR-023 D5/D15).
+ */
 export async function readWorkOrderInvoice(
   workOrderId: string
 ): Promise<ReadState<WorkOrderInvoice>> {
@@ -89,9 +93,11 @@ export async function readWorkOrderInvoice(
 }
 
 /**
- * What the accepted quotation revision would bill (`sal.invoice-preview`).
+ * What a new invoice would bill now (`sal.invoice-preview`): the approved
+ * quotation lines no live invoice holds yet, each at what remains of it, and every
+ * other line of the revision with why it is left off (ADR-023 D5/D15).
  * Money-bearing: the route requires `sal.finance.view`. A work order with no
- * accepted revision answers 404, which the screen states as that, never as an
+ * approved line answers 404, which the screen states as that, never as an
  * empty preview.
  */
 export async function readInvoicePreview(workOrderId: string): Promise<ReadState<InvoicePreview>> {
@@ -120,8 +126,9 @@ export async function readOutstanding(invoiceId: string): Promise<ReadState<Outs
  * refused as a second invoice. A stored replay carries `replayed: false`; the
  * server sets `replayed: true` only when the SAME key reaches the service
  * again and finds the invoice that key already created; a NEW key against a
- * work order with a live invoice is refused as a conflict (409), which the
- * screen answers by re-reading the order's invoice.
+ * work order with an open draft, or with nothing approved left to invoice, is
+ * refused as a conflict (409), which the screen answers by re-reading the order's
+ * invoices.
  */
 export async function createInvoice(
   body: InvoiceCreateBody,

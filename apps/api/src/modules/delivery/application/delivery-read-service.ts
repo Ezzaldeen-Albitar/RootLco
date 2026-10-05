@@ -1089,6 +1089,26 @@ export class DeliveryReadService {
       };
     }
 
+    /**
+     * Approved quotation work that no live invoice holds yet (ADR-023 D5/D15,
+     * P1-32-PRE-OD-FD5). A work order may now be invoiced more than once, so every
+     * invoice being paid no longer means everything approved was billed — and an
+     * unbilled part is not a settled part, for the reason no invoice at all is not.
+     * `established: true`: the remaining quantity was read exactly.
+     */
+    if (receivable.unbilledApprovedWork) {
+      return {
+        outstanding: true,
+        fact: {
+          blocker,
+          established: true,
+          source:
+            '@/modules/billing — approved quotation work is not yet invoiced; invoice it or ' +
+            'override with a reason',
+        },
+      };
+    }
+
     // Re-derived, not merely trusted. `amount` is a `numeric(18,4)` decimal STRING;
     // `Decimal.fromDatabase` refuses a value the column could not have held, and the
     // comparison is exact — no double is materialised at any point.
