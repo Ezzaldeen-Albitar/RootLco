@@ -3989,3 +3989,32 @@ Known limitations of this slice, one line each:
 - On the web, a contact typed and then hidden by switching to a line target that does not complete the acceptance is kept in state and silently not sent; the boxes visibly disappear and the form still counts as unsaved work, so the risk is low, but nothing announces that the hidden value will not be sent.
 - `contactReachesRecord` in `QuotationDetailScreen.tsx` returns true for the whole-revision target even when the decisions read shows a rejected line; the server then answers with a conflict (ERR-CON-001), not a loss, so nothing is silently dropped.
 - Not run by the implementer: the database tier (`tests/db/quo-acceptance-records.test.ts`) and the backend tier locally, because no throwaway database was listening and the shared local port is off-limits; they are covered only by the hosted integration-tests and "Database migrations and RLS tests" jobs of the PR run.
+
+### Part lines on quotations at authorised sales prices (P1-32-PRE-OD-FD6, ADR-023 D6)
+
+A quotation line may quote a part from the item catalogue, priced by the server at the item selling
+price of the work order's branch (branch row, else company row, else tenant-wide row), never at cost
+and never at a price the caller sends (`DBCR-P1-32-PRE-OD-FD6-001`). The line snapshots the item's
+stock code and name, its unit, the price row, the unit price, the discount and the tax class and
+rate; `quo.guard_quotation_part_line` refuses any other price and freezes the snapshot
+(`tests/db/quo-part-line-snapshots.test.ts`). An item with no selling price for the branch is
+refused on that line's part box with `no_authorised_sale_price` and nothing is written
+(`tests/backend/od-quotation-part-lines.test.ts`, `apps/web/tests/quotation-part-lines.dom.test.tsx`).
+A work-order invoice copies the part line with its item and unit and posts no stock movement (same
+backend file).
+
+| Route                                    | Read (code)                                   | Write (code)                                                           | Element                                 | State                                                                                       |
+| ---------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `/quotations` builder — part line        | `inv.item-search` (`inv.item.read`)           | `quo.quotation-create` (`quo.quotation.manage` + `wo.work_order.read`) | kind choice, part picker, unit, refusal | fixed (FD6): offered only with `inv.item.read`; without it the service builder is unchanged |
+| `/quotations/[quotationId]` new revision | `inv.item-search` (`inv.item.read`)           | `quo.quotation-revision-create` (`quo.quotation.manage`)               | same line editor                        | fixed (FD6)                                                                                 |
+| `/quotations/[quotationId]` lines table  | `quo.quotation-detail` (`quo.quotation.read`) | —                                                                      | part name, stock code, unit             | fixed (FD6): names, never an identifier                                                     |
+| `/invoices` detail lines                 | `sal.invoice-detail` (`sal.invoice.manage`)   | —                                                                      | part name, stock code, unit             | fixed (FD6)                                                                                 |
+
+Known limitations of this slice, one line each:
+
+- Only one authorised source can price an item today (the item selling price); `resolveAuthorisedPartPrice` refuses if two ever disagree, and which source would win stays open (CC-OD-47, README question 16).
+- Tax remains blocked on the accounting questionnaire; a price with no tax class is a zero rate for part lines exactly as for services (CC-OD-48, README question 11).
+- The API accepts `sourceRequiredPartRef` (a required part of the same work order naming the same item, checked by the service and the database), but the builder offers no "quote from a required part" control yet.
+- A builder caller without `inv.item.read` is not offered a part line; there is no typed-reference fallback for parts.
+- The invoice preview does not yet show a part line's unit; the invoice detail does. Prints are unchanged (D10).
+- Invoices are not linked to part issues and unquoted part issues are not billed (D5/D15).

@@ -565,7 +565,13 @@ describe('the coverage include lists are pinned, because they are the denominato
     // `modules/payments/application/receipt-reversal-service.ts`. Its five routes
     // live under `src/app`, which this include list does not admit. The floors are
     // untouched for the reason above.
-    expect(files.length).toBe(324);
+    // 326 with the quotation part lines (P1-32-PRE-OD-FD6, ADR-023 D6), which add
+    // TWO: `modules/quotation/application/quotation-line-shape.ts` (the two shapes a
+    // requested line may take) and `modules/quotation/domain/part-price-source.ts`
+    // (the step that refuses, rather than chooses, between disagreeing authorised
+    // prices). The two quotation routes live under `src/app`, which this include
+    // list does not admit. The floors are untouched for the reason above.
+    expect(files.length).toBe(326);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -678,6 +684,8 @@ describe('the coverage include lists are pinned, because they are the denominato
     // `server/openapi/` either, so the two numbers move by one together.
     // 323 with the receipt reversal service (P1-32-PRE-OD-FD4), which is not under
     // `server/openapi/` either, so the two numbers move by one together.
-    expect(instrumented.length).toBe(323);
+    // 325 with the quotation part lines' two (P1-32-PRE-OD-FD6), neither under
+    // `server/openapi/`, so the two numbers move by two together.
+    expect(instrumented.length).toBe(325);
   });
 });

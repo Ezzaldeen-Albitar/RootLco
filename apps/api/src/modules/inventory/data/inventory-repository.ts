@@ -1231,6 +1231,27 @@ const toItemSalePrice = (r: ItemSalePriceSql): ItemSalePriceRow => ({
   createdAt: r.created_at,
 });
 
+/**
+ * An item as a quotation part line captures it (P1-32-PRE-OD-FD6): its words and
+ * unit now, and the selling price that applies to one branch, or `null` when the
+ * item has none there. No cost field exists on this shape.
+ */
+export interface QuotablePartRow {
+  readonly itemId: string;
+  readonly sku: string;
+  readonly name: string;
+  readonly lifecycleStatus: string;
+  readonly unitCode: string;
+  readonly unitName: string;
+  readonly salePrice: {
+    readonly priceId: string;
+    /** Exact decimal string: `numeric(18,4)`, never a number. */
+    readonly unitPrice: string;
+    readonly currencyCode: string;
+    readonly taxClassId: string | null;
+  } | null;
+}
+
 /** A part that came back (P1-32-PRE-112). */
 export interface SalesReturnRow {
   readonly id: string;
@@ -5483,6 +5504,61 @@ export class InventoryRepository extends Repository {
       [context.principal.tenantId, priceId]
     );
     return row ? toItemSalePrice(row) : null;
+  }
+
+  /**
+   * What a quotation part line captures of an item (P1-32-PRE-OD-FD6, ADR-023 D6):
+   * its stock code, name, lifecycle and unit of measure now, and the ONE selling
+   * price `inv.resolve_item_sale_price` answers for the branch — the branch row,
+   * else the company row, else the tenant-wide row, else none. The price is the
+   * resolver's own answer, not a re-implementation of its precedence, so a
+   * quotation is priced exactly as a counter sale at the same branch would be.
+   * Cost is never read. `null` when the item is not in this tenant's catalogue.
+   */
+  public async readQuotablePart(
+    db: DbHandle,
+    input: { readonly itemId: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<QuotablePartRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      id: string;
+      sku: string;
+      name: string;
+      lifecycle_status: string;
+      unit_code: string;
+      unit_name: string;
+      price_id: string | null;
+      unit_price: string | null;
+      currency_code: string | null;
+      tax_class_id: string | null;
+    }>(
+      db,
+      `SELECT i.id, i.sku, i.name, i.lifecycle_status, u.code AS unit_code, u.name AS unit_name,
+              sp.price_id, sp.unit_price::text AS unit_price, sp.currency_code, sp.tax_class_id
+         FROM inv.item_master i
+         JOIN inv.units_of_measure u ON u.id = i.uom_id
+         LEFT JOIN LATERAL inv.resolve_item_sale_price(i.id, $3, $4) sp ON true
+        WHERE i.tenant_id = $1 AND i.id = $2 AND i.deleted_at IS NULL`,
+      [context.principal.tenantId, input.itemId, input.companyId, input.branchId]
+    );
+    if (!row) return null;
+    return {
+      itemId: row.id,
+      sku: row.sku,
+      name: row.name,
+      lifecycleStatus: row.lifecycle_status,
+      unitCode: row.unit_code,
+      unitName: row.unit_name,
+      salePrice:
+        row.price_id === null || row.unit_price === null || row.currency_code === null
+          ? null
+          : {
+              priceId: row.price_id,
+              unitPrice: row.unit_price,
+              currencyCode: row.currency_code,
+              taxClassId: row.tax_class_id,
+            },
+    };
   }
 
   /** `inv.set_item_sale_price` — one live row per (item, company, branch). */

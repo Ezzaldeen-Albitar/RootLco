@@ -1329,6 +1329,34 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
     expect(payment).toHaveTextContent('CLM-2026-0042');
   });
 
+  it('shows a part line copied from the quotation by the part’s name and stock code, with its unit (D6)', async () => {
+    readInvoice.mockImplementation(async () =>
+      okRead(
+        detail(
+          {},
+          {
+            lineType: 'part',
+            quantity: '1.500',
+            item: { id: 'part-1', code: 'BRK-01', name: 'Brake pads' },
+            unit: { code: 'each', name: 'Each' },
+          }
+        )
+      )
+    );
+    renderScreen({ ...live() });
+    const panel = await screen.findByRole('region', {
+      name: EN['invoices.detail.heading'] as string,
+    });
+    const quantity = await within(panel).findByText('1.500');
+    const row = quantity.closest('tr') as HTMLElement;
+    expect(within(row).getByText(EN['invoices.lineType.part'] as string)).toBeVisible();
+    expect(within(row).getByText('Brake pads')).toBeVisible();
+    expect(within(row).getByText('BRK-01')).toHaveAttribute('dir', 'ltr');
+    expect(within(row).getByText('Each')).toBeVisible();
+    // Named, never identified.
+    expect(row.textContent).not.toContain('part-1');
+  });
+
   it('without finance view every amount area says not available, no zero appears, and the balance is not read', async () => {
     readInvoice.mockImplementation(async () => okRead(detail({ totals: null }, { money: null })));
     renderScreen({ ...live(), canViewFinance: false });

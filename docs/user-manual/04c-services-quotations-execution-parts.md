@@ -659,8 +659,8 @@ newest first" <!-- quotations.list.caption --> with **Number**, **Status**, **Cu
 
 **Label** — **New quotation** <!-- quotations.build.heading -->
 
-**Who** — an account holding `quo.quotation.manage`, plus `svc.service.read` for the service picker.
-In the example, Mr. Faris Al-Hamdan (example) prepares the quotation.
+**Who** — an account holding `quo.quotation.manage`, plus `svc.service.read` for the service picker
+and `inv.item.read` to quote a part. In the example, Mr. Faris Al-Hamdan (example) prepares the quotation.
 
 **Where** — **Commerce** → **Quotations** → answer **Which work order?** → **New quotation** <!-- quotations.list.create -->
 .
@@ -690,6 +690,15 @@ In the example, Mr. Faris Al-Hamdan (example) prepares the quotation.
      code or name and choose it from the list that opens under the box; **Choose another service** <!-- pricing.picker.changeService -->
      puts it back. Without `svc.service.read` the line takes the service's reference instead
      (**Service's reference** <!-- pricing.picker.serviceReference --> );
+   - with `inv.item.read`, a line can quote a part instead (ADR-023 D6). Each line first asks
+     **What this line quotes** <!-- quotations.lines.kind --> : **A service** <!-- quotations.lines.kindService -->
+     or **A part from the item catalogue** <!-- quotations.lines.kindPart --> . For a part, **Part** <!-- quotations.picker.item -->
+     replaces the service box: type the beginning of the stock code or name and choose it from the
+     list; **Choose a different item** <!-- inventory.itemPicker.change --> puts it back. The line
+     then says the unit its quantity is counted in, and that it is "Priced at the part's selling
+     price for this branch. The price, unit, discount and tax are kept on the quotation as they are
+     when it is saved; a later price change does not alter them." <!-- quotations.lines.partPriceHelp -->
+     You never type a price: the server takes the part's selling price for the work order's branch;
    - **Quantity** (required) <!-- quotations.lines.quantity --> — "More than zero, up to three
      decimal places." <!-- quotations.lines.quantityHelp --> ;
    - **Discount** (optional) <!-- quotations.lines.discount --> — "Optional. An amount, not a
@@ -725,6 +734,14 @@ for another approver. The draft cannot be issued until they approve it." <!-- qu
   and, in the revision table, **Captured on issue** <!-- quotations.totals.draftShort --> . Do not
   read a draft as "zero".
 - The paying customer must be recorded before a decision can be attributed to the customer.
+- **A part is quoted at its selling price for the branch, never at what it cost.** The branch's own
+  price wins over the company's, which wins over the price for every company. The line keeps the
+  price, the unit, the discount and the tax it was saved with: a later price or unit change in the
+  item catalogue does not alter it, and only a new revision takes the catalogue as it is then. A
+  part's discount is measured and approved exactly as a service's. Its tax is the selling price's
+  tax class at its rate today; tax configuration itself still waits on the accounting
+  questionnaire. When the job is invoiced, the part line is billed and no stock moves: the part
+  left stock when it was issued to the job.
 
 **If it goes wrong**
 
@@ -740,6 +757,12 @@ for another approver. The draft cannot be issued until they approve it." <!-- qu
   one, what you typed stays, and the complaint goes as soon as you correct it.
 - "Your access does not include the service catalogue, so paste the service's reference exactly as
   it was given to you. With access to services you would choose it by name instead." <!-- pricing.picker.servicesNotReadable -->
+- "Find the part and choose it from the matches." <!-- quotations.lines.itemRequired --> — a part
+  line with no part chosen.
+- "This part has no selling price for this branch, so it cannot be quoted. Ask someone who manages
+  item prices to set one, then try again." <!-- form.violation.no_authorised_sale_price --> — shown
+  on that line's part box after you press **Create quotation**; nothing is created. "This part is no
+  longer in use and cannot be quoted. Choose another part." <!-- form.violation.item_archived -->
 
 **Screenshot** — no screenshot available at this version.
 

@@ -47,7 +47,9 @@ import {
   type PinnedDiscountPolicy,
 } from '@/modules/pricing';
 import { sharedServicesModule } from '@/modules/shared-services';
+import { inventoryModule, Quantity } from '@/modules/inventory';
 import { workOrderModule } from '@/modules/work-order';
+import { resolveAuthorisedPartPrice } from '../domain/part-price-source';
 import {
   MAX_ITEMS_PER_REVISION,
   QuotationRuleError,
@@ -55,6 +57,7 @@ import {
   hasExpired,
   isTerminalRevision,
   rollUpDecisions,
+  type ItemKind,
 } from '../domain/quotation';
 import { QUOTATION_LIST_ORDERING, REVISION_LIST_ORDERING } from '../data/quotation-repository';
 import type {
@@ -68,9 +71,21 @@ import type {
 } from '../data/quotation-repository';
 import { describeDiscountApproval, type DiscountApprovalView } from './discount-approval-service';
 
-/** One line a caller asked for. Carries no computed money — by design. */
+/**
+ * One line a caller asked for. Carries no computed money — by design.
+ *
+ * A SERVICE line (`kind` absent or `service`) names a service; a PART line
+ * (`kind: 'part'`, ADR-023 D6) names an item of the inventory catalogue and is
+ * priced at the item selling price that applies to the work order's branch.
+ * Neither names a price, a tax rate or a unit: the server resolves the first two
+ * and captures the third from the item.
+ */
 export interface QuotationLineInput {
-  readonly serviceId: string;
+  readonly kind?: ItemKind | undefined;
+  /** Required on a service line; refused on a part line. */
+  readonly serviceId?: string | undefined;
+  /** Required on a part line; refused on a service line. */
+  readonly itemId?: string | undefined;
   /** `numeric(12,3)` decimal STRING, strictly positive. */
   readonly quantity: string;
   /** `numeric(18,4)` decimal STRING. Optional; defaults to zero. */
@@ -78,6 +93,8 @@ export interface QuotationLineInput {
   readonly description?: string | undefined;
   /** Provenance when the line came from a work-order service line. */
   readonly sourceServiceLineRef?: string | undefined;
+  /** Provenance when a part line was quoted from the work order's required part. */
+  readonly sourceRequiredPartRef?: string | undefined;
 }
 
 export interface CreateQuotationInput {
@@ -128,11 +145,31 @@ export interface IssueQuotationInput {
   readonly expectedVersion: number;
 }
 
+/**
+ * The item a part line quotes, as it was when it was quoted (ADR-023 D6). `code`
+ * is the stock code. A later rename of the item does not change it.
+ */
+export interface QuotationLineItemView {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
+/** The unit a part line's quantity is in, as it was when it was quoted. */
+export interface QuotationLineUnitView {
+  readonly code: string;
+  readonly name: string;
+}
+
 export interface MoneyLine {
   readonly id: string;
   readonly lineNumber: number;
   readonly itemKind: string;
   readonly serviceId: string | null;
+  /** The quoted item of a part line; `null` on a service line. */
+  readonly item: QuotationLineItemView | null;
+  /** The unit a part line's quantity is in; `null` on a service line. */
+  readonly unit: QuotationLineUnitView | null;
   readonly description: string | null;
   readonly currency: string;
   readonly unitPrice: string;
@@ -266,6 +303,14 @@ const toLine = (row: ItemRow): MoneyLine => ({
   lineNumber: row.lineNumber,
   itemKind: row.itemKind,
   serviceId: row.serviceId,
+  item:
+    row.itemRef === null || row.quotedItemSku === null || row.quotedItemName === null
+      ? null
+      : { id: row.itemRef, code: row.quotedItemSku, name: row.quotedItemName },
+  unit:
+    row.quotedUnitCode === null || row.quotedUnitName === null
+      ? null
+      : { code: row.quotedUnitCode, name: row.quotedUnitName },
   description: row.description,
   currency: row.currencyCode,
   unitPrice: row.capturedUnitPrice,
@@ -365,6 +410,7 @@ export class QuotationService {
     // resolves to a different list currency is a hard failure, never a conversion.
     const priced = await this.priceLines(db, {
       lines: input.lines,
+      workOrderId: workOrder.id,
       companyId: workOrder.companyId,
       branchId: workOrder.branchId,
       customerClass: input.customerClass ?? null,
@@ -514,6 +560,7 @@ export class QuotationService {
     const pinned = await this.pinnedDiscountPolicy(db, quotation.id);
     const priced = await this.priceLines(db, {
       lines: input.lines,
+      workOrderId: quotation.workOrderId,
       companyId: quotation.companyId,
       branchId: quotation.branchId,
       customerClass: input.customerClass ?? null,
@@ -1214,6 +1261,7 @@ export class QuotationService {
     db: DbHandle,
     context: {
       lines: readonly QuotationLineInput[];
+      workOrderId: string;
       companyId: string;
       branchId: string;
       customerClass: string | null;
@@ -1230,21 +1278,54 @@ export class QuotationService {
     const discounts: LineDiscount[] = [];
     let currency: string | null = null;
     let lineNumber = 0;
+    let requiredParts: ReadonlyMap<string, string | null> | null = null;
 
     for (const line of context.lines) {
       lineNumber += 1;
+
+      if (line.kind === 'part') {
+        if (line.sourceRequiredPartRef !== undefined && requiredParts === null) {
+          requiredParts = new Map(
+            (await workOrderModule().workOrders.lines(db, 'part', context.workOrderId)).map(
+              (part) => [part.id, part.reference] as const
+            )
+          );
+        }
+        const part = await this.pricePartLine(db, line, lineNumber, context, requiredParts);
+        if (currency === null) {
+          currency = part.item.currencyCode;
+        } else if (part.item.currencyCode !== currency) {
+          throw new AppFailure('ERR-VAL-001', {
+            message:
+              `Line ${lineNumber} is priced in ${part.item.currencyCode}, but this quotation is in ` +
+              `${currency}. A quotation cannot mix currencies and no conversion is performed.`,
+          });
+        }
+        discounts.push(part.discount);
+        items.push(part.item);
+        continue;
+      }
+      if (line.serviceId === undefined) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Line ${lineNumber}: a service line must name a service`,
+          safeDetails: {
+            violations: [{ path: `body.lines[${lineNumber - 1}].serviceId`, rule: 'invalid_type' }],
+          },
+        });
+      }
+      const serviceId = line.serviceId;
 
       const sellable = await catalog.isSellableAt(
         db,
         context.companyId,
         context.branchId,
-        line.serviceId,
+        serviceId,
         context.asOf
       );
       if (!sellable) {
         throw new AppFailure('ERR-VAL-001', {
           message:
-            `Line ${lineNumber}: service ${line.serviceId} is not available at this branch on ` +
+            `Line ${lineNumber}: service ${serviceId} is not available at this branch on ` +
             `${context.asOf}`,
         });
       }
@@ -1267,7 +1348,7 @@ export class QuotationService {
       }
 
       const price = await pricing.prices.resolve(db, {
-        serviceId: line.serviceId,
+        serviceId,
         companyId: context.companyId,
         branchId: context.branchId,
         customerClass: context.customerClass,
@@ -1293,11 +1374,17 @@ export class QuotationService {
       items.push({
         lineNumber,
         itemKind: 'service',
-        serviceId: line.serviceId,
+        serviceId,
         itemRef: null,
         sourceServiceLineRef: line.sourceServiceLineRef ?? null,
         sourceRequiredPartRef: null,
         priceRuleRef: price.priceRuleId,
+        itemSalePriceRef: null,
+        quotedItemSku: null,
+        quotedItemName: null,
+        quotedUnitCode: null,
+        quotedUnitName: null,
+        quotedTaxClassRef: null,
         description: line.description ?? null,
         currencyCode: price.currency,
         unitPrice: price.unitPrice,
@@ -1312,6 +1399,141 @@ export class QuotationService {
     }
     await this.refuseDiscountsFinerThanCurrency(db, currency, discounts);
     return { currency, items, discounts };
+  }
+
+  /**
+   * Prices one PART line (P1-32-PRE-OD-FD6, Owner decision D6, ADR-023).
+   *
+   * At an AUTHORISED SALES price and never at cost: the only source that can price
+   * an item today is the item selling price, which `@/modules/inventory` resolves
+   * for the work order's branch exactly as a counter sale is priced (the branch
+   * row, else the company row, else the tenant-wide row).
+   * `resolveAuthorisedPartPrice` takes every source's answer and refuses rather
+   * than choosing if two ever disagree. No price is a refusal on the line's item,
+   * never a zero.
+   *
+   * The tax treatment is the counter sale's: the price's tax class, at its
+   * effective rate for the company today, and untaxed when the price names no
+   * class. The quantity follows the inventory quantity rules. The line SNAPSHOTS
+   * the item's stock code, name and unit, the price row, the unit price, the tax
+   * class and rate; `quo.guard_quotation_part_line` refuses any other price and
+   * freezes the snapshot, so a later catalogue change never alters it.
+   */
+  private async pricePartLine(
+    db: DbHandle,
+    line: QuotationLineInput,
+    lineNumber: number,
+    context: { readonly companyId: string; readonly branchId: string; readonly asOf: string },
+    requiredParts: ReadonlyMap<string, string | null> | null
+  ): Promise<{ item: NewItemInput; discount: LineDiscount }> {
+    const at = (field: string): string => `body.lines[${lineNumber - 1}].${field}`;
+    const refuse = (field: string, rule: string, message: string): never => {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `Line ${lineNumber}: ${message}`,
+        safeDetails: { violations: [{ path: at(field), rule }] },
+      });
+    };
+    const itemId = line.itemId;
+    if (itemId === undefined) {
+      return refuse('itemId', 'invalid_type', 'a part line must name an item');
+    }
+
+    let quantity: string;
+    try {
+      quantity = Quantity.parse(line.quantity).assertPostable().toString();
+    } catch (cause) {
+      return refuse(
+        'quantity',
+        'quantity',
+        cause instanceof Error ? cause.message : 'invalid quantity'
+      );
+    }
+
+    const facts = await inventoryModule().catalog.quotablePart(db, {
+      itemId,
+      companyId: context.companyId,
+      branchId: context.branchId,
+    });
+    if (facts === null) {
+      return refuse('itemId', 'item_not_found', 'the item is not in this catalogue');
+    }
+    if (facts.lifecycleStatus !== 'active') {
+      return refuse('itemId', 'item_archived', 'the item is archived and cannot be quoted');
+    }
+
+    const resolution = resolveAuthorisedPartPrice([
+      facts.salePrice === null
+        ? null
+        : {
+            source: 'item_sale_price',
+            priceRef: facts.salePrice.priceId,
+            unitPrice: facts.salePrice.unitPrice,
+            currency: facts.salePrice.currencyCode,
+            taxClassId: facts.salePrice.taxClassId,
+          },
+    ]);
+    if (resolution.status === 'refused') {
+      return refuse(
+        'itemId',
+        resolution.rule,
+        resolution.rule === 'no_authorised_sale_price'
+          ? 'no authorised sales price for this item'
+          : 'the authorised sales prices for this item disagree'
+      );
+    }
+    const price = resolution.price;
+
+    if (line.sourceRequiredPartRef !== undefined) {
+      const named = requiredParts?.get(line.sourceRequiredPartRef);
+      if (named === undefined) {
+        return refuse(
+          'sourceRequiredPartRef',
+          'required_part_not_on_work_order',
+          'the required part is not on the work order being quoted'
+        );
+      }
+      if (named !== null && named !== itemId) {
+        return refuse(
+          'sourceRequiredPartRef',
+          'required_part_item_mismatch',
+          'the required part names a different item'
+        );
+      }
+    }
+
+    const tax = await pricingModule().prices.taxRateFor(db, {
+      companyId: context.companyId,
+      taxClassId: price.taxClassId,
+      asOf: context.asOf,
+    });
+    const unitPrice = Decimal.fromDatabase(price.unitPrice, MONEY).toString();
+    const discount = line.discount ?? '0';
+    const base = await this.lineBase(db, lineNumber, unitPrice, quantity);
+
+    return {
+      discount: { lineNumber, discount, base },
+      item: {
+        lineNumber,
+        itemKind: 'part',
+        serviceId: null,
+        itemRef: facts.itemId,
+        sourceServiceLineRef: null,
+        sourceRequiredPartRef: line.sourceRequiredPartRef ?? null,
+        priceRuleRef: null,
+        itemSalePriceRef: price.priceRef,
+        quotedItemSku: facts.sku,
+        quotedItemName: facts.name,
+        quotedUnitCode: facts.unitCode,
+        quotedUnitName: facts.unitName,
+        quotedTaxClassRef: price.taxClassId,
+        description: line.description ?? null,
+        currencyCode: price.currency,
+        unitPrice,
+        quantity,
+        discount,
+        taxRate: tax.taxRate,
+      },
+    };
   }
 
   /**

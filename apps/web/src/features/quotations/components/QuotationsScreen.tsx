@@ -83,6 +83,7 @@ export function QuotationsScreen({
   workOrder,
   canManage,
   canReadServices,
+  canReadItems = false,
   canSearchWorkOrders = false,
   canReadCustomers = false,
   canReadApprovals = false,
@@ -97,6 +98,11 @@ export function QuotationsScreen({
   readonly canManage: boolean;
   /** `svc.service.read` — decides whether a service can be found by code. */
   readonly canReadServices: boolean;
+  /**
+   * `inv.item.read` — whether a line may quote a part from the item catalogue
+   * (ADR-023 D6). Without it every line is a service line, as before.
+   */
+  readonly canReadItems?: boolean;
   /** `wo.work_order.read` — decides whether the job can be FOUND when none is named. */
   readonly canSearchWorkOrders?: boolean;
   /** `crm.customer.read` — whether the paying customer can be found by name. */
@@ -198,6 +204,7 @@ export function QuotationsScreen({
               : null
           }
           canReadServices={canReadServices}
+          canReadItems={canReadItems}
           canReadCustomers={canReadCustomers}
           onClose={() => setBuilding(false)}
         />
@@ -415,6 +422,7 @@ function QuotationBuilder({
   workOrderId,
   payer: initialPayer,
   canReadServices,
+  canReadItems,
   canReadCustomers,
   onClose,
 }: {
@@ -424,6 +432,7 @@ function QuotationBuilder({
   /** Prefilled from the work order's customer when the page could read it. */
   readonly payer: ChosenCustomer | null;
   readonly canReadServices: boolean;
+  readonly canReadItems: boolean;
   readonly canReadCustomers: boolean;
   readonly onClose: () => void;
 }) {
@@ -598,6 +607,7 @@ function QuotationBuilder({
         lines={lines}
         onChange={setLines}
         canReadServices={canReadServices}
+        canReadItems={canReadItems}
         errors={lineErrors(localErrors, outcome)}
       />
       <OutcomeNote

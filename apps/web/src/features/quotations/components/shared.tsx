@@ -1,14 +1,25 @@
 'use client';
 
+import { useCallback } from 'react';
 import Button from '@mui/material/Button';
 import { regexes } from 'zod';
 
+import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { FormMoneyField } from '@/components/forms/mui/FormMoneyField';
+import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { EntityPicker } from '@/components/pickers/EntityPicker';
+import { listItems } from '@/features/inventory/api';
+import {
+  MAX_NAME,
+  MIN_ITEM_SEARCH,
+  type InventoryItem,
+} from '@/features/inventory/inventory-contract';
 import { ServicePicker } from '@/features/pricing/components/shared';
 import { directionOf, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { formatDayInZone, isCalendarDay } from '@/lib/branch-time';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime, intlLocale } from '@/lib/format';
@@ -250,6 +261,16 @@ export function LinesTable({
                   <span className="text-caption text-text-muted">
                     {translateDynamic(messages, `quotations.itemKind.${line.itemKind}`)}
                   </span>
+                  {line.item ? (
+                    // The part as it was quoted (ADR-023 D6): its name, and its stock
+                    // code isolated left to right so an Arabic page keeps its order.
+                    <span>
+                      <bdi>{line.item.name}</bdi>{' '}
+                      <span className="font-mono text-caption text-text-muted" dir="ltr">
+                        {line.item.code}
+                      </span>
+                    </span>
+                  ) : null}
                   {line.description ? <bdi>{line.description}</bdi> : null}
                 </span>
               </td>
@@ -260,6 +281,12 @@ export function LinesTable({
                 <code className="font-mono" dir="ltr">
                   {line.quantity}
                 </code>
+                {line.unit ? (
+                  <>
+                    {' '}
+                    <bdi className="text-caption text-text-muted">{line.unit.name}</bdi>
+                  </>
+                ) : null}
               </td>
               <td className="py-2 pe-3 text-end">
                 <Money amount={line.discount} currency={line.currency} locale={locale} />
@@ -335,9 +362,22 @@ export function TotalsList({
  * The lines editor — what the builder sends; the server prices it
  * ------------------------------------------------------------------ */
 
+/** What a line quotes: a service, or a part from the item catalogue (ADR-023 D6). */
+export type LineKind = 'service' | 'part';
+
+/** A part as the line editor holds it once chosen: its words and the unit it is counted in. */
+export interface ChosenPart {
+  readonly id: string;
+  readonly label: string;
+  readonly unitCode: string;
+}
+
 export interface DraftLine {
   readonly key: number;
+  readonly kind: LineKind;
   readonly serviceId: string;
+  /** The part chosen for a part line; `null` until one is chosen. */
+  readonly item: ChosenPart | null;
   readonly quantity: string;
   readonly discount: string;
   readonly discountValid: boolean;
@@ -347,7 +387,9 @@ export interface DraftLine {
 let lineKey = 0;
 export const newLine = (): DraftLine => ({
   key: ++lineKey,
+  kind: 'service',
   serviceId: '',
+  item: null,
   quantity: '',
   discount: '',
   discountValid: true,
@@ -376,7 +418,11 @@ export function validateLines(
   if (lines.length > MAX_ITEMS_PER_REVISION) errors['lines'] = 'quotations.lines.tooMany';
   for (const line of lines) {
     const serviceId = line.serviceId.trim();
-    if (serviceId.length === 0) {
+    if (line.kind === 'part') {
+      // A part is found and chosen, never typed: the server prices it from the
+      // item's selling price, so the line names the item and nothing else.
+      if (line.item === null) errors[`line-${line.key}-itemId`] = 'quotations.lines.itemRequired';
+    } else if (serviceId.length === 0) {
       errors[`line-${line.key}-serviceId`] = canReadServices
         ? 'pricing.picker.serviceRequired'
         : 'field.required';
@@ -396,7 +442,9 @@ export function validateLines(
       errors[`line-${line.key}-description`] = 'quotations.lines.descriptionTooLong';
     }
     bodies.push({
-      serviceId,
+      ...(line.kind === 'part'
+        ? { kind: 'part' as const, itemId: line.item?.id ?? '' }
+        : { serviceId }),
       quantity,
       ...(discount ? { discount } : {}),
       ...(description ? { description } : {}),
@@ -414,6 +462,7 @@ export function lineValues(lines: readonly DraftLine[]): Record<string, string> 
   const values: Record<string, string> = { lines: String(lines.length) };
   for (const line of lines) {
     values[`line-${line.key}-serviceId`] = line.serviceId;
+    values[`line-${line.key}-itemId`] = line.item?.id ?? '';
     values[`line-${line.key}-quantity`] = line.quantity;
     values[`line-${line.key}-discount`] = line.discount;
     values[`line-${line.key}-description`] = line.description;
@@ -448,14 +497,18 @@ export function lineErrors(
   outcome: ActionState | null
 ): Readonly<Record<string, string>> {
   const published = outcome?.fieldErrors ?? {};
-  const placed = Object.keys(published).some((field) => LINE_DISCOUNT_FIELD.test(field));
+  const placed = Object.keys(published).some((field) => LINE_FIELD.test(field));
   const folded = published['quantity'] ?? (placed ? undefined : published['discount']);
   if (folded === undefined || own['lines'] !== undefined) return own;
   return { ...own, lines: folded };
 }
 
-/** `lines.<n>.discount`: a refused discount with its line's position (quotations `api.ts`). */
-const LINE_DISCOUNT_FIELD = /^lines\.(\d+)\.discount$/;
+/**
+ * `lines.<n>.<field>`: a refused discount or part with its line's position
+ * (quotations `api.ts`). A part line's item is refused there when it has no
+ * selling price for the branch (ADR-023 D6) — only the server knows that.
+ */
+const LINE_FIELD = /^lines\.(\d+)\.(discount|itemId)$/;
 
 /**
  * A server refusal of a line's discount, keyed to the control that holds it.
@@ -474,10 +527,10 @@ export function serverLineRefusals(
 ): Record<string, string> {
   const found: Record<string, string> = {};
   for (const [field, key] of Object.entries(state.fieldErrors ?? {})) {
-    const match = LINE_DISCOUNT_FIELD.exec(field);
+    const match = LINE_FIELD.exec(field);
     if (match === null) continue;
     const line = submitted[Number(match[1])];
-    if (line !== undefined) found[`line-${line.key}-discount`] = key;
+    if (line !== undefined) found[`line-${line.key}-${match[2]}`] = key;
   }
   return found;
 }
@@ -486,6 +539,7 @@ export function serverLineRefusals(
 function lineTouched(line: DraftLine): boolean {
   return (
     line.serviceId.trim().length > 0 ||
+    line.item !== null ||
     line.quantity.trim().length > 0 ||
     line.discount.trim().length > 0 ||
     line.description.trim().length > 0
@@ -518,6 +572,7 @@ export function LinesEditor({
   lines,
   onChange,
   canReadServices,
+  canReadItems = false,
   errors,
 }: {
   readonly messages: Messages;
@@ -527,6 +582,12 @@ export function LinesEditor({
   readonly lines: readonly DraftLine[];
   readonly onChange: (next: readonly DraftLine[]) => void;
   readonly canReadServices: boolean;
+  /**
+   * `inv.item.read` — whether a line may quote a PART (ADR-023 D6). The part is
+   * found in the item catalogue, which needs that read; without it every line is
+   * the service line it always was and nothing on the form changes.
+   */
+  readonly canReadItems?: boolean;
   readonly errors: Readonly<Record<string, string>>;
 }) {
   const errorFor = (key: string): string | undefined => {
@@ -543,6 +604,7 @@ export function LinesEditor({
       </legend>
       <p className="text-caption text-text-muted">
         {translate(messages, 'quotations.lines.explain')}
+        {canReadItems ? ` ${translate(messages, 'quotations.lines.partsExplain')}` : null}
       </p>
       {errorFor('lines') ? (
         <p role="alert" className="text-body text-error">
@@ -556,21 +618,62 @@ export function LinesEditor({
           className="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-2"
           aria-label={`${translate(messages, 'quotations.lines.one')} ${index + 1}`}
         >
+          {canReadItems ? (
+            <div className="sm:col-span-2">
+              <FormRadioGroupField
+                label={translate(messages, 'quotations.lines.kind')}
+                value={line.kind}
+                onChange={(kind) =>
+                  update(line.key, { kind: kind === 'part' ? 'part' : 'service' })
+                }
+                options={[
+                  { value: 'service', label: translate(messages, 'quotations.lines.kindService') },
+                  { value: 'part', label: translate(messages, 'quotations.lines.kindPart') },
+                ]}
+                testId={`quotation-line-${index + 1}-kind`}
+              />
+            </div>
+          ) : null}
           <div className="sm:col-span-2">
-            <ServicePicker
-              messages={messages}
-              locale={locale}
-              canRead={canReadServices}
-              label={translate(messages, 'quotations.picker.service')}
-              value={line.serviceId}
-              onChange={(serviceId) => update(line.key, { serviceId })}
-              error={errorFor(`line-${line.key}-serviceId`)}
-              testId={`quotation-line-${index + 1}-service`}
-            />
+            {line.kind === 'part' ? (
+              <PartPicker
+                messages={messages}
+                locale={locale}
+                label={translate(messages, 'quotations.picker.item')}
+                value={line.item}
+                onChange={(item) => update(line.key, { item })}
+                error={errorFor(`line-${line.key}-itemId`)}
+                testId={`quotation-line-${index + 1}-part`}
+              />
+            ) : (
+              <ServicePicker
+                messages={messages}
+                locale={locale}
+                canRead={canReadServices}
+                label={translate(messages, 'quotations.picker.service')}
+                value={line.serviceId}
+                onChange={(serviceId) => update(line.key, { serviceId })}
+                error={errorFor(`line-${line.key}-serviceId`)}
+                testId={`quotation-line-${index + 1}-service`}
+              />
+            )}
+            {line.kind === 'part' ? (
+              <p className="mt-1 text-caption text-text-muted">
+                {line.item
+                  ? `${translateWithValues(messages, 'quotations.lines.partUnit', { unit: line.item.unitCode })} `
+                  : null}
+                {translate(messages, 'quotations.lines.partPriceHelp')}
+              </p>
+            ) : null}
           </div>
           <FormTextField
             label={translate(messages, 'quotations.lines.quantity')}
-            description={translate(messages, 'quotations.lines.quantityHelp')}
+            description={translate(
+              messages,
+              line.kind === 'part'
+                ? 'quotations.lines.partQuantityHelp'
+                : 'quotations.lines.quantityHelp'
+            )}
             required
             inputMode="decimal"
             dir="ltr"
@@ -622,4 +725,81 @@ export function LinesEditor({
       </div>
     </fieldset>
   );
+}
+
+/**
+ * One part of the item catalogue, found by the start of its stock code or its
+ * name (`inv.item-search`, active items only — an archived item cannot be quoted)
+ * and chosen by what it says, on the shared Material picker (ADR-022). It is only
+ * rendered where the operator holds `inv.item.read` (`LinesEditor`), and it
+ * carries no price: the server prices the part at its selling price for the
+ * branch. The unit the item is counted in is kept with the choice, so the line
+ * can say what its quantity is in. The surrounding form declares its own unsaved
+ * work, so the picker does not.
+ */
+export function PartPicker({
+  messages,
+  locale,
+  label,
+  value,
+  onChange,
+  error,
+  testId,
+}: {
+  readonly messages: Messages;
+  readonly locale?: Locale | undefined;
+  readonly label: string;
+  readonly value: ChosenPart | null;
+  readonly onChange: (next: ChosenPart | null) => void;
+  readonly error?: string | undefined;
+  readonly testId: string;
+}) {
+  const load = useCallback(
+    async (term: string, cursor: string | null): Promise<ReadState<CursorPage<ChosenPart>>> => {
+      const page = await listItems(
+        { search: term, lifecycleStatus: 'active' },
+        { ...INITIAL_REQUEST, pageSize: 10 },
+        cursor
+      );
+      if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
+      return {
+        status: 'ok',
+        data: {
+          items: page.rows.map(chosenPartOf),
+          nextCursor: page.nextCursor,
+          hasMore: page.hasMore,
+        },
+        correlationId: page.correlationId,
+      };
+    },
+    []
+  );
+  return (
+    <EntityPicker<ChosenPart>
+      messages={messages}
+      locale={locale}
+      label={label}
+      value={value}
+      onChange={onChange}
+      labelOf={(part) => part.label}
+      load={load}
+      canSearch
+      notPermitted={translate(messages, 'inventory.itemPicker.notPermitted')}
+      error={error}
+      minLength={MIN_ITEM_SEARCH}
+      maxLength={MAX_NAME}
+      placeholder={translate(messages, 'inventory.itemPicker.searchPlaceholder')}
+      example={translate(messages, 'inventory.itemPicker.searchExample')}
+      tooShort={translate(messages, 'inventory.itemPicker.tooShort')}
+      resultsLabel={translate(messages, 'inventory.itemPicker.results')}
+      change={translate(messages, 'inventory.itemPicker.change')}
+      countsAsUnsaved={false}
+      testId={testId}
+    />
+  );
+}
+
+/** A catalogue row as a part choice: its stock code and name, and its unit. */
+export function chosenPartOf(item: InventoryItem): ChosenPart {
+  return { id: item.id, label: `${item.sku} — ${item.name}`, unitCode: item.unitOfMeasure.code };
 }

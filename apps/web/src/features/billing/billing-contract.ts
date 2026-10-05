@@ -244,10 +244,16 @@ export interface InvoiceLine {
   readonly sourceQuotationItemId: string | null;
   /**
    * `InvoiceLineItemView` — what a counter-sale line sold, by code and name, so
-   * the printed copy can describe the line (GAP-09). `null` on a work-order line,
+   * the printed copy can describe the line (GAP-09); on a work-order PART line,
+   * the item its quotation line quoted (ADR-023 D6). `null` on a service line,
    * which is described by its quotation item instead. Not money.
    */
   readonly item: InvoiceLineItem | null;
+  /**
+   * `InvoiceLineUnitView` — the unit a work-order part line's quantity is in, as
+   * its quotation line captured it (ADR-023 D6). `null` otherwise. Not money.
+   */
+  readonly unit: InvoiceLineUnit | null;
   readonly recordVersion: number;
   readonly money: InvoiceLineMoney | null;
 }
@@ -255,6 +261,12 @@ export interface InvoiceLine {
 /** `InvoiceLineItemView` — an item a counter-sale line sold. `code` is its SKU. */
 export interface InvoiceLineItem {
   readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
+/** `InvoiceLineUnitView` — the unit a part line's quantity is in, as quoted. */
+export interface InvoiceLineUnit {
   readonly code: string;
   readonly name: string;
 }
