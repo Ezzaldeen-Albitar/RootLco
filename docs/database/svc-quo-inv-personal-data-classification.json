@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-10-SEC — Service Catalog / Pricing / Quotation / Inventory personal-and-financial-data classification registry. Restricted = cost/margin fields gated by inv.cost.view. Prices and quotation totals are operational (internal). No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 963,
+  "columnCount": 969,
   "columns": {
     "inv.customer_supplied_parts.branch_id": {
       "classification": "internal",
@@ -3604,6 +3604,11 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "quo.quotation_items.item_sale_price_ref": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "quo.quotation_items.line_number": {
       "classification": "internal",
       "searchable": false,
@@ -3618,6 +3623,31 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
+    },
+    "quo.quotation_items.quoted_item_name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.quotation_items.quoted_item_sku": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.quotation_items.quoted_tax_class_ref": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.quotation_items.quoted_unit_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.quotation_items.quoted_unit_name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
     },
     "quo.quotation_items.record_version": {
       "classification": "internal",

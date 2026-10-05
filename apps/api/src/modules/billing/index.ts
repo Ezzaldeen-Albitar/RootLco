@@ -105,6 +105,7 @@ export type {
   InvoiceRow,
   NumberingConfigRow,
   OpenReceivableRow,
+  QuotedPartRow,
   ReportDocumentPage,
   WorkOrderScopeRow,
 } from './data/billing-repository';
@@ -119,6 +120,7 @@ export type {
   InvoiceDetailView,
   InvoiceLineItemView,
   InvoiceLineMoneyView,
+  InvoiceLineUnitView,
   InvoiceLineView,
   InvoiceListEntryView,
   InvoicePayerView,
@@ -190,6 +192,7 @@ export {
   deriveCreditStatus,
   derivePaymentStatus,
   isLegalInvoiceTransition,
+  issuePostsStock,
   parseInstrumentAmount,
   parseInvoiceAmount,
   type ApprovalState,

@@ -56,7 +56,9 @@
  *   — `stock.postCounterSaleLines`, the port `@/modules/billing` calls after
  *   `sal.issue_invoice` — but the document, its numbering and its money remain
  *   entirely that module's. The price lives here because it is a property of the
- *   ITEM, and because `svc.price_rules` prices services only.
+ *   ITEM, and because `svc.price_rules` prices services only. A quotation part
+ *   line (ADR-023 D6) is priced from the same row through `catalog.quotablePart`,
+ *   the one port `@/modules/quotation` asks; it reads no cost.
  * - **It raises no credit note itself.** A sales return against a counter sale
  *   credits the customer through `sal.request_return_credit_note`, the `sal`-owned
  *   primitive `inv.receive_sales_return` calls in the same transaction. No
@@ -104,6 +106,7 @@ export type {
   MovementRow,
   OpeningBatchHeaderRow,
   OpeningLineRow,
+  QuotablePartRow,
   ReservationRow,
   ResolvedIdentifierRow,
   ReturnableQuantityRow,

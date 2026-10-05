@@ -78,6 +78,7 @@ import {
   assertCreditWithinOpenAmount,
   assertCurrencyMatches,
   assertInvoiceIsDraft,
+  issuePostsStock,
   parseInstrumentAmount,
 } from '../domain/billing';
 import {
@@ -1303,8 +1304,9 @@ export class InvoiceService {
     // leaving a numbered invoice announcing a delivery the branch cannot make.
     //
     // A work-order invoice posts nothing: its parts left as part issues, one by one,
-    // when they were fitted.
-    if (after.saleKind === 'counter_sale') {
+    // when they were fitted, so a part line copied from its quotation bills the part
+    // and moves no stock (ADR-023 D6, `issuePostsStock`).
+    if (issuePostsStock(after.saleKind)) {
       const invoiceLineIds = await this.repository.listCounterSaleLineIds(db, after.id);
       await inventoryModule().stock.postCounterSaleLines(
         db,

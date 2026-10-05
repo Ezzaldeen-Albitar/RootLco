@@ -16,6 +16,7 @@
  * | Work-order identity, scope and terminality | `@/modules/work-order` |
  * | Service availability on a date | `@/modules/service-catalog` |
  * | Price, tax rate, discount assessment and approval authority | `@/modules/pricing` |
+ * | A part's selling price, words and unit at a branch (ADR-023 D6) | `@/modules/inventory` |
  * | Display names of the people on a discount approval | `@/modules/iam` |
  * | Quotation number, evidence attachment | `@/modules/shared-services` |
  *
@@ -121,6 +122,18 @@ export {
   type QuotationState,
   type RevisionState,
 } from './domain/quotation';
+
+export { refineQuotationLine } from './application/quotation-line-shape';
+
+export {
+  PART_PRICE_REFUSALS,
+  PART_PRICE_SOURCES,
+  resolveAuthorisedPartPrice,
+  type AuthorisedPartPrice,
+  type PartPriceRefusal,
+  type PartPriceResolution,
+  type PartPriceSource,
+} from './domain/part-price-source';
 
 /** Composition root: constructs the module's services once per process. */
 export const quotationModule = composeModule({

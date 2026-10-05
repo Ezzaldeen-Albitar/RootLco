@@ -18,13 +18,24 @@
  * The operations appear in the order the register lists them.
  */
 
-/** A line as the builder sends it; the server prices it. */
+/**
+ * A line as the builder sends it; the server prices it.
+ *
+ * A SERVICE line (no `kind`, or `service`) names `serviceId`; a PART line
+ * (`kind: 'part'`, ADR-023 D6) names `itemId` and is priced by the server at
+ * the item selling price of the work order's branch. Neither carries a price, a
+ * unit or a tax figure. The route refuses a service line naming an item and a
+ * part line naming a service.
+ */
 export interface QuotationLineBody {
-  readonly serviceId: string;
+  readonly kind?: 'service' | 'part';
+  readonly serviceId?: string;
+  readonly itemId?: string;
   readonly quantity: string;
   readonly discount?: string;
   readonly description?: string;
   readonly sourceServiceLineRef?: string;
+  readonly sourceRequiredPartRef?: string;
 }
 
 /** Evidence recorded with a decision. `document` needs `documentVersionId`. */

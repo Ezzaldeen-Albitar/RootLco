@@ -1318,10 +1318,32 @@ function DetailPanel({
                     {String(line.lineNumber)}
                   </td>
                   <td className="px-3 py-2">
-                    {translateDynamic(messages, `invoices.lineType.${line.lineType}`)}
+                    <span className="flex flex-col">
+                      <span>
+                        {translateDynamic(messages, `invoices.lineType.${line.lineType}`)}
+                      </span>
+                      {line.item ? (
+                        // What the line bills, by name and stock code: the item a counter
+                        // sale sold, or the part a job's quotation quoted (ADR-023 D6).
+                        <span className="text-caption text-text-muted">
+                          <bdi>{line.item.name}</bdi>{' '}
+                          <span className="font-mono" dir="ltr">
+                            {line.item.code}
+                          </span>
+                        </span>
+                      ) : null}
+                    </span>
                   </td>
-                  <td className="px-3 py-2 text-end font-mono" dir="ltr">
-                    {line.quantity}
+                  <td className="px-3 py-2 text-end">
+                    <span className="font-mono" dir="ltr">
+                      {line.quantity}
+                    </span>
+                    {line.unit ? (
+                      <>
+                        {' '}
+                        <bdi className="text-caption text-text-muted">{line.unit.name}</bdi>
+                      </>
+                    ) : null}
                   </td>
                   {line.money ? (
                     <>

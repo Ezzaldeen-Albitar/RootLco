@@ -4139,6 +4139,15 @@ requested by that draft's creator.
 
 #### quo.quotation_items
 
+P1-32-PRE-OD-FD6 (ADR-023 D6) adds columns 28 to 33, the snapshot of a PART line: the
+`inv.item_sale_prices` row that priced it, the item's stock code and name, its unit of measure
+code and name, and the tax class the price named. All six are NULL on a service line.
+`quo.guard_quotation_part_line` (BEFORE INSERT OR UPDATE) admits a part line only at exactly what
+`inv.resolve_item_sale_price` answers for the line's branch — price row, unit price, currency and
+tax class — with that class's effective rate (zero for none, as a counter sale), the item's current
+words and unit, and a linked required part of the quotation's own work order; it freezes the
+snapshot, and a part line's unit price, tax rate and currency, on UPDATE. Cost is never read.
+
 | #   | Column                     | Type                     | Nullable |
 | --- | -------------------------- | ------------------------ | -------- |
 | 1   | `id`                       | uuid                     | no       |
@@ -4168,6 +4177,12 @@ requested by that draft's creator.
 | 25  | `updated_by`               | uuid                     | yes      |
 | 26  | `deleted_at`               | timestamp with time zone | yes      |
 | 27  | `deleted_by`               | uuid                     | yes      |
+| 28  | `item_sale_price_ref`      | uuid                     | yes      |
+| 29  | `quoted_item_sku`          | text                     | yes      |
+| 30  | `quoted_item_name`         | text                     | yes      |
+| 31  | `quoted_unit_code`         | text                     | yes      |
+| 32  | `quoted_unit_name`         | text                     | yes      |
+| 33  | `quoted_tax_class_ref`     | uuid                     | yes      |
 
 #### quo.quotation_revisions
 

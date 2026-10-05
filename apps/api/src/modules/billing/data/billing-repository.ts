@@ -260,8 +260,23 @@ export interface InvoiceLineRow {
    * work-order line, which is described by its quotation item instead.
    */
   readonly itemId: string | null;
+  /**
+   * What a work-order PART line was quoted as (ADR-023 D6): the item and unit
+   * the source quotation item captured, read through `source_quotation_item_id`
+   * because `sal.invoice_lines` has no unit column. `null` on every other line.
+   */
+  readonly quotedPart: QuotedPartRow | null;
   readonly recordVersion: number;
   readonly money: InvoiceLineAmountsRow | null;
+}
+
+/** A quotation part line's snapshot, as the invoice line it was copied to reads it. */
+export interface QuotedPartRow {
+  readonly itemId: string;
+  readonly itemCode: string;
+  readonly itemName: string;
+  readonly unitCode: string;
+  readonly unitName: string;
 }
 
 /** The restricted 1:1 line money and FR-WTY-004 payer split. */
@@ -696,6 +711,11 @@ interface InvoiceLineSql {
   source_part_issue_id: string | null;
   source_quotation_item_id: string | null;
   item_id: string | null;
+  quoted_item_ref: string | null;
+  quoted_item_sku: string | null;
+  quoted_item_name: string | null;
+  quoted_unit_code: string | null;
+  quoted_unit_name: string | null;
   record_version: number;
   unit_price: string | null;
   net_amount: string | null;
@@ -718,6 +738,20 @@ const toInvoiceLine = (r: InvoiceLineSql): InvoiceLineRow => ({
   sourcePartIssueId: r.source_part_issue_id,
   sourceQuotationItemId: r.source_quotation_item_id,
   itemId: r.item_id,
+  quotedPart:
+    r.quoted_item_ref !== null &&
+    r.quoted_item_sku !== null &&
+    r.quoted_item_name !== null &&
+    r.quoted_unit_code !== null &&
+    r.quoted_unit_name !== null
+      ? {
+          itemId: r.quoted_item_ref,
+          itemCode: r.quoted_item_sku,
+          itemName: r.quoted_item_name,
+          unitCode: r.quoted_unit_code,
+          unitName: r.quoted_unit_name,
+        }
+      : null,
   recordVersion: r.record_version,
   money:
     r.unit_price !== null &&
@@ -1045,6 +1079,11 @@ export class BillingRepository extends Repository {
               l.quantity::text AS quantity, l.tax_class_id, l.currency_code,
               l.source_service_line_id, l.source_part_issue_id, l.source_quotation_item_id,
               l.item_id, l.record_version,
+              qi.item_ref           AS quoted_item_ref,
+              qi.quoted_item_sku  AS quoted_item_sku,
+              qi.quoted_item_name AS quoted_item_name,
+              qi.quoted_unit_code AS quoted_unit_code,
+              qi.quoted_unit_name AS quoted_unit_name,
               la.unit_price::text          AS unit_price,
               la.net_amount::text          AS net_amount,
               la.tax_amount::text          AS tax_amount,
@@ -1056,6 +1095,12 @@ export class BillingRepository extends Repository {
            ON la.tenant_id = l.tenant_id AND la.company_id = l.company_id
           AND la.branch_id = l.branch_id AND la.invoice_line_id = l.id
           AND la.deleted_at IS NULL
+         -- A work-order part line's unit and item, as its quotation line captured
+         -- them (ADR-023 D6). SELECT-only, and only for a PART line.
+         LEFT JOIN quo.quotation_items qi
+           ON qi.tenant_id = l.tenant_id AND qi.company_id = l.company_id
+          AND qi.branch_id = l.branch_id AND qi.id = l.source_quotation_item_id
+          AND l.line_type = 'part' AND qi.item_kind = 'part'
         WHERE l.tenant_id = $1 AND l.company_id = $2 AND l.branch_id = $3
           AND l.invoice_id = $4 AND l.deleted_at IS NULL
         ORDER BY l.line_number ASC`,

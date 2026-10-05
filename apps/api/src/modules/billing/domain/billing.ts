@@ -52,6 +52,22 @@ export const SALE_KINDS = Object.freeze(['work_order', 'counter_sale'] as const)
 export type SaleKind = (typeof SALE_KINDS)[number];
 
 /**
+ * Whether issuing an invoice of this kind moves stock (ADR-023 D6: invoicing
+ * never duplicates an inventory movement).
+ *
+ * Only a COUNTER SALE posts a stock leg at issue — its lines are what leaves the
+ * shelf. A WORK-ORDER invoice posts none, whatever its lines are: its parts left
+ * stock one by one as part issues when they were fitted, so a part line copied
+ * from the accepted quotation bills that part and moves nothing. Anything else —
+ * an unknown kind — moves nothing either: a stock movement is never the default.
+ * `inv.guard_stock_movement_provenance` refuses a `sale` movement against a
+ * work-order invoice line in the database as well.
+ */
+export function issuePostsStock(saleKind: string): boolean {
+  return saleKind === 'counter_sale';
+}
+
+/**
  * `ck_invoice_status_history_to_status` — SIX values, deliberately wider than the
  * four above.
  *

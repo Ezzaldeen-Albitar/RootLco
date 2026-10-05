@@ -157,6 +157,7 @@ export function QuotationDetailScreen({
   canDecide,
   canReadLimits,
   canReadServices,
+  canReadItems = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -171,6 +172,11 @@ export function QuotationDetailScreen({
   readonly canReadLimits: boolean;
   /** `svc.service.read` — whether a service can be found by code in the revision builder. */
   readonly canReadServices: boolean;
+  /**
+   * `inv.item.read` — whether a line may quote a part from the item catalogue
+   * (ADR-023 D6). Without it every line is a service line, as before.
+   */
+  readonly canReadItems?: boolean;
 }) {
   const router = useRouter();
   const context = useWorkingContext();
@@ -322,6 +328,7 @@ export function QuotationDetailScreen({
           messages={messages}
           quotation={quotation}
           canReadServices={canReadServices}
+          canReadItems={canReadItems}
           onCreated={reload}
         />
       ) : null}
@@ -1534,12 +1541,14 @@ function NewRevisionPanel({
   messages,
   quotation,
   canReadServices,
+  canReadItems,
   onCreated,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly quotation: QuotationDetail;
   readonly canReadServices: boolean;
+  readonly canReadItems: boolean;
   /** Reads the quotation again; resolves once that answer is on screen. */
   readonly onCreated: () => Promise<void>;
 }) {
@@ -1664,6 +1673,7 @@ function NewRevisionPanel({
           lines={lines}
           onChange={setLines}
           canReadServices={canReadServices}
+          canReadItems={canReadItems}
           errors={lineErrors(localErrors, outcome)}
         />
         <OutcomeNote

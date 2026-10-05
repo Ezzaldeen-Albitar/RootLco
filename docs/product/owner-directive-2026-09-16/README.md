@@ -401,8 +401,11 @@ against the question with its date; every other question is still open.
 15. **Purchasing scope.** Are suppliers, purchase orders, receipt matching and supplier invoices or
     payables in current scope under "inventory and purchasing" (PROC-18)? Or are they part of full
     accounting, awaiting the questionnaire?
-16. **Part prices once inventory exists.** Which price wins, the service price list or the item
-    selling price? This belongs with the questionnaire's pricing-policy questions (CC-OD-47).
+16. **Part prices once inventory exists.** _Reworded 2026-10-05 (P1-32-PRE-OD-FD6):_ today only the
+    item selling price can price a part, because the service price list prices services only, and
+    quotation part lines use it (ADR-023 D6). If price lists are ever extended to items, which price
+    wins, the service price list or the item selling price? This belongs with the questionnaire's
+    pricing-policy questions (CC-OD-47). **Still open.**
 17. **Adding inventory later.** Is an opening value required at activation, or may quantities be
     approved first and values follow the costing answer? Who approves opening quantities and values?
 18. **QA identities.** The cross-tenant cases need a login for the second tenant, and the

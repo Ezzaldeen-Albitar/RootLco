@@ -89,6 +89,8 @@ export const QUOTATION_PERMISSIONS = {
   limitsRead: 'iam.approval.manage',
   /** The service picker's own code. */
   serviceRead: 'svc.service.read',
+  /** The part picker's own code: a part line (ADR-023 D6) is found in the item catalogue. */
+  itemRead: 'inv.item.read',
   /** Creating a quotation demands the work order be readable too. */
   workOrderRead: 'wo.work_order.read',
   /** The paying customer is FOUND among customers, which `crm.customer-search` answers. */
@@ -185,6 +187,10 @@ export interface QuotationLine {
   readonly lineNumber: number;
   readonly itemKind: ItemKind;
   readonly serviceId: string | null;
+  /** `QuotationLineItemView` — the item a PART line quotes, as quoted; `null` on a service line. */
+  readonly item: QuotationLineItem | null;
+  /** `QuotationLineUnitView` — the unit a part line's quantity is in, as quoted. */
+  readonly unit: QuotationLineUnit | null;
   readonly description: string | null;
   readonly currency: string;
   readonly unitPrice: string;
@@ -194,6 +200,19 @@ export interface QuotationLine {
   readonly taxAmount: string;
   readonly lineTotal: string;
   readonly priceRuleRef: string | null;
+}
+
+/** The item a part line quotes, as it was quoted (ADR-023 D6). `code` is the stock code. */
+export interface QuotationLineItem {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
+/** The unit a part line's quantity is in, as it was quoted. */
+export interface QuotationLineUnit {
+  readonly code: string;
+  readonly name: string;
 }
 
 /**

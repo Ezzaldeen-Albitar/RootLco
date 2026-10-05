@@ -56,6 +56,7 @@ import type {
   ItemCategoryRow,
   ItemRow,
   ItemSalePriceRow,
+  QuotablePartRow,
   StockLocationListRow,
   UnitOfMeasureRow,
 } from '../data/inventory-repository';
@@ -503,6 +504,26 @@ export class InventoryCatalogService {
     const item = await this.requireItem(db, itemId);
     const prices = await this.repository.listItemSalePrices(db, itemId);
     return { itemId: item.id, sku: item.sku, prices: prices.map(toSalePriceView) };
+  }
+
+  /**
+   * An item as a quotation part line would capture it at one branch
+   * (P1-32-PRE-OD-FD6, ADR-023 D6): its stock code, name, lifecycle and unit now,
+   * and the selling price `inv.resolve_item_sale_price` answers for that branch,
+   * or `null` when it answers none.
+   *
+   * The item selling price is the ONLY authorised sales-price source that can
+   * price an item today — `svc.price_rules` prices services only — so this is the
+   * port the quotation module asks. It refuses nothing: an archived item, an item
+   * with no price, are facts the quoting rule turns into refusals. It never reads
+   * cost. The caller's company and branch come from the work order being quoted,
+   * never from the request. `null` when the item is not in the caller's catalogue.
+   */
+  public async quotablePart(
+    db: DbHandle,
+    input: { readonly itemId: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<QuotablePartRow | null> {
+    return this.repository.readQuotablePart(db, input);
   }
 
   /**

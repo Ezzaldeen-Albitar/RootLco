@@ -86,6 +86,18 @@ export interface ItemRow {
   readonly sourceServiceLineRef: string | null;
   readonly sourceRequiredPartRef: string | null;
   readonly priceRuleRef: string | null;
+  /**
+   * A part line's snapshot (P1-32-PRE-OD-FD6, ADR-023 D6): the item selling price
+   * row that priced it, the item's stock code and name, its unit of measure and
+   * the price's tax class, as they were when it was quoted. All `null` on a
+   * service line; frozen by `quo.guard_quotation_part_line`.
+   */
+  readonly itemSalePriceRef: string | null;
+  readonly quotedItemSku: string | null;
+  readonly quotedItemName: string | null;
+  readonly quotedUnitCode: string | null;
+  readonly quotedUnitName: string | null;
+  readonly quotedTaxClassRef: string | null;
   readonly description: string | null;
   readonly currencyCode: string;
   /** Money and quantity columns are decimal STRINGS. */
@@ -302,6 +314,13 @@ export interface NewItemInput {
   readonly sourceServiceLineRef: string | null;
   readonly sourceRequiredPartRef: string | null;
   readonly priceRuleRef: string | null;
+  /** A part line's snapshot (ADR-023 D6); every one `null` on a service line. */
+  readonly itemSalePriceRef: string | null;
+  readonly quotedItemSku: string | null;
+  readonly quotedItemName: string | null;
+  readonly quotedUnitCode: string | null;
+  readonly quotedUnitName: string | null;
+  readonly quotedTaxClassRef: string | null;
   readonly description: string | null;
   readonly currencyCode: string;
   /** All decimal STRINGS, bound as parameters and cast to `numeric` in SQL. */
@@ -363,6 +382,8 @@ const REVISION_COLUMNS = `id, company_id, branch_id, quotation_id, revision_numb
 
 const ITEM_COLUMNS = `id, company_id, branch_id, quotation_revision_id, line_number, item_kind,
        service_id, item_ref, source_service_line_ref, source_required_part_ref, price_rule_ref,
+       item_sale_price_ref, quoted_item_sku, quoted_item_name, quoted_unit_code,
+       quoted_unit_name, quoted_tax_class_ref,
        description, currency_code,
        captured_unit_price::text AS captured_unit_price,
        captured_quantity::text AS captured_quantity,
@@ -532,6 +553,12 @@ interface ItemSql {
   source_service_line_ref: string | null;
   source_required_part_ref: string | null;
   price_rule_ref: string | null;
+  item_sale_price_ref: string | null;
+  quoted_item_sku: string | null;
+  quoted_item_name: string | null;
+  quoted_unit_code: string | null;
+  quoted_unit_name: string | null;
+  quoted_tax_class_ref: string | null;
   description: string | null;
   currency_code: string;
   captured_unit_price: string;
@@ -585,6 +612,12 @@ const toItem = (row: ItemSql): ItemRow => ({
   sourceServiceLineRef: row.source_service_line_ref,
   sourceRequiredPartRef: row.source_required_part_ref,
   priceRuleRef: row.price_rule_ref,
+  itemSalePriceRef: row.item_sale_price_ref,
+  quotedItemSku: row.quoted_item_sku,
+  quotedItemName: row.quoted_item_name,
+  quotedUnitCode: row.quoted_unit_code,
+  quotedUnitName: row.quoted_unit_name,
+  quotedTaxClassRef: row.quoted_tax_class_ref,
   description: row.description,
   currencyCode: row.currency_code,
   capturedUnitPrice: row.captured_unit_price,
@@ -1095,10 +1128,13 @@ export class QuotationRepository extends Repository {
           service_id, item_ref, source_service_line_ref, source_required_part_ref,
           price_rule_ref, description, currency_code,
           captured_unit_price, captured_quantity, captured_discount, captured_tax_rate,
-          captured_tax_amount, captured_line_total, created_by)
+          captured_tax_amount, captured_line_total, created_by,
+          item_sale_price_ref, quoted_item_sku, quoted_item_name, quoted_unit_code,
+          quoted_unit_name, quoted_tax_class_ref)
        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
               $14::numeric(18,4), $15::numeric(12,3), $16::numeric(18,4), $17::numeric(9,6),
-              money.tax, money.net + money.tax, $18
+              money.tax, money.net + money.tax, $18,
+              $19, $20, $21, $22, $23, $24
          FROM (SELECT net, shared.round_to_minor_unit(net * $17::numeric(9,6), $13) AS tax
                  FROM (SELECT shared.round_to_minor_unit(
                                 ($14::numeric(18,4) * $15::numeric(12,3)) - $16::numeric(18,4),
@@ -1123,6 +1159,12 @@ export class QuotationRepository extends Repository {
         item.discount,
         item.taxRate,
         context.principal.userId,
+        item.itemSalePriceRef,
+        item.quotedItemSku,
+        item.quotedItemName,
+        item.quotedUnitCode,
+        item.quotedUnitName,
+        item.quotedTaxClassRef,
       ]
     );
     if (row === null) {

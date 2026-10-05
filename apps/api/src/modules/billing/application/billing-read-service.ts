@@ -116,10 +116,18 @@ export interface InvoiceLineView {
   readonly sourceQuotationItemId: string | null;
   /**
    * What a counter-sale line sold, by code and name (GAP-09), so the line can be
-   * printed with a description. `null` on a work-order line, which is described by
-   * the quotation item it was copied from. Not money: shown to every invoice reader.
+   * printed with a description. On a work-order PART line, the item its quotation
+   * line was quoted as (ADR-023 D6). `null` on a service line, which is described
+   * by the quotation item it was copied from. Not money: shown to every invoice
+   * reader.
    */
   readonly item: InvoiceLineItemView | null;
+  /**
+   * The unit a work-order PART line's quantity is in, as its quotation line
+   * captured it (ADR-023 D6). `null` on a service line and on a counter-sale line,
+   * which snapshots no unit. Not money.
+   */
+  readonly unit: InvoiceLineUnitView | null;
   readonly recordVersion: number;
   /** `null` without `sal.finance.view`. */
   readonly money: InvoiceLineMoneyView | null;
@@ -128,6 +136,12 @@ export interface InvoiceLineView {
 /** An item a counter-sale line sold. `code` is the SKU. */
 export interface InvoiceLineItemView {
   readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
+/** The unit a part line's quantity is in, as it was quoted. */
+export interface InvoiceLineUnitView {
   readonly code: string;
   readonly name: string;
 }
@@ -556,7 +570,14 @@ export const toInvoiceLineView = (
   quantity: row.quantity,
   currency: row.currencyCode,
   sourceQuotationItemId: row.sourceQuotationItemId,
-  item: lineItemView(row.itemId, items),
+  item:
+    row.quotedPart === null
+      ? lineItemView(row.itemId, items)
+      : { id: row.quotedPart.itemId, code: row.quotedPart.itemCode, name: row.quotedPart.itemName },
+  unit:
+    row.quotedPart === null
+      ? null
+      : { code: row.quotedPart.unitCode, name: row.quotedPart.unitName },
   recordVersion: row.recordVersion,
   money: row.money
     ? {

@@ -287,6 +287,32 @@ describe('the guarded writes carry the QUOTATION version, and the others carry n
     expect(Object.keys(other.state.fieldErrors ?? {})).toEqual(['quantity']);
   });
 
+  it('a part with no selling price keeps the position of its line, as a catalogued sentence (D6)', async () => {
+    // The API refuses the part line's item: `body.lines[1].itemId`. The adapter
+    // keeps the position so the builder can mark that line's part box.
+    send.mockResolvedValue({
+      ...failure('validation'),
+      status: 422,
+      problem: {
+        code: 'ERR-VAL-001',
+        violations: [{ path: 'body.lines[1].itemId', rule: 'no_authorised_sale_price' }],
+      },
+    });
+    const lines = [
+      { serviceId: SERVICE_ID, quantity: '1' },
+      { kind: 'part' as const, itemId: SERVICE_ID, quantity: '2' },
+    ];
+    const created = await createQuotation({ workOrderId: WORK_ORDER_ID, lines });
+    expect(created.state.fieldErrors).toMatchObject({
+      itemId: 'form.violation.no_authorised_sale_price',
+      'lines.1.itemId': 'form.violation.no_authorised_sale_price',
+    });
+    expect(created.created).toBeNull();
+    // The part line is sent as built: a kind and an item, nothing that prices it.
+    const sent = send.mock.calls.at(-1)?.[2] as { lines: Record<string, unknown>[] };
+    expect(sent.lines[1]).toEqual({ kind: 'part', itemId: SERVICE_ID, quantity: '2' });
+  });
+
   it('decideRevision and decideItem post the decision bodies unchanged, and no version', async () => {
     send.mockResolvedValue(ok({ decision: 'approved' }));
     const body = {
