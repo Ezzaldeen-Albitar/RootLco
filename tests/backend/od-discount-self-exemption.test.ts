@@ -13,6 +13,14 @@
  *  - SVC_DISCOUNT_APPROVER decides, against a limit an administrator (USER_A) set;
  *  - the base price list is written with nobody signed in, so it is nobody's change.
  *
+ * Fix round 1 (migration 20261007100000): a price whose AMOUNT the requester set stays
+ * theirs after a colleague's later edit to anything else, and an approver whose limit
+ * window the requester moved (reopened, or ended so that a role limit applies) has no
+ * limit that counts for the requester's request. A window move is written here at the
+ * database, signed in as the requester, exactly as the limit-ending route writes it:
+ * the requester in these cases holds no iam.approval.manage, and the column the route
+ * changes (effective_to) and the stamp (updated_by, from the session) are the same.
+ *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
  *   quo.discount-approval-withdraw: route service authorization success denial audit idempotency stale-version isolation cross-tenant
  */
@@ -94,6 +102,8 @@ interface DiscountApproval {
   readonly status: string;
   readonly requestedBy: { readonly id: string };
   readonly requestedByCaller: boolean;
+  readonly canApprove: boolean;
+  readonly cannotApproveReason: string | null;
   readonly requesterSetPolicy: boolean;
   readonly requesterSetPrice: boolean;
   readonly canWithdraw: boolean;
@@ -235,6 +245,96 @@ async function publishUnattributedPrice(amount: string): Promise<void> {
     customerClass: null,
     priority: assignmentPriority,
   });
+}
+
+/**
+ * A price list for SERVICE_A whose rule AMOUNT `amountSetter` sets and whose priority
+ * `colleague` then changes, each signed in; published with nobody signed in.
+ */
+async function publishPriceAmountSetBy(
+  amountSetter: string,
+  colleague: string,
+  amount: string
+): Promise<void> {
+  const client = await admin.connect();
+  let listId: string;
+  try {
+    await client.query('BEGIN');
+    await client.query(`SELECT set_config('app.tenant_id', $1, true)`, [TENANT_A]);
+    listId = (
+      await client.query<{ id: string }>(
+        `INSERT INTO svc.price_lists (tenant_id, price_list_code, name, currency_code, created_by)
+         VALUES ($1,$2,'FD8 amount fixture list','JOD',$3) RETURNING id`,
+        [TENANT_A, nextCode(), USER_A]
+      )
+    ).rows[0]?.id as string;
+    const versionId = (
+      await client.query<{ id: string }>(
+        `INSERT INTO svc.price_list_versions (tenant_id, price_list_id, version_no, effective_from, status, created_by)
+         VALUES ($1,$2,1,DATE '2020-01-01','draft',$3) RETURNING id`,
+        [TENANT_A, listId, USER_A]
+      )
+    ).rows[0]?.id as string;
+    await client.query(`SELECT set_config('app.user_id', $1, true)`, [amountSetter]);
+    const ruleId = (
+      await client.query<{ id: string }>(
+        `INSERT INTO svc.price_rules (tenant_id, price_list_version_id, service_id, company_id, amount, tax_class_id, priority, created_by)
+         VALUES ($1,$2,$3,$4,$5::numeric,$6,0,$7) RETURNING id`,
+        [TENANT_A, versionId, SERVICE_A, COMPANY_A1, amount, TAX_CLASS_A, amountSetter]
+      )
+    ).rows[0]?.id as string;
+    await client.query(`SELECT set_config('app.user_id', $1, true)`, [colleague]);
+    await client.query(`UPDATE svc.price_rules SET priority = 1 WHERE id = $1`, [ruleId]);
+    await client.query(`SELECT set_config('app.user_id', '', true)`);
+    await client.query(`SELECT svc.publish_price_list_version($1,$2,DATE '2020-01-01')`, [
+      listId,
+      versionId,
+    ]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+  assignmentPriority += 1;
+  await assignPriceList({
+    tenantId: TENANT_A,
+    priceListId: listId,
+    companyId: COMPANY_A1,
+    branchId: null,
+    customerClass: null,
+    priority: assignmentPriority,
+  });
+}
+
+/**
+ * Moves an approval limit's end date to `daysFromToday` from today, signed in as
+ * `person` (`null`: nobody, as an administrator's own tooling would).
+ */
+async function moveLimitWindowAs(
+  person: string | null,
+  limitId: string,
+  daysFromToday: number
+): Promise<void> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.tenant_id', $1, true), set_config('app.user_id', $2, true)`,
+      [TENANT_A, person ?? '']
+    );
+    await client.query(
+      `UPDATE iam.approval_limits SET effective_to = current_date + $2::int WHERE id = $1`,
+      [limitId, daysFromToday]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 /** A price list for SERVICE_A published through the routes by SVC_FULL. */
@@ -455,6 +555,118 @@ describe('ADR-023 D8 — one’s own threshold, limit or price never exempts one
       expect(relied.rows[0]?.approver_limit_id).not.toBe(limit.rows[0]?.id);
     } finally {
       await admin.query(`DELETE FROM iam.approval_limits WHERE id = $1`, [limit.rows[0]?.id]);
+    }
+  });
+
+  it('a price amount the requester set still needs another person after a colleague’s later edit', async () => {
+    await administratorThreshold('100.0000');
+    // SVC_FULL sets the amount; SVC_DISCOUNT_APPROVER, who writes no quotation here,
+    // then changes only the rule's priority and is the last to change it.
+    await publishPriceAmountSetBy(SVC_FULL.userId, SVC_DISCOUNT_APPROVER.userId, '100.0000');
+    try {
+      // 40 is under the administrator's 100, and SVC_FULL's own amount still needs
+      // somebody else.
+      const own = await quoteAs(SVC_FULL, '40.0000');
+      expect(approvalOf(own)).toMatchObject({
+        status: 'pending',
+        requesterSetPolicy: false,
+        requesterSetPrice: true,
+      });
+      // SVC_NO_CEILING set neither the amount nor anything else: the threshold decides.
+      const other = await quoteAs(SVC_NO_CEILING, '40.0000');
+      expect(other.currentRevision?.discountApproval).toBeNull();
+    } finally {
+      await publishUnattributedPrice('100.0000');
+    }
+  });
+
+  it('an approver whose expired limit the requester reopened cannot approve the requester’s discount', async () => {
+    await administratorThreshold('0.0000');
+    const quotation = await quoteAs(SVC_NO_CEILING, '5.0000');
+    const request = approvalOf(quotation);
+    // An administrator's limit for SVC_FULL's role, ended long ago.
+    const limit = await admin.query<{ id: string }>(
+      `INSERT INTO iam.approval_limits
+         (tenant_id, company_id, role_id, limit_type, amount, currency_code, effective_from, effective_to, created_by)
+       VALUES ($1,$2,$3,'discount',1000,'JOD',DATE '2020-01-01',DATE '2020-06-01',$4) RETURNING id`,
+      [TENANT_A, COMPANY_A1, SVC_FULL.roleId, USER_A]
+    );
+    const limitId = limit.rows[0]?.id as string;
+    try {
+      authAs(SVC_FULL);
+      const expired = await decide(request.id, { decision: 'approved' });
+      expect(expired.status).toBe(403);
+      expect(((await expired.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_no_approval_limit' },
+      ]);
+
+      // The requester reopens it for a year.
+      await moveLimitWindowAs(SVC_NO_CEILING.userId, limitId, 365);
+      authAs(SVC_FULL);
+      expect(approvalOf(await reread(quotation.id))).toMatchObject({
+        canApprove: false,
+        cannotApproveReason: 'no_approval_limit',
+      });
+      const refused = await decide(request.id, { decision: 'approved' });
+      expect(refused.status).toBe(403);
+      expect(((await refused.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_no_approval_limit' },
+      ]);
+      expect(
+        await refusalEvents(
+          'quo.discount-approval-decide',
+          request.id,
+          'discount_no_approval_limit'
+        )
+      ).toBe(2);
+
+      // When an administrator moves it last, it counts again.
+      await moveLimitWindowAs(null, limitId, 365);
+      authAs(SVC_FULL);
+      const approved = await decide(request.id, { decision: 'approved' });
+      expect(approved.status).toBe(200);
+    } finally {
+      await admin.query(`DELETE FROM iam.approval_limits WHERE id = $1`, [limitId]);
+    }
+  });
+
+  it('an approver whose smaller limit the requester ended cannot approve under a larger role limit', async () => {
+    await administratorThreshold('0.0000');
+    // SVC_DISCOUNT_APPROVER's role holds 1000; an administrator gives the approver
+    // their own limit of 1, which wins while it is in force.
+    const own = await admin.query<{ id: string }>(
+      `INSERT INTO iam.approval_limits
+         (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+       VALUES ($1,$2,$3,'discount',1,'JOD',DATE '2020-01-01',$4) RETURNING id`,
+      [TENANT_A, COMPANY_A1, SVC_DISCOUNT_APPROVER.userId, USER_A]
+    );
+    const ownId = own.rows[0]?.id as string;
+    try {
+      const quotation = await quoteAs(SVC_NO_CEILING, '5.0000');
+      const request = approvalOf(quotation);
+      authAs(SVC_DISCOUNT_APPROVER);
+      const over = await decide(request.id, { decision: 'approved' });
+      expect(over.status).toBe(403);
+      expect(((await over.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_over_approval_limit' },
+      ]);
+
+      // The requester ends the approver's own limit today; the role's 1000 would apply.
+      await moveLimitWindowAs(SVC_NO_CEILING.userId, ownId, 0);
+      authAs(SVC_DISCOUNT_APPROVER);
+      const refused = await decide(request.id, { decision: 'approved' });
+      expect(refused.status).toBe(403);
+      expect(((await refused.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_no_approval_limit' },
+      ]);
+
+      // Somebody else's request follows the limits as they stand: the role limit counts.
+      const others = await quoteAs(SVC_FULL, '5.0000');
+      authAs(SVC_DISCOUNT_APPROVER);
+      const approved = await decide(approvalOf(others).id, { decision: 'approved' });
+      expect(approved.status).toBe(200);
+    } finally {
+      await admin.query(`DELETE FROM iam.approval_limits WHERE id = $1`, [ownId]);
     }
   });
 });

@@ -493,8 +493,18 @@ export async function callerHoldsPermissionAnywhere(
  *
  * `excludeCreatedBy` names the person whose request is being approved. A ceiling
  * they created — on the approver, or on a role the approver holds — never counts
- * either: raising a colleague's limit must not get one's own discount through. The
- * database guard `quo.guard_discount_approval` excludes the same rows.
+ * either: raising a colleague's limit must not get one's own discount through.
+ *
+ * Nor does any ceiling once they moved a limit's window. A limit's amount is
+ * immutable but its `effective_to` is not, so the requester could reopen or extend
+ * a limit somebody else set, or end the approver's own smaller limit so that a
+ * larger role limit applies. When the requester last changed ANY limit of this type
+ * of the caller in the company — on the caller or on a role whose grant reaches it,
+ * in force or not — the caller has no ceiling that counts for that request.
+ * `updated_by` names who last changed a limit: `shared.touch_row_metadata` stamps
+ * it from the session, and `effective_to` is the only column the application may
+ * update. The database guard `quo.guard_discount_approval` applies the same two
+ * rules.
  *
  * `null` means the actor has **no** ceiling, which callers must treat as no
  * authority and never as unlimited.
@@ -507,29 +517,36 @@ export async function callerApprovalCeiling(
   excludeCreatedBy: string | null = null
 ): Promise<{ amount: string; currencyCode: string } | null> {
   const result = await db.query<{ amount: string; currency_code: string }>(
-    `SELECT al.amount::text AS amount, al.currency_code
-       FROM iam.approval_limits al
-      WHERE al.tenant_id = $1 AND al.company_id = $2 AND al.limit_type = $3
-        AND al.effective_from <= $5::date
+    `WITH caller_limits AS (
+       SELECT al.*
+         FROM iam.approval_limits al
+        WHERE al.tenant_id = $1 AND al.company_id = $2 AND al.limit_type = $3
+          AND (al.user_id = $4
+               OR (al.user_id IS NULL AND al.role_id IN (
+                     SELECT g.role_id
+                       FROM iam.role_grants g
+                      WHERE g.tenant_id = $1 AND g.user_id = $4
+                        AND g.status = 'active'
+                        AND g.valid_from <= now()
+                        AND (g.valid_to IS NULL OR g.valid_to > now())
+                        AND (
+                          g.scope_mode = 'unrestricted'
+                          OR EXISTS (
+                            SELECT 1 FROM iam.grant_scopes s
+                             WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id
+                               AND s.company_id = $2
+                          )
+                        ))))
+     )
+     SELECT al.amount::text AS amount, al.currency_code
+       FROM caller_limits al
+      WHERE al.effective_from <= $5::date
         AND (al.effective_to IS NULL OR al.effective_to > $5::date)
         AND al.created_by <> $4
         AND ($6::uuid IS NULL OR al.created_by <> $6::uuid)
-        AND (al.user_id = $4
-             OR (al.user_id IS NULL AND al.role_id IN (
-                   SELECT g.role_id
-                     FROM iam.role_grants g
-                    WHERE g.tenant_id = $1 AND g.user_id = $4
-                      AND g.status = 'active'
-                      AND g.valid_from <= now()
-                      AND (g.valid_to IS NULL OR g.valid_to > now())
-                      AND (
-                        g.scope_mode = 'unrestricted'
-                        OR EXISTS (
-                          SELECT 1 FROM iam.grant_scopes s
-                           WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id
-                             AND s.company_id = $2
-                        )
-                      ))))
+        AND NOT EXISTS (
+          SELECT 1 FROM caller_limits moved
+           WHERE $6::uuid IS NOT NULL AND moved.updated_by = $6::uuid)
       ORDER BY (al.user_id IS NOT NULL) DESC, al.amount DESC
       LIMIT 1`,
     [

@@ -4168,7 +4168,9 @@ copied by `quo.snapshot_quotation_item_price_provenance` when the line is writte
 keeps its source: who had last changed the price rule or item selling price (`price_changed_by`,
 `price_changed_at`) and, for a rule, who had published its price-list version (`price_published_by`,
 `price_published_at`). A writer's value is ignored; a later change to the source does not move it.
-NULL for lines written before migration 20261007090000.
+NULL for lines written before migration 20261007090000. Fix round 1 (migration 20261007100000) adds
+who had set the source's AMOUNT (`price_amount_set_by`, `price_amount_set_at`), copied the same way;
+NULL for lines written before it.
 
 | #   | Column                     | Type                     | Nullable |
 | --- | -------------------------- | ------------------------ | -------- |
@@ -4209,6 +4211,8 @@ NULL for lines written before migration 20261007090000.
 | 35  | `price_changed_at`         | timestamp with time zone | yes      |
 | 36  | `price_published_by`       | uuid                     | yes      |
 | 37  | `price_published_at`       | timestamp with time zone | yes      |
+| 38  | `price_amount_set_by`      | uuid                     | yes      |
+| 39  | `price_amount_set_at`      | timestamp with time zone | yes      |
 
 #### quo.quotation_revisions
 
@@ -4409,7 +4413,10 @@ published before migration 20261007090000 (no row recorded who).
 P1-32-PRE-OD-FD8 (ADR-023 D8) adds `price_changed_by` and `price_changed_at`: who last changed the
 values that price a line from this rule (amount, tax class, narrowing, priority, status, deletion),
 stamped from the signed-in person by `svc.stamp_price_rule_provenance` (NULL when nobody was signed
-in). Rows written before migration 20261007090000 carry their last recorded writer.
+in). Rows written before migration 20261007090000 carry their last recorded writer. Fix round 1
+(migration 20261007100000) adds `amount_set_by` and `amount_set_at`: who set the amount itself,
+stamped by the same trigger when the rule is written and when its amount changes, and never by a
+change to anything else; rows written before it carry `price_changed_by`.
 
 | #   | Column                  | Type                     | Nullable |
 | --- | ----------------------- | ------------------------ | -------- |
@@ -4433,6 +4440,8 @@ in). Rows written before migration 20261007090000 carry their last recorded writ
 | 18  | `deleted_by`            | uuid                     | yes      |
 | 19  | `price_changed_by`      | uuid                     | yes      |
 | 20  | `price_changed_at`      | timestamp with time zone | yes      |
+| 21  | `amount_set_by`         | uuid                     | yes      |
+| 22  | `amount_set_at`         | timestamp with time zone | yes      |
 
 #### svc.pricing_approval_policies
 
@@ -4738,7 +4747,7 @@ Generated from the live catalog after `20260917092000_inv_item_sale_prices.sql`.
 
 #### inv.item_sale_prices
 
-P1-32-PRE-OD-FD8 (ADR-023 D8) adds `price_changed_by` and `price_changed_at`: who last changed the selling price, its currency, tax class, status or deletion, stamped from the signed-in person by `inv.stamp_item_sale_price_provenance` (NULL when nobody was signed in). Setting the same price again changes nothing. Rows written before migration 20261007090000 carry their last recorded writer.
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `price_changed_by` and `price_changed_at`: who last changed the selling price, its currency, tax class, status or deletion, stamped from the signed-in person by `inv.stamp_item_sale_price_provenance` (NULL when nobody was signed in). Setting the same price again changes nothing. Rows written before migration 20261007090000 carry their last recorded writer. Fix round 1 (migration 20261007100000) adds `amount_set_by` and `amount_set_at`: who set the unit price and currency, stamped by the same trigger when the row is written and when either changes, and never by a change to the tax class or status; rows written before it carry `price_changed_by`.
 
 | #   | Column             | Type                     | Nullable |
 | --- | ------------------ | ------------------------ | -------- |
@@ -4760,6 +4769,8 @@ P1-32-PRE-OD-FD8 (ADR-023 D8) adds `price_changed_by` and `price_changed_at`: wh
 | 16  | `deleted_by`       | uuid                     | yes      |
 | 17  | `price_changed_by` | uuid                     | yes      |
 | 18  | `price_changed_at` | timestamp with time zone | yes      |
+| 19  | `amount_set_by`    | uuid                     | yes      |
+| 20  | `amount_set_at`    | timestamp with time zone | yes      |
 
 ### Sales returns (`inv`, P1-32 preparatory slice 2)
 

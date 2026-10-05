@@ -97,9 +97,10 @@ withdraws the requester's own pending request; every refusal by rule is recorded
 - A price the requester set, quoted with no discount at all, needs no second person: nothing is given
   away, so there is no discount approval to be exempted from. Whether such a price should need one is
   an open point for the Owner.
-- Ending a colleague's own approval limit so that a larger role limit applies to them, granting a
-  colleague a role, and assigning a price list (`svc.price_list_assignments`) are not attributed by
-  this change; they are open points.
+- Granting a colleague a role whose limit somebody else set, assigning a price list
+  (`svc.price_list_assignments`), and deactivating or deleting a competing price so that another
+  source prices the line are not attributed by this change; they are open points. Moving a limit's
+  dates is attributed since fix round 1 (section 8).
 - A legacy draft whose creator set what it relies on, and which has no request, cannot be issued until
   it is revised (the issue guard refuses it); no request is backfilled.
 
@@ -135,3 +136,34 @@ row-metadata trigger (and, for price rules, the published-version freeze) disabl
 the statement, so no `record_version`, `updated_by` or `updated_at` moves. The application change
 ships in the same pull request. Applying the migration to the acceptance database happens later,
 through the established backup, rehearsal on a restored copy and forward apply — not in this change.
+
+## 8. Fix round 1 — the 173rd migration
+
+Review of the pull request found two ways round the rule this change states, and
+`supabase/migrations/20261007100000_quo_discount_limit_window_and_amount_provenance.sql` (the 173rd)
+closes both, forward-only and ROLLBACK-SAFE:
+
+- **A limit's dates.** An approval limit's amount is immutable but its `effective_to` is not, so the
+  requester could reopen or extend a limit somebody else had set for the approver, or end the
+  approver's own smaller limit so that a larger role limit applied. `quo.guard_discount_approval` is
+  re-issued: when the requester last changed (`iam.approval_limits.updated_by`, stamped from the
+  session by `shared.touch_row_metadata`; `effective_to` is the only column the application may
+  change) any discount limit of the approver in the company — on the approver or on a role whose
+  grant reaches them, in force or not — none of the approver's limits counts for that request
+  (`discount_no_approval_limit`). `callerApprovalCeiling` applies the same rule.
+- **Who set a price's amount.** `price_changed_by` named whoever last touched any pricing column, so
+  a colleague's later edit to priority, tax class, narrowing or status overwrote the requester's
+  attribution. `svc.price_rules` and `inv.item_sale_prices` gain `amount_set_by` /
+  `amount_set_at`, stamped only when the row is written and when the amount (and, for a selling
+  price, its currency) changes; `quo.quotation_items` snapshots them as `price_amount_set_by` /
+  `price_amount_set_at`, and `quo.revision_self_change_basis` counts a line as the requester's own
+  price when they set its amount, last changed it, or published it. Existing rows take
+  `amount_set_by` from `price_changed_by`, with the row-metadata, provenance and freeze triggers
+  disabled for the statement; existing lines keep NULL in the two new columns.
+
+No table, function, trigger, grant, policy, seed or permission code is added. Executable proof:
+`tests/db/quo-discount-self-exemption.test.ts` and `tests/backend/od-discount-self-exemption.test.ts`
+(both limit paths and the price-rule amount), `tests/backend/od-quotation-part-lines.test.ts` (the
+selling-price amount), and the P1-15 census. Records moved: `migrationCount` 173, `schemaHash`,
+`migrationCountNote` and `structuralTotalsNote173` in `.github/ci-baselines/schema-baseline.json`
+(no structural total moves), the data dictionary and the classification registry (992 columns).

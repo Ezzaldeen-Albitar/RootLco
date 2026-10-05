@@ -1,7 +1,9 @@
 /**
  * P1-32-PRE-OD-FD8 — ADR-023 D8 (no self-exemption from discount approval) and D3
  * (the requester withdraws their own pending discount request), held by the
- * database: migration 20261007090000_quo_discount_self_exemption_and_withdrawal.sql.
+ * database: migration 20261007090000_quo_discount_self_exemption_and_withdrawal.sql,
+ * and its fix round 1, 20261007100000_quo_discount_limit_window_and_amount_provenance.sql
+ * (a limit window the requester moved, and who set a price's amount).
  *
  * Every case runs in a rolled-back transaction as `app_runtime`, switching the
  * signed-in person with `app.user_id` exactly as the application does. USER_A is the
@@ -47,6 +49,17 @@ const APPROVER_REQUESTER_SET = 'd8d30000-0000-4000-8000-000000000002';
 /** A third person who publishes price lists in these cases (no account is needed). */
 const PUBLISHER = 'd8d30000-0000-4000-8000-0000000000f1';
 const ROLE_PRICE_MANAGER = 'd8d30000-0000-4000-8000-0000000000a1';
+/** A requester who also holds iam.approval.manage, so they can move a limit's dates. */
+const LIMIT_REQUESTER = 'd8d30000-0000-4000-8000-000000000003';
+/** Holds svc.price.manage; its only discount limit (OTHER_ACTOR's, 1000 USD) has expired. */
+const APPROVER_REOPEN = 'd8d30000-0000-4000-8000-000000000004';
+/**
+ * Holds svc.price.manage through ROLE_WIDE, whose role limit is 1000 USD; its own user
+ * limit is 10 USD. Both were set by OTHER_ACTOR. The user limit wins while in force.
+ */
+const APPROVER_ENDED = 'd8d30000-0000-4000-8000-000000000005';
+const ROLE_LIMIT_ADMIN = 'd8d30000-0000-4000-8000-0000000000a2';
+const ROLE_WIDE = 'd8d30000-0000-4000-8000-0000000000a3';
 
 beforeAll(async () => {
   await ensureTestLogins(admin);
@@ -55,6 +68,9 @@ beforeAll(async () => {
   for (const [id, n] of [
     [APPROVER, '01'],
     [APPROVER_REQUESTER_SET, '02'],
+    [LIMIT_REQUESTER, '03'],
+    [APPROVER_REOPEN, '04'],
+    [APPROVER_ENDED, '05'],
   ] as const) {
     await admin.query(
       `INSERT INTO iam.user_accounts
@@ -70,14 +86,37 @@ beforeAll(async () => {
      ON CONFLICT (id) DO NOTHING`,
     [ROLE_PRICE_MANAGER, TENANT_A, USER_A]
   );
-  await admin.query(
-    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
-     SELECT $1::uuid, $2::uuid, p.id, 'allow', $3::uuid
-       FROM iam.permissions p WHERE p.permission_code = 'svc.price.manage'
-     ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
-    [TENANT_A, ROLE_PRICE_MANAGER, USER_A]
-  );
-  for (const id of [APPROVER, APPROVER_REQUESTER_SET]) {
+  for (const [role, code, name] of [
+    [ROLE_LIMIT_ADMIN, 'fx_db_fd8_limit_admin', 'DB fixture FD8 limit administrator'],
+    [ROLE_WIDE, 'fx_db_fd8_wide', 'DB fixture FD8 wide approver'],
+  ] as const) {
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1::uuid, $2::uuid, $3, $4, $5::uuid)
+       ON CONFLICT (id) DO NOTHING`,
+      [role, TENANT_A, code, name, USER_A]
+    );
+  }
+  for (const [role, code] of [
+    [ROLE_PRICE_MANAGER, 'svc.price.manage'],
+    [ROLE_WIDE, 'svc.price.manage'],
+    [ROLE_LIMIT_ADMIN, 'iam.approval.manage'],
+  ] as const) {
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid, $2::uuid, p.id, 'allow', $3::uuid
+         FROM iam.permissions p WHERE p.permission_code = $4
+       ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+      [TENANT_A, role, USER_A, code]
+    );
+  }
+  for (const [id, role] of [
+    [APPROVER, ROLE_PRICE_MANAGER],
+    [APPROVER_REQUESTER_SET, ROLE_PRICE_MANAGER],
+    [APPROVER_REOPEN, ROLE_PRICE_MANAGER],
+    [APPROVER_ENDED, ROLE_WIDE],
+    [LIMIT_REQUESTER, ROLE_LIMIT_ADMIN],
+  ] as const) {
     await admin.query(
       `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
        SELECT $1::uuid, $2::uuid, $3::uuid, 'unrestricted', $4::uuid, $4::uuid
@@ -85,7 +124,7 @@ beforeAll(async () => {
           SELECT 1 FROM iam.role_grants
            WHERE tenant_id = $1::uuid AND user_id = $2::uuid AND role_id = $3::uuid
              AND status = 'active')`,
-      [TENANT_A, id, ROLE_PRICE_MANAGER, USER_A]
+      [TENANT_A, id, role, USER_A]
     );
   }
   for (const [id, setBy] of [
@@ -102,6 +141,35 @@ beforeAll(async () => {
       [TENANT_A, COMPANY_A1, id, setBy]
     );
   }
+  // APPROVER_REOPEN: an administrator's limit that ended yesterday.
+  await admin.query(
+    `INSERT INTO iam.approval_limits
+       (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, effective_to, created_by)
+     SELECT $1::uuid, $2::uuid, $3::uuid, 'discount', 1000, 'USD', current_date - 30, current_date - 1, $4::uuid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.approval_limits
+         WHERE tenant_id = $1::uuid AND user_id = $3::uuid AND limit_type = 'discount')`,
+    [TENANT_A, COMPANY_A1, APPROVER_REOPEN, OTHER_ACTOR]
+  );
+  // APPROVER_ENDED: a small user limit in force, and a larger limit on its role.
+  await admin.query(
+    `INSERT INTO iam.approval_limits
+       (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+     SELECT $1::uuid, $2::uuid, $3::uuid, 'discount', 10, 'USD', current_date - 30, $4::uuid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.approval_limits
+         WHERE tenant_id = $1::uuid AND user_id = $3::uuid AND limit_type = 'discount')`,
+    [TENANT_A, COMPANY_A1, APPROVER_ENDED, OTHER_ACTOR]
+  );
+  await admin.query(
+    `INSERT INTO iam.approval_limits
+       (tenant_id, company_id, role_id, limit_type, amount, currency_code, effective_from, created_by)
+     SELECT $1::uuid, $2::uuid, $3::uuid, 'discount', 1000, 'USD', current_date - 30, $4::uuid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.approval_limits
+         WHERE tenant_id = $1::uuid AND role_id = $3::uuid AND limit_type = 'discount')`,
+    [TENANT_A, COMPANY_A1, ROLE_WIDE, OTHER_ACTOR]
+  );
 }, 180_000);
 
 afterAll(async () => {
@@ -254,7 +322,8 @@ async function requestFor(
   c: Q,
   quotation: string,
   revision: string,
-  discount: string
+  discount: string,
+  requester: string = USER_A
 ): Promise<string> {
   return (
     await one<{ id: string }>(
@@ -270,7 +339,7 @@ async function requestFor(
          FROM (SELECT 1) one
          LEFT JOIN quo.quotation_discount_policy($1, $4) p ON true
        RETURNING id`,
-      [TENANT_A, COMPANY_A1, BRANCH_A1, quotation, revision, discount, USER_A]
+      [TENANT_A, COMPANY_A1, BRANCH_A1, quotation, revision, discount, requester]
     )
   ).id;
 }
@@ -348,6 +417,29 @@ describe('quo discount self-exemption and withdrawal — the schema', () => {
         is_nullable,
       }))
     );
+  });
+
+  it('adds who set a price amount, on the source and on the line snapshot (fix round 1)', async () => {
+    const columns = await admin.query<{ name: string; data_type: string; is_nullable: string }>(
+      `SELECT table_schema || '.' || table_name || '.' || column_name AS name, data_type, is_nullable
+         FROM information_schema.columns
+        WHERE (table_schema, table_name, column_name) IN (
+          ('svc','price_rules','amount_set_by'), ('svc','price_rules','amount_set_at'),
+          ('inv','item_sale_prices','amount_set_by'), ('inv','item_sale_prices','amount_set_at'),
+          ('quo','quotation_items','price_amount_set_by'),
+          ('quo','quotation_items','price_amount_set_at'))`
+    );
+    const byName = Object.fromEntries(
+      columns.rows.map((row) => [row.name, `${row.data_type}|${row.is_nullable}`])
+    );
+    expect(byName).toEqual({
+      'inv.item_sale_prices.amount_set_at': 'timestamp with time zone|YES',
+      'inv.item_sale_prices.amount_set_by': 'uuid|YES',
+      'quo.quotation_items.price_amount_set_at': 'timestamp with time zone|YES',
+      'quo.quotation_items.price_amount_set_by': 'uuid|YES',
+      'svc.price_rules.amount_set_at': 'timestamp with time zone|YES',
+      'svc.price_rules.amount_set_by': 'uuid|YES',
+    });
   });
 
   it('runs every new function as the caller, and lets only app_runtime read the D8 basis', async () => {
@@ -684,6 +776,218 @@ describe('quo discount self-exemption — the D8 rule', () => {
         [approval]
       );
       expect(decided.set_by).toBe(OTHER_ACTOR);
+    });
+  });
+});
+
+describe('quo discount self-exemption — who set a price amount (fix round 1)', () => {
+  it('keeps the requester as the price-rule amount setter through a colleague’s later edit', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { service } = await seedService(c, 'fd8_amount_rule');
+      // The threshold is an administrator's: only the price is in question here.
+      await as(c, OTHER_ACTOR, () => recordThreshold(c, '50'));
+      // USER_A sets the amount; OTHER_ACTOR then changes only its priority; a third
+      // person publishes it.
+      const own = await draftPrice(c, service, 'fd8_amount_rule');
+      await as(c, OTHER_ACTOR, () =>
+        c.query(`UPDATE svc.price_rules SET priority = 5 WHERE id = $1`, [own.rule])
+      );
+      await publish(c, PUBLISHER, own.priceList, own.version);
+      expect(
+        await one(c, `SELECT price_changed_by, amount_set_by FROM svc.price_rules WHERE id = $1`, [
+          own.rule,
+        ])
+      ).toEqual({ price_changed_by: OTHER_ACTOR, amount_set_by: USER_A });
+
+      const { wo } = await makeWorkOrder(c, 'fd8_amount_rule');
+      const quotation = await seedQuotation(c, wo, 'fd8_amount_rule');
+      const revision = await draftRevision(c, quotation, 1);
+      const line = await addRuleLine(c, revision, service, own.rule, 10);
+      expect(
+        await one(
+          c,
+          `SELECT price_changed_by, price_amount_set_by FROM quo.quotation_items WHERE id = $1`,
+          [line]
+        )
+      ).toEqual({ price_changed_by: OTHER_ACTOR, price_amount_set_by: USER_A });
+      // 10 is under the administrator's 50, and still needs somebody else.
+      expect(await basisOf(c, revision, USER_A)).toEqual({ own_policy: false, own_price: true });
+      expect(await needsApproval(c, revision)).toBe(true);
+      await expectRefusal(c, /discount_approval_required/, `SELECT quo.issue_revision($1)`, [
+        revision,
+      ]);
+      const approval = await requestFor(c, quotation, revision, '10');
+      expect(
+        await one(c, `SELECT requester_set_price FROM quo.discount_approvals WHERE id = $1`, [
+          approval,
+        ])
+      ).toEqual({ requester_set_price: true });
+    });
+  });
+
+  it('keeps the requester as the selling-price amount setter through a colleague’s status edit', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      await as(c, OTHER_ACTOR, () => recordThreshold(c, '50'));
+      const { item } = await seedItem(c, 'fd8_amount_part');
+      // USER_A sets the price; OTHER_ACTOR deactivates and re-activates it at the
+      // same amount, so OTHER_ACTOR is the last to change the row.
+      const priceRef = (
+        await one<{ id: string }>(
+          c,
+          `SELECT inv.set_item_sale_price($1,$2,$3,'USD',12.34::numeric,NULL) AS id`,
+          [item, COMPANY_A1, BRANCH_A1]
+        )
+      ).id;
+      await as(c, OTHER_ACTOR, async () => {
+        await c.query(`UPDATE inv.item_sale_prices SET status = 'inactive' WHERE id = $1`, [
+          priceRef,
+        ]);
+        await c.query(`SELECT inv.set_item_sale_price($1,$2,$3,'USD',12.34::numeric,NULL)`, [
+          item,
+          COMPANY_A1,
+          BRANCH_A1,
+        ]);
+      });
+      expect(
+        await one(
+          c,
+          `SELECT price_changed_by, amount_set_by FROM inv.item_sale_prices WHERE id = $1`,
+          [priceRef]
+        )
+      ).toEqual({ price_changed_by: OTHER_ACTOR, amount_set_by: USER_A });
+
+      const { wo } = await makeWorkOrder(c, 'fd8_amount_part');
+      const quotation = await seedQuotation(c, wo, 'fd8_amount_part');
+      const revision = await draftRevision(c, quotation, 1);
+      const line = (
+        await one<{ id: string }>(
+          c,
+          `INSERT INTO quo.quotation_items
+             (tenant_id, company_id, branch_id, quotation_revision_id, line_number, item_kind, item_ref,
+              item_sale_price_ref, quoted_item_sku, quoted_item_name, quoted_unit_code, quoted_unit_name,
+              currency_code, captured_unit_price, captured_quantity, captured_discount, captured_tax_rate,
+              captured_tax_amount, captured_line_total, created_by, price_amount_set_by)
+           VALUES ($1,$2,$3,$4,1,'part',$5,$6,'SKU_fd8_amount_part','Item fd8_amount_part',
+                   'u_fd8_amount_part','Unit fd8_amount_part','USD',12.34,1,1,0,0,11.34,$7,$8)
+           RETURNING id`,
+          [TENANT_A, COMPANY_A1, BRANCH_A1, revision, item, priceRef, USER_A, OTHER_ACTOR]
+        )
+      ).id;
+      // The writer's claim is ignored: the line names who set the amount.
+      expect(
+        await one(
+          c,
+          `SELECT price_changed_by, price_amount_set_by FROM quo.quotation_items WHERE id = $1`,
+          [line]
+        )
+      ).toEqual({ price_changed_by: OTHER_ACTOR, price_amount_set_by: USER_A });
+      expect(await basisOf(c, revision, USER_A)).toEqual({ own_policy: false, own_price: true });
+      expect(await needsApproval(c, revision)).toBe(true);
+      await expectRefusal(c, /discount_approval_required/, `SELECT quo.issue_revision($1)`, [
+        revision,
+      ]);
+    });
+  });
+});
+
+describe('quo discount self-exemption — a limit window the requester moved (fix round 1)', () => {
+  /** A discounted draft written and asked for by LIMIT_REQUESTER. */
+  async function requestByLimitRequester(c: Q, tag: string, discount: number): Promise<string> {
+    const { wo } = await makeWorkOrder(c, tag);
+    const { service } = await seedService(c, tag);
+    const quotation = await seedQuotation(c, wo, tag);
+    return as(c, LIMIT_REQUESTER, async () => {
+      const revision = await revisionBy(c, quotation, 1, LIMIT_REQUESTER);
+      await addServiceItem(c, revision, service, 1, 100, 1, discount);
+      return requestFor(c, quotation, revision, String(discount), LIMIT_REQUESTER);
+    });
+  }
+  const userLimitOf = async (c: Q, userId: string): Promise<string> =>
+    (
+      await one<{ id: string }>(
+        c,
+        `SELECT id FROM iam.approval_limits
+          WHERE tenant_id = $1 AND limit_type = 'discount' AND user_id = $2`,
+        [TENANT_A, userId]
+      )
+    ).id;
+  const signedInAs = async <T>(c: Q, person: string, act: () => Promise<T>): Promise<T> => {
+    await setContext(c, { tenantId: TENANT_A, userId: person });
+    try {
+      return await act();
+    } finally {
+      await setContext(c, ctxA);
+    }
+  };
+
+  it('refuses an approver whose expired limit the requester reopened', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const approval = await requestByLimitRequester(c, 'fd8_reopen', 10);
+      await signedInAs(c, APPROVER_REOPEN, () =>
+        expectRefusal(c, /has no discount approval limit that counts/, approveSql, [
+          approval,
+          APPROVER_REOPEN,
+        ])
+      );
+      const limit = await userLimitOf(c, APPROVER_REOPEN);
+      // The requester, who may administer limits, reopens the administrator's limit.
+      await as(c, LIMIT_REQUESTER, () =>
+        c.query(`UPDATE iam.approval_limits SET effective_to = current_date + 365 WHERE id = $1`, [
+          limit,
+        ])
+      );
+      expect(
+        await one(c, `SELECT created_by, updated_by FROM iam.approval_limits WHERE id = $1`, [
+          limit,
+        ])
+      ).toEqual({ created_by: OTHER_ACTOR, updated_by: LIMIT_REQUESTER });
+      await signedInAs(c, APPROVER_REOPEN, () =>
+        expectRefusal(c, /discount_no_approval_limit: .*dates the requester changed/, approveSql, [
+          approval,
+          APPROVER_REOPEN,
+        ])
+      );
+      expect(
+        await one(c, `SELECT status FROM quo.discount_approvals WHERE id = $1`, [approval])
+      ).toEqual({ status: 'pending' });
+    });
+  });
+
+  it('refuses an approver whose smaller own limit the requester ended so a role limit applies', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const approval = await requestByLimitRequester(c, 'fd8_ended', 50);
+      // The user limit of 10 decides while it is in force.
+      await signedInAs(c, APPROVER_ENDED, () =>
+        expectRefusal(c, /discount_over_approval_limit/, approveSql, [approval, APPROVER_ENDED])
+      );
+      const own = await userLimitOf(c, APPROVER_ENDED);
+      await as(c, LIMIT_REQUESTER, () =>
+        c.query(`UPDATE iam.approval_limits SET effective_to = current_date WHERE id = $1`, [own])
+      );
+      // The role's 1000 would now apply; it does not count for the requester's request.
+      await signedInAs(c, APPROVER_ENDED, () =>
+        expectRefusal(c, /discount_no_approval_limit: .*dates the requester changed/, approveSql, [
+          approval,
+          APPROVER_ENDED,
+        ])
+      );
+
+      // Somebody else's request is unaffected: the role limit counts for it.
+      const { wo } = await makeWorkOrder(c, 'fd8_ended_other');
+      const { service } = await seedService(c, 'fd8_ended_other');
+      const quotation = await seedQuotation(c, wo, 'fd8_ended_other');
+      const revision = await draftRevision(c, quotation, 1);
+      await addServiceItem(c, revision, service, 1, 100, 1, 50);
+      const others = await requestFor(c, quotation, revision, '50');
+      await signedInAs(c, APPROVER_ENDED, () => c.query(approveSql, [others, APPROVER_ENDED]));
+      expect(
+        await one(
+          c,
+          `SELECT a.status, l.role_id FROM quo.discount_approvals a
+             JOIN iam.approval_limits l ON l.id = a.approver_limit_id WHERE a.id = $1`,
+          [others]
+        )
+      ).toEqual({ status: 'approved', role_id: ROLE_WIDE });
     });
   });
 });

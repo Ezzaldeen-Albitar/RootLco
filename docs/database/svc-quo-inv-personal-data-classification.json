@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-10-SEC — Service Catalog / Pricing / Quotation / Inventory personal-and-financial-data classification registry. Restricted = cost/margin fields gated by inv.cost.view. Prices and quotation totals are operational (internal). No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 986,
+  "columnCount": 992,
   "columns": {
     "inv.customer_supplied_parts.branch_id": {
       "classification": "internal",
@@ -1010,6 +1010,16 @@
       "dataType": "timestamp with time zone"
     },
     "inv.item_reorder_levels.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_sale_prices.amount_set_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_sale_prices.amount_set_by": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
@@ -3649,6 +3659,16 @@
       "searchable": false,
       "dataType": "integer"
     },
+    "quo.quotation_items.price_amount_set_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.quotation_items.price_amount_set_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "quo.quotation_items.price_changed_at": {
       "classification": "internal",
       "searchable": false,
@@ -4433,6 +4453,16 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "numeric"
+    },
+    "svc.price_rules.amount_set_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "svc.price_rules.amount_set_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
     },
     "svc.price_rules.branch_id": {
       "classification": "internal",

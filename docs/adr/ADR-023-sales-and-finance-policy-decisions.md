@@ -266,11 +266,15 @@ Implementation particulars (P1-32-PRE-OD-FD8, Proposed):
   (`svc.price_rules.price_changed_by`), who published a price-list version
   (`svc.price_list_versions.published_by`) and who last changed an item selling price
   (`inv.item_sale_prices.price_changed_by`), each with its time, stamped by the database from the
-  signed-in person and never taken from the writer. An approval limit's `created_by` was already
-  stamped from the session, and its amount never changes. Columns, not a history table: the rule needs
-  who put a value in force; earlier values are in the audit trail.
-- **Snapshots.** A quotation line copies, when it is written, who had last changed and who had
-  published the price it was priced from; a later change to the source does not move it. A
+  signed-in person and never taken from the writer. A price rule and an item selling price also record
+  who set the amount itself (`amount_set_by`), which a later change to anything else (priority, tax
+  class, narrowing, status) does not move. An approval limit's `created_by` was already stamped from
+  the session and its amount never changes, but its end date (`effective_to`) can be changed, and
+  who last changed it is `updated_by`, stamped from the session. Columns, not a history table: the
+  rule needs who put a value in force; earlier values are in the audit trail.
+- **Snapshots.** A quotation line copies, when it is written, who had set the amount of, who had last
+  changed and who had published the price it was priced from; a later change to the source does not
+  move it. A
   quotation's pinned threshold version is an immutable row, so the pin is its snapshot. A request
   records why another person must approve (`requester_set_policy`, `requester_set_price`), and an
   approval records the limit it relied on.
@@ -280,7 +284,9 @@ Implementation particulars (P1-32-PRE-OD-FD8, Proposed):
   written and at the database when it is issued. Another person's quotation follows the threshold and
   prices as set.
 - **Limits.** An approver's limit never counts when the approver or the requester created it, for the
-  approver or for a role the approver holds.
+  approver or for a role the approver holds. A changed end date is a changed limit: when the requester
+  last changed the dates of any discount limit of the approver in the company — reopening or extending
+  one, or ending one so that another applies — none of the approver's limits counts for that request.
 - **No sole-administrator exception.** The requester never decides their own request, so a second
   authorised person is required, as for D4.
 
@@ -293,11 +299,14 @@ Open points (each choice is the one that never grants more than the Owner allowe
 - **A self-set price with no discount (Owner decision needed).** A quotation with no discount gives
   nothing away and needs no discount approval, even at a price its writer set. Whether a price the
   writer set themselves should itself need a second person is not decided here.
-- **Not attributed.** Ending a colleague's own approval limit so that a larger role limit applies,
-  granting a colleague a role, and assigning a price list are not treated as the requester's change.
+- **Not attributed (Owner decision needed).** Granting the approver a role whose limit somebody else
+  set, assigning a customer to a price list, and deactivating or deleting a competing price rule or
+  branch selling price so that another source prices the line (the item selling price falls back from
+  the branch to the company to the whole tenant) are not treated as the requester's change, and none
+  of them is recorded on the line.
 - **Before this change.** Provenance of existing rows is their last recorded writer, not a verified
-  attribution; who published an existing price-list version was not recorded; lines written earlier
-  carry no snapshot. A legacy draft whose writer set what it relies on cannot be issued until revised.
+  attribution, and who set an existing amount is taken from it; who published an existing price-list
+  version was not recorded; lines written earlier carry no snapshot. A legacy draft whose writer set what it relies on cannot be issued until revised.
 
 ### D9 — Returns and credit are separate events
 

@@ -4219,6 +4219,29 @@ Known limitations, one line each:
 
 - Reading chosen: an independent approver whenever the evaluation relied on the requester's own change, not a reconstruction of the earlier version (never grants more).
 - A price its writer set, quoted with no discount, needs no second person (Owner decision needed).
-- Ending a colleague's own limit so a larger role limit applies, granting a role, and assigning a price list are not attributed.
+- Granting a role, assigning a price list, and deactivating a competing price are not attributed (see fix round 1 below); moving a limit's dates is, since fix round 1.
 - Provenance of rows written before the migration is their last recorded writer; who published an existing price-list version is unknown; older lines carry no snapshot.
 - A legacy draft whose writer set what it relies on cannot be issued until it is revised; no request is backfilled.
+
+Fix round 1 (review of `cc8cbbfa`): one more forward migration,
+`20261007100000_quo_discount_limit_window_and_amount_provenance.sql`. A changed end date is a changed
+limit: when the requester last changed the dates of any discount limit of the approver in the company
+(reopened or extended one, or ended one so that a larger role limit applies), none of the approver's
+limits counts for that request, in `quo.guard_discount_approval` and in `callerApprovalCeiling`
+(`discount_no_approval_limit`). And who set a price's amount is stamped on its own
+(`amount_set_by` on `svc.price_rules` and `inv.item_sale_prices`, snapshotted on the line as
+`price_amount_set_by`), so a colleague's later edit to anything else no longer moves the requester's
+attribution. No new route, operation, permission code or audit action.
+
+Residual items, one line each:
+
+- Not attributed (Owner decision needed): the requester can grant the approver a role whose limit someone else set, assign a customer to a price list, or deactivate or delete a competing price rule or branch selling price so that another source prices the line (`inv.resolve_item_sale_price` falls back branch, then company, then tenant); none of these is recorded on the line.
+- Owner open point: a price its writer set, quoted with no discount, needs no second person (the zero-discount shortcut in `quotation-service.ts` `withoutSelfExemption` and in `quo.revision_discount_needs_approval`).
+- Legacy rows: provenance is backfilled from `COALESCE(updated_by, created_by)` and `amount_set_by` from it, which is not a verified attribution; `published_by` is NULL for versions published before 20261007090000; existing quotation lines carry NULL snapshots. All disclosed.
+- D3 withdrawal checks If-Match before the replay branch: a retry under a fresh idempotency key with the old version answers 409; only the same key, or the new version, answers `replayed`. This matches the tested behaviour and the credit-note pattern, so it is not a defect.
+- Collateral gate edits are data registrations, not laundering: a BODYLESS entry in `scripts/ci/check-p1-30-payload-parity.mjs`, a coverage entry in `scripts/check-operation-test-coverage.mjs`, and each new migration's count, hash and notes in `.github/ci-baselines/schema-baseline.json`. Existing fixtures were changed only so that a separate administrator sets thresholds and limits; no assertion was weakened.
+- Out of scope and disclosed: the Arabic text of `form.violation.credit_note_withdraw_not_requester` says "discount request".
+- Confirmed in round 0: withdrawal only by the requester, only while pending, terminal, its revision never issued, and revising asks again (database guard plus the service); one request per revision (`uq_discount_approvals_revision`), so a withdrawn revision cannot be asked again; refusals go through `withBusinessRefusal`; tenant and branch isolation are tested; English and Arabic keys exist for every new refusal and screen string.
+- Round 0 (`cc8cbbfa`), as its author reported, NOT run on the development machine: the full unit tier, full `test:db` and `test:backend`, `style:check` (no SCSS in the diff), `validate:phase-ownership`, the p1-27-*, p1-24-register and p1-28-access validators, named-wire-shapes, web-theme and web-tokens; hosted CI ran them at that head.
+- Round 0 (`cc8cbbfa`), as its author reported, run on the development machine with exit 0: typecheck, typecheck:api, typecheck:web, lint:api, lint:web, format:check:all, security:all, module-boundaries, authorization-coverage, operation-coverage, openapi, exact-money, plain-language, encoding, web-boundary, api-backend-only, generated-artifacts, command-coverage and check-test-honesty; on a disposable database, all 172 migrations, validate:seed-state, and the focused DB, backend and web files of the slice.
+- Evidence for fix round 1, on the development machine: a disposable postgres:17-alpine database (127.0.0.1:55446, removed afterwards) took all 173 migrations, `validate:seed-state`, `migration-replay-checks.mjs --phase post` and `verify:classifications`; the focused DB files (`quo-discount-self-exemption`, `quo-quotations`, the P1-15 census, `foundation` and eleven adjacent files) and backend files (`od-discount-self-exemption`, `od-quotation-part-lines`, `p1-20-quotation`, `p1-20-pricing`, `p1-30-w3-quotations`, `od-finance-credit-limits`, `iam-admin-writes`) passed, and each new DB and backend case failed with the fix taken out. The full unit, DB, backend and web tiers were not run locally; hosted CI runs them.
