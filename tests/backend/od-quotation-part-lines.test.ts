@@ -12,6 +12,11 @@
  *  - NO PRICE. An item with no authorised sales price is refused on the line's item
  *    (`no_authorised_sale_price`) and nothing is written; an archived item and an
  *    item outside the caller's catalogue are refused by name too.
+ *  - PRICE MOVED UNDER THE WRITE. When the item's selling price or its tax rate
+ *    changes between the service reading it and writing the line — committed by
+ *    another connection inside that window — the guard's refusal is answered as a
+ *    refusal of the line's item (`part_price_changed`, 422, with a correlation id),
+ *    never as a server fault, and nothing of the quotation is written.
  *  - SNAPSHOT. A later price, unit or name change in the catalogue leaves a written
  *    line, draft or issued, exactly as quoted; only a new revision takes the
  *    catalogue as it is then.
@@ -19,15 +24,16 @@
  *    service line's: pending for somebody else when it needs approval, no issue
  *    until approved, and none when there is no discount.
  *  - INVOICE. A work-order invoice copies the part line (`lineType: part`,
- *    `sourceQuotationItemId`) and shows its item and unit, and issuing it posts no
- *    stock movement at all.
+ *    `sourceQuotationItemId`) and shows its item and unit — in the preview before
+ *    the invoice exists as on the invoice — and issuing it posts no stock movement
+ *    at all.
  *  - ISOLATION. Another tenant cannot quote this tenant's item, a branch-scoped
  *    caller cannot quote into another branch, and a required part from another work
  *    order cannot be linked.
  *
  * Money is compared as exact decimal STRINGS.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 
@@ -74,6 +80,8 @@ import {
 } from './p1-21-helpers';
 import { SAL_FULL, cleanP1_22Fixtures, establishP1_22Fixtures } from './p1-22-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
+import { inventoryModule } from '@/modules/inventory';
+import { pricingModule } from '@/modules/pricing';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { POST as CREATE_LIST } from '@/app/api/v1/price-lists/route';
 import { POST as CREATE_LIST_VERSION } from '@/app/api/v1/price-lists/[priceListId]/versions/route';
@@ -87,6 +95,7 @@ import { GET as READ_REVISION } from '@/app/api/v1/quotation-revisions/[revision
 import { POST as DECIDE_REVISION } from '@/app/api/v1/quotation-revisions/[revisionId]/decisions/route';
 import { POST as DECIDE_DISCOUNT } from '@/app/api/v1/discount-approvals/[approvalId]/decision/route';
 import { POST as CREATE_INVOICE } from '@/app/api/v1/invoices/route';
+import { GET as READ_INVOICE_PREVIEW } from '@/app/api/v1/work-orders/[workOrderId]/invoice-preview/route';
 import { GET as READ_INVOICE } from '@/app/api/v1/invoices/[invoiceId]/route';
 import { POST as ISSUE_INVOICE } from '@/app/api/v1/invoices/[invoiceId]/issuance/route';
 
@@ -136,6 +145,7 @@ interface Quotation {
 }
 interface Problem {
   readonly code: string;
+  readonly correlationId?: string;
   readonly violations?: readonly { readonly path: string; readonly rule: string }[];
 }
 
@@ -426,6 +436,147 @@ describe('a part line is priced at the authorised sales price of its branch', ()
   });
 });
 
+/**
+ * Runs `write` with one of the service's reads — the item's selling price
+ * (`catalog.quotablePart`) or its tax rate (`prices.taxRateFor`) — followed, before
+ * the service writes the line, by `move` committed on ANOTHER connection: the race
+ * the guard closes. The read is the real one; only its timing is held.
+ */
+async function withMovedAfterRead(
+  read: 'price' | 'tax',
+  move: () => Promise<void>,
+  write: () => Promise<Response>
+): Promise<{ response: Response; reads: number }> {
+  const catalog = inventoryModule().catalog;
+  const prices = pricingModule().prices;
+  const readPrice = catalog.quotablePart.bind(catalog);
+  const readTax = prices.taxRateFor.bind(prices);
+  const spy =
+    read === 'price'
+      ? vi.spyOn(catalog, 'quotablePart').mockImplementationOnce(async (...args) => {
+          const facts = await readPrice(...args);
+          await move();
+          return facts;
+        })
+      : vi.spyOn(prices, 'taxRateFor').mockImplementationOnce(async (...args) => {
+          const rate = await readTax(...args);
+          await move();
+          return rate;
+        });
+  try {
+    const response = await write();
+    return { response, reads: spy.mock.calls.length };
+  } finally {
+    spy.mockRestore();
+  }
+}
+
+async function expectPriceChangedRefusal(response: Response, line: number): Promise<void> {
+  expect(response.status).toBe(422);
+  const problem = await bodyOf<Problem>(response);
+  expect(problem.code).toBe('ERR-VAL-001');
+  expect(problem.violations).toEqual([
+    { path: `body.lines[${String(line)}].itemId`, rule: 'part_price_changed' },
+  ]);
+  expect(problem.correlationId).toMatch(/^[0-9a-f-]{36}$/);
+  // Nothing of the guard's own words reaches the caller.
+  expect(JSON.stringify(problem)).not.toMatch(/part_line_|check_violation|resolve_item_sale_price/);
+}
+
+describe('a price or tax that changes while the part is being quoted is refused on the part', () => {
+  it('a branch price set between the read and the write: 422 on the item, nothing written', async () => {
+    const item = await freshItem('race price');
+    await setPrice(item.id, '5.0000');
+    const order = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    const { response, reads } = await withMovedAfterRead(
+      'price',
+      async () => {
+        // Committed by another connection: this branch now has its own selling price.
+        await setPrice(item.id, '6.0000', { branch: BRANCH_A1 });
+      },
+      () =>
+        createQuotation(order.workOrderId, [{ serviceId: SERVICE_A, quantity: '1' }, part(item.id)])
+    );
+    expect(reads).toBe(1);
+    await expectPriceChangedRefusal(response, 1);
+    expect(await quotationCount(order.workOrderId)).toBe(0);
+
+    // Saving again reads the price that applies now and quotes the part at it.
+    const again = await created(await createQuotation(order.workOrderId, [part(item.id)]));
+    expect(again.currentRevision?.lines[0]?.unitPrice).toBe('6.0000');
+  });
+
+  it("the price's tax rate replaced between the read and the write, on a revision: 422, nothing written", async () => {
+    const item = await freshItem('race tax');
+    serial += 1;
+    const taxClass = randomUUID();
+    await admin.query(
+      `INSERT INTO org.tax_classes (id, tenant_id, company_id, tax_class_code, name, status, created_by)
+       VALUES ($1,$2,$3,$4,'FD6 race class','active',$5)`,
+      [
+        taxClass,
+        TENANT_A,
+        COMPANY_A1,
+        `fx_fd6_race_${String(Date.now() % 100000)}_${String(serial)}`,
+        USER_A,
+      ]
+    );
+    await admin.query(
+      `INSERT INTO org.tax_rates
+         (tenant_id, company_id, tax_class_id, rate, status, effective_from, created_by)
+       VALUES ($1,$2,$3,0.100000,'active','2020-01-01',$4)`,
+      [TENANT_A, COMPANY_A1, taxClass, USER_A]
+    );
+    await setPrice(item.id, '8.0000', { taxClass });
+    const order = await createOpenWorkOrder();
+    authAs(SVC_FULL);
+    const quotation = await created(
+      await createQuotation(order.workOrderId, [{ serviceId: SERVICE_A, quantity: '1' }])
+    );
+    expect((await issue(quotation)).status).toBe(200);
+    const current = await readQuotation(quotation.id);
+    const revisionsBefore = await admin.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM quo.quotation_revisions WHERE quotation_id = $1`,
+      [quotation.id]
+    );
+
+    const { response, reads } = await withMovedAfterRead(
+      'tax',
+      async () => {
+        // Committed by another connection: the class's rate is replaced from today.
+        await admin.query(
+          `UPDATE org.tax_rates SET effective_to = current_date
+            WHERE tenant_id = $1 AND tax_class_id = $2 AND effective_to IS NULL`,
+          [TENANT_A, taxClass]
+        );
+        await admin.query(
+          `INSERT INTO org.tax_rates
+             (tenant_id, company_id, tax_class_id, rate, status, effective_from, created_by)
+           VALUES ($1,$2,$3,0.200000,'active',current_date,$4)`,
+          [TENANT_A, COMPANY_A1, taxClass, USER_A]
+        );
+      },
+      () =>
+        (REVISE as ParamHandler<{ quotationId: string }>)(
+          post(
+            `http://localhost/api/v1/quotations/${quotation.id}/revisions`,
+            { lines: [part(item.id)] },
+            current.recordVersion
+          ),
+          { params: Promise.resolve({ quotationId: quotation.id }) }
+        )
+    );
+    expect(reads).toBe(1);
+    await expectPriceChangedRefusal(response, 0);
+    const revisionsAfter = await admin.query<{ n: number }>(
+      `SELECT count(*)::int AS n FROM quo.quotation_revisions WHERE quotation_id = $1`,
+      [quotation.id]
+    );
+    expect(revisionsAfter.rows[0]?.n).toBe(revisionsBefore.rows[0]?.n);
+  });
+});
+
 describe('the snapshot is immutable once captured', () => {
   it('keeps price, unit and name through a catalogue change, draft and issued; a revision re-prices', async () => {
     const item = await freshItem('oil filter');
@@ -568,6 +719,31 @@ describe('a work-order invoice copies the part line and moves no stock', () => {
     expect(decided.status).toBe(201);
 
     authAs(SAL_FULL);
+    // The preview names the part as the quotation line quoted it, before any invoice.
+    const previewResponse = await (READ_INVOICE_PREVIEW as ParamHandler<{ workOrderId: string }>)(
+      new Request(`http://localhost/api/v1/work-orders/${order.workOrderId}/invoice-preview`),
+      {
+        params: Promise.resolve({ workOrderId: order.workOrderId }),
+      }
+    );
+    expect(previewResponse.status).toBe(200);
+    const preview = await bodyOf<{
+      lines: readonly {
+        lineType: string;
+        sourceQuotationItemId: string;
+        item: { id: string; code: string; name: string } | null;
+        unit: { code: string; name: string } | null;
+      }[];
+    }>(previewResponse);
+    expect(preview.lines.find((line) => line.lineType === 'part')).toMatchObject({
+      sourceQuotationItemId: partLine.id,
+      item: { id: item.id, code: item.sku, name: item.name },
+      unit: { code: 'fx_each', name: 'Fixture each' },
+    });
+    const previewedService = preview.lines.find((line) => line.lineType === 'service');
+    expect(previewedService?.item).toBeNull();
+    expect(previewedService?.unit).toBeNull();
+
     const invoiceResponse = await CREATE_INVOICE(
       post('http://localhost/api/v1/invoices', { workOrderId: order.workOrderId })
     );

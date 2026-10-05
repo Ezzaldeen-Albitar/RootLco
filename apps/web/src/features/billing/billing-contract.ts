@@ -292,6 +292,14 @@ export interface InvoicePreviewLine {
   readonly description: string | null;
   readonly serviceId: string | null;
   readonly itemId: string | null;
+  /**
+   * On a PART line, the item as its quotation line quoted it — stock code and name
+   * (ADR-023 D6). `null` on a service line, which the read describes by its typed
+   * note only. Not money.
+   */
+  readonly item: InvoiceLineItem | null;
+  /** On a PART line, the unit its quantity is in, as quoted. `null` otherwise. Not money. */
+  readonly unit: InvoiceLineUnit | null;
   readonly quantity: string;
   readonly unitPrice: string;
   readonly discount: string;

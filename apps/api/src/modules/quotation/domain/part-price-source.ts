@@ -103,3 +103,30 @@ export function resolveAuthorisedPartPrice(
   }
   return { status: 'priced', price: first };
 }
+
+/**
+ * The field rule a part line is refused with when its selling price or tax moved
+ * while it was being quoted (P1-32-PRE-OD-FD6 follow-up).
+ *
+ * The service reads the item's selling price and its tax rate, then writes the
+ * line; `quo.guard_quotation_part_line` re-reads both as the line is written and
+ * admits it only at exactly what applies then. A price row added, replaced or
+ * withdrawn — or a tax rate changed — between the two is therefore refused by the
+ * guard, and that refusal is about the line's part, not a fault of the server.
+ */
+export const PART_PRICE_CHANGED = 'part_price_changed';
+
+/**
+ * The guard's tokens that mean the price or the tax applying to the part is no
+ * longer the one the service read. Every other token of that guard is a defect of
+ * the writer (a shape, a frozen snapshot) and stays a fault.
+ */
+const PART_PRICE_RACE_TOKENS: ReadonlySet<string> = new Set(['part_line_price', 'part_line_tax']);
+
+/**
+ * `part_price_changed` for a guard token that says the price or tax moved under
+ * the write, else `null` — the caller then re-throws the error unchanged.
+ */
+export function partPriceRaceRule(guardToken: string | null): typeof PART_PRICE_CHANGED | null {
+  return guardToken !== null && PART_PRICE_RACE_TOKENS.has(guardToken) ? PART_PRICE_CHANGED : null;
+}

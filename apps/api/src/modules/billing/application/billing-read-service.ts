@@ -352,6 +352,14 @@ export interface InvoicePreviewLine {
   readonly description: string | null;
   readonly serviceId: string | null;
   readonly itemId: string | null;
+  /**
+   * On a PART line, the item as its quotation line was quoted — stock code and
+   * name (ADR-023 D6) — so the preview names the part. `null` on a service line.
+   * Not money.
+   */
+  readonly item: InvoiceLineItemView | null;
+  /** On a PART line, the unit its quantity is in, as quoted. `null` otherwise. Not money. */
+  readonly unit: InvoiceLineUnitView | null;
   readonly quantity: string;
   readonly unitPrice: string;
   readonly discount: string;
@@ -1065,6 +1073,18 @@ export class BillingReadService {
         description: line.description,
         serviceId: line.serviceId,
         itemId: line.itemRef,
+        item:
+          line.quotedPart === null
+            ? null
+            : {
+                id: line.quotedPart.itemId,
+                code: line.quotedPart.itemCode,
+                name: line.quotedPart.itemName,
+              },
+        unit:
+          line.quotedPart === null
+            ? null
+            : { code: line.quotedPart.unitCode, name: line.quotedPart.unitName },
         quantity: line.quantity,
         unitPrice: exact(line.unitPrice),
         discount: exact(line.discount),

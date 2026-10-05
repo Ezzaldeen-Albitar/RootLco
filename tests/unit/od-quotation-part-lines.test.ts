@@ -17,9 +17,14 @@
  *    no service; neither takes a price, a unit or a tax figure.
  *  - That issuing a WORK-ORDER invoice never posts stock, whatever its lines are,
  *    and a counter sale still does (`issuePostsStock`).
+ *  - Which refusals of `quo.guard_quotation_part_line` are a price or tax that
+ *    moved while the line was being written (`partPriceRaceRule`): exactly the
+ *    price and tax tokens, answered as `part_price_changed`; every other token is
+ *    left a fault for the caller to re-throw.
  */
 import { describe, expect, it } from 'vitest';
 import {
+  partPriceRaceRule,
   resolveAuthorisedPartPrice,
   type AuthorisedPartPrice,
 } from '@api/modules/quotation/domain/part-price-source';
@@ -169,6 +174,28 @@ describe('a requested quotation line — service by default, part by name', () =
       ]);
     });
   }
+});
+
+describe('partPriceRaceRule — a price that moved under the write is a refusal of the part', () => {
+  it('the price and tax tokens of the guard are part_price_changed', () => {
+    expect(partPriceRaceRule('part_line_price')).toBe('part_price_changed');
+    expect(partPriceRaceRule('part_line_tax')).toBe('part_price_changed');
+  });
+
+  it('every other guard token, and no token, stays a fault', () => {
+    for (const token of [
+      'part_line_shape',
+      'part_line_snapshot',
+      'part_line_snapshot_frozen',
+      'part_line_item',
+      'part_line_required_part',
+      'part_line',
+      '',
+    ]) {
+      expect(partPriceRaceRule(token)).toBeNull();
+    }
+    expect(partPriceRaceRule(null)).toBeNull();
+  });
 });
 
 describe('issuePostsStock — invoicing never duplicates an inventory movement', () => {

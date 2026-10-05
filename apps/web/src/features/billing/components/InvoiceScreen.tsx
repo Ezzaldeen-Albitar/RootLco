@@ -671,7 +671,22 @@ function PreviewFigures({
                   {String(line.lineNumber)}
                 </td>
                 <td className="px-3 py-2">
-                  {line.description ? (
+                  {line.item ? (
+                    // A part line is named by the part its quotation line quoted, with its
+                    // stock code isolated left to right (ADR-023 D6); a note typed on the
+                    // line still shows beneath it.
+                    <span className="flex flex-col">
+                      <span>
+                        <bdi>{line.item.name}</bdi>{' '}
+                        <span className="font-mono text-caption text-text-muted" dir="ltr">
+                          {line.item.code}
+                        </span>
+                      </span>
+                      {line.description ? (
+                        <bdi className="text-caption text-text-muted">{line.description}</bdi>
+                      ) : null}
+                    </span>
+                  ) : line.description ? (
                     <bdi>{line.description}</bdi>
                   ) : (
                     <span className="text-text-muted">
@@ -682,8 +697,16 @@ function PreviewFigures({
                 <td className="px-3 py-2">
                   {translateDynamic(messages, `invoices.lineType.${line.lineType}`)}
                 </td>
-                <td className="px-3 py-2 text-end font-mono" dir="ltr">
-                  {line.quantity}
+                <td className="px-3 py-2 text-end">
+                  <span className="font-mono" dir="ltr">
+                    {line.quantity}
+                  </span>
+                  {line.unit ? (
+                    <>
+                      {' '}
+                      <bdi className="text-caption text-text-muted">{line.unit.name}</bdi>
+                    </>
+                  ) : null}
                 </td>
                 <td className="px-3 py-2 text-end">
                   <Figure

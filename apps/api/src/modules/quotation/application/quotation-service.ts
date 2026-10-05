@@ -31,6 +31,7 @@
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { AppFailure } from '@/server/errors/app-failure';
+import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import { assertMinorUnitScale } from '@/server/http/validation';
 import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
@@ -49,7 +50,7 @@ import {
 import { sharedServicesModule } from '@/modules/shared-services';
 import { inventoryModule, Quantity } from '@/modules/inventory';
 import { workOrderModule } from '@/modules/work-order';
-import { resolveAuthorisedPartPrice } from '../domain/part-price-source';
+import { partPriceRaceRule, resolveAuthorisedPartPrice } from '../domain/part-price-source';
 import {
   MAX_ITEMS_PER_REVISION,
   QuotationRuleError,
@@ -453,10 +454,7 @@ export class QuotationService {
       currencyCode: quotation.currencyCode,
     });
 
-    const items: ItemRow[] = [];
-    for (const item of priced.items) {
-      items.push(await this.repository.insertItem(db, revision, item));
-    }
+    const items = await this.insertItems(db, revision, priced.items);
 
     const approval = await this.recordDiscountRequest(db, revision, discount, asOf, []);
 
@@ -592,10 +590,7 @@ export class QuotationService {
       currencyCode: quotation.currencyCode,
     });
 
-    const items: ItemRow[] = [];
-    for (const item of priced.items) {
-      items.push(await this.repository.insertItem(db, revision, item));
-    }
+    const items = await this.insertItems(db, revision, priced.items);
 
     // The open requests are replaced by this revision first — the database refuses
     // a new request while one is open — and a new one is recorded under the pinned
@@ -1402,6 +1397,42 @@ export class QuotationService {
   }
 
   /**
+   * Writes the priced lines of a new revision, in order.
+   *
+   * A part line is priced by reading the item's selling price and tax rate and is
+   * then written; `quo.guard_quotation_part_line` re-reads both as the row is
+   * written. When either moved in between — a price row added, replaced or
+   * withdrawn, a tax rate changed — the guard refuses the row with
+   * `part_line_price` or `part_line_tax`. That is a refusal of the line's part, not
+   * a fault: it answers `422` on the line's item (`part_price_changed`) so the
+   * operator saves again at the price that applies now. The transaction rolls back
+   * with the thrown failure, so nothing of the quotation is written. Every other
+   * error — any other guard token, any other line kind — is re-thrown unchanged.
+   */
+  private async insertItems(
+    db: DbHandle,
+    revision: RevisionRow,
+    priced: readonly NewItemInput[]
+  ): Promise<ItemRow[]> {
+    const items: ItemRow[] = [];
+    for (const item of priced) {
+      try {
+        items.push(await this.repository.insertItem(db, revision, item));
+      } catch (cause) {
+        const rule = item.itemKind === 'part' ? partPriceRaceRule(guardToken(cause)) : null;
+        if (rule === null) throw cause;
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Line ${item.lineNumber}: the selling price or tax of this part changed while it was being quoted`,
+          safeDetails: {
+            violations: [{ path: `body.lines[${item.lineNumber - 1}].itemId`, rule }],
+          },
+        });
+      }
+    }
+    return items;
+  }
+
+  /**
    * Prices one PART line (P1-32-PRE-OD-FD6, Owner decision D6, ADR-023).
    *
    * At an AUTHORISED SALES price and never at cost: the only source that can price
@@ -1904,3 +1935,18 @@ export class QuotationService {
 
 /** Re-exported so callers can reason about terminal revisions without the domain. */
 export { isTerminalRevision, assertRevisionEditable };
+
+/**
+ * The identifier a guard of `quo.quotation_items` put before the first colon of
+ * its `check_violation` message, or `null` for any other error. Those guards write
+ * a stable token there precisely so this is the whole parse; nothing else of the
+ * driver's message is read or passed on.
+ */
+function guardToken(error: unknown): string | null {
+  if (!isSqlState(error, SQLSTATE.checkViolation)) return null;
+  const message =
+    typeof error === 'object' && error !== null && 'message' in error
+      ? (error as { message?: unknown }).message
+      : undefined;
+  return typeof message === 'string' ? (/^([a-z_]+):/.exec(message)?.[1] ?? null) : null;
+}

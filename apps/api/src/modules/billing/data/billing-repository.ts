@@ -626,6 +626,12 @@ export interface CommercialSourceLineRow {
   readonly serviceId: string | null;
   readonly itemRef: string | null;
   readonly description: string | null;
+  /**
+   * What a PART line was quoted as (ADR-023 D6): the item's stock code and name and
+   * the unit its quantity is in, from the line's own snapshot columns, so a preview
+   * names the part rather than an identifier. `null` on a service line.
+   */
+  readonly quotedPart: QuotedPartRow | null;
   readonly currencyCode: string;
   readonly unitPrice: string;
   readonly quantity: string;
@@ -1850,6 +1856,10 @@ export class BillingRepository extends Repository {
       service_id: string | null;
       item_ref: string | null;
       description: string | null;
+      quoted_item_sku: string | null;
+      quoted_item_name: string | null;
+      quoted_unit_code: string | null;
+      quoted_unit_name: string | null;
       currency_code: string;
       unit_price: string;
       quantity: string;
@@ -1861,7 +1871,9 @@ export class BillingRepository extends Repository {
     }>(
       db,
       `SELECT it.id AS quotation_item_id, it.line_number, it.item_kind, it.service_id,
-              it.item_ref, it.description, it.currency_code,
+              it.item_ref, it.description,
+              it.quoted_item_sku, it.quoted_item_name, it.quoted_unit_code, it.quoted_unit_name,
+              it.currency_code,
               it.captured_unit_price::text AS unit_price,
               it.captured_quantity::text   AS quantity,
               it.captured_discount::text   AS discount,
@@ -1882,6 +1894,20 @@ export class BillingRepository extends Repository {
       serviceId: r.service_id,
       itemRef: r.item_ref,
       description: r.description,
+      quotedPart:
+        r.item_ref !== null &&
+        r.quoted_item_sku !== null &&
+        r.quoted_item_name !== null &&
+        r.quoted_unit_code !== null &&
+        r.quoted_unit_name !== null
+          ? {
+              itemId: r.item_ref,
+              itemCode: r.quoted_item_sku,
+              itemName: r.quoted_item_name,
+              unitCode: r.quoted_unit_code,
+              unitName: r.quoted_unit_name,
+            }
+          : null,
       currencyCode: r.currency_code,
       unitPrice: r.unit_price,
       quantity: r.quantity,
