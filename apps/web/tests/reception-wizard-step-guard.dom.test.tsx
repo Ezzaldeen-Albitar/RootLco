@@ -31,6 +31,11 @@ import { useUnsavedGuard, useUnsavedWork } from '@/features/working-context/Work
  * form and the signature capture form both declare a file picked and not yet
  * sent, so a step change, a confirmed discard and leaving the page treat it
  * exactly like typed words.
+ *
+ * The review of #511 added three more: a file chosen on one requirement row
+ * survives another row's waiver re-reading the contract, and a send clears the
+ * declaration (media and signature), so nothing is asked about once the file
+ * has been handed over.
  */
 
 const EN = en as Record<string, string>;
@@ -55,13 +60,15 @@ vi.mock('@/features/receptions/api', () => ({
   overrideCaptureRequirement: (...args: unknown[]) => overrideCaptureRequirement(...args),
 }));
 // The media step's capture action and the identity read its panels import.
+const captureRequirementEvidence = vi.fn();
 vi.mock('@/features/receptions/evidence-capture', () => ({
-  captureRequirementEvidence: vi.fn(),
+  captureRequirementEvidence: (...args: unknown[]) => captureRequirementEvidence(...args),
   finalizeCapturedEvidence: vi.fn(),
 }));
 // The signature step's capture action.
+const captureSignatureEvidence = vi.fn();
 vi.mock('@/features/receptions/signature-capture', () => ({
-  captureSignatureEvidence: vi.fn(),
+  captureSignatureEvidence: (...args: unknown[]) => captureSignatureEvidence(...args),
 }));
 vi.mock('@/features/receptions/support-api', () => ({
   readUserIdentity: vi.fn(),
@@ -116,6 +123,29 @@ const UNMET_VIN: CaptureContract = {
   overrides: [],
   bindableTemplates: [],
   retiredPublishedTemplateCount: 0,
+};
+
+/** Two unmet requirements, so a file chosen on one can outlive the other's waiver. */
+const UNMET_VIN_AND_DAMAGE: CaptureContract = {
+  ...UNMET_VIN,
+  requirements: [
+    UNMET_VIN.requirements[0]!,
+    { ...UNMET_VIN.requirements[0]!, requirementCode: 'damage' },
+  ],
+};
+
+/** The same visit once the damage requirement has been waived. */
+const DAMAGE_WAIVED: CaptureContract = {
+  ...UNMET_VIN_AND_DAMAGE,
+  requirements: [
+    UNMET_VIN.requirements[0]!,
+    {
+      ...UNMET_VIN.requirements[0]!,
+      requirementCode: 'damage',
+      satisfied: true,
+      overridden: true,
+    },
+  ],
 };
 
 const DETAIL: ReceptionDetail = {
@@ -668,6 +698,131 @@ describe('the check-in wizard asks before a step change discards typed work', ()
       within(dialog).getByRole('button', { name: AR['receptions.wizard.discard.stay']! })
     );
     expect(fileControl().files).toHaveLength(1);
+  });
+
+  it("keeps a file chosen on one row while another row's waiver re-reads the contract", async () => {
+    let answerReread: (value: unknown) => void = () => undefined;
+    readCaptureContract
+      .mockResolvedValueOnce({ status: 'ok', data: UNMET_VIN_AND_DAMAGE, correlationId: 'c-1' })
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answerReread = resolve;
+          })
+      );
+    overrideCaptureRequirement.mockResolvedValue({
+      status: 'success',
+      correlationId: 'corr-waiver',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderShell([MEDIA_STEP, STEPS[1]!]);
+    const vinFile = () =>
+      within(screen.getByTestId('capture-vin')).getByLabelText<HTMLInputElement>(
+        EN['receptions.capture.chooseFile']!
+      );
+
+    await user.upload(await waitFor(vinFile), photo());
+    await user.click(screen.getByTestId('capture-override-open-damage'));
+    await user.type(
+      screen.getByRole('textbox', { name: EN['receptions.capture.overrideReason']! }),
+      'The damage bay is closed'
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['receptions.capture.overrideSubmit']! })
+    );
+
+    // The waiver landed and the contract is being read again: the rows stay.
+    await waitFor(() => expect(readCaptureContract).toHaveBeenCalledTimes(2));
+    expect(vinFile().files).toHaveLength(1);
+    answerReread({ status: 'ok', data: DAMAGE_WAIVED, correlationId: 'c-2' });
+
+    expect(await screen.findByTestId('capture-state-damage')).toHaveTextContent(
+      EN['receptions.capture.state.overridden']!
+    );
+    // The VIN file is still chosen, and still counts as unsaved work.
+    expect(vinFile().files).toHaveLength(1);
+    expect(vinFile().files?.[0]?.name).toBe('vin-plate.jpg');
+    expect(leavingIsQuestioned()).toBe(true);
+    await user.click(stepButton(2, 'receptions.steps.readings.title'));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+  });
+
+  it('asks nothing about a media file once it has been sent, even when nothing was recorded', async () => {
+    readCaptureContract.mockResolvedValue({
+      status: 'ok',
+      data: UNMET_VIN,
+      correlationId: 'corr-capture',
+    });
+    // No stage: nothing reached the visit, so the contract is not read again
+    // and the row is not remounted.
+    captureRequirementEvidence.mockResolvedValue({
+      status: 'unavailable',
+      messageKey: 'state.unavailable.message',
+      attempt: 1,
+    });
+    const user = userEvent.setup();
+    renderShell([MEDIA_STEP, STEPS[1]!]);
+    const fileControl = () =>
+      screen.getByLabelText<HTMLInputElement>(EN['receptions.capture.chooseFile']!);
+
+    await user.upload(await waitFor(fileControl), photo());
+    expect(leavingIsQuestioned()).toBe(true);
+    await user.click(screen.getByRole('button', { name: EN['receptions.capture.submit']! }));
+
+    await waitFor(() => expect(captureRequirementEvidence).toHaveBeenCalledTimes(1));
+    expect(await screen.findByTestId('capture-outcome')).toHaveTextContent(
+      EN['receptions.capture.failed']!
+    );
+    expect(readCaptureContract).toHaveBeenCalledTimes(1);
+    expect(leavingIsQuestioned()).toBe(false);
+    await user.click(stepButton(2, 'receptions.steps.readings.title'));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByText('second step body')).toBeInTheDocument();
+  });
+
+  it('asks nothing about a signature file once it has been captured', async () => {
+    mockSignatureReads();
+    readReception.mockResolvedValue({ status: 'ok', data: DETAIL, correlationId: 'corr-detail' });
+    captureSignatureEvidence.mockResolvedValue({
+      status: 'success',
+      correlationId: 'corr-capture',
+      attempt: 1,
+      stage: 'recorded',
+      documentId: 'doc-1',
+      versionId: 'ver-1',
+      signatureId: 'sig-1',
+      versionStatus: 'pending',
+      scannerAvailable: true,
+    });
+    const user = userEvent.setup();
+    renderShell([SIGNATURE_STEP, STEPS[1]!]);
+    const form = await screen.findByTestId('signature-capture-form');
+
+    await user.selectOptions(
+      within(form).getByLabelText(new RegExp(`^${EN['receptions.signature.signerLabel']}`)),
+      'vehicle_owner'
+    );
+    await user.selectOptions(
+      within(form).getByLabelText(new RegExp(`^${EN['receptions.signature.purposeLabel']}`)),
+      'custody_acceptance'
+    );
+    await user.upload(
+      within(form).getByLabelText<HTMLInputElement>(EN['receptions.signature.chooseFile']!),
+      photo()
+    );
+    expect(leavingIsQuestioned()).toBe(true);
+    await user.click(
+      within(form).getByRole('button', { name: EN['receptions.signature.submit']! })
+    );
+
+    await waitFor(() => expect(captureSignatureEvidence).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(readReception).toHaveBeenCalled());
+    // The choices were emptied by the capture, and the file was handed over.
+    await waitFor(() => expect(leavingIsQuestioned()).toBe(false));
+    await user.click(stepButton(2, 'receptions.steps.readings.title'));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByText('second step body')).toBeInTheDocument();
   });
 
   it('asks in Arabic, right to left, from the same catalogue', async () => {

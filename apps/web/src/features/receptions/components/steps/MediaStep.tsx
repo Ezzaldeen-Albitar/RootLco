@@ -174,11 +174,36 @@ export function MediaStep({
     initial: { ...INITIAL_REQUEST, pageSize: 1 },
     loadKey: visitId,
   });
-  const contract = table.response?.rows[0] ?? null;
+  const read = table.response?.rows[0] ?? null;
   const status = table.status;
   const correlationId = table.correlationId;
 
-  if (status !== 'idle' || contract === null) {
+  /*
+   * The contract last read for THIS visit, held through a re-read.
+   *
+   * A waiver, capture or finalization on one requirement re-reads the
+   * contract, and the table answers `loading` with no rows until it lands.
+   * Replacing the whole list with the loading state then unmounted every
+   * requirement row, and a file chosen on a DIFFERENT row went with it,
+   * without a question (the review of #511): choosing files on several rows
+   * and sending them one at a time lost every file after the first. So while a
+   * re-read is in flight the rows stay mounted over the contract last read,
+   * their actions held back until the answer lands. The first read, a read for
+   * another visit and every failure still show the read's own state.
+   */
+  const [lastRead, setLastRead] = useState<{
+    readonly visitId: string;
+    readonly contract: CaptureContract;
+  } | null>(null);
+  if (read !== null && (lastRead?.contract !== read || lastRead.visitId !== visitId)) {
+    setLastRead({ visitId, contract: read });
+  }
+  const rereading =
+    status === 'loading' && read === null && lastRead !== null && lastRead.visitId === visitId;
+  const contract = read ?? (rereading ? lastRead.contract : null);
+  const refreshing = pending || rereading;
+
+  if ((status !== 'idle' && !rereading) || contract === null) {
     return (
       <section aria-labelledby="check-in-evidence-heading" className="flex flex-col gap-3">
         <h3 id="check-in-evidence-heading" className="text-section-title font-medium">
@@ -196,7 +221,11 @@ export function MediaStep({
   }
 
   return (
-    <section aria-labelledby="check-in-evidence-heading" className="flex flex-col gap-4">
+    <section
+      aria-labelledby="check-in-evidence-heading"
+      aria-busy={rereading}
+      className="flex flex-col gap-4"
+    >
       <h3 id="check-in-evidence-heading" className="text-section-title font-medium">
         {translate(messages, 'receptions.capture.heading')}
       </h3>
@@ -219,16 +248,15 @@ export function MediaStep({
               contract={contract}
               canCapture={capabilities.manageEvidence && !writesLocked}
               canOverride={capabilities.overrideEvidence && !writesLocked}
-              pending={pending}
+              pending={refreshing}
               onDone={(next) => {
                 setOutcome(next);
                 /*
                  * Re-read only when something on the server actually moved.
                  * A refused waiver and a capture that recorded nothing leave
-                 * the visit exactly as it was, and re-reading remounts this
-                 * row — which discards the reason the operator typed and is
-                 * being asked to correct. Reporting a refusal must not cost
-                 * them the text the refusal is about.
+                 * the visit exactly as it was, so there is nothing to read
+                 * back, and the reason the operator typed and is being asked
+                 * to correct stays where it is.
                  */
                 const moved =
                   next.kind === 'waiver' ? next.recorded : next.outcome.stage !== undefined;
@@ -248,7 +276,7 @@ export function MediaStep({
             act and the re-read this step does not hold it — so `pending` is
             passed through and the sentence stays at what is certain.
           */}
-          {translateDynamic(messages, outcomeKey(outcome, contract, pending))}
+          {translateDynamic(messages, outcomeKey(outcome, contract, refreshing))}
         </p>
       ) : null}
     </section>

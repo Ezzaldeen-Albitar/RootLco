@@ -4049,7 +4049,24 @@ empty; the chosen-file question in Arabic, right to left), `apps/web/tests/overl
 (the closure reason asks before the page is left). Each was falsified once by removing the
 behaviour it protects.
 
+Fix round 1 (review of #511). A waiver, capture or finalization on one requirement re-reads the
+capture contract, and the media step used to replace every requirement row with the loading state
+while it did, so a file chosen on a different row was dropped without a question. The rows now
+stay mounted over the contract last read for the same visit while the re-read is in flight, with
+their actions held back until it lands; the first read, a read for another visit and every failed
+read still show the read's own state. New cases in
+`apps/web/tests/reception-wizard-step-guard.dom.test.tsx`: a file chosen on the VIN row survives a
+waiver on the damage row and still asks; a media send that recorded nothing and a successful
+signature capture leave nothing to ask about. Each was falsified once (the early return restored,
+and each form action's `setFileChosen(false)` removed).
+
 Residual items, one line each:
 
-- Cancel on the signature repudiation form still keeps the typed reason for the next opening (stale text, no data-loss path); it was outside this slice.
+- `SignatureStep.tsx:637` — Cancel on the repudiation form still keeps the typed reason, so it reappears when the form is reopened; the fix is one line, the same as `cancelOverride` in the media step.
+- `SignatureStep.tsx:179-190` — when local validation refuses the signature, React resets the form and the chosen file is cleared; this predates the slice and conflicts with the Owner's "preserved input" rule.
+- jsdom with user-event does not clear an uploaded file list when a form is reset, so no DOM test can prove the file control is empty after a send; only the browser tier can.
+- `MediaStep.tsx:553` and `SignatureStep.tsx:308` — if capture or signing becomes unavailable (for example writes locked) while a file is chosen, the control unmounts but the declaration stays, so a question is asked about nothing on screen; no live path was found while on these steps.
+- `ReasonDialog.tsx:85` — a confirmed discard calls `onCancel` even while a closure send is pending; the modal blocks step and branch changes, so only an external discard could reach this (theoretical).
+- `ReasonDialog` registers a guard entry for every caller, including those that do not opt in; it is never dirty, but it notifies the registry's listeners on mount and unmount (the design gallery and the six other callers do not opt in).
+- The case asserting that no object URL is created or released cannot fail today, because `CaptureFileField` makes no preview; it only guards a preview added later.
 - Cancel on the summary's closure dialog still drops a typed reason without asking, because Cancel is the operator's own answer; only leaving the page asks.
