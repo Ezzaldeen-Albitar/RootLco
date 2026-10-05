@@ -1895,7 +1895,7 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     class: 'financial',
     entityType: 'sal.invoice',
     description:
-      'A draft invoice was created from approved commercial data. Creates no receivable: sal.guard_invoice_freeze refuses an INSERT whose status is not `draft`, so the document carries no number and no issue timestamp until sal.issue_invoice allocates one, and uq_invoices_work_order_active permits at most one live invoice per work order.',
+      'A draft invoice was created from approved commercial data. Creates no receivable: sal.guard_invoice_freeze refuses an INSERT whose status is not `draft`, so the document carries no number and no issue timestamp until sal.issue_invoice allocates one, and it bills only the approved quotation quantity no other live invoice of the work order holds (sal.guard_invoice_line_source, ADR-023 D5/D15), with at most one draft invoice per work order (uq_invoices_work_order_draft).',
   },
   {
     code: 'sal.counter_sale.created',

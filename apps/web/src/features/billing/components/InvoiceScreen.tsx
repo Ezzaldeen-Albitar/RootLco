@@ -39,6 +39,8 @@ import {
   type Invoice,
   type InvoiceDetail,
   type InvoicePreview,
+  type InvoicePreviewLine,
+  type InvoicePreviewRevisionLine,
   type Outstanding,
   type Settlement,
   type ThirdPartyPayment,
@@ -68,11 +70,16 @@ import {
  *
  * ## Reached from a work order
  *
- * There is no invoice list. `sal.work-order-invoice-read` answers the order's
- * live invoice or `null`, and the screen shows one of two things: without an
- * invoice, what the accepted quotation revision would bill (the preview) and
- * the act of creating it; with one, the invoice itself, its outstanding
- * balance, and the acts of issuing, cancelling and printing it.
+ * `sal.work-order-invoice-read` answers the order's live invoices, and the
+ * screen shows one of two things: without an invoice, what the approved
+ * quotation lines would bill (the preview) and the act of creating it; with one,
+ * the invoice itself, its outstanding balance, and the acts of issuing,
+ * cancelling and printing it. Since ADR-023 D5/D15 a work order may be invoiced
+ * more than once — each invoice bills approved work no other holds — so the
+ * other live invoices are opened by their number, and approved work not yet
+ * invoiced is previewed and invoiced beneath them, each line showing what was
+ * approved, what is already invoiced and what this invoice bills, and every line
+ * left off showing why.
  *
  * ## `sal.finance.view` splits the screen
  *
@@ -287,19 +294,169 @@ export function InvoiceScreen({
           onConflict={() => changed({ messageKey: 'invoices.create.conflict', figure: null })}
         />
       ) : (
-        <InvoicePanel
-          key={`invoice-${epoch}`}
+        <LiveInvoices
+          key={`invoices-${epoch}`}
           locale={locale}
           messages={messages}
-          invoice={invoiceRead.data.invoice}
+          workOrderId={workOrderId}
+          read={invoiceRead.data}
+          current={invoiceRead.data.invoice}
           workOrder={workOrder}
           canViewFinance={canViewFinance}
           canIssue={canIssue}
           canRaiseCredit={canRaiseCredit}
+          canReadCustomers={canReadCustomers}
           onChanged={changed}
         />
       )}
     </div>
+  );
+}
+
+/**
+ * A work order's live invoices (ADR-023 D5/D15, P1-32-PRE-OD-FD5).
+ *
+ * A work order may be invoiced more than once — each invoice bills approved
+ * quotation work no other live invoice holds — so the screen shows the invoice
+ * the read names (the open draft, else the newest), lets the operator open any
+ * other live one by its number, and, while approved work remains unbilled and no
+ * draft is open, offers what remains to invoice beneath them: the same preview and
+ * create form a work order with no invoice shows, read again from the server.
+ */
+function LiveInvoices({
+  locale,
+  messages,
+  workOrderId,
+  read,
+  current,
+  workOrder,
+  canViewFinance,
+  canIssue,
+  canRaiseCredit,
+  canReadCustomers,
+  onChanged,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly workOrderId: string;
+  readonly read: WorkOrderInvoice;
+  /** The invoice the read names: the open draft, else the newest. */
+  readonly current: Invoice;
+  readonly workOrder: WorkOrderListEntry | null;
+  readonly canViewFinance: boolean;
+  readonly canIssue: boolean;
+  readonly canRaiseCredit: boolean;
+  readonly canReadCustomers: boolean;
+  readonly onChanged: (notice: WriteNotice | null) => Promise<void>;
+}) {
+  const [shownId, setShownId] = useState(current.id);
+  const shown = read.invoices.find((invoice) => invoice.id === shownId) ?? current;
+  const draftOpen = read.invoices.some((invoice) => invoice.status === 'draft');
+  return (
+    <>
+      {read.invoices.length > 1 ? (
+        <InvoiceChooser
+          locale={locale}
+          messages={messages}
+          invoices={read.invoices}
+          truncated={read.invoicesTruncated}
+          shownId={shown.id}
+          onShow={setShownId}
+        />
+      ) : null}
+      <InvoicePanel
+        key={`invoice-${shown.id}`}
+        locale={locale}
+        messages={messages}
+        invoice={shown}
+        workOrder={workOrder}
+        canViewFinance={canViewFinance}
+        canIssue={canIssue}
+        canRaiseCredit={canRaiseCredit}
+        onChanged={onChanged}
+      />
+      {read.approvedWorkToInvoice && !draftOpen ? (
+        <PreviewPanel
+          remaining
+          locale={locale}
+          messages={messages}
+          workOrderId={workOrderId}
+          canViewFinance={canViewFinance}
+          canReadCustomers={canReadCustomers}
+          onCreated={(created) =>
+            onChanged({
+              messageKey: created.replayed
+                ? 'invoices.create.replayed'
+                : 'invoices.create.recorded',
+              figure: null,
+            })
+          }
+          onConflict={() => onChanged({ messageKey: 'invoices.create.conflict', figure: null })}
+        />
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * The live invoices of the work order, each opened by its number (or as the
+ * draft it still is). The one shown is pressed; nothing is read until one is
+ * chosen, and choosing one only changes which invoice the panels below read.
+ */
+function InvoiceChooser({
+  locale,
+  messages,
+  invoices,
+  truncated,
+  shownId,
+  onShow,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly invoices: readonly Invoice[];
+  readonly truncated: boolean;
+  readonly shownId: string;
+  readonly onShow: (invoiceId: string) => void;
+}) {
+  return (
+    <section
+      aria-labelledby="invoice-list-heading"
+      className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+      lang={locale}
+      data-print="hide"
+    >
+      <h2 id="invoice-list-heading" className="text-body font-medium text-text-primary">
+        {translate(messages, 'invoices.list.heading')}
+      </h2>
+      <ul className="flex flex-wrap gap-2">
+        {invoices.map((invoice) => (
+          <li key={invoice.id}>
+            <Button
+              type="button"
+              variant={invoice.id === shownId ? 'contained' : 'outlined'}
+              aria-pressed={invoice.id === shownId}
+              onClick={() => onShow(invoice.id)}
+            >
+              <span className="flex items-center gap-2">
+                {invoice.invoiceNumber ? (
+                  <bdi className="font-mono">{invoice.invoiceNumber}</bdi>
+                ) : (
+                  <span>{translate(messages, 'invoices.list.unnumbered')}</span>
+                )}
+                <span className="text-caption">
+                  {translateDynamic(messages, `invoices.status.${invoice.status}`)}
+                </span>
+              </span>
+            </Button>
+          </li>
+        ))}
+      </ul>
+      {truncated ? (
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'invoices.list.truncated')}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -542,10 +699,16 @@ function PreviewPanel({
   canReadCustomers,
   onCreated,
   onConflict,
+  remaining = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly workOrderId: string;
+  /**
+   * Beneath a work order's invoices: what approved work remains to invoice
+   * (ADR-023 D5/D15). Same read, same form; its own heading.
+   */
+  readonly remaining?: boolean;
   readonly canViewFinance: boolean;
   readonly canReadCustomers: boolean;
   /** Re-reads the order's invoice; resolves once the panels were remounted. */
@@ -569,18 +732,19 @@ function PreviewPanel({
     };
   }, [workOrderId, canViewFinance, attempt]);
 
+  const headingId = remaining ? 'invoice-remaining-heading' : 'invoice-preview-heading';
   return (
     <section
-      aria-labelledby="invoice-preview-heading"
+      aria-labelledby={headingId}
       className="flex min-h-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
       lang={locale}
       data-print="hide"
     >
-      <h2 id="invoice-preview-heading" className="text-body font-medium text-text-primary">
-        {translate(messages, 'invoices.preview.heading')}
+      <h2 id={headingId} className="text-body font-medium text-text-primary">
+        {translate(messages, remaining ? 'invoices.remaining.heading' : 'invoices.preview.heading')}
       </h2>
       <p className="text-caption text-text-muted">
-        {translate(messages, 'invoices.preview.explain')}
+        {translate(messages, remaining ? 'invoices.remaining.explain' : 'invoices.preview.explain')}
       </p>
       {!canViewFinance ? (
         <p className="text-body text-text-secondary">
@@ -600,7 +764,8 @@ function PreviewPanel({
       ) : (
         <PreviewFigures locale={locale} messages={messages} preview={preview.data} />
       )}
-      {canViewFinance && preview?.status === 'ok' ? (
+      {/* Nothing left to bill is said by the figures; no form offers to bill it. */}
+      {canViewFinance && preview?.status === 'ok' && preview.data.lines.length > 0 ? (
         <CreateForm
           locale={locale}
           messages={messages}
@@ -625,6 +790,19 @@ function PreviewFigures({
 }) {
   const currency = preview.currency;
   const minorUnit = preview.minorUnit;
+  const notBilled = preview.revisionLines.filter((line) => line.billingStatus !== 'billable');
+  if (preview.lines.length === 0) {
+    // Everything approved is invoiced, or what remains cannot be billed: said in
+    // words, with why for each line — never a table of zeros (ADR-023 D5/D15).
+    return (
+      <div className="flex min-h-0 flex-col gap-3">
+        <p role="status" className="text-body text-text-secondary">
+          {translate(messages, 'invoices.preview.nothingToBill')}
+        </p>
+        <NotBilledLines messages={messages} lines={notBilled} />
+      </div>
+    );
+  }
   return (
     <div className="flex min-h-0 flex-col gap-3">
       <div className="overflow-x-auto">
@@ -640,6 +818,12 @@ function PreviewFigures({
               </th>
               <th scope="col" className="px-3 py-2 text-start">
                 {translate(messages, 'invoices.preview.column.type')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.approved')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.invoiced')}
               </th>
               <th scope="col" className="px-3 py-2 text-end">
                 {translate(messages, 'invoices.preview.column.quantity')}
@@ -671,31 +855,21 @@ function PreviewFigures({
                   {String(line.lineNumber)}
                 </td>
                 <td className="px-3 py-2">
-                  {line.item ? (
-                    // A part line is named by the part its quotation line quoted, with its
-                    // stock code isolated left to right (ADR-023 D6); a note typed on the
-                    // line still shows beneath it.
-                    <span className="flex flex-col">
-                      <span>
-                        <bdi>{line.item.name}</bdi>{' '}
-                        <span className="font-mono text-caption text-text-muted" dir="ltr">
-                          {line.item.code}
-                        </span>
-                      </span>
-                      {line.description ? (
-                        <bdi className="text-caption text-text-muted">{line.description}</bdi>
-                      ) : null}
-                    </span>
-                  ) : line.description ? (
-                    <bdi>{line.description}</bdi>
-                  ) : (
-                    <span className="text-text-muted">
-                      {translate(messages, 'invoices.preview.noDescription')}
-                    </span>
-                  )}
+                  <LineDescription messages={messages} line={line} />
+                  {line.partlyInvoicedEarlier ? (
+                    <p className="text-caption text-text-muted">
+                      {translate(messages, 'invoices.preview.partlyInvoiced')}
+                    </p>
+                  ) : null}
                 </td>
                 <td className="px-3 py-2">
                   {translateDynamic(messages, `invoices.lineType.${line.lineType}`)}
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Quantity value={line.approvedQuantity} />
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Quantity value={line.invoicedQuantity} />
                 </td>
                 <td className="px-3 py-2 text-end">
                   <span className="font-mono" dir="ltr">
@@ -806,6 +980,125 @@ function PreviewFigures({
       <p className="text-caption text-text-muted">
         {translate(messages, 'invoices.preview.taxRateNote')}
       </p>
+      <NotBilledLines messages={messages} lines={notBilled} />
+    </div>
+  );
+}
+
+/** A quantity: `numeric(12,3)` as the server wrote it, isolated left to right. Not money. */
+function Quantity({ value }: { readonly value: string }) {
+  return (
+    <span className="font-mono" dir="ltr">
+      {value}
+    </span>
+  );
+}
+
+/**
+ * A quotation line, named. A part line is named by the part its quotation line
+ * quoted, with its stock code isolated left to right (ADR-023 D6); a note typed on
+ * the line still shows beneath it.
+ */
+function LineDescription({
+  messages,
+  line,
+}: {
+  readonly messages: Messages;
+  readonly line: Pick<InvoicePreviewLine, 'item' | 'description'>;
+}) {
+  if (line.item) {
+    return (
+      <span className="flex flex-col">
+        <span>
+          <bdi>{line.item.name}</bdi>{' '}
+          <span className="font-mono text-caption text-text-muted" dir="ltr">
+            {line.item.code}
+          </span>
+        </span>
+        {line.description ? (
+          <bdi className="text-caption text-text-muted">{line.description}</bdi>
+        ) : null}
+      </span>
+    );
+  }
+  if (line.description) return <bdi>{line.description}</bdi>;
+  return (
+    <span className="text-text-muted">{translate(messages, 'invoices.preview.noDescription')}</span>
+  );
+}
+
+/**
+ * The lines of the quotation revision this invoice leaves off, each with why
+ * (ADR-023 D5/D15): not approved yet, refused, already invoiced in full, and the
+ * rarer reasons a line cannot be billed again. Shown so nothing approved seems to
+ * have been forgotten and nothing refused seems to have been billed.
+ */
+function NotBilledLines({
+  messages,
+  lines,
+}: {
+  readonly messages: Messages;
+  readonly lines: readonly InvoicePreviewRevisionLine[];
+}) {
+  if (lines.length === 0) return null;
+  return (
+    <div className="flex min-h-0 flex-col gap-2">
+      <h3 className="text-body font-medium text-text-primary">
+        {translate(messages, 'invoices.preview.notBilled.heading')}
+      </h3>
+      <div className="overflow-x-auto">
+        <table className="w-full text-body">
+          <caption className="sr-only">
+            {translate(messages, 'invoices.preview.notBilled.caption')}
+          </caption>
+          <thead>
+            <tr className="text-caption text-text-muted">
+              <th scope="col" className="px-3 py-2 text-start">
+                {translate(messages, 'invoices.preview.column.line')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-start">
+                {translate(messages, 'invoices.preview.column.description')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-start">
+                {translate(messages, 'invoices.preview.column.type')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.quoted')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-end">
+                {translate(messages, 'invoices.preview.column.invoiced')}
+              </th>
+              <th scope="col" className="px-3 py-2 text-start">
+                {translate(messages, 'invoices.preview.notBilled.reason')}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {lines.map((line) => (
+              <tr key={line.sourceQuotationItemId} className="border-t border-border">
+                <td className="px-3 py-2" dir="ltr">
+                  {String(line.lineNumber)}
+                </td>
+                <td className="px-3 py-2">
+                  <LineDescription messages={messages} line={line} />
+                </td>
+                <td className="px-3 py-2">
+                  {translateDynamic(messages, `invoices.lineType.${line.lineType}`)}
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Quantity value={line.quotedQuantity} />
+                </td>
+                <td className="px-3 py-2 text-end">
+                  <Quantity value={line.invoicedQuantity} />
+                </td>
+                <td className="px-3 py-2">
+                  {translateDynamic(messages, `invoices.billing.reason.${line.billingStatus}`)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -1878,31 +2171,16 @@ function PrintPanel({
   readonly initiallyOpen?: boolean;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
-  const [preview, setPreview] = useState<ReadState<InvoicePreview> | null>(null);
-  const workOrderId = detail.invoice.workOrderId;
-  useEffect(() => {
-    // Descriptions live only on the preview, which is money and needs the
-    // code; it is read once, when the paper view is asked for.
-    //
-    // A counter sale carries no work order (P1-32) and so has no preview to
-    // read: its lines were priced from the item price list rather than
-    // snapshotted from an accepted quotation revision, and the preview route
-    // takes a work order in its path. Nothing is read for one.
-    if (!open || !canViewFinance || preview !== null || workOrderId === null) return;
-    let live = true;
-    void readInvoicePreview(workOrderId).then((state) => {
-      if (live) setPreview(state);
-    });
-    return () => {
-      live = false;
-    };
-  }, [open, canViewFinance, preview, workOrderId]);
+  // The copy is described from the invoice's OWN source lines, which the detail
+  // carries for a reader who may see amounts (ADR-023 D5/D15) — never from the
+  // work order's current preview. Since a work order may hold several invoices,
+  // that preview can name another quotation or revision, or none at all once two
+  // quotations are fully invoiced, and an invoice printed from it lost its
+  // descriptions and discounts. A counter sale's lines name their items on the
+  // detail itself (GAP-09). So no quotation read is made here, and none is waited for.
+  const counterSale = detail.invoice.workOrderId === null;
 
-  // A counter sale has no preview to wait for: its lines name their items on the
-  // detail itself (GAP-09). Waiting for a preview that is never requested left the
-  // panel loading forever and offered no Print button.
-  //
-  // The payer's name is waited for too: while its lookup is still out, the copy
+  // The payer's name is waited for: while its lookup is still out, the copy
   // would print "name not shown" for a customer the screen is about to name. So the
   // copy and the Print button wait until the lookup settles — with the name, or
   // with the honest "not shown" when it is withheld or could not be found. The
@@ -1915,11 +2193,7 @@ function PrintPanel({
   // — so the Print button waits for that read too. Its wait is bounded as well:
   // a read that is refused or does not answer in time settles as "could not be
   // read", which the copy says in words, and the panel offers to read it again.
-  const counterSale = workOrderId === null;
-  const ready =
-    (counterSale || !canViewFinance || preview !== null) &&
-    payer.kind !== 'loading' &&
-    settlement.kind !== 'reading';
+  const ready = payer.kind !== 'loading' && settlement.kind !== 'reading';
 
   return (
     <section
@@ -1979,11 +2253,9 @@ function PrintPanel({
                 ? { kind: 'items' }
                 : !canViewFinance
                   ? { kind: 'notRead' }
-                  : preview === null || preview.status !== 'ok'
-                    ? { kind: 'refused', reference: preview?.correlationId ?? null }
-                    : preview.data.quotationRevisionId === detail.invoice.quotationRevisionId
-                      ? { kind: 'matched', preview: preview.data }
-                      : { kind: 'mismatch' }
+                  : detail.source === null
+                    ? { kind: 'unavailable' }
+                    : { kind: 'source' }
             }
             workOrderNumber={workOrderNumber}
             balance={settlement.kind === 'read' ? settlement.balance : null}

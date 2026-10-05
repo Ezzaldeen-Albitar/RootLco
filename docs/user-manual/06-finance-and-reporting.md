@@ -70,8 +70,11 @@ The screen is titled "Invoice" <!-- invoices.page.title --> ("الفاتورة")
 name, a plate or a chassis number, or open it from the work-order board." <!-- invoices.choose.explain -->
 A work order named in the address is the only way in. There is no tenant-wide register of invoices anywhere in this release.
 
-One invoice on this screen belongs to one work order. Everything on it — the preview, the draft, the
-issue, the cancellation, the balance and the printable copy — is about that one work order.
+Every invoice on this screen belongs to one work order. Everything on it — the preview, the draft, the
+issue, the cancellation, the balance and the printable copy — is about that one work order. A work
+order may have **more than one** invoice: each invoice bills approved quotation work that no other
+live invoice of the job already bills, so work the customer approves later is billed later, and
+nothing is ever billed twice (Owner decisions D5 and D15, §6.2.4a).
 
 **One kind of invoice has no work order at all.** A **counter sale** is a sale of parts to somebody
 who left no vehicle with you. It is an invoice like any other — it is issued, settled, printed and
@@ -122,21 +125,48 @@ newest first, which is the one branch-wide list of invoices that does exist.
 **IMPLEMENTED (UI)**
 
 Until an invoice exists, the screen shows "What would be billed" <!-- invoices.preview.heading -->
-with the note "Computed by the server from the accepted quotation revision. Nothing is written until
-the invoice is created." <!-- invoices.preview.explain -->
+with the note "Computed by the server from the approved lines of the current quotation revision
+that are not yet invoiced. Nothing is written until the invoice is created." <!-- invoices.preview.explain -->
 
-The table is captioned "Lines of the accepted quotation revision" <!-- invoices.preview.caption -->
-and its columns are "Line", "Description", "Type", "Quantity", "Unit price", "Discount", "Tax rate",
-"Net", "Tax" and "Gross" <!-- invoices.preview.column.line … .gross --> . Beneath it are "Before
-discount" <!-- invoices.preview.subtotal --> , "Discount", "Net", "Tax" and "Gross".
+The table is captioned "Lines this invoice would bill" <!-- invoices.preview.caption -->
+and its columns are "Line", "Description", "Type", "Approved" <!-- invoices.preview.column.approved -->
+, "Already invoiced" <!-- invoices.preview.column.invoiced --> , "To invoice" <!-- invoices.preview.column.quantity -->
+, "Unit price", "Discount", "Tax rate", "Net", "Tax" and "Gross" <!-- invoices.preview.column.line … .gross -->
+. Beneath it are "Before discount" <!-- invoices.preview.subtotal --> , "Discount", "Net", "Tax" and
+"Gross".
+
+**Only approved lines are billed (Owner decision D5).** A line the customer has approved is
+invoiceable; a line still waiting for the customer's answer, or one the customer refused, is not —
+even when other lines of the same quotation revision are approved. Those lines appear in a second
+table, "Lines not invoiced now" <!-- invoices.preview.notBilled.heading --> , with the quoted
+quantity, what is already invoiced and "Why" <!-- invoices.preview.notBilled.reason --> in words:
+
+- "The customer has not approved this line yet." <!-- invoices.billing.reason.not_approved -->
+- "The customer refused this line, so it is never invoiced." <!-- invoices.billing.reason.rejected -->
+- "Everything approved on this line is already invoiced." <!-- invoices.billing.reason.fully_invoiced -->
+- "This line is on a quotation revision that has been replaced, so it is not invoiced from here." <!-- invoices.billing.reason.not_current -->
+- "Part of this work was invoiced under an earlier quotation revision, and two approved lines now
+  sell it, so what remains cannot be told apart. Revise the quotation so the work appears on one
+  line." <!-- invoices.billing.reason.lineage_ambiguous -->
+- "The approved line now totals less than was already invoiced for it, so nothing more can be
+  invoiced; a credit note is needed instead." <!-- invoices.billing.reason.repriced_below_invoiced -->
+
+**What was already invoiced counts across quotation revisions (Owner decision D15).** When a later
+revision of the quotation raises the quantity of something already invoiced, only the increase is
+billed: the line shows the approved quantity, what is already invoiced and the remainder "To
+invoice", with the note "Part of this line was invoiced before; this invoice bills what remains of
+its approved total, so its discount is not shown again." <!-- invoices.preview.partlyInvoiced -->
+When nothing approved remains, the panel says "Everything approved on the quotation is already
+invoiced, so there is nothing more to bill." <!-- invoices.preview.nothingToBill --> and offers no
+form.
 
 Two sentences on this panel matter:
 
 - "The tax rate is the fraction captured on the quotation line, shown as recorded." <!-- invoices.preview.taxRateNote -->
   — the figure is a fraction, not a percentage, and it is not recalculated for display.
-- "This work order has no accepted quotation revision, so there is nothing to bill yet." <!-- invoices.preview.noAcceptedRevision -->
-  — the work order must have an **accepted** quotation revision before an invoice can exist.
-  Accepting a quotation is covered in Part 4.
+- "This work order has no approved quotation line, so there is nothing to bill yet." <!-- invoices.preview.noAcceptedRevision -->
+  — the customer must have approved at least one line of the work order's quotation before an
+  invoice can exist. Recording the customer's decisions is covered in Part 4.
 
 If you do not hold `sal.finance.view` the panel says "The preview shows amounts, which your access
 does not include." <!-- invoices.preview.needsFinance --> and no figures appear.
@@ -148,16 +178,16 @@ does not include." <!-- invoices.preview.needsFinance --> and no figures appear.
 - **Label:** "Create invoice" <!-- invoices.create.submit --> , under the heading "Create the
   invoice" <!-- invoices.create.heading -->
 - **Who:** an account holding `sal.invoice.manage` and `sal.finance.view`.
-- **Where:** "Commerce" › "Billing", after opening a work order that has an accepted quotation
-  revision and no invoice yet.
+- **Where:** "Commerce" › "Billing", after opening a work order whose quotation has approved lines
+  not yet invoiced, and no draft invoice.
 - **Steps:**
   1. Read the preview and satisfy yourself the lines are right.
   2. "A different paying customer" <!-- invoices.create.payer --> — **optional**, found by name,
      number or phone and chosen from the list under the box. The help text reads "Optional. Leave it
      empty to bill the customer on the work order." <!-- invoices.create.payerHelp --> and the panel
-     explains the rule: "The draft is
-     written from the accepted quotation revision exactly as previewed. The quotation's payer is
-     used; a payer named here counts only when the quotation names none." <!-- invoices.create.explain -->
+     explains the rule: "The draft
+     bills the approved lines exactly as previewed, each only for what is not yet invoiced. The
+     quotation's payer is used; a payer named here counts only when the quotation names none." <!-- invoices.create.explain -->
      Left empty, the invoice bills the customer on the work order — the party who brought the car,
      as the work order shows them — when the quotation names no payer either (finance QA fixes E:
      that case used to be refused with "This field did not receive a value it can use."). Only a
@@ -171,14 +201,41 @@ does not include." <!-- invoices.preview.needsFinance --> and no figures appear.
   reading "Not issued" <!-- invoices.detail.notIssued --> , "Status" <!-- invoices.detail.status -->
   reading "Draft" <!-- invoices.status.draft --> , and "Issued at" <!-- invoices.detail.issuedAt -->
   reading "Not issued yet" <!-- invoices.detail.notIssuedYet --> .
-- **Restrictions:** one invoice per work order. A draft carries no number: the number is allocated
-  only at issue (6.2.5).
+- **Restrictions:** one **draft** at a time per work order — issue or cancel it before invoicing
+  more of the work. An invoice bills only approved quantity no other live invoice holds, and the
+  server refuses anything else even when two people press "Create invoice" at the same moment: one
+  invoice is created, the other request is refused and the screen re-reads. A draft carries no
+  number: the number is allocated only at issue (6.2.5).
 - **If it goes wrong:**
   - "An invoice already existed for this work order; nothing further was created." <!-- invoices.create.replayed -->
     — your request reached the service twice. Nothing was duplicated; the invoice shown is the
     existing one.
-  - "The invoice could not be created; the work order may already have one. The screen was re-read." <!-- invoices.create.conflict -->
+  - "The invoice could not be created: the work order may already have a draft invoice, or
+    everything approved may already be invoiced. The screen was re-read." <!-- invoices.create.conflict -->
     — read what the screen now shows before trying again.
+- **Screenshot:** no screenshot available at this version.
+
+### 6.2.4a Invoice approved work that remains, and open an earlier invoice
+
+**IMPLEMENTED (UI)**
+
+- **Label:** the panel "Approved work not invoiced yet" <!-- invoices.remaining.heading --> , with
+  the same "Create invoice" form as §6.2.4.
+- **Who:** an account holding `sal.invoice.manage` and `sal.finance.view`.
+- **Where:** "Commerce" › "Billing", on a work order that already has an invoice, when the customer
+  has approved quotation work that no live invoice bills yet and no draft is open.
+- **Steps:**
+  1. Read the lines under "Approved work not invoiced yet". The note reads "Approved quotation
+     work that no invoice holds yet. Computed by the server; nothing is written until the invoice
+     is created." <!-- invoices.remaining.explain -->
+  2. Press "Create invoice". A further invoice is drafted for that work only.
+- **Result:** the work order now has several invoices. They are listed under "Invoices for this
+  work order" <!-- invoices.list.heading --> by number — a draft reads "Draft, not numbered yet" <!-- invoices.list.unnumbered -->
+  — and pressing one opens it in the panels below. The draft is shown first, then the newest.
+- **Restrictions:** cancelling a draft before issue returns what it held to "To invoice"; an issued
+  invoice keeps what it billed even when a credit note is approved against it — a credit note does
+  not make the work billable again. When the list cannot show every invoice it says "This work
+  order has more invoices than are listed here." <!-- invoices.list.truncated -->
 - **Screenshot:** no screenshot available at this version.
 
 ### 6.2.5 Issue the invoice, and where its number comes from
@@ -333,14 +390,15 @@ receipt (6.3.5).
   payments again" <!-- invoices.print.retrySettlement --> . The
   issue date is written in your language's reading order, so an Arabic copy prints the day, month
   and year in order on paper.
-- **Restrictions:** the descriptions on the copy do not come from the invoice. The document says so:
+- **Restrictions:** invoice lines carry no description of their own. The copy describes each line
+  from the quotation line it was copied from — the invoice's own source, even when the job has
+  later quotations or other invoices — and the document says so:
   "Line descriptions are taken from the accepted quotation revision this invoice was made from." <!-- invoices.print.descriptionsFromQuotation -->
   On the invoice panel itself the same fact reads "Invoice lines carry no description; the
   descriptions of the accepted quotation appear on the printable copy when it still matches." <!-- invoices.detail.noDescriptionNote -->
 - **If it goes wrong:** the copy names the reason rather than printing a blank column.
   - "Line descriptions are not available: the invoice carries none, and the quotation it was made
     from could not be matched." <!-- invoices.print.descriptionsUnavailable -->
-  - "Line descriptions are not available: the accepted quotation could not be read for this copy." <!-- invoices.print.previewRefused -->
   - "Line descriptions are not available: the accepted quotation shows amounts, which the person who
     printed this copy may not see." <!-- invoices.print.descriptionsNeedFinance -->
   - "Amounts are not available to the person who printed this copy." <!-- invoices.print.amountsUnavailable -->
@@ -357,8 +415,11 @@ receipt (6.3.5).
   fraction no payment can settle is visible instead of hidden.
 - **What was issued, and what has happened since, are kept apart (Owner decision D10).** The lines,
   each line's discount and the "As issued" totals never change once the invoice is issued. A job's
-  line discount is the one on the accepted quotation the invoice was made from, and is printed only
-  when the copy could match that quotation; otherwise it reads "Not available", never a zero. A
+  line discount is the one on the quotation line the invoice was made from, and is printed only
+  when the invoice billed that line whole; otherwise it
+  reads "Not available", never a zero. "Before discount" and the discount total are printed only
+  for an invoice that billed every line of its quotation revision whole — an invoice that billed
+  part of it (§6.2.4a) shows them as "Not available" rather than the revision's figures. A
   counter sale takes no discount, so its copy has no discount column. The settlement — "Amount
   paid" <!-- invoices.print.amountPaid --> , "Amount credited" <!-- invoices.print.amountCredited --> ,
   "Balance due" <!-- invoices.print.balanceDue --> , the payment position ("Not paid yet", "Partly

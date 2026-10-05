@@ -233,7 +233,10 @@ export interface InvoiceLineMoney {
   readonly payerSplit: { readonly customer: MoneyView; readonly warranty: MoneyView };
 }
 
-/** One invoice line — `InvoiceLineView`. Carries NO description. */
+/**
+ * One invoice line — `InvoiceLineView`. Carries no description of its own; a
+ * work-order line names the quotation line it was copied from in `source`.
+ */
 export interface InvoiceLine {
   readonly id: string;
   readonly lineNumber: number;
@@ -254,8 +257,34 @@ export interface InvoiceLine {
    * its quotation line captured it (ADR-023 D6). `null` otherwise. Not money.
    */
   readonly unit: InvoiceLineUnit | null;
+  /**
+   * `InvoiceLineSourceView` — the quotation line this work-order line was copied
+   * from, as quoted (ADR-023 D5/D15): the printed copy is described from it, never
+   * from the revision the work order would bill now. `null` on a counter-sale
+   * line and without `sal.finance.view`.
+   */
+  readonly source: InvoiceLineSource | null;
   readonly recordVersion: number;
   readonly money: InvoiceLineMoney | null;
+}
+
+/** `InvoiceLineSourceView` — a work-order line's source quotation line, as quoted. */
+export interface InvoiceLineSource {
+  readonly description: string | null;
+  /** `numeric(12,3)` as a string: what the quotation line quoted. Not money. */
+  readonly quotedQuantity: string;
+  readonly discount: MoneyView;
+}
+
+/**
+ * `InvoiceSourceView` — the quotation revision a work-order invoice was made
+ * from, as quoted: its line count and its before-discount and discount totals.
+ */
+export interface InvoiceSource {
+  readonly quotationRevisionId: string;
+  readonly lineCount: number;
+  readonly subtotal: MoneyView;
+  readonly discountTotal: MoneyView;
 }
 
 /** `InvoiceLineItemView` — an item a counter-sale line sold. `code` is its SKU. */
@@ -275,13 +304,24 @@ export interface InvoiceLineUnit {
 export interface InvoiceDetail {
   readonly invoice: Invoice;
   readonly lines: readonly InvoiceLine[];
+  /** The revision it was made from, as quoted; `null` on a counter sale and without `sal.finance.view`. */
+  readonly source: InvoiceSource | null;
   readonly recordVersion: number;
 }
 
-/** `sal.work-order-invoice-read` — `WorkOrderInvoiceView`; `invoice` is `null` when the order has no live invoice. */
+/**
+ * `sal.work-order-invoice-read` — `WorkOrderInvoiceView`. `invoice` is `null` when
+ * the order has no live invoice; otherwise it is the open draft, else the newest.
+ * A work order may carry several live invoices (ADR-023 D5/D15), all listed in
+ * `invoices`, draft first and then newest first; `approvedWorkToInvoice` says
+ * approved quotation work remains that no live invoice holds.
+ */
 export interface WorkOrderInvoice {
   readonly workOrderId: string;
   readonly invoice: Invoice | null;
+  readonly invoices: readonly Invoice[];
+  readonly invoicesTruncated: boolean;
+  readonly approvedWorkToInvoice: boolean;
 }
 
 /** One preview line — `InvoicePreviewLine`; bare strings labelled by the document's `currency`. */
@@ -308,9 +348,73 @@ export interface InvoicePreviewLine {
   readonly netAmount: string;
   readonly taxAmount: string;
   readonly grossAmount: string;
+  /**
+   * `numeric(12,3)` strings, not money (ADR-023 D5/D15): the line's approved
+   * quantity and what live invoices already hold of it. `quantity` is what
+   * remains, and what this invoice would bill.
+   */
+  readonly approvedQuantity: string;
+  readonly invoicedQuantity: string;
+  /**
+   * Part of what the line sells was invoiced under an earlier revision, so its
+   * amounts are what remains of the approved line's total, not the line as quoted.
+   */
+  readonly partlyInvoicedEarlier: boolean;
 }
 
-/** `sal.invoice-preview` — `InvoicePreview`; what the accepted quotation revision would bill, computed by the database. */
+/**
+ * Why a quotation line is or is not billed now — `BillingStatus` (ADR-023
+ * D5/D15). Every value but `billable` is a reason the line is left off.
+ */
+export const BILLING_STATUSES = [
+  'billable',
+  'not_current',
+  'not_approved',
+  'rejected',
+  'lineage_ambiguous',
+  'fully_invoiced',
+  'repriced_below_invoiced',
+] as const;
+export type BillingStatus = (typeof BILLING_STATUSES)[number];
+
+/** `InvoicePreviewRevisionLine` — one line of the source revision as quoted, decided and billed so far. */
+export interface InvoicePreviewRevisionLine {
+  readonly sourceQuotationItemId: string;
+  readonly lineNumber: number;
+  readonly lineType: LineType;
+  readonly description: string | null;
+  readonly item: InvoiceLineItem | null;
+  readonly unit: InvoiceLineUnit | null;
+  /** `approved`, `rejected`, or `null` while the customer has not decided. */
+  readonly decision: 'approved' | 'rejected' | null;
+  readonly quotedQuantity: string;
+  readonly approvedQuantity: string;
+  readonly invoicedQuantity: string;
+  readonly remainingQuantity: string;
+  readonly billingStatus: BillingStatus;
+  readonly unitPrice: string;
+  readonly discount: string;
+  readonly taxRate: string;
+  readonly netAmount: string;
+  readonly taxAmount: string;
+  readonly grossAmount: string;
+}
+
+/** `InvoicePreviewRevisionTotals` — the source revision's totals as quoted. */
+export interface InvoicePreviewRevisionTotals {
+  readonly subtotal: string;
+  readonly discountTotal: string;
+  readonly taxTotal: string;
+  readonly netTotal: string;
+  readonly grossTotal: string;
+}
+
+/**
+ * `sal.invoice-preview` — `InvoicePreview`; what a NEW invoice for the work order
+ * would bill now, computed by the database: the approved lines that remain, each at
+ * what remains of it (ADR-023 D5/D15). `revisionLines` is every line of the source
+ * revision with why it is or is not billed; `revisionTotals` is that revision as quoted.
+ */
 export interface InvoicePreview {
   readonly workOrderId: string;
   readonly quotationId: string;
@@ -324,6 +428,8 @@ export interface InvoicePreview {
   readonly netTotal: string;
   readonly grossTotal: string;
   readonly lines: readonly InvoicePreviewLine[];
+  readonly revisionLines: readonly InvoicePreviewRevisionLine[];
+  readonly revisionTotals: InvoicePreviewRevisionTotals;
 }
 
 /** `sal.invoice-outstanding-read` — `OutstandingView`; the open receivable as the database computes it on every call. */
