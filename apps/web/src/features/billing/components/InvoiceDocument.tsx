@@ -10,7 +10,7 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import { formatInZone, zoneLabelAt } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
 
-import type { InvoiceDetail, InvoicePreview, MoneyView, Outstanding } from '../billing-contract';
+import type { InvoiceDetail, MoneyView, Outstanding } from '../billing-contract';
 import { Money, ThirdPartyPaymentItems, Unavailable, When } from './shared';
 
 /**
@@ -35,17 +35,17 @@ export function payerNameKey(kind: Exclude<PayerName['kind'], 'named'>): keyof M
 
 /**
  * Where the line descriptions come from, as the screen established it:
- * `matched` — the preview describes the revision this invoice was made from;
- * `mismatch` — a preview was read but describes another revision;
- * `refused` — the preview read failed, with its reference;
- * `notRead` — no read was made, because the caller may not see amounts;
+ * `source` — the detail carries the quotation revision this invoice was made
+ * from and each line's own source line, as quoted (ADR-023 D5/D15);
+ * `unavailable` — the caller may see amounts, but the detail carries no source
+ * revision (it could not be read for this caller);
+ * `notRead` — the caller may not see amounts, so the detail carries no source;
  * `items` — a counter sale: each line names the item it sold on the detail
- * itself, so no preview exists or is needed (GAP-09).
+ * itself (GAP-09).
  */
 export type DescriptionSource =
-  | { readonly kind: 'matched'; readonly preview: InvoicePreview }
-  | { readonly kind: 'mismatch' }
-  | { readonly kind: 'refused'; readonly reference: string | null }
+  | { readonly kind: 'source' }
+  | { readonly kind: 'unavailable' }
   | { readonly kind: 'notRead' }
   | { readonly kind: 'items' };
 
@@ -54,12 +54,14 @@ export type DescriptionSource =
  *
  * The backend publishes no print or document route, so the paper view is
  * composed here from what it does publish: the detail (header, status, number,
- * lines with their quantities and — for a caller who may see them — amounts)
- * and, when one is readable, the preview, which is the only read carrying line
- * descriptions. A description is taken ONLY when the preview describes the
- * same quotation revision the invoice was made from, joined by the line's
- * source item; otherwise the document says descriptions are unavailable rather
- * than guess. No PDF is generated: this is HTML that prints well.
+ * lines with their quantities and — for a caller who may see them — amounts,
+ * and each work-order line's own source quotation line as quoted). A line is
+ * described ONLY from the quotation line it was copied from, which the detail
+ * reads through the line itself — never from the work order's current preview,
+ * which since ADR-023 D5/D15 may name another quotation or another revision
+ * (several invoices per work order). Where the detail carries no source the
+ * document says descriptions are unavailable rather than guess. No PDF is
+ * generated: this is HTML that prints well.
  *
  * ## Names, and a date that reads in order
  *
@@ -80,9 +82,8 @@ export type DescriptionSource =
  * printed inside it, "Paid by <payer> (<relationship>) for <customer>" with the
  * authorisation reference, exactly as the screen shows it.
  *
- * Every figure is the server's. A job's line discount comes from the accepted
- * quotation revision the invoice was copied from — the preview, used only when
- * it describes that very revision, exactly as the descriptions are — and is
+ * Every figure is the server's. A job's line discount comes from the quotation
+ * line the invoice line was copied from, as the detail carries it, and is
  * otherwise said to be unavailable rather than guessed. A counter sale takes no
  * discount (its create body refuses one), so its copy has no discount column.
  * The settlement is the balance read (`sal.invoice-outstanding-read`): it is
@@ -128,15 +129,13 @@ export function InvoiceDocument({
   const context = useWorkingContext();
   const settlement = balance?.settlement ?? null;
   /*
-   * A job's discount is printed per line; a counter sale takes none. The preview
-   * is the only read that carries a line's discount, and it is believed only
-   * when it describes the revision this invoice was made from. A job's invoice
-   * is the one with a work order (`ck_invoices_sale_kind_source`).
+   * A job's discount is printed per line; a counter sale takes none. The detail
+   * carries each work-order line's own source quotation line, so the discount is
+   * that line's as quoted. A job's invoice is the one with a work order
+   * (`ck_invoices_sale_kind_source`).
    */
   const discounted = invoice.workOrderId !== null;
-  const matched = descriptions.kind === 'matched' ? descriptions.preview : null;
-  const previewMoney = (amount: string): MoneyView | null =>
-    matched === null ? null : { amount, currency: matched.currency, minorUnit: matched.minorUnit };
+  const revision = descriptions.kind === 'source' ? detail.source : null;
   /*
    * Since ADR-023 D5/D15 an invoice may bill PART of its revision — some lines, or
    * what remains of one — so the revision's figures are this invoice's only where
@@ -145,23 +144,17 @@ export function InvoiceDocument({
    * when the invoice billed every line of the revision whole. Otherwise the copy says
    * they are not available, never a figure of another document.
    */
-  const revisionLineOf = (line: InvoiceDetail['lines'][number]) =>
-    matched === null || line.sourceQuotationItemId === null
-      ? undefined
-      : matched.revisionLines.find(
-          (row) => row.sourceQuotationItemId === line.sourceQuotationItemId
-        );
+  const sourceOf = (line: InvoiceDetail['lines'][number]) =>
+    descriptions.kind === 'source' ? line.source : null;
   const billedWhole = (line: InvoiceDetail['lines'][number]): boolean =>
-    revisionLineOf(line)?.quotedQuantity === line.quantity;
+    sourceOf(line)?.quotedQuantity === line.quantity;
   const wholeRevision =
-    matched !== null &&
-    matched.revisionLines.length === detail.lines.length &&
+    revision !== null &&
+    revision.lineCount === detail.lines.length &&
     detail.lines.every(billedWhole);
   const lineDiscount = (line: InvoiceDetail['lines'][number]): MoneyView | null => {
-    const found = revisionLineOf(line);
-    return matched !== null && found !== undefined && billedWhole(line)
-      ? { amount: found.discount, currency: matched.currency, minorUnit: matched.minorUnit }
-      : null;
+    const found = sourceOf(line);
+    return found !== null && billedWhole(line) ? found.discount : null;
   };
   const describe = (line: InvoiceDetail['lines'][number]): ReactNode | null => {
     if (descriptions.kind === 'items') {
@@ -176,8 +169,7 @@ export function InvoiceDocument({
         </>
       ) : null;
     }
-    if (descriptions.kind !== 'matched') return null;
-    const found = revisionLineOf(line);
+    const found = sourceOf(line);
     return found?.description ? <bdi>{found.description}</bdi> : null;
   };
   const amountsVisible = invoice.totals !== null;
@@ -295,24 +287,13 @@ export function InvoiceDocument({
       }
       footer={
         <p>
-          {descriptions.kind === 'matched'
+          {descriptions.kind === 'source'
             ? translate(messages, 'invoices.print.descriptionsFromQuotation')
             : descriptions.kind === 'items'
               ? translate(messages, 'invoices.print.descriptionsFromItems')
-              : descriptions.kind === 'mismatch'
+              : descriptions.kind === 'unavailable'
                 ? translate(messages, 'invoices.print.descriptionsUnavailable')
-                : descriptions.kind === 'refused'
-                  ? translate(messages, 'invoices.print.previewRefused')
-                  : translate(messages, 'invoices.print.descriptionsNeedFinance')}
-          {descriptions.kind === 'refused' && descriptions.reference ? (
-            <>
-              {' '}
-              {translate(messages, 'state.correlationId')}{' '}
-              <code className="font-mono" dir="ltr">
-                {descriptions.reference}
-              </code>
-            </>
-          ) : null}
+                : translate(messages, 'invoices.print.descriptionsNeedFinance')}
           {amountsVisible ? null : <> {translate(messages, 'invoices.print.amountsUnavailable')}</>}
         </p>
       }
@@ -335,9 +316,7 @@ export function InvoiceDocument({
             <dt className="text-text-muted">{translate(messages, 'invoices.print.subtotal')}</dt>
             <dd className="text-end" data-testid="invoice-print-subtotal">
               <PreviewFigure
-                value={
-                  wholeRevision && matched ? previewMoney(matched.revisionTotals.subtotal) : null
-                }
+                value={wholeRevision && revision ? revision.subtotal : null}
                 locale={locale}
                 messages={messages}
               />
@@ -345,11 +324,7 @@ export function InvoiceDocument({
             <dt className="text-text-muted">{translate(messages, 'invoices.print.discount')}</dt>
             <dd className="text-end" data-testid="invoice-print-discount-total">
               <PreviewFigure
-                value={
-                  wholeRevision && matched
-                    ? previewMoney(matched.revisionTotals.discountTotal)
-                    : null
-                }
+                value={wholeRevision && revision ? revision.discountTotal : null}
                 locale={locale}
                 messages={messages}
               />
@@ -402,7 +377,7 @@ export function InvoiceDocument({
   );
 }
 
-/** A line's discount as the matched revision states it, or "not available". */
+/** A line's discount as its source quotation line states it, or "not available". */
 function LineDiscount({
   value,
   locale,
@@ -421,7 +396,7 @@ function LineDiscount({
   );
 }
 
-/** A figure of the matched revision (subtotal, discount), or "not available". */
+/** A figure of the source revision (subtotal, discount), or "not available". */
 function PreviewFigure({
   value,
   locale,

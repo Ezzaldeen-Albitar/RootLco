@@ -233,7 +233,10 @@ export interface InvoiceLineMoney {
   readonly payerSplit: { readonly customer: MoneyView; readonly warranty: MoneyView };
 }
 
-/** One invoice line — `InvoiceLineView`. Carries NO description. */
+/**
+ * One invoice line — `InvoiceLineView`. Carries no description of its own; a
+ * work-order line names the quotation line it was copied from in `source`.
+ */
 export interface InvoiceLine {
   readonly id: string;
   readonly lineNumber: number;
@@ -254,8 +257,34 @@ export interface InvoiceLine {
    * its quotation line captured it (ADR-023 D6). `null` otherwise. Not money.
    */
   readonly unit: InvoiceLineUnit | null;
+  /**
+   * `InvoiceLineSourceView` — the quotation line this work-order line was copied
+   * from, as quoted (ADR-023 D5/D15): the printed copy is described from it, never
+   * from the revision the work order would bill now. `null` on a counter-sale
+   * line and without `sal.finance.view`.
+   */
+  readonly source: InvoiceLineSource | null;
   readonly recordVersion: number;
   readonly money: InvoiceLineMoney | null;
+}
+
+/** `InvoiceLineSourceView` — a work-order line's source quotation line, as quoted. */
+export interface InvoiceLineSource {
+  readonly description: string | null;
+  /** `numeric(12,3)` as a string: what the quotation line quoted. Not money. */
+  readonly quotedQuantity: string;
+  readonly discount: MoneyView;
+}
+
+/**
+ * `InvoiceSourceView` — the quotation revision a work-order invoice was made
+ * from, as quoted: its line count and its before-discount and discount totals.
+ */
+export interface InvoiceSource {
+  readonly quotationRevisionId: string;
+  readonly lineCount: number;
+  readonly subtotal: MoneyView;
+  readonly discountTotal: MoneyView;
 }
 
 /** `InvoiceLineItemView` — an item a counter-sale line sold. `code` is its SKU. */
@@ -275,6 +304,8 @@ export interface InvoiceLineUnit {
 export interface InvoiceDetail {
   readonly invoice: Invoice;
   readonly lines: readonly InvoiceLine[];
+  /** The revision it was made from, as quoted; `null` on a counter sale and without `sal.finance.view`. */
+  readonly source: InvoiceSource | null;
   readonly recordVersion: number;
 }
 

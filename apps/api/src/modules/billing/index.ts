@@ -107,7 +107,9 @@ export type {
   NumberingConfigRow,
   OpenReceivableRow,
   QuotedPartRow,
+  QuotedSourceLineRow,
   ReportDocumentPage,
+  SourceRevisionRow,
   WorkOrderScopeRow,
 } from './data/billing-repository';
 
@@ -121,6 +123,7 @@ export type {
   InvoiceDetailView,
   InvoiceLineItemView,
   InvoiceLineMoneyView,
+  InvoiceLineSourceView,
   InvoiceLineUnitView,
   InvoiceLineView,
   InvoiceListEntryView,
@@ -129,6 +132,7 @@ export type {
   InvoicePreviewLine,
   InvoicePreviewRevisionLine,
   InvoicePreviewRevisionTotals,
+  InvoiceSourceView,
   InvoiceTotalsView,
   InvoiceView,
   NumberingConfigView,

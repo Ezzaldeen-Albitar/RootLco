@@ -250,6 +250,12 @@ function line(over: Record<string, unknown> = {}) {
     quantity: '2.000',
     currency: 'USD',
     sourceQuotationItemId: ITEM_ID,
+    // The quotation line it was copied from, as quoted (ADR-023 D5/D15).
+    source: {
+      description: 'Front brake service',
+      quotedQuantity: '2.000',
+      discount: { amount: '50.0000', currency: 'USD' },
+    },
     recordVersion: 1,
     money: {
       unitPrice: { amount: '100.0000', currency: 'USD' },
@@ -266,9 +272,25 @@ function line(over: Record<string, unknown> = {}) {
 }
 // The detail read's version deliberately differs from the work-order read's (3):
 // issue and cancel must send THIS one.
-function detail(over: Record<string, unknown> = {}, lineOver: Record<string, unknown> = {}) {
+function detail(
+  over: Record<string, unknown> = {},
+  lineOver: Record<string, unknown> = {},
+  top: Record<string, unknown> = {}
+) {
   const inv = invoice({ recordVersion: 5, ...over });
-  return { invoice: inv, lines: [line(lineOver)], recordVersion: inv.recordVersion };
+  return {
+    invoice: inv,
+    lines: [line(lineOver)],
+    // The revision the invoice was made from, as quoted (ADR-023 D5/D15).
+    source: {
+      quotationRevisionId: REVISION_ID,
+      lineCount: 1,
+      subtotal: { amount: '200.0000', currency: 'USD' },
+      discountTotal: { amount: '50.0000', currency: 'USD' },
+    },
+    recordVersion: inv.recordVersion,
+    ...top,
+  };
 }
 const preview = {
   workOrderId: WORK_ORDER_ID,
@@ -1645,15 +1667,14 @@ describe('FE-020 — the printable copy', () => {
     return { initialInvoice: orderRead(invoice()) };
   };
 
-  it('takes descriptions from the preview only when its revision matches, and prints', async () => {
+  it('describes the copy from the invoice’s own source lines, reads no preview, and prints', async () => {
     const user = userEvent.setup();
     const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     renderScreen({ ...live() });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
-    expect(readInvoicePreview).not.toHaveBeenCalled();
     await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
-    await waitFor(() => expect(readInvoicePreview).toHaveBeenCalledWith(WORK_ORDER_ID));
     const document = await screen.findByRole('article');
+    expect(readInvoicePreview).not.toHaveBeenCalled();
     expect(within(document).getByText('Front brake service')).toBeVisible();
     expect(
       within(document).getByText(EN['invoices.print.descriptionsFromQuotation'] as string)
@@ -1702,7 +1723,7 @@ describe('FE-020 — the printable copy', () => {
     );
   });
 
-  it('DF-B1: prints each line discount and the discount total as issued, from the matched revision', async () => {
+  it('DF-B1: prints each line discount and the discount total as issued, from the invoice’s source', async () => {
     const user = userEvent.setup();
     renderScreen({ ...live() });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
@@ -1729,10 +1750,11 @@ describe('FE-020 — the printable copy', () => {
     expect(within(issued).getByText(money('165.0000'))).toBeTruthy();
   });
 
-  it('DF-B1: a discount the matched revision cannot vouch for is said to be unavailable, never zero', async () => {
+  it('DF-B1: a discount the detail cannot vouch for is said to be unavailable, never zero', async () => {
     const user = userEvent.setup();
-    readInvoicePreview.mockImplementation(async () =>
-      okRead({ ...structuredClone(preview), quotationRevisionId: 'other-revision' })
+    // The caller may see amounts, but the detail carries no source revision.
+    readInvoice.mockImplementation(async () =>
+      okRead(detail({}, { source: null }, { source: null }))
     );
     renderScreen({ ...live() });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
@@ -1851,10 +1873,10 @@ describe('FE-020 — the printable copy', () => {
     );
   });
 
-  it('with a preview of another revision, prints without descriptions and says so', async () => {
+  it('with a detail that carries no source, prints without descriptions and says so', async () => {
     const user = userEvent.setup();
-    readInvoicePreview.mockImplementation(async () =>
-      okRead({ ...structuredClone(preview), quotationRevisionId: 'other-revision' })
+    readInvoice.mockImplementation(async () =>
+      okRead(detail({}, { source: null }, { source: null }))
     );
     renderScreen({ ...live() });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
@@ -1867,17 +1889,27 @@ describe('FE-020 — the printable copy', () => {
     ).toBeVisible();
   });
 
-  it('a refused preview is said on the paper view with its reference, never as a mismatch', async () => {
+  it('a work-order preview naming another revision, or refused, never changes the copy (D5/D15)', async () => {
     const user = userEvent.setup();
-    readInvoicePreview.mockImplementation(async () => denied());
+    // A later quotation now has the work to bill, or two are fully invoiced and the
+    // preview is a conflict: the copy is still this invoice's own.
+    readInvoicePreview.mockImplementation(async () =>
+      okRead({ ...structuredClone(preview), quotationRevisionId: 'other-revision' })
+    );
     renderScreen({ ...live() });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
     await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
     const document = await screen.findByRole('article');
+    expect(within(document).getByText('Front brake service')).toBeVisible();
+    expect(within(document).getByTestId('invoice-print-line-discount')).toHaveTextContent(
+      money('50.0000')
+    );
+    expect(within(document).getByTestId('invoice-print-subtotal')).toHaveTextContent(
+      money('200.0000')
+    );
     expect(
-      within(document).getByText(EN['invoices.print.previewRefused'] as string, { exact: false })
+      within(document).getByText(EN['invoices.print.descriptionsFromQuotation'] as string)
     ).toBeVisible();
-    expect(within(document).getByText('ref-403')).toBeVisible();
     expect(
       within(document).queryByText(EN['invoices.print.descriptionsUnavailable'] as string)
     ).toBeNull();
@@ -1885,7 +1917,9 @@ describe('FE-020 — the printable copy', () => {
 
   it('without finance view reads no preview, prints no amount, and says so', async () => {
     const user = userEvent.setup();
-    readInvoice.mockImplementation(async () => okRead(detail({ totals: null }, { money: null })));
+    readInvoice.mockImplementation(async () =>
+      okRead(detail({ totals: null }, { money: null, source: null }, { source: null }))
+    );
     renderScreen({ ...live(), canViewFinance: false });
     await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
     await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
@@ -3544,7 +3578,7 @@ describe('names, not references, and dates that read in order (browser QA 5.1b, 
     });
   const issuedDetail = () => {
     const inv = { ...issuedInvoice(), recordVersion: 5 };
-    return { invoice: inv, lines: [line()], recordVersion: 5 };
+    return { ...detail(), invoice: inv, lines: [line()], recordVersion: 5 };
   };
   const listEntry = (payerName: string | null) => ({
     ...issuedInvoice(),
@@ -3789,8 +3823,8 @@ describe('finance retest fixes C', () => {
     expect(panel).not.toBeNull();
     const section = panel as HTMLElement;
     // Still finding the name: a loading state, no copy, and nothing to print.
-    await waitFor(() => expect(readInvoicePreview).toHaveBeenCalled());
-    expect(within(section).getByRole('status')).toBeVisible();
+    expect(await within(section).findByRole('status')).toBeVisible();
+    expect(readInvoicePreview).not.toHaveBeenCalled();
     expect(screen.queryByRole('article')).toBeNull();
     expect(
       within(section).queryByRole('button', { name: EN['invoices.print.print'] as string })

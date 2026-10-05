@@ -2171,31 +2171,16 @@ function PrintPanel({
   readonly initiallyOpen?: boolean;
 }) {
   const [open, setOpen] = useState(initiallyOpen);
-  const [preview, setPreview] = useState<ReadState<InvoicePreview> | null>(null);
-  const workOrderId = detail.invoice.workOrderId;
-  useEffect(() => {
-    // Descriptions live only on the preview, which is money and needs the
-    // code; it is read once, when the paper view is asked for.
-    //
-    // A counter sale carries no work order (P1-32) and so has no preview to
-    // read: its lines were priced from the item price list rather than
-    // snapshotted from an accepted quotation revision, and the preview route
-    // takes a work order in its path. Nothing is read for one.
-    if (!open || !canViewFinance || preview !== null || workOrderId === null) return;
-    let live = true;
-    void readInvoicePreview(workOrderId).then((state) => {
-      if (live) setPreview(state);
-    });
-    return () => {
-      live = false;
-    };
-  }, [open, canViewFinance, preview, workOrderId]);
+  // The copy is described from the invoice's OWN source lines, which the detail
+  // carries for a reader who may see amounts (ADR-023 D5/D15) — never from the
+  // work order's current preview. Since a work order may hold several invoices,
+  // that preview can name another quotation or revision, or none at all once two
+  // quotations are fully invoiced, and an invoice printed from it lost its
+  // descriptions and discounts. A counter sale's lines name their items on the
+  // detail itself (GAP-09). So no quotation read is made here, and none is waited for.
+  const counterSale = detail.invoice.workOrderId === null;
 
-  // A counter sale has no preview to wait for: its lines name their items on the
-  // detail itself (GAP-09). Waiting for a preview that is never requested left the
-  // panel loading forever and offered no Print button.
-  //
-  // The payer's name is waited for too: while its lookup is still out, the copy
+  // The payer's name is waited for: while its lookup is still out, the copy
   // would print "name not shown" for a customer the screen is about to name. So the
   // copy and the Print button wait until the lookup settles — with the name, or
   // with the honest "not shown" when it is withheld or could not be found. The
@@ -2208,11 +2193,7 @@ function PrintPanel({
   // — so the Print button waits for that read too. Its wait is bounded as well:
   // a read that is refused or does not answer in time settles as "could not be
   // read", which the copy says in words, and the panel offers to read it again.
-  const counterSale = workOrderId === null;
-  const ready =
-    (counterSale || !canViewFinance || preview !== null) &&
-    payer.kind !== 'loading' &&
-    settlement.kind !== 'reading';
+  const ready = payer.kind !== 'loading' && settlement.kind !== 'reading';
 
   return (
     <section
@@ -2272,11 +2253,9 @@ function PrintPanel({
                 ? { kind: 'items' }
                 : !canViewFinance
                   ? { kind: 'notRead' }
-                  : preview === null || preview.status !== 'ok'
-                    ? { kind: 'refused', reference: preview?.correlationId ?? null }
-                    : preview.data.quotationRevisionId === detail.invoice.quotationRevisionId
-                      ? { kind: 'matched', preview: preview.data }
-                      : { kind: 'mismatch' }
+                  : detail.source === null
+                    ? { kind: 'unavailable' }
+                    : { kind: 'source' }
             }
             workOrderNumber={workOrderNumber}
             balance={settlement.kind === 'read' ? settlement.balance : null}

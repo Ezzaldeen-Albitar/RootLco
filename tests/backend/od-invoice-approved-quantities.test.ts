@@ -28,6 +28,11 @@
  *    approved work is all invoiced, it no longer blocks the other's. What is
  *    already invoiced is pooled by work order (an Owner open point): a second
  *    quotation's line of a service the first invoiced is not billed again.
+ *  - The PRINTED COPY's source: an earlier quotation's invoice carries its own
+ *    source lines (description, quoted quantity, discount) and its own revision's
+ *    totals after a later quotation is invoiced — while the preview names the later
+ *    revision and once two fully invoiced quotations make the preview a conflict —
+ *    and a caller without `sal.finance.view` gets none of them.
  *  - ISOLATION: another tenant previews nothing of it.
  *
  * Money is compared as exact decimal STRINGS.
@@ -64,6 +69,7 @@ import {
 import { CATEGORY_A, UOM_EACH, cleanP1_21Fixtures, establishP1_21Fixtures } from './p1-21-helpers';
 import {
   SAL_FULL,
+  SAL_NO_FINANCE,
   SAL_TENANT_B,
   cleanP1_22Fixtures,
   establishP1_22Fixtures,
@@ -88,6 +94,7 @@ import { GET as READ_WORK_ORDER_INVOICE } from '@/app/api/v1/work-orders/[workOr
 import { GET as READ_INVOICE } from '@/app/api/v1/invoices/[invoiceId]/route';
 import { POST as ISSUE_INVOICE } from '@/app/api/v1/invoices/[invoiceId]/issuance/route';
 import { POST as CANCEL_INVOICE } from '@/app/api/v1/invoices/[invoiceId]/cancellation/route';
+import { POST as DECIDE_DISCOUNT } from '@/app/api/v1/discount-approvals/[approvalId]/decision/route';
 
 let admin: Pool;
 let runtime: Pool;
@@ -179,8 +186,19 @@ interface InvoiceDetail {
     readonly lineType: string;
     readonly quantity: string;
     readonly sourceQuotationItemId: string | null;
+    readonly source: {
+      readonly description: string | null;
+      readonly quotedQuantity: string;
+      readonly discount: { readonly amount: string; readonly currency: string };
+    } | null;
     readonly money: { readonly net: { readonly amount: string } } | null;
   }[];
+  readonly source: {
+    readonly quotationRevisionId: string;
+    readonly lineCount: number;
+    readonly subtotal: { readonly amount: string; readonly currency: string };
+    readonly discountTotal: { readonly amount: string; readonly currency: string };
+  } | null;
 }
 interface WorkOrderInvoice {
   readonly invoice: { readonly id: string; readonly status: string } | null;
@@ -387,8 +405,8 @@ async function created(workOrderId: string): Promise<Created> {
   return bodyOf<Created>(response);
 }
 
-async function detailOf(invoiceId: string): Promise<InvoiceDetail> {
-  authAs(SAL_FULL);
+async function detailOf(invoiceId: string, as = SAL_FULL): Promise<InvoiceDetail> {
+  authAs(as);
   return bodyOf<InvoiceDetail>(
     await (READ_INVOICE as ParamHandler<{ invoiceId: string }>)(
       new Request(`http://localhost/api/v1/invoices/${invoiceId}`),
@@ -866,6 +884,107 @@ describe('two quotations on one work order', () => {
     const after = await preview(order.workOrderId);
     expect(after.status).toBe(409);
     expect((await bodyOf<Problem>(after)).code).toBe('ERR-CON-001');
+  });
+});
+
+/**
+ * A quotation of one discounted, described service line, its discount approved by
+ * somebody else and the revision issued — the discount approval rule untouched.
+ */
+async function quoteDiscounted(
+  workOrderId: string
+): Promise<{ quotationId: string; revision: Revision }> {
+  authAs(SVC_FULL);
+  const response = await CREATE_QUOTATION(
+    post('http://localhost/api/v1/quotations', {
+      workOrderId,
+      payerPartnerRef: PARTNER_A,
+      lines: [
+        { serviceId: SERVICE_A, quantity: '2', discount: '5.0000', description: 'Brake bleed' },
+      ],
+    })
+  );
+  expect(response.status).toBe(201);
+  const quotation = await bodyOf<
+    Quotation & {
+      readonly currentRevision: { readonly discountApproval: { readonly id: string } | null };
+    }
+  >(response);
+  const approvalId = quotation.currentRevision.discountApproval?.id;
+  expect(approvalId).toBeDefined();
+  authAs(SVC_DISCOUNT_APPROVER);
+  const decided = await (DECIDE_DISCOUNT as ParamHandler<{ approvalId: string }>)(
+    post(`http://localhost/api/v1/discount-approvals/${approvalId ?? ''}/decision`, {
+      decision: 'approved',
+    }),
+    { params: Promise.resolve({ approvalId: approvalId ?? '' }) }
+  );
+  expect(decided.status).toBe(200);
+  return { quotationId: quotation.id, revision: await issue(quotation.id) };
+}
+
+describe('the printed copy is described from the invoice’s own source lines', () => {
+  /**
+   * Q1's invoice is read after Q2 is invoiced: first while Q2 still has approved
+   * work to bill (the work order's preview names Q2's revision), then once both are
+   * fully invoiced (the preview is a 409). Both times Q1's detail carries Q1's own
+   * description, quoted quantity and discount, and Q1's revision totals — what a
+   * copy read from the work order's preview could not give it.
+   */
+  it('an earlier quotation’s invoice keeps its own description, discount and totals', async () => {
+    const order = await createOpenWorkOrder();
+    const q1 = await quoteDiscounted(order.workOrderId);
+    await approveAll(q1.revision);
+    const one = await created(order.workOrderId);
+    await issueInvoice(one);
+
+    const q2 = await quote(order.workOrderId, [
+      part(await pricedPart(), '2'),
+      part(await pricedPart(), '1'),
+    ]);
+    const [firstPart, secondPart] = q2.revision.lines as [Line, Line];
+    await decideItem(q2.revision, firstPart.id, 'approved');
+    const two = await created(order.workOrderId);
+    await issueInvoice(two);
+    await decideItem(q2.revision, secondPart.id, 'approved');
+    expect((await previewOk(order.workOrderId)).quotationRevisionId).toBe(q2.revision.id);
+
+    const expectQ1Source = async (): Promise<void> => {
+      const q1Detail = await detailOf(one.invoice.id);
+      // 2 × 50.0000 less 5.0000: before discount 100.0000, as quoted.
+      expect(q1Detail.source).toMatchObject({
+        quotationRevisionId: q1.revision.id,
+        lineCount: 1,
+        subtotal: { amount: '100.0000', currency: 'JOD' },
+        discountTotal: { amount: '5.0000', currency: 'JOD' },
+      });
+      expect(q1Detail.lines).toHaveLength(1);
+      expect(q1Detail.lines[0]?.source).toMatchObject({
+        description: 'Brake bleed',
+        quotedQuantity: '2.000',
+        discount: { amount: '5.0000', currency: 'JOD' },
+      });
+    };
+    await expectQ1Source();
+
+    // Bill the rest of Q2: both quotations are fully invoiced, so the preview the
+    // copy used to read is a conflict for good.
+    const three = await created(order.workOrderId);
+    await issueInvoice(three);
+    const conflict = await preview(order.workOrderId);
+    expect(conflict.status).toBe(409);
+    expect((await bodyOf<Problem>(conflict)).code).toBe('ERR-CON-001');
+    await expectQ1Source();
+
+    // Q2's invoices describe Q2's own lines, not Q1's.
+    const q2Detail = await detailOf(two.invoice.id);
+    expect(q2Detail.source).toMatchObject({ quotationRevisionId: q2.revision.id, lineCount: 2 });
+    expect(q2Detail.lines.map((line) => line.source?.quotedQuantity)).toEqual(['2.000']);
+
+    // The discount and the totals are money: without sal.finance.view, none of it.
+    const hidden = await detailOf(one.invoice.id, SAL_NO_FINANCE);
+    expect(hidden.source).toBeNull();
+    expect(hidden.lines.map((line) => line.source)).toEqual([null]);
   });
 });
 

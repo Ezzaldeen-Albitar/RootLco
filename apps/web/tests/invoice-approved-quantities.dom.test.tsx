@@ -27,7 +27,12 @@ import { getMessages } from '@/i18n/get-messages';
  *    one chosen; while approved work remains and no draft is open, what remains is
  *    previewed and offered beneath them, and an open draft withholds that offer;
  *  - the printed copy of an invoice that billed PART of its revision states no
- *    revision subtotal or discount it did not bill, and still describes its lines.
+ *    revision subtotal or discount it did not bill, and still describes its lines;
+ *  - the printed copy is described from the invoice's OWN source lines: an earlier
+ *    quotation's invoice keeps its descriptions, line discount and revision totals
+ *    after a later quotation of the work order is billed — while the work order's
+ *    preview names the later revision, and once two fully invoiced quotations make
+ *    that preview a conflict.
  */
 
 const EN = en as Record<string, string>;
@@ -253,9 +258,26 @@ const outstanding = {
   asOf: '2026-10-01T09:00:00.000Z',
 };
 
-function detailOf(id: string, lines: readonly Record<string, unknown>[]) {
-  const inv = invoice(id);
-  return { invoice: inv, lines, recordVersion: inv.recordVersion };
+const usd = (amount: string) => ({ amount, currency: 'USD' });
+
+/** The revision an invoice was made from, as the detail carries it (ADR-023 D5/D15). */
+function sourceRevision(lineCount: number, subtotal: string, discountTotal = '0.0000') {
+  return {
+    quotationRevisionId: REVISION_ID,
+    lineCount,
+    subtotal: usd(subtotal),
+    discountTotal: usd(discountTotal),
+  };
+}
+
+function detailOf(
+  id: string,
+  lines: readonly Record<string, unknown>[],
+  source: Record<string, unknown> | null = sourceRevision(2, '237.0350'),
+  over: Record<string, unknown> = {}
+) {
+  const inv = invoice(id, over);
+  return { invoice: inv, lines, source, recordVersion: inv.recordVersion };
 }
 
 const serviceInvoiceLine = (quantity: string) => ({
@@ -267,6 +289,8 @@ const serviceInvoiceLine = (quantity: string) => ({
   sourceQuotationItemId: SERVICE_ITEM,
   item: null,
   unit: null,
+  // The quotation line it was copied from: four quoted, so one billed is not whole.
+  source: { description: 'Wheel alignment', quotedQuantity: '4.000', discount: usd('0.0000') },
   recordVersion: 1,
   money: {
     unitPrice: { amount: '50.0000', currency: 'USD' },
@@ -471,15 +495,16 @@ describe('several live invoices on one work order', () => {
 });
 
 describe('the printed copy of an invoice that billed part of its revision', () => {
-  const preview = partlyApproved();
-
-  function renderCopy(lines: readonly Record<string, unknown>[]) {
+  function renderCopy(
+    lines: readonly Record<string, unknown>[],
+    source: Record<string, unknown> | null = sourceRevision(2, '237.0350')
+  ) {
     return renderLtr(
       <InvoiceDocument
         locale="en"
         messages={en}
-        detail={detailOf(FIRST_INVOICE, lines) as never}
-        descriptions={{ kind: 'matched', preview: preview as never }}
+        detail={detailOf(FIRST_INVOICE, lines, source) as never}
+        descriptions={{ kind: 'source' }}
         workOrderNumber="WO-000042"
         payer={{ kind: 'named', name: 'Layla Haddad' } as never}
       />
@@ -496,29 +521,116 @@ describe('the printed copy of an invoice that billed part of its revision', () =
     expect(screen.getByTestId('invoice-print-discount-total').textContent).not.toContain(
       money('0.0000')
     );
+    expect(screen.queryByTestId('invoice-print-line-discount')).toBeNull();
   });
 
   it('states the revision subtotal when it billed every line of the revision whole', () => {
-    const whole = partlyApproved({
-      revisionLines: [revisionLine({})],
-      revisionTotals: {
-        subtotal: '50.0000',
-        discountTotal: '0.0000',
-        taxTotal: '5.0000',
-        netTotal: '50.0000',
-        grossTotal: '55.0000',
-      },
-    });
-    renderLtr(
-      <InvoiceDocument
-        locale="en"
-        messages={en}
-        detail={detailOf(FIRST_INVOICE, [serviceInvoiceLine('1.000')]) as never}
-        descriptions={{ kind: 'matched', preview: whole as never }}
-        workOrderNumber="WO-000042"
-        payer={{ kind: 'named', name: 'Layla Haddad' } as never}
-      />
-    );
+    const whole = {
+      ...serviceInvoiceLine('1.000'),
+      source: { description: 'Wheel alignment', quotedQuantity: '1.000', discount: usd('0.0000') },
+    };
+    renderCopy([whole], sourceRevision(1, '50.0000'));
     expect(screen.getByTestId('invoice-print-subtotal').textContent).toContain(money('50.0000'));
+    expect(screen.getByTestId('invoice-print-line-discount').textContent).toContain(
+      money('0.0000')
+    );
+  });
+});
+
+describe('printing an earlier quotation’s invoice after a later quotation is billed (D5/D15)', () => {
+  const LATER_REVISION = '44444444-4444-4444-8444-444444444445';
+  /** Q1's invoice: one wheel alignment, quoted at 50.00 less 5.00, billed whole. */
+  const q1Line = {
+    ...serviceInvoiceLine('1.000'),
+    money: {
+      unitPrice: usd('50.0000'),
+      net: usd('45.0000'),
+      tax: usd('4.5000'),
+      gross: usd('49.5000'),
+      payerSplit: { customer: usd('49.5000'), warranty: usd('0.0000') },
+    },
+    source: { description: 'Wheel alignment', quotedQuantity: '1.000', discount: usd('5.0000') },
+  };
+  /** Q2's invoice: the oil filter of a later quotation. */
+  const q2Line = {
+    ...serviceInvoiceLine('3.000'),
+    lineType: 'part',
+    sourceQuotationItemId: PART_ITEM,
+    item: { id: 'part-1', code: 'FLT-07', name: 'Oil filter' },
+    unit: { code: 'each', name: 'Each' },
+    source: { description: 'Synthetic', quotedQuantity: '3.000', discount: usd('0.0000') },
+  };
+  const invoices = () => [
+    invoice(SECOND_INVOICE, { quotationRevisionId: LATER_REVISION }),
+    invoice(FIRST_INVOICE),
+  ];
+
+  beforeEach(() => {
+    readInvoice.mockImplementation(async (id: string) =>
+      okRead(
+        id === FIRST_INVOICE
+          ? detailOf(id, [q1Line], sourceRevision(1, '50.0000', '5.0000'))
+          : detailOf(
+              id,
+              [q2Line],
+              { ...sourceRevision(1, '37.0350'), quotationRevisionId: LATER_REVISION },
+              { quotationRevisionId: LATER_REVISION }
+            )
+      )
+    );
+  });
+
+  async function printFirst(approvedWorkToInvoice: boolean) {
+    const user = userEvent.setup();
+    readWorkOrderInvoice.mockImplementation(async () =>
+      orderRead(invoices(), approvedWorkToInvoice)
+    );
+    renderLtr(screenFor(orderRead(invoices(), approvedWorkToInvoice)));
+    const list = region(EN['invoices.list.heading'] as string);
+    await user.click(within(list).getByRole('button', { name: /INV-000101/ }));
+    await waitFor(() => expect(readInvoice).toHaveBeenCalledWith(FIRST_INVOICE));
+    await user.click(
+      await screen.findByRole('button', { name: EN['invoices.print.open'] as string })
+    );
+    const paper = await screen.findByRole('article');
+    await within(paper).findByText('INV-000101');
+    return paper;
+  }
+
+  function expectQ1Copy(paper: HTMLElement) {
+    expect(within(paper).getByText('Wheel alignment')).toBeVisible();
+    expect(within(paper).queryByText(EN['invoices.print.noDescription'] as string)).toBeNull();
+    expect(within(paper).getByTestId('invoice-print-line-discount')).toHaveTextContent(
+      money('5.0000')
+    );
+    expect(within(paper).getByTestId('invoice-print-subtotal')).toHaveTextContent(money('50.0000'));
+    expect(within(paper).getByTestId('invoice-print-discount-total')).toHaveTextContent(
+      money('5.0000')
+    );
+    expect(
+      within(paper).getByText(EN['invoices.print.descriptionsFromQuotation'] as string)
+    ).toBeVisible();
+    // Nothing of the later quotation reaches this copy.
+    expect(within(paper).queryByText('Oil filter')).toBeNull();
+  }
+
+  it('while the work order previews the later revision, Q1’s copy keeps its own figures', async () => {
+    // A part of the later revision still waits to be billed, so the work order's
+    // preview names THAT revision.
+    readInvoicePreview.mockImplementation(async () =>
+      okRead(partlyApproved({ quotationRevisionId: LATER_REVISION }))
+    );
+    const paper = await printFirst(true);
+    expectQ1Copy(paper);
+  });
+
+  it('once both quotations are fully invoiced and the preview is a conflict, Q1’s copy keeps its own figures', async () => {
+    readInvoicePreview.mockImplementation(async () => ({
+      status: 'error' as const,
+      correlationId: 'ref-409',
+    }));
+    const paper = await printFirst(false);
+    expectQ1Copy(paper);
+    expect(within(paper).queryByText('ref-409')).toBeNull();
   });
 });

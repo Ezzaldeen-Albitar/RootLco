@@ -124,9 +124,37 @@ export interface InvoiceLineView {
    * which snapshots no unit. Not money.
    */
   readonly unit: InvoiceLineUnitView | null;
+  /**
+   * The quotation line this work-order line was copied from, as quoted (ADR-023
+   * D5/D15), so a printed copy is described from the invoice's OWN source lines and
+   * never from whatever revision the work order bills now. `null` on a counter-sale
+   * line, and without `sal.finance.view`.
+   */
+  readonly source: InvoiceLineSourceView | null;
   readonly recordVersion: number;
   /** `null` without `sal.finance.view`. */
   readonly money: InvoiceLineMoneyView | null;
+}
+
+/** A work-order line's source quotation line, as quoted. */
+export interface InvoiceLineSourceView {
+  readonly description: string | null;
+  /** `numeric(12,3)` decimal string: what the quotation line quoted. Not money. */
+  readonly quotedQuantity: string;
+  /** The quotation line's discount, as quoted, in the invoice currency. */
+  readonly discount: MoneyView;
+}
+
+/**
+ * The quotation revision a work-order invoice was made from, as quoted (ADR-023
+ * D5/D15): its line count and its before-discount and discount totals. A printed
+ * copy states the totals only for an invoice that billed every line of it whole.
+ */
+export interface InvoiceSourceView {
+  readonly quotationRevisionId: string;
+  readonly lineCount: number;
+  readonly subtotal: MoneyView;
+  readonly discountTotal: MoneyView;
 }
 
 /** An item a counter-sale line sold. `code` is the SKU. */
@@ -199,6 +227,11 @@ export interface InvoiceListEntryView extends InvoiceView {
 export interface InvoiceDetailView {
   readonly invoice: InvoiceView;
   readonly lines: readonly InvoiceLineView[];
+  /**
+   * The revision this invoice was made from, as quoted. `null` on a counter sale,
+   * for a revision the caller cannot see, and without `sal.finance.view`.
+   */
+  readonly source: InvoiceSourceView | null;
   /**
    * The AGGREGATE's version, mirroring `invoice.recordVersion`.
    *
@@ -644,6 +677,14 @@ export const toInvoiceLineView = (
     row.quotedPart === null
       ? null
       : { code: row.quotedPart.unitCode, name: row.quotedPart.unitName },
+  source:
+    row.quotedSource === null
+      ? null
+      : {
+          description: row.quotedSource.description,
+          quotedQuantity: row.quotedSource.quotedQuantity,
+          discount: moneyView(row.quotedSource.discount, row.currencyCode, units),
+        },
   recordVersion: row.recordVersion,
   money: row.money
     ? {
@@ -933,6 +974,34 @@ export async function describeLineItems(
   return inventoryModule().reads.describeItems(db, ids);
 }
 
+/**
+ * The revision a work-order invoice was made from, as quoted, or `null` (a counter
+ * sale, a revision the caller cannot see, or a caller without `sal.finance.view`).
+ * Read for the invoice's OWN revision, so it never depends on which revision the
+ * work order would bill now (ADR-023 D5/D15).
+ */
+export async function describeInvoiceSource(
+  db: DbHandle,
+  repository: BillingRepository,
+  invoice: InvoiceRow,
+  units: MinorUnits = NO_MINOR_UNITS
+): Promise<InvoiceSourceView | null> {
+  if (invoice.quotationRevisionId === null) return null;
+  const row = await repository.sourceRevision(db, {
+    revisionId: invoice.quotationRevisionId,
+    companyId: invoice.companyId,
+    branchId: invoice.branchId,
+  });
+  return row === null
+    ? null
+    : {
+        quotationRevisionId: invoice.quotationRevisionId,
+        lineCount: row.lineCount,
+        subtotal: moneyView(row.subtotal, invoice.currencyCode, units),
+        discountTotal: moneyView(row.discountTotal, invoice.currencyCode, units),
+      };
+}
+
 export class BillingReadService {
   public constructor(private readonly repository: BillingRepository) {}
 
@@ -966,6 +1035,7 @@ export class BillingReadService {
     return {
       invoice: toInvoiceView(invoice, units),
       lines: lines.map((line) => toInvoiceLineView(line, items, units)),
+      source: await describeInvoiceSource(db, this.repository, invoice, units),
       recordVersion: invoice.recordVersion,
     };
   }

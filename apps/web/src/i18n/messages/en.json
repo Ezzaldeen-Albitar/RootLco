@@ -3327,7 +3327,6 @@
   "invoices.print.open": "Show printable copy",
   "invoices.print.payer": "Paying customer",
   "invoices.print.payerTimedOut": "The name could not be found in time, so the copy says it is not available. Find it again to print the copy with the name.",
-  "invoices.print.previewRefused": "Line descriptions are not available: the accepted quotation could not be read for this copy.",
   "invoices.print.print": "Print",
   "invoices.print.retryPayer": "Find the name again",
   "invoices.print.retrySettlement": "Read the payments again",

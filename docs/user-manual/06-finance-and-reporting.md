@@ -390,14 +390,15 @@ receipt (6.3.5).
   payments again" <!-- invoices.print.retrySettlement --> . The
   issue date is written in your language's reading order, so an Arabic copy prints the day, month
   and year in order on paper.
-- **Restrictions:** the descriptions on the copy do not come from the invoice. The document says so:
+- **Restrictions:** invoice lines carry no description of their own. The copy describes each line
+  from the quotation line it was copied from — the invoice's own source, even when the job has
+  later quotations or other invoices — and the document says so:
   "Line descriptions are taken from the accepted quotation revision this invoice was made from." <!-- invoices.print.descriptionsFromQuotation -->
   On the invoice panel itself the same fact reads "Invoice lines carry no description; the
   descriptions of the accepted quotation appear on the printable copy when it still matches." <!-- invoices.detail.noDescriptionNote -->
 - **If it goes wrong:** the copy names the reason rather than printing a blank column.
   - "Line descriptions are not available: the invoice carries none, and the quotation it was made
     from could not be matched." <!-- invoices.print.descriptionsUnavailable -->
-  - "Line descriptions are not available: the accepted quotation could not be read for this copy." <!-- invoices.print.previewRefused -->
   - "Line descriptions are not available: the accepted quotation shows amounts, which the person who
     printed this copy may not see." <!-- invoices.print.descriptionsNeedFinance -->
   - "Amounts are not available to the person who printed this copy." <!-- invoices.print.amountsUnavailable -->
@@ -415,7 +416,7 @@ receipt (6.3.5).
 - **What was issued, and what has happened since, are kept apart (Owner decision D10).** The lines,
   each line's discount and the "As issued" totals never change once the invoice is issued. A job's
   line discount is the one on the quotation line the invoice was made from, and is printed only
-  when the copy could match that quotation and the invoice billed that line whole; otherwise it
+  when the invoice billed that line whole; otherwise it
   reads "Not available", never a zero. "Before discount" and the discount total are printed only
   for an invoice that billed every line of its quotation revision whole — an invoice that billed
   part of it (§6.2.4a) shows them as "Not available" rather than the revision's figures. A

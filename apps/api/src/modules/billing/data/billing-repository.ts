@@ -273,8 +273,35 @@ export interface InvoiceLineRow {
    * because `sal.invoice_lines` has no unit column. `null` on every other line.
    */
   readonly quotedPart: QuotedPartRow | null;
+  /**
+   * The quotation line a work-order line was copied from, as it was quoted
+   * (ADR-023 D5/D15): its description, quoted quantity and discount. Read through
+   * `source_quotation_item_id`, so it describes THIS invoice's own source line
+   * whatever revision the work order bills now. `null` on a counter-sale line,
+   * and for a caller without `sal.finance.view` — the discount is money.
+   */
+  readonly quotedSource: QuotedSourceLineRow | null;
   readonly recordVersion: number;
   readonly money: InvoiceLineAmountsRow | null;
+}
+
+/** A work-order line's source quotation line, as quoted. Amounts are decimal strings. */
+export interface QuotedSourceLineRow {
+  readonly description: string | null;
+  /** `numeric(12,3)`: the quantity the quotation line quoted, not what this line billed. */
+  readonly quotedQuantity: string;
+  readonly discount: string;
+}
+
+/**
+ * The quotation revision an invoice was made from, as quoted: how many lines it
+ * has and its before-discount and discount totals. Read only for a caller holding
+ * `sal.finance.view`.
+ */
+export interface SourceRevisionRow {
+  readonly lineCount: number;
+  readonly subtotal: string;
+  readonly discountTotal: string;
 }
 
 /** A quotation part line's snapshot, as the invoice line it was copied to reads it. */
@@ -770,6 +797,10 @@ interface InvoiceLineSql {
   quoted_item_name: string | null;
   quoted_unit_code: string | null;
   quoted_unit_name: string | null;
+  source_item_id: string | null;
+  source_description: string | null;
+  source_quoted_quantity: string | null;
+  source_discount: string | null;
   record_version: number;
   unit_price: string | null;
   net_amount: string | null;
@@ -804,6 +835,14 @@ const toInvoiceLine = (r: InvoiceLineSql): InvoiceLineRow => ({
           itemName: r.quoted_item_name,
           unitCode: r.quoted_unit_code,
           unitName: r.quoted_unit_name,
+        }
+      : null,
+  quotedSource:
+    r.source_item_id !== null && r.source_quoted_quantity !== null && r.source_discount !== null
+      ? {
+          description: r.source_description,
+          quotedQuantity: r.source_quoted_quantity,
+          discount: r.source_discount,
         }
       : null,
   recordVersion: r.record_version,
@@ -1179,6 +1218,10 @@ export class BillingRepository extends Repository {
               qi.quoted_item_name AS quoted_item_name,
               qi.quoted_unit_code AS quoted_unit_code,
               qi.quoted_unit_name AS quoted_unit_name,
+              src.id                           AS source_item_id,
+              src.description                  AS source_description,
+              src.captured_quantity::text      AS source_quoted_quantity,
+              src.captured_discount::text      AS source_discount,
               la.unit_price::text          AS unit_price,
               la.net_amount::text          AS net_amount,
               la.tax_amount::text          AS tax_amount,
@@ -1196,12 +1239,57 @@ export class BillingRepository extends Repository {
            ON qi.tenant_id = l.tenant_id AND qi.company_id = l.company_id
           AND qi.branch_id = l.branch_id AND qi.id = l.source_quotation_item_id
           AND l.line_type = 'part' AND qi.item_kind = 'part'
+         -- The quotation line ANY work-order line was copied from, as quoted, so a
+         -- printed copy describes this invoice from its own source lines rather than
+         -- from whatever revision the work order bills now (ADR-023 D5/D15). The
+         -- discount is money, so the join is gated the way the amount tables are:
+         -- by iam.has_permission('sal.finance.view'). SELECT-only.
+         LEFT JOIN quo.quotation_items src
+           ON src.tenant_id = l.tenant_id AND src.company_id = l.company_id
+          AND src.branch_id = l.branch_id AND src.id = l.source_quotation_item_id
+          AND iam.has_permission('sal.finance.view')
         WHERE l.tenant_id = $1 AND l.company_id = $2 AND l.branch_id = $3
           AND l.invoice_id = $4 AND l.deleted_at IS NULL
         ORDER BY l.line_number ASC`,
       [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId]
     );
     return result.rows.map(toInvoiceLine);
+  }
+
+  /**
+   * The quotation revision an invoice was made from, as quoted (ADR-023 D5/D15):
+   * its line count and its before-discount and discount totals, summed by
+   * PostgreSQL exactly as `findCommercialSources` sums `revision_subtotal` and
+   * `revision_discount_total`, over the same live items. A printed copy states
+   * these only for an invoice that billed every line of the revision whole.
+   *
+   * `null` for a revision this caller cannot see, and for a caller without
+   * `sal.finance.view`: the totals are money, gated as the amount tables are.
+   */
+  public async sourceRevision(
+    db: DbHandle,
+    scope: { readonly revisionId: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<SourceRevisionRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ line_count: number; subtotal: string; discount_total: string }>(
+      db,
+      `SELECT count(it.id)::int AS line_count,
+              COALESCE(sum(it.captured_line_total - it.captured_tax_amount
+                           + it.captured_discount), 0)::text AS subtotal,
+              COALESCE(sum(it.captured_discount), 0)::text AS discount_total
+         FROM quo.quotation_revisions r
+         LEFT JOIN quo.quotation_items it
+           ON it.tenant_id = r.tenant_id AND it.company_id = r.company_id
+          AND it.branch_id = r.branch_id AND it.quotation_revision_id = r.id
+          AND it.deleted_at IS NULL
+        WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3 AND r.id = $4
+          AND iam.has_permission('sal.finance.view')
+        GROUP BY r.id`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, scope.revisionId]
+    );
+    return row
+      ? { lineCount: row.line_count, subtotal: row.subtotal, discountTotal: row.discount_total }
+      : null;
   }
 
   /**

@@ -88,6 +88,7 @@ import {
   FINANCE_VIEW_PERMISSION,
   balanceIsTrustworthy,
   billableLines,
+  describeInvoiceSource,
   describeLineItems,
   resolveCommercialSource,
   toCreditNoteView,
@@ -2387,6 +2388,7 @@ export class InvoiceService {
     return {
       invoice: toInvoiceView(fresh, units),
       lines: lines.map((line) => toInvoiceLineView(line, items, units)),
+      source: await describeInvoiceSource(db, this.repository, fresh, units),
       recordVersion: fresh.recordVersion,
     };
   }

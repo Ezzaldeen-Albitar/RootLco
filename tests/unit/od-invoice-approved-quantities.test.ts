@@ -20,6 +20,11 @@
  *  - `openReceivableForWorkOrder` judges EVERY live invoice and answers the most
  *    blocking, and approved work no invoice holds keeps a paid work order
  *    outstanding.
+ *  - The invoice detail carries the invoice's OWN source (the printed copy's
+ *    descriptions, discounts and revision totals): `toInvoiceLineView` publishes
+ *    the line's source quotation line as quoted, and `describeInvoiceSource` reads
+ *    the invoice's own revision — never the work order's current one — and
+ *    nothing for a counter sale.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -32,11 +37,17 @@ import {
 import type {
   CommercialSourceLineRow,
   CommercialSourceRow,
+  InvoiceLineRow,
   InvoiceRow,
 } from '@api/modules/billing/data/billing-repository';
 
-const { BillingReadService, billableLines, resolveCommercialSource } =
-  await import('@api/modules/billing/application/billing-read-service');
+const {
+  BillingReadService,
+  billableLines,
+  describeInvoiceSource,
+  resolveCommercialSource,
+  toInvoiceLineView,
+} = await import('@api/modules/billing/application/billing-read-service');
 
 const MIGRATION = readFileSync(
   join(
@@ -352,5 +363,80 @@ describe('openReceivableForWorkOrder — every live invoice, the most blocking a
   it('every invoice paid and nothing approved left unbilled: settled', async () => {
     const answer = await port({ invoices: [invoice()], open: {}, unbilled: false }).read();
     expect(answer).toMatchObject({ hasOutstanding: false, unbilledApprovedWork: false });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The invoice's own source, for its printed copy
+// ---------------------------------------------------------------------------
+
+function invoiceLine(over: Partial<InvoiceLineRow> = {}): InvoiceLineRow {
+  return {
+    id: 'line-1',
+    companyId: 'c',
+    branchId: 'b',
+    lineNumber: 1,
+    lineType: 'service',
+    quantity: '2.000',
+    taxClassId: null,
+    currencyCode: 'USD',
+    sourceServiceLineId: null,
+    sourcePartIssueId: null,
+    sourceQuotationItemId: 'qi-1',
+    itemId: null,
+    quotedPart: null,
+    quotedSource: { description: 'Brake bleed', quotedQuantity: '2.000', discount: '5.0000' },
+    recordVersion: 1,
+    money: null,
+    ...over,
+  };
+}
+
+describe('the invoice detail carries its own source (the printed copy)', () => {
+  it('publishes a line’s source quotation line as quoted, and none where it was withheld', () => {
+    expect(toInvoiceLineView(invoiceLine()).source).toEqual({
+      description: 'Brake bleed',
+      quotedQuantity: '2.000',
+      discount: { amount: '5.0000', currency: 'USD' },
+    });
+    expect(toInvoiceLineView(invoiceLine({ quotedSource: null })).source).toBeNull();
+  });
+
+  it('reads the invoice’s OWN revision, and nothing for a counter sale', async () => {
+    const sourceRevision = vi.fn(async () => ({
+      lineCount: 1,
+      subtotal: '100.0000',
+      discountTotal: '5.0000',
+    }));
+    const repository = { sourceRevision } as never;
+
+    expect(
+      await describeInvoiceSource({} as never, repository, invoice({ quotationRevisionId: 'r-1' }))
+    ).toEqual({
+      quotationRevisionId: 'r-1',
+      lineCount: 1,
+      subtotal: { amount: '100.0000', currency: 'USD' },
+      discountTotal: { amount: '5.0000', currency: 'USD' },
+    });
+    expect(sourceRevision).toHaveBeenCalledWith(expect.anything(), {
+      revisionId: 'r-1',
+      companyId: 'c',
+      branchId: 'b',
+    });
+
+    sourceRevision.mockClear();
+    expect(
+      await describeInvoiceSource(
+        {} as never,
+        repository,
+        invoice({ workOrderId: null, saleKind: 'counter_sale', quotationRevisionId: null })
+      )
+    ).toBeNull();
+    expect(sourceRevision).not.toHaveBeenCalled();
+  });
+
+  it('is null where the revision was withheld (no sal.finance.view)', async () => {
+    const repository = { sourceRevision: vi.fn(async () => null) } as never;
+    expect(await describeInvoiceSource({} as never, repository, invoice())).toBeNull();
   });
 });
