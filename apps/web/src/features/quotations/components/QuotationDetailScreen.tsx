@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Button from '@mui/material/Button';
 
 import {
@@ -1442,6 +1442,33 @@ function DecisionForm({
 
 const NO_EXPIRY = { expiresAt: '' } as const;
 
+/** The newest revision alone: whether it is a draft is all the issue panel asks of the history. */
+const LATEST_ONLY: TableRequest = { ...INITIAL_REQUEST, pageSize: 1 };
+
+/**
+ * The draft a quotation that has already been issued would issue next: its newest
+ * revision, read in full when — and only when — that revision is a draft.
+ *
+ * `currentRevision` cannot answer this once a revision has been issued. The
+ * quotation's current revision is set only by issuing, so a revision added after
+ * that is a later DRAFT the detail read does not carry: it keeps naming the issued
+ * one. The server issues any draft of the quotation it is asked to, and the newest
+ * draft is the one a revision was just added as — the one every older open discount
+ * request was superseded by. Its own read carries the discount request that decides
+ * whether it may be issued, exactly as `currentRevision` does for a first draft.
+ */
+async function readLatestDraft(quotationId: string): Promise<ReadState<QuotationRevision | null>> {
+  const latest = await listRevisions(quotationId, LATEST_ONLY, null);
+  if (latest.status !== 'ok') return { status: latest.status, correlationId: latest.correlationId };
+  const newest = latest.rows[0];
+  if (newest === undefined || newest.status !== 'draft') {
+    return { status: 'ok', data: null, correlationId: latest.correlationId };
+  }
+  const read = await readRevision(newest.id);
+  if (read.status !== 'ok') return read;
+  return { ...read, data: read.data.status === 'draft' ? read.data : null };
+}
+
 function IssuePanel({
   locale,
   messages,
@@ -1457,10 +1484,36 @@ function IssuePanel({
   /** Reads the quotation again; resolves once that answer is on screen. */
   readonly onIssued: () => Promise<void>;
 }) {
+  const current = quotation.currentRevision;
+  /*
+   * A quotation never issued names its newest revision as current, so its draft is
+   * right there. Once a revision has been issued the current one is that issued
+   * revision, and a later draft has to be looked for (`readLatestDraft`).
+   */
+  const looksFurther = current !== null && current.status !== 'draft';
+  const readLater = useMemo(
+    () => (looksFurther ? () => readLatestDraft(quotation.id) : null),
+    [looksFurther, quotation.id]
+  );
+  const later = useReread<QuotationRevision | null>(readLater);
+  const reloadLater = later.reload;
+  /*
+   * Every new read of the quotation — after a revision is added, an issue, or a
+   * refresh — looks for the later draft again. The draft on screen stays while it
+   * does, so an expiry being typed is not taken away.
+   */
+  const seen = useRef(quotation);
+  useEffect(() => {
+    if (seen.current === quotation) return;
+    seen.current = quotation;
+    void reloadLater();
+  }, [quotation, reloadLater]);
   const draft =
-    quotation.currentRevision && quotation.currentRevision.status === 'draft'
-      ? quotation.currentRevision
-      : null;
+    current !== null && current.status === 'draft'
+      ? current
+      : later.value?.status === 'ok'
+        ? later.value.data
+        : null;
   // A draft whose discount is waiting or was turned down is not offered for issue:
   // the server refuses it, and the page says why instead of offering the button.
   const blockedBy =
@@ -1536,6 +1589,7 @@ function IssuePanel({
         setOutcome(null);
         // Busy — and the question up — until the quotation is read again.
         await onIssued();
+        await reloadLater();
         setAsking(false);
         return;
       }
@@ -1559,6 +1613,7 @@ function IssuePanel({
       edit.discard();
       setOutcome(null);
       await onIssued();
+      await reloadLater();
     } finally {
       setBusy(false);
     }
@@ -1578,7 +1633,22 @@ function IssuePanel({
       <p className="text-caption text-text-muted">
         {translate(messages, 'quotations.issue.explain')}
       </p>
-      {draft === null ? (
+      {draft === null && looksFurther && later.value === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : draft === null && looksFurther && later.value !== null && later.value.status !== 'ok' ? (
+        <MuiReadFailureState
+          messages={messages}
+          locale={locale}
+          status={later.value.status}
+          correlationId={later.value.correlationId}
+          descriptionKey={
+            later.value.status === 'denied'
+              ? 'quotations.revisions.refused'
+              : 'quotations.revisions.unavailable'
+          }
+          onRetry={() => void later.reload()}
+        />
+      ) : draft === null ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'quotations.issue.noDraft')}
         </p>
