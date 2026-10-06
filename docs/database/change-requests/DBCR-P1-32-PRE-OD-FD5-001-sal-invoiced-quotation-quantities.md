@@ -140,6 +140,33 @@ pool to one quotation's revisions would bill that line, at the risk of billing w
 is the Owner's choice, not this change's. `tests/backend/od-invoice-approved-quantities.test.ts`
 pins the pooled answer.
 
+**The pooling is an open policy point, not an Owner approval** (Owner instruction of 2026-10-06;
+ADR-023 D5 and D15, "Open policy point: the same service approved again"; verification ledger
+VL-P132-003). This change applies it as the conservative rule pending the Owner's answer and does
+not present it as accepted. What the schema distinguishes:
+
+- **Repeated revisions of one approved entitlement** (superseding revisions of ONE quotation): what
+  an earlier revision invoiced counts against the lineage in the current revision; nothing is billed
+  twice.
+- **Additional approved quantity in a later accepted revision of the same quotation**: billable as
+  the increase only (the backend case "bills only the increase of an approved quantity; the
+  superseded revision is never billed again").
+- **A second quotation of the work order approving the same service again**: the schema holds no
+  marker for additional work, so the pool by work order and lineage treats it as already invoiced up
+  to what the first quotation invoiced, and it is not billable. That can block legitimate additional
+  billing. Signed-in browser QA rows D5-5 en and ar of checkpoint CP-20261006-2 at
+  `789d4f59be32dc450d05df33ffbdbf77668680db` show it on screen (outside repository:
+  `orchestration/evidence/owner-directive-2026-10-05-d5-d8-checkpoint/RESULT-MATRIX.md`): an
+  approved 0.250 of a service shown against 1.000 already invoiced by the first quotation, not
+  billable.
+
+The Owner's possible answers and their consequences are recorded in ADR-023: keep pooling by work
+order (no schema change); pool per quotation lineage (a forward migration changing the pool key of
+`sal.billable_quotation_lines`, by which the invoice source guards also judge, and a reversal of the
+pinned backend case); or an explicit "additional work" marker with approval (a forward migration
+for the marker and its approval, with a permission and audit action the Owner names). This change
+takes none of them.
+
 ## 5. Measured effect
 
 Measured on a database created empty in a throwaway `postgres:17` container on a loopback port of
