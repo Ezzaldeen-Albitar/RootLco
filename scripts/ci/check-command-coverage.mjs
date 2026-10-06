@@ -1238,18 +1238,71 @@ export function evaluate({ scripts, workflowInvocations, register = REGISTER }) 
   return { failures, rows };
 }
 
+/**
+ * TDP-2026-10. The six domain classification validators had ONE hosted run —
+ * `ci.yml`'s database job — and `ci.yml` no longer runs for a pull request into
+ * develop. So two facts are asserted rather than assumed:
+ *
+ *   1. every registered `validate:*-classification` command is reachable from
+ *      `verify:classifications`; and
+ *   2. the reusable clean room runs `npm run verify:classifications` in a step
+ *      with NO `if:` — so it runs under the development profile (every develop
+ *      pull request) and under the full profile (every checkpoint dispatch,
+ *      every pull request into main and every push to main).
+ */
+export function classificationReachFailures({
+  scripts,
+  cleanRoom,
+  register = REGISTER,
+  cleanRoomName = '_reusable-clean-room.yml',
+}) {
+  const failures = [];
+  const viaAggregate = reachableFrom(scripts, key(ROOT, 'verify:classifications'));
+  for (const entry of register) {
+    if (entry.owner !== ROOT || !/^validate:.+-classification$/.test(entry.name)) continue;
+    if (!viaAggregate.has(key(ROOT, entry.name))) {
+      failures.push(
+        `${key(ROOT, entry.name)} is not reachable from \`npm run verify:classifications\`, so no ` +
+          'develop pull request and no checkpoint runs it'
+      );
+    }
+  }
+  const lines = String(cleanRoom ?? '').split(/\r?\n/);
+  const at = lines.findIndex((line) => /^\s+run:\s*npm run verify:classifications\s*$/.test(line));
+  if (at === -1) {
+    failures.push(
+      `${cleanRoomName} does not run \`npm run verify:classifications\` as a step of its own`
+    );
+    return failures;
+  }
+  for (let i = at - 1; i >= 0; i -= 1) {
+    if (/^\s+-\s+name:/.test(lines[i])) break;
+    if (/^\s+if:/.test(lines[i])) {
+      failures.push(
+        `${cleanRoomName} runs \`verify:classifications\` under a condition (${lines[i].trim()}); ` +
+          'it must run under every profile'
+      );
+      break;
+    }
+  }
+  return failures;
+}
+
 function main() {
   let scripts;
   let workflowInvocations;
+  let cleanRoom;
   try {
     scripts = readScripts();
     workflowInvocations = readWorkflowInvocations();
+    cleanRoom = readFileSync(join(GITHUB_ROOT, 'workflows', '_reusable-clean-room.yml'), 'utf8');
   } catch (error) {
     console.error(`IO error: ${error.message}`);
     process.exit(2);
   }
 
   const { failures, rows } = evaluate({ scripts, workflowInvocations });
+  failures.push(...classificationReachFailures({ scripts, cleanRoom }));
 
   if (process.argv.includes('--json')) {
     console.log(JSON.stringify({ aggregate: AGGREGATE, failures, commands: rows }, null, 2));

@@ -23,6 +23,28 @@
 #
 # Everything runs in ONE job against ONE database, so the suites are serial by
 # construction and share state the way a real deployment would.
+#
+# TDP-2026-10 — TWO PROFILES (temporary, Owner approval 2026-10-05).
+#
+#   full         every step below, exactly as before, plus verify:classifications.
+#                The DEFAULT, and the only profile a pull request into main, a
+#                push to main, a release or a checkpoint dispatch ever passes.
+#   development  a pull request into develop that did not escalate. It keeps the
+#                exact-SHA checkout, the lockfile install, the zero-tables check,
+#                migrations and seeds twice, the structural review, the six
+#                classification validators, verify:policies, verify:contracts,
+#                verify:inventories, the API's typecheck/lint/format, the
+#                enumerated gates, the security scans and the clean-tree check.
+#                It drops the steps another job of the same run already proves
+#                (the unit tier, the web tier, verify:web, verify:repository,
+#                format:check:all) and runs the serial database block and the
+#                container block only when change detection says so.
+#
+# An unknown profile, block or records-mode value FAILS the job rather than
+# being read as the cheaper one. Every development-skippable step is guarded by
+# `inputs.profile == 'full' || ...`, so under `full` each condition is true.
+# The profile this job actually ran is uploaded as clean-room-profile.json and
+# `ci-gate` checks it.
 # =============================================================================
 
 name: Reusable — exact-SHA clean room
@@ -45,6 +67,41 @@ on:
         required: false
         type: number
         default: 30
+      profile:
+        description: >-
+          TDP-2026-10. `full` (default) or `development`. Anything else fails
+          the job. Only a pull request into develop may pass `development`.
+        required: false
+        type: string
+        default: full
+      run-database-block:
+        description: >-
+          Under the development profile, whether the serial one-database block
+          (database suite, backend suite, RLS matrix) runs. Ignored under full,
+          where it always runs.
+        required: false
+        type: string
+        default: 'true'
+      run-container-block:
+        description: >-
+          Under the development profile, whether the Docker build and the uid
+          check run. Ignored under full, where they always run.
+        required: false
+        type: string
+        default: 'true'
+      records-mode:
+        description: >-
+          `strict` (default) or `checkpoint-deferred`. A REQUEST only: the P1-27
+          records validators defer nothing unless the event corroborates it
+          (scripts/lib/development-profile.mjs, decideRunRecordMode).
+        required: false
+        type: string
+        default: strict
+      checkpoint-id:
+        description: The checkpoint id (CP-YYYYMMDD-N) of a checkpoint dispatch, or empty.
+        required: false
+        type: string
+        default: ''
     outputs:
       sha:
         description: The commit the clean room actually proved.
@@ -91,6 +148,12 @@ jobs:
       NEXT_PUBLIC_SUPABASE_URL: 'http://127.0.0.1:54321'
       NEXT_PUBLIC_SUPABASE_ANON_KEY: 'ci-placeholder-anon-key-not-a-secret'
       NEXT_PUBLIC_APP_ENV: 'local'
+      # TDP-2026-10. The explicit records-mode REQUEST the two P1-27 records
+      # validators read. An npm `&&` aggregate cannot forward a flag to one inner
+      # command, so the request travels here; the validators still defer nothing
+      # unless the event corroborates it, and STRICT is the answer otherwise.
+      ROOTLCO_RECORDS_MODE: ${{ inputs.records-mode }}
+      ROOTLCO_CHECKPOINT_ID: ${{ inputs.checkpoint-id }}
 
     steps:
       # A local `uses: ./…` action is resolved from the workspace, which is
@@ -127,6 +190,55 @@ jobs:
             exit 1
           fi
 
+      # TDP-2026-10. Fail closed on an input nobody anticipated, and record the
+      # profile this job is about to prove BEFORE proving anything, so the
+      # record exists even when a later step fails.
+      - name: The clean-room profile is one this workflow knows
+        env:
+          PROFILE: ${{ inputs.profile }}
+          RUN_DATABASE_BLOCK: ${{ inputs.run-database-block }}
+          RUN_CONTAINER_BLOCK: ${{ inputs.run-container-block }}
+          RECORDS_MODE: ${{ inputs.records-mode }}
+          CHECKPOINT_ID: ${{ inputs.checkpoint-id }}
+        run: |
+          set -euo pipefail
+          case "${PROFILE}" in
+            full | development) ;;
+            *)
+              echo "::error::Unknown clean-room profile '${PROFILE}'. Only full and development exist."
+              exit 1
+              ;;
+          esac
+          for value in "${RUN_DATABASE_BLOCK}" "${RUN_CONTAINER_BLOCK}"; do
+            case "${value}" in
+              true | false) ;;
+              *)
+                echo "::error::A block input must be true or false, not '${value}'."
+                exit 1
+                ;;
+            esac
+          done
+          case "${RECORDS_MODE}" in
+            strict | checkpoint-deferred) ;;
+            *)
+              echo "::error::Unknown records mode '${RECORDS_MODE}'."
+              exit 1
+              ;;
+          esac
+          node -e '
+            const [profile, db, container, records, checkpoint] = process.argv.slice(1);
+            const full = profile === "full";
+            const doc = {
+              profile,
+              runDatabaseBlock: full || db === "true",
+              runContainerBlock: full || container === "true",
+              recordsMode: records,
+              checkpointId: checkpoint || null,
+            };
+            require("node:fs").writeFileSync("clean-room-profile.json", JSON.stringify(doc, null, 2) + "\n");
+            console.log(JSON.stringify(doc));
+          ' "${PROFILE}" "${RUN_DATABASE_BLOCK}" "${RUN_CONTAINER_BLOCK}" "${RECORDS_MODE}" "${CHECKPOINT_ID}"
+
       - name: The database holds zero application tables
         run: |
           set -euo pipefail
@@ -151,17 +263,30 @@ jobs:
       - name: Structural review
         run: node scripts/db/structural-review.mjs --json clean-room-structural.json
 
+      # TDP-2026-10. The six domain classification validators had exactly one
+      # hosted run — `ci.yml`'s database job — and `ci.yml` no longer runs for a
+      # pull request into develop. They run here under BOTH profiles, against
+      # the database this job just built, which also adds them to main's path.
+      - name: Domain classification validators
+        run: npm run verify:classifications
+
       # Serial by construction: one job, one database, one step after another.
+      # Under the development profile the unit tier is NOT repeated here:
+      # unit-tests-coverage runs the identical suite in the same pull request.
       - name: Unit and foundation suite
+        if: inputs.profile == 'full'
         run: npm run test
 
       - name: Database suite
+        if: inputs.profile == 'full' || inputs.run-database-block == 'true'
         run: npm run test:db
 
       - name: Backend and integration suite
+        if: inputs.profile == 'full' || inputs.run-database-block == 'true'
         run: npm run test:backend
 
       - name: Critical RLS matrix
+        if: inputs.profile == 'full' || inputs.run-database-block == 'true'
         run: node scripts/ci/rls-matrix.mjs --level critical --json clean-room-rls.json --markdown clean-room-rls.md
 
       - name: Schema hash AFTER the suites must be identical
@@ -195,12 +320,31 @@ jobs:
       # download is not a verification, and folding it in would make a network
       # failure look like a test failure.
       - name: Install the browser the aggregate needs
+        if: inputs.profile == 'full'
         run: npm run test:e2e:install --workspace @rootlco/web
 
       - name: The full workspace aggregate
+        if: inputs.profile == 'full'
         run: |
           set -euo pipefail
           npm run verify:workspaces
+
+      # TDP-2026-10, development profile only. The aggregate's leaves that NO
+      # other job of a pull-request run proves — verify:policies (with the P1-27
+      # records validators in the mode requested above), the contract and
+      # inventory validators, and the API workspace's typecheck, lint and format.
+      # The web half of the aggregate is web-quality's job in the same run, and
+      # verify:repository is static-quality's and unit-tests-coverage's.
+      - name: The development-profile aggregate leaves
+        if: inputs.profile == 'development'
+        run: |
+          set -euo pipefail
+          npm run verify:policies
+          npm run verify:contracts
+          npm run verify:inventories
+          npm run typecheck:api
+          npm run lint:api
+          npm run format:check:api
 
       # WTF-11. The aggregate above reaches the web component tier through
       # `verify:web` -> `test:web`, which is a bare `vitest run`: no JSON
@@ -212,11 +356,16 @@ jobs:
       # Deliberately redundant with the aggregate, for the same reason the
       # enumerated gate block below is: `test:web` is what a developer runs and
       # `verify:web` must go on invoking it, so the floored form is added rather
-      # than substituted. The suite is seconds; the guard is the point.
+      # than substituted. The guard is the point. It is NOT a matter of seconds,
+      # whatever an earlier revision of this comment said: measured over 25
+      # successful runs (2026-09-27 to 2026-10-05) this step's median was 678 s
+      # (range 374–1350 s). It runs under the full profile only; under the
+      # development profile web-quality runs the same floored tier.
       #
       # `apps/web/vitest-web.json` is gitignored, so the "working tree is clean"
       # assertion at the end of this job still holds.
       - name: The clean-room web tier carries the same floor as hosted CI
+        if: inputs.profile == 'full'
         run: |
           set -euo pipefail
           npm run test:web-ci
@@ -269,12 +418,14 @@ jobs:
           npm run validate:no-fake-data
 
       - name: Docker configuration and production image
+        if: inputs.profile == 'full' || inputs.run-container-block == 'true'
         run: |
           set -euo pipefail
           docker compose config --quiet
           docker build --target runner -t rootlco/web:clean-room .
 
       - name: The production image runs as the canonical non-root user
+        if: inputs.profile == 'full' || inputs.run-container-block == 'true'
         run: |
           set -euo pipefail
           uid="$(docker run --rm --entrypoint sh rootlco/web:clean-room -c 'id -u')"
@@ -329,6 +480,7 @@ jobs:
           retention-days: ${{ inputs.artifact-retention-days }}
           if-no-files-found: ignore
           path: |
+            clean-room-profile.json
             clean-room-pre.json
             clean-room-migration.log
             clean-room-seed.log

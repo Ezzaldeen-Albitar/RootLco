@@ -63,6 +63,7 @@ Rules:
 ## 3. Pull request process
 
 - Pull requests target `develop`. Never `main`.
+- **Temporary development-path CI policy TDP-2026-10** (Owner approval 2026-10-05; policy text, review point and restoration order in [pr-gate.md](docs/engineering/ci-automation/pr-gate.md)). A pull request into `develop` merges on the required check `ci-gate (development)`, which runs the jobs its change needs and escalates to the full set for workflow, gate, dependency and configuration changes. A merge into `develop` is reported as "merged, full checkpoint verification pending" and never as fully verified. Full verification is still owed at the next checkpoint, at every phase gate, and on the promotion pull request into `main`, whose required checks are unchanged.
 - `main` receives changes only through a reviewed promotion from `develop`, performed by the technical owner.
 - One pull request addresses one task or one coherent group of tasks. Mixed, unrelated changes are rejected.
 - The pull request must use the repository pull request template and complete every section of it.
@@ -99,6 +100,7 @@ The following checks must pass locally before a pull request is opened, and must
 Rules:
 
 - A check that has not been executed is reported as not executed. It is never reported as passing.
+- On the development machine only focused checks run, one heavy operation at a time: the checks for the files a change touches, the affected test files, and the validators the change activates. Full suites, coverage runs and clean-room builds run on GitHub. A local result is recorded as local and is never presented as a GitHub check.
 - Failing checks are fixed, not skipped, disabled or annotated away.
 - `@ts-ignore`, `@ts-expect-error`, `eslint-disable` and equivalent suppressions require an explicit justification in the pull request and reviewer agreement.
 - Independent QA ownership is **not assigned**. Technical tests are currently executed by Eng. Ezzaldeen Al-Bitar under the owner-approved [Solo Developer Review Policy](docs/governance/solo-developer-review-policy.md). This is a recorded, owner-accepted gap; it must remain visible in the risk record and must never be presented as independent verification.
@@ -204,7 +206,7 @@ Rules:
 
 ### Pre-push step for schema and seed changes
 
-No local aggregate runs the Database tier. `npm run verify:workspaces` deliberately does not, because it is the command run before **every** commit — including a documentation-only one — and the hosted clean room mirrors it to claim that a fresh clone passes exactly what a developer runs. Requiring a live PostgreSQL would make that claim false for anyone without the stack up.
+No local aggregate runs the Database tier. `npm run verify:workspaces` deliberately does not, because it is the command run before **every** commit — including a documentation-only one — and the hosted clean room mirrors it to claim that a fresh clone passes exactly what a developer runs. (While TDP-2026-10 is in force, the clean room of a pull request into `develop` runs a development profile that leaves out the parts other jobs of the same run already prove; the full aggregate runs at every checkpoint and on every pull request into `main`.) Requiring a live PostgreSQL would make that claim false for anyone without the stack up.
 
 **Standing verification policy, recorded 2026-09-09 (Owner).** The sentence above describes what `verify:workspaces` is _for_; it is not a per-commit prerequisite. A contributor runs the targeted local checks relevant to the change — the typecheck, lint and format commands for the workspaces touched, the affected test tiers, and the validators the change activates — and relies on the required hosted checks, which run the production builds and the browser smoke, for the aggregate. The full local aggregate remains available and is recommended before a promotion, or whenever a change is wide enough that no targeted set covers it. This qualifies the convention; it removes no check. A check that was not run is reported as not run, and nothing in this policy permits stating that a gate passed when it was not executed.
 
@@ -302,7 +304,7 @@ The platform is multi-tenant, multi-company and multi-branch, and its behaviour 
 - All work reaches `develop` through a pull request from a working branch, reviewed under the [Solo Developer Review Policy](docs/governance/solo-developer-review-policy.md).
 - `main` is updated only by a reviewed promotion from `develop`, performed by the technical owner.
 - History on `main` and `develop` is not rewritten. No force push, no amend of published commits, no rebase of shared branches.
-- Enforcement note: the required-check names in the ruleset must match the names GitHub actually reports — see [github-required-checks.md](docs/phase-1/phase-1-1/github-required-checks.md). The live ruleset is administered in the GitHub UI; the build environment has no GitHub CLI or token and cannot inspect or change it.
+- Enforcement note: the required-check names in the ruleset must match the names GitHub actually reports — see [github-required-checks.md](docs/phase-1/phase-1-1/github-required-checks.md). While TDP-2026-10 is in force the names differ by branch: `main` requires `ci-gate` and the four `ci.yml` names, unchanged; `develop` is moved to `ci-gate (development)` in a separate, recorded ruleset step. The live ruleset is administered in the GitHub UI; the build environment has no GitHub CLI or token and cannot inspect or change it.
 
 ## 12. Phase discipline
 

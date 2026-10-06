@@ -33,6 +33,7 @@ import {
   rmSync,
   symlinkSync,
 } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -664,15 +665,37 @@ describe('P1-27-QA-005 — the recorded counts are reconciled against the reposi
     return entry as Run;
   };
 
-  it('states the number of web test files the repository actually holds', () => {
+  it('states the number of web test files the recorded run measured, and none was lost since', () => {
     /*
      * The exact defect: "still pins ... 763/38 while the tree is ... 5 test
      * files further on". Derived, then required to appear.
+     *
+     * TDP-2026-10: derived at the commit the web run was RECORDED at, from git,
+     * rather than from the live walk — the page is refreshed by the checkpoint
+     * records pull request, not by every pull request that adds a web test. The
+     * live tree must still hold at least that many: a lost file stays fatal.
      */
-    const count = testFiles('apps/web/tests').length;
-    expect(cleanRoom, `the web suite holds ${count} test files`).toContain(
-      `${count} web test files`
+    const at = recordedRun('web') as Run & { measuredAtCommit?: string };
+    const sha = at.measuredAtCommit as string;
+    expect(sha, 'the web run record names no commit').toMatch(/^[0-9a-f]{40}$/);
+    const atRecord = execFileSync(
+      'git',
+      ['ls-tree', '-r', '--name-only', sha, '--', 'apps/web/tests'],
+      {
+        cwd: ROOT,
+        encoding: 'utf8',
+        maxBuffer: 32 * 1024 * 1024,
+      }
+    )
+      .split('\n')
+      .filter((p) => /\.test\.tsx?$/.test(p)).length;
+    expect(cleanRoom, `the web suite held ${atRecord} test files at ${sha.slice(0, 8)}`).toContain(
+      `${atRecord} web test files`
     );
+    expect(
+      testFiles('apps/web/tests').length,
+      'the tree holds fewer web test files than the recorded run — a file was lost'
+    ).toBeGreaterThanOrEqual(atRecord);
   });
 
   it('leaves no web test file that neither vitest project would run', () => {
