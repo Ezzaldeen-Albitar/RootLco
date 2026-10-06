@@ -25,6 +25,11 @@
  *    the line's source quotation line as quoted, and `describeInvoiceSource` reads
  *    the invoice's own revision — never the work order's current one — and
  *    nothing for a counter sale.
+ *  - The route the documents offer for billing extra work of a service already
+ *    invoiced — a new revision of the first quotation — exists only while that
+ *    quotation is open: `revise` refuses an accepted, rejected, expired or
+ *    cancelled one, and `rollUpDecisions` closes it once every line is approved or
+ *    any is rejected. The user manual and ADR-023 option 1 say so.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -48,6 +53,8 @@ const {
   resolveCommercialSource,
   toInvoiceLineView,
 } = await import('@api/modules/billing/application/billing-read-service');
+const { QuotationService } = await import('@api/modules/quotation/application/quotation-service');
+const { rollUpDecisions } = await import('@api/modules/quotation/domain/quotation');
 
 const MIGRATION = readFileSync(
   join(
@@ -438,5 +445,91 @@ describe('the invoice detail carries its own source (the printed copy)', () => {
   it('is null where the revision was withheld (no sal.finance.view)', async () => {
     const repository = { sourceRevision: vi.fn(async () => null) } as never;
     expect(await describeInvoiceSource({} as never, repository, invoice())).toBeNull();
+  });
+});
+
+describe('the documented route for extra work of an already invoiced service (ADR-023 D5/D15)', () => {
+  const reached = new Error('passed the open-quotation guard');
+  function serviceOver(status: string) {
+    const repository = {
+      lockQuotation: vi.fn(async () => ({
+        id: 'q-1',
+        companyId: 'c',
+        branchId: 'b',
+        workOrderId: 'wo-1',
+        quotationNumber: 'Q-1',
+        currencyCode: 'SAR',
+        payerPartnerRef: null,
+        currentRevisionId: 'r-1',
+        status,
+        recordVersion: 1,
+      })),
+      businessDate: vi.fn(async () => {
+        throw reached;
+      }),
+    };
+    return new QuotationService(repository as never);
+  }
+  async function reviseRefusal(status: string): Promise<unknown> {
+    try {
+      await serviceOver(status).revise(
+        {} as never,
+        'q-1',
+        { lines: [{} as never], expectedVersion: 1 },
+        async () => undefined
+      );
+    } catch (error) {
+      return error;
+    }
+    return undefined;
+  }
+
+  it('a revision is possible only while the quotation is draft or active', async () => {
+    expect(await reviseRefusal('active')).toBe(reached);
+    expect(await reviseRefusal('draft')).toBe(reached);
+    for (const closed of ['accepted', 'rejected', 'expired', 'cancelled']) {
+      const failure = await reviseRefusal(closed);
+      expect(failure).not.toBe(reached);
+      expect((failure as { code?: string }).code).toBe('ERR-TRN-001');
+    }
+  });
+
+  it('a quotation stops being active once every line is approved or any is rejected', () => {
+    expect(rollUpDecisions({ itemCount: 2, approvedCount: 1, rejectedCount: 0 })).toBeNull();
+    expect(rollUpDecisions({ itemCount: 2, approvedCount: 2, rejectedCount: 0 })).toBe('accepted');
+    expect(rollUpDecisions({ itemCount: 2, approvedCount: 1, rejectedCount: 1 })).toBe('rejected');
+  });
+
+  /** Whitespace-normalised text between two markers of a document. */
+  function between(path: readonly string[], from: string, to: string): string {
+    const text = readFileSync(join(process.cwd(), ...path), 'utf8').replace(/\s+/g, ' ');
+    const start = text.indexOf(from);
+    const end = text.indexOf(to, start + from.length);
+    if (start < 0 || end < 0) throw new Error(`${path.join('/')} lacks "${from}" … "${to}"`);
+    return text.slice(start, end);
+  }
+
+  it('the user manual offers the revision route only while the first quotation is open', () => {
+    const paragraph = between(
+      ['docs', 'user-manual', '06-finance-and-reporting.md'],
+      'If the customer approved genuinely extra work',
+      'Two sentences on this panel matter'
+    );
+    expect(paragraph).toContain('only while the original quotation is still open');
+    expect(paragraph).toContain('accepted as a whole, rejected, expired or cancelled');
+    expect(paragraph).toContain('cannot be revised');
+  });
+
+  it('ADR-023 option 1 offers the revision route only while the first quotation is open', () => {
+    const option = between(
+      ['docs', 'adr', 'ADR-023-sales-and-finance-policy-decisions.md'],
+      '1. **Keep pooling by work order.**',
+      '2. **Pool per quotation lineage**'
+    );
+    expect(option).toContain('only while the first quotation is still open');
+    expect(option).toContain('accepted as a whole, rejected, expired or cancelled');
+    expect(option).toContain('cannot be revised');
+    expect(option).toContain('assertQuotationOpen');
+    expect(option).toContain('rollUpDecisions');
   });
 });

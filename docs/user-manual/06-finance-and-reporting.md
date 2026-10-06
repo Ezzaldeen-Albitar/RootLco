@@ -160,6 +160,28 @@ When nothing approved remains, the panel says "Everything approved on the quotat
 invoiced, so there is nothing more to bill." <!-- invoices.preview.nothingToBill --> and offers no
 form.
 
+**The same service on a second quotation of the same work order (an open point, not yet decided
+by the Owner).** Today the platform counts what was already invoiced across every quotation of the
+work order, not only across the revisions of one quotation. This is a cautious rule kept until the
+Owner decides; it is not a final business decision. In practice:
+
+- A new revision of the **same** quotation that repeats work already invoiced bills nothing again.
+- A new revision of the **same** quotation that raises a quantity bills only the increase.
+- A **second** quotation that approves a service (or part) the first quotation already invoiced
+  shows that line as "Everything approved on this line is already invoiced." <!-- invoices.billing.reason.fully_invoiced -->
+  up to the quantity already invoiced, and does not bill it — even when it is genuinely extra work
+  the customer approved. Only an approved quantity above what was already invoiced is billed.
+
+If the customer approved genuinely extra work of a service that is already invoiced on the job, you
+can bill it today only while the original quotation is still open: at least one of its lines is
+still waiting for the customer's decision and none has been rejected. Then add a revision to the
+original quotation with the higher quantity and have the customer approve it; the increase is
+billed, provided no other quotation of the job still has approved work waiting to be invoiced.
+Once the original quotation has been accepted as a whole, rejected, expired or cancelled, it
+cannot be revised. In that case nothing in the platform today bills that extra work, except an
+approved quantity on the second quotation above what was already invoiced. Until the Owner
+decides, do not expect a second quotation to bill that work.
+
 Two sentences on this panel matter:
 
 - "The tax rate is the fraction captured on the quotation line, shown as recorded." <!-- invoices.preview.taxRateNote -->
