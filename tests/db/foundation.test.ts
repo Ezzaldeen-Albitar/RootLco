@@ -363,6 +363,10 @@ const ALLOWED_ROUTINES = new Set([
   'iam.has_permission',
   'iam.has_permission_in_scope',
   'iam.has_platform_authority',
+  // P1-32-PRE-OD-FD8 fix round 2 (ADR-023, D8): keeps iam.approval_limits.window_changed_by,
+  // everyone who ever moved a limit's end date. SECURITY INVOKER, empty search_path,
+  // EXECUTE revoked from PUBLIC.
+  'iam.record_approval_limit_window_change',
   'iam.stamp_approval_limit_creator',
   'iam.stamp_login_audit',
   'iam.stamp_user_status_history',
@@ -858,6 +862,7 @@ describe('database foundation', () => {
       'tg_approval_limits_immutable',
       'tg_approval_limits_money',
       'tg_approval_limits_touch_metadata',
+      'tg_approval_limits_window_history',
       'tg_authorizations_authority',
       'tg_authorized_receivers_immutable',
       'tg_authorized_receivers_touch_metadata',

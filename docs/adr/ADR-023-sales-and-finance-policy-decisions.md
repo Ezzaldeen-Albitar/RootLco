@@ -270,8 +270,10 @@ Implementation particulars (P1-32-PRE-OD-FD8, Proposed):
   who set the amount itself (`amount_set_by`), which a later change to anything else (priority, tax
   class, narrowing, status) does not move. An approval limit's `created_by` was already stamped from
   the session and its amount never changes, but its end date (`effective_to`) can be changed, and
-  who last changed it is `updated_by`, stamped from the session. Columns, not a history table: the
-  rule needs who put a value in force; earlier values are in the audit trail.
+  everyone who ever changed it is kept in `window_changed_by`, appended from the session and never
+  removed (the last writer, `updated_by`, is not enough: a later save would hide an earlier change).
+  Columns, not a history table: the rule needs who put a value in force; earlier values are in the
+  audit trail.
 - **Snapshots.** A quotation line copies, when it is written, who had set the amount of, who had last
   changed and who had published the price it was priced from; a later change to the source does not
   move it. A
@@ -285,8 +287,11 @@ Implementation particulars (P1-32-PRE-OD-FD8, Proposed):
   prices as set.
 - **Limits.** An approver's limit never counts when the approver or the requester created it, for the
   approver or for a role the approver holds. A changed end date is a changed limit: when the requester
-  last changed the dates of any discount limit of the approver in the company — reopening or extending
-  one, or ending one so that another applies — none of the approver's limits counts for that request.
+  ever changed the dates of any discount limit of the approver in the company — reopening or extending
+  one, or ending one so that another applies — none of the approver's limits counts for that request;
+  and when the approver ever changed the dates of one of their own discount limits there (on
+  themselves or on a role they hold), none of their limits counts for any request, as for a limit
+  they created. A later save by anyone does not clear either.
 - **No sole-administrator exception.** The requester never decides their own request, so a second
   authorised person is required, as for D4.
 
@@ -304,9 +309,16 @@ Open points (each choice is the one that never grants more than the Owner allowe
   branch selling price so that another source prices the line (the item selling price falls back from
   the branch to the company to the whole tenant) are not treated as the requester's change, and none
   of them is recorded on the line.
+- **An approver's own window change (Owner decision needed).** An approver who moved the dates of
+  one of their own discount limits in a company has no limit that counts there while that limit is
+  theirs, and a new limit set by somebody else does not restore it; the limit-ending route does not
+  refuse such a change up front, as limit creation does. Refusing it at the route, or letting a fresh
+  limit set by another administrator count, is the Owner's choice; until then the stricter reading
+  stands, which never grants more.
 - **Before this change.** Provenance of existing rows is their last recorded writer, not a verified
   attribution, and who set an existing amount is taken from it; who published an existing price-list
-  version was not recorded; lines written earlier carry no snapshot. A legacy draft whose writer set what it relies on cannot be issued until revised.
+  version was not recorded; lines written earlier carry no snapshot; who moved an existing limit's
+  dates is taken from its last writer, so earlier changes of the same limit are not known. A legacy draft whose writer set what it relies on cannot be issued until revised.
 
 ### D9 — Returns and credit are separate events
 

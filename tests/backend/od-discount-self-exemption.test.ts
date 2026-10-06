@@ -21,6 +21,11 @@
  * the requester in these cases holds no iam.approval.manage, and the column the route
  * changes (effective_to) and the stamp (updated_by, from the session) are the same.
  *
+ * Fix round 2 (migration 20261007110000): who moved a window is kept for good in
+ * iam.approval_limits.window_changed_by, so a colleague's later save does not wipe the
+ * requester's change, and an approver who moved the window of their own limit has no
+ * limit that counts, for anybody's request.
+ *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
  *   quo.discount-approval-withdraw: route service authorization success denial audit idempotency stale-version isolation cross-tenant
  */
@@ -620,11 +625,74 @@ describe('ADR-023 D8 — one’s own threshold, limit or price never exempts one
         )
       ).toBe(2);
 
-      // When an administrator moves it last, it counts again.
-      await moveLimitWindowAs(null, limitId, 365);
+      // A colleague who may administer limits moves it last: the requester's change
+      // is still on record, and the limit still does not count (fix round 2).
+      await moveLimitWindowAs(USER_A, limitId, 366);
+      expect(
+        (
+          await admin.query<{ updated_by: string; window_changed_by: string[] }>(
+            `SELECT updated_by, window_changed_by FROM iam.approval_limits WHERE id = $1`,
+            [limitId]
+          )
+        ).rows[0]
+      ).toEqual({ updated_by: USER_A, window_changed_by: [SVC_NO_CEILING.userId, USER_A] });
       authAs(SVC_FULL);
-      const approved = await decide(request.id, { decision: 'approved' });
-      expect(approved.status).toBe(200);
+      const stillRefused = await decide(request.id, { decision: 'approved' });
+      expect(stillRefused.status).toBe(403);
+      expect(((await stillRefused.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_no_approval_limit' },
+      ]);
+    } finally {
+      await admin.query(`DELETE FROM iam.approval_limits WHERE id = $1`, [limitId]);
+    }
+  });
+
+  it('an approver who reopened their own expired limit cannot approve with it, for anybody’s request', async () => {
+    await administratorThreshold('0.0000');
+    const quotation = await quoteAs(SVC_NO_CEILING, '5.0000');
+    const request = approvalOf(quotation);
+    // An administrator's limit for SVC_FULL's role, ended long ago.
+    const limit = await admin.query<{ id: string }>(
+      `INSERT INTO iam.approval_limits
+         (tenant_id, company_id, role_id, limit_type, amount, currency_code, effective_from, effective_to, created_by)
+       VALUES ($1,$2,$3,'discount',1000,'JOD',DATE '2020-01-01',DATE '2020-06-01',$4) RETURNING id`,
+      [TENANT_A, COMPANY_A1, SVC_FULL.roleId, USER_A]
+    );
+    const limitId = limit.rows[0]?.id as string;
+    try {
+      authAs(SVC_FULL);
+      const expired = await decide(request.id, { decision: 'approved' });
+      expect(expired.status).toBe(403);
+
+      // The approver reopens the limit on their own role for a year (fix round 2).
+      await moveLimitWindowAs(SVC_FULL.userId, limitId, 365);
+      authAs(SVC_FULL);
+      expect(approvalOf(await reread(quotation.id))).toMatchObject({
+        canApprove: false,
+        cannotApproveReason: 'no_approval_limit',
+      });
+      const refused = await decide(request.id, { decision: 'approved' });
+      expect(refused.status).toBe(403);
+      expect(((await refused.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_no_approval_limit' },
+      ]);
+      expect(
+        await refusalEvents(
+          'quo.discount-approval-decide',
+          request.id,
+          'discount_no_approval_limit'
+        )
+      ).toBe(2);
+      expect(
+        (
+          await admin.query<{ status: string; window_changed_by: string[] }>(
+            `SELECT a.status, l.window_changed_by
+               FROM quo.discount_approvals a, iam.approval_limits l
+              WHERE a.id = $1 AND l.id = $2`,
+            [request.id, limitId]
+          )
+        ).rows[0]
+      ).toEqual({ status: 'pending', window_changed_by: [SVC_FULL.userId] });
     } finally {
       await admin.query(`DELETE FROM iam.approval_limits WHERE id = $1`, [limitId]);
     }

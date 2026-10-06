@@ -157,8 +157,8 @@
       "class": "DERIVABLE_LOCAL",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Migrations on disk                          | 173   | a walk of `supabase/migrations`                                    |",
-      "value": "173",
+      "locator": "| Migrations on disk                          | 174   | a walk of `supabase/migrations`                                    |",
+      "value": "174",
       "binding": {
         "kind": "derived",
         "table": "counts",
@@ -212,8 +212,8 @@
       "class": "DERIVABLE_GIT",
       "standing": "CURRENT",
       "document": "docs/phase-1/phase-1-27/clean-room-evidence.md",
-      "locator": "| Migrations tracked by git at `HEAD`                  | 173                                         |",
-      "value": "173",
+      "locator": "| Migrations tracked by git at `HEAD`                  | 174                                         |",
+      "value": "174",
       "binding": {
         "kind": "git",
         "op": "lsTree",

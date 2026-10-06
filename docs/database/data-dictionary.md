@@ -868,25 +868,26 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `iam.approval_limits`
 
-**Scope:** tenant (company) · **Retention class:** evidence-audit · Effective-dated monetary ceiling per role XOR user; NUMERIC(18,4), fitting the currency's minor unit on insert; non-overlapping per (company, subject, limit_type), and per currency for a `credit_note` limit (ADR-023 D13; a `credit_note` limit is above zero); identity/amount immutable.
+**Scope:** tenant (company) · **Retention class:** evidence-audit · Effective-dated monetary ceiling per role XOR user; NUMERIC(18,4), fitting the currency's minor unit on insert; non-overlapping per (company, subject, limit_type), and per currency for a `credit_note` limit (ADR-023 D13; a `credit_note` limit is above zero); identity/amount immutable. `window_changed_by` keeps everyone who ever changed the end date, appended from the session by `iam.record_approval_limit_window_change` and never removed (P1-32-PRE-OD-FD8 fix round 2, ADR-023 D8; rows updated before migration 20261007110000 carry their `updated_by`).
 
-| Column           | Type                     | Null | Default           | Classification |
-| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
-| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
-| `tenant_id`      | uuid                     | NO   | —                 | internal       |
-| `company_id`     | uuid                     | NO   | —                 | internal       |
-| `role_id`        | uuid                     | YES  | —                 | internal       |
-| `user_id`        | uuid                     | YES  | —                 | internal       |
-| `limit_type`     | text                     | NO   | —                 | internal       |
-| `amount`         | numeric(18,4)            | NO   | —                 | internal       |
-| `currency_code`  | text                     | NO   | —                 | internal       |
-| `effective_from` | date                     | NO   | —                 | internal       |
-| `effective_to`   | date                     | YES  | —                 | internal       |
-| `record_version` | integer                  | NO   | 1                 | internal       |
-| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
-| `created_by`     | uuid                     | NO   | —                 | internal       |
-| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
-| `updated_by`     | uuid                     | YES  | —                 | internal       |
+| Column              | Type                     | Null | Default           | Classification |
+| ------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`         | uuid                     | NO   | —                 | internal       |
+| `company_id`        | uuid                     | NO   | —                 | internal       |
+| `role_id`           | uuid                     | YES  | —                 | internal       |
+| `user_id`           | uuid                     | YES  | —                 | internal       |
+| `limit_type`        | text                     | NO   | —                 | internal       |
+| `amount`            | numeric(18,4)            | NO   | —                 | internal       |
+| `currency_code`     | text                     | NO   | —                 | internal       |
+| `effective_from`    | date                     | NO   | —                 | internal       |
+| `effective_to`      | date                     | YES  | —                 | internal       |
+| `record_version`    | integer                  | NO   | 1                 | internal       |
+| `created_at`        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`        | uuid                     | NO   | —                 | internal       |
+| `updated_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`        | uuid                     | YES  | —                 | internal       |
+| `window_changed_by` | uuid[]                   | NO   | ARRAY[]::uuid[]   | internal       |
 
 ### `iam.sensitive_data_permissions`
 

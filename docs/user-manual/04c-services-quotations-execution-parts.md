@@ -1260,9 +1260,11 @@ it, or with a smaller one." <!-- quotations.discountApproval.rejectedNext -->
   follows the threshold and prices as they are set. A quotation with no discount needs no approval.
 - **A limit the person who asked set never counts.** An approver cannot approve your discount with
   a limit you set for them, or for a role they hold; it counts as no limit for that request. The
-  same holds when you were the last to change the dates of one of their limits — reopening or
-  extending it, or ending it so that a larger one applies: none of their limits counts for your
-  request.
+  same holds once you have changed the dates of one of their limits — reopening or extending it, or
+  ending it so that a larger one applies: none of their limits counts for your request, even if
+  somebody changes the dates again later. An approver who changes the dates of one of their own
+  limits, or of a limit on a role they hold, has no limit that counts in that company afterwards;
+  ask another administrator to change your limits.
 - **There is no exception for a business run by one person.** Nobody approves their own discount, so
   a discount that needs approval always needs a second authorised person.
 - With nothing waiting, the list says "No discounts are waiting for approval on this branch." <!-- quotations.approvals.none -->

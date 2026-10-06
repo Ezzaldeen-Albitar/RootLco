@@ -357,9 +357,10 @@ export class DiscountAuthorizationService {
      * The ceiling never counts a limit the approver created, nor — ADR-023, D8 — one
      * the REQUESTER created: raising a colleague's limit (or a role's the colleague
      * holds) must not get one's own discount through. Nor does any limit once the
-     * requester last changed the window of one of the approver's limits (reopened,
-     * extended or ended it). Such a limit is no limit that counts, and the screen
-     * says so (`discount_no_approval_limit`).
+     * requester ever changed the window of one of the approver's limits (reopened,
+     * extended or ended it), or once the approver changed the window of one of their
+     * own. Such a limit is no limit that counts, and the screen says so
+     * (`discount_no_approval_limit`).
      */
     const key = `${request.companyId}|${request.asOf}|${request.requestedBy}`;
     let pending = memo?.get(key);

@@ -167,3 +167,37 @@ No table, function, trigger, grant, policy, seed or permission code is added. Ex
 selling-price amount), and the P1-15 census. Records moved: `migrationCount` 173, `schemaHash`,
 `migrationCountNote` and `structuralTotalsNote173` in `.github/ci-baselines/schema-baseline.json`
 (no structural total moves), the data dictionary and the classification registry (992 columns).
+
+## 9. Fix round 2 — the 174th migration
+
+Review of fix round 1 found that its limit-window rule read only the last writer and only for the
+requester. `supabase/migrations/20261007110000_quo_discount_limit_window_history.sql` (the 174th)
+closes both, forward-only and ROLLBACK-SAFE:
+
+- **Who moved a window is kept.** `iam.approval_limits.window_changed_by` (`uuid[]`, not null, empty
+  by default) holds everyone who ever changed the limit's end date. The new BEFORE INSERT OR UPDATE
+  trigger `tg_approval_limits_window_history` (function `iam.record_approval_limit_window_change`,
+  SECURITY INVOKER, empty search path, EXECUTE revoked from PUBLIC) empties it on insert whatever the
+  writer supplied, carries it over on every update, and appends the signed-in person when
+  `effective_to` changes. A save of the same date records nothing and removes nothing, so a later
+  save by the approver or a colleague no longer hides the requester's change. The runtime role keeps
+  UPDATE on `effective_to` only and cannot write the column.
+- **The approver is caught too.** `quo.guard_discount_approval` is re-issued: an approval is refused
+  (`discount_no_approval_limit`) when any discount limit of the approver in the company, on the
+  approver or on a role whose grant reaches them, has the requester in its history (none of the
+  approver's limits counts for that requester's request) or the approver (none counts for any
+  request — moving one's own window is raising one's own ceiling, as creating the limit is).
+  `callerApprovalCeiling` applies the same two rules.
+
+Existing rows take `window_changed_by` from `updated_by` where they were updated, with the
+row-metadata trigger disabled for the statement; earlier changes of the same row are not known.
+One function and one trigger are added (`functions` 658 to 659, `triggers` 649 to 650); no table,
+grant, policy, seed or permission code. Open point (ADR-023 D8): an approver who moved their own
+window has no limit that counts in that company while that limit is theirs, and the limit-ending
+route does not refuse the change up front. Executable proof: `tests/db/quo-discount-self-exemption.test.ts`
+(approver reopening a limit on themselves, extending one on a role they hold, a same-date save, the
+requester's change through later saves, and the history never taken from the writer),
+`tests/backend/od-discount-self-exemption.test.ts`, the `foundation` routine and trigger inventories
+and the P1-15 census. Records moved: `migrationCount` 174, `schemaHash`, `structuralTotals`,
+`migrationCountNote` and `structuralTotalsNote174` in `.github/ci-baselines/schema-baseline.json`,
+and the data dictionary.

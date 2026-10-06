@@ -498,13 +498,23 @@ export async function callerHoldsPermissionAnywhere(
  * Nor does any ceiling once they moved a limit's window. A limit's amount is
  * immutable but its `effective_to` is not, so the requester could reopen or extend
  * a limit somebody else set, or end the approver's own smaller limit so that a
- * larger role limit applies. When the requester last changed ANY limit of this type
- * of the caller in the company — on the caller or on a role whose grant reaches it,
- * in force or not — the caller has no ceiling that counts for that request.
- * `updated_by` names who last changed a limit: `shared.touch_row_metadata` stamps
- * it from the session, and `effective_to` is the only column the application may
- * update. The database guard `quo.guard_discount_approval` applies the same two
- * rules.
+ * larger role limit applies. When the requester EVER changed the end date of ANY
+ * limit of this type of the caller in the company — on the caller or on a role whose
+ * grant reaches it, in force or not — the caller has no ceiling that counts for that
+ * request.
+ *
+ * ## Nor, once the caller moved the window of one of their own limits
+ *
+ * Reopening, extending or ending one's own limit (or a limit on a role one holds)
+ * is raising one's own ceiling, as creating it is. When the CALLER ever changed the
+ * end date of any limit of this type of theirs in the company, they have no ceiling
+ * that counts, for any request.
+ *
+ * Who changed an end date is `window_changed_by`: every person who ever moved it,
+ * appended from the session by `iam.record_approval_limit_window_change` and never
+ * removed — not `updated_by`, which names only the last writer, so a later save of
+ * the same date would wipe the requester's change. The database guard
+ * `quo.guard_discount_approval` applies the same rules.
  *
  * `null` means the actor has **no** ceiling, which callers must treat as no
  * authority and never as unlimited.
@@ -546,7 +556,8 @@ export async function callerApprovalCeiling(
         AND ($6::uuid IS NULL OR al.created_by <> $6::uuid)
         AND NOT EXISTS (
           SELECT 1 FROM caller_limits moved
-           WHERE $6::uuid IS NOT NULL AND moved.updated_by = $6::uuid)
+           WHERE $4::uuid = ANY (moved.window_changed_by)
+              OR ($6::uuid IS NOT NULL AND $6::uuid = ANY (moved.window_changed_by)))
       ORDER BY (al.user_id IS NOT NULL) DESC, al.amount DESC
       LIMIT 1`,
     [

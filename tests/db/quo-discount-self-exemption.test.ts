@@ -3,7 +3,9 @@
  * (the requester withdraws their own pending discount request), held by the
  * database: migration 20261007090000_quo_discount_self_exemption_and_withdrawal.sql,
  * and its fix round 1, 20261007100000_quo_discount_limit_window_and_amount_provenance.sql
- * (a limit window the requester moved, and who set a price's amount).
+ * (a limit window the requester moved, and who set a price's amount), and fix round 2,
+ * 20261007110000_quo_discount_limit_window_history.sql (who ever moved a limit window is
+ * kept in window_changed_by, for the requester and for the approver).
  *
  * Every case runs in a rolled-back transaction as `app_runtime`, switching the
  * signed-in person with `app.user_id` exactly as the application does. USER_A is the
@@ -60,6 +62,19 @@ const APPROVER_REOPEN = 'd8d30000-0000-4000-8000-000000000004';
 const APPROVER_ENDED = 'd8d30000-0000-4000-8000-000000000005';
 const ROLE_LIMIT_ADMIN = 'd8d30000-0000-4000-8000-0000000000a2';
 const ROLE_WIDE = 'd8d30000-0000-4000-8000-0000000000a3';
+/**
+ * Fix round 2. Holds svc.price.manage and iam.approval.manage; its only discount limit
+ * (OTHER_ACTOR's, 1000 USD, on the person) has expired.
+ */
+const APPROVER_SELF_USER = 'd8d30000-0000-4000-8000-000000000006';
+/**
+ * Fix round 2. Holds svc.price.manage through ROLE_SELF_WIDE, whose 1000 USD limit
+ * OTHER_ACTOR set and which is in force for 30 more days, and iam.approval.manage.
+ */
+const APPROVER_SELF_ROLE = 'd8d30000-0000-4000-8000-000000000007';
+const ROLE_SELF_WIDE = 'd8d30000-0000-4000-8000-0000000000a4';
+/** Fix round 2. A colleague who may administer limits and decides nothing here. */
+const LIMIT_COLLEAGUE = 'd8d30000-0000-4000-8000-000000000008';
 
 beforeAll(async () => {
   await ensureTestLogins(admin);
@@ -71,6 +86,9 @@ beforeAll(async () => {
     [LIMIT_REQUESTER, '03'],
     [APPROVER_REOPEN, '04'],
     [APPROVER_ENDED, '05'],
+    [APPROVER_SELF_USER, '06'],
+    [APPROVER_SELF_ROLE, '07'],
+    [LIMIT_COLLEAGUE, '08'],
   ] as const) {
     await admin.query(
       `INSERT INTO iam.user_accounts
@@ -89,6 +107,7 @@ beforeAll(async () => {
   for (const [role, code, name] of [
     [ROLE_LIMIT_ADMIN, 'fx_db_fd8_limit_admin', 'DB fixture FD8 limit administrator'],
     [ROLE_WIDE, 'fx_db_fd8_wide', 'DB fixture FD8 wide approver'],
+    [ROLE_SELF_WIDE, 'fx_db_fd8_self_wide', 'DB fixture FD8 self-moving approver'],
   ] as const) {
     await admin.query(
       `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
@@ -101,6 +120,7 @@ beforeAll(async () => {
     [ROLE_PRICE_MANAGER, 'svc.price.manage'],
     [ROLE_WIDE, 'svc.price.manage'],
     [ROLE_LIMIT_ADMIN, 'iam.approval.manage'],
+    [ROLE_SELF_WIDE, 'svc.price.manage'],
   ] as const) {
     await admin.query(
       `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
@@ -116,6 +136,12 @@ beforeAll(async () => {
     [APPROVER_REOPEN, ROLE_PRICE_MANAGER],
     [APPROVER_ENDED, ROLE_WIDE],
     [LIMIT_REQUESTER, ROLE_LIMIT_ADMIN],
+    [APPROVER_REOPEN, ROLE_LIMIT_ADMIN],
+    [APPROVER_SELF_USER, ROLE_PRICE_MANAGER],
+    [APPROVER_SELF_USER, ROLE_LIMIT_ADMIN],
+    [APPROVER_SELF_ROLE, ROLE_SELF_WIDE],
+    [APPROVER_SELF_ROLE, ROLE_LIMIT_ADMIN],
+    [LIMIT_COLLEAGUE, ROLE_LIMIT_ADMIN],
   ] as const) {
     await admin.query(
       `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
@@ -169,6 +195,26 @@ beforeAll(async () => {
         SELECT 1 FROM iam.approval_limits
          WHERE tenant_id = $1::uuid AND role_id = $3::uuid AND limit_type = 'discount')`,
     [TENANT_A, COMPANY_A1, ROLE_WIDE, OTHER_ACTOR]
+  );
+  // APPROVER_SELF_USER: an administrator's limit on the person that ended yesterday.
+  await admin.query(
+    `INSERT INTO iam.approval_limits
+       (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, effective_to, created_by)
+     SELECT $1::uuid, $2::uuid, $3::uuid, 'discount', 1000, 'USD', current_date - 30, current_date - 1, $4::uuid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.approval_limits
+         WHERE tenant_id = $1::uuid AND user_id = $3::uuid AND limit_type = 'discount')`,
+    [TENANT_A, COMPANY_A1, APPROVER_SELF_USER, OTHER_ACTOR]
+  );
+  // APPROVER_SELF_ROLE: an administrator's limit on its role, in force for 30 more days.
+  await admin.query(
+    `INSERT INTO iam.approval_limits
+       (tenant_id, company_id, role_id, limit_type, amount, currency_code, effective_from, effective_to, created_by)
+     SELECT $1::uuid, $2::uuid, $3::uuid, 'discount', 1000, 'USD', current_date - 30, current_date + 30, $4::uuid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.approval_limits
+         WHERE tenant_id = $1::uuid AND role_id = $3::uuid AND limit_type = 'discount')`,
+    [TENANT_A, COMPANY_A1, ROLE_SELF_WIDE, OTHER_ACTOR]
   );
 }, 180_000);
 
@@ -440,6 +486,33 @@ describe('quo discount self-exemption and withdrawal — the schema', () => {
       'svc.price_rules.amount_set_at': 'timestamp with time zone|YES',
       'svc.price_rules.amount_set_by': 'uuid|YES',
     });
+  });
+
+  it('adds the limit window history, never null, empty by default (fix round 2)', async () => {
+    expect(
+      await one(
+        admin,
+        `SELECT data_type, udt_name, is_nullable, column_default
+           FROM information_schema.columns
+          WHERE table_schema = 'iam' AND table_name = 'approval_limits'
+            AND column_name = 'window_changed_by'`
+      )
+    ).toEqual({
+      data_type: 'ARRAY',
+      udt_name: '_uuid',
+      is_nullable: 'NO',
+      column_default: 'ARRAY[]::uuid[]',
+    });
+    expect(
+      await one(
+        admin,
+        `SELECT p.prosecdef AS secdef, t.tgname AS trigger
+           FROM pg_proc p
+           JOIN pg_namespace n ON n.oid = p.pronamespace
+           JOIN pg_trigger t ON t.tgfoid = p.oid
+          WHERE n.nspname = 'iam' AND p.proname = 'record_approval_limit_window_change'`
+      )
+    ).toEqual({ secdef: false, trigger: 'tg_approval_limits_window_history' });
   });
 
   it('runs every new function as the caller, and lets only app_runtime read the D8 basis', async () => {
@@ -988,6 +1061,179 @@ describe('quo discount self-exemption — a limit window the requester moved (fi
           [others]
         )
       ).toEqual({ status: 'approved', role_id: ROLE_WIDE });
+    });
+  });
+});
+
+describe('quo discount self-exemption — who ever moved a limit window (fix round 2)', () => {
+  const userLimitOf = async (c: Q, userId: string): Promise<string> =>
+    (
+      await one<{ id: string }>(
+        c,
+        `SELECT id FROM iam.approval_limits
+          WHERE tenant_id = $1 AND limit_type = 'discount' AND user_id = $2`,
+        [TENANT_A, userId]
+      )
+    ).id;
+  const roleLimitOf = async (c: Q, roleId: string): Promise<string> =>
+    (
+      await one<{ id: string }>(
+        c,
+        `SELECT id FROM iam.approval_limits
+          WHERE tenant_id = $1 AND limit_type = 'discount' AND role_id = $2`,
+        [TENANT_A, roleId]
+      )
+    ).id;
+  const historyOf = (c: Q, limit: string) =>
+    one<{ updated_by: string | null; window_changed_by: string[] }>(
+      c,
+      `SELECT updated_by, window_changed_by FROM iam.approval_limits WHERE id = $1`,
+      [limit]
+    );
+  const moveWindow = (c: Q, actor: string, limit: string, days: number) =>
+    as(c, actor, () =>
+      c.query(
+        `UPDATE iam.approval_limits SET effective_to = current_date + $2::int WHERE id = $1`,
+        [limit, days]
+      )
+    );
+  /** A discounted draft written and asked for by USER_A, who moves no limit here. */
+  async function requestByUserA(c: Q, tag: string, discount: number): Promise<string> {
+    const { wo } = await makeWorkOrder(c, tag);
+    const { service } = await seedService(c, tag);
+    const quotation = await seedQuotation(c, wo, tag);
+    const revision = await draftRevision(c, quotation, 1);
+    await addServiceItem(c, revision, service, 1, 100, 1, discount);
+    return requestFor(c, quotation, revision, String(discount));
+  }
+  /** A discounted draft written and asked for by LIMIT_REQUESTER. */
+  async function requestByLimitRequester(c: Q, tag: string, discount: number): Promise<string> {
+    const { wo } = await makeWorkOrder(c, tag);
+    const { service } = await seedService(c, tag);
+    const quotation = await seedQuotation(c, wo, tag);
+    return as(c, LIMIT_REQUESTER, async () => {
+      const revision = await revisionBy(c, quotation, 1, LIMIT_REQUESTER);
+      await addServiceItem(c, revision, service, 1, 100, 1, discount);
+      return requestFor(c, quotation, revision, String(discount), LIMIT_REQUESTER);
+    });
+  }
+  const approveAs = (c: Q, approver: string, approval: string) =>
+    as(c, approver, () => c.query(approveSql, [approval, approver]));
+  const refuseAs = (c: Q, approver: string, approval: string, rule: RegExp) =>
+    as(c, approver, () => expectRefusal(c, rule, approveSql, [approval, approver]));
+  const statusOf = async (c: Q, approval: string): Promise<string> =>
+    (
+      await one<{ status: string }>(c, `SELECT status FROM quo.discount_approvals WHERE id = $1`, [
+        approval,
+      ])
+    ).status;
+
+  it('refuses an approver who reopened their own expired limit, for anybody’s request', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const approval = await requestByUserA(c, 'fd8r2_sro', 10);
+      await refuseAs(c, APPROVER_SELF_USER, approval, /has no discount approval limit that counts/);
+      const limit = await userLimitOf(c, APPROVER_SELF_USER);
+      // The approver, who may administer limits, reopens the administrator's limit.
+      await moveWindow(c, APPROVER_SELF_USER, limit, 365);
+      expect(await historyOf(c, limit)).toEqual({
+        updated_by: APPROVER_SELF_USER,
+        window_changed_by: [APPROVER_SELF_USER],
+      });
+      await refuseAs(
+        c,
+        APPROVER_SELF_USER,
+        approval,
+        /discount_no_approval_limit: .*changed the dates of one of their own/
+      );
+      expect(await statusOf(c, approval)).toBe('pending');
+    });
+  });
+
+  it('refuses an approver who extended the limit on a role they hold; saving the same date is no change', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const limit = await roleLimitOf(c, ROLE_SELF_WIDE);
+      // Saving the end date it already has records nothing, and the limit still counts.
+      await as(c, APPROVER_SELF_ROLE, () =>
+        c.query(`UPDATE iam.approval_limits SET effective_to = effective_to WHERE id = $1`, [limit])
+      );
+      expect(await historyOf(c, limit)).toEqual({
+        updated_by: APPROVER_SELF_ROLE,
+        window_changed_by: [],
+      });
+      const first = await requestByUserA(c, 'fd8r2_sra', 10);
+      await approveAs(c, APPROVER_SELF_ROLE, first);
+      expect(await statusOf(c, first)).toBe('approved');
+
+      // Extending it is moving one's own window: none of the approver's limits counts.
+      await moveWindow(c, APPROVER_SELF_ROLE, limit, 365);
+      expect((await historyOf(c, limit)).window_changed_by).toEqual([APPROVER_SELF_ROLE]);
+      const second = await requestByUserA(c, 'fd8r2_srb', 10);
+      await refuseAs(
+        c,
+        APPROVER_SELF_ROLE,
+        second,
+        /discount_no_approval_limit: .*changed the dates of one of their own/
+      );
+      expect(await statusOf(c, second)).toBe('pending');
+    });
+  });
+
+  it('keeps the requester’s window change through a later save by the approver and by a colleague', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const approval = await requestByLimitRequester(c, 'fd8r2_ls', 10);
+      const limit = await userLimitOf(c, APPROVER_REOPEN);
+      await moveWindow(c, LIMIT_REQUESTER, limit, 365);
+      await refuseAs(c, APPROVER_REOPEN, approval, /dates the requester changed/);
+
+      // The approver saves the same end date again: they become the last writer, but
+      // the end date did not move, so nothing is recorded and nothing is removed.
+      await moveWindow(c, APPROVER_REOPEN, limit, 365);
+      expect(await historyOf(c, limit)).toEqual({
+        updated_by: APPROVER_REOPEN,
+        window_changed_by: [LIMIT_REQUESTER],
+      });
+      await refuseAs(c, APPROVER_REOPEN, approval, /dates the requester changed/);
+
+      // A colleague moves it again: they are added, and the requester stays.
+      await moveWindow(c, LIMIT_COLLEAGUE, limit, 366);
+      expect(await historyOf(c, limit)).toEqual({
+        updated_by: LIMIT_COLLEAGUE,
+        window_changed_by: [LIMIT_REQUESTER, LIMIT_COLLEAGUE],
+      });
+      await refuseAs(c, APPROVER_REOPEN, approval, /dates the requester changed/);
+      expect(await statusOf(c, approval)).toBe('pending');
+
+      // Another person's request is decided against the limit as it stands.
+      const others = await requestByUserA(c, 'fd8r2_lso', 10);
+      await approveAs(c, APPROVER_REOPEN, others);
+      expect(await statusOf(c, others)).toBe('approved');
+    });
+  });
+
+  it('takes the window history from the database, never from the writer', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const inserted = await as(c, LIMIT_REQUESTER, () =>
+        one<{ window_changed_by: string[] }>(
+          c,
+          `INSERT INTO iam.approval_limits
+             (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from,
+              created_by, window_changed_by)
+           VALUES ($1,$2,$3,'fd8r2_history',5,'USD',current_date,$4,$5::uuid[])
+           RETURNING window_changed_by`,
+          [TENANT_A, COMPANY_A1, APPROVER, LIMIT_REQUESTER, [OTHER_ACTOR]]
+        )
+      );
+      expect(inserted).toEqual({ window_changed_by: [] });
+      const limit = await userLimitOf(c, APPROVER_SELF_USER);
+      await as(c, LIMIT_REQUESTER, () =>
+        expectRefusal(
+          c,
+          /permission denied/,
+          `UPDATE iam.approval_limits SET window_changed_by = ARRAY[]::uuid[] WHERE id = $1`,
+          [limit],
+          '42501'
+        )
+      );
     });
   });
 });
