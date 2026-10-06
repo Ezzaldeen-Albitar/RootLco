@@ -207,6 +207,20 @@ label falls outside the advisory range, so the evidence is
 record, including the replacement condition, is
 `docs/engineering/dependency-maintenance/ghsa-vfj7-8cjw-p6xm-braces/README.md`.
 
+**source-map-js and postcss-selector-parser advisories (2026-10-06): closed by an upgrade
+and one override.** GitHub reviewed both on 2026-10-05. GHSA-68fv-2mgg-jv7q (high) affects
+`source-map-js` below 1.2.2, which `next` reaches in production through `postcss`; the
+lockfile moves it to 1.2.2, which every parent range already admits, so it needs no
+override. GHSA-rj75-hqrm-r3gf (moderate, development only) affects `postcss-selector-parser`
+below 7.1.6. Upstream patched only the 7.x line, while `tailwindcss` 3.4.19 and
+`postcss-nested` 6.2.0 still ask for `^6`, so the root override `"postcss-selector-parser":
+"^7.1.6"` forces every copy to 7.1.6 across that major. A local API standalone build
+(not a CI-built image) carried neither package, and both are used only on
+repository-owned inputs at build, lint and test time. The limit: the override is a stopgap. Remove it when a `tailwindcss` v3 release
+depends on `^7`, when upstream publishes a patched 6.x, or when `apps/web` moves to
+`tailwindcss` v4 (change-control row CC-OD-56). No exception was added and no gate was
+changed. From P1-32-PRE-OD-DEP4.
+
 ### The one development exception, and why it is gone
 
 `GHSA-mh99-v99m-4gvg` in `brace-expansion` was the only development-tree waiver this
