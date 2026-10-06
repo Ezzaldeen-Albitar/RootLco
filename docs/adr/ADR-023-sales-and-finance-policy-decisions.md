@@ -274,8 +274,19 @@ It has no record that says "this is additional work". So:
 1. **Keep pooling by work order.** Nothing is ever billed twice across quotations. Legitimate
    additional work using a service already invoiced on the work order cannot be billed from a second
    quotation, except for an approved quantity above what was invoiced, billed as the difference of
-   totals; the other route is a new revision of the first quotation that raises the quantity, which
-   bills the increase (case b1). A second quotation's line that is already covered stays
+   totals. The other route, a new revision of the first quotation that raises the quantity and
+   bills the increase (case b1), is available only while the first quotation is still open: some
+   line is undecided and none is rejected. `QuotationService.revise` calls `assertQuotationOpen`
+   (`apps/api/src/modules/quotation/application/quotation-service.ts`), which refuses with
+   ERR-TRN-001 any quotation that is not `draft` or `active`, and `rollUpDecisions`
+   (`apps/api/src/modules/quotation/domain/quotation.ts`) moves a quotation to `accepted` as soon
+   as every line is approved and to `rejected` as soon as any line is rejected. Once the first
+   quotation has been accepted as a whole, rejected, expired or cancelled, it cannot be revised,
+   and nothing in today's platform bills extra work of a service already invoiced on the work order
+   except an approved quantity above what was invoiced on the second quotation. The backend case for
+   (b1) works because its first revision is only partly approved, which keeps the quotation
+   `active`; the D5-5 scenario's first quotation was approved as a whole, so this route is closed
+   there. A second quotation's line that is already covered stays
    unbilled and does not hold the delivery blocker. No code change; the conservative rule becomes
    the recorded decision.
 2. **Pool per quotation lineage** (quotation, kind and service or item). A second quotation's

@@ -172,11 +172,15 @@ Owner decides; it is not a final business decision. In practice:
   up to the quantity already invoiced, and does not bill it — even when it is genuinely extra work
   the customer approved. Only an approved quantity above what was already invoiced is billed.
 
-If the customer approved genuinely extra work of a service that is already invoiced on the job, the
-way to bill it today is to add a revision to the original quotation with the higher quantity and
-have the customer approve it; the increase is then billed, provided no other quotation of the job
-still has approved work waiting to be invoiced. Until the Owner decides, do not expect a
-second quotation to bill that work.
+If the customer approved genuinely extra work of a service that is already invoiced on the job, you
+can bill it today only while the original quotation is still open: at least one of its lines is
+still waiting for the customer's decision and none has been rejected. Then add a revision to the
+original quotation with the higher quantity and have the customer approve it; the increase is
+billed, provided no other quotation of the job still has approved work waiting to be invoiced.
+Once the original quotation has been accepted as a whole, rejected, expired or cancelled, it
+cannot be revised. In that case nothing in the platform today bills that extra work, except an
+approved quantity on the second quotation above what was already invoiced. Until the Owner
+decides, do not expect a second quotation to bill that work.
 
 Two sentences on this panel matter:
 
