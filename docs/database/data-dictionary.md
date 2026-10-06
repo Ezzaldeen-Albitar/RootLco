@@ -4514,6 +4514,10 @@ Nothing else changes a version: its content, `effective_to` and `deleted_at` are
 (`tg_pricing_approval_policies_version_immutable`) and its status moves only through that
 retirement (`tg_pricing_approval_policies_status`). `maker_approver_distinct` is a legacy column
 that nothing reads: separation of duties cannot be configured off.
+A version written on the request path (`app_runtime` or a login member of it) takes effect on
+the day it is recorded and has no end date: the same trigger refuses any other `effective_from`
+and any `effective_to` (P1-32-PRE-OD-FD8 fix round 6, migration 20261007150000, ADR-023 D8), so
+the version that retires the one in force always takes its place.
 
 #### svc.service_categories
 

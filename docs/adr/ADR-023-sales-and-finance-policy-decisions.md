@@ -306,15 +306,17 @@ Implementation particulars (P1-32-PRE-OD-FD8, Proposed):
 - **No sole-administrator exception.** The requester never decides their own request, so a second
   authorised person is required, as for D4.
 - **Bounded path matrix.** DBCR-P1-32-PRE-OD-FD8-001 section 12 lists every way the requester (or
-  the approver, for their own approval) can change what the evaluation relies on. Eleven fall within
+  the approver, for their own approval) can change what the evaluation relies on. Twelve fall within
   D8's words and are closed, each with its migration and regression test: the threshold version; a
+  threshold version dated not to be in force today, which retired the version in force without
+  taking its place (fix round 6: the database now holds every request-path writer to a version
+  effective from the day it is recorded with no end date, as the application already writes it); a
   limit the requester created; a limit's dates; a role limit's value; a role grant and a grant scope
   bringing a role's limit; a price rule's amount; an item selling price's amount and its withdrawal
   or restoration; a price-list publication; and a price-list assignment. Three fall outside them and
   are an unanswered Owner question, not restricted by this change: the approval permission brought
   by a role grant, the approval permission brought by a role-permission mapping, and reactivating the
-  approver's account ("Who may approve" below). One is a residual reachable only by a direct
-  database writer: a future-dated company threshold version, which the application never writes.
+  approver's account ("Who may approve" below). None is left as a residual.
 
 Open points. For the paths within D8's words — a threshold, a role limit or a price list — each
 choice below is the one that never grants more than the Owner allowed (fix round 3 corrected one that
@@ -391,12 +393,21 @@ restrict them.
   permission or account the requester gave or restored cannot approve that requester's request, and
   someone else must. The Owner may also rule on each of the three routes separately.
 
-- **An approver's own window change (Owner decision needed).** An approver who moved the dates of
-  one of their own discount limits in a company has no limit that counts there while that limit is
-  theirs, and a new limit set by somebody else does not restore it; the limit-ending route does not
-  refuse such a change up front, as limit creation does. Refusing it at the route, or letting a fresh
-  limit set by another administrator count, is the Owner's choice; until then the stricter reading
-  stands, which never grants more.
+- **An approver's own changes (Owner decision needed; not decided).** D8's text speaks of "one's own
+  quotation". Two rules go further and exclude an approver's limit for anybody's request, not only
+  the approver's own: an approver who moved the dates of one of their own discount limits in a company
+  (fix round 2), and an approver who issued or changed their own role grant, or added a scope to it
+  (fix round 5), has no limit that counts there while that limit, grant or scope is theirs, and a new
+  limit set by somebody else does not restore it. This is not a new commercial rule: `develop` already
+  refuses a self-grant and a self-scope at the route and setting one's own approval limit
+  (`access-administration-service.ts`, `assertNotSelf` and
+  `assertApprovalLimitNotForSelf`), so these rules reach only a change made
+  around those refusals; but the limit-ending route does not refuse an approver's own window change up
+  front, as limit creation does. Whether D8 reaches an approver's own changes for other people's
+  requests — refusing them at the route, or letting a fresh limit or grant set by another
+  administrator count — is the Owner's choice. It is unresolved and not implemented as a ruling; until
+  the Owner rules, the stricter reading stands, which never grants more (verification ledger
+  VL-P132-002).
 - **Before this change.** Provenance of existing rows is their last recorded writer, not a verified
   attribution, and who set an existing amount is taken from it; who published an existing price-list
   version was not recorded; who made an existing price-list assignment is taken from its creator and

@@ -13,7 +13,10 @@
  * the requester changed, count as the requester's own price), and fix round 5,
  * 20261007140000_quo_discount_role_grant_provenance.sql (a role's limit counts only
  * through a grant, and a grant scope, the requester did not make or change; and a
- * selling price the requester withdrew makes the item's price their own).
+ * selling price the requester withdrew makes the item's price their own), and fix
+ * round 6, 20261007150000_quo_discount_threshold_version_dates.sql (a threshold version
+ * recorded on the request path starts the day it is recorded and has no end date, so
+ * it never retires the version in force without taking its place).
  *
  * Every case runs in a rolled-back transaction as `app_runtime`, switching the
  * signed-in person with `app.user_id` exactly as the application does. USER_A is the
@@ -2220,6 +2223,101 @@ describe('quo discount self-exemption — a role grant the requester made (fix r
       expect(
         await one(c, `SELECT status FROM quo.quotation_revisions WHERE id = $1`, [theirs])
       ).toEqual({ status: 'issued' });
+    });
+  });
+});
+
+describe('quo discount self-exemption — a threshold version the requester dated (fix round 6)', () => {
+  /**
+   * The next discount threshold version of `company` (NULL: tenant-wide), dated by the
+   * SQL expressions `from` and `to`, recorded by whoever is signed in.
+   */
+  const datedThreshold = (from: string, to: string) =>
+    `INSERT INTO svc.pricing_approval_policies
+       (tenant_id, company_id, policy_type, threshold_kind, threshold_value, currency_code,
+        required_permission_code, version_no, effective_from, effective_to, status, created_by)
+     SELECT $1, $2::uuid, 'discount', 'amount', $3::numeric, 'USD', 'svc.price.manage',
+            COALESCE(max(p.version_no), 0) + 1, ${from}, ${to}, 'active', $4
+       FROM svc.pricing_approval_policies p
+      WHERE p.tenant_id = $1 AND p.company_id IS NOT DISTINCT FROM $2::uuid
+        AND p.policy_type = 'discount'
+     RETURNING id`;
+  const inForce = async (c: Q): Promise<string | null> =>
+    (
+      await one<{ id: string | null }>(
+        c,
+        `SELECT (svc.discount_policy_in_force($1, $2, current_date)).id AS id`,
+        [TENANT_A, COMPANY_A1]
+      )
+    ).id;
+
+  it('refuses a version that would retire the threshold in force without taking its place', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { service } = await seedService(c, 'fd8r6_dated');
+      // An administrator set a generous tenant-wide threshold of 500 and a company
+      // threshold of 50; the company's is the one in force.
+      await as(c, OTHER_ACTOR, () =>
+        one(c, datedThreshold('current_date', 'NULL'), [TENANT_A, null, '500', OTHER_ACTOR])
+      );
+      const company = await as(c, OTHER_ACTOR, () => recordThreshold(c, '50'));
+      expect(await inForce(c)).toBe(company);
+
+      // USER_A records a company version that would not be in force today: dated to
+      // start tomorrow, backdated, already ended, or ending later. Each would retire
+      // the administrator's 50 and hold USER_A's next quotation to the 500 nobody but
+      // the administrator set.
+      for (const [from, to] of [
+        ['current_date + 1', 'NULL'],
+        ['current_date - 1', 'NULL'],
+        ['current_date', 'current_date'],
+        ['current_date', 'current_date + 30'],
+      ] as const) {
+        await expectRefusal(
+          c,
+          /a threshold version takes effect on the day it is recorded/,
+          datedThreshold(from, to),
+          [TENANT_A, COMPANY_A1, '5000', USER_A]
+        );
+      }
+      expect(await inForce(c)).toBe(company);
+
+      // USER_A's quotation stays held to the administrator's 50: a discount of 60
+      // needs approval.
+      const { wo } = await makeWorkOrder(c, 'fd8r6_dated');
+      const quotation = await seedQuotation(c, wo, 'fd8r6_dated');
+      expect(
+        await one(c, `SELECT discount_policy_id FROM quo.quotations WHERE id = $1`, [quotation])
+      ).toEqual({ discount_policy_id: company });
+      const revision = await draftRevision(c, quotation, 1);
+      await addServiceItem(c, revision, service, 1, 100, 1, 60);
+      expect(await basisOf(c, revision, USER_A)).toEqual({ own_policy: false, own_price: false });
+      expect(await needsApproval(c, revision)).toBe(true);
+      await expectRefusal(c, /discount_approval_required/, `SELECT quo.issue_revision($1)`, [
+        revision,
+      ]);
+
+      // A version dated today and open-ended — what the application writes — is still
+      // recorded, and puts USER_A's own threshold in force.
+      const own = await recordThreshold(c, '5000');
+      expect(await inForce(c)).toBe(own);
+    });
+  });
+
+  it('leaves a connection that bypasses row security free to record a dated version', async () => {
+    await withRolledBackTx(admin, ctxA, async (c) => {
+      const dated = await one<{ id: string }>(c, datedThreshold("DATE '2020-01-01'", 'NULL'), [
+        TENANT_A,
+        COMPANY_A1,
+        '50',
+        OTHER_ACTOR,
+      ]);
+      expect(
+        await one(
+          c,
+          `SELECT effective_from::text AS effective_from FROM svc.pricing_approval_policies WHERE id = $1`,
+          [dated.id]
+        )
+      ).toEqual({ effective_from: '2020-01-01' });
     });
   });
 });
