@@ -221,6 +221,19 @@ depends on `^7`, when upstream publishes a patched 6.x, or when `apps/web` moves
 `tailwindcss` v4 (change-control row CC-OD-56). No exception was added and no gate was
 changed. From P1-32-PRE-OD-DEP4.
 
+**sharp advisory GHSA-wq5f-xc86-pv6w (2026-10-06): closed by an upgrade.** GitHub published
+it on 2026-10-06 as high: sharp below 0.35.5 bundles a librsvg with a memory-safety defect
+(upstream CVE-2026-96889) that can lead to remote code execution on glibc-based Linux. sharp
+0.35.5 bundles librsvg 2.63.2. `sharp` is a production dependency: the API attachment scanner
+passes uploaded bytes to it, and sharp detects the format from the bytes before the service
+refuses anything that is not JPEG, PNG or WebP, so the SVG loader cannot be ruled out. It is
+also an optional dependency of `next`. The API image runs on `node:22-alpine` (musl), outside
+the glibc condition the advisory names, but development and test machines install the
+vulnerable binary too. `sharp` moves from 0.35.4 to 0.35.5 in lockstep — the root `overrides`
+entry, the root dependency and the `apps/api` dependency — and the lockfile moves the 26
+`@img/sharp-*` platform packages with it (libvips 1.3.3 to 1.3.4). No exception was added and
+no gate was changed (change-control row CC-OD-57). From P1-32-PRE-OD-DEP5.
+
 ### The one development exception, and why it is gone
 
 `GHSA-mh99-v99m-4gvg` in `brace-expansion` was the only development-tree waiver this
