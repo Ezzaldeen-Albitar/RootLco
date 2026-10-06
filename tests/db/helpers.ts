@@ -19,16 +19,18 @@
  *    on the admin connection.
  *
  * Credentials are the public Supabase local-dev defaults, overridable via
- * DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD. They are not secrets;
- * no production credential is ever read here.
+ * DB_NAME / DB_USER / DB_PASSWORD. They are not secrets; no production
+ * credential is ever read here. The host and port have NO default: DB_PORT (or
+ * PGPORT) must name a disposable test database, and `tests/database-target.ts`
+ * refuses a missing or inconsistent port and the local acceptance database.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Client, Pool } from 'pg';
 import type { ClientConfig } from 'pg';
+import { resolveTestDatabaseTarget } from '../database-target';
 
-const HOST = process.env.DB_HOST ?? '127.0.0.1';
-const PORT = Number(process.env.DB_PORT ?? 54322);
+const { host: HOST, port: PORT } = resolveTestDatabaseTarget('tests/db/helpers.ts');
 const DATABASE = process.env.DB_NAME ?? 'postgres';
 const ADMIN_USER = process.env.DB_USER ?? 'postgres';
 const ADMIN_PASSWORD = process.env.DB_PASSWORD ?? 'postgres';

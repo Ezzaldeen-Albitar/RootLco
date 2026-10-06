@@ -576,11 +576,14 @@ describe('entitlement inventory: inputs and where it may write', () => {
     ).toBe(resolve(outside));
   });
 
-  it('requires --out and a real port, and defaults to the local database', () => {
+  it('requires --out and a real port, and leaves an unstated target to the shared resolver', () => {
     expect(() => parseArguments([])).toThrow(/--out is required/);
     expect(() => parseArguments(['--out', 'x.json', '--db-port', 'abc'])).toThrow(/port/);
     expect(() => parseArguments(['--out'])).toThrow(/needs a value/);
-    expect(parseArguments(['--out', 'x.json'])).toMatchObject({ host: '127.0.0.1', port: 54322 });
+    const unstated = parseArguments(['--out', 'x.json']);
+    expect(unstated.port).toBeUndefined();
+    expect(unstated.host).toBeUndefined();
+    expect(parseArguments(['--out', 'x.json', '--db-port', '55441']).port).toBe(55441);
   });
 });
 

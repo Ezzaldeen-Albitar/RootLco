@@ -12,13 +12,17 @@
 // only creates/drops its own `p1_12_upgrade_probe` database.
 //
 // Usage: node scripts/db/phase-upgrade-matrix.mjs [--json out.json]
-// Env: PGHOST/PGPORT/PGUSER/PGPASSWORD (defaults 127.0.0.1:54322 postgres/postgres).
+// Env: PGPORT or DB_PORT (required, and equal when both are set), PGHOST/DB_HOST,
+// PGUSER/PGPASSWORD (default postgres/postgres). The target is resolved by
+// scripts/lib/db-target.mjs, which refuses a missing or inconsistent port and the
+// local acceptance database — see docs/database/migration-standard.md section 16.
 // ============================================================================
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { collectInventory, computeSchemaHash } from './schema-inventory.mjs';
+import { resolveDatabaseTargetOrExit } from '../lib/db-target.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const MIG_DIR = join(ROOT, 'supabase', 'migrations');
@@ -54,9 +58,10 @@ const SEEDS = [
   'seeds/08_sal_payment_methods.sql',
 ];
 
+const target = resolveDatabaseTargetOrExit({ consumer: 'phase-upgrade-matrix' });
 const base = {
-  host: process.env.PGHOST ?? '127.0.0.1',
-  port: Number(process.env.PGPORT ?? 54322),
+  host: target.host,
+  port: target.port,
   user: process.env.PGUSER ?? 'postgres',
   password: process.env.PGPASSWORD ?? 'postgres',
 };

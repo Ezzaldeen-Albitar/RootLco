@@ -429,7 +429,7 @@ their own limit's dates or issued or changed their own grant or scope has no lim
 anybody's request, which goes beyond "one's own quotation"; the stricter reading stands until the
 Owner rules.
 
-## 14. Addendum (P1-32-PRE-OD-RGF) — the 177th migration on a database that already holds grants
+## 14. Addendum (P1-32-PRE-OD-RGF) — `20261007140000` on a database that already holds grants
 
 **What failed.** The upgrade rehearsal of checkpoint CP-20261006-1 on a restored copy of the
 acceptance database stopped at `20261007140000_quo_discount_role_grant_provenance.sql`. That file
@@ -459,6 +459,15 @@ upgrade of a populated database. That gap is recorded in the verification ledger
 - `20261007160000_iam_role_grant_checks_deferred_again.sql` sorts after `20261007150000` and
   re-creates both triggers exactly as `20260718092000` and `20260727090000` wrote them,
   `DEFERRABLE INITIALLY DEFERRED`.
+
+**Ordinals.** Sections 12 and 13 number migrations as they stood when each merged. In filename
+order today, `20261007135000` is the 177th migration, `20261007140000` the 178th (it was the
+177th when section 12 was written), `20261007150000` the 179th and `20261007160000` the 180th.
+
+**A database that already holds `20261007140000`.** `20261007135000` sorts before a version that
+such a database's migration ledger already records, so `supabase migration up` refuses it there
+as out of order; bringing that database forward would need `--include-all` or a reset. No
+persistent database is in that state — holding `20261007140000` without `20261007135000`.
 
 Both are ROLLBACK-SAFE and add no table, column, function, grant, policy, seed or permission code.
 After the second, the schema is the one `20261007150000` left on a database where the first never

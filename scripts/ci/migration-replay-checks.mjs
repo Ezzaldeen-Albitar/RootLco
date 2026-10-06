@@ -18,11 +18,14 @@
  * Usage:
  *   node scripts/ci/migration-replay-checks.mjs --phase post \
  *     --baseline .github/ci-baselines/schema-baseline.json --json out.json
- * Exit codes: 0 pass · 1 assertion failure · 2 connection/IO error.
+ * Exit codes: 0 pass · 1 assertion failure · 2 connection/IO error or a refused
+ * database target (DB_PORT/PGPORT missing or inconsistent, or the local acceptance
+ * database without authorisation — scripts/lib/db-target.mjs).
  */
 import { readdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { resolveDatabaseTargetOrExit } from '../lib/db-target.mjs';
 
 export const MIGRATION_DIR = join('supabase', 'migrations');
 
@@ -394,10 +397,11 @@ async function main(argv) {
       failures.push(`reserved migration series present: ${forbidden.join(', ')}`);
     evidence.filenamePattern = 'checked';
   } else {
+    const target = resolveDatabaseTargetOrExit({ consumer: 'migration-replay-checks' });
     const pg = (await import('pg')).default;
     const client = new pg.Client({
-      host: process.env.DB_HOST ?? '127.0.0.1',
-      port: Number(process.env.DB_PORT ?? 54322),
+      host: target.host,
+      port: target.port,
       database: process.env.DB_NAME ?? 'postgres',
       user: process.env.DB_USER ?? 'postgres',
       password: process.env.DB_PASSWORD ?? 'postgres',

@@ -12,14 +12,17 @@
 // Safety: refuses to run if any module schema already exists, so it can never
 // be pointed at a database that holds state. CI always provides a fresh one.
 //
-// Connection comes from DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD
-// (defaults match the Supabase local stack; CI sets its own). No production
-// credential is read, and none may ever be introduced here.
+// Connection comes from DB_HOST / DB_PORT / DB_NAME / DB_USER / DB_PASSWORD.
+// The port has no default: scripts/lib/db-target.mjs requires DB_PORT (or an
+// agreeing PGPORT) and refuses the local acceptance database without its
+// forward-apply authorisation; CI sets its own. No production credential is
+// read, and none may ever be introduced here.
 // ============================================================================
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import pg from 'pg';
+import { resolveDatabaseTargetOrExit } from '../lib/db-target.mjs';
 
 const MIGRATIONS_DIR = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -80,9 +83,10 @@ export function listMigrations(dir = MIGRATIONS_DIR) {
 }
 
 async function main() {
+  const target = resolveDatabaseTargetOrExit({ consumer: 'apply-migrations' });
   const client = new pg.Client({
-    host: process.env.DB_HOST ?? '127.0.0.1',
-    port: Number(process.env.DB_PORT ?? 54322),
+    host: target.host,
+    port: target.port,
     database: process.env.DB_NAME ?? 'postgres',
     user: process.env.DB_USER ?? 'postgres',
     password: process.env.DB_PASSWORD ?? 'postgres',

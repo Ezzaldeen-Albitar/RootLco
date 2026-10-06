@@ -165,7 +165,7 @@ fact in words did not, which is the gap this revision closes.
 | Web unit and component test files                                      | **198**                                                            | derived                                                                    |
 | Playwright specification files                                         | **9** (2 anonymous, 7 authenticated)                               | commands 11 and 12 — **not re-measured**, §1.1.1                           |
 | Root CI-contract test files                                            | **46**                                                             | derived                                                                    |
-| CI gate scripts under `scripts/ci`                                     | **66** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
+| CI gate scripts under `scripts/ci`                                     | **68** in the directory, **8** introduced or changed by this phase | derived; the eight are the `scripts/ci` rows of §7.1                       |
 | Web gate scripts under `apps/web/scripts`                              | **5** in the directory, **1** introduced by this phase             | derived                                                                    |
 | Phase documentation under `docs/phase-1/phase-1-27`                    | **38** tracked, of which **30** are `.md`                          | derived from `git ls-files` — see §9.1                                     |
 | Product planning documentation under `docs/product`                    | **13** tracked                                                     | derived from `git ls-files` — see §9.2                                     |
@@ -985,8 +985,8 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      whose regexes read the label and the number as adjacent cells. -->
 
 <!-- derived: files apps/web/tests = 198 -->
-<!-- derived: files tests/ci = 82 -->
-<!-- derived: files scripts/ci = 66 -->
+<!-- derived: files tests/ci = 86 -->
+<!-- derived: files scripts/ci = 68 -->
 <!-- derived: files apps/web/scripts = 5 -->
 <!-- derived: files supabase/migrations = 180 -->
 <!-- derived: files tests/db = 166 -->

@@ -27,9 +27,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Pool, type ClientConfig } from 'pg';
 import { listMigrations, versionOf } from '../../scripts/db/apply-migrations.mjs';
+import { resolveTestDatabaseTarget } from '../database-target';
 
-const HOST = process.env.DB_HOST ?? '127.0.0.1';
-const PORT = Number(process.env.DB_PORT ?? 54322);
+const { host: HOST, port: PORT } = resolveTestDatabaseTarget('tests/backend/isolated-database.ts');
 const ADMIN_USER = process.env.DB_USER ?? 'postgres';
 const ADMIN_PASSWORD = process.env.DB_PASSWORD ?? 'postgres';
 /** The shared database the harness otherwise targets. */

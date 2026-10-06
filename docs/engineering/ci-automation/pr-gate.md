@@ -211,16 +211,86 @@ The npm cache was fixed at the same time: a job that does not install no longer 
 (empty) npm cache entry, and a version file in the cache key moves past the empty entries
 without deleting anything. `npm ci` is unchanged.
 
+### Landing owner and approved head
+
+Owner instruction of 2026-10-06. Every pull request into `develop` has **one** explicit landing
+owner — the person or worker assigned to merge it — and nobody else merges, approves, edits or
+closes it. Immediately before merging, the landing owner runs, with `GH_TOKEN` in the
+environment:
+
+```
+node scripts/ci/landing-guard.mjs --pr <number> --approved-head <40-character head SHA> --mark-reviewed
+gh pr merge <number> --merge --match-head-commit <the same SHA>
+```
+
+The guard refuses (exit 1) unless the pull request is open, not a draft, based on `develop`,
+and its current head is exactly the approved head — the head the independent review approved.
+With `--mark-reviewed` it then sets the commit status **`independent-review`** to `success` on
+that head, and re-reads the pull request to prove the head did not move meanwhile.
+`--match-head-commit` makes GitHub refuse the merge if the head moves after that. If the
+guard refuses, nothing is merged; the landing owner reports the refusal.
+
+`independent-review` is required by **no ruleset**. Neither `develop`'s ruleset (19896821) nor
+`main`'s (19896793) changes. It is checked after the merge, by the integrity job below, so a
+merge that skipped the guard, or merged a head other than the one marked, is reported rather
+than absorbed. The guard is repository tooling, not orchestration tooling: the status it sets
+is read by a workflow in this repository, so the setter and the reader share one context name
+and are reviewed and tested together (`tests/ci/landing-guard.test.ts`).
+
 ### After a merge into `develop`
 
 `ci.yml` and the protected verification workflow no longer run on a push to `develop`.
 `develop-merge-integrity.yml` runs instead, about 0.5 minutes (est.), with read-only
-permissions and a concurrency group per commit. It asserts that the pushed commit is a merge
-whose tree equals its second parent's (the pull-request head), and that the head carries a
-successful `ci-gate (development)` check run from GitHub Actions, at that commit, produced by
-`pr-ci.yml`. It then prints **merged, full checkpoint verification pending**, which is the
-fixed wording for every merge. Tree equality holds by construction once `develop` requires
-branches to be up to date.
+permissions, a sparse checkout of `scripts/ci` and a concurrency group per commit. Through
+`scripts/ci/develop-merge-integrity.mjs` it asserts that the pushed commit M is a merge, and
+then, failing on any one of them:
+
+1. tree(M) equals tree(M^2), the pull-request head;
+2. M^2, the **tested candidate**, carries a successful `ci-gate (development)` check run from
+   GitHub Actions, at that commit, produced by `pr-ci.yml`;
+3. M^2, the **approved head**, carries a successful `independent-review` status — a missing
+   status, a status on another commit, or one that is not `success` fails;
+4. exactly one pull request names M as its merge commit; it was based on `develop` and its
+   recorded head is M^2. Only that pull request is cited in the summary: the commit-to-pulls
+   listing also returns every open pull request that contains the commit, such as the standing
+   promotion pull request, and none of those is the one that merged.
+
+It then prints **merged, full checkpoint verification pending**, which is the fixed wording for
+every merge. Tree equality holds by construction once `develop` requires branches to be up to
+date. `tests/ci/develop-merge-integrity.test.ts` exercises each refusal (a matching status, a
+missing one, one on another SHA, a tree mismatch, the gate run and the attribution).
+
+### Known limitations of the landing guard
+
+Recorded at the independent review of 2026-10-06.
+
+- **The integrity script has not run live.** `tests/ci/develop-merge-integrity.test.ts` fails on
+  a missing review status, a status on another SHA, a status read answering for a different
+  SHA, a pending status, a tree mismatch, a non-merge commit, and a gate run that is missing,
+  failed, foreign or from another workflow; it cites only the pull request whose
+  `merge_commit_sha` matches. The live `commits/{M}/pulls` listing was read for four recent
+  `develop` merges: it returns the merged pull request with a matching `merge_commit_sha` plus
+  the open pull requests that contain the commit, so the attribution filter fits real data. The
+  first live run is the merge of the pull request that introduces it, and that run needs
+  `landing-guard --mark-reviewed` first.
+- **`independent-review` is a self-asserted commit status in no ruleset.** Anyone holding a
+  token that can write statuses can set it, and a missing status is detected only after the
+  merge. No workflow in the repository requests `statuses: write`.
+- **The `main` path is unchanged.** `develop-merge-integrity.yml` is the only `.github` file the
+  change touches, `workflow-context-producers.test.ts` passes, and `check-workflow-security`
+  reports no findings. The change adds no disable, skip or only directive and edits no CI
+  baseline.
+- **Records outside the repository.** VL-CI-005 and VL-DB-003 in
+  `docs/product/owner-directive-2026-09-16/capability-status.md` cite a coordinator record
+  outside the repository, which cannot be verified from here; their wording is hedged "per
+  coordinator record".
+- **Stale record text.** The VL-DB-004 and VL-CI-006 rows still say "number assigned when it
+  opens" and "not executed" (hosted), although the pull request is open (#522) and its hosted
+  `ci-gate (development)` run at `b9690696` concluded success. That record text is updated at
+  closure.
+- **Local unit tier under load.** One full local unit run had three timeouts
+  (`p1-28-access-gate`, `p1-28-evidence-manifest`, `tailwind-theme-gate`); all three files pass
+  when re-run in isolation (192 of 192), and the hosted unit-coverage check passed.
 
 ### Checkpoints
 
