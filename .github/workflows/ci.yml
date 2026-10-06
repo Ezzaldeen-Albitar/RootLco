@@ -1,7 +1,17 @@
 # =============================================================================
 # RootLco — Continuous Integration. P1-01-DO-002 / P1-01-QA-009.
 #
-# Runs on pull requests into develop and main, and on pushes to those branches.
+# Runs on pull requests into main and on pushes to main.
+#
+# TDP-2026-10 (temporary, Owner approval 2026-10-05). Until that policy it also
+# ran on every pull request into develop and every push to develop, re-proving
+# what `pr-ci.yml` had already proved on the same head. `develop` now requires
+# `ci-gate (development)` instead of these four job names, so they run only
+# where `main` still requires them: a pull request into main and a push to main.
+# The jobs and their names are unchanged, because main's ruleset requires them by
+# name. `workflow_dispatch` is removed so nothing can place main's four required
+# contexts on a develop commit. Restoration order:
+# docs/engineering/ci-automation/pr-gate.md.
 #
 # NO DEPLOYMENT. Phase 1-1 delivers no CD workflow and none is required: no
 # deployment platform is approved and no environment beyond Local exists (ADR-012).
@@ -14,10 +24,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [develop, main]
+    branches: [main]
   push:
-    branches: [develop, main]
-  workflow_dispatch:
+    branches: [main]
 
 # A newer push to the same branch cancels the older run.
 concurrency:

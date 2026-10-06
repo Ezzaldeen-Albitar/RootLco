@@ -25,6 +25,7 @@ import {
   DECLARED_JOBS,
   toMarkdown,
   acceptableResults,
+  declaredJobsFor,
   STATE,
 } from '../../scripts/ci/evaluate-ci-gate.mjs';
 
@@ -516,5 +517,72 @@ describe('the authenticated browser tier is gate authority', () => {
     expect(markdown).toContain('### Security-gated assurance');
     expect(markdown).toContain(STATE.NOT_ELIGIBLE);
     expect(markdown).toContain('Trusted context: `false`');
+  });
+});
+
+/**
+ * TDP-2026-10 (temporary). The development profile governs the SAME jobs, so the
+ * three-list reconciliation above holds for it too; it differs from the full
+ * profile in exactly two rows, and only for a pull request into develop.
+ */
+describe('the development profile governs the same jobs, two of them conditionally', () => {
+  it('is DECLARED_JOBS with web-quality and authenticated-browser made conditional', () => {
+    expect(declaredJobsFor('full')).toBe(DECLARED_JOBS);
+    const development = declaredJobsFor('development') as Array<{
+      id: string;
+      alwaysRequired: boolean;
+      conditional?: boolean;
+      securityEligibility?: string;
+    }>;
+    expect(development.map((j) => j.id)).toEqual(
+      (DECLARED_JOBS as Array<{ id: string }>).map((j) => j.id)
+    );
+    const changed = development.filter((job) => {
+      const full = (DECLARED_JOBS as Array<{ id: string; alwaysRequired: boolean }>).find(
+        (j) => j.id === job.id
+      );
+      return full?.alwaysRequired !== job.alwaysRequired;
+    });
+    expect(changed.map((j) => j.id).sort()).toEqual(['authenticated-browser', 'web-quality']);
+    for (const job of changed) {
+      expect(job.conditional).toBe(true);
+      expect(acceptableResults(job)).toEqual(new Set(['success', 'skipped']));
+    }
+    // The browser tier keeps its security eligibility in both profiles.
+    expect(development.find((j) => j.id === 'authenticated-browser')?.securityEligibility).toBe(
+      'same-repository head'
+    );
+  });
+
+  it('a pull request into develop may not skip a job its classification required', () => {
+    const classification = {
+      ...classificationRequiringEverything(),
+      profile: 'development',
+      decisions: {
+        head: {
+          jobs: Object.fromEntries(
+            (DECLARED_JOBS as Array<{ id: string }>).map((j) => [j.id, true])
+          ),
+        },
+        base: {
+          available: true,
+          jobs: Object.fromEntries(
+            (DECLARED_JOBS as Array<{ id: string }>).map((j) => [j.id, true])
+          ),
+        },
+      },
+    };
+    const result = evaluate(
+      allSucceeded({ 'web-quality': 'skipped' }),
+      classification,
+      {},
+      {
+        trustedContext: true,
+        event: 'pull_request',
+        baseRef: 'develop',
+      }
+    );
+    expect(result.decision).toBe('No-Go');
+    expect(result.profile).toBe('development');
   });
 });
