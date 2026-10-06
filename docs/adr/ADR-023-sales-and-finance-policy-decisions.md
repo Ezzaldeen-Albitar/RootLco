@@ -305,11 +305,24 @@ Implementation particulars (P1-32-PRE-OD-FD8, Proposed):
   the session (fix round 5).
 - **No sole-administrator exception.** The requester never decides their own request, so a second
   authorised person is required, as for D4.
+- **Bounded path matrix.** DBCR-P1-32-PRE-OD-FD8-001 section 12 lists every way the requester (or
+  the approver, for their own approval) can change what the evaluation relies on. Eleven fall within
+  D8's words and are closed, each with its migration and regression test: the threshold version; a
+  limit the requester created; a limit's dates; a role limit's value; a role grant and a grant scope
+  bringing a role's limit; a price rule's amount; an item selling price's amount and its withdrawal
+  or restoration; a price-list publication; and a price-list assignment. Three fall outside them and
+  are an unanswered Owner question, not restricted by this change: the approval permission brought
+  by a role grant, the approval permission brought by a role-permission mapping, and reactivating the
+  approver's account ("Who may approve" below). One is a residual reachable only by a direct
+  database writer: a future-dated company threshold version, which the application never writes.
 
-Open points (each choice is the one that never grants more than the Owner allowed; fix round 3
-corrected one that did not, a self-set price quoted with no discount, fix round 4 another, a
-price-list assignment the requester made, and fix round 5 two more, a role grant or grant scope the
-requester made and a selling price the requester withdrew):
+Open points. For the paths within D8's words — a threshold, a role limit or a price list — each
+choice below is the one that never grants more than the Owner allowed (fix round 3 corrected one that
+did not, a self-set price quoted with no discount; fix round 4 another, a price-list assignment the
+requester made; and fix round 5 two more, a role grant or grant scope the requester made and a
+selling price the requester withdrew). That statement does not cover the paths outside those words:
+they are listed below as an Owner decision needed, with what happens today, and this change does not
+restrict them.
 
 - **Reading chosen.** D8 allows evaluating under the version in force before the person's change. A
   price changed in place keeps no earlier value and an earlier version may be the same person's, so
@@ -346,12 +359,38 @@ requester made and a selling price the requester withdrew):
   item is treated as having set the price of every line priced from that item's selling prices, which
   is wider than the change and never grants more. A price rule cannot be withdrawn this way: its
   version is frozen once published.
-- **Not attributed (Owner decision needed).** A change to a role's permissions
-  (`iam.role_permissions`) — adding the approval permission to a role the approver holds, or removing
-  a denial — changes who may approve a request, never any limit, and is not treated as the requester's
-  change; nor is reactivating the approver's account. Whether D8 reaches the approval permission as
-  well as the limit is the Owner's choice; a permission mapping that is removed leaves no row to
-  record who removed it, so that reading would need a history of mappings first.
+- **Who may approve (Owner decision needed; not decided).** D8 names a threshold, a role limit and a
+  price list. Three acts of the requester change who may approve the request instead, and none of
+  them is restricted by this change:
+  1. a role grant (or a scope on one) that the requester issues to the approver, through
+     `POST /iam/grants` or `POST /iam/grants/{grantId}/scopes`, bringing a role that carries the
+     approval permission the request records;
+  2. a role-permission mapping on a role the approver holds — adding that permission, changing a
+     mapping to allow it, or removing a denial of it — through `/iam/roles/{roleId}/permissions`;
+  3. reactivating the approver's locked account through `POST /iam/users/{userId}/status`; a locked
+     account holds no permission.
+
+  Today the database guard and the application check the approval permission when the decision is
+  made, through `iam.has_permission_in_scope`, which counts every active grant, scope and mapping of an
+  active account, whoever made them. So the requester's act can turn a refusal for the missing
+  permission into an approval of their own request, provided the approver also holds a discount limit
+  that counts for it (one neither of them created or moved, and not one brought only by a grant the
+  requester issued or changed). The grant in route 1
+  brings no role limit for the requester's request; it does bring the permission. A different person
+  still decides, and the requester never decides their own request.
+
+  The question for the Owner is whether D8 reaches who may approve as well as the threshold, the
+  limit and the price. If the Owner rules that it does not, the current behaviour stands, the ruling
+  is recorded here, and nothing else changes. If the Owner rules that it does, a further forward
+  migration and application change follow: the approval permission counts only through a grant the
+  requester neither granted, issued nor changed and a scope they did not add (the provenance has been
+  recorded since migration 20261007140000); a mapping records from the session who added or changed
+  it, and a removed denial needs a history of mappings first, because a removed row leaves nothing to
+  read; and an account's status changes need an append-only record of who made them, because the
+  account keeps only its last writer. The consequence of that answer is that an approver whose
+  permission or account the requester gave or restored cannot approve that requester's request, and
+  someone else must. The Owner may also rule on each of the three routes separately.
+
 - **An approver's own window change (Owner decision needed).** An approver who moved the dates of
   one of their own discount limits in a company has no limit that counts there while that limit is
   theirs, and a new limit set by somebody else does not restore it; the limit-ending route does not
