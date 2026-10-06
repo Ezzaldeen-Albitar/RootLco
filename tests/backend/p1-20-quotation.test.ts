@@ -69,6 +69,7 @@ import {
   SERVICE_A,
   SERVICE_A_ALT,
   SVC_FULL,
+  SVC_PRICE_SETTER,
   SVC_PERMISSION_ELSEWHERE,
   SVC_READER,
   SVC_SCOPED_A2,
@@ -334,7 +335,9 @@ interface Quotation {
 
 /** Publishes a price list carrying one rule for SERVICE_A and assigns it. */
 async function publishPrice(amount: string, taxClassId?: string): Promise<void> {
-  authAs(SVC_FULL);
+  // An administrator sets and publishes the fixture price, so a quotation the suite
+  // writes as SVC_FULL is not one whose writer set its price (ADR-023 D8).
+  authAs(SVC_PRICE_SETTER);
   const list = (await (
     await CREATE_LIST(
       jsonPost('http://localhost/api/v1/price-lists', {
@@ -386,6 +389,7 @@ async function publishPrice(amount: string, taxClassId?: string): Promise<void> 
     customerClass: null,
     priority: assignmentPriority,
   });
+  authAs(SVC_FULL);
 }
 
 /** A quotation with one line, on a freshly opened work order. */
@@ -2906,8 +2910,13 @@ describe('quo.discount-approval-decide — a discount is approved by somebody el
     });
     let created: Quotation;
     try {
+      // Written by SVC_NO_CEILING: SVC_FULL published the fixture price list and records
+      // the thresholds, so since ADR-023 D8 (P1-32-PRE-OD-FD8) any discount on SVC_FULL's
+      // OWN quotation needs another person whatever the threshold. A case about the
+      // threshold as such is written by somebody who set neither;
+      // tests/backend/od-discount-self-exemption.test.ts covers the self-change.
       const order = await createOpenWorkOrder();
-      authAs(SVC_FULL);
+      authAs(SVC_NO_CEILING);
       const response = await createQuotation({
         workOrderId: order.workOrderId,
         payerPartnerRef: PARTNER_A,
@@ -2957,12 +2966,12 @@ describe('quo.discount-approval-decide — a discount is approved by somebody el
     expect(backfilled.rows).toHaveLength(1);
     expect(backfilled.rows[0]).toMatchObject({
       origin: 'backfilled',
-      requested_by: SVC_FULL.userId,
+      requested_by: SVC_NO_CEILING.userId,
       policy_id: null,
     });
     const approvalId = backfilled.rows[0]?.id as string;
     const current = await reread(created.id);
-    authAs(SVC_FULL);
+    authAs(SVC_NO_CEILING);
     const pending = await issue(created.id, { revisionId }, current.recordVersion);
     expect(pending.status).toBe(409);
     expect(((await pending.json()) as Problem).violations).toEqual([
@@ -2980,8 +2989,8 @@ describe('quo.discount-approval-decide — a discount is approved by somebody el
     expect(approved.status).toBe(200);
     const approvedBody = (await approved.json()) as DiscountApproval;
     expect(approvedBody.origin).toBe('backfilled');
-    expect(approvedBody.requestedBy.id).toBe(SVC_FULL.userId);
-    authAs(SVC_FULL);
+    expect(approvedBody.requestedBy.id).toBe(SVC_NO_CEILING.userId);
+    authAs(SVC_NO_CEILING);
     const issued = await issue(created.id, { revisionId }, current.recordVersion);
     expect(issued.status).toBe(200);
   });
@@ -3239,8 +3248,13 @@ describe('svc.discount-threshold-set — a later threshold change cannot bypass 
   it('lowering the threshold blocks no existing draft — it keeps the version it was written under — and holds a new quotation to the lowered one', async () => {
     await setNext('100.0000');
     // 40 under a threshold of 100: no request.
+    // Written by SVC_NO_CEILING: SVC_FULL published the fixture price list and records
+    // the thresholds, so since ADR-023 D8 (P1-32-PRE-OD-FD8) any discount on SVC_FULL's
+    // OWN quotation needs another person whatever the threshold. A case about the
+    // threshold as such is written by somebody who set neither;
+    // tests/backend/od-discount-self-exemption.test.ts covers the self-change.
     const order = await createOpenWorkOrder();
-    authAs(SVC_FULL);
+    authAs(SVC_NO_CEILING);
     const response = await createQuotation({
       workOrderId: order.workOrderId,
       payerPartnerRef: PARTNER_A,
@@ -3254,7 +3268,7 @@ describe('svc.discount-threshold-set — a later threshold change cannot bypass 
 
     // A quotation written after the change is held to the lowered threshold.
     const newOrder = await createOpenWorkOrder();
-    authAs(SVC_FULL);
+    authAs(SVC_NO_CEILING);
     const fresh = await createQuotation({
       workOrderId: newOrder.workOrderId,
       payerPartnerRef: PARTNER_A,
@@ -3269,11 +3283,14 @@ describe('svc.discount-threshold-set — a later threshold change cannot bypass 
     });
 
     // The existing quotation keeps its version: revised with the same discount it still
-    // needs no request, and it issues.
+    // needs no request, and it issues. (`reread` signs in as SVC_FULL, so the version is
+    // read before the writer signs in.)
+    const existingVersion = (await reread(existing.id)).recordVersion;
+    authAs(SVC_NO_CEILING);
     const revised = await revise(
       existing.id,
       { lines: [{ serviceId: SERVICE_A, quantity: '1.000', discount: '40.0000' }] },
-      (await reread(existing.id)).recordVersion
+      existingVersion
     );
     expect(revised.status).toBe(201);
     const revision = (await revised.json()) as Revision;
@@ -3314,8 +3331,13 @@ describe('svc.discount-threshold-set — a later threshold change cannot bypass 
     );
 
     // A brand-new quotation with the same 40 discount: prospective, so no request...
+    // Written by SVC_NO_CEILING: SVC_FULL published the fixture price list and records
+    // the thresholds, so since ADR-023 D8 (P1-32-PRE-OD-FD8) any discount on SVC_FULL's
+    // OWN quotation needs another person whatever the threshold. A case about the
+    // threshold as such is written by somebody who set neither;
+    // tests/backend/od-discount-self-exemption.test.ts covers the self-change.
     const order = await createOpenWorkOrder();
-    authAs(SVC_FULL);
+    authAs(SVC_NO_CEILING);
     const response = await createQuotation({
       workOrderId: order.workOrderId,
       payerPartnerRef: PARTNER_A,

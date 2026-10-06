@@ -320,7 +320,9 @@ describe('the API application lives in the workspace', () => {
     // 402 with the receipt reversal (P1-32-PRE-OD-FD4): five new route modules,
     // `payments/{paymentId}/reversals`, `payments/{paymentId}/replacement` and
     // `receipt-reversals/{reversalId}/{approval,rejection,withdrawal}`.
-    expect(routeFiles.length).toBe(402);
+    // 403 with the discount request withdrawal (P1-32-PRE-OD-FD8): one new route
+    // module, `discount-approvals/{approvalId}/withdrawal`.
+    expect(routeFiles.length).toBe(403);
 
     // Non-vacuity. A discovery assertion that only checks a count would pass
     // against a set with one route swapped for another, so the comparison that
@@ -341,7 +343,7 @@ describe('the API application lives in the workspace', () => {
     }
   });
 
-  it('discovers the same 512 operations from the root, apps/api and apps/web', () => {
+  it('discovers the same 513 operations from the root, apps/api and apps/web', () => {
     // The decisive cwd proof, run against a REAL validator rather than the
     // helper alone: `check-authorization-coverage.mjs` derived the repository
     // from `process.cwd()` until this migration, so its answer used to depend on
@@ -442,7 +444,8 @@ describe('the API application lives in the workspace', () => {
     // 507 with the credit-note withdrawal and rejection: two operations over two
     // new route modules.
     // 512 with the receipt reversal's five operations over five new route modules.
-    expect(report.operations).toHaveLength(512);
+    // 513 with the discount request withdrawal: one operation, one new route module.
+    expect(report.operations).toHaveLength(513);
 
     // Three node processes, each loading the whole route surface, so the cost
     // grows with the surface. The budget was 30 s and began timing out inside the

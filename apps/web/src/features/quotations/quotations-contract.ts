@@ -97,8 +97,17 @@ export const QUOTATION_PERMISSIONS = {
   customerRead: 'crm.customer.read',
 } as const;
 
-/** `ck_discount_approvals_status`, mirrored. */
-export const DISCOUNT_APPROVAL_STATES = ['pending', 'approved', 'rejected', 'superseded'] as const;
+/**
+ * `ck_discount_approvals_status`, mirrored. `withdrawn` (ADR-023, D3) is the
+ * requester's own withdrawal of a pending request: terminal, never decided.
+ */
+export const DISCOUNT_APPROVAL_STATES = [
+  'pending',
+  'approved',
+  'rejected',
+  'superseded',
+  'withdrawn',
+] as const;
 export type DiscountApprovalState = (typeof DISCOUNT_APPROVAL_STATES)[number];
 
 /**
@@ -296,7 +305,28 @@ export interface DiscountApproval {
   readonly decisionReason: string | null;
   /** When a newer revision replaced this request, or `null`. */
   readonly supersededAt: string | null;
+  /**
+   * ADR-023, D8: the requester set the discount threshold version the quotation is
+   * held to, so another person must approve any discount on it.
+   */
+  readonly requesterSetPolicy: boolean;
+  /** ADR-023, D8: the requester set a price one of the lines was priced at. */
+  readonly requesterSetPrice: boolean;
+  /** The server's answer: may the signed-in person withdraw this request now (D3). */
+  readonly canWithdraw: boolean;
+  /** The requester who withdrew the request, or `null`. */
+  readonly withdrawnBy: DiscountApprovalPerson | null;
+  readonly withdrawnAt: string | null;
   readonly recordVersion: number;
+}
+
+/**
+ * The body of `quo.discount-approval-withdraw` — `DiscountApprovalWithdrawal`: the
+ * request after the withdrawal, and `replayed` when it had already been withdrawn.
+ */
+export interface DiscountApprovalWithdrawal {
+  readonly discountApproval: DiscountApproval;
+  readonly replayed: boolean;
 }
 
 /**

@@ -456,7 +456,13 @@ export class QuotationService {
 
     const items = await this.insertItems(db, revision, priced.items);
 
-    const approval = await this.recordDiscountRequest(db, revision, discount, asOf, []);
+    const approval = await this.recordDiscountRequest(
+      db,
+      revision,
+      await this.withoutSelfExemption(db, revision, discount, pinned),
+      asOf,
+      []
+    );
 
     await appendAudit(db, {
       action: 'quo.quotation.created',
@@ -600,7 +606,13 @@ export class QuotationService {
       open.map((row) => row.id),
       revision.id
     );
-    const approval = await this.recordDiscountRequest(db, revision, discount, asOf, superseded);
+    const approval = await this.recordDiscountRequest(
+      db,
+      revision,
+      await this.withoutSelfExemption(db, revision, discount, pinned),
+      asOf,
+      superseded
+    );
 
     await appendAudit(db, {
       action: 'quo.quotation_revision.created',
@@ -812,6 +824,13 @@ export class QuotationService {
       refuseIssue(
         'discount_approval_rejected',
         `Revision ${revision.revisionNumber} carries a discount that was turned down`
+      );
+    }
+    if (approvalRow.status === 'withdrawn') {
+      refuseIssue(
+        'discount_approval_withdrawn',
+        `Revision ${revision.revisionNumber} carries a discount request its requester withdrew. ` +
+          'Revise the quotation to ask again or to drop the discount.'
       );
     }
     if (approvalRow.status === 'superseded') {
@@ -1374,6 +1393,7 @@ export class QuotationService {
         sourceServiceLineRef: line.sourceServiceLineRef ?? null,
         sourceRequiredPartRef: null,
         priceRuleRef: price.priceRuleId,
+        priceCustomerClass: context.customerClass,
         itemSalePriceRef: null,
         quotedItemSku: null,
         quotedItemName: null,
@@ -1551,6 +1571,7 @@ export class QuotationService {
         sourceServiceLineRef: null,
         sourceRequiredPartRef: line.sourceRequiredPartRef ?? null,
         priceRuleRef: null,
+        priceCustomerClass: null,
         itemSalePriceRef: price.priceRef,
         quotedItemSku: facts.sku,
         quotedItemName: facts.name,
@@ -1692,7 +1713,8 @@ export class QuotationService {
      * split discount needs approval exactly when the whole would.
      *
      * It runs only when something was actually discounted. A zero-discount quotation
-     * needs no configuration and no approval.
+     * needs no configuration, and no approval under the threshold; a price its writer
+     * set is the separate D8 question `withoutSelfExemption` asks.
      */
     let requiresApproval = elevatedLines > 0;
     if (!Decimal.parse(totalDiscount, MONEY).isZero) {
@@ -1722,6 +1744,55 @@ export class QuotationService {
       elevatedLines,
       permissionCode: requiredPermission,
       threshold: appliedThreshold,
+    };
+  }
+
+  /**
+   * ADR-023, D8 — a person's own policy or price change never exempts their own
+   * quotation from discount approval.
+   *
+   * Asked AFTER the lines are written, because the database snapshots on each line
+   * who had last changed or published the price it was priced from. When the
+   * requester (the signed-in person writing the revision) recorded the discount
+   * policy version the quotation is held to, or set a price a line was priced at,
+   * any discount at all needs approval by somebody else: the threshold their own
+   * change produced is not relied on. Approval still follows the quotation's pinned
+   * version — its permission and its snapshot — and the request records why
+   * (`requester_set_policy`, `requester_set_price`, computed by the database).
+   *
+   * The reading chosen is the one that never grants more: the version in force
+   * before the person's change cannot always be reconstructed (a price changes in
+   * place, and the earlier policy version may be theirs too), so an independent
+   * approver is required instead.
+   *
+   * A price the requester set needs somebody else even with NO discount (fix round
+   * 3): the price itself can carry the discount — lowering one's own price from 100
+   * to 10 and quoting at 10 gives the same 90 away that a discount of 90 would. The
+   * request is then recorded with a discount total of zero and `requester_set_price`,
+   * which is the only zero-discount request the database admits. A threshold the
+   * requester recorded is not in question when nothing is discounted. The issue guard
+   * holds the same rule for a revision with no request
+   * (`quo.revision_discount_needs_approval`).
+   */
+  private async withoutSelfExemption(
+    db: DbHandle,
+    revision: RevisionRow,
+    summary: DiscountSummary,
+    pinned: PinnedDiscountPolicy
+  ): Promise<DiscountSummary> {
+    if (summary.requiresApproval) return summary;
+    const basis = await this.repository.revisionSelfChangeBasis(
+      db,
+      revision.id,
+      db.context.principal.userId
+    );
+    const discounted = !Decimal.parse(summary.total, MONEY).isZero;
+    if (!basis.ownPrice && !(discounted && basis.ownPolicy)) return summary;
+    return {
+      ...summary,
+      requiresApproval: true,
+      permissionCode: pinned.permissionCode,
+      threshold: pinned.threshold,
     };
   }
 
@@ -1810,6 +1881,18 @@ export class QuotationService {
           field: 'thresholdValue',
           classification: 'internal',
           value: approval.thresholdValue ?? '0',
+        },
+        // ADR-023, D8: why another person must approve even under the threshold —
+        // computed by the database from the provenance it snapshotted.
+        {
+          field: 'requesterSetPolicy',
+          classification: 'internal',
+          value: String(approval.requesterSetPolicy),
+        },
+        {
+          field: 'requesterSetPrice',
+          classification: 'internal',
+          value: String(approval.requesterSetPrice),
         },
         ...(supersedes.length === 0
           ? []

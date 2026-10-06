@@ -378,6 +378,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'quo.discount_approval.approved',
   'quo.discount_approval.rejected',
   'quo.discount_approval.requested',
+  'quo.discount_approval.withdrawn',
   'quo.quotation.accepted',
   'quo.quotation.created',
   'quo.quotation.expired',

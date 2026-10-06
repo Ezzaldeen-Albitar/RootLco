@@ -42,6 +42,7 @@ import { PARTNER_A, createOpenWorkOrder, establishP1_19Fixtures } from './p1-19-
 import {
   SERVICE_A,
   SVC_FULL,
+  SVC_PRICE_SETTER,
   assignPriceList,
   authAs as authAsPricing,
   establishP1_20Fixtures,
@@ -180,7 +181,9 @@ async function provisionTaxClass(): Promise<string> {
 
 /** A draft JOD price list version, ready for rules. */
 async function jodDraftVersion(): Promise<{ listId: string; versionId: string }> {
-  authAsPricing(SVC_FULL);
+  // An administrator sets and publishes the fixture price, so a quotation the suite
+  // writes as SVC_FULL is not one whose writer set its price (ADR-023 D8).
+  authAsPricing(SVC_PRICE_SETTER);
   const list = await bodyOf<{ id: string; recordVersion: number }>(
     await CREATE_LIST(
       json('http://localhost/api/v1/price-lists', {
@@ -216,7 +219,9 @@ const recordRule = (listId: string, versionId: string, amount: string): Promise<
 
 /** Publishes and assigns the version so SERVICE_A is priced from it in COMPANY_A1. */
 async function publishAndAssign(listId: string, versionId: string): Promise<void> {
-  authAsPricing(SVC_FULL);
+  // An administrator sets and publishes the fixture price, so a quotation the suite
+  // writes as SVC_FULL is not one whose writer set its price (ADR-023 D8).
+  authAsPricing(SVC_PRICE_SETTER);
   const published = await PUBLISH(
     json(
       `http://localhost/api/v1/price-lists/${listId}/versions/${versionId}/publication`,
@@ -235,6 +240,7 @@ async function publishAndAssign(listId: string, versionId: string): Promise<void
     customerClass: null,
     priority,
   });
+  authAsPricing(SVC_FULL);
 }
 
 const createQuotation = (workOrderId: string, line: Record<string, string>): Promise<Response> =>

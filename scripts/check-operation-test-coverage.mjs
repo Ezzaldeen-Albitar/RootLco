@@ -2519,6 +2519,12 @@ export const MANIFEST = {
     ],
     note: 'P1-32-PRE-OD-DISC-01/-04: the route is gated by quo.quotation.read and the decision needs ONLY the permission the request recorded (discount_approval_permission_missing), checked against the row own company and branch; the requester is recorded by the server when the revision is created, so the approver can never be the requester (discount_approver_must_differ, and ck_discount_approvals_separation whatever reaches the database); approving needs a limit the approver did not set that covers the whole discount (discount_no_approval_limit / discount_over_approval_limit) and records the approved amount the issue guard compares with the lines; the decision is measured against the policy version pinned on the quotation when it was written, which the request copies, a request a newer revision replaced is discount_approval_superseded, and two concurrent decisions serialize on the quotation lock so the second is discount_approval_already_decided',
   },
+  // ADR-023 D3 and D8 (P1-32-PRE-OD-FD8): the requester's own withdrawal.
+  'quo.discount-approval-withdraw': {
+    files: ['tests/backend/od-discount-self-exemption.test.ts'],
+    required: ['denial', 'stale-version'],
+    note: 'the requester withdraws their own PENDING discount request and nobody else may — refused by name (discount_withdraw_not_requester) in the service and again by quo.guard_discount_approval, so a raw UPDATE is held to the same rule; the route declares quo.quotation.manage, authorized against the row own company and branch; a decided request is discount_approval_already_decided and a replaced one discount_approval_superseded; a withdrawn request is terminal — never approved (discount_approval_withdrawn), its revision never issued, and revising the quotation asks again or drops the discount; If-Match is the REQUEST version compared with the locked row, a stale one is a conflict and a missing one 428; a replay under the same key and a retry at the new version write one audit record; each refusal by rule leaves exactly one security event after the rollback (ADR-023 D12)',
+  },
   'svc.discount-threshold-read': {
     files: ['tests/backend/p1-20-quotation.test.ts'],
     required: ['success', 'denial', 'isolation'],

@@ -46,12 +46,14 @@ export type {
   DiscountApprovalState,
   DiscountApprovalThresholdView,
   DiscountApprovalView,
+  DiscountApprovalWithdrawal,
   ListableDiscountApprovalState,
 } from './application/discount-approval-service';
 export {
   DISCOUNT_APPROVAL_DECISIONS,
   DISCOUNT_APPROVAL_STATES,
   DISCOUNT_DECISION_BLOCKS,
+  DISCOUNT_WITHDRAWAL_REFUSALS,
   LISTABLE_DISCOUNT_APPROVAL_STATES,
   MAX_DISCOUNT_DECISION_REASON,
 } from './application/discount-approval-service';

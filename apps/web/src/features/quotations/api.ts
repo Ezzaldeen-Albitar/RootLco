@@ -30,6 +30,7 @@ import type {
 import type {
   DiscountApproval,
   DiscountApprovalState,
+  DiscountApprovalWithdrawal,
   ItemDecisionEcho,
   QuotationDetail,
   QuotationRevision,
@@ -345,6 +346,36 @@ export async function decideItem(
   return {
     state: {
       ...success('quotations.decision.success', attempt),
+      correlationId: result.correlationId,
+    },
+    created: result.data,
+  };
+}
+
+/**
+ * Withdraw your own pending discount request (`quo.discount-approval-withdraw`,
+ * ADR-023 D3). `ifMatch` is the REQUEST's `recordVersion` from the revision it was
+ * read on, required. Anybody but the requester is refused by name
+ * (`discount_withdraw_not_requester`), as is a request already decided or replaced
+ * by a newer revision; each comes back as a named rule the note puts in words.
+ */
+export async function withdrawDiscountApproval(
+  approvalId: string,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<DiscountApprovalWithdrawal>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<DiscountApprovalWithdrawal>(
+    'POST',
+    `/api/v1/discount-approvals/${encodeURIComponent(approvalId)}/withdrawal`,
+    undefined,
+    { ifMatch }
+  );
+  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  return {
+    state: {
+      ...success('quotations.discountApproval.withdrawSuccess', attempt),
       correlationId: result.correlationId,
     },
     created: result.data,

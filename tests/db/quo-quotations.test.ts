@@ -33,6 +33,26 @@ const admin = adminPool();
 const runtime = runtimePool();
 const ctxA = { tenantId: TENANT_A, userId: USER_A };
 
+/**
+ * Runs `write` signed in as `OTHER_ACTOR` — the administrator who sets the discount
+ * thresholds in these fixtures — and then as USER_A, the quotation writer, again.
+ * Since ADR-023 D8 (migration 20261007090000) a threshold the writer recorded
+ * themselves never exempts their own quotation, so a fixture that means "the company
+ * threshold" has somebody else record it; `tests/db/quo-discount-self-exemption.test.ts`
+ * proves what happens when the writer records it.
+ */
+async function asAdministrator<T>(
+  c: { query: import('pg').Client['query'] },
+  write: () => Promise<T>
+): Promise<T> {
+  await c.query(`SELECT set_config('app.user_id', $1, true)`, [OTHER_ACTOR]);
+  try {
+    return await write();
+  } finally {
+    await c.query(`SELECT set_config('app.user_id', $1, true)`, [USER_A]);
+  }
+}
+
 beforeAll(async () => {
   await ensureTestLogins(admin);
   await ensureOrgFixtures(admin);
@@ -54,12 +74,14 @@ describe('quo quotations', () => {
       // (the quotation is held to it), so it issues without a request: with no policy
       // the threshold is zero and a discounted revision needs an approval
       // (P1-32-PRE-OD-DISC-04, -07), which the discount approval cases below prove.
-      await c.query(
-        `INSERT INTO svc.pricing_approval_policies
-           (tenant_id, company_id, policy_type, threshold_kind, threshold_value, currency_code,
-            required_permission_code, version_no, effective_from, status, created_by)
-         VALUES ($1,$2,'discount','amount',50,'USD','svc.price.manage',1,current_date,'active',$3)`,
-        [TENANT_A, COMPANY_A1, USER_A]
+      await asAdministrator(c, () =>
+        c.query(
+          `INSERT INTO svc.pricing_approval_policies
+             (tenant_id, company_id, policy_type, threshold_kind, threshold_value, currency_code,
+              required_permission_code, version_no, effective_from, status, created_by)
+           VALUES ($1,$2,'discount','amount',50,'USD','svc.price.manage',1,current_date,'active',$3)`,
+          [TENANT_A, COMPANY_A1, OTHER_ACTOR]
+        )
       );
       const quotation = await seedQuotation(c, wo, 'q1');
       const rev = await draftRevision(c, quotation, 1);
@@ -202,7 +224,7 @@ describe('quo discount approvals', () => {
   const APPROVER_JOD = 'd15c0000-0000-4000-8000-000000000003';
   /** Holds the permission; the only limit on file is one they set for themselves. */
   const APPROVER_SELF_SET = 'd15c0000-0000-4000-8000-000000000004';
-  /** A limit of 1000 USD that USER_A set, and no permission. */
+  /** A limit of 1000 USD an administrator set, and no permission. */
   const NO_PERMISSION = 'd15c0000-0000-4000-8000-000000000005';
   const ROLE_PRICE_MANAGER = 'd15c0000-0000-4000-8000-0000000000a1';
 
@@ -255,12 +277,14 @@ describe('quo discount approvals', () => {
         [TENANT_A, id, ROLE_PRICE_MANAGER, USER_A]
       );
     }
+    // Set by an administrator who is neither the requester (USER_A) nor the approver:
+    // since ADR-023 D8 a limit the requester set never counts for their own discount.
     const limits: ReadonlyArray<readonly [string, string, string, string]> = [
-      [APPROVER, '1000', 'USD', USER_A],
-      [APPROVER_LOW, '39.99', 'USD', USER_A],
-      [APPROVER_JOD, '1000', 'JOD', USER_A],
+      [APPROVER, '1000', 'USD', OTHER_ACTOR],
+      [APPROVER_LOW, '39.99', 'USD', OTHER_ACTOR],
+      [APPROVER_JOD, '1000', 'JOD', OTHER_ACTOR],
       [APPROVER_SELF_SET, '1000', 'USD', APPROVER_SELF_SET],
-      [NO_PERMISSION, '1000', 'USD', USER_A],
+      [NO_PERMISSION, '1000', 'USD', OTHER_ACTOR],
     ];
     for (const [id, amount, currency, setBy] of limits) {
       await admin.query(
@@ -305,28 +329,32 @@ describe('quo discount approvals', () => {
     currency: string | null,
     extra: { status?: string; deletedAt?: boolean; companyId?: string | null } = {}
   ): Promise<string> {
-    return (
-      await c.query(
-        `INSERT INTO svc.pricing_approval_policies
-           (tenant_id, company_id, policy_type, threshold_kind, threshold_value, currency_code,
-            required_permission_code, version_no, effective_from, status, created_by,
-            deleted_at)
-         VALUES ($1,$2,'discount',$3,$4,$5,'svc.price.manage',$6,current_date,$7,$8,
-                 CASE WHEN $9 THEN now() END)
-         RETURNING id`,
-        [
-          TENANT_A,
-          extra.companyId === undefined ? COMPANY_A1 : extra.companyId,
-          kind,
-          value,
-          currency,
-          versionNo,
-          extra.status ?? 'active',
-          USER_A,
-          extra.deletedAt === true,
-        ]
-      )
-    ).rows[0].id as string;
+    return asAdministrator(
+      c,
+      async () =>
+        (
+          await c.query(
+            `INSERT INTO svc.pricing_approval_policies
+               (tenant_id, company_id, policy_type, threshold_kind, threshold_value, currency_code,
+                required_permission_code, version_no, effective_from, status, created_by,
+                deleted_at)
+             VALUES ($1,$2,'discount',$3,$4,$5,'svc.price.manage',$6,current_date,$7,$8,
+                     CASE WHEN $9 THEN now() END)
+             RETURNING id`,
+            [
+              TENANT_A,
+              extra.companyId === undefined ? COMPANY_A1 : extra.companyId,
+              kind,
+              value,
+              currency,
+              versionNo,
+              extra.status ?? 'active',
+              OTHER_ACTOR,
+              extra.deletedAt === true,
+            ]
+          )
+        ).rows[0].id as string
+    );
   }
 
   /** The discount policy a quotation is pinned to. */

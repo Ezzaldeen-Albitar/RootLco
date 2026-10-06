@@ -1053,7 +1053,7 @@ function withExtra(adapter: string, screen: string = SEAL_SCREEN) {
 }
 
 describe('an adapter the contract places outside apt/rec is excluded from the count, and only it', () => {
-  it('on the live tree, excludes exactly the nine billing, inventory, payment and pricing adapters by their guarded operations', () => {
+  it('on the live tree, excludes exactly the ten billing, inventory, payment, pricing and quotation adapters by their guarded operations', () => {
     const live = run() as Report & {
       outsideByContract: { name: string; operations: string[] }[];
     };
@@ -1070,7 +1070,9 @@ describe('an adapter the contract places outside apt/rec is excluded from the co
     // reached from the credit-notes screen with the note's own version. The
     // seventh, eighth and ninth are the receipt-reversal request, rejection and
     // withdrawal (P1-32-PRE-OD-FD4, ADR-023 D4), sal operations reached from the
-    // payments screen with the receipt's and the reversal's own versions.
+    // payments screen with the receipt's and the reversal's own versions. The tenth
+    // is the discount request withdrawal (P1-32-PRE-OD-FD8, ADR-023 D3), a quo
+    // operation reached from the quotation screen with the request's own version.
     expect(live.outsideByContract.map((one) => one.name)).toEqual([
       'withdrawCreditNote',
       'rejectCreditNote',
@@ -1081,10 +1083,11 @@ describe('an adapter the contract places outside apt/rec is excluded from the co
       'rejectReceiptReversal',
       'withdrawReceiptReversal',
       'setDiscountThreshold',
+      'withdrawDiscountApproval',
     ]);
     for (const entry of live.outsideByContract) {
       expect(entry.operations).toHaveLength(1);
-      expect(entry.operations[0]).toMatch(/^(inv|svc|sal)[.]/);
+      expect(entry.operations[0]).toMatch(/^(inv|svc|sal|quo)[.]/);
     }
     expect(live.accountedFor).not.toContain('withdrawCreditNote');
     expect(live.accountedFor).not.toContain('rejectCreditNote');

@@ -1435,6 +1435,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
       'A person other than the requester turned down a recorded discount request, with a reason. The revision carrying it can no longer be issued; a new revision is how the quotation moves on.',
   },
   {
+    code: 'quo.discount_approval.withdrawn',
+    class: 'approval',
+    entityType: 'quo.discount_approval',
+    description:
+      'The requester withdrew their own pending discount request (ADR-023, D3). Only the person who asked for it may withdraw it, which quo.guard_discount_approval enforces from the session and stamps with the time. A withdrawn request is terminal: it is never approved, rejected or superseded, and its revision cannot be issued; revising the quotation asks again or drops the discount.',
+  },
+  {
     code: 'quo.quotation.created',
     class: 'financial',
     entityType: 'quo.quotation',

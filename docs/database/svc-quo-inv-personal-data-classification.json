@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-10-SEC — Service Catalog / Pricing / Quotation / Inventory personal-and-financial-data classification registry. Restricted = cost/margin fields gated by inv.cost.view. Prices and quotation totals are operational (internal). No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 969,
+  "columnCount": 1001,
   "columns": {
     "inv.customer_supplied_parts.branch_id": {
       "classification": "internal",
@@ -1014,6 +1014,21 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "inv.item_sale_prices.amount_set_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_sale_prices.amount_set_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_sale_prices.availability_changed_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "ARRAY"
+    },
     "inv.item_sale_prices.branch_id": {
       "classification": "internal",
       "searchable": false,
@@ -1055,6 +1070,16 @@
       "dataType": "uuid"
     },
     "inv.item_sale_prices.item_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "inv.item_sale_prices.price_changed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "inv.item_sale_prices.price_changed_by": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
@@ -3369,6 +3394,11 @@
       "searchable": false,
       "dataType": "text"
     },
+    "quo.discount_approvals.approver_limit_id": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "quo.discount_approvals.branch_id": {
       "classification": "internal",
       "searchable": false,
@@ -3469,6 +3499,16 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "quo.discount_approvals.requester_set_policy": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
+    "quo.discount_approvals.requester_set_price": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "boolean"
+    },
     "quo.discount_approvals.required_permission_code": {
       "classification": "internal",
       "searchable": false,
@@ -3515,6 +3555,16 @@
       "dataType": "timestamp with time zone"
     },
     "quo.discount_approvals.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.discount_approvals.withdrawn_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.discount_approvals.withdrawn_by": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
@@ -3613,6 +3663,61 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "integer"
+    },
+    "quo.quotation_items.price_amount_set_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.quotation_items.price_amount_set_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.quotation_items.price_assigned_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.quotation_items.price_assigned_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.quotation_items.price_assignment_changed_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "ARRAY"
+    },
+    "quo.quotation_items.price_assignment_ref": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.quotation_items.price_changed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.quotation_items.price_changed_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.quotation_items.price_customer_class": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "quo.quotation_items.price_published_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.quotation_items.price_published_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
     },
     "quo.quotation_items.price_rule_ref": {
       "classification": "internal",
@@ -4134,6 +4239,21 @@
       "searchable": false,
       "dataType": "numeric"
     },
+    "svc.price_list_assignments.assigned_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "svc.price_list_assignments.assigned_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "svc.price_list_assignments.assignment_changed_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "ARRAY"
+    },
     "svc.price_list_assignments.branch_id": {
       "classification": "internal",
       "searchable": false,
@@ -4264,6 +4384,16 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "svc.price_list_versions.published_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "svc.price_list_versions.published_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "svc.price_list_versions.record_version": {
       "classification": "internal",
       "searchable": false,
@@ -4369,6 +4499,16 @@
       "searchable": false,
       "dataType": "numeric"
     },
+    "svc.price_rules.amount_set_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "svc.price_rules.amount_set_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "svc.price_rules.branch_id": {
       "classification": "internal",
       "searchable": false,
@@ -4405,6 +4545,16 @@
       "dataType": "uuid"
     },
     "svc.price_rules.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "svc.price_rules.price_changed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "svc.price_rules.price_changed_by": {
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
@@ -4518,6 +4668,16 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "text"
+    },
+    "svc.pricing_approval_policies.set_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "svc.pricing_approval_policies.set_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
     },
     "svc.pricing_approval_policies.status": {
       "classification": "internal",

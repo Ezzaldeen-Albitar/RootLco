@@ -809,27 +809,29 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `iam.role_grants`
 
-**Scope:** tenant · **Retention class:** evidence-audit · Role→user assignment with validity, revocation, approval ref; scope_mode/identity immutable; self-grant denied.
+**Scope:** tenant · **Retention class:** evidence-audit · Role→user assignment with validity, revocation, approval ref; scope_mode/identity immutable; self-grant denied. `issued_by` is the signed-in person who wrote the grant, stamped by `iam.record_role_grant_provenance` on insert and never moved (`granted_by` is the writer's claim), and `grant_changed_by` keeps everyone who ever changed its status, `valid_from`, `valid_to` or `revoked_at`, appended from the session and never removed; a role's discount approval limit counts toward an approver's ceiling only through a grant neither issued, granted nor changed by the requester (P1-32-PRE-OD-FD8 fix round 5, ADR-023 D8; rows written before migration 20261007140000 carry `created_by` and their `updated_by`).
 
-| Column           | Type                     | Null | Default           | Classification |
-| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
-| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
-| `tenant_id`      | uuid                     | NO   | —                 | internal       |
-| `user_id`        | uuid                     | NO   | —                 | internal       |
-| `role_id`        | uuid                     | NO   | —                 | internal       |
-| `scope_mode`     | text                     | NO   | 'unrestricted'    | internal       |
-| `status`         | text                     | NO   | 'active'::text    | internal       |
-| `valid_from`     | timestamp with time zone | NO   | now()             | internal       |
-| `valid_to`       | timestamp with time zone | YES  | —                 | internal       |
-| `granted_by`     | uuid                     | NO   | —                 | internal       |
-| `approval_ref`   | text                     | YES  | —                 | internal       |
-| `revoked_at`     | timestamp with time zone | YES  | —                 | internal       |
-| `revoke_reason`  | text                     | YES  | —                 | internal       |
-| `record_version` | integer                  | NO   | 1                 | internal       |
-| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
-| `created_by`     | uuid                     | NO   | —                 | internal       |
-| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
-| `updated_by`     | uuid                     | YES  | —                 | internal       |
+| Column             | Type                     | Null | Default           | Classification |
+| ------------------ | ------------------------ | ---- | ----------------- | -------------- |
+| `id`               | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`        | uuid                     | NO   | —                 | internal       |
+| `user_id`          | uuid                     | NO   | —                 | internal       |
+| `role_id`          | uuid                     | NO   | —                 | internal       |
+| `scope_mode`       | text                     | NO   | 'unrestricted'    | internal       |
+| `status`           | text                     | NO   | 'active'::text    | internal       |
+| `valid_from`       | timestamp with time zone | NO   | now()             | internal       |
+| `valid_to`         | timestamp with time zone | YES  | —                 | internal       |
+| `granted_by`       | uuid                     | NO   | —                 | internal       |
+| `approval_ref`     | text                     | YES  | —                 | internal       |
+| `revoked_at`       | timestamp with time zone | YES  | —                 | internal       |
+| `revoke_reason`    | text                     | YES  | —                 | internal       |
+| `record_version`   | integer                  | NO   | 1                 | internal       |
+| `created_at`       | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`       | uuid                     | NO   | —                 | internal       |
+| `updated_at`       | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`       | uuid                     | YES  | —                 | internal       |
+| `issued_by`        | uuid                     | YES  | —                 | internal       |
+| `grant_changed_by` | uuid[]                   | NO   | ARRAY[]::uuid[]   | internal       |
 
 ### `iam.platform_grants`
 
@@ -852,7 +854,7 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `iam.grant_scopes`
 
-**Scope:** tenant · **Retention class:** evidence-audit · Company/branch/department scope rows for a scoped grant; parent chain carried via composite FKs; append-only.
+**Scope:** tenant · **Retention class:** evidence-audit · Company/branch/department scope rows for a scoped grant; parent chain carried via composite FKs; append-only. `added_by` is the signed-in person who added the scope, stamped by `iam.stamp_grant_scope_adder` on insert and never moved (`created_by` is the writer's claim); a scope the requester added does not bring a role's discount approval limit to the approver for their request (P1-32-PRE-OD-FD8 fix round 5, ADR-023 D8; rows written before migration 20261007140000 carry `created_by`).
 
 | Column          | Type                     | Null | Default           | Classification |
 | --------------- | ------------------------ | ---- | ----------------- | -------------- |
@@ -865,28 +867,30 @@ credential authority. Contact fields are classified `restricted`.
 | `department_id` | uuid                     | YES  | —                 | internal       |
 | `created_at`    | timestamp with time zone | NO   | now()             | internal       |
 | `created_by`    | uuid                     | NO   | —                 | internal       |
+| `added_by`      | uuid                     | YES  | —                 | internal       |
 
 ### `iam.approval_limits`
 
-**Scope:** tenant (company) · **Retention class:** evidence-audit · Effective-dated monetary ceiling per role XOR user; NUMERIC(18,4), fitting the currency's minor unit on insert; non-overlapping per (company, subject, limit_type), and per currency for a `credit_note` limit (ADR-023 D13; a `credit_note` limit is above zero); identity/amount immutable.
+**Scope:** tenant (company) · **Retention class:** evidence-audit · Effective-dated monetary ceiling per role XOR user; NUMERIC(18,4), fitting the currency's minor unit on insert; non-overlapping per (company, subject, limit_type), and per currency for a `credit_note` limit (ADR-023 D13; a `credit_note` limit is above zero); identity/amount immutable. `window_changed_by` keeps everyone who ever changed the end date, appended from the session by `iam.record_approval_limit_window_change` and never removed (P1-32-PRE-OD-FD8 fix round 2, ADR-023 D8; rows updated before migration 20261007110000 carry their `updated_by`).
 
-| Column           | Type                     | Null | Default           | Classification |
-| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
-| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
-| `tenant_id`      | uuid                     | NO   | —                 | internal       |
-| `company_id`     | uuid                     | NO   | —                 | internal       |
-| `role_id`        | uuid                     | YES  | —                 | internal       |
-| `user_id`        | uuid                     | YES  | —                 | internal       |
-| `limit_type`     | text                     | NO   | —                 | internal       |
-| `amount`         | numeric(18,4)            | NO   | —                 | internal       |
-| `currency_code`  | text                     | NO   | —                 | internal       |
-| `effective_from` | date                     | NO   | —                 | internal       |
-| `effective_to`   | date                     | YES  | —                 | internal       |
-| `record_version` | integer                  | NO   | 1                 | internal       |
-| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
-| `created_by`     | uuid                     | NO   | —                 | internal       |
-| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
-| `updated_by`     | uuid                     | YES  | —                 | internal       |
+| Column              | Type                     | Null | Default           | Classification |
+| ------------------- | ------------------------ | ---- | ----------------- | -------------- |
+| `id`                | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`         | uuid                     | NO   | —                 | internal       |
+| `company_id`        | uuid                     | NO   | —                 | internal       |
+| `role_id`           | uuid                     | YES  | —                 | internal       |
+| `user_id`           | uuid                     | YES  | —                 | internal       |
+| `limit_type`        | text                     | NO   | —                 | internal       |
+| `amount`            | numeric(18,4)            | NO   | —                 | internal       |
+| `currency_code`     | text                     | NO   | —                 | internal       |
+| `effective_from`    | date                     | NO   | —                 | internal       |
+| `effective_to`      | date                     | YES  | —                 | internal       |
+| `record_version`    | integer                  | NO   | 1                 | internal       |
+| `created_at`        | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`        | uuid                     | NO   | —                 | internal       |
+| `updated_at`        | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`        | uuid                     | YES  | —                 | internal       |
+| `window_changed_by` | uuid[]                   | NO   | ARRAY[]::uuid[]   | internal       |
 
 ### `iam.sensitive_data_permissions`
 
@@ -4100,6 +4104,19 @@ request although its discount needs one under its quotation's pinned policy
 `quo.backfill_discount_approvals` recorded for a draft written under the single-request flow,
 requested by that draft's creator.
 
+P1-32-PRE-OD-FD8 (ADR-023 D8 and D3). `requester_set_policy` and `requester_set_price` say why
+another person must approve whatever the threshold: the requester recorded the policy version the
+quotation is held to, or had last changed or published a line's price; both are computed by
+`quo.guard_discount_approval` when the request is written and frozen. An approval's limit never
+counts when the approver OR the requester created it, and the limit relied on is recorded in
+`approver_limit_id` (restricted). Since fix round 3 (20261007120000) a revision whose writer set a
+price one of its lines was priced at needs another person's approval whatever its discount, so its
+request may carry a discount total of zero; `ck_discount_approvals_amounts` admits zero only with
+`requester_set_price`. The requester may withdraw a PENDING request: status `withdrawn`,
+with `withdrawn_by` (a foreign key into `iam.user_accounts`, always the requester) and
+`withdrawn_at` stamped by the guard; a withdrawn request is terminal — never approved, rejected or
+superseded — and its revision cannot be issued.
+
 | #   | Column                         | Type                     | Nullable |
 | --- | ------------------------------ | ------------------------ | -------- |
 | 1   | `id`                           | uuid                     | no       |
@@ -4136,6 +4153,11 @@ requested by that draft's creator.
 | 32  | `created_by`                   | uuid                     | no       |
 | 33  | `updated_at`                   | timestamp with time zone | yes      |
 | 34  | `updated_by`                   | uuid                     | yes      |
+| 35  | `requester_set_policy`         | boolean                  | no       |
+| 36  | `requester_set_price`          | boolean                  | no       |
+| 37  | `approver_limit_id`            | uuid                     | yes      |
+| 38  | `withdrawn_by`                 | uuid                     | yes      |
+| 39  | `withdrawn_at`                 | timestamp with time zone | yes      |
 
 #### quo.quotation_items
 
@@ -4148,41 +4170,68 @@ tax class — with that class's effective rate (zero for none, as a counter sale
 words and unit, and a linked required part of the quotation's own work order; it freezes the
 snapshot, and a part line's unit price, tax rate and currency, on UPDATE. Cost is never read.
 
-| #   | Column                     | Type                     | Nullable |
-| --- | -------------------------- | ------------------------ | -------- |
-| 1   | `id`                       | uuid                     | no       |
-| 2   | `tenant_id`                | uuid                     | no       |
-| 3   | `company_id`               | uuid                     | no       |
-| 4   | `branch_id`                | uuid                     | no       |
-| 5   | `quotation_revision_id`    | uuid                     | no       |
-| 6   | `line_number`              | integer                  | no       |
-| 7   | `item_kind`                | text                     | no       |
-| 8   | `service_id`               | uuid                     | yes      |
-| 9   | `item_ref`                 | uuid                     | yes      |
-| 10  | `source_service_line_ref`  | uuid                     | yes      |
-| 11  | `source_required_part_ref` | uuid                     | yes      |
-| 12  | `price_rule_ref`           | uuid                     | yes      |
-| 13  | `description`              | text                     | yes      |
-| 14  | `currency_code`            | text                     | no       |
-| 15  | `captured_unit_price`      | numeric                  | no       |
-| 16  | `captured_quantity`        | numeric                  | no       |
-| 17  | `captured_discount`        | numeric                  | no       |
-| 18  | `captured_tax_rate`        | numeric                  | no       |
-| 19  | `captured_tax_amount`      | numeric                  | no       |
-| 20  | `captured_line_total`      | numeric                  | no       |
-| 21  | `record_version`           | integer                  | no       |
-| 22  | `created_at`               | timestamp with time zone | no       |
-| 23  | `created_by`               | uuid                     | no       |
-| 24  | `updated_at`               | timestamp with time zone | yes      |
-| 25  | `updated_by`               | uuid                     | yes      |
-| 26  | `deleted_at`               | timestamp with time zone | yes      |
-| 27  | `deleted_by`               | uuid                     | yes      |
-| 28  | `item_sale_price_ref`      | uuid                     | yes      |
-| 29  | `quoted_item_sku`          | text                     | yes      |
-| 30  | `quoted_item_name`         | text                     | yes      |
-| 31  | `quoted_unit_code`         | text                     | yes      |
-| 32  | `quoted_unit_name`         | text                     | yes      |
-| 33  | `quoted_tax_class_ref`     | uuid                     | yes      |
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds the provenance snapshot of the price a line was priced from,
+copied by `quo.snapshot_quotation_item_price_provenance` when the line is written and kept while it
+keeps its source: who had last changed the price rule or item selling price (`price_changed_by`,
+`price_changed_at`) and, for a rule, who had published its price-list version (`price_published_by`,
+`price_published_at`). A writer's value is ignored; a later change to the source does not move it.
+NULL for lines written before migration 20261007090000. Fix round 1 (migration 20261007100000) adds
+who had set the source's AMOUNT (`price_amount_set_by`, `price_amount_set_at`), copied the same way;
+NULL for lines written before it. Fix round 4 (migration 20261007130000) adds the customer class a
+service line was priced for (`price_customer_class`, written by the application as it asked
+`svc.resolve_price`) and the snapshot of the `svc.price_list_assignments` row that selected the
+list of the line's price rule (`price_assignment_ref`) — chosen with `svc.resolve_price`'s filter
+and order among the assignments naming that list — with who had made it (`price_assigned_by`,
+`price_assigned_at`) and who had changed it (`price_assignment_changed_by`). A writer's value is
+ignored; NULL on a part line, when no assignment names the rule's list, and for lines written
+before it.
+
+| #   | Column                        | Type                     | Nullable |
+| --- | ----------------------------- | ------------------------ | -------- |
+| 1   | `id`                          | uuid                     | no       |
+| 2   | `tenant_id`                   | uuid                     | no       |
+| 3   | `company_id`                  | uuid                     | no       |
+| 4   | `branch_id`                   | uuid                     | no       |
+| 5   | `quotation_revision_id`       | uuid                     | no       |
+| 6   | `line_number`                 | integer                  | no       |
+| 7   | `item_kind`                   | text                     | no       |
+| 8   | `service_id`                  | uuid                     | yes      |
+| 9   | `item_ref`                    | uuid                     | yes      |
+| 10  | `source_service_line_ref`     | uuid                     | yes      |
+| 11  | `source_required_part_ref`    | uuid                     | yes      |
+| 12  | `price_rule_ref`              | uuid                     | yes      |
+| 13  | `description`                 | text                     | yes      |
+| 14  | `currency_code`               | text                     | no       |
+| 15  | `captured_unit_price`         | numeric                  | no       |
+| 16  | `captured_quantity`           | numeric                  | no       |
+| 17  | `captured_discount`           | numeric                  | no       |
+| 18  | `captured_tax_rate`           | numeric                  | no       |
+| 19  | `captured_tax_amount`         | numeric                  | no       |
+| 20  | `captured_line_total`         | numeric                  | no       |
+| 21  | `record_version`              | integer                  | no       |
+| 22  | `created_at`                  | timestamp with time zone | no       |
+| 23  | `created_by`                  | uuid                     | no       |
+| 24  | `updated_at`                  | timestamp with time zone | yes      |
+| 25  | `updated_by`                  | uuid                     | yes      |
+| 26  | `deleted_at`                  | timestamp with time zone | yes      |
+| 27  | `deleted_by`                  | uuid                     | yes      |
+| 28  | `item_sale_price_ref`         | uuid                     | yes      |
+| 29  | `quoted_item_sku`             | text                     | yes      |
+| 30  | `quoted_item_name`            | text                     | yes      |
+| 31  | `quoted_unit_code`            | text                     | yes      |
+| 32  | `quoted_unit_name`            | text                     | yes      |
+| 33  | `quoted_tax_class_ref`        | uuid                     | yes      |
+| 34  | `price_changed_by`            | uuid                     | yes      |
+| 35  | `price_changed_at`            | timestamp with time zone | yes      |
+| 36  | `price_published_by`          | uuid                     | yes      |
+| 37  | `price_published_at`          | timestamp with time zone | yes      |
+| 38  | `price_amount_set_by`         | uuid                     | yes      |
+| 39  | `price_amount_set_at`         | timestamp with time zone | yes      |
+| 40  | `price_customer_class`        | text                     | yes      |
+| 41  | `price_assignment_ref`        | uuid                     | yes      |
+| 42  | `price_assigned_by`           | uuid                     | yes      |
+| 43  | `price_assigned_at`           | timestamp with time zone | yes      |
+| 44  | `price_assignment_changed_by` | uuid[]                   | yes      |
 
 #### quo.quotation_revisions
 
@@ -4312,27 +4361,43 @@ set `discount_policy_pinned_at` means no policy was in force: the threshold is z
 
 #### svc.price_list_assignments
 
-| #   | Column           | Type                     | Nullable |
-| --- | ---------------- | ------------------------ | -------- |
-| 1   | `id`             | uuid                     | no       |
-| 2   | `tenant_id`      | uuid                     | no       |
-| 3   | `price_list_id`  | uuid                     | no       |
-| 4   | `company_id`     | uuid                     | yes      |
-| 5   | `branch_id`      | uuid                     | yes      |
-| 6   | `customer_class` | text                     | yes      |
-| 7   | `priority`       | integer                  | no       |
-| 8   | `effective_from` | date                     | no       |
-| 9   | `effective_to`   | date                     | yes      |
-| 10  | `status`         | text                     | no       |
-| 11  | `record_version` | integer                  | no       |
-| 12  | `created_at`     | timestamp with time zone | no       |
-| 13  | `created_by`     | uuid                     | no       |
-| 14  | `updated_at`     | timestamp with time zone | yes      |
-| 15  | `updated_by`     | uuid                     | yes      |
-| 16  | `deleted_at`     | timestamp with time zone | yes      |
-| 17  | `deleted_by`     | uuid                     | yes      |
+P1-32-PRE-OD-FD8 fix round 4 (ADR-023 D8, migration 20261007130000) adds who made the assignment
+(`assigned_by`, `assigned_at`), stamped from the signed-in person on insert and never moved, and
+everyone who ever changed what it selects afterwards — its list, company, branch, customer class,
+priority, dates, status or deletion (`assignment_changed_by`), appended from the session and never
+removed. Both are kept by `svc.stamp_price_list_assignment_provenance` (BEFORE INSERT OR UPDATE);
+a writer's value is ignored. Rows written before the migration carry `created_by` and, where
+updated, `updated_by`.
+
+| #   | Column                  | Type                     | Nullable |
+| --- | ----------------------- | ------------------------ | -------- |
+| 1   | `id`                    | uuid                     | no       |
+| 2   | `tenant_id`             | uuid                     | no       |
+| 3   | `price_list_id`         | uuid                     | no       |
+| 4   | `company_id`            | uuid                     | yes      |
+| 5   | `branch_id`             | uuid                     | yes      |
+| 6   | `customer_class`        | text                     | yes      |
+| 7   | `priority`              | integer                  | no       |
+| 8   | `effective_from`        | date                     | no       |
+| 9   | `effective_to`          | date                     | yes      |
+| 10  | `status`                | text                     | no       |
+| 11  | `record_version`        | integer                  | no       |
+| 12  | `created_at`            | timestamp with time zone | no       |
+| 13  | `created_by`            | uuid                     | no       |
+| 14  | `updated_at`            | timestamp with time zone | yes      |
+| 15  | `updated_by`            | uuid                     | yes      |
+| 16  | `deleted_at`            | timestamp with time zone | yes      |
+| 17  | `deleted_by`            | uuid                     | yes      |
+| 18  | `assigned_by`           | uuid                     | yes      |
+| 19  | `assigned_at`           | timestamp with time zone | yes      |
+| 20  | `assignment_changed_by` | uuid[]                   | no       |
 
 #### svc.price_list_versions
+
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `published_by` and `published_at`: who published the version,
+stamped from the signed-in person by `svc.stamp_price_list_version_publication` when it becomes
+published and never changed. NULL for a draft, when nobody was signed in, and for a version
+published before migration 20261007090000 (no row recorded who).
 
 | #   | Column           | Type                     | Nullable |
 | --- | ---------------- | ------------------------ | -------- |
@@ -4351,6 +4416,8 @@ set `discount_policy_pinned_at` means no policy was in force: the threshold is z
 | 13  | `updated_by`     | uuid                     | yes      |
 | 14  | `deleted_at`     | timestamp with time zone | yes      |
 | 15  | `deleted_by`     | uuid                     | yes      |
+| 16  | `published_by`   | uuid                     | yes      |
+| 17  | `published_at`   | timestamp with time zone | yes      |
 
 #### svc.price_lists
 
@@ -4373,6 +4440,14 @@ set `discount_policy_pinned_at` means no policy was in force: the threshold is z
 
 #### svc.price_rules
 
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `price_changed_by` and `price_changed_at`: who last changed the
+values that price a line from this rule (amount, tax class, narrowing, priority, status, deletion),
+stamped from the signed-in person by `svc.stamp_price_rule_provenance` (NULL when nobody was signed
+in). Rows written before migration 20261007090000 carry their last recorded writer. Fix round 1
+(migration 20261007100000) adds `amount_set_by` and `amount_set_at`: who set the amount itself,
+stamped by the same trigger when the rule is written and when its amount changes, and never by a
+change to anything else; rows written before it carry `price_changed_by`.
+
 | #   | Column                  | Type                     | Nullable |
 | --- | ----------------------- | ------------------------ | -------- |
 | 1   | `id`                    | uuid                     | no       |
@@ -4393,8 +4468,18 @@ set `discount_policy_pinned_at` means no policy was in force: the threshold is z
 | 16  | `updated_by`            | uuid                     | yes      |
 | 17  | `deleted_at`            | timestamp with time zone | yes      |
 | 18  | `deleted_by`            | uuid                     | yes      |
+| 19  | `price_changed_by`      | uuid                     | yes      |
+| 20  | `price_changed_at`      | timestamp with time zone | yes      |
+| 21  | `amount_set_by`         | uuid                     | yes      |
+| 22  | `amount_set_at`         | timestamp with time zone | yes      |
 
 #### svc.pricing_approval_policies
+
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `set_by` and `set_at`: who recorded this threshold version and
+when, stamped from the signed-in person by `svc.stamp_pricing_approval_policy_provenance` (NULL when
+nobody was signed in) and never changed. A quotation whose requester recorded the version it is held
+to needs another person's approval for any discount (`quo.revision_self_change_basis`). Rows written
+before migration 20261007090000 carry `created_by` / `created_at`.
 
 | #   | Column                     | Type                     | Nullable |
 | --- | -------------------------- | ------------------------ | -------- |
@@ -4418,6 +4503,8 @@ set `discount_policy_pinned_at` means no policy was in force: the threshold is z
 | 18  | `deleted_at`               | timestamp with time zone | yes      |
 | 19  | `deleted_by`               | uuid                     | yes      |
 | 20  | `version_no`               | integer                  | no       |
+| 21  | `set_by`                   | uuid                     | yes      |
+| 22  | `set_at`                   | timestamp with time zone | yes      |
 
 `version_no` (P1-32-PRE-OD-DISC-01, -04) numbers the versions of one (company, policy type)
 policy from 1, unique over every row of the scope including deleted and inactive ones
@@ -4427,6 +4514,10 @@ Nothing else changes a version: its content, `effective_to` and `deleted_at` are
 (`tg_pricing_approval_policies_version_immutable`) and its status moves only through that
 retirement (`tg_pricing_approval_policies_status`). `maker_approver_distinct` is a legacy column
 that nothing reads: separation of duties cannot be configured off.
+A version written on the request path (`app_runtime` or a login member of it) takes effect on
+the day it is recorded and has no end date: the same trigger refuses any other `effective_from`
+and any `effective_to` (P1-32-PRE-OD-FD8 fix round 6, migration 20261007150000, ADR-023 D8), so
+the version that retires the one in force always takes its place.
 
 #### svc.service_categories
 
@@ -4690,24 +4781,31 @@ Generated from the live catalog after `20260917092000_inv_item_sale_prices.sql`.
 
 #### inv.item_sale_prices
 
-| #   | Column           | Type                     | Nullable |
-| --- | ---------------- | ------------------------ | -------- |
-| 1   | `id`             | uuid                     | no       |
-| 2   | `tenant_id`      | uuid                     | no       |
-| 3   | `item_id`        | uuid                     | no       |
-| 4   | `company_id`     | uuid                     | yes      |
-| 5   | `branch_id`      | uuid                     | yes      |
-| 6   | `currency_code`  | text                     | no       |
-| 7   | `unit_price`     | numeric                  | no       |
-| 8   | `tax_class_id`   | uuid                     | yes      |
-| 9   | `status`         | text                     | no       |
-| 10  | `record_version` | integer                  | no       |
-| 11  | `created_at`     | timestamp with time zone | no       |
-| 12  | `created_by`     | uuid                     | no       |
-| 13  | `updated_at`     | timestamp with time zone | yes      |
-| 14  | `updated_by`     | uuid                     | yes      |
-| 15  | `deleted_at`     | timestamp with time zone | yes      |
-| 16  | `deleted_by`     | uuid                     | yes      |
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `price_changed_by` and `price_changed_at`: who last changed the selling price, its currency, tax class, status or deletion, stamped from the signed-in person by `inv.stamp_item_sale_price_provenance` (NULL when nobody was signed in). Setting the same price again changes nothing. Rows written before migration 20261007090000 carry their last recorded writer. Fix round 1 (migration 20261007100000) adds `amount_set_by` and `amount_set_at`: who set the unit price and currency, stamped by the same trigger when the row is written and when either changes, and never by a change to the tax class or status; rows written before it carry `price_changed_by`. Fix round 5 (migration 20261007140000) adds `availability_changed_by`: everyone who ever changed the row's status or deletion, appended from the signed-in person by `inv.record_item_sale_price_availability_change` and never removed. Withdrawing a more specific price hands a line to a less specific one, so `quo.revision_self_change_basis` reads it for every selling price of a part line's item; inactive or deleted rows written before the migration carry their `deleted_by` and `updated_by`.
+
+| #   | Column                    | Type                     | Nullable |
+| --- | ------------------------- | ------------------------ | -------- |
+| 1   | `id`                      | uuid                     | no       |
+| 2   | `tenant_id`               | uuid                     | no       |
+| 3   | `item_id`                 | uuid                     | no       |
+| 4   | `company_id`              | uuid                     | yes      |
+| 5   | `branch_id`               | uuid                     | yes      |
+| 6   | `currency_code`           | text                     | no       |
+| 7   | `unit_price`              | numeric                  | no       |
+| 8   | `tax_class_id`            | uuid                     | yes      |
+| 9   | `status`                  | text                     | no       |
+| 10  | `record_version`          | integer                  | no       |
+| 11  | `created_at`              | timestamp with time zone | no       |
+| 12  | `created_by`              | uuid                     | no       |
+| 13  | `updated_at`              | timestamp with time zone | yes      |
+| 14  | `updated_by`              | uuid                     | yes      |
+| 15  | `deleted_at`              | timestamp with time zone | yes      |
+| 16  | `deleted_by`              | uuid                     | yes      |
+| 17  | `price_changed_by`        | uuid                     | yes      |
+| 18  | `price_changed_at`        | timestamp with time zone | yes      |
+| 19  | `amount_set_by`           | uuid                     | yes      |
+| 20  | `amount_set_at`           | timestamp with time zone | yes      |
+| 21  | `availability_changed_by` | uuid[]                   | no       |
 
 ### Sales returns (`inv`, P1-32 preparatory slice 2)
 

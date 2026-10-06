@@ -108,7 +108,9 @@ describe('every operation publishes the success status it returns', () => {
     // 512 with the receipt reversal (P1-32-PRE-OD-FD4): five operations over five new
     // route modules — the request and the replacement answer 201, the approval, the
     // rejection and the withdrawal 200.
-    expect(actual.size).toBe(512);
+    // 513 with the discount request withdrawal (P1-32-PRE-OD-FD8): one operation over
+    // one new route module, answering 200.
+    expect(actual.size).toBe(513);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -259,7 +261,9 @@ describe('every operation publishes the success status it returns', () => {
     // 200 as the approval does, so the 201 count does not move.
     // 367 -> 370 with the receipt-reversal approval, rejection and withdrawal
     // (P1-32-PRE-OD-FD4), each answering 200.
-    expect(counts[200]).toBe(370);
+    // 370 -> 371 with the discount request withdrawal (P1-32-PRE-OD-FD8), answering
+    // 200 as the decision does.
+    expect(counts[200]).toBe(371);
   });
 
   it('reads the handler, not the declaration', () => {

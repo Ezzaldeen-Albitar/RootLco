@@ -352,11 +352,15 @@ async function recordFixtureDiscountApproval(
 /**
  * Somebody other than `USER_A`, so the approval above is a separate person's act: a real
  * tenant-A user account, granted `svc.price.manage` through an unrestricted role, with a
- * discount approval limit that `USER_A` — not they — set in the revision's company.
- * Committed with the fixture and removed with the tenant by the suite's cleanup.
+ * discount approval limit that a fixture administrator — neither they nor `USER_A`, the
+ * requester — set in the revision's company: since ADR-023 D8 (P1-32-PRE-OD-FD8) a limit
+ * the requester set never counts for their own discount. Committed with the fixture and
+ * removed with the tenant by the suite's cleanup.
  */
 const FIXTURE_DISCOUNT_APPROVER = 'f1306000-0000-4000-8000-00000000da01';
 const FIXTURE_DISCOUNT_APPROVER_ROLE = 'f1306000-0000-4000-8000-00000000da02';
+/** Sets the approver's limit; signed in only for that write. */
+const FIXTURE_LIMIT_ADMINISTRATOR = 'f1306000-0000-4000-8000-00000000da03';
 
 async function ensureFixtureDiscountApprover(client: PoolClient, companyId: string): Promise<void> {
   await client.query(
@@ -389,6 +393,9 @@ async function ensureFixtureDiscountApprover(client: PoolClient, companyId: stri
            AND status = 'active')`,
     [TENANT_A, FIXTURE_DISCOUNT_APPROVER, FIXTURE_DISCOUNT_APPROVER_ROLE, USER_A]
   );
+  // `iam.stamp_approval_limit_creator` holds `created_by` to the signed-in person, so
+  // the administrator signs in for this one write and USER_A signs in again after it.
+  await client.query(`SELECT set_config('app.user_id', $1, true)`, [FIXTURE_LIMIT_ADMINISTRATOR]);
   await client.query(
     `INSERT INTO iam.approval_limits
        (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
@@ -397,8 +404,9 @@ async function ensureFixtureDiscountApprover(client: PoolClient, companyId: stri
         SELECT 1 FROM iam.approval_limits
          WHERE tenant_id = $1::uuid AND company_id = $2::uuid AND user_id = $3::uuid
            AND limit_type = 'discount')`,
-    [TENANT_A, companyId, FIXTURE_DISCOUNT_APPROVER, USER_A]
+    [TENANT_A, companyId, FIXTURE_DISCOUNT_APPROVER, FIXTURE_LIMIT_ADMINISTRATOR]
   );
+  await client.query(`SELECT set_config('app.user_id', $1, true)`, [USER_A]);
 }
 
 /** 100.0000 × 2.000 = 200.0000; less 50.0000 = 150.0000 net; tax 0.100000 on the net = 15.0000; gross 165.0000. */

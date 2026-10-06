@@ -22,7 +22,9 @@
  *    catalogue as it is then.
  *  - DISCOUNT. A part line's discount goes through the same approval rule as a
  *    service line's: pending for somebody else when it needs approval, no issue
- *    until approved, and none when there is no discount.
+ *    until approved, and none when there is no discount. A selling price whose
+ *    AMOUNT the writer set stays theirs after a colleague changes only its tax
+ *    class, so a discount on it needs somebody else (ADR-023 D8, fix round 1).
  *  - INVOICE. A work-order invoice copies the part line (`lineType: part`,
  *    `sourceQuotationItemId`) and shows its item and unit — in the preview before
  *    the invoice exists as on the invoice — and issuing it posts no stock movement
@@ -60,6 +62,7 @@ import {
   SERVICE_A,
   SVC_DISCOUNT_APPROVER,
   SVC_FULL,
+  SVC_PRICE_SETTER,
   SVC_QUO_SCOPED_A2,
   SVC_TENANT_B_FULL,
   TAX_CLASS_A,
@@ -69,6 +72,7 @@ import {
   establishP1_20Fixtures,
   priceListVersionOf,
   seedDiscountCeiling,
+  seedDiscountPolicy,
 } from './p1-20-helpers';
 import {
   CATEGORY_A,
@@ -185,6 +189,43 @@ async function setPrice(
   return row.rows[0]?.id ?? '';
 }
 
+/**
+ * A company selling price whose amount `amountSetter` sets and whose tax class
+ * `colleague` then changes, each signed in.
+ */
+async function setPriceAmountBy(
+  itemId: string,
+  unitPrice: string,
+  amountSetter: string,
+  colleague: string
+): Promise<void> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `SELECT set_config('app.tenant_id', $1, true), set_config('app.user_id', $2, true)`,
+      [TENANT_A, amountSetter]
+    );
+    const row = await client.query<{ id: string }>(
+      `INSERT INTO inv.item_sale_prices
+         (tenant_id, item_id, company_id, branch_id, currency_code, unit_price, tax_class_id, created_by)
+       VALUES ($1,$2,$3,NULL,'JOD',$4::numeric,NULL,$5) RETURNING id`,
+      [TENANT_A, itemId, COMPANY_A1, unitPrice, amountSetter]
+    );
+    await client.query(`SELECT set_config('app.user_id', $1, true)`, [colleague]);
+    await client.query(`UPDATE inv.item_sale_prices SET tax_class_id = $2 WHERE id = $1`, [
+      row.rows[0]?.id,
+      TAX_CLASS_A,
+    ]);
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 const createQuotation = (workOrderId: string, lines: unknown[]): Promise<Response> =>
   CREATE_QUOTATION(
     post('http://localhost/api/v1/quotations', { workOrderId, payerPartnerRef: PARTNER_A, lines })
@@ -230,7 +271,9 @@ async function quotationCount(workOrderId: string): Promise<number> {
 
 /** A published, assigned JOD price list pricing SERVICE_A at `amount`, taxed. */
 async function publishServicePrice(amount: string): Promise<void> {
-  authAs(SVC_FULL);
+  // An administrator sets and publishes the fixture price, so a quotation the suite
+  // writes as SVC_FULL is not one whose writer set its price (ADR-023 D8).
+  authAs(SVC_PRICE_SETTER);
   serial += 1;
   const list = await bodyOf<{ id: string; recordVersion: number }>(
     await CREATE_LIST(
@@ -280,6 +323,7 @@ async function publishServicePrice(amount: string): Promise<void> {
     customerClass: null,
     priority: 800,
   });
+  authAs(SVC_FULL);
 }
 
 beforeAll(async () => {
@@ -687,6 +731,51 @@ describe('a part line discount goes through the discount approval rule', () => {
     expect(decided.status).toBe(200);
     authAs(SVC_FULL);
     expect((await issue(await readQuotation(partQuote.id))).status).toBe(200);
+  });
+
+  it('a selling price whose amount the writer set needs somebody else after a colleague’s tax-class edit', async () => {
+    await clearDiscountPolicy(TENANT_A);
+    await seedDiscountPolicy({
+      tenantId: TENANT_A,
+      companyId: COMPANY_A1,
+      thresholdKind: 'amount',
+      thresholdValue: '100.0000',
+      currencyCode: 'JOD',
+    });
+    try {
+      const own = await freshItem('rotor');
+      const theirs = await freshItem('drum');
+      // SVC_FULL sets the rotor's amount; SVC_DISCOUNT_APPROVER, who quotes nothing
+      // here, then changes only its tax class and is the last to change the row.
+      await setPriceAmountBy(own.id, '40.0000', SVC_FULL.userId, SVC_DISCOUNT_APPROVER.userId);
+      await setPriceAmountBy(
+        theirs.id,
+        '40.0000',
+        SVC_DISCOUNT_APPROVER.userId,
+        SVC_DISCOUNT_APPROVER.userId
+      );
+      const order = await createOpenWorkOrder();
+      authAs(SVC_FULL);
+      // 5 is under the administrator's 100, and SVC_FULL's own amount still needs
+      // somebody else.
+      const ownQuote = await created(
+        await createQuotation(order.workOrderId, [part(own.id, { discount: '5.000' })])
+      );
+      const request = ownQuote.currentRevision?.discountApproval;
+      expect(request?.status).toBe('pending');
+      const reason = await admin.query<{ requester_set_price: boolean }>(
+        `SELECT requester_set_price FROM quo.discount_approvals WHERE id = $1`,
+        [request?.id]
+      );
+      expect(reason.rows[0]?.requester_set_price).toBe(true);
+      // A price SVC_FULL did not set follows the threshold as set.
+      const theirQuote = await created(
+        await createQuotation(order.workOrderId, [part(theirs.id, { discount: '5.000' })])
+      );
+      expect(theirQuote.currentRevision?.discountApproval).toBeNull();
+    } finally {
+      await clearDiscountPolicy(TENANT_A);
+    }
   });
 });
 

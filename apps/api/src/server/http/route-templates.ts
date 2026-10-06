@@ -127,6 +127,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/diagnostic-types',
   '/discount-approvals',
   '/discount-approvals/{approvalId}/decision',
+  '/discount-approvals/{approvalId}/withdrawal',
   '/discount-thresholds/{companyId}',
   '/exports/authorizations',
   '/exports/resources',

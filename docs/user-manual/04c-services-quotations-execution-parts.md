@@ -1249,6 +1249,35 @@ it, or with a smaller one." <!-- quotations.discountApproval.rejectedNext -->
   a waiting request in the name of the person who created them, so somebody else has to approve
   them before they can be issued.
 - Only approval needs a limit. Turning a request down needs the permission, not a limit.
+- **Your own threshold or price never lets your own discount through** (ADR-023 D8). When you set
+  the discount threshold your quotation follows, or a price one of its lines uses — a price-list
+  rule you wrote or published, or an item selling price you set — any discount you give on it needs
+  another person's approval, however small. The quotation screen says why: "Another person has to
+  approve this discount whatever its size, because the person who asked for it set the discount
+  threshold this quotation follows." <!-- quotations.discountApproval.ownPolicy --> or "Another
+  person has to approve this discount whatever its size, because the person who asked for it set a
+  price used on this draft." <!-- quotations.discountApproval.ownPrice --> Somebody else's quotation
+  follows the threshold and prices as they are set. A price you set needs another person's approval
+  even when you give no discount, because the price itself can carry one; a quotation with no
+  discount at prices somebody else set needs no approval. Choosing which price list applies counts
+  as setting the price: if you assigned the price list a line was priced from to your branch,
+  company or customer class, or ever changed a price-list assignment, your quotation needs another
+  person's approval in the same way. So does withdrawing a selling price: if you ever deactivated or
+  removed a selling price of an item, so that a cheaper price for the company or the whole
+  organisation applies, a quotation of yours with a part priced from that item's selling prices needs
+  another person's approval.
+- **A limit the person who asked set never counts.** An approver cannot approve your discount with
+  a limit you set for them, or for a role they hold; it counts as no limit for that request. The
+  same holds once you have changed the dates of one of their limits — reopening or extending it, or
+  ending it so that a larger one applies: none of their limits counts for your request, even if
+  somebody changes the dates again later. An approver who changes the dates of one of their own
+  limits, or of a limit on a role they hold, has no limit that counts in that company afterwards;
+  ask another administrator to change your limits. Giving an approver a role counts the same way: a
+  role you granted them, or whose dates you changed, or which reaches your company only through a
+  company you added to their grant, brings them no limit for your request. An approver whose own
+  grant they changed or added to themselves has no limit from it at all.
+- **There is no exception for a business run by one person.** Nobody approves their own discount, so
+  a discount that needs approval always needs a second authorised person.
 - With nothing waiting, the list says "No discounts are waiting for approval on this branch." <!-- quotations.approvals.none -->
 
 **If it goes wrong**
@@ -1274,6 +1303,55 @@ it, or with a smaller one." <!-- quotations.discountApproval.rejectedNext -->
 - **No reason given when turning down.** "A reason is required." <!-- overlay.reasonRequired -->
   — said on the reason box, which is marked red; the decision is not sent.
 - A refusal from the server closes the question and is said above the list, with its reference.
+
+**Screenshot** — no screenshot available at this version.
+
+### 4C.4.6a Withdraw your own discount request — IMPLEMENTED (UI)
+
+**Label** — **Withdraw request** <!-- quotations.discountApproval.withdraw.action -->
+
+**Who** — the person who asked for the discount, holding `quo.quotation.manage`, while the request
+is still **Waiting for approval** <!-- quotations.discountApproval.status.pending --> . Nobody else
+can withdraw it (ADR-023 D3).
+
+**Where** — the quotation's screen, in the **Discount approval** <!-- quotations.discountApproval.heading -->
+section of the current draft. It reads "You asked for this discount. If you no longer need it, you
+can withdraw the request, and nobody can approve it afterwards." <!-- quotations.discountApproval.withdraw.explain -->
+
+**Steps**
+
+1. Press **Withdraw request**.
+2. The question **Withdraw this discount request?** <!-- quotations.discountApproval.withdraw.confirmTitle -->
+   says "Nobody will be able to approve it, and this draft cannot be issued with the discount. To go
+   on, make a new draft with the discount or without it." <!-- quotations.discountApproval.withdraw.confirmExplain -->
+   Press **Withdraw request** to confirm, or **Cancel** <!-- overlay.cancel --> to send nothing.
+
+**Result** — "Discount request withdrawn." <!-- quotations.discountApproval.withdrawSuccess --> The
+request's state becomes **Withdrawn** <!-- quotations.discountApproval.status.withdrawn --> , with who
+withdrew it and when, and the screen says "This discount request was withdrawn, so this draft cannot
+be issued. Make a new draft to ask for the discount again, or without it." <!-- quotations.discountApproval.withdrawnNext -->
+The issue section says "The discount request on this draft was withdrawn, so it cannot be issued.
+Make a new draft first." <!-- quotations.issue.discountWithdrawn -->
+
+**Restrictions**
+
+- A withdrawn request is final: nobody can approve it or turn it down afterwards, and the draft keeps
+  its lines. A new draft is how the quotation moves on — with the discount, which asks again, or
+  without it.
+- A request that was approved, turned down or replaced by a newer draft cannot be withdrawn.
+
+**If it goes wrong**
+
+- **Somebody else asked for it.** "Only the person who asked for this discount can withdraw the
+  request." <!-- form.violation.discount_withdraw_not_requester -->
+- **It was decided first.** "This discount has already been approved or turned down, so it cannot be
+  decided again. Refresh the page to see the decision that was recorded." <!-- form.violation.discount_approval_already_decided -->
+- **Someone changed it while you were deciding.** "Someone else changed this quotation first. Reload
+  the page to see the latest, then try again." <!-- quotations.detail.conflict --> , with
+  **Load the latest** <!-- quotations.detail.reload --> beside it.
+- **An approver tries to decide a withdrawn request.** "The person who asked for this discount
+  withdrew the request, so it can no longer be approved or turned down, and this draft cannot be
+  issued. Make a new draft to ask again or to drop the discount." <!-- form.violation.discount_approval_withdrawn -->
 
 **Screenshot** — no screenshot available at this version.
 

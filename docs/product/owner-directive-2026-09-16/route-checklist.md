@@ -4187,3 +4187,213 @@ Fix round 3 (review of `c00885d8`), residual items, one line each:
 - The other round-1 and round-2 residuals listed above remain open: READ COMMITTED dependence, a lineage swap, the approved-work flag counting only `billable` lines, `deleted_at` ignored on the billed read, the same-key race answering `invoice_draft_open`, the nothing-to-bill wording, `BILLING_STATUSES` not in `server-vocabularies.test.ts`, and the expiry of a partly decided revision. The SQL, API, web, English and Arabic status vocabularies match at `c00885d8`.
 - Evidence for round 2 (`c00885d8`): the DB and backend tiers ran on hosted CI only, not on the development machine (port 54322 is off-limits and no disposable database was available); they passed in hosted jobs 111848125798 (DB 2028/2028, backend 4121/4121) and 111848270949 (backend 4121/4121). Round 3 did not run them on the development machine either.
 - Evidence for round 2 (`c00885d8`): a full local `npm run test:web` had 3 failures under machine load (`cancellable-reads`, `platform-console-writes`, `reception-condition-evidence.dom`); the three files passed when re-run alone (304/304) and hosted web-quality ran 198/198 files, so they are treated as local load flakes outside this slice.
+
+### No self-benefit from one's own policy changes; discount request withdrawal (P1-32-PRE-OD-FD8, ADR-023 D8/D3)
+
+Owner decisions D8 and D3 (ADR-023): a person's own change to a discount threshold, an approval
+limit or a price never exempts their own quotation from discount approval, with provenance and
+snapshots kept and no sole-administrator exception; and the requester may withdraw their own
+pending discount request. One forward migration
+(`20261007090000_quo_discount_self_exemption_and_withdrawal.sql`), one new operation, one new audit
+action (`quo.discount_approval.withdrawn`), no new permission code.
+
+| Route                                                 | Operation                                               | Who                                                            | What changed                                                                                                                                                                                                               |
+| ----------------------------------------------------- | ------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /discount-approvals/{id}/withdrawal`            | `quo.discount-approval-withdraw`                        | the requester (`quo.quotation.manage` in the request's branch) | Withdraws the requester's own pending request (`If-Match` = the request's version; idempotent, a retry answers `replayed: true`); a withdrawn request is never decided and its draft is never issued; revising asks again. |
+| `POST /quotations`, `POST /quotations/{id}/revisions` | `quo.quotation-create`, `quo.quotation-revision-create` | unchanged                                                      | A discount whose requester set the threshold version or a price the lines use needs another person's approval whatever the threshold; the request names why (`requesterSetPolicy`, `requesterSetPrice`).                   |
+| `POST /discount-approvals/{id}/decision`              | `quo.discount-approval-decide`                          | unchanged                                                      | A limit the requester set never counts (`discount_no_approval_limit`); a withdrawn request is refused (`discount_approval_withdrawn`).                                                                                     |
+| `POST /quotations/{id}/issue`                         | `quo.quotation-issue`                                   | unchanged                                                      | A withdrawn request is refused by name (`discount_approval_withdrawn`); a draft without a request whose writer set what it relies on is refused (`discount_approval_required`).                                            |
+| `/quotations/{id}` (discount approval section)        | the four above                                          | as above                                                       | **Withdraw request** with a confirmation, the withdrawn state with who and when, and the two D8 reasons, in English and Arabic.                                                                                            |
+
+`DiscountApprovalView` gains additive fields: `requesterSetPolicy`, `requesterSetPrice`,
+`canWithdraw`, `withdrawnBy`, `withdrawnAt`, and the state `withdrawn`. No new web route.
+
+Wrapper extensions: none. The withdrawal uses the shared `ConfirmDialog` as it is.
+
+Preserved: separation of duties on every decision; the quotation's pinned threshold version; the
+approval of an amount and the frozen lines; rejection by another person with a reason; the credit-note
+and receipt-reversal rules; tenant and branch isolation (another tenant 404, another branch 403);
+plain refusal sentences in English and Arabic, right to left; money stays a decimal string.
+
+Known limitations, one line each:
+
+- Reading chosen: an independent approver whenever the evaluation relied on the requester's own change, not a reconstruction of the earlier version (never grants more).
+- A price its writer set, quoted with no discount, needed no second person; closed in fix round 3 below.
+- Granting a role, assigning a price list (attributed since fix round 4), and deactivating a competing price are not attributed (see fix round 1 below); moving a limit's dates is, since fix round 1, and since fix round 2 for the approver too, kept for good rather than as the last writer.
+- Provenance of rows written before the migration is their last recorded writer; who published an existing price-list version is unknown; older lines carry no snapshot.
+- A legacy draft whose writer set what it relies on cannot be issued until it is revised; no request is backfilled.
+
+Fix round 1 (review of `cc8cbbfa`): one more forward migration,
+`20261007100000_quo_discount_limit_window_and_amount_provenance.sql`. A changed end date is a changed
+limit: when the requester last changed the dates of any discount limit of the approver in the company
+(reopened or extended one, or ended one so that a larger role limit applies), none of the approver's
+limits counts for that request, in `quo.guard_discount_approval` and in `callerApprovalCeiling`
+(`discount_no_approval_limit`). And who set a price's amount is stamped on its own
+(`amount_set_by` on `svc.price_rules` and `inv.item_sale_prices`, snapshotted on the line as
+`price_amount_set_by`), so a colleague's later edit to anything else no longer moves the requester's
+attribution. No new route, operation, permission code or audit action.
+
+Residual items, one line each:
+
+- Not attributed (Owner decision needed): the requester can grant the approver a role whose limit someone else set, assign a customer to a price list (attributed since fix round 4), or deactivate or delete a competing price rule or branch selling price so that another source prices the line (`inv.resolve_item_sale_price` falls back branch, then company, then tenant); none of these is recorded on the line.
+- Closed in fix round 3: a price its writer set, quoted with no discount, needed no second person (the zero-discount shortcut in `quotation-service.ts` `withoutSelfExemption` and in `quo.revision_discount_needs_approval`).
+- Legacy rows: provenance is backfilled from `COALESCE(updated_by, created_by)` and `amount_set_by` from it, which is not a verified attribution; `published_by` is NULL for versions published before 20261007090000; existing quotation lines carry NULL snapshots. All disclosed.
+- D3 withdrawal checks If-Match before the replay branch: a retry under a fresh idempotency key with the old version answers 409; only the same key, or the new version, answers `replayed`. This matches the tested behaviour and the credit-note pattern, so it is not a defect.
+- Collateral gate edits are data registrations, not laundering: a BODYLESS entry in `scripts/ci/check-p1-30-payload-parity.mjs`, a coverage entry in `scripts/check-operation-test-coverage.mjs`, and each new migration's count, hash and notes in `.github/ci-baselines/schema-baseline.json`. Existing fixtures were changed only so that a separate administrator sets thresholds and limits; no assertion was weakened.
+- Out of scope and disclosed: the Arabic text of `form.violation.credit_note_withdraw_not_requester` says "discount request".
+- Confirmed in round 0: withdrawal only by the requester, only while pending, terminal, its revision never issued, and revising asks again (database guard plus the service); one request per revision (`uq_discount_approvals_revision`), so a withdrawn revision cannot be asked again; refusals go through `withBusinessRefusal`; tenant and branch isolation are tested; English and Arabic keys exist for every new refusal and screen string.
+- Round 0 (`cc8cbbfa`), as its author reported, NOT run on the development machine: the full unit tier, full `test:db` and `test:backend`, `style:check` (no SCSS in the diff), `validate:phase-ownership`, the p1-27-*, p1-24-register and p1-28-access validators, named-wire-shapes, web-theme and web-tokens; hosted CI ran them at that head.
+- Round 0 (`cc8cbbfa`), as its author reported, run on the development machine with exit 0: typecheck, typecheck:api, typecheck:web, lint:api, lint:web, format:check:all, security:all, module-boundaries, authorization-coverage, operation-coverage, openapi, exact-money, plain-language, encoding, web-boundary, api-backend-only, generated-artifacts, command-coverage and check-test-honesty; on a disposable database, all 172 migrations, validate:seed-state, and the focused DB, backend and web files of the slice.
+- Evidence for fix round 1, on the development machine: a disposable postgres:17-alpine database (127.0.0.1:55446, removed afterwards) took all 173 migrations, `validate:seed-state`, `migration-replay-checks.mjs --phase post` and `verify:classifications`; the focused DB files (`quo-discount-self-exemption`, `quo-quotations`, the P1-15 census, `foundation` and eleven adjacent files) and backend files (`od-discount-self-exemption`, `od-quotation-part-lines`, `p1-20-quotation`, `p1-20-pricing`, `p1-30-w3-quotations`, `od-finance-credit-limits`, `iam-admin-writes`) passed, and each new DB and backend case failed with the fix taken out. The full unit, DB, backend and web tiers were not run locally; hosted CI runs them.
+
+Fix round 2 (review of `3a6009a4`): one more forward migration,
+`20261007110000_quo_discount_limit_window_history.sql`. Fix round 1 read who moved a limit's end date
+from `updated_by`, the last writer only, and applied it to the requester only. Now
+`iam.approval_limits.window_changed_by` keeps everyone who ever changed a limit's end date (appended
+from the session by `iam.record_approval_limit_window_change`, never removed, empty on insert whatever
+the writer supplied; a save of the same date records nothing). `quo.guard_discount_approval` and
+`callerApprovalCeiling` refuse an approval (`discount_no_approval_limit`) when any discount limit of the
+approver in the company, on the approver or on a role whose grant reaches them, has in that history the
+requester (none of the approver's limits counts for that requester's request) or the approver (none
+counts for any request: moving one's own window is raising one's own ceiling, as creating it is). No
+new route, operation, permission code or audit action.
+
+Residual items after fix round 2, one line each:
+
+- Fixed in round 1 and confirmed in review: a price amount's provenance (`amount_set_by`/`amount_set_at` on `svc.price_rules` and `inv.item_sale_prices`) is stamped from the session only on insert or on an amount, unit price or currency change (migration 20261007100000, lines 96-166), snapshotted on `quo.quotation_items` (181-217) and counted in `quo.revision_self_change_basis` (243); price rules are frozen once their version is published, and publication is attributed; tests name the rule message.
+- Fixed in round 2: a requester's change to the window of an approver's limit was refused only while the requester was the last writer (20261007100000, lines 447-456); it is now kept in `window_changed_by`, and a later save by the approver or a colleague no longer clears it.
+- Fixed in round 2: an approver who reopened, extended or ended their own limit (or one on a role they hold) was not caught; now none of their limits counts.
+- Owner decision needed (never grants more, may grant less): an approver who moved the window of one of their own discount limits in a company has no limit that counts there for as long as that limit is theirs, and a new limit set by somebody else does not restore it; the limit-ending route (`PATCH /iam/approval-limits/{limitId}`) does not refuse such a change up front, as limit creation does. Options: refuse it at the route, or let a fresh limit set by another administrator count.
+- A requester who ever moved the window of one of an approver's discount limits in a company can no longer have that approver approve their discounts there; this follows the review's chosen reading and is disclosed.
+- A window change made with nobody signed in (database maintenance, not the application, whose update policy needs a signed-in holder of `iam.approval.manage`) is not recorded in the history.
+- Legacy rows: `window_changed_by` is backfilled from `updated_by` (the last writer only); earlier window changes of the same row are not recoverable.
+- Out of scope (ADR-023 D13, not D8): a credit-note limit still excludes only a limit the approver created; the window history is not read for credit notes.
+- Disclosed and needing an Owner decision (ADR-023 D8 open points): self-set prices quoted with no discount (closed in fix round 3); granting the approver a role; assigning a price list (attributed since fix round 4); deactivating a competing price rule or selling price. Legacy provenance is backfilled from the last writer, and `published_by` of older price-list versions is unknown.
+- D3 withdrawal reconfirmed in review: the database guard (20261007100000, lines 335-368) refuses anyone but the requester and anything not pending, and makes a withdrawn request terminal; the backend tests cover If-Match, replay, refusal records and isolation.
+- Collateral is data only: `.github/ci-baselines/schema-baseline.json` gains each new migration's count, hash, totals and notes, and the P1-15 migration-tail pin is widened rather than slid; the fix commits add no eslint-disable, ts-ignore, skip or only and remove no assertion. Migrations 20261007090000 and 20261007100000 are unchanged; each fix is a new forward migration.
+- Round-1 local artefact, not a defect: `tests/db/p1-15-shared-services-runtime-capabilities` "catalog matches the seed" failed on the round-1 reviewer's disposable database only because rows were written there before the seeds were applied; the hosted database job passed at `3a6009a4`.
+- Round-1 review, run locally with exit 0: typecheck, typecheck:api, typecheck:web, lint:api, format:check:all, security:all, module-boundaries, exact-money, encoding, plain-language, openapi, authorization-coverage, operation-coverage, generated-artifacts, command-coverage and check-test-honesty; on a disposable database (removed afterwards), the D8 DB and backend files and `quotation-detail.dom`.
+- Round-1 review, NOT run locally: `validate:phase-ownership` (needs an event context; hosted CI runs it), the p1-27-*, p1-24-register and p1-28-access validators, named-wire-shapes, web-theme, web-tokens, style:check (no SCSS in the diff), the full unit, DB and backend tiers, builds and e2e.
+- Evidence for fix round 2, on the development machine: a disposable postgres:17-alpine database (127.0.0.1:55492, removed afterwards) took all 174 migrations, `validate:seed-state` and `migration-replay-checks.mjs --phase post`; the focused DB files (`quo-discount-self-exemption`, the P1-15 census, `foundation`, `iam-approvals`, `p1-14-runtime-administration-capabilities`, `sal-credit-approval-limits`, `quo-quotations`) and backend files (`od-discount-self-exemption`, `od-quotation-part-lines`, `p1-20-quotation`, `p1-22-invoice-lifecycle`, `p1-30-w6-invoices`, `iam-admin-writes`, `iam-access-administration`, `od-finance-credit-limits`) passed, and each new DB and backend case failed with the fix taken out. The full tiers were not run locally; hosted CI runs them.
+
+Fix round 3 (review of `eb94f5ac`): one more forward migration,
+`20261007120000_quo_discount_self_set_price_without_discount.sql`. Leaving a quotation with no discount
+alone was a self-exemption: with a threshold of 50 and a price of 100, a discount of 90 needed another
+person; the same writer then lowered that price to 10 and quoted at 10 with no discount, and it issued
+with nobody's approval. Now a revision whose writer set a price one of its lines was priced at needs
+another person's approval whatever its discount, zero included, in `quo.revision_discount_needs_approval`
+and in `withoutSelfExemption`; the request records a discount total of zero with `requesterSetPrice`,
+which `ck_discount_approvals_amounts` admits only for such a price. A threshold the writer recorded
+still needs another person for any discount greater than zero. Develop `d1797f05` (#514) is merged in
+with a merge commit. No new route, operation, permission code or audit action.
+
+Residual items after fix round 3, one line each:
+
+- Fixed in round 2 and confirmed in review: `iam.approval_limits.window_changed_by` is append-only and taken from the session (migration 20261007110000, lines 74-97): empty on insert, the old value kept on every update, the signed-in person added when `effective_to` changes; `app_runtime` has UPDATE on `effective_to` only (20260726090000, line 169); `quo.guard_discount_approval` and `callerApprovalCeiling` refuse when the requester or the approver is in the window history of any discount limit the approver holds in that company, on themselves or on a role reaching them; the trigger order (immutable, then touch_metadata, then window_history) is safe; with `tg_approval_limits_window_history` disabled on the reviewer's disposable database, 6 of 23 tests in `tests/db/quo-discount-self-exemption` failed, each naming the rule, and the trigger was re-enabled afterwards.
+- Narrow TOCTOU, not demonstrated: in the database guard the window-history EXISTS checks and the ceiling SELECT are separate statements, each with a fresh READ COMMITTED snapshot and no FOR SHARE, so a window change committed between them could slip past; the application's single-snapshot ceiling query runs before the UPDATE and refuses in both states, so no exploitable path through the API was found; folding the checks into one statement would close it.
+- Over-strict, never grants more: the backfill puts `updated_by` into `window_changed_by` for every legacy row that was updated, and an approver's own window change then removes all their limits in that company for good, even ones another administrator sets later; disclosed in ADR-023 D8 as needing an Owner decision.
+- Disclosed, still waiting on the Owner (ADR-023 D8 open points): granting the approver a role; assigning a price list (attributed since fix round 4); deactivating a competing price rule or selling price so that a fallback source prices the line; ending a price-list version. Legacy provenance is backfilled from the last writer.
+- Out of D8 scope, noted: the credit-note limit path (`callerApprovalLimitStanding` and `sal.guard_credit_note_decision`) has no window-history rule, so an approver who reopens their own credit-note limit is not caught; ADR-023 D13/D4 territory.
+- D3 withdrawal unchanged and re-run in review: only the requester withdraws, only while pending, and a withdrawn request is terminal; the backend cases for 428, 409, 403 and 404, replay, refusal records and isolation pass.
+- Collateral at `eb94f5ac` is data only: `schema-baseline.json` gained migration 174 with its hash and totals (the reviewer measured the same hash), the P1-15 tail pin was widened to 45 rather than slid, and `foundation.test.ts` registers the new function and trigger; no eslint-disable, ts-ignore, skip, only or removed assertion in the PR; 20261007090000 and 20261007100000 are unchanged.
+- Process note, not a gate failure: the commits are authored as `verify <verify@local>` rather than a named identity.
+- Round-2 review, as its reviewer reported, on a disposable postgres:17-alpine database (127.0.0.1:55511, removed afterwards; port 54322 never used), under the heavy-operation lock: all 174 migrations applied, `validate:seed-state`, the schema hash equal to the baseline, and the focused files `tests/db` quo-discount-self-exemption, foundation, p1-15-shared-services-runtime-capabilities and quo-quotations, `tests/backend` od-discount-self-exemption and p1-20-quotation, and `apps/web` quotation-detail.dom.
+- Round-2 review, as its reviewer reported, run locally with exit 0: typecheck, typecheck:api, typecheck:web, lint:api, lint:web, format:check:all, style:check:web, security:all, and the module-boundaries, authorization-coverage, operation-coverage, openapi, exact-money, encoding, plain-language, generated-artifacts, command-coverage, api-backend-only, web-boundary, named-wire-shapes, p1-27-frontend, p1-27-reachability, p1-27-matrix, p1-24-register, p1-28-access, web-theme and web-tokens validators, check-test-honesty, and phase ownership with `--resolve-context` (event pull_request) resolving to CHECK under owner-directive-saas-operation with 59 files and 0 violations against `d8d5fa9a`.
+- Round-2 review, NOT run locally: the full test, test:db, test:backend and test:web tiers; builds; e2e; verify:classifications.
+- Consequence of fix round 3, disclosed: anyone who sets or publishes a price and also writes quotations priced from it needs a second person for every such quotation, discount or not; a sole administrator cannot issue one alone. Backend suites whose quotations are written by the person who also set the fixture prices now publish those prices as a separate fixture principal (`SVC_PRICE_SETTER` in `tests/backend/p1-20-helpers.ts`); no assertion was weakened, and the D8 suites still publish as the writer on purpose.
+- A legacy draft with no discount whose writer set a price it uses, and which has no request, cannot be issued until it is revised (the issue guard refuses it); no request is backfilled.
+- Evidence for fix round 3, on the development machine: a disposable postgres:17-alpine database (127.0.0.1:55513, removed afterwards) took all 175 migrations, `validate:seed-state` and `migration-replay-checks.mjs --phase post`, and the schema hash was measured there; the focused DB files (`quo-discount-self-exemption`, the P1-15 census, `foundation`, `quo-quotations` and the other files that issue a revision) and the backend files that write or issue quotations passed, and each new DB and backend case failed with the fix taken out. The full tiers were not run locally; hosted CI runs them.
+
+Fix round 4 (review of `18c0b369`): one more forward migration,
+`20261007130000_quo_price_list_assignment_provenance.sql`. A requester could still exempt their own
+quotation by changing which price list applies: with a threshold of 50, an administrator's list at 100
+assigned company-wide and an administrator's list at 10, a discount of 90 needed another person; the
+requester then assigned the list at 10 to their own branch, `svc.resolve_price` answered 10, and a
+quotation at 10 with no discount issued with nobody's approval. Now `svc.price_list_assignments`
+records from the session who made each assignment (`assigned_by`, `assigned_at`) and everyone who
+ever changed what it selects (`assignment_changed_by`); each quotation line records the customer class
+it was priced for and snapshots the assignment that selected the list of its price rule, with who
+made and who changed it; and `quo.revision_self_change_basis` counts that person, and anyone who ever
+changed any assignment of the tenant, as having set the line's price. The fix round 3 rule then
+applies at write time (`withoutSelfExemption`) and at issue. Develop `f8142217` (#516, the
+dependency-security fix) is merged in with a merge commit. No new route, operation, permission code
+or audit action.
+
+Residual items after fix round 4, one line each:
+
+- Round 3 defect fixed and confirmed. Forward migration 20261007120000 re-issues quo.revision_discount_needs_approval: own_price now needs another person at any discount, zero included. ck_discount_approvals_amounts admits a request with a discount of zero only when requester_set_price is set. withoutSelfExemption (quotation-service.ts:1775) matches the database and is called on both create and revise (:462, :612). Falsification on the reviewer's disposable DB: with the old 'v_total > 0 AND own_price' condition restored, 2 of 26 tests in tests/db/quo-discount-self-exemption failed, both of them the new zero-discount cases; the function was then restored and its md5 matched again.
+- Other self-benefit paths checked and found closed. Threshold version rows cannot be changed except for their status (tg_pricing_approval_policies_version_immutable). Price rules in a published version are frozen. Item selling prices have no deactivation or delete API (POST upsert only), so the fallback from branch to company to tenant cannot be triggered through the product. Quotation lines are written only on create and revise, and their prices are resolved on the server. No window for a two-tab race was found: the line snapshot and the price are read in the requester's own transaction, and only a third person's later change could split them.
+- Disclosed, still needs an Owner decision, not escalated: granting the approver a role whose limit someone else set (a second person still decides). An approver who changes the dates of their own limit loses every limit in that company, which is over-strict but never grants more. Legacy provenance is backfilled from the last writer, published_by is unknown for older versions, and older lines have NULL snapshots.
+- D3 withdrawal: unchanged since round 3 (the fix diff 878901f1..94813b21 has no change to the withdrawal or to apps/web). Re-run in review: the backend od-discount-self-exemption cases for 428/409/403/404, replay, refusal records and isolation pass.
+- Collateral is data only. Four new forward migrations; no existing migration is modified relative to develop d1797f05. schema-baseline.json gains migration 175, and hosted migration-replay passes. The P1-15 tail pin is widened to 46, not slid. The fixtures in 9 backend suites now publish prices as SVC_PRICE_SETTER; no assertion was removed. The fix diff adds no eslint-disable, ts-ignore, .only or .skip. The merge 878901f1 brings in only files develop changed. Commit -08 took develop's P1-27 run records, and hosted-clean-room is green at this head.
+- Commits are authored as 'verify <verify@local>'. That is a process oddity, not a gate failure.
+- Round-3 review, as its reviewer reported, on disposable DB 127.0.0.1:55531 (postgres:17-alpine, container rootlco-vr515r4, removed afterwards; port 54322 never used), with the heavy lock acquired and released and about 21 GB of free commit memory: apply-migrations 175 clean; validate:seed-state OK; tests/db quo-discount-self-exemption, p1-15-shared-services-runtime-capabilities, quo-quotations and foundation 111/111; tests/backend od-discount-self-exemption, od-finance-rounding, od-invoice-approved-quantities, od-quotation-acceptance-record, od-quotation-part-lines, p1-20-additional-work-link, p1-20-quotation, p1-30-a2-published-reads and p1-30-w3-quotations 218/218; apps/web quotation-detail.dom 52/52.
+- Round-3 review, as its reviewer reported, run locally with exit 0: typecheck, typecheck:api, typecheck:web, lint:api, eslint on quotation-service.ts, format:check:all, security:all, and validate: module-boundaries, exact-money, encoding, plain-language, generated-artifacts, command-coverage, openapi, authorization-coverage, operation-coverage; also check-test-honesty.
+- Round-3 review, NOT run locally: style:check:web (the fix diff has no SCSS); validate:phase-ownership; the p1-27-*, p1-24-register and p1-28-access validators; named-wire-shapes; web-theme and web-tokens; the full test, test:db, test:backend and test:web tiers; builds; e2e. Hosted CI ran the DB tier: 2054 passed, 0 failed.
+- Strict reading, Owner may rule otherwise (ADR-023 D8 open point): a price-list assignment is treated as a price-list change; whoever made or changed the assignment that selected a line's list needs another person for that quotation whatever its discount.
+- Wider than the change, never grants more: anyone who ever changed any price-list assignment of the tenant (ending, re-prioritising, moving one) needs another person for every quotation of theirs that has a service line priced from a price rule, because a moved or ended assignment no longer says where it applied. No route changes an assignment today (the application only creates them), so only direct database writers reach this.
+- Consequence, disclosed: an administrator who assigns price lists and also writes quotations priced through that assignment needs a second person for each such quotation; a sole administrator cannot issue one alone.
+- The line snapshot picks the assignment with `svc.resolve_price`'s own filter and order, on the line's company, branch and recorded customer class at the transaction's date, among the assignments naming the list of the line's price rule; if another person changes the assignments between the price read and the line write, it still names the assignment that selects that list, never another list's.
+- An assignment made or changed with nobody signed in (database maintenance, not the application) is unattributed, as for every other provenance stamp. Legacy assignments take `assigned_by` from `created_by` and `assignment_changed_by` from `updated_by` (the last writer only).
+- Hosted CI at `18c0b369` failed only on dependency-security (an advisory in the frontend dependency tree) and therefore on ci-gate; #516 (source-map-js 1.2.2, postcss-selector-parser 7.1.6) was merged into develop under the zero-waiver policy and develop was merged into this branch; no job was waived.
+- Evidence for fix round 4, on the development machine: a disposable postgres:17-alpine database (127.0.0.1:55451, removed afterwards; port 54322 never used) took all 176 migrations, `validate:seed-state` and `migration-replay-checks.mjs --phase post` against the updated baseline, and the schema hash was measured there; the focused DB files (`quo-discount-self-exemption`, the P1-15 census, `foundation`, `quo-quotations`, `svc-pricing`, `quo-part-line-snapshots`, `svc-classification-guard`) and backend files (`od-discount-self-exemption`, `p1-30-a1-service-catalogue-head` and the quotation-writing suites) passed; with the round-3 basis function restored, the 3 new DB issue cases and the new backend case failed, and the function's md5 matched again once restored. The full tiers were not run locally; hosted CI runs them.
+
+Fix round 5 (review of `6f3c7b03`): one more forward migration,
+`20261007140000_quo_discount_role_grant_provenance.sql`. A requester could still get their own
+discount approved by changing the approver's role limit through a role grant: the approver held the
+approval permission and no limit that counted, the requester (who may issue grants) gave the approver
+a role whose limit an administrator had set, and the refused approval went through on that role's
+limit. Now `iam.role_grants` records from the session who wrote each grant (`issued_by`; `granted_by`
+stays the writer's claim) and everyone who ever changed its status or dates (`grant_changed_by`), and
+`iam.grant_scopes` records who added each scope (`added_by`). `quo.guard_discount_approval` and
+`callerApprovalCeiling` count a role's limit toward the approver's ceiling only through a grant the
+requester neither granted, issued nor changed, reaching the company through a scope the requester
+neither created nor added; a grant or scope the approver made or changed for themselves does not
+count either. Re-checking the other paths found one more: withdrawing a branch selling price so that a
+cheaper company price applies. `inv.item_sale_prices.availability_changed_by` records everyone who
+ever changed a selling price's status or deletion, and `quo.revision_self_change_basis` counts the
+requester's own price when they ever withdrew or restored a selling price of a part line's item. No
+new route, operation, permission code or audit action.
+
+Residual items after fix round 5, one line each:
+
+- Round 4 defect fixed (reviewer): migration 20261007130000 stamps assigned_by/assigned_at from the session, keeps assignment_changed_by append-only, snapshots the assignment with resolve_price's own filter and order, and the basis counts it; with tg_price_list_assignments_provenance disabled, 4 of 31 DB cases failed, all of them round-4 cases.
+- Other paths the round-5 reviewer checked and found closed: an inserted assignment only matters by winning, and the winner is snapshotted; ending or re-prioritising a competing assignment is caught by the tenant-wide clause; app_runtime has no DELETE on the pricing tables; a closed price-list version window cannot reopen; threshold versions change only through svc.record_pricing_approval_policy_version; a self-grant is refused by ck_role_grants_no_self_grant; no two-tab race was found.
+- Closed in fix round 5 (was disclosed for the Owner): deactivating a competing selling price so that the branch, company, tenant fallback applies; a person who ever withdrew or restored any selling price of an item is treated as having set the price of that item's part lines, which is wider than the change and never grants more.
+- Still disclosed for the Owner: an approver who changed their own limit window loses every limit they hold in that company (over-strict, never grants more); legacy provenance is backfilled from the last writer, `published_by` of older versions is unknown, and older lines have NULL snapshots.
+- Outside D8, from P1-20: `customerClass` in the bodies of POST /quotations and POST /quotations/{id}/revisions is chosen by the client, so any writer can pick a class whose assignment, made by somebody else, prices lower; not a self-change, for the Owner or the backlog.
+- D3 withdrawal unchanged since round 3 (reviewer re-ran the backend cases for 428/409/403/404, replay, refusal records and isolation, and apps/web quotation-detail.dom 52/52); fix round 5 does not touch it or apps/web.
+- Collateral is data only (reviewer): the baseline gains each migration, the BODYLESS and coverage registrations are for the new operation, no suppression or focused test is added, no existing migration is modified, and commits are authored as 'verify <verify@local>'.
+- Strict reading, Owner may rule otherwise (ADR-023 D8 open point): a role grant, a grant's reopening or extension, and a company scope added to a grant are role-limit changes; they bring no role limit to the approver for the requester's request and still do for anybody else's.
+- Strict reading, Owner may rule otherwise: a grant or scope the approver issued, changed or added for themselves brings no role limit to them for any request, as a limit they created does not; a self-grant was already refused by ck_role_grants_no_self_grant, and `issued_by` now also catches one written in another person's name.
+- Not attributed, Owner decision needed: a role's permission mappings (adding the approval permission to a role the approver holds, or removing a denial) and reactivating the approver's account change who may approve, never any limit; a removed mapping leaves no row to record who removed it, so that reading would need a history of mappings first.
+- The window-history rules of fix round 2 still read every role an active grant brings to the approver, counting or not, so a window the requester moved on such a role's limit still refuses the approver; that is stricter than the grant rule and never grants more.
+- Legacy rows: grants take `issued_by` from `created_by` and `grant_changed_by` from `updated_by`; scopes take `added_by` from `created_by`; inactive or deleted selling prices take `availability_changed_by` from `deleted_by` and `updated_by`; the closest evidence the rows hold, not a verified attribution.
+- The DB fixtures that gave fixture approvers their roles now issue those grants as an administrator who requests nothing (OTHER_ACTOR, not USER_A); with USER_A's grants, two earlier cases measured a grant the requester issued and failed under the new rule, as they should.
+- Evidence for fix round 5, on the development machine: disposable postgres:17-alpine databases (127.0.0.1:55457 and 55458, removed afterwards; port 54322 never used) took all 177 migrations and `validate:seed-state`; on the empty replay, `migration-replay-checks.mjs --phase pre` and `--phase post` against the updated baseline passed and the schema hash was measured; the focused DB and backend files passed; with the round-4 guard and basis restored, the 5 new behaviour DB cases and the new backend case failed (the backend case also with only `callerApprovalCeiling` reverted), and both functions' md5 matched again once restored. The full tiers were not run locally; hosted CI runs them.
+
+Records after review round 6 (review of `e78c7b2e`; no code, migration or test changes): the
+bounded path matrix in DBCR-P1-32-PRE-OD-FD8-001 section 12 lists each way the requester, or the
+approver for their own approval, can change what the D8 evaluation relies on; ADR-023 D8 summarises
+it, and its open-points statement now holds only for the paths within D8's words.
+
+Known limitations after review round 6, one line each:
+
+- Unresolved policy, Owner decision needed, not restricted by this change (ADR-023 D8 "Who may approve", VL-P132-001): the approval permission brought by a role grant or scope the requester issued (`POST /iam/grants`, `POST /iam/grants/{grantId}/scopes`), the approval permission brought by a role-permission mapping the requester added, changed to allow or whose denial they removed (`/iam/roles/{roleId}/permissions`), and the requester reactivating the approver's account (`POST /iam/users/{userId}/status`). Today each can turn a refusal for the missing permission into an approval of the requester's own request, when the approver also holds a limit that counts; a different person still decides.
+- These three routes change who may approve, not a threshold, a role limit or a price list, so they are outside D8's words; the earlier line that called the mapping route and account reactivation "not attributed" is superseded by this one, which also names the grant route.
+- Closed in fix round 6 (was recorded here as a residual): a direct database writer signed in as the requester could insert a future-dated company threshold version, which retired the current one so the next quotation was held to the tenant-wide version; migration 20261007150000 now refuses it (see below).
+- A restored selling price runs the same status-change record and basis clause as a withdrawn one; only the withdrawal has a case of its own.
+
+Fix round 6 (review of `c78ee429`): migration 20261007150000 re-issues
+`svc.record_pricing_approval_policy_version` so that a threshold version written on the request path
+(`app_runtime`) takes effect on the day it is recorded and has no end date, as the application
+already writes it; the version that retires the one in force is always the one that takes its place.
+No new route, operation, permission code, audit action, table, column, function or trigger.
+
+Items after fix round 6, one line each:
+
+- Defect closed (was recorded as a residual, within D8's words, "one's own threshold"): a company threshold version dated to start later or earlier, or with an end date, written by the requester's session, retired the version in force and let the quotation fall back to a tenant-wide version somebody else set. DBCR-P1-32-PRE-OD-FD8-001 section 13; DB case "refuses a version that would retire the threshold in force without taking its place" failed with the earlier function body and passed with this one.
+- Not held to the new rule: a connection that bypasses row security (provisioning and fixtures), the same boundary as the grant delegation backstop; DB case "leaves a connection that bypasses row security free to record a dated version".
+- Unresolved policy, Owner decision needed, unchanged (VL-P132-001): who may approve — the approval permission brought by a role grant, scope or role-permission mapping the requester made, and the requester reactivating the approver's account.
+- Unresolved policy, Owner decision needed, not implemented as a ruling (ADR-023 D8 "An approver's own changes", VL-P132-002): an approver who moved their own limit's dates or issued or changed their own grant or scope has no limit that counts in that company for anybody's request, while D8's text speaks of "one's own quotation"; the stricter reading stands until the Owner rules.
+- Evidence for fix round 6, on the development machine: a disposable postgres:17-alpine database (127.0.0.1:55459, removed afterwards; port 54322 never used) took all 178 migrations and `validate:seed-state`; `migration-replay-checks.mjs --phase pre` and `--phase post` passed against the updated baseline and the schema hash was measured unchanged; the focused DB files (self-exemption, quotations, foundation, P1-15 census) and the backend self-exemption file passed. The full tiers were not run locally; hosted CI runs them.

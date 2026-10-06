@@ -489,6 +489,47 @@ export async function callerHoldsPermissionAnywhere(
  * against it. A ceiling set by somebody else is unaffected, and the same row
  * still authorizes every other holder of the role.
  *
+ * ## Nor does a ceiling the requester set (ADR-023, D8)
+ *
+ * `excludeCreatedBy` names the person whose request is being approved. A ceiling
+ * they created — on the approver, or on a role the approver holds — never counts
+ * either: raising a colleague's limit must not get one's own discount through.
+ *
+ * Nor does any ceiling once they moved a limit's window. A limit's amount is
+ * immutable but its `effective_to` is not, so the requester could reopen or extend
+ * a limit somebody else set, or end the approver's own smaller limit so that a
+ * larger role limit applies. When the requester EVER changed the end date of ANY
+ * limit of this type of the caller in the company — on the caller or on a role whose
+ * grant reaches it, in force or not — the caller has no ceiling that counts for that
+ * request.
+ *
+ * ## Nor, once the caller moved the window of one of their own limits
+ *
+ * Reopening, extending or ending one's own limit (or a limit on a role one holds)
+ * is raising one's own ceiling, as creating it is. When the CALLER ever changed the
+ * end date of any limit of this type of theirs in the company, they have no ceiling
+ * that counts, for any request.
+ *
+ * Who changed an end date is `window_changed_by`: every person who ever moved it,
+ * appended from the session by `iam.record_approval_limit_window_change` and never
+ * removed — not `updated_by`, which names only the last writer, so a later save of
+ * the same date would wipe the requester's change. The database guard
+ * `quo.guard_discount_approval` applies the same rules.
+ *
+ * ## A role's limit counts only through a grant that counts (ADR-023, D8)
+ *
+ * Giving the caller a role is raising the caller's ceiling by that role's limit, so a
+ * role limit is chosen only when a grant that COUNTS brings the role to the caller in
+ * the company: not granted or issued by the requester (`granted_by` is the writer's
+ * claim, `issued_by` the session's, stamped by `iam.record_role_grant_provenance`),
+ * never reopened, extended or otherwise changed by the requester
+ * (`grant_changed_by`), and — when scoped — reaching the company through a scope the
+ * requester neither created nor added (`iam.grant_scopes.added_by`). A grant the
+ * caller issued to themselves, changed themselves or scoped themselves does not
+ * count either. A limit on the caller as a person is unaffected, and the window
+ * rules above still read every role an active grant brings, counting or not. The
+ * database guard applies the same rule (migration 20261007140000).
+ *
  * `null` means the actor has **no** ceiling, which callers must treat as no
  * authority and never as unlimited.
  */
@@ -496,34 +537,79 @@ export async function callerApprovalCeiling(
   db: DbHandle,
   companyId: string,
   limitType: string,
-  asOf: string
+  asOf: string,
+  excludeCreatedBy: string | null = null
 ): Promise<{ amount: string; currencyCode: string } | null> {
   const result = await db.query<{ amount: string; currency_code: string }>(
-    `SELECT al.amount::text AS amount, al.currency_code
-       FROM iam.approval_limits al
-      WHERE al.tenant_id = $1 AND al.company_id = $2 AND al.limit_type = $3
-        AND al.effective_from <= $5::date
+    `WITH caller_limits AS (
+       SELECT al.*
+         FROM iam.approval_limits al
+        WHERE al.tenant_id = $1 AND al.company_id = $2 AND al.limit_type = $3
+          AND (al.user_id = $4
+               OR (al.user_id IS NULL AND al.role_id IN (
+                     SELECT g.role_id
+                       FROM iam.role_grants g
+                      WHERE g.tenant_id = $1 AND g.user_id = $4
+                        AND g.status = 'active'
+                        AND g.valid_from <= now()
+                        AND (g.valid_to IS NULL OR g.valid_to > now())
+                        AND (
+                          g.scope_mode = 'unrestricted'
+                          OR EXISTS (
+                            SELECT 1 FROM iam.grant_scopes s
+                             WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id
+                               AND s.company_id = $2
+                          )
+                        ))))
+     ),
+     counting_roles AS (
+       SELECT g.role_id
+         FROM iam.role_grants g
+        WHERE g.tenant_id = $1 AND g.user_id = $4
+          AND g.status = 'active'
+          AND g.valid_from <= now()
+          AND (g.valid_to IS NULL OR g.valid_to > now())
+          AND g.issued_by IS DISTINCT FROM $4::uuid
+          AND NOT ($4::uuid = ANY (g.grant_changed_by))
+          AND ($6::uuid IS NULL OR (
+                g.granted_by <> $6::uuid
+                AND g.issued_by IS DISTINCT FROM $6::uuid
+                AND NOT ($6::uuid = ANY (g.grant_changed_by))))
+          AND (
+            g.scope_mode = 'unrestricted'
+            OR EXISTS (
+              SELECT 1 FROM iam.grant_scopes s
+               WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id
+                 AND s.company_id = $2
+                 AND s.created_by <> $4::uuid
+                 AND s.added_by IS DISTINCT FROM $4::uuid
+                 AND ($6::uuid IS NULL OR (
+                       s.created_by <> $6::uuid
+                       AND s.added_by IS DISTINCT FROM $6::uuid))
+            )
+          )
+     )
+     SELECT al.amount::text AS amount, al.currency_code
+       FROM caller_limits al
+      WHERE al.effective_from <= $5::date
         AND (al.effective_to IS NULL OR al.effective_to > $5::date)
         AND al.created_by <> $4
-        AND (al.user_id = $4
-             OR (al.user_id IS NULL AND al.role_id IN (
-                   SELECT g.role_id
-                     FROM iam.role_grants g
-                    WHERE g.tenant_id = $1 AND g.user_id = $4
-                      AND g.status = 'active'
-                      AND g.valid_from <= now()
-                      AND (g.valid_to IS NULL OR g.valid_to > now())
-                      AND (
-                        g.scope_mode = 'unrestricted'
-                        OR EXISTS (
-                          SELECT 1 FROM iam.grant_scopes s
-                           WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id
-                             AND s.company_id = $2
-                        )
-                      ))))
+        AND ($6::uuid IS NULL OR al.created_by <> $6::uuid)
+        AND (al.user_id IS NOT NULL OR al.role_id IN (SELECT role_id FROM counting_roles))
+        AND NOT EXISTS (
+          SELECT 1 FROM caller_limits moved
+           WHERE $4::uuid = ANY (moved.window_changed_by)
+              OR ($6::uuid IS NOT NULL AND $6::uuid = ANY (moved.window_changed_by)))
       ORDER BY (al.user_id IS NOT NULL) DESC, al.amount DESC
       LIMIT 1`,
-    [db.context.principal.tenantId, companyId, limitType, db.context.principal.userId, asOf]
+    [
+      db.context.principal.tenantId,
+      companyId,
+      limitType,
+      db.context.principal.userId,
+      asOf,
+      excludeCreatedBy,
+    ]
   );
   const row = result.rows[0];
   return row ? { amount: row.amount, currencyCode: row.currency_code } : null;
