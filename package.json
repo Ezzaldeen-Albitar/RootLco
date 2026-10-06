@@ -166,7 +166,7 @@
   "comment:overrides": "Security overrides. Each entry forces a PATCHED version of a transitive dependency whose direct parent still pins a vulnerable range, so `npm audit` reports zero HIGH/CRITICAL rather than a permanently ignored baseline. Remove an entry only when the parent's own pin has caught up. See docs/engineering/ci-automation/security-model.md. `braces` is the one exception: no patched upstream release exists for GHSA-vfj7-8cjw-p6xm, so the root devDependency and the `$braces` override point every dependent at the local patched copy in scripts/vendor/braces (version 3.0.3-rootlco.1). npm audit does not verify that copy; tests/ci/braces-patched-copy.test.ts does. See scripts/vendor/braces/README.md for the replacement condition. `postcss-selector-parser` (GHSA-rj75-hqrm-r3gf) is forced across a major: the fix exists only as 7.1.6 and tailwindcss 3.4.19 and postcss-nested 6.2.0 still ask for ^6, which has no patched release. Remove it when a tailwindcss v3 release depends on ^7, when upstream ships a patched 6.x, or when apps/web moves to tailwindcss v4.",
   "overrides": {
     "postcss": "^8.5.24",
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "fast-uri": "^4.1.5",
     "brace-expansion@<1.1.21": "^1.1.21",
     "brace-expansion@>=4.0.0 <5.0.12": "^5.0.12",
@@ -176,7 +176,7 @@
     "postcss-selector-parser": "^7.1.6",
     "braces": "$braces"
   },
-  "comment:dependencies": "Mirrors apps/api/package.json. The API workspace names what it imports so it can build alone; the root names the same runtime because the repository-level test tiers (vitest.config.ts, vitest.config.backend.ts, vitest.config.db.ts) import API source through the @/ alias and would otherwise resolve these packages only by npm's hoisting, which is an implementation detail rather than a declaration. @aws-sdk/client-s3, @aws-sdk/s3-request-presigner and sharp are here for that reason: tests/foundation/p1-15-evidence-foundation.test.ts imports the S3 adapter and tests/backend/p1-15-evidence-foundation.test.ts imports sharp. ONE deliberate spelling difference: sharp is `^0.35.4` here and `0.35.4` in the workspace, because npm refuses (EOVERRIDE) a root direct dependency whose spec differs from the root's own security override for the same package. The override is the root's authority over sharp and it resolves to the identical 0.35.4 in the lockfile.",
+  "comment:dependencies": "Mirrors apps/api/package.json. The API workspace names what it imports so it can build alone; the root names the same runtime because the repository-level test tiers (vitest.config.ts, vitest.config.backend.ts, vitest.config.db.ts) import API source through the @/ alias and would otherwise resolve these packages only by npm's hoisting, which is an implementation detail rather than a declaration. @aws-sdk/client-s3, @aws-sdk/s3-request-presigner and sharp are here for that reason: tests/foundation/p1-15-evidence-foundation.test.ts imports the S3 adapter and tests/backend/p1-15-evidence-foundation.test.ts imports sharp. ONE deliberate spelling difference: sharp is `^0.35.5` here and `0.35.5` in the workspace, because npm refuses (EOVERRIDE) a root direct dependency whose spec differs from the root's own security override for the same package. The override is the root's authority over sharp and it resolves to the identical 0.35.5 in the lockfile.",
   "dependencies": {
     "@aws-sdk/client-s3": "3.1111.0",
     "@aws-sdk/s3-request-presigner": "3.1111.0",
@@ -187,7 +187,7 @@
     "pino": "^10.3.1",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "sharp": "^0.35.4",
+    "sharp": "^0.35.5",
     "zod": "^4.3.6"
   },
   "devDependencies": {
