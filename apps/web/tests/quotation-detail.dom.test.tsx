@@ -879,9 +879,9 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
     });
   });
 
-  it('says there is no draft to issue when the current revision is issued', () => {
+  it('says there is no draft to issue when the newest revision is the issued one', async () => {
     renderDetail();
-    expect(screen.getByText(EN['quotations.issue.noDraft'] as string)).toBeVisible();
+    expect(await screen.findByText(EN['quotations.issue.noDraft'] as string)).toBeVisible();
   });
 
   it('a conflict on issue renders as a conflict and does not refresh', async () => {
@@ -1206,6 +1206,148 @@ describe('a discount waiting for approval is shown, and holds the draft back fro
     expect(
       screen.getByRole('button', { name: EN['quotations.issue.submit'] as string })
     ).toBeVisible();
+  });
+});
+
+/**
+ * A revision added after an issue is a later DRAFT (P1-32-PRE-OD-QRI).
+ *
+ * The quotation's current revision is set only by issuing, so once revision 2 is
+ * issued the detail read keeps naming it while revision 3 waits as a draft. The
+ * server issues that draft; the screen must find it and offer it, held back by its
+ * own discount request exactly as a first draft is. Falsified by restoring the
+ * current-revision-only lookup: the panel then says there is no draft to issue.
+ */
+describe('a draft added after an issue can be issued from the screen', () => {
+  const LATER_ID = '99999999-3333-4333-8333-333333333333';
+  const laterDraft = (over: Record<string, unknown> = {}) =>
+    revision({ id: LATER_ID, revisionNumber: 3, status: 'draft', issuedAt: null, ...over });
+
+  function withLaterDraft(over: Record<string, unknown> = {}) {
+    listRevisions.mockResolvedValue(
+      okPage([header(LATER_ID, 3, 'draft', false), header(ISSUED_ID, 2, 'issued', true)])
+    );
+    readRevision.mockImplementation((id: string) =>
+      Promise.resolve(id === LATER_ID ? okRead(laterDraft(over)) : okRead(revision()))
+    );
+  }
+
+  it('offers the later draft and issues that revision with the quotation’s version', async () => {
+    withLaterDraft();
+    const user = userEvent.setup();
+    renderDetail();
+    const form = await screen.findByRole('form', {
+      name: EN['quotations.issue.heading'] as string,
+    });
+    expect(within(form).getByText('3')).toBeVisible();
+    expect(screen.queryByText(EN['quotations.issue.noDraft'] as string)).toBeNull();
+    await user.click(
+      within(form).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog', {
+      name: (EN['quotations.issue.confirmTitle'] as string).replace('{number}', '3'),
+    });
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['quotations.issue.submit'] as string })
+    );
+    await waitFor(() => expect(issueQuotation).toHaveBeenCalledTimes(1));
+    const [id, body, ifMatch] = issueQuotation.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+      number,
+    ];
+    expect(id).toBe(QUOTATION_ID);
+    expect(body['revisionId']).toBe(LATER_ID);
+    expect(ifMatch).toBe(5);
+    // The quotation is read again, and the later draft looked for again, before the
+    // question lets go.
+    await waitFor(() => expect(readQuotation).toHaveBeenCalledWith(QUOTATION_ID));
+    await waitFor(() =>
+      expect(readRevision.mock.calls.filter(([read]) => read === LATER_ID).length).toBeGreaterThan(
+        1
+      )
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
+  it.each([
+    ['pending', 'quotations.issue.discountPending'],
+    ['withdrawn', 'quotations.issue.discountWithdrawn'],
+  ])('a %s discount on the later draft still holds it back from issue', async (status, key) => {
+    withLaterDraft({
+      discountApproval: discountApproval({ status, revisionId: LATER_ID, revisionNumber: 3 }),
+    });
+    renderDetail();
+    expect(await screen.findByTestId('issue-blocked-by-discount')).toHaveTextContent(
+      EN[key] as string
+    );
+    expect(
+      screen.queryByRole('button', { name: EN['quotations.issue.submit'] as string })
+    ).toBeNull();
+    expect(issueQuotation).not.toHaveBeenCalled();
+  });
+
+  it('a never-issued quotation offers its first draft at once, without looking further', () => {
+    renderDetail(
+      {},
+      quotation({
+        status: 'draft',
+        currentRevisionId: null,
+        currentRevision: revision({ status: 'draft', issuedAt: null }),
+      })
+    );
+    const form = screen.getByRole('form', { name: EN['quotations.issue.heading'] as string });
+    expect(within(form).getByText('2')).toBeVisible();
+    expect(readRevision).not.toHaveBeenCalled();
+  });
+
+  it('when the later draft cannot be looked for, says so and offers a retry instead of “no draft”', async () => {
+    listRevisions.mockResolvedValue({
+      status: 'unavailable',
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-7',
+    });
+    renderDetail();
+    const issue = region('quotations.issue.heading');
+    expect(
+      await within(issue).findByText(EN['quotations.revisions.unavailable'] as string)
+    ).toBeVisible();
+    expect(within(issue).queryByText(EN['quotations.issue.noDraft'] as string)).toBeNull();
+    expect(within(issue).queryByRole('form')).toBeNull();
+  });
+
+  it('speaks Arabic: the later draft is offered for issue', async () => {
+    withLaterDraft();
+    const AR = ar as Record<string, string>;
+    renderRtlBare(
+      withMui(
+        inBranch(
+          <QuotationDetailScreen
+            locale="ar"
+            messages={ar}
+            quotation={quotation() as never}
+            canManage
+            canDecide={false}
+            canReadLimits={false}
+            canReadServices={false}
+          />,
+          { locale: 'ar' }
+        ),
+        'ar'
+      )
+    );
+    const form = await screen.findByRole('form', {
+      name: AR['quotations.issue.heading'] as string,
+    });
+    expect(
+      within(form).getByText(AR['quotations.issue.draftLabel'] as string, { exact: false })
+    ).toBeVisible();
+    expect(
+      within(form).getByRole('button', { name: AR['quotations.issue.submit'] as string })
+    ).toBeVisible();
+    expect(screen.queryByText(AR['quotations.issue.noDraft'] as string)).toBeNull();
   });
 });
 
