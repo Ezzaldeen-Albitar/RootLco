@@ -428,3 +428,58 @@ account the requester reactivated. An approver's own changes (VL-P132-002): an a
 their own limit's dates or issued or changed their own grant or scope has no limit that counts for
 anybody's request, which goes beyond "one's own quotation"; the stricter reading stands until the
 Owner rules.
+
+## 14. Addendum (P1-32-PRE-OD-RGF) — the 177th migration on a database that already holds grants
+
+**What failed.** The upgrade rehearsal of checkpoint CP-20261006-1 on a restored copy of the
+acceptance database stopped at `20261007140000_quo_discount_role_grant_provenance.sql`. That file
+disables `tg_role_grants_touch_metadata`, backfills `issued_by` and `grant_changed_by` with one
+UPDATE of every `iam.role_grants` row, and enables the trigger again. Two constraint triggers on the
+same table, `tg_role_grants_require_scope` (`20260718092000`) and
+`tg_role_grants_delegation_authority` (`20260727090000`), are `DEFERRABLE INITIALLY DEFERRED` and
+fire on every UPDATE, so the backfill queued one deferred event per row for each of them, and
+PostgreSQL refuses `ALTER TABLE ... ENABLE TRIGGER` while the table has pending trigger events. The
+statement that failed was `ALTER TABLE iam.role_grants ENABLE TRIGGER tg_role_grants_touch_metadata`.
+
+**Why replay did not show it.** Every migration check in continuous integration replays the
+migrations onto an EMPTY database. When `20261007140000` runs there, `iam.role_grants` holds no row,
+the backfill updates nothing, nothing is queued, and the file applies. No job applies the pending
+migrations to a database that already holds business rows, so the defect was reachable only by an
+upgrade of a populated database. That gap is recorded in the verification ledger as VL-DB-002.
+
+**The fix, forward-only.** A merged migration is immutable, so `20261007140000` stays byte-identical
+(`git diff` against `develop` shows no change to it). Two new migrations surround it:
+
+- `20261007135000_iam_role_grant_checks_immediate_for_backfill.sql` sorts before it and re-creates
+  both constraint triggers `DEFERRABLE INITIALLY IMMEDIATE`, under the same names, functions and
+  events. The same checks then run at the end of the backfill statement instead of at commit, so
+  nothing is pending when the metadata trigger is enabled. No check is weakened: each still runs on
+  every insert and update, and while the triggers are immediate a scoped grant written before its
+  scopes in one transaction is refused (fails closed).
+- `20261007160000_iam_role_grant_checks_deferred_again.sql` sorts after `20261007150000` and
+  re-creates both triggers exactly as `20260718092000` and `20260727090000` wrote them,
+  `DEFERRABLE INITIALLY DEFERRED`.
+
+Both are ROLLBACK-SAFE and add no table, column, function, grant, policy, seed or permission code.
+After the second, the schema is the one `20261007150000` left on a database where the first never
+ran, so `schemaHash` (`216dfbab...`) and every structural total are unchanged; `migrationCount`
+moves 178 to 180 (`.github/ci-baselines/schema-baseline.json`, `structuralTotalsNote180`), and the
+P1-15 census in `tests/db/p1-15-shared-services-runtime-capabilities.test.ts` names both files.
+
+**Rehearsal (local, disposable databases; not a hosted measurement).**
+
+- Restored copy of the 2026-10-06 acceptance backup on a throwaway Supabase PostgreSQL 17 container
+  (ledger at 170 migrations, 264 role grants): `supabase migration up` applied all ten pending
+  migrations, including both new ones, and the ledger reached 180. Every pre-existing table row
+  count, money total and role count read before and after was unchanged; only the new provenance
+  columns were filled (all 264 grants received `issued_by`). Both constraint triggers ended
+  `DEFERRABLE INITIALLY DEFERRED` and enabled, and the measured schema hash was `216dfbab...`.
+  Without the two new migrations the same restore stopped at the statement named above.
+- Replay from empty on a throwaway `postgres:17-alpine` container: all 180 migrations applied,
+  seeds applied twice, the migration-replay static, pre and post phases reported no failure
+  against the raised baseline, the schema hash equalled the baseline, the `pg_dump --schema-only`
+  of the application schemas was identical to the one `develop` produces, and
+  `tests/db/foundation.test.ts` with the P1-15 census ran without a failure.
+
+The hosted migration-replay job re-proves the replay from empty; it does not exercise a populated
+upgrade.
