@@ -7,7 +7,10 @@
  * 20261007110000_quo_discount_limit_window_history.sql (who ever moved a limit window is
  * kept in window_changed_by, for the requester and for the approver), and fix round 3,
  * 20261007120000_quo_discount_self_set_price_without_discount.sql (a price the
- * requester set needs another person even when the quotation carries no discount).
+ * requester set needs another person even when the quotation carries no discount), and
+ * fix round 4, 20261007130000_quo_price_list_assignment_provenance.sql (who made or
+ * changed the price-list assignment that selected a line's list, and any assignment
+ * the requester changed, count as the requester's own price).
  *
  * Every case runs in a rolled-back transaction as `app_runtime`, switching the
  * signed-in person with `app.user_id` exactly as the application does. USER_A is the
@@ -1416,6 +1419,365 @@ describe('quo discount self-exemption — a self-set price with no discount (fix
       );
       await c.query(`SELECT quo.issue_revision($1)`, [revision]);
       expect(await statusOf(c, revision)).toBe('issued');
+    });
+  });
+});
+
+describe('quo discount self-exemption — a price-list assignment the requester made (fix round 4)', () => {
+  /** A price list for `service` at `amount`, written and published by `actor`. */
+  const publishedList = (
+    c: Q,
+    actor: string,
+    service: string,
+    tag: string,
+    amount: string
+  ): Promise<{ priceList: string; rule: string }> =>
+    as(c, actor, async () => {
+      const priceList = (
+        await one<{ id: string }>(
+          c,
+          `INSERT INTO svc.price_lists (tenant_id, price_list_code, name, currency_code, created_by)
+           VALUES ($1,$2,$3,'USD',$4) RETURNING id`,
+          [TENANT_A, `PL_${tag}`, `Price list ${tag}`, actor]
+        )
+      ).id;
+      const version = (
+        await one<{ id: string }>(
+          c,
+          `INSERT INTO svc.price_list_versions (tenant_id, price_list_id, version_no, effective_from, status, created_by)
+           VALUES ($1,$2,1,DATE '2026-01-01','draft',$3) RETURNING id`,
+          [TENANT_A, priceList, actor]
+        )
+      ).id;
+      const rule = (
+        await one<{ id: string }>(
+          c,
+          `INSERT INTO svc.price_rules (tenant_id, price_list_version_id, service_id, amount, priority, created_by)
+           VALUES ($1,$2,$3,$4::numeric,0,$5) RETURNING id`,
+          [TENANT_A, version, service, amount, actor]
+        )
+      ).id;
+      await c.query(`SELECT svc.publish_price_list_version($1,$2,DATE '2026-01-01')`, [
+        priceList,
+        version,
+      ]);
+      return { priceList, rule };
+    });
+
+  /**
+   * Assigns `priceList` to COMPANY_A1 (and BRANCH_A1 when `branch`), signed in as
+   * `actor`. The writer's provenance claim names somebody else and is ignored.
+   */
+  const assign = (
+    c: Q,
+    actor: string,
+    priceList: string,
+    branch: boolean,
+    priority: number
+  ): Promise<string> =>
+    as(
+      c,
+      actor,
+      async () =>
+        (
+          await one<{ id: string }>(
+            c,
+            `INSERT INTO svc.price_list_assignments
+             (tenant_id, price_list_id, company_id, branch_id, priority, effective_from, created_by,
+              assigned_by, assigned_at, assignment_changed_by)
+           VALUES ($1,$2,$3,$4,$5,current_date,$6,$7,now() - interval '1 day',ARRAY[$7]::uuid[])
+           RETURNING id`,
+            [TENANT_A, priceList, COMPANY_A1, branch ? BRANCH_A1 : null, priority, actor, PUBLISHER]
+          )
+        ).id
+    );
+
+  /** The amount svc.resolve_price answers for `service` at BRANCH_A1 today. */
+  const resolved = async (c: Q, service: string): Promise<string | undefined> =>
+    (
+      await c.query<{ amount: string }>(
+        `SELECT amount::text AS amount FROM svc.resolve_price($1,$2,$3,NULL,current_date)`,
+        [service, COMPANY_A1, BRANCH_A1]
+      )
+    ).rows[0]?.amount;
+
+  /**
+   * A service line priced from `rule` at `unit`, discounted by `discount`. The
+   * writer's assignment snapshot names somebody else and is ignored.
+   */
+  const addPricedLine = async (
+    c: Q,
+    revision: string,
+    service: string,
+    rule: string,
+    unit: string,
+    discount: string
+  ): Promise<string> =>
+    (
+      await one<{ id: string }>(
+        c,
+        `INSERT INTO quo.quotation_items
+           (tenant_id, company_id, branch_id, quotation_revision_id, line_number, item_kind, service_id,
+            price_rule_ref, currency_code, captured_unit_price, captured_quantity, captured_discount,
+            captured_tax_rate, captured_tax_amount, captured_line_total, created_by,
+            price_assignment_ref, price_assigned_by, price_assignment_changed_by)
+         VALUES ($1,$2,$3,$4,1,'service',$5,$6,'USD',$7::numeric,1,$8::numeric,0,0,
+                 $7::numeric - $8::numeric,$9,$6,$10,ARRAY[$10]::uuid[])
+         RETURNING id`,
+        [
+          TENANT_A,
+          COMPANY_A1,
+          BRANCH_A1,
+          revision,
+          service,
+          rule,
+          unit,
+          discount,
+          USER_A,
+          PUBLISHER,
+        ]
+      )
+    ).id;
+
+  const snapshotOf = (c: Q, line: string) =>
+    one<{
+      price_assignment_ref: string | null;
+      price_assigned_by: string | null;
+      price_assignment_changed_by: string[] | null;
+    }>(
+      c,
+      `SELECT price_assignment_ref, price_assigned_by, price_assignment_changed_by
+         FROM quo.quotation_items WHERE id = $1`,
+      [line]
+    );
+  const statusOf = async (c: Q, revision: string): Promise<string> =>
+    (
+      await one<{ status: string }>(c, `SELECT status FROM quo.quotation_revisions WHERE id = $1`, [
+        revision,
+      ])
+    ).status;
+
+  it('adds who made and who changed an assignment, and the line snapshot of it', async () => {
+    const columns = await admin.query<{ name: string; type: string }>(
+      `SELECT table_schema || '.' || table_name || '.' || column_name AS name,
+              data_type || '|' || udt_name || '|' || is_nullable || '|' || COALESCE(column_default, '') AS type
+         FROM information_schema.columns
+        WHERE (table_schema, table_name, column_name) IN (
+          ('svc','price_list_assignments','assigned_by'),
+          ('svc','price_list_assignments','assigned_at'),
+          ('svc','price_list_assignments','assignment_changed_by'),
+          ('quo','quotation_items','price_customer_class'),
+          ('quo','quotation_items','price_assignment_ref'),
+          ('quo','quotation_items','price_assigned_by'),
+          ('quo','quotation_items','price_assigned_at'),
+          ('quo','quotation_items','price_assignment_changed_by'))`
+    );
+    expect(Object.fromEntries(columns.rows.map((row) => [row.name, row.type]))).toEqual({
+      'quo.quotation_items.price_assigned_at': 'timestamp with time zone|timestamptz|YES|',
+      'quo.quotation_items.price_assigned_by': 'uuid|uuid|YES|',
+      'quo.quotation_items.price_assignment_changed_by': 'ARRAY|_uuid|YES|',
+      'quo.quotation_items.price_assignment_ref': 'uuid|uuid|YES|',
+      'quo.quotation_items.price_customer_class': 'text|text|YES|',
+      'svc.price_list_assignments.assigned_at': 'timestamp with time zone|timestamptz|YES|',
+      'svc.price_list_assignments.assigned_by': 'uuid|uuid|YES|',
+      'svc.price_list_assignments.assignment_changed_by': 'ARRAY|_uuid|NO|ARRAY[]::uuid[]',
+    });
+    expect(
+      await one(
+        admin,
+        `SELECT p.prosecdef AS secdef, t.tgname AS trigger
+           FROM pg_proc p
+           JOIN pg_namespace n ON n.oid = p.pronamespace
+           JOIN pg_trigger t ON t.tgfoid = p.oid
+          WHERE n.nspname = 'svc' AND p.proname = 'stamp_price_list_assignment_provenance'`
+      )
+    ).toEqual({ secdef: false, trigger: 'tg_price_list_assignments_provenance' });
+  });
+
+  it('stamps who made an assignment and who changed it from the session, never the writer', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { service } = await seedService(c, 'fd8r4_stamp');
+      const list = await publishedList(c, OTHER_ACTOR, service, 'fd8r4_stamp', '100');
+      const id = await assign(c, USER_A, list.priceList, true, 7101);
+      const row = () =>
+        one<{ assigned_by: string; changed: string[]; recent: boolean }>(
+          c,
+          `SELECT assigned_by, assignment_changed_by AS changed,
+                  assigned_at > now() - interval '1 minute' AS recent
+             FROM svc.price_list_assignments WHERE id = $1`,
+          [id]
+        );
+      expect(await row()).toEqual({ assigned_by: USER_A, changed: [], recent: true });
+
+      // A colleague's later change is appended and never replaces who made it.
+      await as(c, OTHER_ACTOR, () =>
+        c.query(`UPDATE svc.price_list_assignments SET priority = 7102 WHERE id = $1`, [id])
+      );
+      expect(await row()).toEqual({ assigned_by: USER_A, changed: [OTHER_ACTOR], recent: true });
+      // A save that changes nothing it selects records nothing; a writer's value is ignored.
+      await as(c, PUBLISHER, () =>
+        c.query(
+          `UPDATE svc.price_list_assignments
+              SET priority = 7102, assigned_by = $2, assignment_changed_by = ARRAY[]::uuid[]
+            WHERE id = $1`,
+          [id, PUBLISHER]
+        )
+      );
+      expect(await row()).toEqual({ assigned_by: USER_A, changed: [OTHER_ACTOR], recent: true });
+      // Ending it is a change too.
+      await c.query(`UPDATE svc.price_list_assignments SET status = 'inactive' WHERE id = $1`, [
+        id,
+      ]);
+      expect(await row()).toEqual({
+        assigned_by: USER_A,
+        changed: [OTHER_ACTOR, USER_A],
+        recent: true,
+      });
+    });
+  });
+
+  it('needs another person when the requester pointed their branch at a cheaper list and quotes at no discount', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { service } = await seedService(c, 'fd8r4_branch');
+      // An administrator's threshold of 50; the administrator's list prices the service
+      // at 100 company-wide, and the administrator also published a list at 10.
+      await as(c, OTHER_ACTOR, () => recordThreshold(c, '50'));
+      const dear = await publishedList(c, OTHER_ACTOR, service, 'fd8r4_dear', '100');
+      const cheap = await publishedList(c, OTHER_ACTOR, service, 'fd8r4_cheap', '10');
+      const company = await assign(c, OTHER_ACTOR, dear.priceList, false, 7201);
+      expect(await resolved(c, service)).toBe('100.0000');
+
+      // Control: 90 off the administrator's 100 needs somebody else.
+      const { wo } = await makeWorkOrder(c, 'fd8r4_ctl');
+      const control = await draftRevision(c, await seedQuotation(c, wo, 'fd8r4_ctl'), 1);
+      const controlLine = await addPricedLine(c, control, service, dear.rule, '100', '90');
+      expect(await snapshotOf(c, controlLine)).toEqual({
+        price_assignment_ref: company,
+        price_assigned_by: OTHER_ACTOR,
+        price_assignment_changed_by: [],
+      });
+      expect(await needsApproval(c, control)).toBe(true);
+
+      // USER_A points their own branch at the list priced at 10, more specifically, and
+      // quotes at 10 with no discount: the customer gets the same 90 off.
+      const own = await assign(c, USER_A, cheap.priceList, true, 7202);
+      expect(await resolved(c, service)).toBe('10.0000');
+      const { wo: wo2 } = await makeWorkOrder(c, 'fd8r4_own');
+      const quotation = await seedQuotation(c, wo2, 'fd8r4_own');
+      const revision = await draftRevision(c, quotation, 1);
+      const line = await addPricedLine(c, revision, service, cheap.rule, '10', '0');
+      // The amount and the publication are the administrator's; the assignment is not.
+      expect(
+        await one(
+          c,
+          `SELECT price_amount_set_by, price_changed_by, price_published_by
+             FROM quo.quotation_items WHERE id = $1`,
+          [line]
+        )
+      ).toEqual({
+        price_amount_set_by: OTHER_ACTOR,
+        price_changed_by: OTHER_ACTOR,
+        price_published_by: OTHER_ACTOR,
+      });
+      expect(await snapshotOf(c, line)).toEqual({
+        price_assignment_ref: own,
+        price_assigned_by: USER_A,
+        price_assignment_changed_by: [],
+      });
+      expect(await basisOf(c, revision, USER_A)).toEqual({ own_policy: false, own_price: true });
+      expect(await needsApproval(c, revision)).toBe(true);
+      await expectRefusal(c, /discount_approval_required/, `SELECT quo.issue_revision($1)`, [
+        revision,
+      ]);
+      const approval = await requestFor(c, quotation, revision, '0');
+      expect(
+        await one(
+          c,
+          `SELECT discount_total::text AS total, requester_set_price
+             FROM quo.discount_approvals WHERE id = $1`,
+          [approval]
+        )
+      ).toEqual({ total: '0.0000', requester_set_price: true });
+      // No sole-administrator exception: the requester never decides it.
+      await expectRefusal(c, /discount_approver_must_differ/, approveSql, [approval, USER_A]);
+      await setContext(c, { tenantId: TENANT_A, userId: APPROVER });
+      await c.query(approveSql, [approval, APPROVER]);
+      await setContext(c, ctxA);
+      await c.query(`SELECT quo.issue_revision($1)`, [revision]);
+      expect(await statusOf(c, revision)).toBe('issued');
+
+      // Another person's quotation under the same assignment, with no discount, issues
+      // alone: APPROVER made no assignment and set no price.
+      const { wo: wo3 } = await makeWorkOrder(c, 'fd8r4_other');
+      const theirs = await revisionBy(c, await seedQuotation(c, wo3, 'fd8r4_other'), 1, APPROVER);
+      const theirLine = await addPricedLine(c, theirs, service, cheap.rule, '10', '0');
+      expect((await snapshotOf(c, theirLine)).price_assigned_by).toBe(USER_A);
+      expect(await basisOf(c, theirs, APPROVER)).toEqual({ own_policy: false, own_price: false });
+      expect(await needsApproval(c, theirs)).toBe(false);
+      await c.query(`SELECT quo.issue_revision($1)`, [theirs]);
+      expect(await statusOf(c, theirs)).toBe('issued');
+    });
+  });
+
+  it('needs another person when the requester out-prioritised an assignment, through a colleague’s later edit', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { service } = await seedService(c, 'fd8r4_prio');
+      await as(c, OTHER_ACTOR, () => recordThreshold(c, '50'));
+      const dear = await publishedList(c, OTHER_ACTOR, service, 'fd8r4_pdear', '100');
+      const cheap = await publishedList(c, OTHER_ACTOR, service, 'fd8r4_pcheap', '10');
+      await assign(c, OTHER_ACTOR, dear.priceList, true, 7301);
+      expect(await resolved(c, service)).toBe('100.0000');
+      // Same specificity, higher priority; a colleague then moves its priority again.
+      const own = await assign(c, USER_A, cheap.priceList, true, 7302);
+      await as(c, PUBLISHER, () =>
+        c.query(`UPDATE svc.price_list_assignments SET priority = 7303 WHERE id = $1`, [own])
+      );
+      expect(await resolved(c, service)).toBe('10.0000');
+      const { wo } = await makeWorkOrder(c, 'fd8r4_prio');
+      const revision = await draftRevision(c, await seedQuotation(c, wo, 'fd8r4_prio'), 1);
+      const line = await addPricedLine(c, revision, service, cheap.rule, '10', '0');
+      expect(await snapshotOf(c, line)).toEqual({
+        price_assignment_ref: own,
+        price_assigned_by: USER_A,
+        price_assignment_changed_by: [PUBLISHER],
+      });
+      expect(await basisOf(c, revision, USER_A)).toEqual({ own_policy: false, own_price: true });
+      expect(await needsApproval(c, revision)).toBe(true);
+      await expectRefusal(c, /discount_approval_required/, `SELECT quo.issue_revision($1)`, [
+        revision,
+      ]);
+    });
+  });
+
+  it('needs another person when the requester ended a competing assignment so a cheaper list applies', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { service } = await seedService(c, 'fd8r4_end');
+      await as(c, OTHER_ACTOR, () => recordThreshold(c, '50'));
+      const dear = await publishedList(c, OTHER_ACTOR, service, 'fd8r4_edear', '100');
+      const cheap = await publishedList(c, OTHER_ACTOR, service, 'fd8r4_echeap', '10');
+      // Both assignments are the administrator's; the branch one wins.
+      const company = await assign(c, OTHER_ACTOR, cheap.priceList, false, 7401);
+      const branch = await assign(c, OTHER_ACTOR, dear.priceList, true, 7402);
+      expect(await resolved(c, service)).toBe('100.0000');
+      // USER_A ends the branch assignment, so the company one applies.
+      await c.query(`UPDATE svc.price_list_assignments SET status = 'inactive' WHERE id = $1`, [
+        branch,
+      ]);
+      expect(await resolved(c, service)).toBe('10.0000');
+      const { wo } = await makeWorkOrder(c, 'fd8r4_end');
+      const revision = await draftRevision(c, await seedQuotation(c, wo, 'fd8r4_end'), 1);
+      const line = await addPricedLine(c, revision, service, cheap.rule, '10', '0');
+      // The assignment that priced the line is the administrator's, untouched ...
+      expect(await snapshotOf(c, line)).toEqual({
+        price_assignment_ref: company,
+        price_assigned_by: OTHER_ACTOR,
+        price_assignment_changed_by: [],
+      });
+      // ... but USER_A changed which list applies.
+      expect(await basisOf(c, revision, USER_A)).toEqual({ own_policy: false, own_price: true });
+      expect(await needsApproval(c, revision)).toBe(true);
+      // Somebody who changed no assignment is not held to it.
+      expect(await basisOf(c, revision, APPROVER)).toEqual({ own_policy: false, own_price: false });
     });
   });
 });

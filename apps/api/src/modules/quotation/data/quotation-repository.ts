@@ -334,6 +334,13 @@ export interface NewItemInput {
   readonly sourceServiceLineRef: string | null;
   readonly sourceRequiredPartRef: string | null;
   readonly priceRuleRef: string | null;
+  /**
+   * The customer class a service line was priced for, exactly as passed to
+   * `svc.resolve_price`; `null` for no class and on a part line. The database
+   * snapshots, from it, the price-list assignment that selected the line's list
+   * and who made it (ADR-023 D8, P1-32-PRE-OD-FD8 fix round 4).
+   */
+  readonly priceCustomerClass: string | null;
   /** A part line's snapshot (ADR-023 D6); every one `null` on a service line. */
   readonly itemSalePriceRef: string | null;
   readonly quotedItemSku: string | null;
@@ -1159,11 +1166,11 @@ export class QuotationRepository extends Repository {
           captured_unit_price, captured_quantity, captured_discount, captured_tax_rate,
           captured_tax_amount, captured_line_total, created_by,
           item_sale_price_ref, quoted_item_sku, quoted_item_name, quoted_unit_code,
-          quoted_unit_name, quoted_tax_class_ref)
+          quoted_unit_name, quoted_tax_class_ref, price_customer_class)
        SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13,
               $14::numeric(18,4), $15::numeric(12,3), $16::numeric(18,4), $17::numeric(9,6),
               money.tax, money.net + money.tax, $18,
-              $19, $20, $21, $22, $23, $24
+              $19, $20, $21, $22, $23, $24, $25
          FROM (SELECT net, shared.round_to_minor_unit(net * $17::numeric(9,6), $13) AS tax
                  FROM (SELECT shared.round_to_minor_unit(
                                 ($14::numeric(18,4) * $15::numeric(12,3)) - $16::numeric(18,4),
@@ -1194,6 +1201,7 @@ export class QuotationRepository extends Repository {
         item.quotedUnitCode,
         item.quotedUnitName,
         item.quotedTaxClassRef,
+        item.priceCustomerClass,
       ]
     );
     if (row === null) {

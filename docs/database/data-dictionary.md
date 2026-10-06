@@ -4174,49 +4174,61 @@ keeps its source: who had last changed the price rule or item selling price (`pr
 `price_published_at`). A writer's value is ignored; a later change to the source does not move it.
 NULL for lines written before migration 20261007090000. Fix round 1 (migration 20261007100000) adds
 who had set the source's AMOUNT (`price_amount_set_by`, `price_amount_set_at`), copied the same way;
-NULL for lines written before it.
+NULL for lines written before it. Fix round 4 (migration 20261007130000) adds the customer class a
+service line was priced for (`price_customer_class`, written by the application as it asked
+`svc.resolve_price`) and the snapshot of the `svc.price_list_assignments` row that selected the
+list of the line's price rule (`price_assignment_ref`) — chosen with `svc.resolve_price`'s filter
+and order among the assignments naming that list — with who had made it (`price_assigned_by`,
+`price_assigned_at`) and who had changed it (`price_assignment_changed_by`). A writer's value is
+ignored; NULL on a part line, when no assignment names the rule's list, and for lines written
+before it.
 
-| #   | Column                     | Type                     | Nullable |
-| --- | -------------------------- | ------------------------ | -------- |
-| 1   | `id`                       | uuid                     | no       |
-| 2   | `tenant_id`                | uuid                     | no       |
-| 3   | `company_id`               | uuid                     | no       |
-| 4   | `branch_id`                | uuid                     | no       |
-| 5   | `quotation_revision_id`    | uuid                     | no       |
-| 6   | `line_number`              | integer                  | no       |
-| 7   | `item_kind`                | text                     | no       |
-| 8   | `service_id`               | uuid                     | yes      |
-| 9   | `item_ref`                 | uuid                     | yes      |
-| 10  | `source_service_line_ref`  | uuid                     | yes      |
-| 11  | `source_required_part_ref` | uuid                     | yes      |
-| 12  | `price_rule_ref`           | uuid                     | yes      |
-| 13  | `description`              | text                     | yes      |
-| 14  | `currency_code`            | text                     | no       |
-| 15  | `captured_unit_price`      | numeric                  | no       |
-| 16  | `captured_quantity`        | numeric                  | no       |
-| 17  | `captured_discount`        | numeric                  | no       |
-| 18  | `captured_tax_rate`        | numeric                  | no       |
-| 19  | `captured_tax_amount`      | numeric                  | no       |
-| 20  | `captured_line_total`      | numeric                  | no       |
-| 21  | `record_version`           | integer                  | no       |
-| 22  | `created_at`               | timestamp with time zone | no       |
-| 23  | `created_by`               | uuid                     | no       |
-| 24  | `updated_at`               | timestamp with time zone | yes      |
-| 25  | `updated_by`               | uuid                     | yes      |
-| 26  | `deleted_at`               | timestamp with time zone | yes      |
-| 27  | `deleted_by`               | uuid                     | yes      |
-| 28  | `item_sale_price_ref`      | uuid                     | yes      |
-| 29  | `quoted_item_sku`          | text                     | yes      |
-| 30  | `quoted_item_name`         | text                     | yes      |
-| 31  | `quoted_unit_code`         | text                     | yes      |
-| 32  | `quoted_unit_name`         | text                     | yes      |
-| 33  | `quoted_tax_class_ref`     | uuid                     | yes      |
-| 34  | `price_changed_by`         | uuid                     | yes      |
-| 35  | `price_changed_at`         | timestamp with time zone | yes      |
-| 36  | `price_published_by`       | uuid                     | yes      |
-| 37  | `price_published_at`       | timestamp with time zone | yes      |
-| 38  | `price_amount_set_by`      | uuid                     | yes      |
-| 39  | `price_amount_set_at`      | timestamp with time zone | yes      |
+| #   | Column                        | Type                     | Nullable |
+| --- | ----------------------------- | ------------------------ | -------- |
+| 1   | `id`                          | uuid                     | no       |
+| 2   | `tenant_id`                   | uuid                     | no       |
+| 3   | `company_id`                  | uuid                     | no       |
+| 4   | `branch_id`                   | uuid                     | no       |
+| 5   | `quotation_revision_id`       | uuid                     | no       |
+| 6   | `line_number`                 | integer                  | no       |
+| 7   | `item_kind`                   | text                     | no       |
+| 8   | `service_id`                  | uuid                     | yes      |
+| 9   | `item_ref`                    | uuid                     | yes      |
+| 10  | `source_service_line_ref`     | uuid                     | yes      |
+| 11  | `source_required_part_ref`    | uuid                     | yes      |
+| 12  | `price_rule_ref`              | uuid                     | yes      |
+| 13  | `description`                 | text                     | yes      |
+| 14  | `currency_code`               | text                     | no       |
+| 15  | `captured_unit_price`         | numeric                  | no       |
+| 16  | `captured_quantity`           | numeric                  | no       |
+| 17  | `captured_discount`           | numeric                  | no       |
+| 18  | `captured_tax_rate`           | numeric                  | no       |
+| 19  | `captured_tax_amount`         | numeric                  | no       |
+| 20  | `captured_line_total`         | numeric                  | no       |
+| 21  | `record_version`              | integer                  | no       |
+| 22  | `created_at`                  | timestamp with time zone | no       |
+| 23  | `created_by`                  | uuid                     | no       |
+| 24  | `updated_at`                  | timestamp with time zone | yes      |
+| 25  | `updated_by`                  | uuid                     | yes      |
+| 26  | `deleted_at`                  | timestamp with time zone | yes      |
+| 27  | `deleted_by`                  | uuid                     | yes      |
+| 28  | `item_sale_price_ref`         | uuid                     | yes      |
+| 29  | `quoted_item_sku`             | text                     | yes      |
+| 30  | `quoted_item_name`            | text                     | yes      |
+| 31  | `quoted_unit_code`            | text                     | yes      |
+| 32  | `quoted_unit_name`            | text                     | yes      |
+| 33  | `quoted_tax_class_ref`        | uuid                     | yes      |
+| 34  | `price_changed_by`            | uuid                     | yes      |
+| 35  | `price_changed_at`            | timestamp with time zone | yes      |
+| 36  | `price_published_by`          | uuid                     | yes      |
+| 37  | `price_published_at`          | timestamp with time zone | yes      |
+| 38  | `price_amount_set_by`         | uuid                     | yes      |
+| 39  | `price_amount_set_at`         | timestamp with time zone | yes      |
+| 40  | `price_customer_class`        | text                     | yes      |
+| 41  | `price_assignment_ref`        | uuid                     | yes      |
+| 42  | `price_assigned_by`           | uuid                     | yes      |
+| 43  | `price_assigned_at`           | timestamp with time zone | yes      |
+| 44  | `price_assignment_changed_by` | uuid[]                   | yes      |
 
 #### quo.quotation_revisions
 
@@ -4346,25 +4358,36 @@ set `discount_policy_pinned_at` means no policy was in force: the threshold is z
 
 #### svc.price_list_assignments
 
-| #   | Column           | Type                     | Nullable |
-| --- | ---------------- | ------------------------ | -------- |
-| 1   | `id`             | uuid                     | no       |
-| 2   | `tenant_id`      | uuid                     | no       |
-| 3   | `price_list_id`  | uuid                     | no       |
-| 4   | `company_id`     | uuid                     | yes      |
-| 5   | `branch_id`      | uuid                     | yes      |
-| 6   | `customer_class` | text                     | yes      |
-| 7   | `priority`       | integer                  | no       |
-| 8   | `effective_from` | date                     | no       |
-| 9   | `effective_to`   | date                     | yes      |
-| 10  | `status`         | text                     | no       |
-| 11  | `record_version` | integer                  | no       |
-| 12  | `created_at`     | timestamp with time zone | no       |
-| 13  | `created_by`     | uuid                     | no       |
-| 14  | `updated_at`     | timestamp with time zone | yes      |
-| 15  | `updated_by`     | uuid                     | yes      |
-| 16  | `deleted_at`     | timestamp with time zone | yes      |
-| 17  | `deleted_by`     | uuid                     | yes      |
+P1-32-PRE-OD-FD8 fix round 4 (ADR-023 D8, migration 20261007130000) adds who made the assignment
+(`assigned_by`, `assigned_at`), stamped from the signed-in person on insert and never moved, and
+everyone who ever changed what it selects afterwards — its list, company, branch, customer class,
+priority, dates, status or deletion (`assignment_changed_by`), appended from the session and never
+removed. Both are kept by `svc.stamp_price_list_assignment_provenance` (BEFORE INSERT OR UPDATE);
+a writer's value is ignored. Rows written before the migration carry `created_by` and, where
+updated, `updated_by`.
+
+| #   | Column                  | Type                     | Nullable |
+| --- | ----------------------- | ------------------------ | -------- |
+| 1   | `id`                    | uuid                     | no       |
+| 2   | `tenant_id`             | uuid                     | no       |
+| 3   | `price_list_id`         | uuid                     | no       |
+| 4   | `company_id`            | uuid                     | yes      |
+| 5   | `branch_id`             | uuid                     | yes      |
+| 6   | `customer_class`        | text                     | yes      |
+| 7   | `priority`              | integer                  | no       |
+| 8   | `effective_from`        | date                     | no       |
+| 9   | `effective_to`          | date                     | yes      |
+| 10  | `status`                | text                     | no       |
+| 11  | `record_version`        | integer                  | no       |
+| 12  | `created_at`            | timestamp with time zone | no       |
+| 13  | `created_by`            | uuid                     | no       |
+| 14  | `updated_at`            | timestamp with time zone | yes      |
+| 15  | `updated_by`            | uuid                     | yes      |
+| 16  | `deleted_at`            | timestamp with time zone | yes      |
+| 17  | `deleted_by`            | uuid                     | yes      |
+| 18  | `assigned_by`           | uuid                     | yes      |
+| 19  | `assigned_at`           | timestamp with time zone | yes      |
+| 20  | `assignment_changed_by` | uuid[]                   | no       |
 
 #### svc.price_list_versions
 

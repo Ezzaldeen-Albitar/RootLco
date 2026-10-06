@@ -1259,7 +1259,10 @@ it, or with a smaller one." <!-- quotations.discountApproval.rejectedNext -->
   price used on this draft." <!-- quotations.discountApproval.ownPrice --> Somebody else's quotation
   follows the threshold and prices as they are set. A price you set needs another person's approval
   even when you give no discount, because the price itself can carry one; a quotation with no
-  discount at prices somebody else set needs no approval.
+  discount at prices somebody else set needs no approval. Choosing which price list applies counts
+  as setting the price: if you assigned the price list a line was priced from to your branch,
+  company or customer class, or ever changed a price-list assignment, your quotation needs another
+  person's approval in the same way.
 - **A limit the person who asked set never counts.** An approver cannot approve your discount with
   a limit you set for them, or for a role they hold; it counts as no limit for that request. The
   same holds once you have changed the dates of one of their limits — reopening or extending it, or

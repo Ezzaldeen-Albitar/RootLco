@@ -273,17 +273,20 @@ Implementation particulars (P1-32-PRE-OD-FD8, Proposed):
   everyone who ever changed it is kept in `window_changed_by`, appended from the session and never
   removed (the last writer, `updated_by`, is not enough: a later save would hide an earlier change).
   Columns, not a history table: the rule needs who put a value in force; earlier values are in the
-  audit trail.
+  audit trail. A price-list assignment records who made it (`assigned_by`) and everyone who ever
+  changed what it selects afterwards (`assignment_changed_by`), from the session.
 - **Snapshots.** A quotation line copies, when it is written, who had set the amount of, who had last
-  changed and who had published the price it was priced from; a later change to the source does not
+  changed and who had published the price it was priced from, and the price-list assignment that
+  selected its list with who had made and who had changed it; a later change to the source does not
   move it. A
   quotation's pinned threshold version is an immutable row, so the pin is its snapshot. A request
   records why another person must approve (`requester_set_policy`, `requester_set_price`), and an
   approval records the limit it relied on.
 - **The rule.** When the requester of a revision (its writer) recorded the threshold version the
   quotation is held to, any discount on it needs approval by somebody else, whatever the threshold
-  says. When the writer set a price one of its lines was priced at, the revision needs approval by
-  somebody else whatever its discount, zero included: the price itself can carry the discount, so
+  says. When the writer set a price one of its lines was priced at — its amount, its publication, or
+  the price-list assignment that selected its list — or ever changed any price-list assignment, the
+  revision needs approval by somebody else whatever its discount, zero included: the price itself can carry the discount, so
   lowering one's own price from 100 to 10 and quoting at 10 gives away what a discount of 90 would.
   Such a request records a discount of zero and why (`requester_set_price`). Both hold at the
   application when the revision is written and at the database when it is issued. Another person's
@@ -299,7 +302,8 @@ Implementation particulars (P1-32-PRE-OD-FD8, Proposed):
   authorised person is required, as for D4.
 
 Open points (each choice is the one that never grants more than the Owner allowed; fix round 3
-corrected the one that did not, a self-set price quoted with no discount):
+corrected one that did not, a self-set price quoted with no discount, and fix round 4 another, a
+price-list assignment the requester made):
 
 - **Reading chosen.** D8 allows evaluating under the version in force before the person's change. A
   price changed in place keeps no earlier value and an earlier version may be the same person's, so
@@ -313,11 +317,19 @@ corrected the one that did not, a self-set price quoted with no discount):
   approval is required instead, whatever the discount. If the Owner rules that a price one sets
   oneself, quoted with no discount, needs no second person, that ruling is recorded here; until then
   this reading stands.
+- **A price-list assignment is a price-list change (strict reading; the Owner may rule otherwise).**
+  D8 names the price list. Pointing one's own branch (or company, or customer class) at another list,
+  more specifically or at a higher priority, changes which price applies as surely as changing the
+  price, so the person who made the assignment that selected a line's list, or changed it, is treated
+  as having set that price; so is anyone who ever changed any assignment of the tenant (ending or
+  re-prioritising a competing one changes which list applies without being the one that won). No
+  route changes an assignment today, so that last clause is wider than the change and reaches only
+  direct writers. If the Owner rules that an assignment is not a price-list change, that ruling is
+  recorded here; until then this reading stands.
 - **Not attributed (Owner decision needed).** Granting the approver a role whose limit somebody else
-  set, assigning a customer to a price list, and deactivating or deleting a competing price rule or
-  branch selling price so that another source prices the line (the item selling price falls back from
-  the branch to the company to the whole tenant) are not treated as the requester's change, and none
-  of them is recorded on the line.
+  set, and deactivating or deleting a competing price rule or branch selling price so that another
+  source prices the line (the item selling price falls back from the branch to the company to the
+  whole tenant), are not treated as the requester's change, and neither is recorded on the line.
 - **An approver's own window change (Owner decision needed).** An approver who moved the dates of
   one of their own discount limits in a company has no limit that counts there while that limit is
   theirs, and a new limit set by somebody else does not restore it; the limit-ending route does not
@@ -326,7 +338,8 @@ corrected the one that did not, a self-set price quoted with no discount):
   stands, which never grants more.
 - **Before this change.** Provenance of existing rows is their last recorded writer, not a verified
   attribution, and who set an existing amount is taken from it; who published an existing price-list
-  version was not recorded; lines written earlier carry no snapshot; who moved an existing limit's
+  version was not recorded; who made an existing price-list assignment is taken from its creator and
+  who changed it from its last writer; lines written earlier carry no snapshot; who moved an existing limit's
   dates is taken from its last writer, so earlier changes of the same limit are not known. A legacy draft whose writer set what it relies on cannot be issued until revised.
 
 ### D9 — Returns and credit are separate events

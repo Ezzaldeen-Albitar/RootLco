@@ -96,10 +96,10 @@ withdraws the requester's own pending request; every refusal by rule is recorded
   it carry no snapshot.
 - A price the requester set, quoted with no discount at all, needed no second person under this
   migration. That was a self-exemption, closed by fix round 3 (section 10).
-- Granting a colleague a role whose limit somebody else set, assigning a price list
-  (`svc.price_list_assignments`), and deactivating or deleting a competing price so that another
-  source prices the line are not attributed by this change; they are open points. Moving a limit's
-  dates is attributed since fix round 1 (section 8).
+- Granting a colleague a role whose limit somebody else set, and deactivating or deleting a
+  competing price so that another source prices the line, are not attributed by this change; they
+  are open points. Moving a limit's dates is attributed since fix round 1 (section 8), and making
+  or changing a price-list assignment (`svc.price_list_assignments`) since fix round 4 (section 11).
 - A legacy draft whose creator set what it relies on, and which has no request, cannot be issued until
   it is revised (the issue guard refuses it); no request is backfilled.
 
@@ -230,3 +230,54 @@ written by the person who also set their fixture prices now publish those prices
 fixture principal (`SVC_PRICE_SETTER`), so they keep measuring what they set out to. Records moved:
 `migrationCount` 175, `schemaHash`, `migrationCountNote` and `structuralTotalsNote175` in
 `.github/ci-baselines/schema-baseline.json`, and the data dictionary.
+
+## 11. Fix round 4 — the 176th migration
+
+Review of fix round 3 showed that a requester could still exempt their own quotation by changing which
+price list applies: with a threshold of 50, an administrator's list at 100 assigned company-wide and an
+administrator's list at 10, a discount of 90 needed another person; the requester then assigned the
+list at 10 to their own branch, `svc.resolve_price` answered 10, and a quotation at 10 with no
+discount issued with nobody's approval. Nothing recorded who made an assignment, and the D8 basis
+looked only at who set, changed or published the rule's amount.
+`supabase/migrations/20261007130000_quo_price_list_assignment_provenance.sql` (the 176th) closes it,
+forward-only and ROLLBACK-SAFE:
+
+- **Who made an assignment, and who changed it.** `svc.price_list_assignments` gains `assigned_by`
+  and `assigned_at`, stamped from the signed-in person on insert and never moved, and
+  `assignment_changed_by` (`uuid[]`, not null, empty by default): everyone who ever changed what the
+  assignment selects afterwards — its list, company, branch, customer class, priority, dates, status
+  or deletion — appended and never removed. The new BEFORE INSERT OR UPDATE trigger
+  `tg_price_list_assignments_provenance` (function `svc.stamp_price_list_assignment_provenance`,
+  SECURITY INVOKER, empty search path, EXECUTE revoked from PUBLIC) keeps all three whatever the
+  writer supplies; a save that changes none of the selecting columns records nothing.
+- **The line snapshot.** `quo.quotation_items` gains `price_customer_class` (the class the
+  application asked `svc.resolve_price` for; the repository writes it) and the snapshot of the
+  assignment that selected the list of the line's price rule: `price_assignment_ref`,
+  `price_assigned_by`, `price_assigned_at` and `price_assignment_changed_by`.
+  `quo.snapshot_quotation_item_price_provenance` chooses it with `svc.resolve_price`'s own filter and
+  order, on the line's company, branch and class at the transaction's date, among the assignments
+  naming the rule's list, and ignores a writer's value.
+- **The basis.** `quo.revision_self_change_basis` counts a line as the requester's own price also
+  when the requester made, or ever changed, the snapshotted assignment, and when the requester ever
+  changed any assignment of the tenant while the revision has a line priced from a price rule
+  (ending or re-prioritising a competing assignment changes which list applies without being the one
+  that won, and a moved assignment no longer says where it was). Through it the fix round 3 rule
+  applies: another person approves whatever the discount, zero included, at the application when the
+  revision is written and at the issue guard.
+
+Existing assignments take `assigned_by`/`assigned_at` from `created_by`/`created_at` and
+`assignment_changed_by` from `updated_by` where they were updated, with the row-metadata trigger
+disabled for the statement; existing lines keep NULL snapshots. No route changes an assignment today
+(the application only creates them), so the tenant-wide clause guards direct writers and is wider than
+the change itself, which never grants more. One function and one trigger are added (`functions` 659
+to 660, `triggers` 650 to 651); no table, grant, policy, seed or permission code. Executable proof:
+`tests/db/quo-discount-self-exemption.test.ts` (the columns and trigger; stamps from the session
+through a colleague's later change and a writer's claim; the requester pointing their branch at a
+cheaper list more specifically, out-prioritising an assignment through a colleague's later edit, and
+ending a competing assignment, each refused at issue until another person approves; a third person's
+quotation under the requester's assignment issues alone), `tests/backend/od-discount-self-exemption.test.ts`
+(the assignment made through `POST /price-list-assignments`), the `foundation` routine and trigger
+inventories and the P1-15 census. Records moved: `migrationCount` 176, `schemaHash`,
+`structuralTotals`, `migrationCountNote`, `functionCountDiscrepancyNote` and
+`structuralTotalsNote176` in `.github/ci-baselines/schema-baseline.json`, the data dictionary and
+the classification registry (1000 columns).

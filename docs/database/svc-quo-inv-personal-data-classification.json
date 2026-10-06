@@ -2,7 +2,7 @@
   "$schema": "./classification.schema.json",
   "description": "P1-10-SEC — Service Catalog / Pricing / Quotation / Inventory personal-and-financial-data classification registry. Restricted = cost/margin fields gated by inv.cost.view. Prices and quotation totals are operational (internal). No restricted column is searchable.",
   "allowedClassifications": ["public", "internal", "restricted", "secret"],
-  "columnCount": 992,
+  "columnCount": 1000,
   "columns": {
     "inv.customer_supplied_parts.branch_id": {
       "classification": "internal",
@@ -3669,6 +3669,26 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "quo.quotation_items.price_assigned_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "quo.quotation_items.price_assigned_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "quo.quotation_items.price_assignment_changed_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "ARRAY"
+    },
+    "quo.quotation_items.price_assignment_ref": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "quo.quotation_items.price_changed_at": {
       "classification": "internal",
       "searchable": false,
@@ -3678,6 +3698,11 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "uuid"
+    },
+    "quo.quotation_items.price_customer_class": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
     },
     "quo.quotation_items.price_published_at": {
       "classification": "internal",
@@ -4208,6 +4233,21 @@
       "classification": "internal",
       "searchable": false,
       "dataType": "numeric"
+    },
+    "svc.price_list_assignments.assigned_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "svc.price_list_assignments.assigned_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "svc.price_list_assignments.assignment_changed_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "ARRAY"
     },
     "svc.price_list_assignments.branch_id": {
       "classification": "internal",

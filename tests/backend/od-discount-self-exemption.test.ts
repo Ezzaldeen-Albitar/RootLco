@@ -30,12 +30,17 @@
  * person even when the quotation carries no discount, because the price itself can
  * carry it; the request is recorded with a discount total of zero and the reason.
  *
+ * Fix round 4 (migration 20261007130000): pointing one's own branch at a cheaper
+ * price list is changing one's own price list. The line snapshots who made the
+ * assignment that selected its list, and the rule above applies.
+ *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
  *   quo.discount-approval-withdraw: route service authorization success denial audit idempotency stale-version isolation cross-tenant
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
 import {
+  BRANCH_A1,
   COMPANY_A1,
   TENANT_A,
   USER_A,
@@ -69,6 +74,7 @@ import { POST as CREATE_LIST } from '@/app/api/v1/price-lists/route';
 import { POST as CREATE_PL_VERSION } from '@/app/api/v1/price-lists/[priceListId]/versions/route';
 import { POST as RECORD_RULE } from '@/app/api/v1/price-lists/[priceListId]/versions/[versionId]/rules/route';
 import { POST as PUBLISH } from '@/app/api/v1/price-lists/[priceListId]/versions/[versionId]/publication/route';
+import { POST as ASSIGN_PRICE_LIST } from '@/app/api/v1/price-list-assignments/route';
 import { POST as CREATE_QUOTATION } from '@/app/api/v1/quotations/route';
 import { GET as QUOTATION_DETAIL } from '@/app/api/v1/quotations/[quotationId]/route';
 import { POST as CREATE_REVISION } from '@/app/api/v1/quotations/[quotationId]/revisions/route';
@@ -208,8 +214,11 @@ async function administratorThreshold(value: string): Promise<void> {
   });
 }
 
-/** A price list for SERVICE_A written and published with nobody signed in. */
-async function publishUnattributedPrice(amount: string): Promise<void> {
+/**
+ * A price list for SERVICE_A written and published with nobody signed in, assigned
+ * company-wide unless `assign` is false. Returns the list.
+ */
+async function publishUnattributedPrice(amount: string, assign = true): Promise<string> {
   const client = await admin.connect();
   let listId: string;
   try {
@@ -245,6 +254,7 @@ async function publishUnattributedPrice(amount: string): Promise<void> {
   } finally {
     client.release();
   }
+  if (!assign) return listId;
   assignmentPriority += 1;
   await assignPriceList({
     tenantId: TENANT_A,
@@ -254,6 +264,7 @@ async function publishUnattributedPrice(amount: string): Promise<void> {
     customerClass: null,
     priority: assignmentPriority,
   });
+  return listId;
 }
 
 /**
@@ -589,6 +600,102 @@ describe('ADR-023 D8 — one’s own threshold, limit or price never exempts one
       expect(issued.status).toBe(200);
     } finally {
       await publishUnattributedPrice('100.0000');
+    }
+  });
+
+  it('the requester who points their branch at a cheaper list needs another person even with no discount (fix round 4)', async () => {
+    await administratorThreshold('50.0000');
+    // Control: 90 off the unattributed 100 needs somebody else under the threshold of 50.
+    const control = await quoteAs(SVC_FULL, '90.0000');
+    expect(approvalOf(control)).toMatchObject({
+      status: 'pending',
+      requesterSetPolicy: false,
+      requesterSetPrice: false,
+    });
+
+    // A list pricing the service at 10, written and published by nobody signed in;
+    // SVC_FULL assigns it to their own branch through the route, which outranks the
+    // company-wide assignment, and quotes at 10 with no discount.
+    const cheap = await publishUnattributedPrice('10.0000', false);
+    authAs(SVC_FULL);
+    const assigned = await ASSIGN_PRICE_LIST(
+      post('http://localhost/api/v1/price-list-assignments', {
+        priceListId: cheap,
+        companyId: COMPANY_A1,
+        branchId: BRANCH_A1,
+        effectiveFrom: '2020-01-01',
+      })
+    );
+    expect(assigned.status).toBe(201);
+    const assignment = (await assigned.json()) as { id: string };
+    try {
+      const own = await quoteAs(SVC_FULL, '0');
+      const request = approvalOf(own);
+      expect(request).toMatchObject({
+        status: 'pending',
+        requestedByCaller: true,
+        requesterSetPolicy: false,
+        requesterSetPrice: true,
+      });
+      const line = await admin.query<{
+        unit: string;
+        assignment: string;
+        assignedBy: string;
+        amountSetBy: string | null;
+        publishedBy: string | null;
+      }>(
+        `SELECT i.captured_unit_price::text AS unit, i.price_assignment_ref AS assignment,
+                i.price_assigned_by AS "assignedBy", i.price_amount_set_by AS "amountSetBy",
+                i.price_published_by AS "publishedBy"
+           FROM quo.quotation_items i WHERE i.quotation_revision_id = $1`,
+        [own.currentRevision?.id]
+      );
+      // Priced from the cheaper list through SVC_FULL's assignment; nobody signed in
+      // set or published that price.
+      expect(line.rows).toEqual([
+        {
+          unit: '10.0000',
+          assignment: assignment.id,
+          assignedBy: SVC_FULL.userId,
+          amountSetBy: null,
+          publishedBy: null,
+        },
+      ]);
+      const blocked = await issue(own.id, own.currentRevision?.id as string, own.recordVersion);
+      expect(blocked.status).toBe(409);
+      expect(((await blocked.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_approval_pending' },
+      ]);
+      // No sole-administrator exception: the requester never decides it.
+      const self = await decide(request.id, { decision: 'approved' });
+      expect(self.status).toBe(403);
+
+      // Somebody else's quotation under the same assignment, with no discount, issues alone.
+      const other = await quoteAs(SVC_NO_CEILING, '0');
+      expect(other.currentRevision?.discountApproval).toBeNull();
+      const issuedOther = await issue(
+        other.id,
+        other.currentRevision?.id as string,
+        other.recordVersion
+      );
+      expect(issuedOther.status).toBe(200);
+
+      // A second authorised person approves the requester's, and then it issues.
+      authAs(SVC_DISCOUNT_APPROVER);
+      const approved = await decide(request.id, { decision: 'approved' });
+      expect(approved.status).toBe(200);
+      authAs(SVC_FULL);
+      const issued = await issue(
+        own.id,
+        own.currentRevision?.id as string,
+        (await reread(own.id)).recordVersion
+      );
+      expect(issued.status).toBe(200);
+    } finally {
+      // Ended with nobody signed in, so the cases after this one price as before.
+      await admin.query(`UPDATE svc.price_list_assignments SET status = 'inactive' WHERE id = $1`, [
+        assignment.id,
+      ]);
     }
   });
 
