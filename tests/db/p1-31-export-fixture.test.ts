@@ -65,6 +65,7 @@ import { join } from 'node:path';
 import type { Pool } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { acquireDatabaseLease } from '../../scripts/lib/database-lease.mjs';
+import { resolveTestDatabaseTarget } from '../database-target';
 import { SYSTEM_ACTOR } from '../../scripts/dev/owner-acceptance/context.mjs';
 // The consumer's own contract module, so a document produced by a REAL run is held to the shape
 // the out-of-repository companion reads rather than to a shape restated here.
@@ -90,9 +91,10 @@ import {
 /** The permission code the export contract is gated on. A code, not an operation identifier. */
 const EXPORT_CODE = 'rpt.export';
 
-/** The two values the environment contributes. Neither is a credential. */
-const HOST = process.env.DB_HOST ?? '127.0.0.1';
-const PORT = Number(process.env.DB_PORT ?? 54_322);
+/** The two values the environment contributes, through the shared resolver. Neither is a credential. */
+const { host: HOST, port: PORT } = resolveTestDatabaseTarget(
+  'tests/db/p1-31-export-fixture.test.ts'
+);
 
 /** The runtime login `ensureTestLogins` creates: NOSUPERUSER, NOBYPASSRLS, member of app_runtime. */
 const RUNTIME_ROLE = 'rootlco_test_runtime';

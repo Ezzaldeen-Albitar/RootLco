@@ -8,8 +8,9 @@ import { API_SRC_ROOT } from './scripts/lib/repository-paths.mjs';
 //          127.0.0.1:55440, then DB_PORT=55440 with `npm run db:apply-migrations`.
 //          Never `supabase:reset` the shared stack that holds the acceptance data.
 //   CI:    the postgres service container + scripts/db/apply-migrations.mjs
-// Connection comes from DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD
-// (defaults match the Supabase local stack). See tests/db/helpers.ts.
+// Connection comes from DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD. The port
+// has no default and the local acceptance port is refused without authorisation
+// (tests/database-target.ts; docs/database/migration-standard.md section 16).
 export default defineConfig({
   test: {
     environment: 'node',

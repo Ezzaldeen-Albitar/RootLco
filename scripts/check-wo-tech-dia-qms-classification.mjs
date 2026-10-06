@@ -23,6 +23,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import pg from 'pg';
+import { resolveDatabaseTargetOrExit } from './lib/db-target.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // WO_CLASSIFICATION_REGISTRY is a TEST-ONLY override so the guard's failure modes
@@ -32,9 +33,11 @@ const REGISTRY =
   process.env.WO_CLASSIFICATION_REGISTRY ??
   join(HERE, '..', 'docs', 'database', 'wo-tech-dia-qms-personal-data-classification.json');
 
+// No default port: DB_PORT (or an agreeing PGPORT) is required.
+const target = resolveDatabaseTargetOrExit({ consumer: 'check-wo-tech-dia-qms-classification' });
 const cfg = {
-  host: process.env.DB_HOST ?? '127.0.0.1',
-  port: Number(process.env.DB_PORT ?? 54322),
+  host: target.host,
+  port: target.port,
   database: process.env.DB_NAME ?? 'postgres',
   user: process.env.DB_USER ?? 'postgres',
   password: process.env.DB_PASSWORD ?? 'postgres',

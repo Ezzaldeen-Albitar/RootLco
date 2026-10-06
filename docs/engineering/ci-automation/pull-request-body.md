@@ -42,7 +42,7 @@ shaped the design:
 └── workflows/
     ├── pr-ci.yml                    14 governed jobs + one gate (ci-gate; ci-gate (development) into develop)
     ├── protected-develop-verification.yml   never cancels; push to main + develop checkpoint dispatch
-    ├── develop-merge-integrity.yml  TDP-2026-10: tree identity + gate provenance on every develop merge
+    ├── develop-merge-integrity.yml  TDP-2026-10: tree identity + gate provenance + independent-review on every develop merge
     ├── nightly-assurance.yml        11 jobs + nightly-gate
     ├── release-verification.yml     build once, SBOM, provenance
     ├── deploy-staging.yml           foundation — checks preconditions, does not deploy
@@ -61,7 +61,7 @@ shaped the design:
 Counted precisely, because these numbers drifted once already and are now
 reconciled against the filesystem by `tests/ci/documented-counts.test.ts`:
 **10 reusable workflows**, **8 top-level workflows** (the seven above plus the
-retained `ci.yml`), **1 composite action**, **66 scripts in `scripts/ci`**,
+retained `ci.yml`), **1 composite action**, **68 scripts in `scripts/ci`**,
 **15 baselines**, **25 documents** under `docs/engineering/ci-automation`, and
 **14 workflow-security rules**.
 

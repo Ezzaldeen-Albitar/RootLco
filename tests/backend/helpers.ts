@@ -33,7 +33,9 @@
  * the writer, so appending never becomes a way to read audit history.
  *
  * Credentials below are the public local-dev defaults, overridable via
- * DB_HOST / DB_PORT / DB_NAME. No production credential is ever read here.
+ * DB_NAME. The host and port come from `tests/database-target.ts`, which has no
+ * default and refuses the local acceptance database. No production credential
+ * is ever read here.
  */
 import { randomUUID } from 'node:crypto';
 import { Pool, type ClientConfig, type PoolClient } from 'pg';
@@ -52,6 +54,7 @@ import {
 } from '../db/helpers';
 import { __resetBackendConfigForTests } from '@/server/config/backend-config';
 import { buildRequestContext, type RequestContext } from '@/server/context/request-context';
+import { resolveTestDatabaseTarget } from '../database-target';
 
 export {
   BRANCH_A1,
@@ -69,8 +72,7 @@ export {
   expectSqlState,
 } from '../db/helpers';
 
-const HOST = process.env.DB_HOST ?? '127.0.0.1';
-const PORT = Number(process.env.DB_PORT ?? 54322);
+const { host: HOST, port: PORT } = resolveTestDatabaseTarget('tests/backend/helpers.ts');
 const DATABASE = process.env.DB_NAME ?? 'postgres';
 /** Deliberately weak, deliberately fake, local test databases only. */
 const TEST_LOGIN_PASSWORD = 'rootlco-local-test-only';

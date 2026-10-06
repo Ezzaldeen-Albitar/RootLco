@@ -29,8 +29,12 @@
  * ## Usage
  *
  *   node scripts/platform/entitlement-inventory.mjs --out <file.json>
- *     [--db-host 127.0.0.1] [--db-port 54322] [--db-name postgres]
+ *     [--db-host <host>] [--db-port <port>] [--db-name postgres]
  *     [--labels <tenant-class-labels.json>]
+ *
+ *   The port has no default: `--db-port`, DB_PORT or PGPORT must name it, and
+ *   every one that is given must agree. scripts/lib/db-target.mjs decides, and
+ *   refuses the local acceptance database without its authorisation.
  *
  *   DB_USER / DB_PASSWORD   the connection's account (default postgres)
  *
@@ -42,6 +46,7 @@ import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
 import pg from 'pg';
 import { parseModule } from '../lib/typescript-source.mjs';
+import { DatabaseTargetRefused, resolveDatabaseTarget } from '../lib/db-target.mjs';
 import { API_ROUTES_ROOT, REPOSITORY_ROOT, toRepositoryPath } from '../lib/repository-paths.mjs';
 import {
   CANDIDATE_MODULES,
@@ -140,7 +145,8 @@ export class InventoryRefused extends Error {}
  * ------------------------------------------------------------------------- */
 
 export function parseArguments(argv) {
-  const options = { host: '127.0.0.1', port: 54322, database: 'postgres', out: '', labels: '' };
+  // Host and port stay unset unless given: resolveDatabaseTarget decides them.
+  const options = { host: undefined, port: undefined, database: 'postgres', out: '', labels: '' };
   for (let index = 0; index < argv.length; index += 1) {
     const flag = argv[index];
     const value = argv[index + 1];
@@ -158,7 +164,10 @@ export function parseArguments(argv) {
     else if (flag === '--labels') options.labels = take();
     else throw new InventoryRefused(`unknown argument ${flag}`);
   }
-  if (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535) {
+  if (
+    options.port !== undefined &&
+    (!Number.isInteger(options.port) || options.port < 1 || options.port > 65535)
+  ) {
     throw new InventoryRefused('--db-port must be a port number');
   }
   if (options.out === '') throw new InventoryRefused('--out is required');
@@ -570,9 +579,20 @@ async function main() {
   const outPath = assertOutsideRepository(options.out);
   const labels = readLabels(options.labels);
   const operations = readOperations();
+  let target;
+  try {
+    target = resolveDatabaseTarget({
+      host: options.host,
+      port: options.port,
+      consumer: 'entitlement-inventory',
+    });
+  } catch (error) {
+    if (error instanceof DatabaseTargetRefused) throw new InventoryRefused(error.message);
+    throw error;
+  }
   const client = new pg.Client({
-    host: options.host,
-    port: options.port,
+    host: target.host,
+    port: target.port,
     database: options.database,
     user: process.env.DB_USER ?? 'postgres',
     password: process.env.DB_PASSWORD ?? 'postgres',
@@ -587,7 +607,7 @@ async function main() {
   const document = {
     tool: 'scripts/platform/entitlement-inventory.mjs',
     generatedAt: new Date().toISOString(),
-    database: { host: options.host, port: options.port, name: options.database },
+    database: { host: target.host, port: target.port, name: options.database },
     statement: 'Read-only analysis. Nothing was enforced, applied or written to any database.',
     ...outcome,
   };

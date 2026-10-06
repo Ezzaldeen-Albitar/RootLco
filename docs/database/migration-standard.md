@@ -365,6 +365,8 @@ a shared environment first exists, not learned on it.
   selectively.
 - **Local loop:** `npm run supabase:start` (start the stack) →
   `npm run supabase:reset` (replay from clean) → `npm run test:db` (assert behaviour).
+  `test:db` names its database explicitly and does not reach the stack's port 54322 without
+  authorisation — see [section 16](#16-choosing-the-database-a-command-touches).
 
   > **Warning — `npm run supabase:reset` rebuilds the project's local stack and deletes all its
   > data — including the acceptance database when the stack holds it.** To verify migrations use
@@ -424,3 +426,51 @@ Supabase-managed roles (e.g. policies targeting `authenticated`, PostgREST expos
 cannot be considered CI-verified by this job and must carry its own evidence from the
 local Supabase stack until CI grows a Supabase lane. This gap is documented here, in
 the CI workflow comments, and is accepted by the owner for Phase 1-2.
+
+## 16. Choosing the database a command touches
+
+**Status:** binding from 2026-10-06 (Owner instruction of that date). **Why:** two runs of
+`scripts/db/phase-upgrade-matrix.mjs` reached the acceptance database on 127.0.0.1:54322 because
+the script read `PGPORT`, found it unset, and fell back to 54322 — the operator had set only
+`DB_PORT`, to a disposable database. A default port is a target nobody chose.
+
+**The rule.** Every repository script and test helper that opens a PostgreSQL connection
+resolves its target through one resolver, `scripts/lib/db-target.mjs` (test helpers use its typed
+wrapper, `tests/database-target.ts`). It fails closed, before any connection:
+
+1. **The port is explicit.** `DB_PORT`, `PGPORT` or the command's own `--db-port` must name it.
+   None of them set means the command refuses — there is no default port.
+2. **Every source that is set must agree.** `PGPORT=55441` with `DB_PORT=54322` is two databases,
+   and the command refuses rather than choosing one. `PGHOST` and `DB_HOST`, when both are set,
+   must agree too.
+3. **The local acceptance database is refused without authorisation.** Outside GitHub Actions, a
+   loopback target on port 54322 (the Supabase local stack) is refused unless
+   `ROOTLCO_ACCEPTANCE_DB=authorised-forward-apply` is set.
+4. **CI is unchanged.** In GitHub Actions (`GITHUB_ACTIONS=true`) 54322 is the ephemeral service
+   container each database job starts, and every such job already sets `DB_PORT`; rules 1 and 2
+   still apply there.
+
+**Who may set `ROOTLCO_ACCEPTANCE_DB`.** Only the operator carrying out the established
+backup → rehearsal → forward-apply procedure for the acceptance database
+([environment-configuration.md](../platform/environment-configuration.md) section 19.4: backup
+outside the repository first, then the forward apply), and only for the single repository command
+that procedure calls for, in that command's own process. It is never exported in a profile, a
+`.env` file or a terminal left open, and never set to make a test tier run: `test:db`,
+`test:backend` and `test:db-fixture` run against a disposable database
+([CONTRIBUTING.md](../../CONTRIBUTING.md) section 8). Legitimate acceptance migrations keep their
+existing path; the Supabase CLI commands of section 19.4 do not read the variable.
+
+**The documented exceptions.** The guarded operator scripts target the acceptance stack on
+purpose, each behind its own `ROOTLCO_ENV` refusal and an explicit `--confirm`, and keep their own
+target logic: `scripts/platform/add-platform-operator.mjs`,
+`backfill-delivering-employee-identity.mjs`, `backfill-tenant-administrator-bundle.mjs`,
+`genesis-platform-operator.mjs`, `grant-platform-authority.mjs`, `revoke-platform-operator.mjs`,
+`scripts/db/provision-organization.mjs` and `scripts/dev/owner-acceptance/context.mjs`. The
+read-only `scripts/platform/entitlement-inventory.mjs` is not an exception; it uses the resolver.
+
+**How it is enforced.** `tests/ci/db-target.test.ts` proves the resolver's refusals (missing,
+inconsistent, the acceptance port with and without authorisation, CI).
+`tests/ci/db-target-contract.test.ts` parses every tracked JavaScript and TypeScript file that
+mentions `PGPORT` or `DB_PORT` and fails on any read of either with a fallback outside the
+resolver and the exceptions above; it also fails if a consumer stops importing the resolver, or
+if an exception stops carrying its `ROOTLCO_ENV` guard or no longer needs to be one.

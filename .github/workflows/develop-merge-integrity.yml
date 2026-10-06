@@ -12,9 +12,20 @@
 #      except through a pull request;
 #   2. its tree is identical to the tree of its second parent, the pull-request
 #      head — so the merge introduced nothing the PR gate did not see;
-#   3. that head carries a SUCCESSFUL `ci-gate (development)` check run, from
-#      GitHub Actions, at exactly that commit, in the latest attempt, produced by
-#      `.github/workflows/pr-ci.yml`.
+#   3. that head — the TESTED CANDIDATE — carries a SUCCESSFUL
+#      `ci-gate (development)` check run, from GitHub Actions, at exactly that
+#      commit, in the latest attempt, produced by `.github/workflows/pr-ci.yml`;
+#   4. that head — the APPROVED HEAD — carries a SUCCESSFUL `independent-review`
+#      commit status, which the pull request's one landing owner sets on the head
+#      they approved immediately before merging (scripts/ci/landing-guard.mjs).
+#      A missing status, a status on another commit, or one that is not
+#      `success` fails. `independent-review` is in NO ruleset;
+#   5. exactly one pull request names the pushed commit as its merge commit, it
+#      was based on develop, and its recorded head is the second parent. Only
+#      that pull request is cited.
+#
+# The checks live in scripts/ci/develop-merge-integrity.mjs, where
+# tests/ci/develop-merge-integrity.test.ts exercises every refusal.
 #
 # It proves PROVENANCE, not quality. Its success means "merged, full checkpoint
 # verification pending", and that is what it prints. Full verification happens
@@ -22,8 +33,9 @@
 # develop, pinned to a candidate commit. Every integrity run since the previous
 # checkpoint must be green before a checkpoint is dispatched.
 #
-# Least privilege: read-only, no checkout, no secrets beyond the job token, no
-# deployment and no database. It never cancels a pending run.
+# Least privilege: read-only, a sparse checkout of scripts/ci only, no secrets
+# beyond the job token, no deployment and no database. It never cancels a
+# pending run.
 # Policy, review point and restoration order: docs/engineering/ci-automation/pr-gate.md.
 # =============================================================================
 
@@ -52,67 +64,27 @@ jobs:
       checks: read
       actions: read
       pull-requests: read
+      statuses: read
     steps:
-      - name: The merge is the pull-request head that the PR gate proved
+      # Sparse and shallow: the check is one self-contained script, and nothing
+      # else of the tree is needed. No credentials are persisted.
+      - name: Check out the integrity script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: scripts/ci
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: The merge is the pull-request head that the PR gate proved and the landing owner approved
         env:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           MERGE_SHA: ${{ github.sha }}
-          GATE_NAME: 'ci-gate (development)'
-          GATE_WORKFLOW: '.github/workflows/pr-ci.yml'
-          # GitHub Actions' app id. A check run with this name from any other
-          # app is not the gate.
-          ACTIONS_APP_ID: '15368'
-        run: |
-          set -euo pipefail
-          commit="$(gh api "repos/${REPOSITORY}/commits/${MERGE_SHA}")"
-          parents="$(printf '%s' "${commit}" | jq -r '.parents | length')"
-          if [ "${parents}" != "2" ]; then
-            echo "::error::${MERGE_SHA} has ${parents} parent(s). Only a merge commit of a pull request may reach develop."
-            exit 1
-          fi
-          head_sha="$(printf '%s' "${commit}" | jq -r '.parents[1].sha')"
-          merge_tree="$(printf '%s' "${commit}" | jq -r '.commit.tree.sha')"
-          head_tree="$(gh api "repos/${REPOSITORY}/commits/${head_sha}" --jq '.commit.tree.sha')"
-          printf 'merge %s tree %s\nhead  %s tree %s\n' "${MERGE_SHA}" "${merge_tree}" "${head_sha}" "${head_tree}"
-          if [ "${merge_tree}" != "${head_tree}" ]; then
-            echo "::error::The merge tree differs from the pull-request head's tree, so develop now holds a tree no PR gate proved. Keep the branch up to date with develop before merging."
-            exit 1
-          fi
-
-          runs="$(gh api -X GET "repos/${REPOSITORY}/commits/${head_sha}/check-runs" \
-            -f check_name="${GATE_NAME}" -f filter=latest -f per_page=100)"
-          count="$(printf '%s' "${runs}" | jq --arg app "${ACTIONS_APP_ID}" --arg sha "${head_sha}" \
-            '[.check_runs[] | select((.app.id | tostring) == $app and .head_sha == $sha)] | length')"
-          if [ "${count}" = "0" ]; then
-            echo "::error::${head_sha} carries no '${GATE_NAME}' check run from GitHub Actions."
-            exit 1
-          fi
-          conclusion="$(printf '%s' "${runs}" | jq -r --arg app "${ACTIONS_APP_ID}" --arg sha "${head_sha}" \
-            '[.check_runs[] | select((.app.id | tostring) == $app and .head_sha == $sha)] | sort_by(.completed_at // "") | last | .conclusion')"
-          suite="$(printf '%s' "${runs}" | jq -r --arg app "${ACTIONS_APP_ID}" --arg sha "${head_sha}" \
-            '[.check_runs[] | select((.app.id | tostring) == $app and .head_sha == $sha)] | sort_by(.completed_at // "") | last | .check_suite.id')"
-          if [ "${conclusion}" != "success" ]; then
-            echo "::error::The latest '${GATE_NAME}' check run on ${head_sha} concluded '${conclusion}', not success."
-            exit 1
-          fi
-          workflow_path="$(gh api -X GET "repos/${REPOSITORY}/actions/runs" -f check_suite_id="${suite}" \
-            --jq '.workflow_runs[0].path')"
-          run_id="$(gh api -X GET "repos/${REPOSITORY}/actions/runs" -f check_suite_id="${suite}" \
-            --jq '.workflow_runs[0].id')"
-          if [ "${workflow_path}" != "${GATE_WORKFLOW}" ]; then
-            echo "::error::The '${GATE_NAME}' check run on ${head_sha} came from '${workflow_path}', not ${GATE_WORKFLOW}."
-            exit 1
-          fi
-          pr="$(gh api "repos/${REPOSITORY}/commits/${head_sha}/pulls" --jq '[.[] | .number] | join(",")')"
-          echo "merged, full checkpoint verification pending (pull request #${pr:-unknown}, PR CI run ${run_id})"
-          {
-            printf '### Develop merge integrity (TDP-2026-10)\n\n'
-            printf '**merged, full checkpoint verification pending**\n\n'
-            printf '| Item | Value |\n| --- | --- |\n'
-            printf '| Merge commit | `%s` |\n' "${MERGE_SHA}"
-            printf '| Pull-request head | `%s` |\n' "${head_sha}"
-            printf '| Trees identical | yes (`%s`) |\n' "${merge_tree}"
-            printf '| Gate check run | `%s`: success, PR CI run %s |\n' "${GATE_NAME}" "${run_id}"
-            printf '| Pull request | #%s |\n' "${pr:-unknown}"
-          } >> "${GITHUB_STEP_SUMMARY}"
+        run: node scripts/ci/develop-merge-integrity.mjs
