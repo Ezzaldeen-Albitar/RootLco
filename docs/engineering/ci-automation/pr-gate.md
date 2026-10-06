@@ -260,6 +260,38 @@ every merge. Tree equality holds by construction once `develop` requires branche
 date. `tests/ci/develop-merge-integrity.test.ts` exercises each refusal (a matching status, a
 missing one, one on another SHA, a tree mismatch, the gate run and the attribution).
 
+### Known limitations of the landing guard
+
+Recorded at the independent review of 2026-10-06.
+
+- **The integrity script has not run live.** `tests/ci/develop-merge-integrity.test.ts` fails on
+  a missing review status, a status on another SHA, a status read answering for a different
+  SHA, a pending status, a tree mismatch, a non-merge commit, and a gate run that is missing,
+  failed, foreign or from another workflow; it cites only the pull request whose
+  `merge_commit_sha` matches. The live `commits/{M}/pulls` listing was read for four recent
+  `develop` merges: it returns the merged pull request with a matching `merge_commit_sha` plus
+  the open pull requests that contain the commit, so the attribution filter fits real data. The
+  first live run is the merge of the pull request that introduces it, and that run needs
+  `landing-guard --mark-reviewed` first.
+- **`independent-review` is a self-asserted commit status in no ruleset.** Anyone holding a
+  token that can write statuses can set it, and a missing status is detected only after the
+  merge. No workflow in the repository requests `statuses: write`.
+- **The `main` path is unchanged.** `develop-merge-integrity.yml` is the only `.github` file the
+  change touches, `workflow-context-producers.test.ts` passes, and `check-workflow-security`
+  reports no findings. The change adds no disable, skip or only directive and edits no CI
+  baseline.
+- **Records outside the repository.** VL-CI-005 and VL-DB-003 in
+  `docs/product/owner-directive-2026-09-16/capability-status.md` cite a coordinator record
+  outside the repository, which cannot be verified from here; their wording is hedged "per
+  coordinator record".
+- **Stale record text.** The VL-DB-004 and VL-CI-006 rows still say "number assigned when it
+  opens" and "not executed" (hosted), although the pull request is open (#522) and its hosted
+  `ci-gate (development)` run at `b9690696` concluded success. That record text is updated at
+  closure.
+- **Local unit tier under load.** One full local unit run had three timeouts
+  (`p1-28-access-gate`, `p1-28-evidence-manifest`, `tailwind-theme-gate`); all three files pass
+  when re-run in isolation (192 of 192), and the hosted unit-coverage check passed.
+
 ### Checkpoints
 
 A checkpoint is due at the end of every coherent batch (declared by the planner), before

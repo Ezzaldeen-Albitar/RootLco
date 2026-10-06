@@ -471,6 +471,31 @@ read-only `scripts/platform/entitlement-inventory.mjs` is not an exception; it u
 **How it is enforced.** `tests/ci/db-target.test.ts` proves the resolver's refusals (missing,
 inconsistent, the acceptance port with and without authorisation, CI).
 `tests/ci/db-target-contract.test.ts` parses every tracked JavaScript and TypeScript file that
-mentions `PGPORT` or `DB_PORT` and fails on any read of either with a fallback outside the
-resolver and the exceptions above; it also fails if a consumer stops importing the resolver, or
-if an exception stops carrying its `ROOTLCO_ENV` guard or no longer needs to be one.
+mentions `PGPORT` or `DB_PORT` and fails on any read of either outside the resolver, the
+exceptions above and one named test file that saves and restores `DB_PORT` around its cases. In
+the resolver and that test file it fails on a read that carries a fallback: `??`, `||`, `??=`,
+`||=` or a conditional applied to the read itself, to a conversion or method call of it
+(`Number(process.env.DB_PORT) || 54322`), or to a variable the read was stored in, and a
+destructuring default. It also fails if a consumer stops importing the resolver, or if an
+exception stops carrying its `ROOTLCO_ENV` guard or no longer needs to be one. A read the parser
+does not recognise as one — a computed key such as `process.env[name]` — is not detected.
+
+**Known limitations** (recorded at the independent review of 2026-10-06).
+
+- The refusals were probed without connecting to any database. With no port,
+  `schema-inventory`, `check-crm-classification` and `rls-matrix` exit 2 before connecting, and
+  with `PGPORT=54322` and no authorisation they also exit 2; `phase-upgrade-matrix` with
+  `DB_PORT=54322` exits 2; `entitlement-inventory` refuses with exit 3 for `--db-port 54322` and
+  for a `--db-port` that disagrees with `PGPORT`. Resolver cases checked: `GITHUB_ACTIONS=true`,
+  the authorisation value, a disagreement, `054322` and a blank value.
+- Rule 3's loopback check matches exact host strings only. With an explicit host,
+  `DB_HOST=127.0.0.2`, `[::1]`, `localhost.`, `0.0.0.0`, `host.docker.internal` or the
+  machine's own name on port 54322 resolves as not the acceptance database and is allowed. That
+  takes a deliberate host choice, so it is not a silent default.
+- The documented exceptions above still fall back to 54322, each behind `ROOTLCO_ENV`
+  (`local-acceptance` or `production-genesis`) and `--confirm`. This is by design.
+- CI behaviour was checked statically. Every database job sets `DB_PORT=54322` under
+  `GITHUB_ACTIONS`; the nightly perf-baseline job also sets `PGPORT=54322`, which agrees;
+  backup-restore-drill passes `String(PORT)` to `pg_dump` and `psql`. The nightly-only consumers
+  (perf-baseline, backup-restore-drill) do not run on pull-request CI and have not been observed
+  live.
