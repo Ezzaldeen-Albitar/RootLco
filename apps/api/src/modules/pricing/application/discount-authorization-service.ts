@@ -359,8 +359,9 @@ export class DiscountAuthorizationService {
      * holds) must not get one's own discount through. Nor does any limit once the
      * requester ever changed the window of one of the approver's limits (reopened,
      * extended or ended it), or once the approver changed the window of one of their
-     * own. Such a limit is no limit that counts, and the screen says so
-     * (`discount_no_approval_limit`).
+     * own. Nor does a role's limit that reaches the approver only through a grant
+     * or grant scope the requester made or changed (fix round 5). Such a limit is no
+     * limit that counts, and the screen says so (`discount_no_approval_limit`).
      */
     const key = `${request.companyId}|${request.asOf}|${request.requestedBy}`;
     let pending = memo?.get(key);

@@ -297,13 +297,19 @@ Implementation particulars (P1-32-PRE-OD-FD8, Proposed):
   one, or ending one so that another applies — none of the approver's limits counts for that request;
   and when the approver ever changed the dates of one of their own discount limits there (on
   themselves or on a role they hold), none of their limits counts for any request, as for a limit
-  they created. A later save by anyone does not clear either.
+  they created. A later save by anyone does not clear either. Giving a person a role is changing that
+  person's role limit: a role's limit counts toward the approver's ceiling only through a grant that
+  neither the requester granted, issued or ever changed (reopening or extending it) nor the approver
+  issued or changed themselves, and — when the grant is scoped — through a company scope neither of
+  them created or added. Who issued a grant, who changed it and who added a scope are recorded from
+  the session (fix round 5).
 - **No sole-administrator exception.** The requester never decides their own request, so a second
   authorised person is required, as for D4.
 
 Open points (each choice is the one that never grants more than the Owner allowed; fix round 3
-corrected one that did not, a self-set price quoted with no discount, and fix round 4 another, a
-price-list assignment the requester made):
+corrected one that did not, a self-set price quoted with no discount, fix round 4 another, a
+price-list assignment the requester made, and fix round 5 two more, a role grant or grant scope the
+requester made and a selling price the requester withdrew):
 
 - **Reading chosen.** D8 allows evaluating under the version in force before the person's change. A
   price changed in place keeps no earlier value and an earlier version may be the same person's, so
@@ -326,10 +332,26 @@ price-list assignment the requester made):
   route changes an assignment today, so that last clause is wider than the change and reaches only
   direct writers. If the Owner rules that an assignment is not a price-list change, that ruling is
   recorded here; until then this reading stands.
-- **Not attributed (Owner decision needed).** Granting the approver a role whose limit somebody else
-  set, and deactivating or deleting a competing price rule or branch selling price so that another
-  source prices the line (the item selling price falls back from the branch to the company to the
-  whole tenant), are not treated as the requester's change, and neither is recorded on the line.
+- **A role grant is a role-limit change (strict reading; the Owner may rule otherwise).** D8 names
+  the role limit. Granting the approver a role brings that role's limit to them as surely as raising
+  it, so a grant the requester issued (whoever it names as granting it), reopened or extended, or a
+  company scope the requester added, does not bring the role's limit to the approver for the
+  requester's request; it still does for anybody else's. A grant or scope the approver made or
+  changed for themselves does not count for any request, as a limit they created does not. If the
+  Owner rules that granting a role is not a role-limit change, that ruling is recorded here; until then
+  this reading stands.
+- **A withdrawn selling price is a price change (strict reading; the Owner may rule otherwise).**
+  Deactivating or deleting the branch's selling price hands the line to a cheaper company or
+  tenant-wide price somebody else set. A person who ever withdrew or restored any selling price of an
+  item is treated as having set the price of every line priced from that item's selling prices, which
+  is wider than the change and never grants more. A price rule cannot be withdrawn this way: its
+  version is frozen once published.
+- **Not attributed (Owner decision needed).** A change to a role's permissions
+  (`iam.role_permissions`) — adding the approval permission to a role the approver holds, or removing
+  a denial — changes who may approve a request, never any limit, and is not treated as the requester's
+  change; nor is reactivating the approver's account. Whether D8 reaches the approval permission as
+  well as the limit is the Owner's choice; a permission mapping that is removed leaves no row to
+  record who removed it, so that reading would need a history of mappings first.
 - **An approver's own window change (Owner decision needed).** An approver who moved the dates of
   one of their own discount limits in a company has no limit that counts there while that limit is
   theirs, and a new limit set by somebody else does not restore it; the limit-ending route does not
@@ -340,7 +362,10 @@ price-list assignment the requester made):
   attribution, and who set an existing amount is taken from it; who published an existing price-list
   version was not recorded; who made an existing price-list assignment is taken from its creator and
   who changed it from its last writer; lines written earlier carry no snapshot; who moved an existing limit's
-  dates is taken from its last writer, so earlier changes of the same limit are not known. A legacy draft whose writer set what it relies on cannot be issued until revised.
+  dates is taken from its last writer, so earlier changes of the same limit are not known; who issued
+  an existing grant is taken from its creator, who changed it from its last writer, who added an
+  existing scope from its creator, and who withdrew an existing selling price from its last writer
+  and deleter. A legacy draft whose writer set what it relies on cannot be issued until revised.
 
 ### D9 — Returns and credit are separate events
 

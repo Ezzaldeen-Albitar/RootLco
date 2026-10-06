@@ -281,3 +281,73 @@ inventories and the P1-15 census. Records moved: `migrationCount` 176, `schemaHa
 `structuralTotals`, `migrationCountNote`, `functionCountDiscrepancyNote` and
 `structuralTotalsNote176` in `.github/ci-baselines/schema-baseline.json`, the data dictionary and
 the classification registry (1000 columns).
+
+## 12. Fix round 5 — the 177th migration
+
+Review of fix round 4 showed that a requester could still get their own discount approved by changing
+the approver's role limit through a role grant: the approver held the recorded permission and no
+limit that counted, the requester (who may issue grants) gave the approver a role whose limit an
+administrator had set, and the refused approval went through on that role's limit.
+`quo.guard_discount_approval` read every role an active grant brought to the approver, whoever issued
+it, and a scoped grant reached the company through any scope row, whoever added it.
+`supabase/migrations/20261007140000_quo_discount_role_grant_provenance.sql` (the 177th) closes it,
+forward-only and ROLLBACK-SAFE:
+
+- **Who issued a grant, and who changed it.** `iam.role_grants` gains `issued_by`, stamped from the
+  signed-in person on insert and never moved (`granted_by` is the writer's claim: the application
+  writes the signed-in person into it, a direct writer may write anybody), and `grant_changed_by`
+  (`uuid[]`, not null, empty by default): everyone who ever changed the grant's status, `valid_from`,
+  `valid_to` or `revoked_at`, appended and never removed. Kept by the new BEFORE INSERT OR UPDATE
+  trigger `tg_role_grants_provenance` (function `iam.record_role_grant_provenance`).
+- **Who added a scope.** `iam.grant_scopes` gains `added_by`, stamped from the signed-in person on
+  insert and never moved (`created_by` is the writer's claim). Kept by `tg_grant_scopes_adder`
+  (function `iam.stamp_grant_scope_adder`).
+- **The guard.** A role's discount limit counts toward the approver's ceiling only through a grant
+  that counts for the request: active, in force, neither granted nor issued by the requester, never
+  changed by the requester, and — unless unrestricted — reaching the request's company through a
+  scope the requester neither created nor added. A grant the approver issued, changed or scoped
+  themselves does not count either, as a limit the approver created does not. A limit on the approver
+  as a person is unaffected, and the window-history rules of fix round 2 still read every role an
+  active grant brings. The application's `callerApprovalCeiling` applies the same rule, so the screen
+  and the decision route name `discount_no_approval_limit` before the database refuses.
+- **A withdrawn selling price.** Re-checking every other way the requester could lower the price they
+  are held to found one more: deactivating or deleting the branch's selling price hands the line to a
+  cheaper company or tenant-wide price somebody else set, and the line's snapshot named only that row.
+  `inv.item_sale_prices` gains `availability_changed_by` (`uuid[]`, not null, empty by default):
+  everyone who ever changed the row's status or deletion, appended and never removed, kept by
+  `tg_item_sale_prices_availability_history` (function
+  `inv.record_item_sale_price_availability_change`). `quo.revision_self_change_basis` counts a part
+  line as the requester's own price when the requester ever changed the status or deletion of any
+  selling price of the line's item; through it the fix round 3 rule applies.
+
+The other paths were re-checked and are closed by the earlier rounds or by the schema: a limit the
+requester created or whose window they moved (rounds 1 and 2; `created_by` is the signed-in person,
+refused when it names anybody else); a threshold version (recorded only as the next version, stamped
+`set_by`); a price rule (frozen once its version is published); a price-list version (its publisher is
+stamped and a closed window cannot reopen); a price-list assignment (round 4); an item selling price's
+amount (round 1). Revoking a grant, deleting a scope or ending a limit can only lower a ceiling, except
+a person's own limit, which round 1 covers. A role's permission mappings (`iam.role_permissions`)
+change who may approve, never any limit; they are recorded as an open point in ADR-023.
+
+Existing grants take `issued_by` from `created_by` and `grant_changed_by` from `updated_by` where
+they were updated; existing scopes take `added_by` from `created_by`; inactive or deleted selling
+prices take `availability_changed_by` from `deleted_by` and `updated_by` — the closest evidence the
+rows hold, not a verified attribution — with the row-metadata triggers disabled for the statements.
+Three functions and three triggers are added (`functions` 660 to 663, `triggers` 651 to 654); no
+table, grant, policy, seed or permission code. Executable proof:
+`tests/db/quo-discount-self-exemption.test.ts` (the columns; stamps from the session through a
+colleague's later change and a writer's claim; a grant the requester issued, in their own name or a
+colleague's, a company scope the requester added to a colleague's grant, and a colleague's expired
+grant the requester reopened, each refused for the requester's request and approved for another
+person's; a grant or scope a colleague made approved for it; a grant the approver reopened refused for
+anybody's request; a branch selling price the requester withdrew, quoted at the cheaper company price
+with no discount, refused at issue while another person's quotation issues alone),
+`tests/backend/od-discount-self-exemption.test.ts` (the screen and `POST
+/discount-approvals/{id}/decision` refuse an approver given the role by the requester and accept the
+same role granted by an administrator), the `foundation` routine and trigger inventories and the P1-15
+census. The DB fixtures that gave fixture approvers their roles now issue those grants as an
+administrator who requests nothing, so the earlier cases keep measuring what they set out to. Records
+moved: `migrationCount` 177, `schemaHash`, `structuralTotals`, `migrationCountNote`,
+`functionCountDiscrepancyNote` and `structuralTotalsNote177` in
+`.github/ci-baselines/schema-baseline.json`, the data dictionary and the classification registry (1001
+columns).

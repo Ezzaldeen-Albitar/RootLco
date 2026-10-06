@@ -34,6 +34,11 @@
  * price list is changing one's own price list. The line snapshots who made the
  * assignment that selected its list, and the rule above applies.
  *
+ * Fix round 5 (migration 20261007140000): giving the approver a role is changing their
+ * role limit. A role's limit counts only through a grant the requester did not issue or
+ * change; the grant is written at the database, signed in as the requester, with the
+ * columns and session POST /iam/grants writes (the requester holds no iam.grant.manage).
+ *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
  *   quo.discount-approval-withdraw: route service authorization success denial audit idempotency stale-version isolation cross-tenant
  */
@@ -912,6 +917,104 @@ describe('ADR-023 D8 — one’s own threshold, limit or price never exempts one
       expect(approved.status).toBe(200);
     } finally {
       await admin.query(`DELETE FROM iam.approval_limits WHERE id = $1`, [ownId]);
+    }
+  });
+});
+
+describe('ADR-023 D8 — a role grant the requester made (fix round 5)', () => {
+  /**
+   * Grants `roleId` to `userId`, signed in as `person`, in `person`'s name — the
+   * columns and the session exactly as POST /iam/grants writes them
+   * (`authorization-repository.ts` insertGrant). Returns the grant.
+   */
+  async function grantRoleAs(person: string, userId: string, roleId: string): Promise<string> {
+    const client = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `SELECT set_config('app.tenant_id', $1, true), set_config('app.user_id', $2, true)`,
+        [TENANT_A, person]
+      );
+      const id = (
+        await client.query<{ id: string }>(
+          `INSERT INTO iam.role_grants
+             (tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+           VALUES ($1, $2, $3, 'unrestricted', 'active', $4, $4) RETURNING id`,
+          [TENANT_A, userId, roleId, person]
+        )
+      ).rows[0]?.id as string;
+      await client.query('COMMIT');
+      return id;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  it('an approver given a role by the requester cannot approve the requester’s discount under its limit', async () => {
+    await administratorThreshold('0.0000');
+    const quotation = await quoteAs(SVC_NO_CEILING, '5.0000');
+    const request = approvalOf(quotation);
+    const grants: string[] = [];
+    try {
+      // SVC_FULL holds the recorded permission and no discount limit.
+      authAs(SVC_FULL);
+      const none = await decide(request.id, { decision: 'approved' });
+      expect(none.status).toBe(403);
+      expect(((await none.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_no_approval_limit' },
+      ]);
+
+      // The requester gives SVC_FULL the approver's role, whose 1000 an
+      // administrator set.
+      grants.push(
+        await grantRoleAs(SVC_NO_CEILING.userId, SVC_FULL.userId, SVC_DISCOUNT_APPROVER.roleId)
+      );
+      expect(
+        (
+          await admin.query<{ granted_by: string; issued_by: string }>(
+            `SELECT granted_by, issued_by FROM iam.role_grants WHERE id = $1`,
+            [grants[0]]
+          )
+        ).rows[0]
+      ).toEqual({ granted_by: SVC_NO_CEILING.userId, issued_by: SVC_NO_CEILING.userId });
+      authAs(SVC_FULL);
+      expect(approvalOf(await reread(quotation.id))).toMatchObject({
+        canApprove: false,
+        cannotApproveReason: 'no_approval_limit',
+      });
+      const refused = await decide(request.id, { decision: 'approved' });
+      expect(refused.status).toBe(403);
+      expect(((await refused.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_no_approval_limit' },
+      ]);
+      expect(
+        await refusalEvents(
+          'quo.discount-approval-decide',
+          request.id,
+          'discount_no_approval_limit'
+        )
+      ).toBe(2);
+
+      // The same role, granted by an administrator, counts.
+      grants.push(await grantRoleAs(USER_A, SVC_FULL.userId, SVC_DISCOUNT_APPROVER.roleId));
+      authAs(SVC_FULL);
+      expect(approvalOf(await reread(quotation.id))).toMatchObject({ canApprove: true });
+      const approved = await decide(request.id, { decision: 'approved' });
+      expect(approved.status).toBe(200);
+      expect(
+        (
+          await admin.query<{ status: string; role_id: string }>(
+            `SELECT a.status, l.role_id FROM quo.discount_approvals a
+               JOIN iam.approval_limits l ON l.id = a.approver_limit_id WHERE a.id = $1`,
+            [request.id]
+          )
+        ).rows[0]
+      ).toEqual({ status: 'approved', role_id: SVC_DISCOUNT_APPROVER.roleId });
+    } finally {
+      await admin.query(`DELETE FROM iam.role_grants WHERE id = ANY($1::uuid[])`, [grants]);
     }
   });
 });

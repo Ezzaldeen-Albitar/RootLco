@@ -10,7 +10,10 @@
  * requester set needs another person even when the quotation carries no discount), and
  * fix round 4, 20261007130000_quo_price_list_assignment_provenance.sql (who made or
  * changed the price-list assignment that selected a line's list, and any assignment
- * the requester changed, count as the requester's own price).
+ * the requester changed, count as the requester's own price), and fix round 5,
+ * 20261007140000_quo_discount_role_grant_provenance.sql (a role's limit counts only
+ * through a grant, and a grant scope, the requester did not make or change; and a
+ * selling price the requester withdrew makes the item's price their own).
  *
  * Every case runs in a rolled-back transaction as `app_runtime`, switching the
  * signed-in person with `app.user_id` exactly as the application does. USER_A is the
@@ -80,6 +83,24 @@ const APPROVER_SELF_ROLE = 'd8d30000-0000-4000-8000-000000000007';
 const ROLE_SELF_WIDE = 'd8d30000-0000-4000-8000-0000000000a4';
 /** Fix round 2. A colleague who may administer limits and decides nothing here. */
 const LIMIT_COLLEAGUE = 'd8d30000-0000-4000-8000-000000000008';
+/**
+ * Fix round 5. A requester who may issue role grants (iam.grant.manage) and holds
+ * svc.price.manage, so the grant policy lets them hand ROLE_BIG on.
+ */
+const GRANT_REQUESTER = 'd8d30000-0000-4000-8000-000000000009';
+/** Fix round 5. A colleague who may issue role grants and decides nothing here. */
+const GRANT_COLLEAGUE = 'd8d30000-0000-4000-8000-00000000000a';
+/**
+ * Fix round 5. Holds svc.price.manage and iam.grant.manage through ROLE_GRANT_ADMIN
+ * (granted by OTHER_ACTOR) and no discount limit of any kind.
+ */
+const APPROVER_GRANTED = 'd8d30000-0000-4000-8000-00000000000b';
+/** Fix round 5. iam.grant.manage and svc.price.manage. */
+const ROLE_GRANT_ADMIN = 'd8d30000-0000-4000-8000-0000000000a5';
+/** Fix round 5. svc.price.manage, and a 1000 USD discount limit OTHER_ACTOR set. */
+const ROLE_BIG = 'd8d30000-0000-4000-8000-0000000000a6';
+/** Fix round 5. A second company of TENANT_A, where a scoped grant can point first. */
+const COMPANY_FD8_OTHER = 'd8d30000-0000-4000-8000-0000000000c1';
 
 beforeAll(async () => {
   await ensureTestLogins(admin);
@@ -94,6 +115,9 @@ beforeAll(async () => {
     [APPROVER_SELF_USER, '06'],
     [APPROVER_SELF_ROLE, '07'],
     [LIMIT_COLLEAGUE, '08'],
+    [GRANT_REQUESTER, '09'],
+    [GRANT_COLLEAGUE, '0a'],
+    [APPROVER_GRANTED, '0b'],
   ] as const) {
     await admin.query(
       `INSERT INTO iam.user_accounts
@@ -113,6 +137,8 @@ beforeAll(async () => {
     [ROLE_LIMIT_ADMIN, 'fx_db_fd8_limit_admin', 'DB fixture FD8 limit administrator'],
     [ROLE_WIDE, 'fx_db_fd8_wide', 'DB fixture FD8 wide approver'],
     [ROLE_SELF_WIDE, 'fx_db_fd8_self_wide', 'DB fixture FD8 self-moving approver'],
+    [ROLE_GRANT_ADMIN, 'fx_db_fd8_grant_admin', 'DB fixture FD8 grant administrator'],
+    [ROLE_BIG, 'fx_db_fd8_big', 'DB fixture FD8 large-limit approver'],
   ] as const) {
     await admin.query(
       `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
@@ -126,6 +152,9 @@ beforeAll(async () => {
     [ROLE_WIDE, 'svc.price.manage'],
     [ROLE_LIMIT_ADMIN, 'iam.approval.manage'],
     [ROLE_SELF_WIDE, 'svc.price.manage'],
+    [ROLE_GRANT_ADMIN, 'iam.grant.manage'],
+    [ROLE_GRANT_ADMIN, 'svc.price.manage'],
+    [ROLE_BIG, 'svc.price.manage'],
   ] as const) {
     await admin.query(
       `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
@@ -147,7 +176,12 @@ beforeAll(async () => {
     [APPROVER_SELF_ROLE, ROLE_SELF_WIDE],
     [APPROVER_SELF_ROLE, ROLE_LIMIT_ADMIN],
     [LIMIT_COLLEAGUE, ROLE_LIMIT_ADMIN],
+    [GRANT_REQUESTER, ROLE_GRANT_ADMIN],
+    [GRANT_COLLEAGUE, ROLE_GRANT_ADMIN],
+    [APPROVER_GRANTED, ROLE_GRANT_ADMIN],
   ] as const) {
+    // Issued by an administrator who requests nothing here: since fix round 5 a grant
+    // the requester issued brings no role limit to the approver for their request.
     await admin.query(
       `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
        SELECT $1::uuid, $2::uuid, $3::uuid, 'unrestricted', $4::uuid, $4::uuid
@@ -155,7 +189,7 @@ beforeAll(async () => {
           SELECT 1 FROM iam.role_grants
            WHERE tenant_id = $1::uuid AND user_id = $2::uuid AND role_id = $3::uuid
              AND status = 'active')`,
-      [TENANT_A, id, role, USER_A]
+      [TENANT_A, id, role, OTHER_ACTOR]
     );
   }
   for (const [id, setBy] of [
@@ -220,6 +254,22 @@ beforeAll(async () => {
         SELECT 1 FROM iam.approval_limits
          WHERE tenant_id = $1::uuid AND role_id = $3::uuid AND limit_type = 'discount')`,
     [TENANT_A, COMPANY_A1, ROLE_SELF_WIDE, OTHER_ACTOR]
+  );
+  // ROLE_BIG: an administrator's 1000 USD limit, held by nobody until a case grants it.
+  await admin.query(
+    `INSERT INTO iam.approval_limits
+       (tenant_id, company_id, role_id, limit_type, amount, currency_code, effective_from, created_by)
+     SELECT $1::uuid, $2::uuid, $3::uuid, 'discount', 1000, 'USD', current_date - 30, $4::uuid
+      WHERE NOT EXISTS (
+        SELECT 1 FROM iam.approval_limits
+         WHERE tenant_id = $1::uuid AND role_id = $3::uuid AND limit_type = 'discount')`,
+    [TENANT_A, COMPANY_A1, ROLE_BIG, OTHER_ACTOR]
+  );
+  await admin.query(
+    `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+     VALUES ($1, $2, 'fx_db_fd8_other', 'FD8 other company', 'USD', $3)
+     ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_FD8_OTHER, TENANT_A, OTHER_ACTOR]
   );
 }, 180_000);
 
@@ -1778,6 +1828,398 @@ describe('quo discount self-exemption — a price-list assignment the requester 
       expect(await needsApproval(c, revision)).toBe(true);
       // Somebody who changed no assignment is not held to it.
       expect(await basisOf(c, revision, APPROVER)).toEqual({ own_policy: false, own_price: false });
+    });
+  });
+});
+
+describe('quo discount self-exemption — a role grant the requester made (fix round 5)', () => {
+  /** A discounted draft written and asked for by `requester`. */
+  async function requestBy(
+    c: Q,
+    requester: string,
+    tag: string,
+    discount: number
+  ): Promise<string> {
+    const { wo } = await makeWorkOrder(c, tag);
+    const { service } = await seedService(c, tag);
+    const quotation = await seedQuotation(c, wo, tag);
+    return as(c, requester, async () => {
+      const revision = await revisionBy(c, quotation, 1, requester);
+      await addServiceItem(c, revision, service, 1, 100, 1, discount);
+      return requestFor(c, quotation, revision, String(discount), requester);
+    });
+  }
+  const signedInAs = async <T>(c: Q, person: string, act: () => Promise<T>): Promise<T> => {
+    await setContext(c, { tenantId: TENANT_A, userId: person });
+    try {
+      return await act();
+    } finally {
+      await setContext(c, ctxA);
+    }
+  };
+  /**
+   * A grant of ROLE_BIG to APPROVER_GRANTED written by whoever is signed in, naming
+   * `grantedBy` (the writer's claim); scoped, or ended yesterday, on request.
+   */
+  const grantBig = (
+    c: Q,
+    grantedBy: string,
+    options: { scoped?: boolean; expired?: boolean } = {}
+  ): Promise<string> =>
+    one<{ id: string }>(
+      c,
+      `INSERT INTO iam.role_grants
+         (tenant_id, user_id, role_id, scope_mode, granted_by, created_by, valid_from, valid_to)
+       VALUES ($1, $2, $3, $4, $5, $5,
+               CASE WHEN $6 THEN now() - interval '30 days' ELSE now() END,
+               CASE WHEN $6 THEN now() - interval '1 day' END)
+       RETURNING id`,
+      [
+        TENANT_A,
+        APPROVER_GRANTED,
+        ROLE_BIG,
+        options.scoped ? 'scoped' : 'unrestricted',
+        grantedBy,
+        options.expired ?? false,
+      ]
+    ).then((row) => row.id);
+  const addScope = (c: Q, grant: string, company: string, createdBy: string): Promise<unknown> =>
+    c.query(
+      `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, created_by)
+       VALUES ($1, $2, 'company', $3, $4)`,
+      [TENANT_A, grant, company, createdBy]
+    );
+  const approveAsGranted = (c: Q, approval: string): Promise<unknown> =>
+    signedInAs(c, APPROVER_GRANTED, () => c.query(approveSql, [approval, APPROVER_GRANTED]));
+  const refusedNoLimit = (c: Q, approval: string): Promise<void> =>
+    signedInAs(c, APPROVER_GRANTED, () =>
+      expectRefusal(
+        c,
+        /discount_no_approval_limit: .*has no discount approval limit that counts/,
+        approveSql,
+        [approval, APPROVER_GRANTED]
+      )
+    );
+  const reliedOn = (c: Q, approval: string) =>
+    one(
+      c,
+      `SELECT a.status, l.role_id FROM quo.discount_approvals a
+         JOIN iam.approval_limits l ON l.id = a.approver_limit_id WHERE a.id = $1`,
+      [approval]
+    );
+  /** A part line priced from the item selling price `priceRef`, at `unit`, discounted by `discount`. */
+  const addPartLine = async (
+    c: Q,
+    revision: string,
+    tag: string,
+    item: string,
+    priceRef: string,
+    unit: string,
+    discount: string
+  ): Promise<void> => {
+    await c.query(
+      `INSERT INTO quo.quotation_items
+         (tenant_id, company_id, branch_id, quotation_revision_id, line_number, item_kind, item_ref,
+          item_sale_price_ref, quoted_item_sku, quoted_item_name, quoted_unit_code, quoted_unit_name,
+          currency_code, captured_unit_price, captured_quantity, captured_discount, captured_tax_rate,
+          captured_tax_amount, captured_line_total, created_by)
+       VALUES ($1,$2,$3,$4,1,'part',$5,$6,$7,$8,$9,$10,'USD',$11::numeric,1,$12::numeric,0,0,
+               $11::numeric - $12::numeric,$13)`,
+      [
+        TENANT_A,
+        COMPANY_A1,
+        BRANCH_A1,
+        revision,
+        item,
+        priceRef,
+        `SKU_${tag}`,
+        `Item ${tag}`,
+        `u_${tag}`,
+        `Unit ${tag}`,
+        unit,
+        discount,
+        USER_A,
+      ]
+    );
+  };
+
+  it('adds who issued a grant, who changed it, who added a scope and who withdrew a price', async () => {
+    const columns = await admin.query(
+      `SELECT table_name, column_name, data_type, is_nullable, column_default
+         FROM information_schema.columns
+        WHERE (table_schema, table_name, column_name) IN
+              (('iam','role_grants','issued_by'), ('iam','role_grants','grant_changed_by'),
+               ('iam','grant_scopes','added_by'), ('inv','item_sale_prices','availability_changed_by'))
+        ORDER BY table_name, column_name`
+    );
+    const history = {
+      data_type: 'ARRAY',
+      is_nullable: 'NO',
+      column_default: 'ARRAY[]::uuid[]',
+    };
+    const stamp = { data_type: 'uuid', is_nullable: 'YES', column_default: null };
+    expect(columns.rows).toEqual([
+      { table_name: 'grant_scopes', column_name: 'added_by', ...stamp },
+      { table_name: 'item_sale_prices', column_name: 'availability_changed_by', ...history },
+      { table_name: 'role_grants', column_name: 'grant_changed_by', ...history },
+      { table_name: 'role_grants', column_name: 'issued_by', ...stamp },
+    ]);
+  });
+
+  it('stamps who issued a grant, who changed it and who added a scope from the session, never the writer', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      // The requester writes a grant in a colleague's name and claims the stamps too.
+      const grant = await as(c, GRANT_REQUESTER, () =>
+        one<{ id: string }>(
+          c,
+          `INSERT INTO iam.role_grants
+             (tenant_id, user_id, role_id, scope_mode, granted_by, created_by, issued_by, grant_changed_by)
+           VALUES ($1, $2, $3, 'scoped', $4, $4, $4, ARRAY[$4]::uuid[]) RETURNING id`,
+          [TENANT_A, APPROVER_GRANTED, ROLE_BIG, GRANT_COLLEAGUE]
+        ).then((row) => row.id)
+      );
+      await as(c, GRANT_REQUESTER, () =>
+        c.query(
+          `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, created_by, added_by)
+           VALUES ($1, $2, 'company', $3, $4, $4)`,
+          [TENANT_A, grant, COMPANY_A1, GRANT_COLLEAGUE]
+        )
+      );
+      const stamps = () =>
+        one(
+          c,
+          `SELECT g.granted_by, g.issued_by, g.grant_changed_by, s.created_by, s.added_by
+             FROM iam.role_grants g JOIN iam.grant_scopes s ON s.grant_id = g.id
+            WHERE g.id = $1`,
+          [grant]
+        );
+      expect(await stamps()).toEqual({
+        granted_by: GRANT_COLLEAGUE,
+        issued_by: GRANT_REQUESTER,
+        grant_changed_by: [],
+        created_by: GRANT_COLLEAGUE,
+        added_by: GRANT_REQUESTER,
+      });
+
+      // A colleague sets an end date and the requester saves the same one (no
+      // change); then the requester moves it and the colleague moves it last. Each
+      // person who moved it is kept, once.
+      const setEnd = (actor: string, days: number) =>
+        as(c, actor, () =>
+          c.query(
+            `UPDATE iam.role_grants
+                SET valid_to = date_trunc('day', now()) + make_interval(days => $2)
+              WHERE id = $1`,
+            [grant, days]
+          )
+        );
+      await setEnd(GRANT_COLLEAGUE, 30);
+      await setEnd(GRANT_REQUESTER, 30);
+      expect(await stamps()).toMatchObject({ grant_changed_by: [GRANT_COLLEAGUE] });
+      await setEnd(GRANT_REQUESTER, 60);
+      await setEnd(GRANT_COLLEAGUE, 90);
+      expect(await stamps()).toMatchObject({
+        issued_by: GRANT_REQUESTER,
+        grant_changed_by: [GRANT_COLLEAGUE, GRANT_REQUESTER],
+      });
+      // The runtime role cannot write the history itself.
+      await expectRefusal(
+        c,
+        /permission denied/,
+        `UPDATE iam.role_grants SET grant_changed_by = ARRAY[]::uuid[], issued_by = NULL WHERE id = $1`,
+        [grant],
+        '42501'
+      );
+    });
+  });
+
+  it('never counts a role limit a grant the requester issued brings, for the requester’s request', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const approval = await requestBy(c, GRANT_REQUESTER, 'fd8r5_grant', 50);
+      // The approver holds the permission and no limit at all.
+      await refusedNoLimit(c, approval);
+
+      // The requester gives the approver ROLE_BIG, whose 1000 an administrator set.
+      await as(c, GRANT_REQUESTER, () => grantBig(c, GRANT_REQUESTER));
+      await refusedNoLimit(c, approval);
+      // Writing a grant in a colleague's name changes nothing: who wrote it is the
+      // session's.
+      await as(c, GRANT_REQUESTER, () => grantBig(c, GRANT_COLLEAGUE));
+      await refusedNoLimit(c, approval);
+      expect(
+        await one(c, `SELECT status FROM quo.discount_approvals WHERE id = $1`, [approval])
+      ).toEqual({ status: 'pending' });
+
+      // Somebody else's request is approved under the very grants the requester made.
+      const others = await requestBy(c, USER_A, 'fd8r5_grant_other', 50);
+      await approveAsGranted(c, others);
+      expect(await reliedOn(c, others)).toEqual({ status: 'approved', role_id: ROLE_BIG });
+
+      // A grant a colleague issues counts for the requester's request.
+      await as(c, GRANT_COLLEAGUE, () => grantBig(c, GRANT_COLLEAGUE));
+      await approveAsGranted(c, approval);
+      expect(await reliedOn(c, approval)).toEqual({ status: 'approved', role_id: ROLE_BIG });
+    });
+  });
+
+  it('reaches the company only through a grant scope the requester did not add', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const approval = await requestBy(c, GRANT_REQUESTER, 'fd8r5_scope', 50);
+      // A colleague grants ROLE_BIG to the approver for ANOTHER company only.
+      const grant = await as(c, GRANT_COLLEAGUE, async () => {
+        const id = await grantBig(c, GRANT_COLLEAGUE, { scoped: true });
+        await addScope(c, id, COMPANY_FD8_OTHER, GRANT_COLLEAGUE);
+        return id;
+      });
+      await refusedNoLimit(c, approval);
+
+      // The requester adds this company to it, naming the colleague as its creator.
+      await as(c, GRANT_REQUESTER, () => addScope(c, grant, COMPANY_A1, GRANT_COLLEAGUE));
+      await refusedNoLimit(c, approval);
+
+      // Somebody else's request is approved through that scope.
+      const others = await requestBy(c, USER_A, 'fd8r5_scope_other', 50);
+      await approveAsGranted(c, others);
+      expect(await reliedOn(c, others)).toEqual({ status: 'approved', role_id: ROLE_BIG });
+
+      // A scope the colleague adds (the branch's, in this company) counts for it.
+      await as(c, GRANT_COLLEAGUE, () =>
+        c.query(
+          `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+           VALUES ($1, $2, 'branch', $3, $4, $5)`,
+          [TENANT_A, grant, COMPANY_A1, BRANCH_A1, GRANT_COLLEAGUE]
+        )
+      );
+      await approveAsGranted(c, approval);
+      expect(await reliedOn(c, approval)).toEqual({ status: 'approved', role_id: ROLE_BIG });
+    });
+  });
+
+  it('never counts a grant whose dates the requester moved, through a colleague’s later save', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const approval = await requestBy(c, GRANT_REQUESTER, 'fd8r5_reopen', 50);
+      // A colleague's grant of ROLE_BIG to the approver that ended yesterday.
+      const grant = await as(c, GRANT_COLLEAGUE, () =>
+        grantBig(c, GRANT_COLLEAGUE, { expired: true })
+      );
+      await refusedNoLimit(c, approval);
+
+      // The requester reopens it; the colleague then saves another end date.
+      const reopen = (actor: string, days: number) =>
+        as(c, actor, () =>
+          c.query(
+            `UPDATE iam.role_grants SET valid_to = now() + make_interval(days => $2) WHERE id = $1`,
+            [grant, days]
+          )
+        );
+      await reopen(GRANT_REQUESTER, 30);
+      await refusedNoLimit(c, approval);
+      await reopen(GRANT_COLLEAGUE, 60);
+      expect(
+        await one(c, `SELECT granted_by, grant_changed_by FROM iam.role_grants WHERE id = $1`, [
+          grant,
+        ])
+      ).toEqual({
+        granted_by: GRANT_COLLEAGUE,
+        grant_changed_by: [GRANT_REQUESTER, GRANT_COLLEAGUE],
+      });
+      await refusedNoLimit(c, approval);
+
+      // Somebody else's request is approved under it.
+      const others = await requestBy(c, USER_A, 'fd8r5_reopen_other', 50);
+      await approveAsGranted(c, others);
+      expect(await reliedOn(c, others)).toEqual({ status: 'approved', role_id: ROLE_BIG });
+    });
+  });
+
+  it('never counts a grant the approver reopened themselves, for anybody’s request', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const approval = await requestBy(c, USER_A, 'fd8r5_self', 50);
+      const grant = await as(c, GRANT_COLLEAGUE, () =>
+        grantBig(c, GRANT_COLLEAGUE, { expired: true })
+      );
+      await refusedNoLimit(c, approval);
+      // The approver, who may administer grants, reopens their own.
+      await as(c, APPROVER_GRANTED, () =>
+        c.query(`UPDATE iam.role_grants SET valid_to = now() + interval '30 days' WHERE id = $1`, [
+          grant,
+        ])
+      );
+      await refusedNoLimit(c, approval);
+      expect(
+        await one(c, `SELECT grant_changed_by FROM iam.role_grants WHERE id = $1`, [grant])
+      ).toEqual({ grant_changed_by: [APPROVER_GRANTED] });
+    });
+  });
+
+  it('needs another person when the requester withdrew a branch selling price so a cheaper one applies', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      // An administrator's threshold of 50; an administrator's prices: 100 at the
+      // branch, 10 for the whole company.
+      await as(c, OTHER_ACTOR, () => recordThreshold(c, '50'));
+      const { item } = await seedItem(c, 'fd8r5_part');
+      const setPrice = (branch: string | null, price: string) =>
+        one<{ id: string }>(
+          c,
+          `SELECT inv.set_item_sale_price($1,$2,$3,'USD',$4::numeric,NULL) AS id`,
+          [item, COMPANY_A1, branch, price]
+        ).then((row) => row.id);
+      const branchPrice = await as(c, OTHER_ACTOR, () => setPrice(BRANCH_A1, '100.0000'));
+      const companyPrice = await as(c, OTHER_ACTOR, () => setPrice(null, '10.0000'));
+
+      // USER_A withdraws the branch price, so the company's 10 prices the branch.
+      await c.query(`UPDATE inv.item_sale_prices SET status = 'inactive' WHERE id = $1`, [
+        branchPrice,
+      ]);
+      expect(
+        await one(
+          c,
+          `SELECT price_changed_by, amount_set_by, availability_changed_by
+             FROM inv.item_sale_prices WHERE id = $1`,
+          [branchPrice]
+        )
+      ).toEqual({
+        price_changed_by: USER_A,
+        amount_set_by: OTHER_ACTOR,
+        availability_changed_by: [USER_A],
+      });
+
+      // USER_A quotes at 10 with no discount: the customer gets the 90 off that needed
+      // somebody else, and it still does, though the line's price is nobody's but the
+      // administrator's.
+      const { wo } = await makeWorkOrder(c, 'fd8r5_part_own');
+      const quotation = await seedQuotation(c, wo, 'fd8r5_part_own');
+      const revision = await draftRevision(c, quotation, 1);
+      await addPartLine(c, revision, 'fd8r5_part', item, companyPrice, '10', '0');
+      expect(
+        await one(
+          c,
+          `SELECT price_changed_by, price_amount_set_by FROM quo.quotation_items
+            WHERE quotation_revision_id = $1`,
+          [revision]
+        )
+      ).toEqual({ price_changed_by: OTHER_ACTOR, price_amount_set_by: OTHER_ACTOR });
+      expect(await basisOf(c, revision, USER_A)).toEqual({ own_policy: false, own_price: true });
+      expect(await needsApproval(c, revision)).toBe(true);
+      await expectRefusal(c, /discount_approval_required/, `SELECT quo.issue_revision($1)`, [
+        revision,
+      ]);
+
+      // Another person's quotation at the same price, with no discount, issues alone.
+      const { wo: wo2 } = await makeWorkOrder(c, 'fd8r5_part_other');
+      const theirs = await revisionBy(
+        c,
+        await seedQuotation(c, wo2, 'fd8r5_part_other'),
+        1,
+        APPROVER
+      );
+      await addPartLine(c, theirs, 'fd8r5_part', item, companyPrice, '10', '0');
+      expect(await basisOf(c, theirs, APPROVER)).toEqual({ own_policy: false, own_price: false });
+      expect(await needsApproval(c, theirs)).toBe(false);
+      await c.query(`SELECT quo.issue_revision($1)`, [theirs]);
+      expect(
+        await one(c, `SELECT status FROM quo.quotation_revisions WHERE id = $1`, [theirs])
+      ).toEqual({ status: 'issued' });
     });
   });
 });

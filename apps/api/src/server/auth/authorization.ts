@@ -516,6 +516,20 @@ export async function callerHoldsPermissionAnywhere(
  * the same date would wipe the requester's change. The database guard
  * `quo.guard_discount_approval` applies the same rules.
  *
+ * ## A role's limit counts only through a grant that counts (ADR-023, D8)
+ *
+ * Giving the caller a role is raising the caller's ceiling by that role's limit, so a
+ * role limit is chosen only when a grant that COUNTS brings the role to the caller in
+ * the company: not granted or issued by the requester (`granted_by` is the writer's
+ * claim, `issued_by` the session's, stamped by `iam.record_role_grant_provenance`),
+ * never reopened, extended or otherwise changed by the requester
+ * (`grant_changed_by`), and — when scoped — reaching the company through a scope the
+ * requester neither created nor added (`iam.grant_scopes.added_by`). A grant the
+ * caller issued to themselves, changed themselves or scoped themselves does not
+ * count either. A limit on the caller as a person is unaffected, and the window
+ * rules above still read every role an active grant brings, counting or not. The
+ * database guard applies the same rule (migration 20261007140000).
+ *
  * `null` means the actor has **no** ceiling, which callers must treat as no
  * authority and never as unlimited.
  */
@@ -547,6 +561,33 @@ export async function callerApprovalCeiling(
                                AND s.company_id = $2
                           )
                         ))))
+     ),
+     counting_roles AS (
+       SELECT g.role_id
+         FROM iam.role_grants g
+        WHERE g.tenant_id = $1 AND g.user_id = $4
+          AND g.status = 'active'
+          AND g.valid_from <= now()
+          AND (g.valid_to IS NULL OR g.valid_to > now())
+          AND g.issued_by IS DISTINCT FROM $4::uuid
+          AND NOT ($4::uuid = ANY (g.grant_changed_by))
+          AND ($6::uuid IS NULL OR (
+                g.granted_by <> $6::uuid
+                AND g.issued_by IS DISTINCT FROM $6::uuid
+                AND NOT ($6::uuid = ANY (g.grant_changed_by))))
+          AND (
+            g.scope_mode = 'unrestricted'
+            OR EXISTS (
+              SELECT 1 FROM iam.grant_scopes s
+               WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id
+                 AND s.company_id = $2
+                 AND s.created_by <> $4::uuid
+                 AND s.added_by IS DISTINCT FROM $4::uuid
+                 AND ($6::uuid IS NULL OR (
+                       s.created_by <> $6::uuid
+                       AND s.added_by IS DISTINCT FROM $6::uuid))
+            )
+          )
      )
      SELECT al.amount::text AS amount, al.currency_code
        FROM caller_limits al
@@ -554,6 +595,7 @@ export async function callerApprovalCeiling(
         AND (al.effective_to IS NULL OR al.effective_to > $5::date)
         AND al.created_by <> $4
         AND ($6::uuid IS NULL OR al.created_by <> $6::uuid)
+        AND (al.user_id IS NOT NULL OR al.role_id IN (SELECT role_id FROM counting_roles))
         AND NOT EXISTS (
           SELECT 1 FROM caller_limits moved
            WHERE $4::uuid = ANY (moved.window_changed_by)

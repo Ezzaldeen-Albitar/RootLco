@@ -809,27 +809,29 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `iam.role_grants`
 
-**Scope:** tenant · **Retention class:** evidence-audit · Role→user assignment with validity, revocation, approval ref; scope_mode/identity immutable; self-grant denied.
+**Scope:** tenant · **Retention class:** evidence-audit · Role→user assignment with validity, revocation, approval ref; scope_mode/identity immutable; self-grant denied. `issued_by` is the signed-in person who wrote the grant, stamped by `iam.record_role_grant_provenance` on insert and never moved (`granted_by` is the writer's claim), and `grant_changed_by` keeps everyone who ever changed its status, `valid_from`, `valid_to` or `revoked_at`, appended from the session and never removed; a role's discount approval limit counts toward an approver's ceiling only through a grant neither issued, granted nor changed by the requester (P1-32-PRE-OD-FD8 fix round 5, ADR-023 D8; rows written before migration 20261007140000 carry `created_by` and their `updated_by`).
 
-| Column           | Type                     | Null | Default           | Classification |
-| ---------------- | ------------------------ | ---- | ----------------- | -------------- |
-| `id`             | uuid                     | NO   | gen_random_uuid() | internal       |
-| `tenant_id`      | uuid                     | NO   | —                 | internal       |
-| `user_id`        | uuid                     | NO   | —                 | internal       |
-| `role_id`        | uuid                     | NO   | —                 | internal       |
-| `scope_mode`     | text                     | NO   | 'unrestricted'    | internal       |
-| `status`         | text                     | NO   | 'active'::text    | internal       |
-| `valid_from`     | timestamp with time zone | NO   | now()             | internal       |
-| `valid_to`       | timestamp with time zone | YES  | —                 | internal       |
-| `granted_by`     | uuid                     | NO   | —                 | internal       |
-| `approval_ref`   | text                     | YES  | —                 | internal       |
-| `revoked_at`     | timestamp with time zone | YES  | —                 | internal       |
-| `revoke_reason`  | text                     | YES  | —                 | internal       |
-| `record_version` | integer                  | NO   | 1                 | internal       |
-| `created_at`     | timestamp with time zone | NO   | now()             | internal       |
-| `created_by`     | uuid                     | NO   | —                 | internal       |
-| `updated_at`     | timestamp with time zone | YES  | —                 | internal       |
-| `updated_by`     | uuid                     | YES  | —                 | internal       |
+| Column             | Type                     | Null | Default           | Classification |
+| ------------------ | ------------------------ | ---- | ----------------- | -------------- |
+| `id`               | uuid                     | NO   | gen_random_uuid() | internal       |
+| `tenant_id`        | uuid                     | NO   | —                 | internal       |
+| `user_id`          | uuid                     | NO   | —                 | internal       |
+| `role_id`          | uuid                     | NO   | —                 | internal       |
+| `scope_mode`       | text                     | NO   | 'unrestricted'    | internal       |
+| `status`           | text                     | NO   | 'active'::text    | internal       |
+| `valid_from`       | timestamp with time zone | NO   | now()             | internal       |
+| `valid_to`         | timestamp with time zone | YES  | —                 | internal       |
+| `granted_by`       | uuid                     | NO   | —                 | internal       |
+| `approval_ref`     | text                     | YES  | —                 | internal       |
+| `revoked_at`       | timestamp with time zone | YES  | —                 | internal       |
+| `revoke_reason`    | text                     | YES  | —                 | internal       |
+| `record_version`   | integer                  | NO   | 1                 | internal       |
+| `created_at`       | timestamp with time zone | NO   | now()             | internal       |
+| `created_by`       | uuid                     | NO   | —                 | internal       |
+| `updated_at`       | timestamp with time zone | YES  | —                 | internal       |
+| `updated_by`       | uuid                     | YES  | —                 | internal       |
+| `issued_by`        | uuid                     | YES  | —                 | internal       |
+| `grant_changed_by` | uuid[]                   | NO   | ARRAY[]::uuid[]   | internal       |
 
 ### `iam.platform_grants`
 
@@ -852,7 +854,7 @@ credential authority. Contact fields are classified `restricted`.
 
 ### `iam.grant_scopes`
 
-**Scope:** tenant · **Retention class:** evidence-audit · Company/branch/department scope rows for a scoped grant; parent chain carried via composite FKs; append-only.
+**Scope:** tenant · **Retention class:** evidence-audit · Company/branch/department scope rows for a scoped grant; parent chain carried via composite FKs; append-only. `added_by` is the signed-in person who added the scope, stamped by `iam.stamp_grant_scope_adder` on insert and never moved (`created_by` is the writer's claim); a scope the requester added does not bring a role's discount approval limit to the approver for their request (P1-32-PRE-OD-FD8 fix round 5, ADR-023 D8; rows written before migration 20261007140000 carry `created_by`).
 
 | Column          | Type                     | Null | Default           | Classification |
 | --------------- | ------------------------ | ---- | ----------------- | -------------- |
@@ -865,6 +867,7 @@ credential authority. Contact fields are classified `restricted`.
 | `department_id` | uuid                     | YES  | —                 | internal       |
 | `created_at`    | timestamp with time zone | NO   | now()             | internal       |
 | `created_by`    | uuid                     | NO   | —                 | internal       |
+| `added_by`      | uuid                     | YES  | —                 | internal       |
 
 ### `iam.approval_limits`
 
@@ -4774,30 +4777,31 @@ Generated from the live catalog after `20260917092000_inv_item_sale_prices.sql`.
 
 #### inv.item_sale_prices
 
-P1-32-PRE-OD-FD8 (ADR-023 D8) adds `price_changed_by` and `price_changed_at`: who last changed the selling price, its currency, tax class, status or deletion, stamped from the signed-in person by `inv.stamp_item_sale_price_provenance` (NULL when nobody was signed in). Setting the same price again changes nothing. Rows written before migration 20261007090000 carry their last recorded writer. Fix round 1 (migration 20261007100000) adds `amount_set_by` and `amount_set_at`: who set the unit price and currency, stamped by the same trigger when the row is written and when either changes, and never by a change to the tax class or status; rows written before it carry `price_changed_by`.
+P1-32-PRE-OD-FD8 (ADR-023 D8) adds `price_changed_by` and `price_changed_at`: who last changed the selling price, its currency, tax class, status or deletion, stamped from the signed-in person by `inv.stamp_item_sale_price_provenance` (NULL when nobody was signed in). Setting the same price again changes nothing. Rows written before migration 20261007090000 carry their last recorded writer. Fix round 1 (migration 20261007100000) adds `amount_set_by` and `amount_set_at`: who set the unit price and currency, stamped by the same trigger when the row is written and when either changes, and never by a change to the tax class or status; rows written before it carry `price_changed_by`. Fix round 5 (migration 20261007140000) adds `availability_changed_by`: everyone who ever changed the row's status or deletion, appended from the signed-in person by `inv.record_item_sale_price_availability_change` and never removed. Withdrawing a more specific price hands a line to a less specific one, so `quo.revision_self_change_basis` reads it for every selling price of a part line's item; inactive or deleted rows written before the migration carry their `deleted_by` and `updated_by`.
 
-| #   | Column             | Type                     | Nullable |
-| --- | ------------------ | ------------------------ | -------- |
-| 1   | `id`               | uuid                     | no       |
-| 2   | `tenant_id`        | uuid                     | no       |
-| 3   | `item_id`          | uuid                     | no       |
-| 4   | `company_id`       | uuid                     | yes      |
-| 5   | `branch_id`        | uuid                     | yes      |
-| 6   | `currency_code`    | text                     | no       |
-| 7   | `unit_price`       | numeric                  | no       |
-| 8   | `tax_class_id`     | uuid                     | yes      |
-| 9   | `status`           | text                     | no       |
-| 10  | `record_version`   | integer                  | no       |
-| 11  | `created_at`       | timestamp with time zone | no       |
-| 12  | `created_by`       | uuid                     | no       |
-| 13  | `updated_at`       | timestamp with time zone | yes      |
-| 14  | `updated_by`       | uuid                     | yes      |
-| 15  | `deleted_at`       | timestamp with time zone | yes      |
-| 16  | `deleted_by`       | uuid                     | yes      |
-| 17  | `price_changed_by` | uuid                     | yes      |
-| 18  | `price_changed_at` | timestamp with time zone | yes      |
-| 19  | `amount_set_by`    | uuid                     | yes      |
-| 20  | `amount_set_at`    | timestamp with time zone | yes      |
+| #   | Column                    | Type                     | Nullable |
+| --- | ------------------------- | ------------------------ | -------- |
+| 1   | `id`                      | uuid                     | no       |
+| 2   | `tenant_id`               | uuid                     | no       |
+| 3   | `item_id`                 | uuid                     | no       |
+| 4   | `company_id`              | uuid                     | yes      |
+| 5   | `branch_id`               | uuid                     | yes      |
+| 6   | `currency_code`           | text                     | no       |
+| 7   | `unit_price`              | numeric                  | no       |
+| 8   | `tax_class_id`            | uuid                     | yes      |
+| 9   | `status`                  | text                     | no       |
+| 10  | `record_version`          | integer                  | no       |
+| 11  | `created_at`              | timestamp with time zone | no       |
+| 12  | `created_by`              | uuid                     | no       |
+| 13  | `updated_at`              | timestamp with time zone | yes      |
+| 14  | `updated_by`              | uuid                     | yes      |
+| 15  | `deleted_at`              | timestamp with time zone | yes      |
+| 16  | `deleted_by`              | uuid                     | yes      |
+| 17  | `price_changed_by`        | uuid                     | yes      |
+| 18  | `price_changed_at`        | timestamp with time zone | yes      |
+| 19  | `amount_set_by`           | uuid                     | yes      |
+| 20  | `amount_set_at`           | timestamp with time zone | yes      |
+| 21  | `availability_changed_by` | uuid[]                   | no       |
 
 ### Sales returns (`inv`, P1-32 preparatory slice 2)
 

@@ -1262,14 +1262,20 @@ it, or with a smaller one." <!-- quotations.discountApproval.rejectedNext -->
   discount at prices somebody else set needs no approval. Choosing which price list applies counts
   as setting the price: if you assigned the price list a line was priced from to your branch,
   company or customer class, or ever changed a price-list assignment, your quotation needs another
-  person's approval in the same way.
+  person's approval in the same way. So does withdrawing a selling price: if you ever deactivated or
+  removed a selling price of an item, so that a cheaper price for the company or the whole
+  organisation applies, a quotation of yours with a part priced from that item's selling prices needs
+  another person's approval.
 - **A limit the person who asked set never counts.** An approver cannot approve your discount with
   a limit you set for them, or for a role they hold; it counts as no limit for that request. The
   same holds once you have changed the dates of one of their limits — reopening or extending it, or
   ending it so that a larger one applies: none of their limits counts for your request, even if
   somebody changes the dates again later. An approver who changes the dates of one of their own
   limits, or of a limit on a role they hold, has no limit that counts in that company afterwards;
-  ask another administrator to change your limits.
+  ask another administrator to change your limits. Giving an approver a role counts the same way: a
+  role you granted them, or whose dates you changed, or which reaches your company only through a
+  company you added to their grant, brings them no limit for your request. An approver whose own
+  grant they changed or added to themselves has no limit from it at all.
 - **There is no exception for a business run by one person.** Nobody approves their own discount, so
   a discount that needs approval always needs a second authorised person.
 - With nothing waiting, the list says "No discounts are waiting for approval on this branch." <!-- quotations.approvals.none -->

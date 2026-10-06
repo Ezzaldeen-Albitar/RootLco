@@ -367,7 +367,14 @@ const ALLOWED_ROUTINES = new Set([
   // everyone who ever moved a limit's end date. SECURITY INVOKER, empty search_path,
   // EXECUTE revoked from PUBLIC.
   'iam.record_approval_limit_window_change',
+  // P1-32-PRE-OD-FD8 fix round 5 (ADR-023, D8): stamps iam.role_grants.issued_by from the
+  // session and keeps grant_changed_by, everyone who ever changed when a grant holds.
+  // SECURITY INVOKER, empty search_path, EXECUTE revoked from PUBLIC.
+  'iam.record_role_grant_provenance',
   'iam.stamp_approval_limit_creator',
+  // P1-32-PRE-OD-FD8 fix round 5 (ADR-023, D8): stamps iam.grant_scopes.added_by from the
+  // session. SECURITY INVOKER, empty search_path, EXECUTE revoked from PUBLIC.
+  'iam.stamp_grant_scope_adder',
   'iam.stamp_login_audit',
   'iam.stamp_user_status_history',
   'inv.approve_adjustment',
@@ -436,6 +443,10 @@ const ALLOWED_ROUTINES = new Set([
   'inv.recheck_material_requirement',
   'inv.reconcile_stock_count',
   'inv.record_damage',
+  // P1-32-PRE-OD-FD8 fix round 5 (ADR-023, D8): keeps inv.item_sale_prices
+  // .availability_changed_by, everyone who ever withdrew or restored a selling price.
+  // SECURITY INVOKER, empty search_path, EXECUTE revoked from PUBLIC.
+  'inv.record_item_sale_price_availability_change',
   'inv.record_stock_count_line',
   'inv.record_vehicle_fluid_specification',
   'inv.reject_adjustment',
@@ -1030,6 +1041,7 @@ describe('database foundation', () => {
       'tg_goods_receipts_immutable',
       'tg_goods_receipts_status',
       'tg_goods_receipts_touch_metadata',
+      'tg_grant_scopes_adder',
       'tg_grant_scopes_delegation_authority',
       'tg_grant_scopes_require_scope',
       'tg_individual_profiles_immutable',
@@ -1070,6 +1082,7 @@ describe('database foundation', () => {
       'tg_item_master_uom_scope',
       'tg_item_reorder_levels_immutable',
       'tg_item_reorder_levels_touch_metadata',
+      'tg_item_sale_prices_availability_history',
       'tg_item_sale_prices_guard',
       'tg_item_sale_prices_immutable',
       'tg_item_sale_prices_provenance',
@@ -1283,6 +1296,7 @@ describe('database foundation', () => {
       'tg_rework_links_touch_metadata',
       'tg_role_grants_delegation_authority',
       'tg_role_grants_immutable',
+      'tg_role_grants_provenance',
       'tg_role_grants_require_scope',
       'tg_role_grants_touch_metadata',
       'tg_role_permissions_immutable',
