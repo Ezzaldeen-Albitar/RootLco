@@ -53,6 +53,7 @@ import {
   SERVICE_A,
   SVC_DISCOUNT_APPROVER,
   SVC_FULL,
+  SVC_PRICE_SETTER,
   SVC_NO_CEILING,
   SVC_TENANT_B,
   SVC_UNPERMITTED,
@@ -228,7 +229,9 @@ function decideRevision(id: string, body: unknown): Promise<Response> {
 
 /** A published, assigned price list carrying one taxed rule for SERVICE_A. */
 async function publishPrice(amount: string): Promise<void> {
-  authAs(SVC_FULL);
+  // An administrator sets and publishes the fixture price, so a quotation the suite
+  // writes as SVC_FULL is not one whose writer set its price (ADR-023 D8).
+  authAs(SVC_PRICE_SETTER);
   const list = await json<{ id: string; recordVersion: number }>(
     await CREATE_LIST(
       jsonPost('http://localhost/api/v1/price-lists', {
@@ -275,6 +278,7 @@ async function publishPrice(amount: string): Promise<void> {
     customerClass: null,
     priority: 700,
   });
+  authAs(SVC_FULL);
 }
 
 beforeAll(async () => {

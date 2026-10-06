@@ -1711,7 +1711,8 @@ export class QuotationService {
      * split discount needs approval exactly when the whole would.
      *
      * It runs only when something was actually discounted. A zero-discount quotation
-     * needs no configuration and no approval.
+     * needs no configuration, and no approval under the threshold; a price its writer
+     * set is the separate D8 question `withoutSelfExemption` asks.
      */
     let requiresApproval = elevatedLines > 0;
     if (!Decimal.parse(totalDiscount, MONEY).isZero) {
@@ -1760,8 +1761,15 @@ export class QuotationService {
    * The reading chosen is the one that never grants more: the version in force
    * before the person's change cannot always be reconstructed (a price changes in
    * place, and the earlier policy version may be theirs too), so an independent
-   * approver is required instead. A discount of zero gives nothing away and is left
-   * alone. The issue guard holds the same rule for a revision with no request
+   * approver is required instead.
+   *
+   * A price the requester set needs somebody else even with NO discount (fix round
+   * 3): the price itself can carry the discount — lowering one's own price from 100
+   * to 10 and quoting at 10 gives the same 90 away that a discount of 90 would. The
+   * request is then recorded with a discount total of zero and `requester_set_price`,
+   * which is the only zero-discount request the database admits. A threshold the
+   * requester recorded is not in question when nothing is discounted. The issue guard
+   * holds the same rule for a revision with no request
    * (`quo.revision_discount_needs_approval`).
    */
   private async withoutSelfExemption(
@@ -1770,13 +1778,14 @@ export class QuotationService {
     summary: DiscountSummary,
     pinned: PinnedDiscountPolicy
   ): Promise<DiscountSummary> {
-    if (summary.requiresApproval || Decimal.parse(summary.total, MONEY).isZero) return summary;
+    if (summary.requiresApproval) return summary;
     const basis = await this.repository.revisionSelfChangeBasis(
       db,
       revision.id,
       db.context.principal.userId
     );
-    if (!basis.ownPolicy && !basis.ownPrice) return summary;
+    const discounted = !Decimal.parse(summary.total, MONEY).isZero;
+    if (!basis.ownPrice && !(discounted && basis.ownPolicy)) return summary;
     return {
       ...summary,
       requiresApproval: true,

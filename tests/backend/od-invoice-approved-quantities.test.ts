@@ -58,6 +58,7 @@ import {
   SERVICE_A,
   SVC_DISCOUNT_APPROVER,
   SVC_FULL,
+  SVC_PRICE_SETTER,
   TAX_CLASS_A,
   assignPriceList,
   authAs,
@@ -237,7 +238,9 @@ async function pricedPart(): Promise<string> {
 }
 
 async function publishServicePrice(amount: string): Promise<void> {
-  authAs(SVC_FULL);
+  // An administrator sets and publishes the fixture price, so a quotation the suite
+  // writes as SVC_FULL is not one whose writer set its price (ADR-023 D8).
+  authAs(SVC_PRICE_SETTER);
   serial += 1;
   const list = await bodyOf<{ id: string; recordVersion: number }>(
     await CREATE_LIST(
@@ -287,6 +290,7 @@ async function publishServicePrice(amount: string): Promise<void> {
     customerClass: null,
     priority: 800,
   });
+  authAs(SVC_FULL);
 }
 
 const service = (quantity: string) => ({ serviceId: SERVICE_A, quantity });

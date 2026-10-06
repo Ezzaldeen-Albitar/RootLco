@@ -94,9 +94,8 @@ withdraws the requester's own pending request; every refusal by rule is recorded
   rules and selling prices: `COALESCE(updated_by, created_by)`), not a verified attribution, and who
   published an existing price-list version was never recorded (NULL). Quotation lines written before
   it carry no snapshot.
-- A price the requester set, quoted with no discount at all, needs no second person: nothing is given
-  away, so there is no discount approval to be exempted from. Whether such a price should need one is
-  an open point for the Owner.
+- A price the requester set, quoted with no discount at all, needed no second person under this
+  migration. That was a self-exemption, closed by fix round 3 (section 10).
 - Granting a colleague a role whose limit somebody else set, assigning a price list
   (`svc.price_list_assignments`), and deactivating or deleting a competing price so that another
   source prices the line are not attributed by this change; they are open points. Moving a limit's
@@ -201,3 +200,33 @@ requester's change through later saves, and the history never taken from the wri
 and the P1-15 census. Records moved: `migrationCount` 174, `schemaHash`, `structuralTotals`,
 `migrationCountNote` and `structuralTotalsNote174` in `.github/ci-baselines/schema-baseline.json`,
 and the data dictionary.
+
+## 10. Fix round 3 — the 175th migration
+
+Review of fix round 2 showed that leaving a revision with no discount alone was a self-exemption: with
+a threshold of 50 and a price of 100, a discount of 90 needed another person; the same writer then
+lowered that price to 10 and quoted at 10 with no discount, and the revision issued with nobody's
+approval. `supabase/migrations/20261007120000_quo_discount_self_set_price_without_discount.sql` (the
+175th) closes it, forward-only and ROLLBACK-SAFE:
+
+- **The issue guard.** `quo.revision_discount_needs_approval` is re-issued under its own name: a
+  revision whose writer set a price one of its lines was priced at (`own_price`) needs another
+  person's approval whatever its discount, zero included. A threshold the writer recorded
+  (`own_policy`) still needs another person for any discount greater than zero.
+- **The request.** `ck_discount_approvals_amounts` is replaced under its own name: a request may carry
+  a discount total of zero only when `quo.guard_discount_approval` computed `requester_set_price` for
+  it, so the approver sees why; every other request still carries a discount greater than zero. The
+  application records such a request when the revision is written (`withoutSelfExemption`).
+
+No row is written: every existing request carries a discount greater than zero. A legacy draft with
+no discount whose writer set a price it uses, and which has no request, cannot be issued until it is
+revised. No table, column, function, trigger, grant, policy, seed or permission code is added, so
+no structural total moves. Executable proof: `tests/db/quo-discount-self-exemption.test.ts` (an item
+selling price the requester lowered, a price-rule amount the requester set and published, each quoted
+with no discount and refused until another person approves; another person's quotation at the same
+price issues alone; a zero-discount request refused when the requester set no price),
+`tests/backend/od-discount-self-exemption.test.ts`, and the P1-15 census. Suites whose quotations are
+written by the person who also set their fixture prices now publish those prices as a separate
+fixture principal (`SVC_PRICE_SETTER`), so they keep measuring what they set out to. Records moved:
+`migrationCount` 175, `schemaHash`, `migrationCountNote` and `structuralTotalsNote175` in
+`.github/ci-baselines/schema-baseline.json`, and the data dictionary.

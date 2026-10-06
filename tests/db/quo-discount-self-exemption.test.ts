@@ -5,7 +5,9 @@
  * and its fix round 1, 20261007100000_quo_discount_limit_window_and_amount_provenance.sql
  * (a limit window the requester moved, and who set a price's amount), and fix round 2,
  * 20261007110000_quo_discount_limit_window_history.sql (who ever moved a limit window is
- * kept in window_changed_by, for the requester and for the approver).
+ * kept in window_changed_by, for the requester and for the approver), and fix round 3,
+ * 20261007120000_quo_discount_self_set_price_without_discount.sql (a price the
+ * requester set needs another person even when the quotation carries no discount).
  *
  * Every case runs in a rolled-back transaction as `app_runtime`, switching the
  * signed-in person with `app.user_id` exactly as the application does. USER_A is the
@@ -1234,6 +1236,186 @@ describe('quo discount self-exemption — who ever moved a limit window (fix rou
           '42501'
         )
       );
+    });
+  });
+});
+
+describe('quo discount self-exemption — a self-set price with no discount (fix round 3)', () => {
+  /** A part line priced from the item selling price `priceRef`, at `unit`, discounted by `discount`. */
+  const addPartLine = async (
+    c: Q,
+    revision: string,
+    tag: string,
+    item: string,
+    priceRef: string,
+    unit: string,
+    discount: string
+  ): Promise<void> => {
+    await c.query(
+      `INSERT INTO quo.quotation_items
+         (tenant_id, company_id, branch_id, quotation_revision_id, line_number, item_kind, item_ref,
+          item_sale_price_ref, quoted_item_sku, quoted_item_name, quoted_unit_code, quoted_unit_name,
+          currency_code, captured_unit_price, captured_quantity, captured_discount, captured_tax_rate,
+          captured_tax_amount, captured_line_total, created_by)
+       VALUES ($1,$2,$3,$4,1,'part',$5,$6,$7,$8,$9,$10,'USD',$11::numeric,1,$12::numeric,0,0,
+               $11::numeric - $12::numeric,$13)`,
+      [
+        TENANT_A,
+        COMPANY_A1,
+        BRANCH_A1,
+        revision,
+        item,
+        priceRef,
+        `SKU_${tag}`,
+        `Item ${tag}`,
+        `u_${tag}`,
+        `Unit ${tag}`,
+        unit,
+        discount,
+        USER_A,
+      ]
+    );
+  };
+  const statusOf = async (c: Q, revision: string): Promise<string> =>
+    (
+      await one<{ status: string }>(c, `SELECT status FROM quo.quotation_revisions WHERE id = $1`, [
+        revision,
+      ])
+    ).status;
+
+  it('needs another person when the requester lowered an item selling price and quotes at no discount', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      // An administrator's threshold of 50 and an administrator's price of 100.
+      await as(c, OTHER_ACTOR, () => recordThreshold(c, '50'));
+      const { item } = await seedItem(c, 'fd8r3_part');
+      const setPrice = (price: string) =>
+        one<{ id: string }>(
+          c,
+          `SELECT inv.set_item_sale_price($1,$2,$3,'USD',$4::numeric,NULL) AS id`,
+          [item, COMPANY_A1, BRANCH_A1, price]
+        ).then((row) => row.id);
+      const priceRef = await as(c, OTHER_ACTOR, () => setPrice('100.0000'));
+
+      // Control: 90 off the administrator's 100 needs somebody else.
+      const { wo } = await makeWorkOrder(c, 'fd8r3_ctl');
+      const control = await draftRevision(c, await seedQuotation(c, wo, 'fd8r3_ctl'), 1);
+      await addPartLine(c, control, 'fd8r3_part', item, priceRef, '100', '90');
+      expect(await needsApproval(c, control)).toBe(true);
+
+      // USER_A lowers that same price to 10 and quotes at 10 with no discount: the
+      // customer gets the same 90 off, and it still needs somebody else.
+      await setPrice('10.0000');
+      const { wo: wo2 } = await makeWorkOrder(c, 'fd8r3_own');
+      const quotation = await seedQuotation(c, wo2, 'fd8r3_own');
+      const revision = await draftRevision(c, quotation, 1);
+      await addPartLine(c, revision, 'fd8r3_part', item, priceRef, '10', '0');
+      expect(await basisOf(c, revision, USER_A)).toEqual({ own_policy: false, own_price: true });
+      expect(await needsApproval(c, revision)).toBe(true);
+      await expectRefusal(c, /discount_approval_required/, `SELECT quo.issue_revision($1)`, [
+        revision,
+      ]);
+
+      // The request carries a discount of zero and says why.
+      const approval = await requestFor(c, quotation, revision, '0');
+      expect(
+        await one(
+          c,
+          `SELECT discount_total::text AS total, requester_set_policy, requester_set_price
+             FROM quo.discount_approvals WHERE id = $1`,
+          [approval]
+        )
+      ).toEqual({ total: '0.0000', requester_set_policy: false, requester_set_price: true });
+      await expectRefusal(c, /discount_approval_pending/, `SELECT quo.issue_revision($1)`, [
+        revision,
+      ]);
+      // No sole-administrator exception: the requester never decides it.
+      await expectRefusal(c, /discount_approver_must_differ/, approveSql, [approval, USER_A]);
+      await setContext(c, { tenantId: TENANT_A, userId: APPROVER });
+      await c.query(approveSql, [approval, APPROVER]);
+      await setContext(c, ctxA);
+      await c.query(`SELECT quo.issue_revision($1)`, [revision]);
+      expect(await statusOf(c, revision)).toBe('issued');
+
+      // Another person's quotation at the same price, with no discount, issues alone.
+      const { wo: wo3 } = await makeWorkOrder(c, 'fd8r3_other');
+      const theirs = await revisionBy(
+        c,
+        await seedQuotation(c, wo3, 'fd8r3_other'),
+        1,
+        OTHER_ACTOR
+      );
+      await addPartLine(c, theirs, 'fd8r3_part', item, priceRef, '10', '0');
+      // OTHER_ACTOR recorded the threshold, which is not in question with no discount.
+      expect(await basisOf(c, theirs, OTHER_ACTOR)).toEqual({
+        own_policy: true,
+        own_price: false,
+      });
+      expect(await needsApproval(c, theirs)).toBe(false);
+      await c.query(`SELECT quo.issue_revision($1)`, [theirs]);
+      expect(await statusOf(c, theirs)).toBe('issued');
+    });
+  });
+
+  it('needs another person when the requester set and published a price-rule amount and quotes at no discount', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { service } = await seedService(c, 'fd8r3_rule');
+      await as(c, OTHER_ACTOR, () => recordThreshold(c, '50'));
+      const own = await draftPrice(c, service, 'fd8r3r1');
+      await publish(c, USER_A, own.priceList, own.version);
+      const { wo } = await makeWorkOrder(c, 'fd8r3r1');
+      const quotation = await seedQuotation(c, wo, 'fd8r3r1');
+      const revision = await draftRevision(c, quotation, 1);
+      await addRuleLine(c, revision, service, own.rule, 0);
+      expect(await basisOf(c, revision, USER_A)).toEqual({ own_policy: false, own_price: true });
+      expect(await needsApproval(c, revision)).toBe(true);
+      await expectRefusal(c, /discount_approval_required/, `SELECT quo.issue_revision($1)`, [
+        revision,
+      ]);
+      const approval = await requestFor(c, quotation, revision, '0');
+      await setContext(c, { tenantId: TENANT_A, userId: APPROVER });
+      await c.query(approveSql, [approval, APPROVER]);
+      await setContext(c, ctxA);
+      await c.query(`SELECT quo.issue_revision($1)`, [revision]);
+      expect(await statusOf(c, revision)).toBe('issued');
+
+      // Another person's quotation priced from the same rule, with no discount, issues alone.
+      const { wo: wo2 } = await makeWorkOrder(c, 'fd8r3r2');
+      const theirs = await revisionBy(c, await seedQuotation(c, wo2, 'fd8r3r2'), 1, OTHER_ACTOR);
+      await addRuleLine(c, theirs, service, own.rule, 0);
+      expect(await needsApproval(c, theirs)).toBe(false);
+      await c.query(`SELECT quo.issue_revision($1)`, [theirs]);
+      expect(await statusOf(c, theirs)).toBe('issued');
+    });
+  });
+
+  it('admits a request with no discount only for a price its requester set', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { wo } = await makeWorkOrder(c, 'fd8r3_none');
+      const { service } = await seedService(c, 'fd8r3_none');
+      await as(c, OTHER_ACTOR, () => recordThreshold(c, '50'));
+      const quotation = await seedQuotation(c, wo, 'fd8r3_none');
+      const revision = await draftRevision(c, quotation, 1);
+      await addServiceItem(c, revision, service, 1, 100, 1, 0);
+      expect(await basisOf(c, revision, USER_A)).toEqual({ own_policy: false, own_price: false });
+      expect(await needsApproval(c, revision)).toBe(false);
+      // The writer claims a self-set price; the guard computes none, so the CHECK refuses.
+      await expectRefusal(
+        c,
+        /ck_discount_approvals_amounts/,
+        `INSERT INTO quo.discount_approvals
+           (tenant_id, company_id, branch_id, quotation_id, quotation_revision_id, currency_code,
+            discount_total, discount_base, elevated_line_count, policy_id, policy_version_no,
+            threshold_kind, threshold_value, threshold_currency_code, required_permission_code,
+            requested_by, created_by, requester_set_policy, requester_set_price)
+         SELECT $1,$2,$3,$4,$5,'USD',0,100,0,p.id,p.version_no,p.threshold_kind,
+                p.threshold_value,p.currency_code,
+                COALESCE(p.required_permission_code, 'svc.price.manage'),$6,$6,false,true
+           FROM (SELECT 1) one
+           LEFT JOIN quo.quotation_discount_policy($1, $4) p ON true`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, quotation, revision, USER_A]
+      );
+      await c.query(`SELECT quo.issue_revision($1)`, [revision]);
+      expect(await statusOf(c, revision)).toBe('issued');
     });
   });
 });

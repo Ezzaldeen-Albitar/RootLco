@@ -26,6 +26,10 @@
  * requester's change, and an approver who moved the window of their own limit has no
  * limit that counts, for anybody's request.
  *
+ * Fix round 3 (migration 20261007120000): a price the requester set needs another
+ * person even when the quotation carries no discount, because the price itself can
+ * carry it; the request is recorded with a discount total of zero and the reason.
+ *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
  *   quo.discount-approval-withdraw: route service authorization success denial audit idempotency stale-version isolation cross-tenant
  */
@@ -515,11 +519,77 @@ describe('ADR-023 D8 — one’s own threshold, limit or price never exempts one
     const other = await quoteAs(SVC_NO_CEILING, '40.0000');
     expect(other.currentRevision?.discountApproval).toBeNull();
 
-    // With no discount at all, nothing is given away and nothing needs approval.
-    const plain = await quoteAs(SVC_FULL, '0');
+    // With no discount at all, SVC_NO_CEILING's quotation needs nothing: the price is
+    // not theirs.
+    const plain = await quoteAs(SVC_NO_CEILING, '0');
     expect(plain.currentRevision?.discountApproval).toBeNull();
 
     await publishUnattributedPrice('100.0000');
+  });
+
+  it('the requester who set and published a lower price needs another person even with no discount (fix round 3)', async () => {
+    await administratorThreshold('50.0000');
+    // Control: 90 off the unattributed 100 needs somebody else under the threshold of 50.
+    const control = await quoteAs(SVC_FULL, '90.0000');
+    expect(approvalOf(control)).toMatchObject({
+      status: 'pending',
+      requesterSetPolicy: false,
+      requesterSetPrice: false,
+    });
+
+    // SVC_FULL sets and publishes 10 for the same service and quotes at 10 with no
+    // discount: the customer gets the same 90 off, so somebody else approves it.
+    await publishPriceAsFull('10.0000');
+    try {
+      const own = await quoteAs(SVC_FULL, '0');
+      const request = approvalOf(own);
+      expect(request).toMatchObject({
+        status: 'pending',
+        requestedByCaller: true,
+        requesterSetPolicy: false,
+        requesterSetPrice: true,
+      });
+      const zero = await admin.query<{ total: string }>(
+        `SELECT discount_total::text AS total FROM quo.discount_approvals WHERE id = $1`,
+        [request.id]
+      );
+      expect(zero.rows[0]?.total).toBe('0.0000');
+      const blocked = await issue(own.id, own.currentRevision?.id as string, own.recordVersion);
+      expect(blocked.status).toBe(409);
+      expect(((await blocked.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_approval_pending' },
+      ]);
+      // No sole-administrator exception: the requester never decides it.
+      const self = await decide(request.id, { decision: 'approved' });
+      expect(self.status).toBe(403);
+      expect(((await self.json()) as Problem).violations).toEqual([
+        { path: 'body', rule: 'discount_approver_must_differ' },
+      ]);
+
+      // Somebody else's quotation at the same price, with no discount, issues alone.
+      const other = await quoteAs(SVC_NO_CEILING, '0');
+      expect(other.currentRevision?.discountApproval).toBeNull();
+      const issuedOther = await issue(
+        other.id,
+        other.currentRevision?.id as string,
+        other.recordVersion
+      );
+      expect(issuedOther.status).toBe(200);
+
+      // A second authorised person approves the requester's, and then it issues.
+      authAs(SVC_DISCOUNT_APPROVER);
+      const approved = await decide(request.id, { decision: 'approved' });
+      expect(approved.status).toBe(200);
+      authAs(SVC_FULL);
+      const issued = await issue(
+        own.id,
+        own.currentRevision?.id as string,
+        (await reread(own.id)).recordVersion
+      );
+      expect(issued.status).toBe(200);
+    } finally {
+      await publishUnattributedPrice('100.0000');
+    }
   });
 
   it('a limit the requester set never lets an approver approve the requester’s discount', async () => {

@@ -62,6 +62,7 @@ import {
   SERVICE_A,
   SVC_DISCOUNT_APPROVER,
   SVC_FULL,
+  SVC_PRICE_SETTER,
   SVC_QUO_SCOPED_A2,
   SVC_TENANT_B_FULL,
   TAX_CLASS_A,
@@ -270,7 +271,9 @@ async function quotationCount(workOrderId: string): Promise<number> {
 
 /** A published, assigned JOD price list pricing SERVICE_A at `amount`, taxed. */
 async function publishServicePrice(amount: string): Promise<void> {
-  authAs(SVC_FULL);
+  // An administrator sets and publishes the fixture price, so a quotation the suite
+  // writes as SVC_FULL is not one whose writer set its price (ADR-023 D8).
+  authAs(SVC_PRICE_SETTER);
   serial += 1;
   const list = await bodyOf<{ id: string; recordVersion: number }>(
     await CREATE_LIST(
@@ -320,6 +323,7 @@ async function publishServicePrice(amount: string): Promise<void> {
     customerClass: null,
     priority: 800,
   });
+  authAs(SVC_FULL);
 }
 
 beforeAll(async () => {

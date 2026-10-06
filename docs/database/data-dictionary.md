@@ -4106,7 +4106,10 @@ another person must approve whatever the threshold: the requester recorded the p
 quotation is held to, or had last changed or published a line's price; both are computed by
 `quo.guard_discount_approval` when the request is written and frozen. An approval's limit never
 counts when the approver OR the requester created it, and the limit relied on is recorded in
-`approver_limit_id` (restricted). The requester may withdraw a PENDING request: status `withdrawn`,
+`approver_limit_id` (restricted). Since fix round 3 (20261007120000) a revision whose writer set a
+price one of its lines was priced at needs another person's approval whatever its discount, so its
+request may carry a discount total of zero; `ck_discount_approvals_amounts` admits zero only with
+`requester_set_price`. The requester may withdraw a PENDING request: status `withdrawn`,
 with `withdrawn_by` (a foreign key into `iam.user_accounts`, always the requester) and
 `withdrawn_at` stamped by the guard; a withdrawn request is terminal — never approved, rejected or
 superseded — and its revision cannot be issued.

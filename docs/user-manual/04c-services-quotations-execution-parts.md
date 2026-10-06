@@ -1257,7 +1257,9 @@ it, or with a smaller one." <!-- quotations.discountApproval.rejectedNext -->
   threshold this quotation follows." <!-- quotations.discountApproval.ownPolicy --> or "Another
   person has to approve this discount whatever its size, because the person who asked for it set a
   price used on this draft." <!-- quotations.discountApproval.ownPrice --> Somebody else's quotation
-  follows the threshold and prices as they are set. A quotation with no discount needs no approval.
+  follows the threshold and prices as they are set. A price you set needs another person's approval
+  even when you give no discount, because the price itself can carry one; a quotation with no
+  discount at prices somebody else set needs no approval.
 - **A limit the person who asked set never counts.** An approver cannot approve your discount with
   a limit you set for them, or for a role they hold; it counts as no limit for that request. The
   same holds once you have changed the dates of one of their limits — reopening or extending it, or

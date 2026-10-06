@@ -281,10 +281,13 @@ Implementation particulars (P1-32-PRE-OD-FD8, Proposed):
   records why another person must approve (`requester_set_policy`, `requester_set_price`), and an
   approval records the limit it relied on.
 - **The rule.** When the requester of a revision (its writer) recorded the threshold version the
-  quotation is held to, or set a price one of its lines was priced at, any discount on it needs
-  approval by somebody else, whatever the threshold says — at the application when the revision is
-  written and at the database when it is issued. Another person's quotation follows the threshold and
-  prices as set.
+  quotation is held to, any discount on it needs approval by somebody else, whatever the threshold
+  says. When the writer set a price one of its lines was priced at, the revision needs approval by
+  somebody else whatever its discount, zero included: the price itself can carry the discount, so
+  lowering one's own price from 100 to 10 and quoting at 10 gives away what a discount of 90 would.
+  Such a request records a discount of zero and why (`requester_set_price`). Both hold at the
+  application when the revision is written and at the database when it is issued. Another person's
+  quotation follows the threshold and prices as set.
 - **Limits.** An approver's limit never counts when the approver or the requester created it, for the
   approver or for a role the approver holds. A changed end date is a changed limit: when the requester
   ever changed the dates of any discount limit of the approver in the company — reopening or extending
@@ -295,15 +298,21 @@ Implementation particulars (P1-32-PRE-OD-FD8, Proposed):
 - **No sole-administrator exception.** The requester never decides their own request, so a second
   authorised person is required, as for D4.
 
-Open points (each choice is the one that never grants more than the Owner allowed):
+Open points (each choice is the one that never grants more than the Owner allowed; fix round 3
+corrected the one that did not, a self-set price quoted with no discount):
 
 - **Reading chosen.** D8 allows evaluating under the version in force before the person's change. A
   price changed in place keeps no earlier value and an earlier version may be the same person's, so
   that cannot always be reconstructed; an independent approver is required instead, which never
   grants more.
-- **A self-set price with no discount (Owner decision needed).** A quotation with no discount gives
-  nothing away and needs no discount approval, even at a price its writer set. Whether a price the
-  writer set themselves should itself need a second person is not decided here.
+- **A self-set price with no discount (strict reading; the Owner may rule otherwise).** Leaving a
+  quotation with no discount alone at a price its writer set was a self-exemption: the writer lowers
+  the price themselves and quotes with no discount, and the customer gets what needed another
+  person's approval before the change, approved by nobody — a sole administrator included. The
+  price in force before the change is not kept, so it cannot be measured against; another person's
+  approval is required instead, whatever the discount. If the Owner rules that a price one sets
+  oneself, quoted with no discount, needs no second person, that ruling is recorded here; until then
+  this reading stands.
 - **Not attributed (Owner decision needed).** Granting the approver a role whose limit somebody else
   set, assigning a customer to a price list, and deactivating or deleting a competing price rule or
   branch selling price so that another source prices the line (the item selling price falls back from

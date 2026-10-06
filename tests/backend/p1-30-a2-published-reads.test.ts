@@ -114,6 +114,7 @@ import {
   SERVICE_A,
   SERVICE_B,
   SVC_FULL,
+  SVC_PRICE_SETTER,
   SVC_QUO_SCOPED_A2,
   SVC_TENANT_B,
   SVC_UNPERMITTED,
@@ -403,7 +404,9 @@ interface SeededPriceList {
 
 /** A published price list carrying one rule for SERVICE_A, assigned to company A1. */
 async function publishPriceList(amount = '120.0000'): Promise<SeededPriceList> {
-  authAsSvc(SVC_FULL);
+  // An administrator sets and publishes the fixture price, so a quotation the suite
+  // writes as SVC_FULL is not one whose writer set its price (ADR-023 D8).
+  authAsSvc(SVC_PRICE_SETTER);
   priceCodeSeq += 1;
   const list = (await (
     await CREATE_PRICE_LIST(
@@ -459,6 +462,7 @@ async function publishPriceList(amount = '120.0000'): Promise<SeededPriceList> {
     customerClass: null,
     priority: assignmentPriority,
   });
+  authAsSvc(SVC_FULL);
   return { listId: list.id, versionId: version.id, amount };
 }
 

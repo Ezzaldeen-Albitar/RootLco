@@ -430,6 +430,23 @@ export const SVC_APPROVER_COMPANY_A2: Principal = {
   scope: { companyId: COMPANY_A2, branchId: BRANCH_A2_OF_COMPANY_A2 },
 };
 
+/**
+ * Sets and publishes prices and writes no quotation (P1-32-PRE-OD-FD8, ADR-023 D8).
+ *
+ * Since D8 fix round 3 a price the quotation's writer set needs another person's
+ * approval whatever the discount, zero included, so a suite whose quotations are
+ * written by `SVC_FULL` publishes its fixture prices as this principal: the price is
+ * an administrator's, and the suite measures what it set out to measure. The suites
+ * that prove the D8 rule itself publish as the writer on purpose.
+ */
+export const SVC_PRICE_SETTER: Principal = {
+  roleId: 'd2900000-0000-4000-8000-0000000001e1',
+  userId: 'd2900000-0000-4000-8000-0000000001e2',
+  subject: 'fx_p1_20_price_setter',
+  tenantId: TENANT_A,
+  permissions: [SERVICE_READ, PRICE_READ, PRICE_MANAGE, PRICE_PUBLISH],
+};
+
 export const P1_20_PRINCIPALS: readonly Principal[] = [
   SVC_FULL,
   SVC_READER,
@@ -450,6 +467,7 @@ export const P1_20_PRINCIPALS: readonly Principal[] = [
   SVC_TENANT_B_APPROVER,
   SVC_RECORDED_APPROVER,
   SVC_APPROVER_COMPANY_A2,
+  SVC_PRICE_SETTER,
 ];
 
 let admin: Pool;
