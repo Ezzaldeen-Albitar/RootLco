@@ -109,6 +109,7 @@ import { workOrderModule } from '@/modules/work-order';
 import type { ReportCatalogueRepository } from '../data/report-catalogue-repository';
 import { assertReportConfiguration } from './report-configuration-policy';
 import {
+  datasetTakesAsOf,
   isReportDatasetCode,
   reportDataset,
   type ReportColumnKind,
@@ -275,8 +276,20 @@ export interface ReportRunView {
    * `live` — the rows are read from the operational tables inside the request's
    * own transaction. There is no snapshot, no cache and no materialised view
    * behind this, and a client must not present the answer as one.
+   *
+   * `as_of` — the same live read, with every amount computed as of the moment
+   * `asOf` states (Owner decision D16): a payment, credit or reversal that took
+   * effect after it does not move the figures. Still no snapshot: the snapshot
+   * that freezes a report as it was issued is a separate, later change (FD16B).
    */
-  readonly freshness: 'live';
+  readonly freshness: 'live' | 'as_of';
+  /**
+   * The moment the amounts were computed as of, an ISO-8601 instant, present
+   * exactly when `freshness` is `as_of`. A dataset that does not compute its
+   * amounts as of a moment publishes no such field rather than a claim it does not
+   * keep.
+   */
+  readonly asOf?: string;
   readonly columns: readonly ReportColumnView[];
   /** Every group of the WHOLE selection, with its measures. Dataset-shaped. */
   readonly groups: readonly ReportGroupView[];
@@ -306,6 +319,14 @@ export interface ReportRunInput {
   readonly from: string;
   /** First day EXCLUDED, `YYYY-MM-DD`. */
   readonly to: string;
+  /**
+   * The moment the amounts are computed as of, an ISO-8601 instant with an offset
+   * (Owner decision D16). Accepted only by a dataset that declares `asOf`; absent,
+   * that dataset uses the period's exclusive end once it has passed and the read
+   * time before then. A caller paging through one report passes the `asOf` the
+   * first page answered with, so every page is computed as of the same moment.
+   */
+  readonly asOf?: string | undefined;
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
 }
@@ -315,6 +336,8 @@ interface ResolverInput extends ReportPeriodInput {
   readonly companyId: string;
   readonly branchId: string;
   readonly branchName: string;
+  /** The resolved as-of moment, ISO-8601; null for a dataset that takes none. */
+  readonly asOf: string | null;
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
 }
@@ -740,12 +763,18 @@ const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
     cursor: input.cursor,
     limit: input.limit,
   });
+  if (input.asOf === null) {
+    // The dataset declares `asOf`, so `run` always resolves one. Reaching here
+    // without it is a wiring defect, never a reason to compute live figures.
+    throw new AppFailure('ERR-SYS-001', { message: 'The report moment was not resolved.' });
+  }
   const filter = {
     companyId: input.companyId,
     branchId: input.branchId,
     from: input.from,
     toExclusive: input.toExclusive,
     timezoneName: input.timezoneName,
+    asOf: input.asOf,
   };
   // One row of headroom per stream, which is what lets the merge decide `hasMore`
   // over the union rather than trusting either stream's own end.
@@ -932,6 +961,12 @@ const RESOLVERS: Readonly<Record<ReportDatasetCode, ReportResolver>> = Object.fr
 /** `YYYY-MM-DD`, validated again here because this service is callable directly. */
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
+/**
+ * An ISO-8601 instant with an explicit offset or `Z`, validated again here for the
+ * same reason. A local time with no offset would be read in the SERVER's zone.
+ */
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/;
+
 export class ReportRunService extends ApplicationService {
   protected readonly module = 'reporting';
 
@@ -953,6 +988,8 @@ export class ReportRunService extends ApplicationService {
     }
     const definition: ReportDatasetDefinition = reportDataset(input.reportCode);
     assertPeriod(input.from, input.to);
+    const takesAsOf = datasetTakesAsOf(definition);
+    const requestedAsOf = parseAsOf(input.asOf, takesAsOf);
 
     // FIRST. See the file header: resolving the branch before this would let a
     // caller who cannot read the data learn whether a branch exists.
@@ -997,6 +1034,25 @@ export class ReportRunService extends ApplicationService {
       throw new AppFailure('ERR-RES-001', { message: 'Report not found.' });
     }
 
+    // D16: the moment every amount is computed as of. The period's bounds are read
+    // with the expression the period predicate compares against, in the branch's
+    // zone, so the default lands exactly where the selection stops.
+    let asOf: string | null = null;
+    if (takesAsOf) {
+      const readAt = new Date();
+      const bounds = await this.repository.periodInstants(db, {
+        from: input.from,
+        toExclusive: input.to,
+        timezoneName: branch.timezoneName,
+      });
+      if (requestedAsOf === null) {
+        asOf = (bounds.closes.getTime() <= readAt.getTime() ? bounds.closes : readAt).toISOString();
+      } else {
+        assertAsOfWithin(requestedAsOf, bounds.opens, readAt);
+        asOf = requestedAsOf.toISOString();
+      }
+    }
+
     const resolved = await RESOLVERS[input.reportCode](db, {
       companyId: input.companyId,
       branchId: input.branchId,
@@ -1004,6 +1060,7 @@ export class ReportRunService extends ApplicationService {
       from: input.from,
       toExclusive: input.to,
       timezoneName: branch.timezoneName,
+      asOf,
       cursor: input.cursor,
       limit: input.limit,
     });
@@ -1018,7 +1075,9 @@ export class ReportRunService extends ApplicationService {
       filters: { companyId: input.companyId, branchId: input.branchId },
       branch: { id: input.branchId, name: branch.name },
       generatedAt: new Date().toISOString(),
-      freshness: 'live',
+      // `as_of` with the moment for a dataset that computes as of one; `live` and
+      // no moment for every other, which would otherwise be a false claim.
+      ...(asOf === null ? { freshness: 'live' as const } : { freshness: 'as_of' as const, asOf }),
       columns: definition.columns.map((column) => ({
         key: column.key,
         kind: column.kind,
@@ -1040,6 +1099,50 @@ export class ReportRunService extends ApplicationService {
       rows: resolved.rows,
     };
   }
+}
+
+/**
+ * The requested as-of moment, validated before anything is read (Owner decision
+ * D16). Absent answers null and the run resolves the default. A dataset that does
+ * not compute its amounts as of a moment REFUSES one rather than ignoring it: a
+ * report that silently dropped the parameter would be read as figures at that
+ * moment when they are live.
+ */
+function parseAsOf(raw: string | undefined, takesAsOf: boolean): Date | null {
+  if (raw === undefined) return null;
+  if (!takesAsOf) {
+    throw new AppFailure('ERR-VAL-001', {
+      message: 'This report does not compute its amounts as of a moment.',
+      safeDetails: { violations: [{ path: 'query.asOf', rule: 'not_supported' }] },
+    });
+  }
+  const parsed = INSTANT.test(raw) ? new Date(raw) : null;
+  if (parsed === null || Number.isNaN(parsed.getTime())) {
+    throw new AppFailure('ERR-VAL-001', {
+      message: 'The as-of moment is not a valid instant.',
+      safeDetails: { violations: [{ path: 'query.asOf', rule: 'invalid_format' }] },
+    });
+  }
+  return parsed;
+}
+
+/**
+ * The as-of moment must fall inside what the report can honestly answer: not
+ * before the period opens — the documents it chooses had not begun — and not after
+ * the read, which would be a figure for a moment that has not happened yet.
+ */
+function assertAsOfWithin(asOf: Date, opens: Date, readAt: Date): void {
+  const rule =
+    asOf.getTime() < opens.getTime()
+      ? 'before_period_start'
+      : asOf.getTime() > readAt.getTime()
+        ? 'after_read_time'
+        : null;
+  if (rule === null) return;
+  throw new AppFailure('ERR-VAL-001', {
+    message: 'The as-of moment must fall between the start of the period and now.',
+    safeDetails: { violations: [{ path: 'query.asOf', rule }] },
+  });
 }
 
 /**

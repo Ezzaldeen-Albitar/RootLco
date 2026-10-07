@@ -1273,9 +1273,10 @@ reversal. The person who asked can never approve or reject their own request.
 **What the reversal does not do**
 
 - It is not a refund (refunds are not available in this release).
-- Reports keep leaving reversed receipts out of the money received, as before. A report run for a
-  past period is not restated as of that period: end-of-period reporting is a separate decision
-  still open.
+- Reports keep leaving reversed receipts out of the money received, as before — counted from the
+  moment the reversal was approved. The "Invoices and payments" report of a closed period shows its
+  amounts as of the end of that period, so a receipt reversed afterwards is still shown there as it
+  stood then (6.5.4a).
 - Organisations set up before this release: nobody can approve or reject a reversal until an
   administrator who holds `sal.reversal.approve` grants it (Part 3).
 
@@ -1459,7 +1460,9 @@ never be read without knowing what produced it:
   example "Jordan Time (GMT+3)" ("توقيت الأردن (غرينتش+3)") — never as a system identifier
 - "Reported company" <!-- reports.context.company --> and "Reported branch" <!-- reports.context.branch -->
 - "How current" <!-- reports.context.freshness --> , which reads "Read from the live records the
-  moment you asked" <!-- reports.context.freshness.live -->
+  moment you asked" <!-- reports.context.freshness.live --> — or, for "Invoices and payments",
+  "Read from the live records, with every amount as it stood at the moment stated below" <!-- reports.context.freshness.asOf -->
+  (6.5.4a)
 - "Read at" <!-- reports.context.generatedAt -->
 - and the note "Days and times are shown exactly as the system recorded them, in the time zone named
   above, so a row is never moved into a different day." <!-- reports.context.periodNote -->
@@ -1500,6 +1503,38 @@ Three things to expect in the cells:
   the same words. An empty set of values reads "None" <!-- reports.cell.none --> . **An absence is
   never printed as a zero.**
 - A group with no name reads "Not named" <!-- reports.groups.unnamed --> .
+
+### 6.5.4a As-of versus snapshot — end-of-period amounts in "Invoices and payments"
+
+**IMPLEMENTED (UI)** — Owner decision D16, part 1 (as-of amounts). The snapshot half is not built.
+
+- **The documents are chosen by the period.** The invoices, receipts and credit notes listed are the
+  ones dated inside the period, exactly as before.
+- **The amounts are as of a stated moment.** What each invoice still owed, what each receipt had
+  applied and had left, each invoice's credit position and each document's status are worked out as
+  they stood at that moment. The screen says which moment: "Amounts as of {moment}" <!-- reports.asOf.statement -->
+  , on the reported branch's clock with its time zone, and "A payment, credit or reversal recorded
+  after this moment does not change these amounts. The documents listed are still the ones dated in
+  the period." <!-- reports.asOf.note -->
+- **The moment, by default, is the end of the period** — midnight at the start of the day you put in
+  "Up to but not including", on the branch's clock — once that has passed. For a period still
+  running it is the moment you asked. Under "Show the amounts as of" <!-- reports.asOf.legend --> you
+  may choose "End of period" <!-- reports.asOf.endOfPeriod --> , "Now" <!-- reports.asOf.now --> or
+  "A specific moment" <!-- reports.asOf.specific --> , then press "Show these amounts" <!-- reports.asOf.apply -->
+  . A moment before the period starts, or later than now, is refused; so is a date and time only
+  partly typed ("The date and time are not finished. Complete them, or clear them." <!-- reports.asOf.incomplete -->
+  ).
+- **So a later payment, credit or reversal changes only a report whose moment is after it.** Last
+  month's report, read as of the end of last month, stays as it was when a payment is applied, a
+  credit note approved or a receipt reversed today. The same report read as of now shows today's
+  figures.
+- **What this is not: a snapshot.** The report is still read from the live records each time; it is
+  not a stored copy. Payments, allocations, credit notes and reversals take their moment from the
+  system clock when they are recorded and cannot be backdated, which is what makes an as-of reading
+  repeatable. Keeping an issued copy of a period's report and marking a later correction as a
+  restatement are the second part of this decision and are not available yet. Closing a period and
+  financial statements are not part of it.
+- The other three reports are read as they are now and say so; they do not offer a moment.
 
 ### 6.5.5 Drill-through from a report row
 
@@ -1657,7 +1692,10 @@ operational overview, none on the audit log, and none on any invoice, receipt or
   - **The file is not the page.** The panel states this: "Export all rows for the displayed branch
     and period using current data. Values may have changed since this report was shown." <!-- reports.export.liveNote -->
     The export reads live records at the moment you press the button, so it may differ from what is
-    on screen.
+    on screen. **"Invoices and payments" is the exception:** its file holds the amounts as of the
+    moment the report on screen states, and the panel says so instead — "The file will hold the
+    amounts as of {moment}, the same moment as the report shown." <!-- reports.export.asOfNote -->
+    Every record of that file carries the moment in an `asOf` column beside `freshness` (6.5.4a).
   - The file covers **all rows** for the displayed branch and period — not just the page you can
     see.
   - One branch and one period per file.
@@ -1687,6 +1725,7 @@ Each successful export writes one audit record, `rpt.report.exported`, holding:
 - who exported it and the reference of that request,
 - the company and branch,
 - the period and its time zone,
+- for "Invoices and payments", the moment its amounts were worked out as of,
 - how many detail rows and how many summary rows were in the file, and
 - the reason you typed, classified.
 

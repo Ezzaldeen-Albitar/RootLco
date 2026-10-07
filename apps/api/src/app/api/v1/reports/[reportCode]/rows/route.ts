@@ -82,6 +82,14 @@ const Query = z
     branchId: schemas.uuid,
     from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a YYYY-MM-DD calendar day'),
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'must be a YYYY-MM-DD calendar day'),
+    /**
+     * The moment the amounts are computed as of (Owner decision D16), an instant
+     * WITH an offset — unlike the period, it names a moment rather than a day.
+     * Accepted only by a report that computes its amounts as of a moment; any other
+     * refuses it. Absent, such a report uses the period's exclusive end once it has
+     * passed and the read time before then, and answers with the moment it used.
+     */
+    asOf: z.iso.datetime({ offset: true }).optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
@@ -101,6 +109,7 @@ export const REPORT_RUN_OPERATION = defineOperation({
   auditClass: 'none',
   rateLimitPolicy: 'expensive-read',
   cacheCategory: 'never',
+  queryParameterSchema: z.toJSONSchema(Query),
 });
 
 export async function GET(
@@ -125,6 +134,7 @@ export async function GET(
           branchId: query.branchId,
           from: query.from,
           to: query.to,
+          asOf: query.asOf,
           cursor: query.cursor,
           limit: query.limit,
         }),

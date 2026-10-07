@@ -75,7 +75,20 @@ export function halfOpenLocalDayRange(
   timezoneIndex: number
 ): string {
   return (
-    `${column} >= (($${fromIndex}::date)::timestamp AT TIME ZONE $${timezoneIndex})\n` +
-    `          AND ${column} <  (($${toExclusiveIndex}::date)::timestamp AT TIME ZONE $${timezoneIndex})`
+    `${column} >= ${localMidnight(fromIndex, timezoneIndex)}\n` +
+    `          AND ${column} <  ${localMidnight(toExclusiveIndex, timezoneIndex)}`
   );
+}
+
+/**
+ * The instant a calendar day begins in a named zone — its local midnight — as a
+ * SQL expression over two bind parameters.
+ *
+ * The SAME expression `halfOpenLocalDayRange` compares against, so a caller that
+ * needs a period's bounds as instants (the as-of moment of Owner decision D16
+ * defaults to the period's exclusive end) reads exactly the instants the period
+ * predicate uses rather than converting the day a second way.
+ */
+export function localMidnight(dayIndex: number, timezoneIndex: number): string {
+  return `(($${dayIndex}::date)::timestamp AT TIME ZONE $${timezoneIndex})`;
 }

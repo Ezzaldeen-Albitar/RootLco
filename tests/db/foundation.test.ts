@@ -592,9 +592,14 @@ const ALLOWED_ROUTINES = new Set([
   'sal.guard_receipt_reversal_decision',
   'sal.guard_receipt_reversal_request',
   'sal.invoice_open_receivable',
+  // P1-32-PRE-OD-FD16A (Owner decision D16): what an invoice owed and what a receipt
+  // had left at a stated moment, and the three stamps that keep the request path from
+  // backdating the instants they compare. All five SECURITY INVOKER, empty search_path.
+  'sal.invoice_open_receivable_as_of',
   'sal.issue_invoice',
   'sal.partner_outstanding_balance',
   'sal.receipt_unallocated',
+  'sal.receipt_unallocated_as_of',
   'sal.record_receipt',
   'sal.reject_credit_note',
   // P1-32-PRE-OD-FD4 (ADR-023, D4): reject, request and withdraw a receipt reversal.
@@ -603,6 +608,9 @@ const ALLOWED_ROUTINES = new Set([
   'sal.request_return_credit_note',
   'sal.stamp_delivering_employee_identity',
   'sal.stamp_dual_control_maker',
+  'sal.stamp_financial_event_occurred_at',
+  'sal.stamp_payment_allocation_allocated_at',
+  'sal.stamp_receipt_received_at',
   'sal.withdraw_credit_note',
   'sal.withdraw_receipt_reversal',
   'shared.archive_document',
@@ -1031,6 +1039,7 @@ describe('database foundation', () => {
       'tg_external_purchase_parts_touch_metadata',
       'tg_feature_flags_immutable',
       'tg_feature_flags_touch_metadata',
+      'tg_financial_events_occurred_at',
       'tg_financial_events_provenance',
       'tg_findings_immutable',
       'tg_findings_touch_metadata',
@@ -1183,6 +1192,7 @@ describe('database foundation', () => {
       'tg_partner_sensitive_attributes_touch_metadata',
       'tg_partner_status_history_stamp',
       'tg_partner_status_history_timeline',
+      'tg_payment_allocations_allocated_at',
       'tg_payment_allocations_event_completeness',
       'tg_payment_allocations_payer',
       'tg_payment_allocations_receipt_open',
@@ -1255,6 +1265,7 @@ describe('database foundation', () => {
       'tg_receipts_event_completeness',
       'tg_receipts_freeze',
       'tg_receipts_immutable',
+      'tg_receipts_received_at',
       'tg_receipts_replacement',
       'tg_receipts_touch_metadata',
       'tg_reception_evidence_binding_guard',

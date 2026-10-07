@@ -5528,6 +5528,30 @@ Receipt (branch-scoped, WHOLE ROW gated by `sal.finance.view`).
 | `deleted_at`                   | `timestamptz`   | internal   | yes   | Soft-delete timestamp (NULL = live).                                                                                                                                                                                             |
 | `deleted_by`                   | `uuid`          | internal   | yes   | Soft-deleting actor.                                                                                                                                                                                                             |
 
+### As-of settlement reads and request-path instants (P1-32-PRE-OD-FD16A, migration 20261008090000)
+
+Owner decision D16 (end-of-period reporting, ADR-023), part 1.
+
+- `sal.invoice_open_receivable_as_of(p_invoice_id uuid, p_as_of timestamptz) returns numeric` —
+  `sal.invoice_open_receivable` as of `p_as_of`: 0 for a draft, a voided invoice and an invoice
+  issued after the moment; otherwise gross less the allocations with `allocated_at <= p_as_of` of
+  receipts not reversed by then (an approved reversal counts from its `reversed_at`) and less the
+  approved credit notes with `issued_at <= p_as_of`, rounded to 4. STABLE, SECURITY INVOKER, empty
+  `search_path`; EXECUTE for `app_runtime` and `app_readonly` only.
+- `sal.receipt_unallocated_as_of(p_receipt_id uuid, p_as_of timestamptz) returns numeric` —
+  `sal.receipt_unallocated` as of `p_as_of`: 0 for a receipt received after the moment or reversed
+  by then; otherwise its amount less the allocations with `allocated_at <= p_as_of`. Same posture.
+- For a moment at or after the read, each equals its live counterpart. A NULL moment is refused
+  (`null_value_not_allowed`).
+- `sal.receipts.received_at`, `sal.payment_allocations.allocated_at` and
+  `sal.financial_events.occurred_at` are stamped with `now()` on INSERT for `app_runtime` and its
+  login members, whatever the writer supplied (`sal.stamp_receipt_received_at`,
+  `sal.stamp_payment_allocation_allocated_at`, `sal.stamp_financial_event_occurred_at`; BEFORE
+  INSERT triggers `tg_receipts_received_at`, `tg_payment_allocations_allocated_at`,
+  `tg_financial_events_occurred_at`). Before this migration the runtime role could insert a past
+  value into each through its table-level INSERT grant. A role that bypasses row security is not
+  held to it. No stored row is changed.
+
 ## §WTY — warranty policies/effective-dated coverage/records/record items/status history.
 
 ### `wty.warranty_coverage`

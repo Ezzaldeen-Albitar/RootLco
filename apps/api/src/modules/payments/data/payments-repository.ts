@@ -269,6 +269,12 @@ export interface ReceiptDocumentFilter {
   readonly toExclusive: string;
   /** An IANA zone name: the reporting branch's `org.branches.timezone_name`. */
   readonly timezoneName: string;
+  /**
+   * The moment every amount is computed as of, an ISO-8601 instant (Owner decision
+   * D16). The period still chooses the receipts; this decides what each had become
+   * by then. REQUIRED: the reporting module resolves the default.
+   */
+  readonly asOf: string;
 }
 
 /**
@@ -1047,6 +1053,15 @@ export class PaymentsRepository extends Repository {
    * `sal.invoice_open_receivable` performs on the invoice side, so the two sides
    * of this report agree about which money moved.
    *
+   * ## Every amount is AS OF a stated moment (Owner decision D16)
+   *
+   * `filter.asOf` is that moment; the period still chooses the receipts. Only the
+   * allocations made by then count, `unallocatedAmount` is
+   * `sal.receipt_unallocated_as_of`, the status is the allocation state the receipt
+   * had then, and "reversed" above means reversed BY then: a receipt whose reversal
+   * was approved later is listed as it stood. For a moment at or after the read
+   * every figure is the live one.
+   *
    * ## The allocated column is the receipt's own, and it is summed here ONCE
    *
    * A receipt may allocate to many invoices and more than once to the same one,
@@ -1085,11 +1100,16 @@ export class PaymentsRepository extends Repository {
       filter.from,
       filter.toExclusive,
       filter.timezoneName,
+      filter.asOf,
     ];
     // Written once and used by both statements. A second copy is how an aggregate
     // and its rows come to answer for different selections. The LATERAL sums the
-    // receipt's own allocations; `LEFT JOIN` keeps a receipt that has none, which
-    // `coalesce` then renders as an exact zero rather than an absence.
+    // receipt's own allocations made by the as-of moment `$7` (D16); `LEFT JOIN`
+    // keeps a receipt that has none, which `coalesce` then renders as an exact zero
+    // rather than an absence. A receipt is left out as reversed only when its
+    // approved reversal took effect (`reversed_at`) by the moment — one reversed
+    // later is the receipt it was then — and a receipt received after the moment
+    // did not exist yet.
     const scope = `FROM sal.receipts r
          LEFT JOIN LATERAL (
            SELECT sum(pa.amount) AS allocated,
@@ -1098,11 +1118,17 @@ export class PaymentsRepository extends Repository {
              FROM sal.payment_allocations pa
             WHERE pa.tenant_id = r.tenant_id AND pa.company_id = r.company_id
               AND pa.branch_id = r.branch_id AND pa.receipt_id = r.id
+              AND pa.allocated_at <= $7::timestamptz
          ) al ON true
         WHERE r.tenant_id = $1 AND r.company_id = $2 AND r.branch_id = $3
           AND r.deleted_at IS NULL
-          AND r.status <> 'reversed'
-          AND ${halfOpenLocalDayRange('r.received_at', 4, 5, 6)}`;
+          AND (r.status <> 'reversed' OR EXISTS (
+                SELECT 1 FROM sal.receipt_reversals rr
+                 WHERE rr.tenant_id = r.tenant_id AND rr.company_id = r.company_id
+                   AND rr.branch_id = r.branch_id AND rr.original_receipt_id = r.id
+                   AND rr.approval_state = 'approved' AND rr.reversed_at > $7::timestamptz))
+          AND ${halfOpenLocalDayRange('r.received_at', 4, 5, 6)}
+          AND r.received_at <= $7::timestamptz`;
 
     const totals = await this.run<{
       currency_code: string;
@@ -1114,7 +1140,8 @@ export class PaymentsRepository extends Repository {
       `SELECT r.currency_code,
               sum(r.amount)::text                                     AS receipts,
               coalesce(sum(al.allocated), 0::numeric(18, 4))::text    AS allocated,
-              coalesce(sum(sal.receipt_unallocated(r.id)), 0::numeric(18, 4))::text
+              coalesce(sum(sal.receipt_unallocated_as_of(r.id, $7::timestamptz)),
+                       0::numeric(18, 4))::text
                                                                       AS unallocated
          ${scope}
         GROUP BY r.currency_code
@@ -1151,11 +1178,16 @@ export class PaymentsRepository extends Repository {
       db,
       `SELECT r.id AS document_id, r.receipt_number AS document_number,
               r.received_at AS document_date, r.payer_partner_id, r.currency_code,
-              r.status, r.amount::text AS receipt_amount,
+              -- The allocation state it had at the moment, by the rule
+              -- sal.allocate_receipt applies to the receipt's own status.
+              CASE WHEN coalesce(al.allocated, 0) = 0 THEN 'recorded'
+                   WHEN al.allocated >= r.amount THEN 'allocated'
+                   ELSE 'partially_allocated' END AS status,
+              r.amount::text AS receipt_amount,
               coalesce(al.allocated, 0::numeric(18, 4))::text AS allocated_amount,
               coalesce(al.third_party_allocated, 0::numeric(18, 4))::text
                 AS third_party_allocated_amount,
-              sal.receipt_unallocated(r.id)::text AS unallocated_amount,
+              sal.receipt_unallocated_as_of(r.id, $7::timestamptz)::text AS unallocated_amount,
               ${cursorTimestamp('r.received_at')} AS sort_value
          ${scope}
           ${after}

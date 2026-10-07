@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { TextAreaField } from '@/components/forms/Field';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { formatMessage, translate } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { exportReport } from '../reports-api';
 import type { ReportScopeSelection } from '../reports-contract';
@@ -16,11 +16,21 @@ export function ReportExportPanel({
   reportCode,
   selection,
   permitted,
+  asOf = null,
+  asOfMoment = null,
 }: {
   readonly messages: Messages;
   readonly reportCode: string;
   readonly selection: ReportScopeSelection;
   readonly permitted: boolean;
+  /**
+   * The moment the shown report's amounts are as of (Owner decision D16), exactly
+   * as the server stated it. The export asks for that same moment, so the file
+   * holds the figures on the screen. Null for a report that states none.
+   */
+  readonly asOf?: string | null;
+  /** `asOf` as the operator reads it: on the branch's clock, with the zone named. */
+  readonly asOfMoment?: string | null;
 }) {
   const [reason, setReason] = useState('');
   const [pending, setPending] = useState(false);
@@ -52,7 +62,11 @@ export function ReportExportPanel({
     inFlight.current = true;
     setPending(true);
     try {
-      const result = await exportReport(reportCode, { ...selection, reason: clean });
+      const result = await exportReport(reportCode, {
+        ...selection,
+        ...(asOf === null ? {} : { asOf }),
+        reason: clean,
+      });
       if (!alive.current) return;
       if (result.status !== 'success' || !result.exported) {
         if (result.status === 'invalid') setInvalid(true);
@@ -98,9 +112,21 @@ export function ReportExportPanel({
       <h4 id="report-export-heading" className="text-body font-medium text-text-primary">
         {translate(messages, 'reports.export.title')}
       </h4>
-      <p className="text-caption text-text-secondary">
-        {translate(messages, 'reports.export.liveNote')}
-      </p>
+      {/* A file of amounts as of a stated moment says that moment instead of
+          warning that its values may have moved since the screen was read. */}
+      {asOf === null || asOfMoment === null ? (
+        <p className="text-caption text-text-secondary">
+          {translate(messages, 'reports.export.liveNote')}
+        </p>
+      ) : (
+        <p className="text-caption text-text-secondary" data-testid="report-export-as-of">
+          <bdi>
+            {formatMessage(translate(messages, 'reports.export.asOfNote'), {
+              moment: asOfMoment,
+            })}
+          </bdi>
+        </p>
+      )}
       <TextAreaField
         label={translate(messages, 'reports.export.reason')}
         required
