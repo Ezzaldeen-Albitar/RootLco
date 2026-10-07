@@ -5728,8 +5728,11 @@ snapshot, so the chain is linear. The guard stamps `generated_by`, `created_by`,
 digests (`rows_digest`, `parameters_digest`, over the canonical jsonb text) for every writer, and
 admits a restatement only of the same report, period and filters. `sel_report_snapshots_scope`
 admits a row only with `rpt.report.read` and every code in `required_permissions`, each in the
-row's own company and branch; `ins_report_snapshots_scope` also requires `rpt.export` and pins
-`generated_by` to the signed-in user.
+row's own company and branch; `ins_report_snapshots_scope` also requires `rpt.report.configure` and
+pins `generated_by` to the signed-in user. It required `rpt.export` until migration
+`20261008110000_rpt_report_snapshot_save_gate.sql` (P1-32-PRE-OD-FD16C): a snapshot is an internal
+frozen record, not an export, and `rpt.export` is withheld from every tenant administrator (CC-04),
+so no tenant account could save one. Interim until the Owner decides on a dedicated snapshot code.
 
 | Column                 | Type          | class      | Null? | Purpose                                                                                                         |
 | ---------------------- | ------------- | ---------- | ----- | --------------------------------------------------------------------------------------------------------------- |

@@ -85,7 +85,9 @@ const EXPECTED_ROUTE_FILES = 36;
  * is a statement about DISTINCT authority and not about the size of the surface.
  */
 // P-12 adds the conjunction rpt.export + rpt.report.read, without granting either.
-const EXPECTED_DISTINCT_SETS = 14;
+// P1-32-PRE-OD-FD16C adds rpt.report.configure + rpt.report.read: the snapshot save
+// moves off the export switch, which the CSV export alone now declares. No grant.
+const EXPECTED_DISTINCT_SETS = 15;
 
 /**
  * The case-title templates the map's case ids are built from.

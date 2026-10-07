@@ -67,6 +67,13 @@ import type { ActionState } from '@/lib/forms/action-result';
 export const REPORT_PERMISSIONS = {
   read: 'rpt.report.read',
   export: 'rpt.export',
+  /**
+   * Saving and restating a frozen snapshot (P1-32-PRE-OD-FD16C). Not the export
+   * switch: a snapshot stays inside the platform. The dataset's own codes are
+   * required as well; the panel appears only on a run the backend answered, which
+   * already required them.
+   */
+  snapshot: 'rpt.report.configure',
 } as const;
 
 /**

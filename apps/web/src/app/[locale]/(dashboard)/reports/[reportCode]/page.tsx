@@ -157,9 +157,11 @@ export default async function ReportPage({
         holds(session.permissions, REPORT_PERMISSIONS.export) &&
         definition.data.exportPermissionCode !== null
       }
-      // A frozen snapshot is saved under rpt.export (Owner decision D16,
-      // P1-32-PRE-OD-FD16B); no tenant export configuration is involved.
-      canSnapshot={holds(session.permissions, REPORT_PERMISSIONS.export)}
+      // A frozen snapshot is saved under rpt.report.configure, not the export
+      // switch (Owner decision D16, P1-32-PRE-OD-FD16C). The dataset's own codes
+      // are required too: the panel is drawn only on a run the backend answered,
+      // and that run already required them.
+      canSnapshot={holds(session.permissions, REPORT_PERMISSIONS.snapshot)}
       scopeOptions={scopeOptions}
       named={namedReportSelection(query)}
     />

@@ -4428,6 +4428,27 @@ money stays a decimal string and nothing is summed in the browser.
 Known limitations, one line each:
 
 - Only `invoice_payment_summary` keeps snapshots; every other report refuses one.
-- A dedicated permission code for snapshots is an open Owner question; saving uses `rpt.export`.
+- A dedicated permission code for snapshots is an open Owner question; saving used `rpt.export` here, and `rpt.report.configure` since P1-32-PRE-OD-FD16C (below).
 - A snapshot's saver is named only to a reader allowed to see user names (`iam.user.read`); others see "a person whose name is not shown to you".
 - The DB and backend tiers were run on the development machine on a disposable database only for the files named in the pull request; the full tiers run on hosted CI.
+
+### Report snapshot save gate, read bound and race-path refusal (P1-32-PRE-OD-FD16C, ADR-023 D16)
+
+Follow-up to FD16B. No tenant account could save a snapshot: the save required `rpt.export`, which
+the Owner withholds from every tenant administrator (CC-04) and which cannot be granted by
+delegation. A snapshot is an internal, frozen, append-only record that only holders of the
+dataset's codes can read, not an export, so saving one now requires `rpt.report.configure`, which
+the administrator bundle already carries. Interim: a dedicated snapshot permission code remains an
+open Owner question. No role bundle, backfill, grant or permission code changes. One forward
+migration (`20261008110000_rpt_report_snapshot_save_gate.sql`, the INSERT policy only).
+
+| Route                                             | Operation                    | Who                                                                                    | What changed                                                                                                                                                                                                                                                                                                                                                    |
+| ------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /reports/{reportCode}/snapshots`            | `rpt.report-snapshot-create` | `rpt.report.configure` and `rpt.report.read` in the branch, and the report's own codes | The gate, for an original and a restatement alike (operation, service and row-level security). At most `DB_POOL_MAX - 2` saves (never below one) read their pages at once per process; the next is refused at once with `ERR-RTE-001` (429, Retry-After). A duplicate original that lost the race at the unique index is recorded against the winning snapshot. |
+| `POST /reports/{reportCode}:export`               | `rpt.report-export`          | unchanged: `rpt.export` and `rpt.report.read`                                          | Nothing.                                                                                                                                                                                                                                                                                                                                                        |
+| `/reports/[reportCode]` ("Invoices and payments") | the snapshot operations      | Save snapshot and Restate only with `rpt.report.configure`                             | The two actions follow the new gate; the panel appears only on a run the backend answered, which already required the report's own codes.                                                                                                                                                                                                                       |
+
+Known limitations, one line each:
+
+- The bound counts saves in one process; several application instances each hold their own.
+- A dedicated permission code for snapshots is an open Owner question.

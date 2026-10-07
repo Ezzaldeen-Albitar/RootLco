@@ -66,6 +66,10 @@ import {
   GET as READ_SNAPSHOT,
   REPORT_SNAPSHOT_READ_OPERATION,
 } from '@/app/api/v1/reports/[reportCode]/snapshots/[snapshotId]/rows/route';
+import {
+  POST as EXPORT_REPORT,
+  REPORT_EXPORT_OPERATION,
+} from '@/app/api/v1/reports/[reportCode]/route';
 
 let admin: Pool;
 let runtime: Pool | undefined;
@@ -90,7 +94,7 @@ const SAVER: Principal = {
   userId: 'f16b0000-0000-4000-8000-000000000102',
   subject: 'fx_od_fd16b_saver',
   tenantId: TENANT_A,
-  permissions: ['rpt.report.read', 'sal.finance.view', 'rpt.export', 'crm.customer.read'],
+  permissions: ['rpt.report.read', 'sal.finance.view', 'rpt.report.configure', 'crm.customer.read'],
 };
 /** May read reports and money and name people; may not save. Not the CRM read. */
 const READER: Principal = {
@@ -106,7 +110,7 @@ const NO_FINANCE: Principal = {
   userId: 'f16b0000-0000-4000-8000-000000000122',
   subject: 'fx_od_fd16b_no_finance',
   tenantId: TENANT_A,
-  permissions: ['rpt.report.read', 'rpt.export'],
+  permissions: ['rpt.report.read', 'rpt.report.configure'],
 };
 /** Every code, but only in the sibling branch. */
 const SCOPED_N2: Principal = {
@@ -114,7 +118,7 @@ const SCOPED_N2: Principal = {
   userId: 'f16b0000-0000-4000-8000-000000000132',
   subject: 'fx_od_fd16b_scoped',
   tenantId: TENANT_A,
-  permissions: ['rpt.report.read', 'sal.finance.view', 'rpt.export'],
+  permissions: ['rpt.report.read', 'sal.finance.view', 'rpt.report.configure'],
   scope: { companyId: COMPANY_N, branchId: BRANCH_N2 },
   grantId: 'f16b0000-0000-4000-8000-0000000001f1',
 };
@@ -124,7 +128,7 @@ const TENANT_B_FULL: Principal = {
   userId: 'f16b0000-0000-4000-8000-000000000142',
   subject: 'fx_od_fd16b_tenant_b',
   tenantId: TENANT_B,
-  permissions: ['rpt.report.read', 'sal.finance.view', 'rpt.export'],
+  permissions: ['rpt.report.read', 'sal.finance.view', 'rpt.report.configure'],
 };
 /** May save and see money in every branch, but is not told party names. */
 const NO_CRM: Principal = {
@@ -132,9 +136,20 @@ const NO_CRM: Principal = {
   userId: 'f16b0000-0000-4000-8000-000000000152',
   subject: 'fx_od_fd16b_no_crm',
   tenantId: TENANT_A,
-  permissions: ['rpt.report.read', 'sal.finance.view', 'rpt.export'],
+  permissions: ['rpt.report.read', 'sal.finance.view', 'rpt.report.configure'],
 };
-const PRINCIPALS = [SAVER, READER, NO_FINANCE, SCOPED_N2, TENANT_B_FULL, NO_CRM];
+/**
+ * Every code the save needed before P1-32-PRE-OD-FD16C, the export switch among
+ * them, but not rpt.report.configure: refused. The export switch is not the gate.
+ */
+const EXPORT_ONLY: Principal = {
+  roleId: 'f16b0000-0000-4000-8000-000000000161',
+  userId: 'f16b0000-0000-4000-8000-000000000162',
+  subject: 'fx_od_fd16c_export_only',
+  tenantId: TENANT_A,
+  permissions: ['rpt.report.read', 'sal.finance.view', 'rpt.export', 'crm.customer.read'],
+};
+const PRINCIPALS = [SAVER, READER, NO_FINANCE, SCOPED_N2, TENANT_B_FULL, NO_CRM, EXPORT_ONLY];
 
 const CREATE_OPERATION = 'rpt.report-snapshot-create';
 
@@ -560,10 +575,10 @@ afterAll(async () => {
 });
 
 describe('the three operations are declared as the Owner decision requires', () => {
-  it('saves under rpt.export and rpt.report.read, audited and idempotent; reads under rpt.report.read', () => {
+  it('saves under rpt.report.configure and rpt.report.read, audited and idempotent; reads under rpt.report.read', () => {
     expect(REPORT_SNAPSHOT_CREATE_OPERATION).toMatchObject({
       id: 'rpt.report-snapshot-create',
-      permissions: ['rpt.export', 'rpt.report.read'],
+      permissions: ['rpt.report.configure', 'rpt.report.read'],
       scope: 'branch',
       auditClass: 'financial',
       auditAction: 'rpt.report.snapshot_created',
@@ -581,6 +596,8 @@ describe('the three operations are declared as the Owner decision requires', () 
       scope: 'branch',
       answersNotFound: true,
     });
+    // The CSV export, which does leave the platform, keeps the export switch.
+    expect(REPORT_EXPORT_OPERATION.permissions).toEqual(['rpt.export', 'rpt.report.read']);
   });
 });
 
@@ -876,12 +893,65 @@ describe('refusals by rule and by permission', () => {
     const noFinance = await create({ ...scope, from: '2026-04-02', to: '2026-04-03' });
     expect(noFinance.status).toBe(403);
     authAs(READER);
-    const noExport = await create({ ...scope, from: '2026-04-02', to: '2026-04-03' });
-    expect(noExport.status).toBe(403);
+    const noConfigure = await create({ ...scope, from: '2026-04-02', to: '2026-04-03' });
+    expect(noConfigure.status).toBe(403);
     authAs(SCOPED_N2);
     const elsewhere = await create({ ...scope, from: '2026-04-02', to: '2026-04-03' });
     expect(elsewhere.status).toBe(403);
     expect(await snapshotRows('2026-04-02')).toBe(0);
+  });
+
+  it('saves under rpt.report.configure, and refuses the export switch without it, original or restatement', async () => {
+    // P1-32-PRE-OD-FD16C: a snapshot is an internal frozen record, not an export.
+    // The export switch is withheld from every tenant administrator, so a gate on
+    // it left no tenant account able to save one.
+    const body = { ...scope, from: '2026-04-03', to: '2026-04-04' };
+    authAs(EXPORT_ONLY);
+    const refused = await create(body);
+    expect(refused.status).toBe(403);
+    expect(
+      ((await refused.json()) as { requiredPermissions?: string[] }).requiredPermissions
+    ).toEqual(['rpt.report.configure', 'rpt.report.read']);
+    expect(await snapshotRows('2026-04-03')).toBe(0);
+
+    authAs(SAVER);
+    const saved = await create(body);
+    expect(saved.status).toBe(201);
+    const original = ((await saved.json()) as { snapshot: SnapshotView }).snapshot;
+
+    // A restatement is held to the same gate.
+    authAs(EXPORT_ONLY);
+    const restateRefused = await create({
+      ...body,
+      restatesSnapshotId: original.id,
+      reason: 'Restated without the configure permission',
+    });
+    expect(restateRefused.status).toBe(403);
+    expect(await snapshotRows('2026-04-03')).toBe(1);
+    authAs(SAVER);
+    const restated = await create({
+      ...body,
+      restatesSnapshotId: original.id,
+      reason: 'Restated with the configure permission',
+    });
+    expect(restated.status).toBe(201);
+    expect(await snapshotRows('2026-04-03')).toBe(2);
+  });
+
+  it('keeps the CSV export under rpt.export: the snapshot saver may not export', async () => {
+    authAs(SAVER);
+    const response = await EXPORT_REPORT(
+      new Request(`http://localhost/api/v1/reports/${REPORT_CODE}:export`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ ...period, reason: 'Month-end export' }),
+      }),
+      { params: Promise.resolve({ reportCode: `${REPORT_CODE}:export` }) }
+    );
+    expect(response.status).toBe(403);
+    expect(
+      ((await response.json()) as { requiredPermissions?: string[] }).requiredPermissions
+    ).toEqual(['rpt.export', 'rpt.report.read']);
   });
 
   it('hides every snapshot from another tenant, a caller without the money and another branch', async () => {
@@ -952,6 +1022,101 @@ describe('idempotency and concurrency', () => {
     expect(((await refused?.json()) as Problem).code).toBe('ERR-RES-002');
     expect(await snapshotRows(from)).toBe(1);
     expect(await refusals('report_snapshot_exists')).toBe(before + 1);
+  });
+
+  it('records a save that lost the race at the unique index against the winning snapshot', async () => {
+    // Both saves are held until both are reading their pages, so both pass the
+    // check before the read and the loser meets the winner only at
+    // uq_report_snapshots_original. Its refusal names the winner, as the check
+    // before the read would have (ADR-023 D12), not the branch.
+    authAs(SAVER);
+    const seam = runSeam();
+    const original = seam.run.bind(seam);
+    let arrived = 0;
+    let release: () => void = () => undefined;
+    const bothReading = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fallback = setTimeout(() => release(), 20_000);
+    const spy = vi.spyOn(seam, 'run').mockImplementation(async (...args: unknown[]) => {
+      arrived += 1;
+      if (arrived === 2) release();
+      if (arrived <= 2) await bothReading;
+      return original(...args);
+    });
+    try {
+      const from = '2026-04-07';
+      const branchBefore = await refusals('report_snapshot_exists', `org.branch/${BRANCH_N1}`);
+      const responses = await Promise.all([
+        create({ ...scope, from, to: '2026-04-08' }),
+        create({ ...scope, from, to: '2026-04-08' }),
+      ]);
+      expect(arrived).toBeGreaterThanOrEqual(2);
+      expect(responses.map((response) => response.status).sort()).toEqual([201, 409]);
+      const winner = responses.find((response) => response.status === 201);
+      const winnerId = ((await winner?.json()) as { snapshot: SnapshotView }).snapshot.id;
+      const loser = responses.find((response) => response.status === 409);
+      expect(((await loser?.json()) as Problem).code).toBe('ERR-RES-002');
+      expect(await snapshotRows(from)).toBe(1);
+      expect(await refusals('report_snapshot_exists', `rpt.report_snapshot/${winnerId}`)).toBe(1);
+      expect(await refusals('report_snapshot_exists', `org.branch/${BRANCH_N1}`)).toBe(
+        branchBefore
+      );
+    } finally {
+      clearTimeout(fallback);
+      spy.mockRestore();
+    }
+  });
+
+  it('refuses a save at once while the snapshot reads are at their bound, and saves again after', async () => {
+    // DB_POOL_MAX 3 leaves room for ONE snapshot read (3 - 2). One save is held
+    // while it reads its pages on its second connection; another save is then
+    // refused at once with the throttling refusal, not queued on the pool and not
+    // a 500. Once the first finishes, a save goes through again.
+    authAs(SAVER);
+    const previous = process.env.DB_POOL_MAX;
+    process.env.DB_POOL_MAX = '3';
+    __resetBackendConfigForTests();
+    const seam = runSeam();
+    const original = seam.run.bind(seam);
+    let reading: () => void = () => undefined;
+    const firstReading = new Promise<void>((resolve) => {
+      reading = resolve;
+    });
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fallback = setTimeout(() => release(), 20_000);
+    let calls = 0;
+    const spy = vi.spyOn(seam, 'run').mockImplementation(async (...args: unknown[]) => {
+      calls += 1;
+      if (calls === 1) {
+        reading();
+        await held;
+      }
+      return original(...args);
+    });
+    try {
+      const first = create({ ...scope, from: '2026-04-05', to: '2026-04-06' });
+      await firstReading;
+      const refused = await create({ ...scope, from: '2026-04-06', to: '2026-04-07' });
+      expect(refused.status).toBe(429);
+      expect(((await refused.json()) as Problem).code).toBe('ERR-RTE-001');
+      expect(refused.headers.get('retry-after')).toBe('5');
+      expect(await snapshotRows('2026-04-06')).toBe(0);
+      release();
+      expect((await first).status).toBe(201);
+      const after = await create({ ...scope, from: '2026-04-06', to: '2026-04-07' });
+      expect(after.status).toBe(201);
+    } finally {
+      clearTimeout(fallback);
+      release();
+      spy.mockRestore();
+      if (previous === undefined) delete process.env.DB_POOL_MAX;
+      else process.env.DB_POOL_MAX = previous;
+      __resetBackendConfigForTests();
+    }
   });
 
   it('saves while another audited write in the tenant commits between its pages', async () => {
