@@ -311,6 +311,27 @@ async function typeMoment(user: ReturnType<typeof userEvent.setup>, key: string,
   await user.keyboard(digits);
 }
 
+/**
+ * The named part of a moment holds the cursor with its whole text selected, so
+ * the next digit replaces it. A cursor collapsed at the start of the part would
+ * make the first digit of the year `2YYYY`, which the picker discards, and
+ * `2026` would arrive as `0261`. Asserted at once, never waited for: the
+ * field selects the part in the same step that focuses it. Falsified by
+ * removing that selection (`selectFocusedPart` in `DateField.tsx`) while the
+ * picker's delayed blur update is held back until after the refusal, as under
+ * load: the range is then collapsed at the start of the year.
+ */
+function expectPartSelected(group: HTMLElement, partKey: string) {
+  const part = within(group).getByRole('spinbutton', { name: EN[partKey] as string });
+  expect(document.activeElement).toBe(part);
+  const selection = document.getSelection();
+  const range = selection !== null && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+  expect(range).not.toBeNull();
+  expect(range?.collapsed).toBe(false);
+  expect(range !== null && part.contains(range.startContainer)).toBe(true);
+  expect(range !== null && part.contains(range.endContainer)).toBe(true);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   listRevisions.mockResolvedValue(
@@ -703,7 +724,11 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
    * !== null` (and, for the partial entry, by removing the field's `'incomplete'`
    * report): the question then opens and the issue is sent with no expiry.
    */
-  async function refusedExpiry(user: ReturnType<typeof userEvent.setup>, digits: string) {
+  async function refusedExpiry(
+    user: ReturnType<typeof userEvent.setup>,
+    digits: string,
+    partKey: string
+  ) {
     renderDetail({}, quotation({ currentRevision: revision({ status: 'draft', issuedAt: null }) }));
     const form = screen.getByRole('form', { name: EN['quotations.issue.heading'] as string });
     await typeMoment(user, 'quotations.issue.expiresAt', digits);
@@ -715,6 +740,8 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
     expect(within(form).getByText(EN['quotations.issue.dateFormat'] as string)).toBeInTheDocument();
     // The cursor is put back into the expiry, and nothing was asked or sent.
     await waitFor(() => expect(group.contains(document.activeElement)).toBe(true));
+    // ...on the part to finish, already selected, so typing replaces it.
+    expectPartSelected(group, partKey);
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(issueQuotation).not.toHaveBeenCalled();
     return { form, group };
@@ -722,7 +749,7 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
 
   it('refuses a partly typed expiry on the field, keeps what was typed, and issues once it is finished', async () => {
     const user = userEvent.setup();
-    const { form, group } = await refusedExpiry(user, '0112');
+    const { form, group } = await refusedExpiry(user, '0112', 'mui.pickers.year');
     // The cursor waits on the empty year; finishing the entry withdraws the complaint.
     await user.keyboard('20261000');
     await waitFor(() => expect(group).not.toHaveAttribute('aria-invalid'));
@@ -742,7 +769,7 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
 
   it('refuses an impossible expiry on the field and sends nothing', async () => {
     const user = userEvent.setup();
-    const { form } = await refusedExpiry(user, '310220261000');
+    const { form } = await refusedExpiry(user, '310220261000', 'mui.pickers.day');
     // Asking again with the entry unchanged is refused again.
     await user.click(
       within(form).getByRole('button', { name: EN['quotations.issue.submit'] as string })

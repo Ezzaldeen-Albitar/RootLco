@@ -137,6 +137,17 @@ import {
  * dropped every digit typed (checkpoint browser QA, DEF-02). Entered this way,
  * typing edits at once, and the caller's error clears as soon as the day is
  * whole and valid.
+ *
+ * The part is also left SELECTED, as the picker leaves a part it enters. The
+ * picker selects a part's text only when it re-renders, and `focusField` can
+ * cause no re-render at all: when the refusal lands before the picker has
+ * applied its own delayed blur, the picker still believes it holds focus on
+ * that same part, nothing it tracks changes, and the cursor sits collapsed at
+ * the start of the year. The next digit then makes `2YYYY`, which the picker
+ * discards, and `2026` arrives as `0261`. So after `focusField` the answer
+ * selects the focused part's text itself whenever no selection already spans
+ * it — the same selection the picker makes, through the browser's own
+ * selection and no picker internals.
  */
 
 // The foundation extends these too (`ui-foundation/dayjs-locale.ts`); a
@@ -404,8 +415,28 @@ function PartsReportingTextField({
 }
 
 /**
+ * Selects the text of the part that holds the cursor, unless a selection
+ * already spans it. See "After a refusal the cursor lands on the part to
+ * finish".
+ */
+function selectFocusedPart(): void {
+  const part = document.activeElement;
+  if (part === null) return;
+  const selection = part.ownerDocument.getSelection();
+  if (selection === null) return;
+  const range = selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+  const spansPart =
+    range !== null &&
+    !range.collapsed &&
+    part.contains(range.startContainer) &&
+    part.contains(range.endContainer);
+  if (!spansPart) selection.selectAllChildren(part);
+}
+
+/**
  * The focus request's answer for one picker: its first empty part, or its first
- * part when none is empty, focused through the picker's own field API.
+ * part when none is empty, focused through the picker's own field API and left
+ * selected.
  */
 function useEnterFirstUnfinishedPart(
   fieldRef: RefObject<FieldRef<Dayjs | null> | null>
@@ -415,7 +446,9 @@ function useEnterFirstUnfinishedPart(
     if (field === null) return false;
     const firstEmpty = field.getSections().findIndex((section) => section.value === '');
     field.focusField(firstEmpty === -1 ? 0 : firstEmpty);
-    return field.isFieldFocused();
+    if (!field.isFieldFocused()) return false;
+    selectFocusedPart();
+    return true;
   }, [fieldRef]);
 }
 

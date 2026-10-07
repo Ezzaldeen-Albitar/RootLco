@@ -346,6 +346,15 @@ describe('a refused half-typed day is finished where it was left', () => {
       const { group, onDay } = await refuseHalfTyped(user);
       const yearPart = within(group).getByRole('spinbutton', { name: year });
       await waitFor(() => expect(document.activeElement).toBe(yearPart));
+      // The year is entered already selected, in the same step that focuses
+      // it, so the first digit replaces the empty year instead of landing in
+      // front of it. Asserted at once, never waited for.
+      const selection = document.getSelection();
+      const range = selection !== null && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+      expect(range).not.toBeNull();
+      expect(range?.collapsed).toBe(false);
+      expect(range !== null && yearPart.contains(range.startContainer)).toBe(true);
+      expect(range !== null && yearPart.contains(range.endContainer)).toBe(true);
       await user.keyboard('2027');
       expect(onDay).toHaveBeenLastCalledWith('2027-03-01');
       await waitFor(() => expect(group).not.toHaveAttribute('aria-invalid'));
