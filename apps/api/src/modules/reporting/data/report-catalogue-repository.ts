@@ -23,6 +23,7 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
+import { localMidnight } from '@/server/db/period';
 import {
   buildPage,
   keysetFragment,
@@ -174,5 +175,28 @@ export class ReportCatalogueRepository extends Repository {
       [context.principal.tenantId, [...reportCodes]]
     );
     return result.rows;
+  }
+
+  /**
+   * The instants a half-open local-day period opens and closes, in the named zone
+   * (Owner decision D16, P1-32-PRE-OD-FD16A).
+   *
+   * Read through `localMidnight`, the expression `halfOpenLocalDayRange` compares
+   * documents against, so the as-of moment a report defaults to — the period's
+   * exclusive end — is exactly the instant its selection stops at. No table is
+   * read; the zone is a bind parameter, never interpolated.
+   */
+  async periodInstants(
+    db: DbHandle,
+    period: { readonly from: string; readonly toExclusive: string; readonly timezoneName: string }
+  ): Promise<{ readonly opens: Date; readonly closes: Date }> {
+    this.assertContext(db);
+    const row = await this.runOne<{ opens: Date; closes: Date }>(
+      db,
+      `SELECT ${localMidnight(1, 3)} AS opens, ${localMidnight(2, 3)} AS closes`,
+      [period.from, period.toExclusive, period.timezoneName]
+    );
+    if (row === null) throw new Error('periodInstants: the bounds query returned no row');
+    return row;
   }
 }

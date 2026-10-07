@@ -216,7 +216,14 @@ export interface ReportRun {
   readonly scope: string;
   readonly period: ReportPeriod;
   readonly generatedAt: string;
+  /** `live`, or `as_of` for a report whose amounts are as of a stated moment (D16). */
   readonly freshness: string;
+  /**
+   * The moment every amount was computed as of, an ISO-8601 instant — present
+   * exactly when `freshness` is `as_of` (Owner decision D16). The documents are
+   * still the ones the period chose.
+   */
+  readonly asOf?: string;
   readonly columns: readonly ReportColumn[];
   readonly rows: CursorPage<ReportRow>;
   /** Deprecated on the newer envelope. Read only when `groups` is absent. */
@@ -428,6 +435,36 @@ export function isReportPeriod(from: string, to: string): boolean {
 }
 
 /**
+ * Which moment a report's amounts are shown as of (Owner decision D16).
+ *
+ *   * `end` — the report's own default: the end of the period once it has
+ *     passed, the moment of reading before then. Nothing is sent.
+ *   * `now` — the moment of reading, taken by the Server Action just before the
+ *     request rather than by the browser, whose clock may run ahead.
+ *   * `at` — a moment the operator chose, an ISO-8601 instant.
+ *
+ * Only the choice is kept; the moment the server ANSWERED with is what the screen
+ * shows and what every further page and the export are asked for.
+ */
+export type ReportAsOfChoice =
+  | { readonly mode: 'end' }
+  | { readonly mode: 'now' }
+  | { readonly mode: 'at'; readonly instant: string };
+
+/** The request value for a choice: an instant, `'now'`, or null for the default. */
+export function reportAsOfRequest(choice: ReportAsOfChoice): string | null {
+  if (choice.mode === 'at') return choice.instant;
+  return choice.mode === 'now' ? 'now' : null;
+}
+
+const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/;
+
+/** An ISO-8601 instant with an explicit offset or `Z` — never a bare local time. */
+export function isReportInstant(value: string): boolean {
+  return INSTANT.test(value) && !Number.isNaN(Date.parse(value));
+}
+
+/**
  * The published route templates THIS application can serve, and the address each
  * one opens.
  *
@@ -525,13 +562,21 @@ export interface ReportExportBody {
   readonly branchId: string;
   readonly from: string;
   readonly to: string;
+  /**
+   * The moment the exported amounts are computed as of (D16): the instant the
+   * shown report answered with, so the file holds the figures on the screen.
+   * Absent for a report that is not computed as of a moment.
+   */
+  readonly asOf?: string;
   readonly reason: string;
 }
 
 export interface ReportExportResult {
   readonly reportCode: string;
   readonly generated: true;
-  readonly freshness: 'live';
+  readonly freshness: 'live' | 'as_of';
+  /** Present exactly when `freshness` is `as_of`. */
+  readonly asOf?: string;
   readonly generatedAt: string;
   readonly filters: { readonly companyId: string; readonly branchId: string };
   readonly period: { readonly from: string; readonly to: string; readonly timezone: string };
@@ -560,7 +605,13 @@ export function isSelectedReportExport(
   return (
     result.reportCode === code &&
     result.generated === true &&
-    result.freshness === 'live' &&
+    // A live file states no moment; an as-of file states the one it was asked for.
+    (result.freshness === 'live'
+      ? result.asOf === undefined && body.asOf === undefined
+      : result.freshness === 'as_of' &&
+        typeof result.asOf === 'string' &&
+        isReportInstant(result.asOf) &&
+        (body.asOf === undefined || Date.parse(result.asOf) === Date.parse(body.asOf))) &&
     typeof result.generatedAt === 'string' &&
     Number.isFinite(Date.parse(result.generatedAt)) &&
     result.filters?.companyId === body.companyId &&

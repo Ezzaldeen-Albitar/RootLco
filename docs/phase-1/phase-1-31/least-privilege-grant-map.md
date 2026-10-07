@@ -100,9 +100,9 @@ One minimal actor is seeded per set rather than per operation, so the table belo
 | `rpt.report-configuration-update`             | `apps/api/src/app/api/v1/report-configurations/[configurationId]/route.ts:127`                             |
 | `rpt.report-configuration-version-create`     | `apps/api/src/app/api/v1/report-configurations/[configurationId]/versions/route.ts:164`                    |
 | `rpt.report-configuration-version-publish`    | `apps/api/src/app/api/v1/report-configurations/[configurationId]/versions/[versionId]/publish/route.ts:64` |
-| `rpt.report-export`                           | `apps/api/src/app/api/v1/reports/[reportCode]/route.ts:90`                                                 |
+| `rpt.report-export`                           | `apps/api/src/app/api/v1/reports/[reportCode]/route.ts:97`                                                 |
 | `rpt.report-read`                             | `apps/api/src/app/api/v1/reports/[reportCode]/route.ts:32`                                                 |
-| `rpt.report-run`                              | `apps/api/src/app/api/v1/reports/[reportCode]/rows/route.ts:90`                                            |
+| `rpt.report-run`                              | `apps/api/src/app/api/v1/reports/[reportCode]/rows/route.ts:98`                                            |
 | `sal.delivery-checklist-record`               | `apps/api/src/app/api/v1/deliveries/[deliveryId]/checklist-results/route.ts:43`                            |
 | `sal.delivery-checklist-result-list`          | `apps/api/src/app/api/v1/deliveries/[deliveryId]/checklist-results/route.ts:138`                           |
 | `sal.delivery-checklist-template-create`      | `apps/api/src/app/api/v1/delivery-checklist-templates/route.ts:153`                                        |

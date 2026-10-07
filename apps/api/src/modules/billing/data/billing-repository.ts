@@ -413,6 +413,12 @@ export interface InvoiceDocumentFilter {
   readonly toExclusive: string;
   /** An IANA zone name: the reporting branch's `org.branches.timezone_name`. */
   readonly timezoneName: string;
+  /**
+   * The moment every amount is computed as of, an ISO-8601 instant (Owner decision
+   * D16). The period still chooses the documents; this decides what each had
+   * become by then. REQUIRED: the reporting module resolves the default.
+   */
+  readonly asOf: string;
 }
 
 /**
@@ -1491,6 +1497,18 @@ export class BillingRepository extends Repository {
    * credit notes' own `currency_code` — which `sal.approve_credit_note` holds
    * equal to the invoice's.
    *
+   * ## Every amount is AS OF a stated moment (Owner decision D16)
+   *
+   * `filter.asOf` is the moment the amounts are computed as of, and the period
+   * still chooses the documents. `outstanding` is
+   * `sal.invoice_open_receivable_as_of`, the live function's answer at that moment
+   * (identical to it for a moment at or after the read); the credited amount and the
+   * credit notes of the period count only credits issued by then; an invoice or a
+   * credit note issued after the moment did not exist yet and is left out; and the
+   * status is the one the invoice had then. So a payment allocated, a credit
+   * approved or a receipt reversed later does not change a report whose as-of is
+   * before it.
+   *
    * ## No allocation column, and that is what prevents the double count
    *
    * Allocations live in `sal.payment_allocations`, which is the payments module's
@@ -1519,16 +1537,19 @@ export class BillingRepository extends Repository {
       filter.from,
       filter.toExclusive,
       filter.timezoneName,
+      filter.asOf,
     ];
     // Written once and used by both statements. A second copy is how an aggregate
-    // and its rows come to answer for different selections.
+    // and its rows come to answer for different selections. `$7` is the as-of
+    // moment (D16): an invoice issued after it did not exist yet, and is left out.
     const invoiceScope = `FROM sal.invoices i
          LEFT JOIN sal.invoice_amounts a
            ON a.tenant_id = i.tenant_id AND a.company_id = i.company_id
           AND a.branch_id = i.branch_id AND a.invoice_id = i.id AND a.deleted_at IS NULL
         WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
           AND i.deleted_at IS NULL
-          AND ${halfOpenLocalDayRange('i.issued_at', 4, 5, 6)}`;
+          AND ${halfOpenLocalDayRange('i.issued_at', 4, 5, 6)}
+          AND i.issued_at <= $7::timestamptz`;
 
     // The approved credit notes of the same period, scoped through the invoice
     // they credit — the only route from a credit note to a branch, because
@@ -1540,7 +1561,8 @@ export class BillingRepository extends Repository {
           AND i.branch_id = c.branch_id AND i.id = c.invoice_id
         WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3
           AND c.approval_state = 'approved'
-          AND ${halfOpenLocalDayRange('c.issued_at', 4, 5, 6)}`;
+          AND ${halfOpenLocalDayRange('c.issued_at', 4, 5, 6)}
+          AND c.issued_at <= $7::timestamptz`;
 
     const totals = await this.run<{
       currency_code: string;
@@ -1550,7 +1572,7 @@ export class BillingRepository extends Repository {
       db,
       `SELECT i.currency_code,
               coalesce(sum(a.gross_total), 0::numeric(18, 4))::text AS invoiced,
-              coalesce(sum(round(sal.invoice_open_receivable(i.id), 4)),
+              coalesce(sum(round(sal.invoice_open_receivable_as_of(i.id, $7::timestamptz), 4)),
                        0::numeric(18, 4))::text                     AS outstanding
          ${invoiceScope}
         GROUP BY i.currency_code
@@ -1605,13 +1627,26 @@ export class BillingRepository extends Repository {
          SELECT 'invoice'::text AS document_type, i.id AS document_id,
                 i.invoice_number AS document_number, i.issued_at AS document_date,
                 i.payer_partner_id, 'payer'::text AS party_role,
-                i.currency_code, i.status,
+                i.currency_code,
+                -- The status it had at the as-of moment. issued -> credited is the
+                -- only move after issue; it is undone here only on the record's own
+                -- evidence that it happened after the moment.
+                CASE WHEN i.status = 'credited'
+                      AND EXISTS (SELECT 1 FROM sal.invoice_status_history h
+                                   WHERE h.tenant_id = i.tenant_id AND h.invoice_id = i.id
+                                     AND h.to_status = 'credited' AND h.occurred_at > $7::timestamptz)
+                      AND NOT EXISTS (SELECT 1 FROM sal.invoice_status_history h
+                                       WHERE h.tenant_id = i.tenant_id AND h.invoice_id = i.id
+                                         AND h.to_status = 'credited' AND h.occurred_at <= $7::timestamptz)
+                     THEN 'issued' ELSE i.status END              AS status,
                 a.gross_total::text                               AS invoiced_amount,
-                round(sal.invoice_open_receivable(i.id), 4)::text AS outstanding,
+                round(sal.invoice_open_receivable_as_of(i.id, $7::timestamptz), 4)::text
+                                                                  AS outstanding,
                 NULL::text                                        AS credit_note_amount,
                 COALESCE((SELECT sum(cn.amount) FROM sal.credit_notes cn
                            WHERE cn.tenant_id = i.tenant_id AND cn.invoice_id = i.id
-                             AND cn.approval_state = 'approved'), 0)::numeric(18,4)::text
+                             AND cn.approval_state = 'approved'
+                             AND cn.issued_at <= $7::timestamptz), 0)::numeric(18,4)::text
                                                                   AS credited_amount,
                 ${cursorTimestamp('i.issued_at')}                 AS sort_value
            ${invoiceScope}

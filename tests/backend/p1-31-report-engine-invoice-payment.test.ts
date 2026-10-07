@@ -75,7 +75,7 @@
  * `app_runtime` cannot do and which is set LOCAL to the fixture's own
  * transaction. Nothing else about any row is touched.
  */
-import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
@@ -99,6 +99,7 @@ import {
 } from './p1-19-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import { REPORT_DATASETS, REPORT_DATASET_CODES } from '@/modules/reporting';
 import { GET as RUN } from '@/app/api/v1/reports/[reportCode]/rows/route';
 import { POST as EXPORT_REPORT } from '@/app/api/v1/reports/[reportCode]/route';
@@ -156,10 +157,19 @@ const PAYMENT_METHOD_S = 'f1340000-0000-4000-8000-0000000000d1';
 
 // ---- The period, and the instants that decide it ----------------------------
 
+/*
+ * The period is in the PAST, as every real document's is. Since Owner decision
+ * D16 (P1-32-PRE-OD-FD16A) the amounts are computed as of a moment that defaults
+ * to the period's exclusive end once it has passed, and every fixture below —
+ * allocations, the credit note and the reversal included — is placed inside the
+ * period, so that default answers exactly what the live authorities answer today.
+ * A future-dated period, which no document can have, would instead default to the
+ * read time and leave out every fixture dated after it.
+ */
 /** First day INCLUDED, in `BRANCH_TIMEZONE`. */
-const FROM = '2027-06-14';
+const FROM = '2026-06-14';
 /** First day EXCLUDED — the day after the last one reported. */
-const TO = '2027-06-16';
+const TO = '2026-06-16';
 
 /**
  * A period the fixtures place NO document in, for the empty-selection export.
@@ -167,8 +177,8 @@ const TO = '2027-06-16';
  * Two days after the reported period closes, so it is clear of every boundary
  * fixture: the latest document any case seeds is issued at local midnight on `TO`.
  */
-const EMPTY_FROM = '2027-06-18';
-const EMPTY_TO = '2027-06-19';
+const EMPTY_FROM = '2026-06-18';
+const EMPTY_TO = '2026-06-19';
 
 /*
  * The bounds are READ BACK from the database rather than written down here.
@@ -339,6 +349,7 @@ interface RunBody {
   readonly branch: { readonly id: string; readonly name: string };
   readonly generatedAt: string;
   readonly freshness: string;
+  readonly asOf?: string;
   readonly columns: readonly Column[];
   readonly groups: readonly Group[];
   readonly countsByState: readonly unknown[];
@@ -351,6 +362,7 @@ interface RunBody {
 interface Problem {
   readonly code: string;
   readonly requiredPermissions?: readonly string[];
+  readonly violations?: readonly { readonly path: string; readonly rule: string }[];
 }
 
 function run(query: Record<string, string>, reportCode = REPORT_CODE): Promise<Response> {
@@ -653,13 +665,18 @@ async function seedApprovedCreditNote(input: {
   return creditId;
 }
 
-/** Flips a receipt to `reversed` through an approved reversal. */
+/**
+ * Flips a receipt to `reversed` through an approved reversal, and places the
+ * reversal's effect — `approved_at` and `reversed_at`, which the decision guard
+ * stamps together — at a chosen instant, unless the case wants it left at now().
+ */
 async function seedReceiptReversal(input: {
   readonly branchId: string;
   readonly receiptId: string;
   readonly currency: string;
   readonly amount: string;
-}): Promise<void> {
+  readonly reversedAt: string | null;
+}): Promise<string> {
   const reversalId = await inTenantTransaction(USER_A, async (client) => {
     const row = await client.query<{ id: string }>(
       `INSERT INTO sal.receipt_reversals
@@ -674,6 +691,11 @@ async function seedReceiptReversal(input: {
   await inTenantTransaction(APPROVER, async (client) => {
     await client.query(`SELECT sal.approve_receipt_reversal($1,NULL)`, [reversalId]);
   });
+  if (input.reversedAt !== null) {
+    await restateInstant('sal.receipt_reversals', 'approved_at', reversalId, input.reversedAt);
+    await restateInstant('sal.receipt_reversals', 'reversed_at', reversalId, input.reversedAt);
+  }
+  return reversalId;
 }
 
 /** `sal.invoice_open_receivable`, read as admin — the authority the report calls. */
@@ -1046,11 +1068,14 @@ beforeAll(async () => {
     amount: '25.0000',
     receivedAt: shift(middle, 2 * HOUR),
   });
+  // Reversed inside the period, an hour after it was received (D16: a report as of
+  // any later moment leaves it out; one as of an earlier moment shows it).
   await seedReceiptReversal({
     branchId: BRANCH_S1,
     receiptId: receiptReversed,
     currency: USD,
     amount: '25.0000',
+    reversedAt: shift(middle, 3 * HOUR),
   });
 
   // ONE SECOND before the period opens. Out.
@@ -1169,18 +1194,23 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 describe('the dataset is registered as the Owner approved it', () => {
-  it('declares sal.finance.view, a branch scope and the half-open period parameters', () => {
+  it('declares sal.finance.view, a branch scope, the half-open period and the optional as-of moment', () => {
     expect([...REPORT_DATASETS.invoice_payment_summary.requiredPermissions]).toEqual([
       FINANCE_VIEW,
     ]);
     expect(REPORT_DATASETS.invoice_payment_summary.scope).toBe('branch');
-    expect(REPORT_DATASETS.invoice_payment_summary.parameterSchema.map((p) => p.name)).toEqual([
-      'from',
-      'to',
+    expect(
+      REPORT_DATASETS.invoice_payment_summary.parameterSchema.map((p) => [
+        p.name,
+        p.kind,
+        p.required,
+      ])
+    ).toEqual([
+      ['from', 'date', true],
+      ['to', 'date', true],
+      // D16: optional; absent, the run states the moment it defaulted to.
+      ['asOf', 'instant', false],
     ]);
-    expect(REPORT_DATASETS.invoice_payment_summary.parameterSchema.every((p) => p.required)).toBe(
-      true
-    );
   });
 
   it('registers exactly the four datasets the engine implements', () => {
@@ -1271,14 +1301,17 @@ describe('the dataset is registered as the Owner approved it', () => {
     }
   });
 
-  it('echoes the period, the zone and the filter context, and calls itself live', async () => {
+  it('echoes the period, the zone and the filter context, and states the moment its amounts are as of', async () => {
     authAs(FIN_RPT_FULL);
     const view = await body(await report());
     expect(view.reportCode).toBe(REPORT_CODE);
     expect(view.period).toEqual({ from: FROM, to: TO, timezone: BRANCH_TIMEZONE });
     expect(view.filters).toEqual({ companyId: COMPANY_S, branchId: BRANCH_S1 });
     expect(view.branch).toEqual({ id: BRANCH_S1, name: 'P1-31 Finance Reported Branch' });
-    expect(view.freshness).toBe('live');
+    // D16: a live read whose amounts are as of a stated moment — for a period that
+    // has closed, its exclusive end. Never presented as a snapshot.
+    expect(view.freshness).toBe('as_of');
+    expect(view.asOf).toBe(periodCloses);
     // The deprecated field belongs to one dataset and is empty for every other.
     // Filling it here would be inventing a grouping this report does not have.
     expect(view.countsByState).toEqual([]);
@@ -1573,7 +1606,7 @@ describe('the period is half-open in the branch’s own timezone', () => {
     // period is widened by a day at each end. If they were absent for any other
     // reason the two cases above would be proving nothing.
     authAs(FIN_RPT_FULL);
-    const view = await body(await report({ from: '2027-06-13', to: '2027-06-17' }));
+    const view = await body(await report({ from: '2026-06-13', to: '2026-06-17' }));
     const present = view.rows.items.map((item) => cellValue(item, 'document'));
     expect(present).toContain(invoiceBeforeOpen.invoiceId);
     expect(present).toContain(invoiceAtClose.invoiceId);
@@ -1582,10 +1615,10 @@ describe('the period is half-open in the branch’s own timezone', () => {
   it('reads the day in the BRANCH’s zone, not the server’s', async () => {
     // `periodOpens` is local midnight in Asia/Amman, which is 21:00 UTC on the
     // PREVIOUS day. A report whose period was resolved in UTC would place that
-    // invoice on 2027-06-13 and drop it from this one.
-    expect(periodOpens.slice(0, 10)).toBe('2027-06-13');
+    // invoice on 2026-06-13 and drop it from this one.
+    expect(periodOpens.slice(0, 10)).toBe('2026-06-13');
     authAs(FIN_RPT_FULL);
-    const view = await body(await report({ from: FROM, to: '2027-06-15' }));
+    const view = await body(await report({ from: FROM, to: '2026-06-15' }));
     expect(view.rows.items.map((item) => cellValue(item, 'document'))).toContain(
       invoiceUsd.invoiceId
     );
@@ -1866,7 +1899,9 @@ describe('the export of this dataset carries its own documents and its own total
       view.period.to,
       BRANCH_TIMEZONE,
       view.generatedAt,
-      'live',
+      'as_of',
+      // D16: the moment every amount in the file is as of, beside the freshness.
+      view.asOf ?? '',
       'context',
       // The group triple, then both halves of every column.
       ...Array.from({ length: 3 + columns * 2 }, () => ''),
@@ -1888,7 +1923,8 @@ describe('the export of this dataset carries its own documents and its own total
       expect(result).toMatchObject({
         reportCode: REPORT_CODE,
         generated: true,
-        freshness: 'live',
+        freshness: 'as_of',
+        asOf: periodCloses,
         // The seven documents of the period, and the five currency/type totals
         // counted separately from them: a reader who totals the file must not total
         // the same amount twice.
@@ -2002,6 +2038,286 @@ describe('the export of this dataset carries its own documents and its own total
       );
       // The disclosure is recorded for what was asked, not for what came back.
       expect(audit.rowCount).toBe(1);
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Owner decision D16 (P1-32-PRE-OD-FD16A): end-of-period amounts are AS OF a
+// stated moment, so a later payment, credit or reversal does not silently change
+// a report of a closed period.
+// ---------------------------------------------------------------------------
+
+describe('D16 — the amounts are as of a stated moment, and later events do not move them', () => {
+  /** A closed period of its own, clear of every other fixture in this suite. */
+  const D16_FROM = '2026-05-10';
+  const D16_TO = '2026-05-11';
+  let d16Opens = '';
+  let d16Closes = '';
+  let invoiceLate: SeededInvoice;
+  /** Received and part-applied inside the period; the rest applied today. */
+  let receiptKept = '';
+  /** Received inside the period, never applied, reversed today. */
+  let receiptReversedLater = '';
+
+  const none: Row = { cells: [] };
+
+  // The run is an `expensive-read` (30 a minute per caller), and this suite runs
+  // well over thirty before this block; a throttled answer would prove nothing.
+  beforeEach(() => {
+    __resetRateLimitForTests();
+  });
+
+  function d16Report(extra: Record<string, string> = {}): Promise<Response> {
+    return run({
+      companyId: COMPANY_S,
+      branchId: BRANCH_S1,
+      from: D16_FROM,
+      to: D16_TO,
+      ...extra,
+    });
+  }
+
+  beforeAll(async () => {
+    const bounds = await admin.query<{ opens: Date; closes: Date }>(
+      `SELECT (($1::date)::timestamp AT TIME ZONE $3) AS opens,
+              (($2::date)::timestamp AT TIME ZONE $3) AS closes`,
+      [D16_FROM, D16_TO, BRANCH_TIMEZONE]
+    );
+    d16Opens = (bounds.rows[0]?.opens ?? new Date(0)).toISOString();
+    d16Closes = (bounds.rows[0]?.closes ?? new Date(0)).toISOString();
+
+    // Inside the period: an invoice of 120.0000, a receipt of 50.0000 applying
+    // 20.0000 of it, and a second receipt of 40.0000.
+    invoiceLate = await seedInvoice({
+      branchId: BRANCH_S1,
+      currency: USD,
+      net: '120.0000',
+      tax: '0.0000',
+      issuedAt: shift(d16Opens, 10 * HOUR),
+    });
+    receiptKept = await seedReceipt({
+      branchId: BRANCH_S1,
+      currency: USD,
+      amount: '50.0000',
+      receivedAt: shift(d16Opens, 11 * HOUR),
+    });
+    await seedAllocation(receiptKept, invoiceLate.invoiceId, '20.0000');
+    const inPeriod = await admin.query<{ id: string }>(
+      `SELECT id FROM sal.payment_allocations WHERE receipt_id = $1`,
+      [receiptKept]
+    );
+    expect(inPeriod.rows).toHaveLength(1);
+    await restateInstant(
+      'sal.payment_allocations',
+      'allocated_at',
+      inPeriod.rows[0]?.id ?? '',
+      shift(d16Opens, 12 * HOUR)
+    );
+    receiptReversedLater = await seedReceipt({
+      branchId: BRANCH_S1,
+      currency: USD,
+      amount: '40.0000',
+      receivedAt: shift(d16Opens, 13 * HOUR),
+    });
+
+    // AFTER the period closed, today: the rest of the receipt applied, a credit
+    // note of 10.0000 approved, and the second receipt reversed. None is restated.
+    await seedAllocation(receiptKept, invoiceLate.invoiceId, '30.0000');
+    const creditId = await inTenantTransaction(USER_A, async (client) => {
+      const row = await client.query<{ id: string }>(
+        `INSERT INTO sal.credit_notes
+           (tenant_id, company_id, branch_id, invoice_id, currency_code, amount, reason,
+            requested_by, created_by)
+         VALUES ($1,$2,$3,$4,$5,'10.0000'::numeric,'FD16A later credit',$6,$6)
+         RETURNING id`,
+        [TENANT_A, COMPANY_S, BRANCH_S1, invoiceLate.invoiceId, USD, USER_A]
+      );
+      return row.rows[0]?.id ?? '';
+    });
+    await inTenantTransaction(APPROVER, async (client) => {
+      await client.query(`SELECT sal.approve_credit_note($1,NULL)`, [creditId]);
+    });
+    await seedReceiptReversal({
+      branchId: BRANCH_S1,
+      receiptId: receiptReversedLater,
+      currency: USD,
+      amount: '40.0000',
+      reversedAt: null,
+    });
+  }, 120_000);
+
+  it('reads a closed period as of its end by default, as it stood then', async () => {
+    authAs(FIN_RPT_FULL);
+    const response = await d16Report();
+    expect(response.status).toBe(200);
+    const view = await body(response);
+    expect(view.freshness).toBe('as_of');
+    expect(view.asOf).toBe(d16Closes);
+
+    // The later payment and the later credit are not in the invoice's figure,
+    const invoiceRow = rowFor(view, invoiceLate.invoiceId) ?? none;
+    expect(cellValue(invoiceRow, 'outstanding')).toBe('100.0000');
+    expect(cellValue(invoiceRow, 'creditStatus')).toBe('none');
+    // nor in the receipt's.
+    const kept = rowFor(view, receiptKept) ?? none;
+    expect(cellValue(kept, 'allocatedAmount')).toBe('20.0000');
+    expect(cellValue(kept, 'unallocatedAmount')).toBe('30.0000');
+    expect(cellValue(kept, 'status')).toBe('partially_allocated');
+    // The receipt reversed today is listed as it stood at the end of the period.
+    const reversedLater = rowFor(view, receiptReversedLater);
+    expect(reversedLater).toBeDefined();
+    expect(cellValue(reversedLater ?? none, 'status')).toBe('recorded');
+    expect(cellValue(reversedLater ?? none, 'unallocatedAmount')).toBe('40.0000');
+    expect(groupFor(view, USD, 'invoice')?.measures.outstanding).toBe('100.0000');
+    expect(groupFor(view, USD, 'receipt')?.measures).toEqual({
+      receipts: '90.0000',
+      allocated: '20.0000',
+      unallocated: '70.0000',
+    });
+
+    // Non-vacuity: today every one of those figures is different.
+    expect(await openReceivableOf(invoiceLate.invoiceId)).toBe('60.0000');
+    expect(await unallocatedOf(receiptKept)).toBe('0.0000');
+    expect(await unallocatedOf(receiptReversedLater)).toBe('0');
+  });
+
+  it('reads the same period as of now on request, and then agrees with the live figures', async () => {
+    authAs(FIN_RPT_FULL);
+    const asOf = new Date().toISOString();
+    const view = await body(await d16Report({ asOf }));
+    expect(view.freshness).toBe('as_of');
+    expect(view.asOf).toBe(asOf);
+    const invoiceRow = rowFor(view, invoiceLate.invoiceId) ?? none;
+    expect(cellValue(invoiceRow, 'outstanding')).toBe(
+      await openReceivableOf(invoiceLate.invoiceId)
+    );
+    expect(cellValue(invoiceRow, 'creditStatus')).toBe('partly_credited');
+    const kept = rowFor(view, receiptKept) ?? none;
+    expect(cellValue(kept, 'unallocatedAmount')).toBe(await unallocatedOf(receiptKept));
+    expect(cellValue(kept, 'status')).toBe('allocated');
+    // Reversed by now: a receipt that did not happen (D-4).
+    expect(rowFor(view, receiptReversedLater)).toBeUndefined();
+  });
+
+  it('reads a moment inside the period as of that moment', async () => {
+    authAs(FIN_RPT_FULL);
+    // After the invoice and the first receipt; before the in-period allocation and
+    // before the second receipt was received.
+    const asOf = shift(d16Opens, 11 * HOUR + 30 * MINUTE);
+    const view = await body(await d16Report({ asOf }));
+    expect(view.asOf).toBe(asOf);
+    expect(cellValue(rowFor(view, invoiceLate.invoiceId) ?? none, 'outstanding')).toBe('120.0000');
+    const kept = rowFor(view, receiptKept) ?? none;
+    expect(cellValue(kept, 'allocatedAmount')).toBe('0.0000');
+    expect(cellValue(kept, 'unallocatedAmount')).toBe('50.0000');
+    expect(cellValue(kept, 'status')).toBe('recorded');
+    // Not received yet at that moment.
+    expect(rowFor(view, receiptReversedLater)).toBeUndefined();
+  });
+
+  it('lists a receipt reversed after the moment as it stood, and leaves it out after', async () => {
+    authAs(FIN_RPT_FULL);
+    // `receiptReversed` was received at middle + 2h and reversed at middle + 3h.
+    const before = await body(await report({ asOf: shift(middle, 2 * HOUR + 30 * MINUTE) }));
+    const row = rowFor(before, receiptReversed) ?? none;
+    expect(cellValue(row, 'document')).toBe(receiptReversed);
+    expect(cellValue(row, 'status')).toBe('recorded');
+    expect(cellValue(row, 'unallocatedAmount')).toBe('25.0000');
+    const after = await body(await report({ asOf: shift(middle, 3 * HOUR + 30 * MINUTE) }));
+    expect(rowFor(after, receiptReversed)).toBeUndefined();
+  });
+
+  it('reads a period that has not closed as of the read time by default', async () => {
+    authAs(FIN_RPT_FULL);
+    const before = Date.now();
+    const view = await body(
+      await run({ companyId: COMPANY_S, branchId: BRANCH_S1, from: D16_FROM, to: '2099-01-01' })
+    );
+    const after = Date.now();
+    expect(view.freshness).toBe('as_of');
+    const asOf = new Date(view.asOf ?? '').getTime();
+    expect(asOf).toBeGreaterThanOrEqual(before);
+    expect(asOf).toBeLessThanOrEqual(after);
+  });
+
+  it('refuses a moment before the period opens, after the read, or without an offset', async () => {
+    authAs(FIN_RPT_FULL);
+    const early = await d16Report({ asOf: shift(d16Opens, -SECOND) });
+    expect(early.status).toBe(422);
+    expect(await early.json()).toMatchObject({
+      code: 'ERR-VAL-001',
+      violations: [{ path: 'query.asOf', rule: 'before_period_start' }],
+    });
+    const late = await d16Report({ asOf: shift(new Date().toISOString(), 24 * HOUR) });
+    expect(late.status).toBe(422);
+    expect(await late.json()).toMatchObject({
+      code: 'ERR-VAL-001',
+      violations: [{ path: 'query.asOf', rule: 'after_read_time' }],
+    });
+    const local = await d16Report({ asOf: '2026-05-10T12:00:00' });
+    expect(local.status).toBe(422);
+    expect(((await local.json()) as Problem).code).toBe('ERR-VAL-001');
+    // The first instant of the period is itself accepted: the refusal is a bound.
+    expect((await d16Report({ asOf: d16Opens })).status).toBe(200);
+  });
+
+  it('is refused by a report that does not compute its amounts as of a moment', async () => {
+    authAs(FIN_RPT_FULL);
+    const response = await run(
+      {
+        companyId: COMPANY_S,
+        branchId: BRANCH_S1,
+        from: D16_FROM,
+        to: D16_TO,
+        asOf: d16Closes,
+      },
+      'work_orders_by_status'
+    );
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({
+      code: 'ERR-VAL-001',
+      violations: [{ path: 'query.asOf', rule: 'not_supported' }],
+    });
+  });
+
+  it('exports as of the moment, says so in every record, and records it', async () => {
+    await withExplicitReportConfiguration(async (id) => {
+      authAs(EXPORT_FULL);
+      const segment = `${REPORT_CODE}:export`;
+      const response = await EXPORT_REPORT(
+        new Request(`http://localhost/api/v1/reports/${segment}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            companyId: COMPANY_S,
+            branchId: BRANCH_S1,
+            from: D16_FROM,
+            to: D16_TO,
+            reason: 'FD16A as-of export',
+          }),
+        }),
+        { params: Promise.resolve({ reportCode: segment }) }
+      );
+      expect(response.status).toBe(200);
+      const result = (await response.json()) as ReportExportView;
+      expect(result).toMatchObject({ freshness: 'as_of', asOf: d16Closes, rowCount: 3 });
+      const lines = result.file.content.split('\r\n');
+      expect(lines[0]).toContain('"freshness","asOf","recordType"');
+      for (const line of lines.slice(1, -1)) expect(line).toContain(`"as_of","${d16Closes}"`);
+      // The figure in the file is the figure as of the end of the period.
+      expect(result.file.content).toContain('"100.0000"');
+      const detail = await admin.query<{ value: string | null }>(
+        `SELECT d.new_value_masked AS value
+           FROM iam.audit_records r
+           JOIN iam.audit_record_details d
+             ON d.tenant_id = r.tenant_id AND d.audit_record_id = r.id
+          WHERE r.tenant_id = $1 AND r.entity_id = $2 AND r.action = 'rpt.report.exported'
+            AND d.field_name = 'as_of'`,
+        [TENANT_A, id]
+      );
+      expect(detail.rows).toHaveLength(1);
+      expect(detail.rows[0]?.value).toBe(d16Closes);
     });
   });
 });

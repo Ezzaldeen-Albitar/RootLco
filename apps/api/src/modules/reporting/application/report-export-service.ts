@@ -19,7 +19,10 @@ export interface ReportExportInput extends Omit<ReportRunInput, 'cursor' | 'limi
 export interface ReportExportView {
   readonly reportCode: string;
   readonly generated: true;
-  readonly freshness: 'live';
+  /** `as_of`, with `asOf`, for a dataset whose amounts are computed as of a moment (D16). */
+  readonly freshness: ReportRunView['freshness'];
+  /** The moment every amount in the file was computed as of; absent for a live dataset. */
+  readonly asOf?: string;
   readonly generatedAt: string;
   readonly filters: ReportRunView['filters'];
   readonly period: ReportRunView['period'];
@@ -104,10 +107,28 @@ export class ReportExportService extends ApplicationService {
       lines.push(line);
     };
 
+    // The context every record of the file carries. `asOf` joins it only for a
+    // dataset whose amounts are computed as of a moment (D16), so the file of every
+    // other report is unchanged and none claims a moment it was not computed at.
+    const context = (page: ReportRunView, generatedAt: string): (string | null)[] => [
+      page.reportCode,
+      page.filters.companyId,
+      page.filters.branchId,
+      page.period.from,
+      page.period.to,
+      page.period.timezone,
+      generatedAt,
+      page.freshness,
+      ...(page.asOf === undefined ? [] : [page.asOf]),
+    ];
+
     for (;;) {
       // Reuse every dataset permission, tenant restriction and period rule; no alternate SQL.
+      // Every page after the first is computed as of the moment the first one
+      // resolved, so a default "now" cannot drift between the pages of one file.
       const page = await this.runs.run(db, {
         ...input,
+        ...(first?.asOf === undefined ? {} : { asOf: first.asOf }),
         cursor,
         limit: Math.min(MAX_PAGE_SIZE, maxRows - rowCount + 1),
       });
@@ -123,6 +144,7 @@ export class ReportExportService extends ApplicationService {
             'timezone',
             'generatedAt',
             'freshness',
+            ...(page.asOf === undefined ? [] : ['asOf']),
             'recordType',
             'groupKey',
             'groupLabel',
@@ -133,14 +155,7 @@ export class ReportExportService extends ApplicationService {
         // An empty selection still carries its scope and period inside the downloaded file.
         append(
           csvRow([
-            page.reportCode,
-            page.filters.companyId,
-            page.filters.branchId,
-            page.period.from,
-            page.period.to,
-            page.period.timezone,
-            page.generatedAt,
-            page.freshness,
+            ...context(page, page.generatedAt),
             'context',
             null,
             null,
@@ -152,14 +167,7 @@ export class ReportExportService extends ApplicationService {
         for (const group of page.groups) {
           append(
             csvRow([
-              page.reportCode,
-              page.filters.companyId,
-              page.filters.branchId,
-              page.period.from,
-              page.period.to,
-              page.period.timezone,
-              page.generatedAt,
-              page.freshness,
+              ...context(page, page.generatedAt),
               'summary',
               JSON.stringify(group.key),
               group.label,
@@ -174,14 +182,7 @@ export class ReportExportService extends ApplicationService {
         if (rowCount > maxRows) tooLarge();
         append(
           csvRow([
-            page.reportCode,
-            page.filters.companyId,
-            page.filters.branchId,
-            page.period.from,
-            page.period.to,
-            page.period.timezone,
-            first.generatedAt,
-            page.freshness,
+            ...context(page, first.generatedAt),
             'row',
             null,
             null,
@@ -218,6 +219,10 @@ export class ReportExportService extends ApplicationService {
         { field: 'from', classification: 'internal', value: input.from },
         { field: 'to_exclusive', classification: 'internal', value: input.to },
         { field: 'timezone', classification: 'internal', value: first.period.timezone },
+        // The moment the disclosed amounts were computed as of (D16).
+        ...(first.asOf === undefined
+          ? []
+          : [{ field: 'as_of', classification: 'internal' as const, value: first.asOf }]),
         { field: 'row_count', classification: 'internal', value: String(rowCount) },
         { field: 'summary_count', classification: 'internal', value: String(first.groups.length) },
         { field: 'reason', classification: 'restricted', value: reason },
@@ -226,7 +231,8 @@ export class ReportExportService extends ApplicationService {
     return {
       reportCode: input.reportCode,
       generated: true,
-      freshness: 'live',
+      freshness: first.freshness,
+      ...(first.asOf === undefined ? {} : { asOf: first.asOf }),
       generatedAt: first.generatedAt,
       filters: first.filters,
       period: first.period,
