@@ -74,8 +74,14 @@ export default async function PaymentsPage({
     return candidate && UUID.test(candidate) ? candidate : null;
   };
 
+  /*
+   * The header and the body share one print scope, as the invoice page does
+   * (finance retest DF-R2-1): while a receipt's printable copy is open, the page
+   * title and its description stay off the paper and the copy prints alone
+   * (checkpoint browser QA at 3cf622c3 found them printed above it).
+   */
   return (
-    <>
+    <div data-print-scope="document">
       <PageHeader
         locale={locale}
         messages={messages}
@@ -99,7 +105,7 @@ export default async function PaymentsPage({
           currentUserId={session.userId}
         />
       </PageBody>
-    </>
+    </div>
   );
 }
 

@@ -147,26 +147,33 @@ export default async function AcknowledgementPage({
    * (`styles/print/_index.scss`): while it holds the document, every direct
    * child that holds none — the toolbar with Print and the way back — is left
    * off the paper, and the print sheet releases the viewport so the document
-   * runs onto as many pages as it needs.
+   * runs onto as many pages as it needs. The page's own header shares an outer
+   * scope with the body, as the invoice page's does (finance retest DF-R2-1), so
+   * the page title and its description stay off the paper too (checkpoint
+   * browser QA at 3cf622c3 found them printed above the sheet).
    */
-  return frame(
-    <div data-print-scope="document" className="flex flex-col gap-4">
-      <PrintToolbar
-        printLabel={translate(messages, 'receptions.acknowledgement.print')}
-        backHref={`/${locale}/receptions/check-in/${receptionId}`}
-        backLabel={translate(messages, 'receptions.acknowledgement.backToVisit')}
-        testId="acknowledgement-toolbar"
-      />
-      <AcknowledgementDocument
-        locale={locale}
-        messages={messages}
-        detail={detail.data}
-        sections={{
-          parties: section(parties),
-          authorizations: section(authorizations),
-          evidence: section(evidence),
-        }}
-      />
+  return (
+    <div data-print-scope="document">
+      {frame(
+        <div data-print-scope="document" className="flex flex-col gap-4">
+          <PrintToolbar
+            printLabel={translate(messages, 'receptions.acknowledgement.print')}
+            backHref={`/${locale}/receptions/check-in/${receptionId}`}
+            backLabel={translate(messages, 'receptions.acknowledgement.backToVisit')}
+            testId="acknowledgement-toolbar"
+          />
+          <AcknowledgementDocument
+            locale={locale}
+            messages={messages}
+            detail={detail.data}
+            sections={{
+              parties: section(parties),
+              authorizations: section(authorizations),
+              evidence: section(evidence),
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

@@ -20,6 +20,7 @@ import {
   switchWithoutQuestion,
 } from './support/branch-switch';
 import { findSearchedOption } from './support/picker-option';
+import { onPaper } from './support/print-paper';
 import {
   ALLOCATION_ID,
   AR,
@@ -265,6 +266,29 @@ describe('the route page decides before it reads', () => {
     expect(listReceipts).not.toHaveBeenCalled();
     expect(listPaymentMethods).not.toHaveBeenCalled();
     expect(readReceipt).not.toHaveBeenCalled();
+  });
+
+  it('prints a receipt without the page heading, and the page as it is with no copy open', async () => {
+    // Checkpoint browser QA at 3cf622c3: the printed receipt began with the
+    // page's title and description. The route now puts its header and its body
+    // in one print scope, as the invoice page does (DF-R2-1).
+    PERMISSIONS = ['sal.finance.view'];
+    await renderPage({ locale: 'en' }, { paymentId: RECEIPT_ID });
+    await screen.findByRole('region', { name: EN['payments.receipt.heading'] as string });
+    const title = screen.getByRole('heading', {
+      level: 1,
+      name: EN['payments.page.title'] as string,
+    });
+    const description = screen.getByText(EN['payments.page.description'] as string);
+    expect(onPaper(title)).toBe(true);
+    expect(onPaper(description)).toBe(true);
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: EN['payments.print.open'] as string }));
+    const copy = await screen.findByRole('article');
+    expect(onPaper(copy)).toBe(true);
+    expect(onPaper(title)).toBe(false);
+    expect(onPaper(description)).toBe(false);
   });
 
   it('renders the screen for a cashier holding finance view', async () => {

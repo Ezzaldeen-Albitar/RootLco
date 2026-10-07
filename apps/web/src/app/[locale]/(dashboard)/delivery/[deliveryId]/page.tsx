@@ -219,24 +219,34 @@ export default async function DeliveryDetailPage({
   const canReadWorkOrder = holds(session.permissions, WORK_ORDER_PERMISSIONS.read);
   const vehicleName = await resolveVehicleName(record.data.workOrderId, canReadWorkOrder);
 
-  return shell(
-    <DeliveryDetailScreen
-      locale={locale}
-      messages={messages}
-      delivery={record.data}
-      canReadFinance={holds(session.permissions, DELIVERY_PERMISSIONS.financeView)}
-      canComplete={holds(session.permissions, DELIVERY_PERMISSIONS.complete)}
-      canManage={holds(session.permissions, DELIVERY_PERMISSIONS.manage)}
-      canAttachEvidence={
-        holds(session.permissions, RECEIVER_EVIDENCE_PERMISSIONS.categoryRead) &&
-        holds(session.permissions, RECEIVER_EVIDENCE_PERMISSIONS.documentManage)
-      }
-      canIssueWarranty={holds(session.permissions, WARRANTY_PERMISSIONS.issue)}
-      canReadWarrantyPolicies={holds(session.permissions, WARRANTY_PERMISSIONS.read)}
-      canReadWorkOrder={canReadWorkOrder}
-      finalOdometerReading={finalOdometerReading}
-      vehicleName={vehicleName}
-    />
+  /*
+   * The header and the body share one print scope, as the invoice page does
+   * (finance retest DF-R2-1): while the handover sheet is open, the page title
+   * and its description stay off the paper and the sheet prints alone
+   * (checkpoint browser QA at 3cf622c3 found them printed above it).
+   */
+  return (
+    <div data-print-scope="document">
+      {shell(
+        <DeliveryDetailScreen
+          locale={locale}
+          messages={messages}
+          delivery={record.data}
+          canReadFinance={holds(session.permissions, DELIVERY_PERMISSIONS.financeView)}
+          canComplete={holds(session.permissions, DELIVERY_PERMISSIONS.complete)}
+          canManage={holds(session.permissions, DELIVERY_PERMISSIONS.manage)}
+          canAttachEvidence={
+            holds(session.permissions, RECEIVER_EVIDENCE_PERMISSIONS.categoryRead) &&
+            holds(session.permissions, RECEIVER_EVIDENCE_PERMISSIONS.documentManage)
+          }
+          canIssueWarranty={holds(session.permissions, WARRANTY_PERMISSIONS.issue)}
+          canReadWarrantyPolicies={holds(session.permissions, WARRANTY_PERMISSIONS.read)}
+          canReadWorkOrder={canReadWorkOrder}
+          finalOdometerReading={finalOdometerReading}
+          vehicleName={vehicleName}
+        />
+      )}
+    </div>
   );
 }
 

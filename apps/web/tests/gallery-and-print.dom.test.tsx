@@ -618,6 +618,117 @@ describe('the print sheet releases the application shell on paper', () => {
     expect(broken).toMatch(/the main region: no print release/);
     expect(broken).toMatch(/the scroll regions: no print release/);
   });
+
+  /*
+   * Checkpoint browser QA at 3cf622c3: an invoice that used to print on one page
+   * printed on two, the first BLANK but for its panel's border. The copy is one
+   * outer table (its identity row repeats on every page), and Chromium moves
+   * that table whole onto the next page when it does not fit below what stands
+   * above it but would fit a fresh page — and the page body's and the panel's
+   * padding stood above it. While a document is open, the print sheet now
+   * releases every box between a print scope and the document: no padding,
+   * border or margin, block layout. The page count itself is measured in the
+   * browser tier (`tests/e2e/print-layout.spec.ts`); what is held here is
+   * WHICH boxes the compiled rule reaches, evaluated against a real DOM.
+   */
+  const releaseSelectors = (css: string): string[] =>
+    rulesOf(css)
+      .filter(
+        (rule) =>
+          rule.print &&
+          rule.selector.startsWith('[data-print-scope]:has(') &&
+          rule.declarations['display'] === 'block' &&
+          rule.declarations['padding'] === '0' &&
+          rule.declarations['border'] === '0' &&
+          rule.declarations['margin'] === '0'
+      )
+      .map((rule) => rule.selector);
+
+  /** Splits `a b` at its top-level descendant combinators. */
+  function descendantParts(selector: string): string[] {
+    const parts: string[] = [];
+    let depth = 0;
+    let start = 0;
+    for (let i = 0; i < selector.length; i += 1) {
+      const ch = selector[i];
+      if (ch === '(' || ch === '[') depth += 1;
+      else if (ch === ')' || ch === ']') depth -= 1;
+      else if (ch === ' ' && depth === 0) {
+        parts.push(selector.slice(start, i));
+        start = i + 1;
+      }
+    }
+    parts.push(selector.slice(start));
+    return parts.filter((part) => part.length > 0);
+  }
+
+  function matchesSelector(element: Element, selector: string): boolean {
+    const parts = descendantParts(selector);
+    const last = parts.pop();
+    if (last === undefined || !matchesCompound(element, last)) return false;
+    let ancestor = element.parentElement;
+    for (const part of parts.reverse()) {
+      while (ancestor !== null && !matchesCompound(ancestor, part))
+        ancestor = ancestor.parentElement;
+      if (ancestor === null) return false;
+      ancestor = ancestor.parentElement;
+    }
+    return true;
+  }
+
+  /** The elements under `root` the release rule reaches. */
+  function releasedBy(selectors: readonly string[], root: Element): Element[] {
+    return [root, ...root.querySelectorAll('*')].filter((element) =>
+      selectors.some((selector) => matchesSelector(element, selector))
+    );
+  }
+
+  /** The invoice page: a page scope around the header and body, the screen's scope, the panel. */
+  function invoicePage(copyOpen: boolean): HTMLElement {
+    const page = document.createElement('main');
+    page.innerHTML =
+      '<div data-print-scope="document" data-testid="page">' +
+      '<div data-testid="header"></div>' +
+      '<div data-testid="body"><div class="contents" data-testid="gate">' +
+      '<div data-print-scope="document" data-testid="screen">' +
+      '<section data-testid="working"></section>' +
+      '<section data-testid="panel"><div data-print="hide" data-testid="toolbar"></div>' +
+      (copyOpen
+        ? '<article data-print="document" data-testid="copy"><p data-testid="inside"></p></article>'
+        : '') +
+      '</section></div></div></div></div>';
+    return page;
+  }
+
+  it('releases every box between a print scope and its open document, and nothing else', () => {
+    const selectors = releaseSelectors(compiled);
+    expect(selectors.length).toBeGreaterThan(0);
+    expect(ids(releasedBy(selectors, invoicePage(true)))).toEqual([
+      'page',
+      'body',
+      'gate',
+      'screen',
+      'panel',
+    ]);
+    // No document open: the screen keeps its panels' frames on paper too.
+    expect(releasedBy(selectors, invoicePage(false))).toEqual([]);
+  });
+
+  it('outranks the utility classes it releases', () => {
+    for (const selector of releaseSelectors(compiled)) {
+      expect(outranks(specificity(selector), ONE_UTILITY), selector).toBeGreaterThan(0);
+    }
+  });
+
+  it('FALSIFICATION: without the release, the panel keeps its frame on paper', () => {
+    const regressed = compiled.replace(
+      /\[data-print-scope\]:has\(\[data-print=['"]?document['"]?\]\),\s*\[data-print-scope\][^{]*\{[^}]*\}/,
+      ''
+    );
+    expect(regressed).not.toBe(compiled);
+    expect(releaseSelectors(regressed)).toEqual([]);
+    expect(releasedBy(releaseSelectors(regressed), invoicePage(true))).toEqual([]);
+  });
 });
 
 /**
