@@ -976,6 +976,58 @@ screen is recalculated, and no arithmetic is performed in your browser.
 
 **Screenshot** — no screenshot available at this version.
 
+### 4C.3.6a Print a quotation — IMPLEMENTED (UI)
+
+**Label** — "Show printable copy" <!-- quotations.print.open --> under "Printable quotation" <!-- quotations.print.heading -->
+on the quotation detail.
+
+**Who** — anyone who can open the quotation (`quo.quotation.read`). There is no separate print
+permission: whoever can read the quotation on screen can print it, and nobody else. Whether printing
+gets permissions of its own is an open question for the Owner.
+
+**Steps**
+
+1. Press "Show printable copy". The copy reads the revision and the customer's decision when you
+   open it, and the "Print" <!-- quotations.print.print --> button appears once they have arrived.
+2. To print an earlier revision, choose it in "Revision to print" <!-- quotations.print.revisionLabel -->
+   . The current revision is chosen to begin with.
+3. Press "Print" to open your browser's own print dialogue. Press "Hide printable copy" <!-- quotations.print.close -->
+   when you are done.
+
+**Result** — a copy headed "Quotation" <!-- quotations.print.title --> with "Number", "Revision",
+"Status", "Issued", "Valid until" <!-- quotations.print.validUntil --> and "Branch"; then "Work
+order", "Customer" and "Vehicle" by number and name; then the table "Quoted lines" <!-- quotations.print.linesCaption -->
+with "Line", "Description", "Quantity", "Unit" <!-- quotations.print.column.unit --> , "Unit price",
+"Discount", "Tax" and "Line total"; then "Totals as issued" <!-- quotations.print.totalsHeading -->
+; the discount approval, when the revision carries one; and "Customer's decision" <!-- quotations.print.decisionHeading -->
+with the acceptance record when the customer accepted. The acceptance record is a record of how the
+customer accepted, not a signature, and the copy says so.
+
+**Restrictions**
+
+- **Only the copy reaches the paper.** While the copy is open, printing leaves off the page title and
+  every other panel. They stay on the screen, and nothing you typed into a form is lost.
+- **Unsaved changes are not on the copy.** If a form on the page holds changes you have not saved,
+  the panel says "You have changes on this page that are not saved yet. They are not on this copy,
+  which shows the record as it was last saved. Opening or printing the copy does not discard them." <!-- print.unsavedNote -->
+- **No finance on a quotation copy.** The copy carries the quotation's prices and totals and nothing
+  else: no invoice, no payment, no balance, no cost and no margin. Its footer says "Prices and totals
+  are the ones recorded when this revision was issued. This copy does not show invoices, payments or
+  balances." <!-- quotations.print.footer -->
+- **Amounts are written with the currency's decimals**, for example three for the Jordanian dinar and
+  none for the Japanese yen, and are never rounded.
+- **A draft revision has no totals.** Its copy says the totals are captured on issue.
+- **English and Arabic.** An Arabic copy reads right to left, and dates read in order. Long tables
+  continue over several A4 pages with their column headings repeated.
+- **No PDF.** This is your browser's own print; save to PDF from its dialogue if you need a file.
+
+**If it goes wrong** — "The printable copy could not be prepared because part of the quotation could
+not be read just now. Try again." <!-- quotations.print.unavailable --> with "Try again" <!-- quotations.print.retry -->
+. If the earlier revisions cannot be listed, only the current one can be printed, and the panel says
+so.
+
+**Screenshot** — no screenshot available at this version.
+
 ### 4C.3.7 Why a save is refused: the record version, in plain terms — IMPLEMENTED (UI)
 
 Every quotation carries a record version. The screen no longer prints it, but it is still how the
@@ -1019,8 +1071,8 @@ entered is already taken.
 - **No discount approval on the quotation screen itself.** A discount waiting for approval is decided
   on the **Discounts waiting for approval** list on the Quotations page (4C.4.6); the quotation
   screen shows its state and links there.
-- **No quotation printout.** Of the four printable documents in this release — invoice, receipt,
-  vehicle handover document, reception acknowledgement — none is a quotation.
+- **A quotation printout, but no document file.** A quotation is printed from its detail page
+  (4C.3.6a) through your browser; no PDF is stored or sent.
 - **No emailing of a quotation to a customer.** Issuing records that the quotation was issued; how
   it reaches the customer is your own procedure, and the channel is recorded afterwards on the
   decision (**Received** <!-- quotations.decide.channel --> ).
@@ -1786,8 +1838,8 @@ Stated here in one place, and repeated above where you meet them.
 
 1. **No tenant-wide quotation list, and no tenant-wide parts list.** Both screens begin with a
    question, not a list.
-2. **No quotation printout and no quotation email.** Issuing records the issue; delivering it to the
-   customer is your own procedure.
+2. **No quotation email.** Issuing records the issue; delivering it to the customer is your own
+   procedure. A printable copy is available (4C.3.6a).
 3. **No cancel action on a quotation**, and no edit of a recorded decision. Discounts waiting for
    approval are decided on the Quotations page (4C.4.6), not on the quotation itself.
 4. **A draft revision has no totals.** They are captured on issue.

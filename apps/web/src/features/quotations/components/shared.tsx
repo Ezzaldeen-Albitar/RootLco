@@ -177,19 +177,30 @@ export function Figure({
   );
 }
 
-/** A money figure, as the server stated it, with its ISO code. */
+/**
+ * A money figure, as the server stated it, with its ISO code, written at the
+ * currency's minor unit (`formatMoney`, Owner decision D1): three decimals for
+ * JOD, none for JPY, and never fewer than the amount's own significant digits.
+ *
+ * `minorUnit` is the server's count of decimals where a read publishes one. No
+ * quotation read publishes it today, so `formatMoney` takes the currency's minor
+ * unit from the browser's own currency data (`Intl`) — the same fallback every
+ * other screen uses for an amount whose read did not say.
+ */
 export function Money({
   amount,
   currency,
+  minorUnit,
   locale,
 }: {
   readonly amount: string;
   readonly currency: string;
+  readonly minorUnit?: number | undefined;
   readonly locale: Locale;
 }) {
   return (
     <span className="font-mono" dir="ltr">
-      {formatMoney({ amount, currency }, locale)}
+      {formatMoney({ amount, currency, minorUnit }, locale)}
     </span>
   );
 }
