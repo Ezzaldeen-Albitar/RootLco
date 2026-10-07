@@ -13,6 +13,9 @@ import {
   renderRtl,
 } from './render';
 import { forgetRememberedBranch } from './support/branch-switch';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 import { addDays, dayIn, isKnownZone, zoneDisplayName } from '../src/lib/branch-time';
 import { formatReportTime } from '../src/features/reports/report-labels';
 
@@ -240,20 +243,31 @@ async function renderCataloguePage() {
 
 async function renderReportPage(
   locale = 'en',
-  search: Record<string, string | string[] | undefined> = {}
+  search: Record<string, string | string[] | undefined> = {},
+  pickers = false
 ) {
-  const ui = await ReportRoutePage({
+  const page = (await ReportRoutePage({
     params: Promise.resolve({ locale, reportCode: CODE }),
     searchParams: Promise.resolve(search),
-  });
-  return locale === 'ar'
-    ? renderRtl(ui as React.ReactElement)
-    : renderLtr(ui as React.ReactElement);
+  })) as React.ReactElement;
+  // The locale layout's Material provider, which the moment picker of the D16
+  // as-of choice needs; the other cases render without it, as they always have.
+  const ui = pickers ? (
+    <UiFoundationProvider
+      locale={locale === 'ar' ? 'ar' : 'en'}
+      text={muiTextOf(getMessages(locale === 'ar' ? 'ar' : 'en'))}
+    >
+      {page}
+    </UiFoundationProvider>
+  ) : (
+    page
+  );
+  return locale === 'ar' ? renderRtl(ui) : renderLtr(ui);
 }
 
 /** Fills the form and runs the report, returning the rendered container. */
-async function showReport(locale = 'en') {
-  const rendered = await renderReportPage(locale);
+async function showReport(locale = 'en', pickers = false) {
+  const rendered = await renderReportPage(locale, {}, pickers);
   const user = userEvent.setup();
   const messages = locale === 'ar' ? AR : EN;
   const label = (key: string) => new RegExp(`^${escape(messages[key] as string)}`);
@@ -1228,5 +1242,186 @@ describe('export uses the displayed report selection', () => {
     expect(
       screen.queryByRole('button', { name: EN['reports.export.download'] as string })
     ).toBeNull();
+  });
+});
+
+/*
+ * Owner decision D16 (P1-32-PRE-OD-FD16A): the invoice-and-payment report states
+ * the moment its amounts are as of, and the operator may ask for the end of the
+ * period, now, or a moment of their own. Each case fails when the screen stops
+ * stating the moment, stops offering a choice, sends a choice it did not make, or
+ * lets a page drift to a different moment.
+ */
+describe('D16 — the amounts are as of a stated moment', () => {
+  /** The end of the 2026-09-01 .. 2026-09-08 period on the Amman clock. */
+  const AS_OF = '2026-09-07T21:00:00.000Z';
+  const AS_OF_ENVELOPE = { ...NEW_ENVELOPE, freshness: 'as_of', asOf: AS_OF };
+  const momentEn = () => `${amman('en-GB', AS_OF)} (Jordan Time (GMT+3))`;
+
+  /** A moment typed part by part, in English order: day, month, year, hour, minute. */
+  async function typeMoment(user: ReturnType<typeof userEvent.setup>, digits: string) {
+    const group = screen.getByRole('group', { name: labelled('reports.asOf.moment') });
+    await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard(digits);
+  }
+
+  it('states the moment on the branch clock, with its zone, and how current it is', async () => {
+    runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+    await showReport();
+    const statement = await screen.findByTestId('report-as-of');
+    expect(statement).toHaveTextContent(
+      (EN['reports.asOf.statement'] as string).replace('{moment}', momentEn())
+    );
+    expect(screen.getByText(EN['reports.asOf.note'] as string)).toBeVisible();
+    expect(screen.getByText(EN['reports.context.freshness.asOf'] as string)).toBeVisible();
+    // Never the raw instant, and never called live.
+    expect(screen.queryByText(AS_OF)).toBeNull();
+    expect(screen.queryByText(EN['reports.context.freshness.live'] as string)).toBeNull();
+  });
+
+  it('says nothing about a moment for a report that is not computed as of one', async () => {
+    runReport.mockResolvedValue(runOk(NEW_ENVELOPE));
+    await showReport();
+    await screen.findByText(EN['reports.context.freshness.live'] as string);
+    expect(screen.queryByTestId('report-as-of')).toBeNull();
+    expect(
+      screen.queryByRole('radiogroup', { name: EN['reports.asOf.legend'] as string })
+    ).toBeNull();
+  });
+
+  it('offers the end of the period, now, or a specific moment, with the end of the period chosen', async () => {
+    runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+    await showReport();
+    const group = await screen.findByRole('radiogroup', {
+      name: EN['reports.asOf.legend'] as string,
+    });
+    const end = within(group).getByRole('radio', {
+      name: EN['reports.asOf.endOfPeriod'] as string,
+    });
+    const now = within(group).getByRole('radio', { name: EN['reports.asOf.now'] as string });
+    const at = within(group).getByRole('radio', { name: EN['reports.asOf.specific'] as string });
+    expect(end).toBeChecked();
+    expect(now).not.toBeChecked();
+    expect(at).not.toBeChecked();
+    // The first read asked for no moment: the report's own default.
+    expect(runReport).toHaveBeenCalledWith(expect.objectContaining({ asOf: null, cursor: null }));
+  });
+
+  it('reads again as of now, and asks every later page for the moment answered', async () => {
+    runReport.mockResolvedValue(
+      runOk({ ...AS_OF_ENVELOPE, rows: { items: [ROW], nextCursor: 'page-2', hasMore: true } })
+    );
+    await showReport();
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('radio', { name: EN['reports.asOf.now'] as string }));
+    await user.click(screen.getByRole('button', { name: EN['reports.asOf.apply'] as string }));
+    await waitFor(() =>
+      expect(runReport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ asOf: 'now', cursor: null })
+      )
+    );
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.page.next'] as string })
+    );
+    // The next page is computed as of the moment the first one answered with,
+    // not "now" again.
+    await waitFor(() =>
+      expect(runReport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ asOf: AS_OF, cursor: 'page-2' })
+      )
+    );
+  });
+
+  it('reads as of a moment typed on the branch clock', async () => {
+    runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+    await showReport('en', true);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('radio', { name: EN['reports.asOf.specific'] as string })
+    );
+    await typeMoment(user, '030920261200');
+    await user.click(screen.getByRole('button', { name: EN['reports.asOf.apply'] as string }));
+    await waitFor(() =>
+      expect(runReport).toHaveBeenLastCalledWith(
+        expect.objectContaining({ asOf: '2026-09-03T12:00:00+03:00', cursor: null })
+      )
+    );
+  });
+
+  it('refuses a partly typed moment as unfinished, never as required, and sends nothing', async () => {
+    runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+    await showReport('en', true);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('radio', { name: EN['reports.asOf.specific'] as string })
+    );
+    await typeMoment(user, '0309');
+    const calls = runReport.mock.calls.length;
+    await user.click(screen.getByRole('button', { name: EN['reports.asOf.apply'] as string }));
+    expect(await screen.findByText(EN['reports.asOf.incomplete'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['reports.asOf.chooseMoment'] as string)).toBeNull();
+    expect(screen.queryByText(EN['form.required'] as string)).toBeNull();
+    expect(runReport).toHaveBeenCalledTimes(calls);
+  });
+
+  it('refuses a moment before the period starts, with the bound it broke', async () => {
+    runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+    await showReport('en', true);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('radio', { name: EN['reports.asOf.specific'] as string })
+    );
+    await typeMoment(user, '310820261200');
+    const calls = runReport.mock.calls.length;
+    await user.click(screen.getByRole('button', { name: EN['reports.asOf.apply'] as string }));
+    expect(await screen.findByText(EN['reports.asOf.beforePeriod'] as string)).toBeVisible();
+    expect(runReport).toHaveBeenCalledTimes(calls);
+  });
+
+  it('exports as of the moment shown, and says so in the export panel', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    readReport.mockResolvedValue({
+      status: 'ok',
+      data: { ...BASELINE, exportPermissionCode: 'rpt.export', source: 'tenant', versionNumber: 1 },
+      correlationId: null,
+    });
+    runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+    await showReport();
+    expect(await screen.findByTestId('report-export-as-of')).toHaveTextContent(
+      (EN['reports.export.asOfNote'] as string).replace('{moment}', momentEn())
+    );
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByRole('textbox', { name: labelled('reports.export.reason') }),
+      'Month-end figures'
+    );
+    await user.click(screen.getByRole('button', { name: EN['reports.export.download'] as string }));
+    await waitFor(() =>
+      expect(exportReport).toHaveBeenCalledExactlyOnceWith(CODE, {
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        from: '2026-09-01',
+        to: '2026-09-08',
+        asOf: AS_OF,
+        reason: 'Month-end figures',
+      })
+    );
+  });
+
+  it('reads in Arabic as Arabic, right to left', async () => {
+    runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+    const { container } = await showReport('ar');
+    const statement = await within(container).findByTestId('report-as-of');
+    expect(statement).toHaveTextContent(
+      (AR['reports.asOf.statement'] as string).replace('{moment}', '').trim()
+    );
+    expect(statement).toHaveTextContent('توقيت الأردن (غرينتش+3)');
+    const group = within(container).getByRole('radiogroup', {
+      name: AR['reports.asOf.legend'] as string,
+    });
+    for (const key of ['reports.asOf.endOfPeriod', 'reports.asOf.now', 'reports.asOf.specific']) {
+      expect(within(group).getByRole('radio', { name: AR[key] as string })).toBeInTheDocument();
+    }
+    expect(document.documentElement.dir).toBe('rtl');
   });
 });

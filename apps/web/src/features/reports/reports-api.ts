@@ -13,6 +13,7 @@ import {
   type ReadState,
 } from '@/lib/api/read-operation';
 import {
+  isReportInstant,
   isReportPeriod,
   isSelectedReportExport,
   reportPageSize,
@@ -127,6 +128,13 @@ export async function runReport(input: {
   readonly branchId: string;
   readonly from: string;
   readonly to: string;
+  /**
+   * The moment the amounts are asked for as of (Owner decision D16): an ISO-8601
+   * instant, `'now'` for the moment this action runs, or null/absent for the
+   * report's own default. Only a report that computes its amounts as of a moment
+   * is sent one; the screen offers the choice only after such a report answered.
+   */
+  readonly asOf?: string | null;
   readonly cursor: string | null;
   readonly limit: number;
 }): Promise<ReportRunState> {
@@ -134,6 +142,10 @@ export async function runReport(input: {
     // Refused before a request is spent. The route refuses it too — `to` is the
     // first day EXCLUDED, so an equal pair is an empty period — and answering
     // here means the operator is told which box to correct.
+    return { status: 'error', correlationId: null };
+  }
+  const requested = input.asOf ?? null;
+  if (requested !== null && requested !== 'now' && !isReportInstant(requested)) {
     return { status: 'error', correlationId: null };
   }
 
@@ -155,6 +167,9 @@ export async function runReport(input: {
       {
         from: input.from,
         to: input.to,
+        // "Now" is this action's own clock, read just before the request, so the
+        // moment cannot be later than the server's reading of it.
+        asOf: requested === 'now' ? new Date().toISOString() : requested,
         cursor: input.cursor,
         limit: reportPageSize(input.limit),
       }
@@ -190,7 +205,8 @@ export async function exportReport(
     typeof input.reason !== 'string' ||
     !input.reason.trim() ||
     input.reason.trim().length > 500 ||
-    !isReportPeriod(input.from, input.to)
+    !isReportPeriod(input.from, input.to) ||
+    (input.asOf !== undefined && (typeof input.asOf !== 'string' || !isReportInstant(input.asOf)))
   ) {
     return {
       status: 'invalid',
@@ -226,6 +242,8 @@ export async function exportReport(
     branchId: input.branchId,
     from: input.from,
     to: input.to,
+    // The moment the shown report answered with, so the file holds its figures (D16).
+    ...(input.asOf === undefined ? {} : { asOf: input.asOf }),
     reason: input.reason.trim(),
   };
   const result = await client.send<unknown>(

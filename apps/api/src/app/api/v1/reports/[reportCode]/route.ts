@@ -62,6 +62,12 @@ export const ExportBody = z
     branchId: schemas.uuid,
     from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+    /**
+     * The moment the exported amounts are computed as of (Owner decision D16), an
+     * instant with an offset; only a report that computes its amounts as of a
+     * moment accepts it. Absent, that report's default moment is used and stated.
+     */
+    asOf: z.iso.datetime({ offset: true }).optional(),
     reason: z.string().trim().min(1).max(500),
   })
   .strict();
@@ -70,7 +76,8 @@ const ExportResult = z
   .object({
     reportCode: ReportCode,
     generated: z.literal(true),
-    freshness: z.literal('live'),
+    freshness: z.enum(['live', 'as_of']),
+    asOf: z.iso.datetime().optional(),
     generatedAt: z.iso.datetime(),
     filters: z.object({ companyId: schemas.uuid, branchId: schemas.uuid }).strict(),
     period: z.object({ from: z.string(), to: z.string(), timezone: z.string() }).strict(),

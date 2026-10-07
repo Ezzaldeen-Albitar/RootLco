@@ -1,7 +1,13 @@
 'use client';
 
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import Link from 'next/link';
+import { RadioGroupField } from '@/components/forms/Field';
+import {
+  dayToPicker,
+  ZonedDateTimeField,
+  type MomentProblem,
+} from '@/components/forms/mui/DateField';
 import { EmptyState } from '@/components/states/States';
 import {
   useWorkingContext,
@@ -9,7 +15,7 @@ import {
 } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { formatMessage, translate } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import { zoneDisplayName } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
@@ -31,8 +37,11 @@ import {
 import {
   drillThroughHref,
   initialReportScope,
+  isReportInstant,
+  reportAsOfRequest,
   reportGroups,
   REPORT_PAGE_SIZE,
+  type ReportAsOfChoice,
   type ReportCell,
   type ReportColumn,
   type ReportDefinition,
@@ -175,6 +184,13 @@ export function ReportScreen({
   const branches = scopeOptions.status === 'ok' ? scopeOptions.data.branches : [];
   const [chosen, setChosen] = useState<ReportScopeSelection | null>(null);
   /*
+   * Which moment the amounts are shown as of (Owner decision D16). Kept beside
+   * the selection — the screen keeps its filters in its own state, not the
+   * address — and returned to the end of the period whenever the selection
+   * changes, because a moment chosen for one period may fall outside the next.
+   */
+  const [asOfChoice, setAsOfChoice] = useState<ReportAsOfChoice>({ mode: 'end' });
+  /*
    * The working branch and today, when the address names nothing. The
    * operator's own submission takes its place until the working context
    * changes, when the screen follows the new branch again.
@@ -184,7 +200,10 @@ export function ReportScreen({
   const followed = !addressNamed && working.kind === 'ready' ? working.selection : null;
   const { version } = useWorkingContext();
   useWorkingContextChange(() => {
-    if (!addressNamed) setChosen(null);
+    if (!addressNamed) {
+      setChosen(null);
+      setAsOfChoice({ mode: 'end' });
+    }
   });
   const submitted = chosen ?? followed;
 
@@ -248,7 +267,10 @@ export function ReportScreen({
         options={scopeOptions.data}
         initial={followed ?? initialReportScope(scopeOptions.data, named)}
         submitKey="reports.run.show"
-        onSubmit={setChosen}
+        onSubmit={(selection) => {
+          setChosen(selection);
+          setAsOfChoice({ mode: 'end' });
+        }}
       />
 
       {submitted === null ? (
@@ -262,11 +284,13 @@ export function ReportScreen({
         // read on a new period or branch rather than paging the previous one with
         // cursors issued against a different selection.
         <ReportResults
-          key={JSON.stringify(submitted)}
+          key={`${JSON.stringify(submitted)}|${JSON.stringify(asOfChoice)}`}
           locale={locale}
           messages={messages}
           reportCode={definition.reportCode}
           submitted={submitted}
+          asOfChoice={asOfChoice}
+          onAsOfChange={setAsOfChoice}
           companyName={chosenCompany?.legalName ?? null}
           branchName={chosenBranch?.name ?? null}
           canExport={canExport}
@@ -302,6 +326,8 @@ function ReportResults({
   messages,
   reportCode,
   submitted,
+  asOfChoice,
+  onAsOfChange,
   companyName,
   branchName,
   canExport,
@@ -310,23 +336,38 @@ function ReportResults({
   readonly messages: Messages;
   readonly reportCode: string;
   readonly submitted: ReportScopeSelection;
+  readonly asOfChoice: ReportAsOfChoice;
+  readonly onAsOfChange: (choice: ReportAsOfChoice) => void;
   readonly companyName: string | null;
   readonly branchName: string | null;
   readonly canExport: boolean;
 }) {
   const { companyId, branchId, from, to } = submitted;
+  /*
+   * The moment the FIRST answer was computed as of (D16). Every later page, and a
+   * return to the first, asks for exactly that moment, so a default of "now" — or
+   * the end of a period still running — cannot drift between the pages of one
+   * report. The first request carries the operator's choice.
+   */
+  const pinnedAsOf = useRef<string | null>(null);
   const read = useCallback(
-    (cursor: string | null) =>
-      runReport({
+    async (cursor: string | null) => {
+      const outcome = await runReport({
         reportCode,
         companyId,
         branchId,
         from,
         to,
+        asOf: pinnedAsOf.current ?? reportAsOfRequest(asOfChoice),
         cursor,
         limit: REPORT_PAGE_SIZE,
-      }),
-    [reportCode, companyId, branchId, from, to]
+      });
+      if (outcome.status === 'ok' && outcome.data.asOf !== undefined) {
+        pinnedAsOf.current ??= outcome.data.asOf;
+      }
+      return outcome;
+    },
+    [reportCode, companyId, branchId, from, to, asOfChoice]
   );
   const trail = useCursorTrail<ReportRun>(read, runSignals);
 
@@ -345,6 +386,20 @@ function ReportResults({
   const groups = reportGroups(run);
   const rows = run.rows.items;
   const title = runTitle(messages, run.titleKey);
+  /*
+   * D16: the moment the amounts are as of, on the BRANCH's clock with the zone
+   * named, exactly as the server stated it. Only a report that answered with one
+   * says it; a live report claims no moment.
+   */
+  const asOf = run.freshness === 'as_of' && run.asOf !== undefined ? run.asOf : null;
+  const asOfMoment =
+    asOf === null
+      ? null
+      : `${formatReportTime(asOf, locale, run.period.timezone)} (${zoneDisplayName(
+          run.period.timezone,
+          intlLocale(locale),
+          asOf
+        )})`;
 
   return (
     <section aria-labelledby="report-result-heading" className="flex flex-col gap-4">
@@ -390,6 +445,8 @@ function ReportResults({
         <ContextFact label={translate(messages, 'reports.context.freshness')}>
           {run.freshness === 'live' ? (
             translate(messages, 'reports.context.freshness.live')
+          ) : asOf !== null ? (
+            translate(messages, 'reports.context.freshness.asOf')
           ) : (
             <MachineName value={run.freshness} />
           )}
@@ -404,6 +461,36 @@ function ReportResults({
         {translate(messages, 'reports.context.periodNote')}
       </p>
 
+      {asOf === null || asOfMoment === null ? null : (
+        <section
+          aria-labelledby="report-as-of-heading"
+          className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+        >
+          <p
+            id="report-as-of-heading"
+            className="text-body font-medium text-text-primary"
+            data-testid="report-as-of"
+            lang={locale}
+          >
+            <bdi>
+              {formatMessage(translate(messages, 'reports.asOf.statement'), {
+                moment: asOfMoment,
+              })}
+            </bdi>
+          </p>
+          <p className="text-caption text-text-muted" lang={locale}>
+            {translate(messages, 'reports.asOf.note')}
+          </p>
+          <AsOfChoiceForm
+            messages={messages}
+            zone={run.period.timezone}
+            periodFrom={run.period.from}
+            choice={asOfChoice}
+            onApply={onAsOfChange}
+          />
+        </section>
+      )}
+
       <ReportExportPanel
         messages={messages}
         reportCode={reportCode}
@@ -414,6 +501,8 @@ function ReportResults({
           from: run.period.from,
           to: run.period.to,
         }}
+        asOf={asOf}
+        asOfMoment={asOfMoment}
       />
 
       {groups.length === 0 ? null : (
@@ -488,6 +577,119 @@ function ReportResults({
         {translate(messages, 'reports.run.pagingNote')}
       </p>
     </section>
+  );
+}
+
+/**
+ * Which moment the amounts are shown as of (Owner decision D16): the end of the
+ * period (the report's own default), now, or a moment the operator types on the
+ * reported branch's clock.
+ *
+ * Applying a choice re-reads the report; nothing is computed here. A moment only
+ * partly typed is refused with the incomplete-entry message — never "required",
+ * which would tell the operator the box is empty when it is not — and a moment
+ * before the period starts or later than now is refused before a request is spent,
+ * with the bound it broke. The server refuses both too.
+ */
+function AsOfChoiceForm({
+  messages,
+  zone,
+  periodFrom,
+  choice,
+  onApply,
+}: {
+  readonly messages: Messages;
+  readonly zone: string;
+  readonly periodFrom: string;
+  readonly choice: ReportAsOfChoice;
+  readonly onApply: (choice: ReportAsOfChoice) => void;
+}) {
+  const [mode, setMode] = useState<ReportAsOfChoice['mode']>(choice.mode);
+  const [moment, setMoment] = useState(choice.mode === 'at' ? choice.instant : '');
+  const [problem, setProblem] = useState<MomentProblem>(null);
+  const [errorKey, setErrorKey] = useState<keyof Messages | null>(null);
+
+  const apply = () => {
+    if (mode !== 'at') {
+      setErrorKey(null);
+      onApply({ mode });
+      return;
+    }
+    if (problem === 'incomplete') {
+      setErrorKey('reports.asOf.incomplete');
+      return;
+    }
+    if (problem !== null) {
+      setErrorKey('reports.asOf.invalid');
+      return;
+    }
+    if (moment === '' || !isReportInstant(moment)) {
+      setErrorKey('reports.asOf.chooseMoment');
+      return;
+    }
+    const opens = dayToPicker(periodFrom, zone);
+    if (opens !== null && Date.parse(moment) < opens.valueOf()) {
+      setErrorKey('reports.asOf.beforePeriod');
+      return;
+    }
+    if (Date.parse(moment) > Date.now()) {
+      setErrorKey('reports.asOf.afterNow');
+      return;
+    }
+    setErrorKey(null);
+    onApply({ mode: 'at', instant: moment });
+  };
+
+  return (
+    <form
+      noValidate
+      aria-label={translate(messages, 'reports.asOf.legend')}
+      className="flex flex-col gap-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        apply();
+      }}
+    >
+      <RadioGroupField
+        label={translate(messages, 'reports.asOf.legend')}
+        name="report-as-of"
+        value={mode}
+        onChange={(next) => {
+          setErrorKey(null);
+          setMode(next === 'now' || next === 'at' ? next : 'end');
+        }}
+        options={[
+          { value: 'end', label: translate(messages, 'reports.asOf.endOfPeriod') },
+          { value: 'now', label: translate(messages, 'reports.asOf.now') },
+          { value: 'at', label: translate(messages, 'reports.asOf.specific') },
+        ]}
+      />
+      {mode === 'at' ? (
+        <ZonedDateTimeField
+          messages={messages}
+          label={translate(messages, 'reports.asOf.moment')}
+          description={translate(messages, 'reports.asOf.momentHint')}
+          timezone={zone}
+          value={moment}
+          onChange={(next) => {
+            setErrorKey(null);
+            setMoment(next);
+          }}
+          onProblem={setProblem}
+          error={errorKey === null ? undefined : translate(messages, errorKey)}
+          testId="report-as-of-moment"
+        />
+      ) : errorKey === null ? null : (
+        <p role="alert" className="text-supporting text-error">
+          {translate(messages, errorKey)}
+        </p>
+      )}
+      <div>
+        <button type="submit" className={REPORT_SECONDARY_BUTTON}>
+          {translate(messages, 'reports.asOf.apply')}
+        </button>
+      </div>
+    </form>
   );
 }
 

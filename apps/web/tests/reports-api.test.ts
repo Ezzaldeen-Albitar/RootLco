@@ -606,3 +606,83 @@ describe('explicit scoped report export', () => {
     }
   });
 });
+
+/*
+ * Owner decision D16 (P1-32-PRE-OD-FD16A): the moment a report's amounts are as
+ * of travels as an instant the operator chose, as this action's own "now", or not
+ * at all — and an export file is accepted only when it states the moment it was
+ * asked for.
+ */
+describe('the as-of moment (D16)', () => {
+  const AS_OF = '2026-09-07T21:00:00.000Z';
+  const runInput = {
+    reportCode: 'invoice_payment_summary',
+    companyId: COMPANY_ID,
+    branchId: BRANCH_ID,
+    from: RUN.period.from,
+    to: RUN.period.to,
+    cursor: null,
+    limit: REPORT_PAGE_SIZE,
+  };
+
+  it('sends no moment for the report’s own default', async () => {
+    transport(() => ok(RUN));
+    await runReport({ ...runInput, asOf: null });
+    expect(requestedRun()).not.toContain('asOf=');
+  });
+
+  it('sends a chosen moment exactly as it was given', async () => {
+    transport(() => ok(RUN));
+    await runReport({ ...runInput, asOf: '2026-09-03T12:00:00+03:00' });
+    expect(new URL(`http://x${requestedRun() ?? ''}`).searchParams.get('asOf')).toBe(
+      '2026-09-03T12:00:00+03:00'
+    );
+  });
+
+  it('turns "now" into this action’s own clock, read just before the request', async () => {
+    transport(() => ok(RUN));
+    const before = Date.now();
+    await runReport({ ...runInput, asOf: 'now' });
+    const after = Date.now();
+    const sent = new URL(`http://x${requestedRun() ?? ''}`).searchParams.get('asOf') ?? '';
+    expect(contract.isReportInstant(sent)).toBe(true);
+    expect(Date.parse(sent)).toBeGreaterThanOrEqual(before);
+    expect(Date.parse(sent)).toBeLessThanOrEqual(after);
+  });
+
+  it('refuses a moment without an offset before a request is spent', async () => {
+    transport(() => ok(RUN));
+    const state = await runReport({ ...runInput, asOf: '2026-09-03T12:00:00' });
+    expect(state.status).toBe('error');
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it('exports as of the moment shown, and accepts only a file that states it', async () => {
+    transport(() => ok(RUN));
+    const asOfResult = { ...exportResult(), freshness: 'as_of', asOf: AS_OF };
+    send.mockResolvedValue(ok(asOfResult));
+    const result = await exportReport(CODE, { ...EXPORT_BODY, asOf: AS_OF });
+    expect(result.status).toBe('success');
+    expect(send).toHaveBeenCalledExactlyOnceWith('POST', `/api/v1/reports/${CODE}:export`, {
+      ...EXPORT_BODY,
+      asOf: AS_OF,
+    });
+    for (const data of [
+      // A file computed as of another moment.
+      { ...asOfResult, asOf: '2026-09-01T00:00:00.000Z' },
+      // A file that claims a moment without stating it.
+      { ...exportResult(), freshness: 'as_of' },
+      // A live file answering a request for a moment.
+      exportResult(),
+    ]) {
+      send.mockResolvedValue(ok(data));
+      expect((await exportReport(CODE, { ...EXPORT_BODY, asOf: AS_OF })).status).toBe('error');
+    }
+  });
+
+  it('refuses an export moment without an offset before spending a request', async () => {
+    const state = await exportReport(CODE, { ...EXPORT_BODY, asOf: '2026-09-03T12:00:00' });
+    expect(state.status).toBe('invalid');
+    expect(send).not.toHaveBeenCalled();
+  });
+});

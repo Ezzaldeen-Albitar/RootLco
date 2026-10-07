@@ -99,10 +99,17 @@ export interface ReportColumnDefinition {
   readonly drillThroughByKind?: ReportDrillThroughByKind;
 }
 
-/** One declared parameter of a dataset. Both of today's are required dates. */
+/**
+ * One declared parameter of a dataset.
+ *
+ * `date` is a calendar day resolved in the branch's zone (`from`, `to`). `instant`
+ * is a moment with an explicit offset — the optional `asOf` of a dataset whose
+ * amounts are computed as of a stated moment (Owner decision D16). A dataset that
+ * does not declare `asOf` refuses one rather than ignoring it.
+ */
 export interface ReportParameterDefinition {
   readonly name: string;
-  readonly kind: 'date';
+  readonly kind: 'date' | 'instant';
   readonly required: boolean;
 }
 
@@ -160,6 +167,26 @@ const PERIOD_PARAMETERS: readonly ReportParameterDefinition[] = Object.freeze([
   Object.freeze({ name: 'from', kind: 'date', required: true }),
   Object.freeze({ name: 'to', kind: 'date', required: true }),
 ]);
+
+/**
+ * The period, and the optional moment the amounts are computed as of (Owner
+ * decision D16, P1-32-PRE-OD-FD16A).
+ *
+ * The DOCUMENTS are still chosen by the period. `asOf` decides only what every
+ * amount on them had become by that moment: a payment allocated, a credit note
+ * approved or a receipt reversed after it does not move the figure. Absent, the
+ * moment is the period's exclusive end when that has passed and the read time
+ * otherwise, and the run states which moment it used.
+ */
+const PERIOD_AS_OF_PARAMETERS: readonly ReportParameterDefinition[] = Object.freeze([
+  ...PERIOD_PARAMETERS,
+  Object.freeze({ name: 'asOf', kind: 'instant', required: false }),
+]);
+
+/** Whether a dataset computes its amounts as of a stated moment (declares `asOf`). */
+export function datasetTakesAsOf(definition: ReportDatasetDefinition): boolean {
+  return definition.parameterSchema.some((parameter) => parameter.name === 'asOf');
+}
 
 /**
  * Every dataset the engine can run, by code.
@@ -469,7 +496,9 @@ export const REPORT_DATASETS = Object.freeze({
     titleKey: 'reports.invoice_payment_summary.title',
     scope: 'branch',
     requiredPermissions: Object.freeze(['sal.finance.view']),
-    parameterSchema: PERIOD_PARAMETERS,
+    // The period chooses the documents; `asOf` states the moment their amounts are
+    // computed as of (Owner decision D16).
+    parameterSchema: PERIOD_AS_OF_PARAMETERS,
     columns: Object.freeze([
       // The number is what a human reads and the id is the machine-readable half.
       // The route depends on WHICH KIND of document the row is, so the column
