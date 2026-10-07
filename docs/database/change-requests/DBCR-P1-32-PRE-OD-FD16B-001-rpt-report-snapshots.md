@@ -19,7 +19,8 @@ any existing database is a separate, rehearsed step.
   `rpt.report.read` and every frozen code; one original; one restatement per snapshot; the reason
   and difference checks; a restatement of another period refused),
   `tests/backend/od-report-snapshots.test.ts` (the three operations end to end),
-  `tests/unit/od-report-snapshot-isolation.test.ts` (the save runs at REPEATABLE READ),
+  `tests/unit/od-report-snapshot-isolation.test.ts` (the pages are read at REPEATABLE READ, the
+  save itself is not),
   `tests/db/foundation.test.ts` (table, routine, trigger and policy inventories),
   `tests/db/p1-11-security.test.ts` (append-only list) and
   `tests/db/p1-15-shared-services-runtime-capabilities.test.ts` (migration census).
@@ -80,15 +81,21 @@ every other dataset refuses):
 
 - `rpt.report-snapshot-create` — `POST /reports/{reportCode}/snapshots`, idempotent, declaring
   `rpt.export` and `rpt.report.read` at the branch; the service requires every dataset code too.
-  The whole result is read page by page through the report run, as of ONE moment, inside the
-  request's transaction opened at REPEATABLE READ, so a payment committed while the pages are read
-  cannot appear in some of them. Capped by the export's row bound (`EXPORT_MAX_ROWS`) and byte
-  bound. A restatement's difference counts the rows added, removed and changed by the dataset's
-  identity column and sums every money column per currency, before and after, in PostgreSQL.
+  The whole result is read page by page through the report run, as of ONE moment, in a separate
+  READ ONLY transaction at REPEATABLE READ on the caller's context, so a payment committed while the
+  pages are read cannot appear in some of them. The insert, its audit record and the idempotency
+  key are written afterwards in the request's own transaction at READ COMMITTED: `iam.audit_append`
+  numbers the tenant's chain by reading the highest number so far, which at REPEATABLE READ would
+  miss an audited write committed while the pages were read and collide with it. Capped by the
+  export's row bound (`EXPORT_MAX_ROWS`) and byte bound. A restatement's difference counts the
+  rows added, removed and changed by the dataset's identity column and sums every money column per
+  currency, before and after, in PostgreSQL; a withheld display column (the party name) is left out
+  of the changed-row comparison, so a rename or a restater not told the name is not a change.
   Refusals by rule are recorded (ADR-023 D12): `report_snapshot_exists`,
   `report_snapshot_reason_required`, `report_snapshot_not_latest`,
   `report_snapshot_period_mismatch`, `report_snapshot_not_supported`, `report_snapshot_too_large`.
-  A unique-index loss is mapped to the same refusals, never a 500.
+  A unique-index loss is mapped to the same refusals, never a 500 — except when the winner was the
+  same request under the same Idempotency-Key, which is answered with the stored response.
 - `rpt.report-snapshot-list` — `GET /reports/{reportCode}/snapshots`, metadata only, newest first.
 - `rpt.report-snapshot-read` — `GET /reports/{reportCode}/snapshots/{snapshotId}/rows`, the frozen
   rows a page at a time with the restatement links and difference. The party name is stored as the

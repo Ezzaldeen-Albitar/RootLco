@@ -1588,7 +1588,8 @@ name is not shown to you" <!-- reports.snapshots.nameHidden --> rather than show
   restates and why, and "What changed from the earlier snapshot"
   <!-- reports.snapshots.difference.heading --> : how many rows were added, removed and changed, and
   each amount per currency before and after. Amounts in different currencies are never added
-  together.
+  together. A row counts as changed only when what it reports changed: a customer's name that was
+  renamed since, or that is not shown to the person restating, is not a change.
 - **Restating.** Only the latest snapshot of a period can be restated: open it and press "Restate"
   <!-- reports.snapshots.restate --> . A reason is required ("Say why the snapshot is being
   restated." <!-- reports.snapshots.reasonRequired --> ). The restatement saves the report as it is

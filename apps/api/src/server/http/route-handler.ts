@@ -53,6 +53,7 @@ import { requireFeature } from '../auth/entitlement';
 import type { RegisteredOperation } from '../auth/operation-registry';
 import {
   IdempotencyRaceError,
+  raceIfKeyStored,
   requestFingerprint,
   requireIdempotencyKey,
   resolveRace,
@@ -154,6 +155,20 @@ export interface HandlerInput {
    * told that, not told the scope is invisible.
    */
   readonly requireScopeClaim: ScopeAuthorizer;
+  /**
+   * For a keyed (idempotent) operation: throws the idempotency-race signal when
+   * this request's key is ALREADY stored with this request's fingerprint, and
+   * returns normally otherwise — including for an operation that takes no key
+   * (P1-32-PRE-OD-FD16B).
+   *
+   * For a command that loses a race at its OWN unique index. The key is written
+   * after the command, so two copies of one request sent at once both execute, and
+   * the loser meets the winner's row before it ever reaches the key — and would
+   * refuse its own retry. Asked at that moment, on this transaction (READ COMMITTED,
+   * after a savepoint rollback), it sees the winner's committed key, and the route
+   * answers with the stored response exactly as for any other race.
+   */
+  readonly replayIfRetried: () => Promise<void>;
 }
 
 export type OperationHandler<T> = (input: HandlerInput) => Promise<HandlerResult<T>>;
@@ -169,13 +184,6 @@ export interface RouteOptions {
   readonly body?: unknown;
   /** Peer address from the platform. Never read from a header. */
   readonly peerAddress?: string | null;
-  /**
-   * `repeatable read` runs the operation's transaction at REPEATABLE READ, so a
-   * handler that assembles one result from several statements reads one snapshot
-   * of the database (P1-32-PRE-OD-FD16B, the frozen report snapshot). Absent, the
-   * server's READ COMMITTED applies, as it always has.
-   */
-  readonly isolation?: 'repeatable read';
 }
 
 function successHeaders(correlationId: string, recordVersion?: number): Record<string, string> {
@@ -484,6 +492,14 @@ export async function handleOperation<T>(
               // otherwise leave the write.
               requireScopeClaim: (claim: AuthorizationTarget) =>
                 requireScopeClaimInTenant(db, operation, claim),
+              replayIfRetried: () =>
+                idempotencyKey && fingerprint
+                  ? raceIfKeyStored(db, {
+                      operationId: operation.id,
+                      key: idempotencyKey,
+                      fingerprint,
+                    })
+                  : Promise.resolve(),
             });
 
           if (!idempotencyKey || !fingerprint) return execute();
@@ -502,10 +518,7 @@ export async function handleOperation<T>(
         // operation's own declaration rather than from a route-side flag, so a
         // platform operation cannot be served from the request-path pool by
         // forgetting to pass something.
-        {
-          ...(isControlPlane(operation) ? { connection: 'platform' as const } : {}),
-          ...(options.isolation === undefined ? {} : { isolation: options.isolation }),
-        }
+        isControlPlane(operation) ? { connection: 'platform' as const } : {}
       );
 
     let result: HandlerResult<T>;
@@ -587,6 +600,10 @@ async function handlePublic<T>(
     // reading.
     requireScopeClaim: () => {
       throw new Error(`Operation ${operation.id} is public and cannot resolve a scope claim`);
+    },
+    // A public operation has no tenant and no stored keys to consult.
+    replayIfRetried: () => {
+      throw new Error(`Operation ${operation.id} is public and cannot replay a stored key`);
     },
   });
   metrics().increment(METRICS.requestCount, { operation: operation.id, result: 'success' });

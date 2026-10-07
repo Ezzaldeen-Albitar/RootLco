@@ -7,14 +7,14 @@
  * period and a reason, a RESTATEMENT of it. GET lists a branch's snapshots of the
  * report, newest first, without their rows.
  *
- * ## Why the save runs at REPEATABLE READ
+ * ## One consistent read, written at READ COMMITTED
  *
  * The rows are read page by page through the same report run the screen and the
- * export use. At the server's default READ COMMITTED every page would read the
- * database as it stood when that page's statement began, so a payment committed
- * between two pages could appear in one and not the other. At REPEATABLE READ
- * every statement reads the one snapshot the transaction's first statement took:
- * the stored copy is one consistent read.
+ * export use, and the service reads them in a READ ONLY transaction of its own at
+ * REPEATABLE READ, so the stored copy is one consistent read. This route's own
+ * transaction — the insert, the audit record and the idempotency key — stays at the
+ * server's READ COMMITTED: the audit chain's numbering must see every audited write
+ * the tenant committed while the pages were read (see the service's header).
  *
  * ## Permissions
  *
@@ -128,26 +128,29 @@ export async function POST(
   return handleOperation(
     REPORT_SNAPSHOT_CREATE_OPERATION,
     request,
-    async ({ db, request: incoming, authorizeScope, requireScopeClaim }) => {
+    async ({ db, request: incoming, authorizeScope, requireScopeClaim, replayIfRetried }) => {
       const code = parseOrFail(ReportCode, params.reportCode, 'path.reportCode');
       const input = await parseJsonBody(incoming, SnapshotBody);
       const target = { companyId: input.companyId, branchId: input.branchId };
       await authorizeScope(target);
       await requireScopeClaim(target);
-      const created: ReportSnapshotCreatedView = await reportingModule().snapshots.create(db, {
-        reportCode: code,
-        companyId: input.companyId,
-        branchId: input.branchId,
-        from: input.from,
-        to: input.to,
-        asOf: input.asOf,
-        restatesSnapshotId: input.restatesSnapshotId,
-        reason: input.reason,
-      });
+      const created: ReportSnapshotCreatedView = await reportingModule().snapshots.create(
+        db,
+        {
+          reportCode: code,
+          companyId: input.companyId,
+          branchId: input.branchId,
+          from: input.from,
+          to: input.to,
+          asOf: input.asOf,
+          restatesSnapshotId: input.restatesSnapshotId,
+          reason: input.reason,
+        },
+        { replayIfRetried }
+      );
       return { status: 201, body: created };
     },
-    // One consistent read of every page: see the file header.
-    { ...scopeTargetOption(body), params, body, isolation: 'repeatable read' }
+    { ...scopeTargetOption(body), params, body }
   );
 }
 

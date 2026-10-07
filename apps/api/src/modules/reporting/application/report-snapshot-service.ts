@@ -13,14 +13,23 @@
  * says why, and carries a summary of what changed. Nothing is overwritten: the
  * restated snapshot stays as it was, marked as restated.
  *
- * ## One consistent read
+ * ## One consistent read, and a write at READ COMMITTED
  *
  * The whole result is assembled page by page through the same `ReportRunService`
- * the screen and the export use — no second SQL for the rows — inside the
- * request's transaction, which the route opens at REPEATABLE READ: every page reads
- * the one database snapshot the transaction's first statement took, so a payment
- * committed while the pages are read cannot appear in some of them. Every page is
- * computed as of the moment the first one resolved.
+ * the screen and the export use — no second SQL for the rows — inside a SEPARATE
+ * READ ONLY transaction at REPEATABLE READ, on the caller's own context: every page
+ * reads the one database snapshot that transaction's first statement took, so a
+ * payment committed while the pages are read cannot appear in some of them. Every
+ * page is computed as of the moment the first one resolved.
+ *
+ * The insert, its audit record and the idempotency key are written afterwards in
+ * the request's own transaction, which stays at the server's READ COMMITTED. That
+ * split is required, not stylistic: `iam.audit_append` numbers the tenant's audit
+ * chain under an advisory lock by reading the highest number so far, and at
+ * REPEATABLE READ that read would see the snapshot taken when the save began — so
+ * any audited write committed in the tenant while the pages were read would leave
+ * the save picking a number already taken, and failing. A chain or sequence writer
+ * never runs inside the REPEATABLE READ read.
  *
  * ## The chain is linear, and the database holds it so
  *
@@ -29,6 +38,9 @@
  * period is the one nothing restates, and only that one may be restated. A second
  * save of the same period — or two at once — leaves exactly one row; the other is
  * refused by rule and the refusal is recorded (ADR-023 D12), never answered 500.
+ * The one exception is the same request sent twice at once under the same
+ * Idempotency-Key — a retry: the request that lost the race answers with the
+ * winner's stored response, as any replay does, and records no refusal.
  *
  * ## Who may do what
  *
@@ -46,7 +58,7 @@ import { appendAudit } from '@/server/audit/audit';
 import { withBusinessRefusal } from '@/server/audit/business-refusals';
 import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { backendConfig } from '@/server/config/backend-config';
-import type { DbHandle } from '@/server/db/transaction';
+import { withSavepoint, withTransaction, type DbHandle } from '@/server/db/transaction';
 import {
   buildPageWithCursors,
   pageRequest,
@@ -186,6 +198,17 @@ export interface ReportSnapshotCreateInput {
   readonly reason?: string | undefined;
 }
 
+/**
+ * What the route lends a save beyond its input. `replayIfRetried` throws the
+ * platform's idempotency-race signal when THIS request's Idempotency-Key is already
+ * stored with this request's fingerprint — a concurrent copy of the same request
+ * committed first — so the route answers with the stored response instead of a
+ * refusal. It returns normally otherwise, and the refusal stands.
+ */
+export interface ReportSnapshotCreateHooks {
+  readonly replayIfRetried?: () => Promise<void>;
+}
+
 export interface ReportSnapshotListInput {
   readonly reportCode: string;
   readonly companyId: string;
@@ -214,7 +237,17 @@ export class ReportSnapshotService extends ApplicationService {
   }
 
   /** Saves a frozen snapshot of one run, or a restatement of the latest one. */
-  async create(db: DbHandle, input: ReportSnapshotCreateInput): Promise<ReportSnapshotCreatedView> {
+  async create(
+    db: DbHandle,
+    input: ReportSnapshotCreateInput,
+    hooks: ReportSnapshotCreateHooks = {}
+  ): Promise<ReportSnapshotCreatedView> {
+    // A refusal that a concurrent copy of THIS request may explain: when it does,
+    // the caller is answered with that copy's stored response, not refused.
+    const refuseUnlessRetried = async (refusal: AppFailure): Promise<never> => {
+      await hooks.replayIfRetried?.();
+      throw refusal;
+    };
     if (!isReportDatasetCode(input.reportCode)) {
       throw new AppFailure('ERR-RES-001', { message: 'Report not found.' });
     }
@@ -286,7 +319,7 @@ export class ReportSnapshotService extends ApplicationService {
         });
       }
       if (restated.restatedBySnapshotId !== null) {
-        throw notLatest(restated.id);
+        await refuseUnlessRetried(notLatest(restated.id));
       }
       if (restated.periodFrom !== input.from || restated.periodToExclusive !== input.to) {
         throw withBusinessRefusal(
@@ -310,7 +343,7 @@ export class ReportSnapshotService extends ApplicationService {
         periodToExclusive: input.to,
         parameters,
       });
-      if (existing !== null) throw alreadySaved(SNAPSHOT_ENTITY, existing.id);
+      if (existing !== null) await refuseUnlessRetried(alreadySaved(SNAPSHOT_ENTITY, existing.id));
     }
 
     const refusalEntity =
@@ -323,32 +356,37 @@ export class ReportSnapshotService extends ApplicationService {
 
     let stored: ReportSnapshotRow;
     try {
-      stored = await this.repository.insert(db, {
-        companyId: input.companyId,
-        branchId: input.branchId,
-        reportCode: definition.code,
-        periodFrom: input.from,
-        periodToExclusive: input.to,
-        timezoneName: result.first.period.timezone,
-        asOf: result.asOf,
-        parameters,
-        requiredPermissions: definition.requiredPermissions,
-        columns: result.first.columns,
-        rows: result.rows,
-        restatesSnapshotId: restated?.id ?? null,
-        restatementReason: restated === null ? null : (reason ?? null),
-        difference: difference === null ? null : { ...difference },
-      });
+      // Inside a savepoint, so a unique-index loss leaves the request's transaction
+      // usable: the retry check below reads the idempotency keys on it.
+      stored = await withSavepoint(db, (nested) =>
+        this.repository.insert(nested, {
+          companyId: input.companyId,
+          branchId: input.branchId,
+          reportCode: definition.code,
+          periodFrom: input.from,
+          periodToExclusive: input.to,
+          timezoneName: result.first.period.timezone,
+          asOf: result.asOf,
+          parameters,
+          requiredPermissions: definition.requiredPermissions,
+          columns: result.first.columns,
+          rows: result.rows,
+          restatesSnapshotId: restated?.id ?? null,
+          restatementReason: restated === null ? null : (reason ?? null),
+          difference: difference === null ? null : { ...difference },
+        })
+      );
     } catch (error) {
       // A concurrent save of the same period, or a concurrent restatement of the
-      // same snapshot, lost the race at the unique index: refused by rule, not 500.
+      // same snapshot, lost the race at the unique index: refused by rule, not 500
+      // — unless the winner was this very request sent twice, which is replayed.
       if (isSqlState(error, SQLSTATE.uniqueViolation)) {
         const constraint = violatedConstraint(error);
         if (constraint === 'uq_report_snapshots_original') {
-          throw alreadySaved(branchEntity.entityType, branchEntity.entityId);
+          return refuseUnlessRetried(alreadySaved(branchEntity.entityType, branchEntity.entityId));
         }
         if (constraint === 'uq_report_snapshots_restates' && restated !== null) {
-          throw notLatest(restated.id);
+          return refuseUnlessRetried(notLatest(restated.id));
         }
       }
       throw error;
@@ -530,12 +568,32 @@ export class ReportSnapshotService extends ApplicationService {
   }
 
   /**
-   * Every page of the run, as of ONE moment, inside the request's transaction.
-   *
-   * Capped exactly as the export is: the configured row bound and the same byte
-   * bound, measured over the rows as they will be stored.
+   * Every page of the run, as of ONE moment, in ONE database snapshot: a READ ONLY
+   * transaction at REPEATABLE READ of its own, on the caller's context (see the
+   * file header for why the request's transaction cannot be that one).
    */
   private async readWholeReport(
+    db: DbHandle,
+    input: ReportSnapshotCreateInput,
+    refusalEntity: { readonly entityType: string; readonly entityId: string }
+  ): Promise<{ first: ReportRunView; asOf: string; rows: ReportRowView[] }> {
+    return withTransaction(
+      db.context,
+      (snapshotDb) => this.readPages(snapshotDb, input, refusalEntity),
+      {
+        access: 'read only',
+        isolation: 'repeatable read',
+        ...(db.connection === undefined ? {} : { connection: db.connection }),
+      }
+    );
+  }
+
+  /**
+   * The pages themselves, on the snapshot transaction. Capped exactly as the export
+   * is: the configured row bound and the same byte bound, measured over the rows as
+   * they will be stored.
+   */
+  private async readPages(
     db: DbHandle,
     input: ReportSnapshotCreateInput,
     refusalEntity: { readonly entityType: string; readonly entityId: string }
@@ -610,15 +668,19 @@ export class ReportSnapshotService extends ApplicationService {
   ): Promise<ReportSnapshotDifferenceView> {
     const identity = (row: ReportRowView): string | null =>
       row.cells.find((cell) => cell.key === snapshot.identityColumn)?.value ?? null;
+    // A withheld column — the party NAME — is a display value: empty for a saver
+    // without the code that names it, and moved by a rename. It is not part of what
+    // a row reports, so it never makes a row count as changed.
+    const ignored = new Set(snapshot.withheldColumns.map((column) => column.key));
     const before = new Map<string, string>();
     for (const row of (await this.repository.rowsOf(db, restated.id)) as ReportRowView[]) {
       const key = identity(row);
-      if (key !== null) before.set(key, canonicalRow(row));
+      if (key !== null) before.set(key, canonicalRow(row, ignored));
     }
     const after = new Map<string, string>();
     for (const row of rows) {
       const key = identity(row);
-      if (key !== null) after.set(key, canonicalRow(row));
+      if (key !== null) after.set(key, canonicalRow(row, ignored));
     }
     let added = 0;
     let changed = 0;
@@ -693,10 +755,11 @@ function notLatest(restatedId: string): AppFailure {
   );
 }
 
-/** A row's cells in a fixed key order, so two equal rows compare equal. */
-function canonicalRow(row: ReportRowView): string {
+/** A row's compared cells in a fixed key order, so two equal rows compare equal. */
+function canonicalRow(row: ReportRowView, ignored: ReadonlySet<string>): string {
   return JSON.stringify(
-    [...row.cells]
+    row.cells
+      .filter((cell) => !ignored.has(cell.key))
       .sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0))
       .map((cell) => [cell.key, cell.label, cell.value])
   );

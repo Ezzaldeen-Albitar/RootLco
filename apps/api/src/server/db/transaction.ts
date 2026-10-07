@@ -70,10 +70,13 @@ export interface TransactionOptions {
   /**
    * `repeatable read` starts the transaction at REPEATABLE READ, so every
    * statement in it reads ONE snapshot of the database — the snapshot taken by its
-   * first statement (P1-32-PRE-OD-FD16B). For a request that assembles one result
-   * from several reads and must not see a write that commits between them: a
-   * frozen report snapshot read page by page. Defaults to the server's READ
-   * COMMITTED, which keeps every existing caller unchanged.
+   * first statement (P1-32-PRE-OD-FD16B). For a READ ONLY transaction that
+   * assembles one result from several reads and must not see a write that commits
+   * between them: a frozen report snapshot read page by page. Never for a
+   * transaction that appends to the audit chain or draws from a sequence table:
+   * those writers number the next entry by reading the highest one so far, which at
+   * REPEATABLE READ misses every entry committed since the snapshot. Defaults to the
+   * server's READ COMMITTED, which keeps every existing caller unchanged.
    */
   readonly isolation?: 'read committed' | 'repeatable read';
 }

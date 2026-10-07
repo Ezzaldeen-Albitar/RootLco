@@ -29,7 +29,7 @@
  * payment report suite does and for the reasons it records. This suite owns its
  * company, branches, principals and payment method.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
@@ -52,6 +52,7 @@ import {
   type Principal,
 } from './p1-19-helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
+import { reportingModule } from '@/modules/reporting';
 import { __resetRateLimitForTests } from '@/server/http/rate-limit';
 import { __resetBackendConfigForTests } from '@/server/config/backend-config';
 import { GET as RUN } from '@/app/api/v1/reports/[reportCode]/rows/route';
@@ -125,7 +126,15 @@ const TENANT_B_FULL: Principal = {
   tenantId: TENANT_B,
   permissions: ['rpt.report.read', 'sal.finance.view', 'rpt.export'],
 };
-const PRINCIPALS = [SAVER, READER, NO_FINANCE, SCOPED_N2, TENANT_B_FULL];
+/** May save and see money in every branch, but is not told party names. */
+const NO_CRM: Principal = {
+  roleId: 'f16b0000-0000-4000-8000-000000000151',
+  userId: 'f16b0000-0000-4000-8000-000000000152',
+  subject: 'fx_od_fd16b_no_crm',
+  tenantId: TENANT_A,
+  permissions: ['rpt.report.read', 'sal.finance.view', 'rpt.export'],
+};
+const PRINCIPALS = [SAVER, READER, NO_FINANCE, SCOPED_N2, TENANT_B_FULL, NO_CRM];
 
 const CREATE_OPERATION = 'rpt.report-snapshot-create';
 
@@ -255,6 +264,25 @@ async function refusals(rule: string, entity?: string): Promise<number> {
     [`operation=${CREATE_OPERATION} entity=${entity ?? '%'} rule=${rule} outcome=refused`]
   );
   return Number(result.rows[0]?.n ?? '0');
+}
+
+/**
+ * The run the snapshot service reads its pages through — the module's own
+ * instance, which the route uses — so a test can act between the pages.
+ */
+interface RunSeam {
+  run(...args: unknown[]): Promise<unknown>;
+}
+function runSeam(): RunSeam {
+  return (reportingModule().snapshots as unknown as { runs: RunSeam }).runs;
+}
+
+async function chainVerifies(): Promise<boolean> {
+  const result = await admin.query<{ report: { ok: boolean } }>(
+    'SELECT iam.audit_verify_chain($1) AS report',
+    [TENANT_A]
+  );
+  return result.rows[0]?.report.ok === true;
 }
 
 async function snapshotRows(periodFrom: string): Promise<number> {
@@ -924,5 +952,133 @@ describe('idempotency and concurrency', () => {
     expect(((await refused?.json()) as Problem).code).toBe('ERR-RES-002');
     expect(await snapshotRows(from)).toBe(1);
     expect(await refusals('report_snapshot_exists')).toBe(before + 1);
+  });
+
+  it('saves while another audited write in the tenant commits between its pages', async () => {
+    // The save reads its pages in one consistent snapshot. Its audit record must
+    // still be numbered after every audited write the tenant committed meanwhile:
+    // at REPEATABLE READ the chain's next number came from the old snapshot, was
+    // already taken, and the save answered 500. Here another save — an audited
+    // write in the same tenant, on its own connections — commits after page 1.
+    authAs(SAVER);
+    const seam = runSeam();
+    const original = seam.run.bind(seam);
+    let started = false;
+    let interleaved: Response | undefined;
+    const spy = vi.spyOn(seam, 'run').mockImplementation(async (...args: unknown[]) => {
+      const page = await original(...args);
+      if (!started) {
+        started = true;
+        interleaved = await create({ ...scope, from: '2026-04-17', to: '2026-04-18' });
+      }
+      return page;
+    });
+    try {
+      const response = await create({ ...scope, from: '2026-04-15', to: '2026-04-16' });
+      expect(interleaved?.status).toBe(201);
+      expect(response.status).toBe(201);
+      const saved = ((await response.json()) as { snapshot: SnapshotView }).snapshot;
+      expect(await snapshotRows('2026-04-15')).toBe(1);
+      expect(await snapshotRows('2026-04-17')).toBe(1);
+      const audits = await admin.query<{ n: string }>(
+        `SELECT count(*)::text AS n FROM iam.audit_records
+          WHERE tenant_id = $1 AND entity_id = $2 AND action = 'rpt.report.snapshot_created'`,
+        [TENANT_A, saved.id]
+      );
+      expect(audits.rows[0]?.n).toBe('1');
+      expect(await chainVerifies()).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('answers two concurrent copies of one request under one key with one snapshot, refusing neither', async () => {
+    // A retry sent while the first attempt is still running: both execute, and the
+    // loser meets the winner's row before it reaches the key. Held until both are
+    // reading, so the race is the one under test and not a sequential replay.
+    authAs(SAVER);
+    const seam = runSeam();
+    const original = seam.run.bind(seam);
+    let arrived = 0;
+    let release: () => void = () => undefined;
+    const bothReading = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const fallback = setTimeout(() => release(), 20_000);
+    const spy = vi.spyOn(seam, 'run').mockImplementation(async (...args: unknown[]) => {
+      arrived += 1;
+      if (arrived === 2) release();
+      if (arrived <= 2) await bothReading;
+      return original(...args);
+    });
+    try {
+      const from = '2026-04-22';
+      const key = randomUUID();
+      const before = await refusals('report_snapshot_exists');
+      const responses = await Promise.all([
+        create({ ...scope, from, to: '2026-04-23' }, key),
+        create({ ...scope, from, to: '2026-04-23' }, key),
+      ]);
+      expect(arrived).toBeGreaterThanOrEqual(2);
+      // The winner's 201, and the stored response replayed as every replay is: 200.
+      expect(responses.map((response) => response.status).sort()).toEqual([200, 201]);
+      const ids = await Promise.all(
+        responses.map(
+          async (response) => ((await response.json()) as { snapshot: SnapshotView }).snapshot.id
+        )
+      );
+      expect(ids[0]).toBe(ids[1]);
+      expect(await snapshotRows(from)).toBe(1);
+      expect(await refusals('report_snapshot_exists')).toBe(before);
+    } finally {
+      clearTimeout(fallback);
+      spy.mockRestore();
+    }
+  });
+});
+
+describe('a restatement counts a row as changed only when what it reports changed', () => {
+  it('does not count a party name the restater is not told as a change', async () => {
+    // The same documents, the same moment (the period's end): only the party name
+    // differs, because the restater may not be told it. That is not a change.
+    const wider = { ...scope, from: FROM, to: '2026-04-13' };
+    authAs(SAVER);
+    const first = await create(wider);
+    expect(first.status).toBe(201);
+    const saved = ((await first.json()) as { snapshot: SnapshotView }).snapshot;
+    expect(saved.rowCount).toBe(2);
+
+    authAs(NO_CRM);
+    const second = await create({
+      ...wider,
+      restatesSnapshotId: saved.id,
+      reason: 'Saved again by a colleague',
+    });
+    expect(second.status).toBe(201);
+    const restated = ((await second.json()) as { snapshot: SnapshotView }).snapshot;
+    expect(restated.asOf).toBe(saved.asOf);
+    expect(restated.difference).toMatchObject({
+      rowsBefore: 2,
+      rowsAfter: 2,
+      rowsAdded: 0,
+      rowsRemoved: 0,
+      rowsChanged: 0,
+    });
+    for (const total of restated.difference?.totals ?? []) {
+      expect(total.after, total.measure).toBe(total.before);
+    }
+    // And the name really did differ between the two stored copies.
+    const names = await admin.query<{ id: string; name: string | null }>(
+      `SELECT s.id::text AS id, cell->>'value' AS name
+         FROM rpt.report_snapshots s,
+              jsonb_array_elements(s.rows) AS r(row),
+              jsonb_array_elements(r.row->'cells') AS c(cell)
+        WHERE s.id = ANY($1::uuid[]) AND cell->>'key' = 'partyName'`,
+      [[saved.id, restated.id]]
+    );
+    const savedNames = names.rows.filter((row) => row.id === saved.id).map((row) => row.name);
+    const restatedNames = names.rows.filter((row) => row.id === restated.id).map((row) => row.name);
+    expect(savedNames.some((name) => name !== null)).toBe(true);
+    expect(restatedNames.every((name) => name === null)).toBe(true);
   });
 });
