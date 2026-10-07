@@ -360,6 +360,33 @@ describe('what the opened sheet carries', () => {
     expect(within(sheet).getByText('WO-000119')).toBeVisible();
   });
 
+  it('names itself on every printed page by the job it hands over, in a head row drawn only on paper', async () => {
+    // Pages after the first otherwise said nothing about which handover they
+    // belonged to (2026-10-07 browser retest). A handover has no number of its
+    // own: the work order's number names it.
+    renderScreen();
+    await openDocument();
+    await waitFor(() => expect(readWorkOrderDetail).toHaveBeenCalledWith(WORK_ORDER_ID));
+    const sheet = document.querySelector('[data-print="document"]') as HTMLElement;
+    const identity = within(sheet).getByTestId('print-document-identity');
+    expect(identity.tagName).toBe('THEAD');
+    const classes = identity.className.split(/\s+/);
+    expect(classes).toContain('hidden');
+    expect(classes).toContain('print:table-header-group');
+    await waitFor(() =>
+      expect(identity).toHaveTextContent(`${EN['delivery.document.title']} · WO-000119`)
+    );
+  });
+
+  it('repeats the title alone when the work order may not be read, and invents no number', async () => {
+    renderScreen({ canReadWorkOrder: false });
+    await openDocument();
+    const sheet = document.querySelector('[data-print="document"]') as HTMLElement;
+    expect(within(sheet).getByTestId('print-document-identity').textContent).toBe(
+      EN['delivery.document.title']
+    );
+  });
+
   it('does not ask for the work order without its code, and says its details are left off', async () => {
     renderScreen({ canReadWorkOrder: false });
     await openDocument();

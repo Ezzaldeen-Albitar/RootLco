@@ -22,6 +22,7 @@ import { notifyActionResult } from '@/components/notifications/action-notificati
 import { IDLE, invalid, unreachable } from '@/lib/forms/action-result';
 import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { useUnfinishedEntries } from '@/lib/forms/use-unfinished-entries';
 import { listCustomerVehiclesCancellable } from '@/lib/customers/vehicles-read';
 import type { CustomerVehicleEntry } from '@/lib/customers/vehicles-contract';
 import type { Messages } from '@/i18n/get-messages';
@@ -139,6 +140,8 @@ function BookingForm({
   const [typeId, setTypeId] = useState('');
   const [channelId, setChannelId] = useState('');
   const [windowDraft, setWindowDraft] = useState<WindowDraft>(EMPTY_WINDOW);
+  // Which half of the window is only partly typed, as its field reports it.
+  const windowUnfinished = useUnfinishedEntries();
   const [state, setState] = useState<AppointmentCreateState>(IDLE);
   const [pending, setPending] = useState(false);
   const [booked, setBooked] = useState(false);
@@ -191,7 +194,10 @@ function BookingForm({
     if (customer === null) found['requesterPartnerId'] = 'appointments.book.requesterRequired';
     if (vehicle === null) found['vehicleId'] = 'appointments.book.vehicleRequired';
     if (typeId.length === 0) found['appointmentTypeId'] = 'field.required';
-    const windowIssues = windowErrors(windowDraft);
+    const windowIssues = windowErrors(windowDraft, {
+      from: windowUnfinished.isUnfinished('from'),
+      to: windowUnfinished.isUnfinished('to'),
+    });
     if (windowIssues.from) found['requestedFrom'] = windowIssues.from;
     if (windowIssues.to) found['requestedTo'] = windowIssues.to;
     if (Object.keys(found).length > 0) {
@@ -386,6 +392,7 @@ function BookingForm({
         onEdit={(half) => {
           corrections.noteEdited(half === 'from' ? 'requestedFrom' : 'requestedTo');
         }}
+        onProblem={(half, problem) => windowUnfinished.noteProblem(half)(problem)}
         errors={{
           from: isServerKey(fromKey) ? undefined : fromKey,
           to: isServerKey(toKey) ? undefined : toKey,

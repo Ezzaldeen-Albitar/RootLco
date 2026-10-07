@@ -231,6 +231,19 @@ describe('the printable receipt (FE-021)', () => {
     }
   });
 
+  it('names itself, title and receipt reference, in a head row drawn only on paper', async () => {
+    // Every printed page after the first otherwise said nothing about which
+    // receipt it belonged to (2026-10-07 browser retest).
+    const user = userEvent.setup();
+    const document = await openPrint(user);
+    const identity = within(document).getByTestId('print-document-identity');
+    expect(identity.tagName).toBe('THEAD');
+    const classes = identity.className.split(/\s+/);
+    expect(classes).toContain('hidden');
+    expect(classes).toContain('print:table-header-group');
+    expect(identity).toHaveTextContent(`${EN['payments.print.title']} · RCT-000007`);
+  });
+
   it('says a receipt applied to nothing has been applied to nothing', async () => {
     readReceipt.mockResolvedValue(
       okRead(detail({ allocations: [], status: 'recorded', unallocated: receipt.money }))

@@ -120,6 +120,8 @@ export function AcknowledgementDocument({
   return (
     <PrintDocument
       title={title}
+      // The title already carries the visit's number when it has one.
+      reference={null}
       brand={<BrandMark />}
       header={
         <>

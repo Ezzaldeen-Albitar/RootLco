@@ -231,6 +231,7 @@ export function InvoiceDocument({
   return (
     <PrintDocument
       title={translate(messages, 'invoices.print.title')}
+      reference={invoice.invoiceNumber ?? translate(messages, 'invoices.detail.notIssued')}
       header={
         <dl className="grid gap-1">
           <div>

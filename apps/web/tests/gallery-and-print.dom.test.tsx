@@ -163,6 +163,54 @@ describe('print document', () => {
     expect(table.querySelector('tbody')).not.toBeNull();
   });
 
+  it('names the document on every printed page when it has a reference, and only on paper', () => {
+    // The header prints once, on page one. A document that names a reference
+    // is wrapped in a layout table whose head row the browser repeats on each
+    // printed page (2026-10-07 browser retest); on screen the row is hidden.
+    const { container } = renderLtr(
+      <PrintDocument title="Sample" reference="DOC-000001" header={<p>DOC-000001</p>}>
+        <p>Body</p>
+      </PrintDocument>
+    );
+    const identity = screen.getByTestId('print-document-identity');
+    expect(identity.tagName).toBe('THEAD');
+    const classes = identity.className.split(/\s+/);
+    expect(classes).toContain('hidden');
+    expect(classes).toContain('print:table-header-group');
+    expect(identity.textContent).toBe('Sample · DOC-000001');
+    // A layout table: it says nothing to assistive technology, and the page-one
+    // header and body are inside it, unchanged.
+    const frame = identity.closest('table') as HTMLElement;
+    expect(frame.getAttribute('role')).toBe('presentation');
+    expect(within(frame).getByRole('heading', { name: 'Sample' })).toBeInTheDocument();
+    expect(within(frame).getByText('Body')).toBeInTheDocument();
+    // The body row may break across pages, unlike a line of a `PrintTable`.
+    expect(frame.querySelector(':scope > tbody > tr')?.className).toContain(
+      'print:break-inside-auto'
+    );
+    // The number is one phrase in the row, never a second exact copy of it.
+    expect(within(container).getAllByText('DOC-000001')).toHaveLength(1);
+  });
+
+  it('repeats the title alone for a null reference, and nothing at all without one', () => {
+    const { unmount } = renderLtr(
+      <PrintDocument title="Sample" reference={null}>
+        <p>Body</p>
+      </PrintDocument>
+    );
+    expect(screen.getByTestId('print-document-identity').textContent).toBe('Sample');
+    unmount();
+    // A sheet that is not a document (the shelf labels, one label per page)
+    // passes no reference and gets no repeated row and no layout table.
+    const { container } = renderLtr(
+      <PrintDocument title="Labels">
+        <p>Body</p>
+      </PrintDocument>
+    );
+    expect(screen.queryByTestId('print-document-identity')).toBeNull();
+    expect(container.querySelector('table')).toBeNull();
+  });
+
   it('renders in Arabic RTL without its own layout', () => {
     renderRtl(
       <PrintDocument title="مستند">
@@ -177,6 +225,19 @@ describe('print document', () => {
     for (const [, renderIn] of BOTH_DIRECTIONS) {
       const { container, unmount } = renderIn(
         <PrintDocument title="Sample" footer={<p>Footer</p>}>
+          <PrintTable headers={['A']} rows={[['1']]} />
+        </PrintDocument>
+      );
+      const results = await axe(container);
+      expect(results.violations).toEqual([]);
+      unmount();
+    }
+  });
+
+  it('has no axe violations in either direction with the repeated identity row', async () => {
+    for (const [, renderIn] of BOTH_DIRECTIONS) {
+      const { container, unmount } = renderIn(
+        <PrintDocument title="Sample" reference="DOC-000001" footer={<p>Footer</p>}>
           <PrintTable headers={['A']} rows={[['1']]} />
         </PrintDocument>
       );

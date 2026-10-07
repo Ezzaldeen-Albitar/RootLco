@@ -284,6 +284,23 @@ describe('confirm by rescheduling (FE-003)', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalled());
   });
 
+  it('says a moment typed only in part is unfinished, never that it is required, and sends nothing', async () => {
+    // A partly typed moment holds no value, and the form used to answer it with
+    // "This field is required." (2026-10-07 browser retest).
+    const user = userEvent.setup();
+    renderScreen({ status: 'requested' });
+    await typeMoment(user, 'appointments.window.from', '210820260900');
+    // The end: day and month only.
+    await typeMoment(user, 'appointments.window.to', '2108');
+    await user.click(rescheduleSubmit());
+
+    expect(await screen.findByText(en['field.dateTimeIncomplete'])).toBeVisible();
+    expect(screen.queryByText(en['field.required'])).toBeNull();
+    expect(half('appointments.window.to')).toHaveAttribute('aria-invalid', 'true');
+    expect(half('appointments.window.from')).not.toHaveAttribute('aria-invalid');
+    expect(rescheduleAppointment).not.toHaveBeenCalled();
+  });
+
   it("types on the APPOINTMENT's branch clock, not the working branch's", async () => {
     rescheduleAppointment.mockResolvedValue(rescheduled(8));
     const user = userEvent.setup();

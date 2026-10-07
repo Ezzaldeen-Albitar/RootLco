@@ -16,6 +16,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import { useReread } from '@/lib/api/use-reread';
+import { unitName } from '@/lib/unit-name';
 
 import { listRevisions, readRevision, readRevisionDecisions } from '../api';
 import type {
@@ -36,7 +37,10 @@ import { Money, When } from './shared';
  * the acceptance record, D11) and the page's own work-order read for the job's
  * number, customer and vehicle. No PDF is generated: this is HTML that prints
  * well, through the shared frame (`PrintDocument`, `PrintTable`) — direction from
- * the document root, a header repeated on every page, rows never split.
+ * the document root, the title and quotation number at the top of every printed
+ * page, the lines table's column headings repeated wherever it crosses a page,
+ * and no line split across two. The header block (number, revision, dates,
+ * branch) prints once, on the first page.
  *
  * ## The same gate as the screen
  *
@@ -337,7 +341,7 @@ export function QuotationDocument({
       {line.quantity}
     </span>,
     line.unit ? (
-      <bdi key="u">{line.unit.name}</bdi>
+      <bdi key="u">{unitName(messages, line.unit)}</bdi>
     ) : (
       <span key="u" className="text-text-muted">
         {translate(messages, 'quotations.print.noUnit')}
@@ -352,6 +356,7 @@ export function QuotationDocument({
   return (
     <PrintDocument
       title={translate(messages, 'quotations.print.title')}
+      reference={quotation.quotationNumber}
       header={
         <dl className="grid gap-1">
           <Pair label={translate(messages, 'quotations.print.number')}>

@@ -24,6 +24,7 @@ import type { ReadState } from '@/lib/api/read-operation';
 import { CLIENT_READ_TIMEOUT_MS } from '@/lib/api/read-budget';
 import { unreachable, type ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { unitName } from '@/lib/unit-name';
 
 import {
   cancelInvoice,
@@ -878,7 +879,9 @@ function PreviewFigures({
                   {line.unit ? (
                     <>
                       {' '}
-                      <bdi className="text-caption text-text-muted">{line.unit.name}</bdi>
+                      <bdi className="text-caption text-text-muted">
+                        {unitName(messages, line.unit)}
+                      </bdi>
                     </>
                   ) : null}
                 </td>
@@ -1657,7 +1660,9 @@ function DetailPanel({
                     {line.unit ? (
                       <>
                         {' '}
-                        <bdi className="text-caption text-text-muted">{line.unit.name}</bdi>
+                        <bdi className="text-caption text-text-muted">
+                          {unitName(messages, line.unit)}
+                        </bdi>
                       </>
                     ) : null}
                   </td>

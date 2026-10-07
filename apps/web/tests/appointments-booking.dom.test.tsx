@@ -452,6 +452,29 @@ describe('booking', () => {
     await waitFor(() => expect(to).not.toHaveAttribute('aria-invalid'));
   });
 
+  it('says a moment typed only in part is unfinished, never that it is required, and books nothing', async () => {
+    // A partly typed moment holds no value, and the form used to answer it with
+    // "This field is required." (2026-10-07 browser retest). The field reports
+    // it as unfinished, and that is what is said, on that half only.
+    const user = userEvent.setup();
+    renderScreen();
+    await fillForm(user);
+    const to = screen.getByRole('group', { name: new RegExp(`^${en['appointments.window.to']}`) });
+    await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('{Control>}a{/Control}{Backspace}');
+    await user.keyboard('2108');
+    await user.click(submit());
+
+    expect(await screen.findByText(en['field.dateTimeIncomplete'])).toBeVisible();
+    expect(screen.queryByText(en['field.required'])).toBeNull();
+    expect(to).toHaveAttribute('aria-invalid', 'true');
+    const from = screen.getByRole('group', {
+      name: new RegExp(`^${en['appointments.window.from']}`),
+    });
+    expect(from).not.toHaveAttribute('aria-invalid');
+    expect(createAppointment).not.toHaveBeenCalled();
+  });
+
   it('refuses a window that ends before it starts, on the end', async () => {
     const user = userEvent.setup();
     renderScreen();

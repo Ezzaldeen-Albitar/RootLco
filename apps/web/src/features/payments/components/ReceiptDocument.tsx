@@ -98,6 +98,7 @@ export function ReceiptDocument({
   return (
     <PrintDocument
       title={translate(messages, 'payments.print.title')}
+      reference={receipt.reference}
       header={
         <dl className="grid gap-1">
           <div>

@@ -24,6 +24,7 @@ import { formatDayInZone, isCalendarDay } from '@/lib/branch-time';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatDateTime, intlLocale } from '@/lib/format';
 import { formatMoney } from '@/lib/money';
+import { unitName } from '@/lib/unit-name';
 
 import type { QuotationLineBody } from '@/lib/contracts/quotations-contract';
 import {
@@ -295,7 +296,9 @@ export function LinesTable({
                 {line.unit ? (
                   <>
                     {' '}
-                    <bdi className="text-caption text-text-muted">{line.unit.name}</bdi>
+                    <bdi className="text-caption text-text-muted">
+                      {unitName(messages, line.unit)}
+                    </bdi>
                   </>
                 ) : null}
               </td>

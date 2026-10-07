@@ -31,6 +31,7 @@ import type { ReceptionDetail } from '../../receptions-contract';
 import type { CheckInStepProps } from '../../check-in/wizard';
 import { IDLE, unreachable, type ActionState } from '@/lib/forms/action-result';
 import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
+import { INCOMPLETE_DATE_TIME_KEY, useUnfinishedEntries } from '@/lib/forms/use-unfinished-entries';
 import {
   EvidenceSection,
   EvidenceStates,
@@ -333,6 +334,9 @@ function OdometerForm({
   // working selection (this route is addressed to one record).
   const zone = context.branches.find((entry) => entry.id === detail.branchId)?.timezone || null;
   const [draft, setDraft] = useState<OdometerDraft>(EMPTY_READING);
+  // A moment only partly typed holds no value, so the hidden input is empty; the
+  // field reports it, and it is refused as unfinished rather than as missing.
+  const unfinished = useUnfinishedEntries();
 
   const [state, action, pending] = useActionState(
     async (previous: ActionState, form: FormData): Promise<ActionState> => {
@@ -341,7 +345,9 @@ function OdometerForm({
       if (String(form.get('value') ?? '').trim() === '') found['value'] = 'field.required';
       if (String(form.get('unit') ?? '') === '') found['unit'] = 'field.required';
       if (String(form.get('observedAt') ?? '') === '') {
-        found['observedAt'] = 'vehicles.odometer.error.observedAt';
+        found['observedAt'] = unfinished.isUnfinished('observedAt')
+          ? INCOMPLETE_DATE_TIME_KEY
+          : 'vehicles.odometer.error.observedAt';
       }
       if (Object.keys(found).length > 0) {
         return { status: 'invalid', messageKey: 'form.formError', fieldErrors: found, attempt };
@@ -431,6 +437,7 @@ function OdometerForm({
             timezone={zone}
             value={draft.observedAt}
             onChange={(value) => update('observedAt', value)}
+            onProblem={unfinished.noteProblem('observedAt')}
             error={fieldError('observedAt')}
             testId="odometer-observed-at"
           />

@@ -231,6 +231,9 @@ export function CreditNoteDocument({
   return (
     <PrintDocument
       title={translate(messages, 'creditNotes.print.title')}
+      // No credit-note number exists: the copy repeats the same reference its
+      // header already composes from the credited invoice and the request time.
+      reference={reference}
       header={
         <dl className="grid gap-1">
           <Pair

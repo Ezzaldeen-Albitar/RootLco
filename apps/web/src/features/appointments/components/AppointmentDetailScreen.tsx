@@ -16,6 +16,7 @@ import { IDLE, invalid, unreachable, type ActionState } from '@/lib/forms/action
 import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
 import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { useUnfinishedEntries } from '@/lib/forms/use-unfinished-entries';
 import { formatInZone, zoneLabelAt } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
 import type { Messages } from '@/i18n/get-messages';
@@ -462,6 +463,8 @@ function RescheduleSection({
   const [pending, setPending] = useState(false);
   const formRef = useFocusFirstInvalid(state);
   const corrections = useClearOnCorrect(state);
+  // Which half of the window is only partly typed, as its field reports it.
+  const windowUnfinished = useUnfinishedEntries();
 
   // Typed times are unsaved work: a branch switch or leaving the page asks,
   // and a confirmed discard empties the form.
@@ -485,7 +488,10 @@ function RescheduleSection({
     // off by the branch's real offset.
     if (zone === null) return;
     const attempt = (state.attempt ?? 0) + 1;
-    const issues = windowErrors(draft);
+    const issues = windowErrors(draft, {
+      from: windowUnfinished.isUnfinished('from'),
+      to: windowUnfinished.isUnfinished('to'),
+    });
     if (issues.from || issues.to) {
       const found: Record<string, string> = {};
       if (issues.from) found['confirmedFrom'] = issues.from;
@@ -569,6 +575,7 @@ function RescheduleSection({
           onEdit={(half) =>
             corrections.noteEdited(half === 'from' ? 'confirmedFrom' : 'confirmedTo')
           }
+          onProblem={(half, problem) => windowUnfinished.noteProblem(half)(problem)}
           errors={{
             from: isServerKey(fromKey) ? undefined : fromKey,
             to: isServerKey(toKey) ? undefined : toKey,

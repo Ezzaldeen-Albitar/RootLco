@@ -471,6 +471,49 @@ describe('the work-order record says why a command was refused', () => {
     expect(assignTechnician).not.toHaveBeenCalled();
   });
 
+  it('says a window bound typed only in part is unfinished, never that it is required, and assigns nothing', async () => {
+    // A partly typed moment holds no value, and the form used to answer it with
+    // "This field is required." (2026-10-07 browser retest).
+    PERMISSIONS = [WORK_ORDER_READ, 'tech.technician.read', 'tech.assignment.manage'];
+    readWorkOrderDetail.mockResolvedValue({
+      status: 'ok',
+      data: movable,
+      correlationId: 'corr-wo',
+    });
+    listJobAssignments.mockResolvedValue({
+      status: 'ok',
+      data: { items: [] },
+      correlationId: 'corr-assignments',
+    });
+    listJobBlockers.mockResolvedValue({
+      status: 'ok',
+      data: { items: [] },
+      correlationId: 'corr-blockers',
+    });
+    const user = userEvent.setup();
+    await renderRecord();
+
+    await user.click(await screen.findByRole('button', { name: 'Open job Front brake overhaul' }));
+    const profile = await screen.findByLabelText(
+      new RegExp(`^${EN['workOrders.detail.technicianProfileId'] as string}`)
+    );
+    await user.type(profile, 'the-reference-on-screen');
+    await typeMoment(user, EN['workOrders.detail.windowFrom'] as string, '010920260800');
+    // The end: day and month only.
+    await typeMoment(user, EN['workOrders.detail.windowTo'] as string, '0109');
+    await user.click(
+      screen.getByRole('button', { name: EN['workOrders.detail.assignTechnician'] as string })
+    );
+
+    expect(await screen.findByText(EN['field.dateTimeIncomplete'] as string)).toBeVisible();
+    expect(screen.queryByText(EN['field.required'] as string)).toBeNull();
+    const to = screen.getByRole('group', {
+      name: new RegExp(`^${EN['workOrders.detail.windowTo'] as string}`),
+    });
+    expect(to).toHaveAttribute('aria-invalid', 'true');
+    expect(assignTechnician).not.toHaveBeenCalled();
+  });
+
   it('puts the inactive-technician refusal beside the technician control', async () => {
     // `assign()` runs the eligibility check before the write, and an inactive
     // profile comes back on `body.technicianProfileId` — the control this form

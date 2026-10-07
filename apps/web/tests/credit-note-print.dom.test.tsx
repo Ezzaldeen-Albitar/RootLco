@@ -271,6 +271,24 @@ describe('the credit-note copy, document only', () => {
     expect(container.textContent).not.toContain('1,500.0');
   });
 
+  it('names itself on every printed page by the same reference as its header, and invents no number', () => {
+    // Pages after the first otherwise carried nothing that said which note they
+    // belonged to (2026-10-07 browser retest). A credit note has no number of
+    // its own, so the repeated row carries the composed reference — and only it.
+    for (const over of [{}, { invoice: null }]) {
+      const { getByTestId, unmount } = renderDocument(over);
+      const identity = getByTestId('print-document-identity');
+      expect(identity.tagName).toBe('THEAD');
+      const classes = identity.className.split(/\s+/);
+      expect(classes).toContain('hidden');
+      expect(classes).toContain('print:table-header-group');
+      const reference = getByTestId('credit-note-print-reference').textContent ?? '';
+      expect(reference.length).toBeGreaterThan(0);
+      expect(identity.textContent).toBe(`${EN['creditNotes.print.title']} · ${reference}`);
+      unmount();
+    }
+  });
+
   it('identifies a note whose invoice has no number by its request time alone', () => {
     const { getByTestId } = renderDocument({ invoice: null });
     expect(getByTestId('credit-note-print-reference')).toHaveTextContent('Credit note requested');

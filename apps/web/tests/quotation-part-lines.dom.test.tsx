@@ -498,6 +498,9 @@ describe('the quotation shows a part line by name and unit', () => {
     const row = screen.getAllByRole('row')[1] as HTMLElement;
     expect(within(row).getByText(AR['quotations.itemKind.part'] as string)).toBeVisible();
     expect(within(row).getByText('BRK-01')).toHaveAttribute('dir', 'ltr');
-    expect(within(row).getByText('Each')).toBeVisible();
+    // A unit the platform seeded is worded in the reader's language, not by the
+    // English name it was stored with (2026-10-07 browser retest).
+    expect(within(row).getByText(AR['units.name.each'] as string)).toBeVisible();
+    expect(row.textContent).not.toContain('Each');
   });
 });
