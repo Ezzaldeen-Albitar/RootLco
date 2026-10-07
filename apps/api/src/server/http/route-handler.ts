@@ -169,6 +169,13 @@ export interface RouteOptions {
   readonly body?: unknown;
   /** Peer address from the platform. Never read from a header. */
   readonly peerAddress?: string | null;
+  /**
+   * `repeatable read` runs the operation's transaction at REPEATABLE READ, so a
+   * handler that assembles one result from several statements reads one snapshot
+   * of the database (P1-32-PRE-OD-FD16B, the frozen report snapshot). Absent, the
+   * server's READ COMMITTED applies, as it always has.
+   */
+  readonly isolation?: 'repeatable read';
 }
 
 function successHeaders(correlationId: string, recordVersion?: number): Record<string, string> {
@@ -495,7 +502,10 @@ export async function handleOperation<T>(
         // operation's own declaration rather than from a route-side flag, so a
         // platform operation cannot be served from the request-path pool by
         // forgetting to pass something.
-        isControlPlane(operation) ? { connection: 'platform' as const } : {}
+        {
+          ...(isControlPlane(operation) ? { connection: 'platform' as const } : {}),
+          ...(options.isolation === undefined ? {} : { isolation: options.isolation }),
+        }
       );
 
     let result: HandlerResult<T>;

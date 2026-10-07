@@ -420,6 +420,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'rec.warning_light_code.renamed',
   'rec.warning_light_code.status_changed',
   'rpt.report.exported',
+  'rpt.report.snapshot_created',
   'rpt.report_configuration.created',
   'rpt.report_configuration.status_changed',
   'rpt.report_configuration.updated',

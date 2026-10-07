@@ -15,7 +15,9 @@ import {
 import {
   isReportInstant,
   isReportPeriod,
+  isSavedReportSnapshot,
   isSelectedReportExport,
+  MAX_RESTATEMENT_REASON,
   reportPageSize,
   type ReportDefinition,
   type ReportExportBody,
@@ -23,6 +25,10 @@ import {
   type ReportRun,
   type ReportRunState,
   type ReportScopeOptions,
+  type ReportSnapshotCreateBody,
+  type ReportSnapshotRows,
+  type ReportSnapshotSaveState,
+  type ReportSnapshotSummary,
 } from './reports-contract';
 
 /**
@@ -258,4 +264,139 @@ export async function exportReport(
     return { status: 'error', messageKey: 'action.failed', correlationId: result.correlationId };
   }
   return { ...success('reports.export.ready', 1), exported: result.data };
+}
+
+/**
+ * One page of a branch's saved snapshots of a report, newest first —
+ * `rpt.report-snapshot-list` (Owner decision D16, P1-32-PRE-OD-FD16B).
+ *
+ * Narrowed to one period when `from` and `to` are given, which is how the report
+ * screen shows the snapshots, and the restatements, of the period it is showing.
+ * Metadata only: a snapshot's rows are read one snapshot at a time.
+ */
+export async function listReportSnapshots(input: {
+  readonly reportCode: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly from: string;
+  readonly to: string;
+  readonly cursor: string | null;
+  readonly limit: number;
+}): Promise<ReadState<CursorPage<ReportSnapshotSummary>>> {
+  if (!isReportPeriod(input.from, input.to)) return { status: 'error', correlationId: null };
+  const path =
+    `/api/v1/reports/${encodeURIComponent(input.reportCode)}/snapshots` +
+    branchTargetQuery(
+      { companyId: input.companyId, branchId: input.branchId },
+      {
+        from: input.from,
+        to: input.to,
+        cursor: input.cursor,
+        limit: reportPageSize(input.limit),
+      }
+    );
+  return readOperation<CursorPage<ReportSnapshotSummary>>(path);
+}
+
+/**
+ * One saved snapshot's frozen rows, a page at a time, with its metadata and its
+ * restatements — `rpt.report-snapshot-read`. The branch is the snapshot's own, so
+ * no scope travels; the backend checks it against the stored row.
+ */
+export async function readReportSnapshot(input: {
+  readonly reportCode: string;
+  readonly snapshotId: string;
+  readonly cursor: string | null;
+  readonly limit: number;
+}): Promise<ReadState<ReportSnapshotRows>> {
+  const path =
+    `/api/v1/reports/${encodeURIComponent(input.reportCode)}/snapshots/` +
+    `${encodeURIComponent(input.snapshotId)}/rows` +
+    query({ cursor: input.cursor, limit: reportPageSize(input.limit) });
+  return readOperation<ReportSnapshotRows>(path);
+}
+
+/**
+ * Saves a frozen snapshot of the report as shown, or a restatement of the latest
+ * one — `rpt.report-snapshot-create`.
+ *
+ * The moment sent is the one the shown report answered with, so the snapshot
+ * holds the figures on the screen. The named branch is re-checked against the
+ * authorized directory, as the export does, before anything is sent; the backend
+ * remains the authority on every rule, and a refusal arrives as its own sentence.
+ */
+export async function saveReportSnapshot(
+  reportCode: string,
+  input: ReportSnapshotCreateBody
+): Promise<ReportSnapshotSaveState> {
+  const reason = input?.reason?.trim();
+  if (
+    !input ||
+    typeof reportCode !== 'string' ||
+    !isReportPeriod(input.from, input.to) ||
+    (input.asOf !== undefined && !isReportInstant(input.asOf))
+  ) {
+    return { status: 'error', messageKey: 'action.failed' };
+  }
+  if (
+    input.restatesSnapshotId !== undefined &&
+    (!reason || reason.length > MAX_RESTATEMENT_REASON)
+  ) {
+    return {
+      status: 'invalid',
+      messageKey: 'reports.snapshots.reasonRequired',
+      fieldErrors: { reason: 'reports.snapshots.reasonRequired' },
+    };
+  }
+  const scopes = await readReportScopes();
+  if (scopes.status !== 'ok') {
+    return {
+      status:
+        scopes.status === 'denied'
+          ? 'denied'
+          : scopes.status === 'expired'
+            ? 'expired'
+            : 'unavailable',
+      messageKey: 'action.failed',
+      correlationId: scopes.correlationId,
+    };
+  }
+  if (
+    !scopes.data.companies.some((company) => company.id === input.companyId) ||
+    !scopes.data.branches.some(
+      (branch) => branch.id === input.branchId && branch.companyId === input.companyId
+    )
+  ) {
+    return { status: 'denied', messageKey: 'state.denied.title' };
+  }
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message' };
+  const body: ReportSnapshotCreateBody = {
+    companyId: input.companyId,
+    branchId: input.branchId,
+    from: input.from,
+    to: input.to,
+    ...(input.asOf === undefined ? {} : { asOf: input.asOf }),
+    ...(input.restatesSnapshotId === undefined || reason === undefined
+      ? {}
+      : { restatesSnapshotId: input.restatesSnapshotId, reason }),
+  };
+  const result = await client.send<unknown>(
+    'POST',
+    `/api/v1/reports/${encodeURIComponent(reportCode)}/snapshots`,
+    body
+  );
+  if (!result.ok) return fromFailure(result, 1);
+  if (!isSavedReportSnapshot(result.data, body)) {
+    return { status: 'error', messageKey: 'action.failed', correlationId: result.correlationId };
+  }
+  return {
+    ...success(
+      body.restatesSnapshotId === undefined
+        ? 'reports.snapshots.saved'
+        : 'reports.snapshots.restatedSaved',
+      1
+    ),
+    saved: result.data.snapshot,
+  };
 }

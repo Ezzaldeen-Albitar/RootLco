@@ -75,8 +75,10 @@ const P1_31_NAMESPACES = Object.freeze([
   'warranty-policies',
 ] as const);
 
-const EXPECTED_OPERATIONS = 47;
-const EXPECTED_ROUTE_FILES = 34;
+// 50 over 36 with the report snapshots (P1-32-PRE-OD-FD16B, Owner decision D16):
+// three operations over two route files under `reports/{reportCode}/snapshots`.
+const EXPECTED_OPERATIONS = 50;
+const EXPECTED_ROUTE_FILES = 36;
 /**
  * Unmoved at 13 by the 46th operation: `wty.warranty-status-history` declares
  * `wty.warranty.read` alone, which four operations already declared, so the set count
@@ -221,7 +223,23 @@ const catalogueCell = (code: string): string => {
     : `\`supabase/seeds/04_iam_permission_catalog.sql:${String(line)}\``;
 };
 
-/** Service-enforced codes, keyed by operation. Only `rpt.report-run` has any. */
+/**
+ * The dataset codes a service enforces for the datasets that keep snapshots
+ * (P1-32-PRE-OD-FD16B): saving and listing require them, and a snapshot's read
+ * requires the codes it froze, which are the same ones.
+ */
+const SNAPSHOT_DATASET_CODES: readonly string[] = [
+  ...new Set(
+    REPORT_DATASET_CODES.filter(
+      (code) => (REPORT_DATASETS[code] as { readonly snapshot?: unknown }).snapshot !== undefined
+    ).flatMap((code) => [...REPORT_DATASETS[code].requiredPermissions])
+  ),
+].sort();
+
+/**
+ * Service-enforced codes, keyed by operation: `rpt.report-run` over every dataset,
+ * and the three snapshot operations over the datasets that keep snapshots.
+ */
 const SERVICE_ENFORCED = new Map<string, readonly string[]>([
   [
     'rpt.report-run',
@@ -231,6 +249,9 @@ const SERVICE_ENFORCED = new Map<string, readonly string[]>([
       ),
     ].sort(),
   ],
+  ['rpt.report-snapshot-create', SNAPSHOT_DATASET_CODES],
+  ['rpt.report-snapshot-list', SNAPSHOT_DATASET_CODES],
+  ['rpt.report-snapshot-read', SNAPSHOT_DATASET_CODES],
 ]);
 
 const codeList = (codes: readonly string[]): string =>

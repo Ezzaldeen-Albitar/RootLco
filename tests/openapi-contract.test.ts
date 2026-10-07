@@ -93,6 +93,9 @@ import '@/app/api/v1/reports/[reportCode]/route';
 // line here is: the registry is populated by import side effect, so an unimported
 // route is simply ABSENT from the generated document rather than reported missing.
 import '@/app/api/v1/reports/[reportCode]/rows/route';
+// P1-32-PRE-OD-FD16B (Owner decision D16) — frozen report snapshots and restatements.
+import '@/app/api/v1/reports/[reportCode]/snapshots/route';
+import '@/app/api/v1/reports/[reportCode]/snapshots/[snapshotId]/rows/route';
 import '@/app/api/v1/notifications/route';
 import '@/app/api/v1/notifications/[notificationId]/route';
 import '@/app/api/v1/notifications/[notificationId]/deliveries/route';

@@ -4397,3 +4397,37 @@ Items after fix round 6, one line each:
 - Unresolved policy, Owner decision needed, unchanged (VL-P132-001): who may approve — the approval permission brought by a role grant, scope or role-permission mapping the requester made, and the requester reactivating the approver's account.
 - Unresolved policy, Owner decision needed, not implemented as a ruling (ADR-023 D8 "An approver's own changes", VL-P132-002): an approver who moved their own limit's dates or issued or changed their own grant or scope has no limit that counts in that company for anybody's request, while D8's text speaks of "one's own quotation"; the stricter reading stands until the Owner rules.
 - Evidence for fix round 6, on the development machine: a disposable postgres:17-alpine database (127.0.0.1:55459, removed afterwards; port 54322 never used) took all 178 migrations and `validate:seed-state`; `migration-replay-checks.mjs --phase pre` and `--phase post` passed against the updated baseline and the schema hash was measured unchanged; the focused DB files (self-exemption, quotations, foundation, P1-15 census) and the backend self-exemption file passed. The full tiers were not run locally; hosted CI runs them.
+
+### Report snapshots and restatements; as-of residuals (P1-32-PRE-OD-FD16B, ADR-023 D16)
+
+Owner decision D16, part 2: a historical report can be kept exactly as it was shown, and a later
+correction of it is a distinguished restatement. One forward migration
+(`20261008100000_rpt_report_snapshots.sql`), three new operations, one new audit action
+(`rpt.report.snapshot_created`), no new permission code (a dedicated snapshot code is an open Owner
+question).
+
+| Route                                                   | Operation                    | Who                                                                               | What changed                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /reports/{reportCode}/snapshots`                  | `rpt.report-snapshot-create` | `rpt.export` and `rpt.report.read` in the branch, and the report's own codes      | Saves a frozen copy of the report as of the moment shown (idempotent; one consistent read; capped like the export); with `restatesSnapshotId` and a reason, restates the latest snapshot of the period. Refusals by rule are recorded (D12).                         |
+| `GET /reports/{reportCode}/snapshots`                   | `rpt.report-snapshot-list`   | `rpt.report.read` and the report's own codes                                      | The branch's snapshots of the report, newest first, for one period: saved when and by whom, the moment, the rows, the restatement chain. No rows.                                                                                                                    |
+| `GET /reports/{reportCode}/snapshots/{snapshotId}/rows` | `rpt.report-snapshot-read`   | `rpt.report.read` and every code the snapshot froze, in the snapshot's own branch | The frozen rows a page at a time, the snapshot it restates and the one that restated it, and a restatement's difference. Another tenant, branch or a reader without the codes gets not-found. The party name is withheld without `crm.customer.read`.                |
+| `GET /reports/{reportCode}/rows`                        | `rpt.report-run`             | unchanged                                                                         | `asOf=now` is read on the database clock; the cursor carries the moment, so a later page without `asOf` keeps it and a different moment beside it is refused (`query.cursor`, `as_of_mismatch`); the envelope says whether the report keeps snapshots (`snapshots`). |
+| `POST /reports/{reportCode}:export`                     | `rpt.report-export`          | unchanged                                                                         | A refused moment names `body.asOf`.                                                                                                                                                                                                                                  |
+| `/reports/[reportCode]` ("Invoices and payments")       | the five above               | as above; Save snapshot and Restate only with `rpt.export`                        | "Saved snapshots": save with a confirmation naming scope, period and moment; the list with names, never identifiers; a snapshot's banner, restatement notes and difference; Restate on the latest only, with a required reason; en and ar, right to left.            |
+
+Web: "Now" is sent as the word `now`; a seeded unit code shows the catalogue's word only while the
+line still carries the seeded English name (`apps/web/src/lib/unit-name.ts`). No new web route.
+
+Wrapper extensions: none. The save uses the shared `ConfirmDialog`; the frozen rows use the report's
+own row table.
+
+Preserved: the as-of rules of FD16A; the report's permission model (the whole report refused without
+the dataset's codes); tenant and branch isolation; plain refusal sentences in English and Arabic;
+money stays a decimal string and nothing is summed in the browser.
+
+Known limitations, one line each:
+
+- Only `invoice_payment_summary` keeps snapshots; every other report refuses one.
+- A dedicated permission code for snapshots is an open Owner question; saving uses `rpt.export`.
+- A snapshot's saver is named only to a reader allowed to see user names (`iam.user.read`); others see "a person whose name is not shown to you".
+- The DB and backend tiers were run on the development machine on a disposable database only for the files named in the pull request; the full tiers run on hosted CI.

@@ -224,6 +224,11 @@ export interface ReportRun {
    * still the ones the period chose.
    */
   readonly asOf?: string;
+  /**
+   * Whether a frozen snapshot of this report may be saved and listed (Owner
+   * decision D16, P1-32-PRE-OD-FD16B). Absent on an older envelope, read as false.
+   */
+  readonly snapshots?: boolean;
   readonly columns: readonly ReportColumn[];
   readonly rows: CursorPage<ReportRow>;
   /** Deprecated on the newer envelope. Read only when `groups` is absent. */
@@ -630,5 +635,112 @@ export function isSelectedReportExport(
     typeof result.file.content === 'string' &&
     typeof result.file.filename === 'string' &&
     result.file.filename === `${code}-${body.from}-${body.to}.csv`
+  );
+}
+
+/*
+ * Frozen report snapshots and distinguished restatements (Owner decision D16,
+ * P1-32-PRE-OD-FD16B).
+ *
+ * An as-of report is recomputed from the records every time it is read. A
+ * SNAPSHOT is a frozen copy of one run — period, zone, the moment its amounts were
+ * computed as of, and every row — saved once and never changed. A RESTATEMENT is a
+ * later snapshot of the same branch and period that names the one it replaces,
+ * says why, and carries what changed; the earlier one is kept and marked.
+ */
+
+/** The body of `rpt.report-snapshot-create`. The mirror the P1-31 write-shape gate compares. */
+export interface ReportSnapshotCreateBody {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly from: string;
+  readonly to: string;
+  /** The moment the shown report answered with, so the snapshot holds those figures. */
+  readonly asOf?: string;
+  /** The latest snapshot of the same branch and period, when restating it. */
+  readonly restatesSnapshotId?: string;
+  /** Why it is restated; sent only with `restatesSnapshotId`. */
+  readonly reason?: string;
+}
+
+/** A person named on a snapshot; the name only where the reader may be told it. */
+export interface ReportSnapshotPerson {
+  readonly id: string;
+  readonly displayName: string | null;
+}
+
+/** A snapshot without its rows: what the list publishes. */
+export interface ReportSnapshotSummary {
+  readonly id: string;
+  readonly reportCode: string;
+  readonly period: ReportPeriod;
+  readonly asOf: string;
+  readonly generatedAt: string;
+  readonly generatedBy: ReportSnapshotPerson;
+  readonly rowCount: number;
+  readonly rowsDigest: string;
+  readonly restatesSnapshotId: string | null;
+  readonly restatedBySnapshotId: string | null;
+  readonly restatementReason: string | null;
+}
+
+/** One money measure's total in one currency, before and after a restatement. */
+export interface ReportSnapshotTotal {
+  readonly currency: string | null;
+  readonly measure: string;
+  readonly before: string | null;
+  readonly after: string | null;
+}
+
+/** What a restatement changed from the snapshot it replaces. */
+export interface ReportSnapshotDifference {
+  readonly rowsBefore: number;
+  readonly rowsAfter: number;
+  readonly rowsAdded: number;
+  readonly rowsRemoved: number;
+  readonly rowsChanged: number;
+  readonly totals: readonly ReportSnapshotTotal[];
+}
+
+export interface ReportSnapshot extends ReportSnapshotSummary {
+  readonly filters: ReportFilterContext;
+  readonly difference: ReportSnapshotDifference | null;
+}
+
+/** A snapshot's frozen rows, a page at a time, with its restatement links. */
+export interface ReportSnapshotRows {
+  readonly snapshot: ReportSnapshot;
+  readonly restates: ReportSnapshotSummary | null;
+  readonly restatedBy: ReportSnapshotSummary | null;
+  readonly columns: readonly ReportColumn[];
+  readonly rows: CursorPage<ReportRow>;
+}
+
+export interface ReportSnapshotSaveState extends ActionState {
+  readonly saved?: ReportSnapshot;
+}
+
+/** The longest restatement reason the server accepts. */
+export const MAX_RESTATEMENT_REASON = 500;
+
+/** Checks the saved snapshot answers for the branch and period that were asked for. */
+export function isSavedReportSnapshot(
+  value: unknown,
+  body: ReportSnapshotCreateBody
+): value is { readonly snapshot: ReportSnapshot } {
+  if (!value || typeof value !== 'object') return false;
+  const snapshot = (value as { snapshot?: Partial<ReportSnapshot> }).snapshot;
+  return (
+    typeof snapshot === 'object' &&
+    snapshot !== null &&
+    typeof snapshot.id === 'string' &&
+    snapshot.filters?.companyId === body.companyId &&
+    snapshot.filters?.branchId === body.branchId &&
+    snapshot.period?.from === body.from &&
+    snapshot.period?.to === body.to &&
+    typeof snapshot.asOf === 'string' &&
+    isReportInstant(snapshot.asOf) &&
+    (body.asOf === undefined || Date.parse(snapshot.asOf) === Date.parse(body.asOf)) &&
+    (snapshot.restatesSnapshotId ?? undefined) === body.restatesSnapshotId
   );
 }

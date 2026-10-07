@@ -571,7 +571,13 @@ describe('the coverage include lists are pinned, because they are the denominato
     // (the step that refuses, rather than chooses, between disagreeing authorised
     // prices). The two quotation routes live under `src/app`, which this include
     // list does not admit. The floors are untouched for the reason above.
-    expect(files.length).toBe(326);
+    // 328 with the report snapshots (P1-32-PRE-OD-FD16B, Owner decision D16), which
+    // add TWO: `modules/reporting/application/report-snapshot-service.ts` (the save,
+    // the list and the read of a frozen run and its restatements) and
+    // `modules/reporting/data/report-snapshot-repository.ts`. The two routes live
+    // under `src/app`, which this include list does not admit. The floors are
+    // untouched for the reason above.
+    expect(files.length).toBe(328);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -686,6 +692,8 @@ describe('the coverage include lists are pinned, because they are the denominato
     // `server/openapi/` either, so the two numbers move by one together.
     // 325 with the quotation part lines' two (P1-32-PRE-OD-FD6), neither under
     // `server/openapi/`, so the two numbers move by two together.
-    expect(instrumented.length).toBe(325);
+    // 327 with the report snapshots' two (P1-32-PRE-OD-FD16B), neither under
+    // `server/openapi/`, so the two numbers move by two together.
+    expect(instrumented.length).toBe(327);
   });
 });

@@ -157,6 +157,9 @@ export default async function ReportPage({
         holds(session.permissions, REPORT_PERMISSIONS.export) &&
         definition.data.exportPermissionCode !== null
       }
+      // A frozen snapshot is saved under rpt.export (Owner decision D16,
+      // P1-32-PRE-OD-FD16B); no tenant export configuration is involved.
+      canSnapshot={holds(session.permissions, REPORT_PERMISSIONS.export)}
       scopeOptions={scopeOptions}
       named={namedReportSelection(query)}
     />

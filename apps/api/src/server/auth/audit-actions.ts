@@ -2211,6 +2211,13 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'rpt.report_configuration',
     description: 'A bounded CSV report was generated under explicit scoped export permissions.',
   },
+  {
+    code: 'rpt.report.snapshot_created',
+    class: 'financial',
+    entityType: 'rpt.report_snapshot',
+    description:
+      'A frozen snapshot of one run of a report was saved (Owner decision D16): the report, the branch, the period, the moment its amounts were computed as of, the row count and the digest of the stored rows, and for a restatement the snapshot it replaces. A snapshot is never changed; a correction is a restatement with a reason.',
+  },
 
   // ---- Platform Owner Console (P1-32-PRE-023/024) -------------------------
   //

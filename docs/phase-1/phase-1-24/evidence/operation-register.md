@@ -9,14 +9,14 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 513   |
+| Public operations        | 516   |
 | Domains (modules)        | 21    |
-| OpenAPI paths            | 403   |
-| OpenAPI operations       | 513   |
+| OpenAPI paths            | 405   |
+| OpenAPI operations       | 516   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 134   |
-| Audit actions catalogued | 298   |
+| Audit actions catalogued | 299   |
 | Domain events catalogued | 50    |
 | Structured error codes   | 34    |
 
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 513        |
+| Covered           | 516        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -48,7 +48,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | quality         | 15         | 15      | 7      | 8       | 7          | 2               |
 | quotation       | 13         | 13      | 7      | 7       | 7          | 3               |
 | reception       | 71         | 71      | 43     | 43      | 36         | 22              |
-| reporting       | 11         | 11      | 6      | 6       | 3          | 3               |
+| reporting       | 14         | 14      | 7      | 7       | 4          | 3               |
 | service-catalog | 9          | 9       | 6      | 6       | 6          | 2               |
 | shared-services | 28         | 28      | 18     | 18      | 6          | 6               |
 | technician      | 18         | 18      | 12     | 12      | 4          | 5               |
@@ -383,6 +383,9 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `rpt.report-export`                                 | POST   | `/api/v1/reports/{reportCode}:export`                                                   | branch  | `rpt.export`<br>`rpt.report.read`                                    | rpt.report.exported                            | —    | —   | audit authorization cross-tenant denial isolation route service success                                                       | Covered |
 | `rpt.report-read`                                   | GET    | `/api/v1/reports/{reportCode}`                                                          | tenant  | `rpt.report.read`                                                    | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `rpt.report-run`                                    | GET    | `/api/v1/reports/{reportCode}/rows`                                                     | branch  | `rpt.report.read`                                                    | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
+| `rpt.report-snapshot-create`                        | POST   | `/api/v1/reports/{reportCode}/snapshots`                                                | branch  | `rpt.export`<br>`rpt.report.read`                                    | rpt.report.snapshot_created                    | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
+| `rpt.report-snapshot-list`                          | GET    | `/api/v1/reports/{reportCode}/snapshots`                                                | branch  | `rpt.report.read`                                                    | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
+| `rpt.report-snapshot-read`                          | GET    | `/api/v1/reports/{reportCode}/snapshots/{snapshotId}/rows`                              | branch  | `rpt.report.read`                                                    | —                                              | —    | —   | authorization cross-tenant denial isolation pagination route service success                                                  | Covered |
 | `sal.counter-sale-create`                           | POST   | `/api/v1/counter-sales`                                                                 | branch  | `sal.invoice.manage`<br>`sal.finance.view`                           | sal.counter_sale.created                       | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `sal.counter-sale-list`                             | GET    | `/api/v1/counter-sales`                                                                 | branch  | `sal.invoice.manage`                                                 | —                                              | —    | —   | authorization isolation route service success                                                                                 | Covered |
 | `sal.credit-note-approve`                           | POST   | `/api/v1/credit-notes/{creditNoteId}/approval`                                          | branch  | `sal.credit.approve`<br>`sal.finance.view`                           | sal.credit_note.approved                       | yes  | —   | audit authorization cross-tenant denial idempotency isolation outbox route service success                                    | Covered |

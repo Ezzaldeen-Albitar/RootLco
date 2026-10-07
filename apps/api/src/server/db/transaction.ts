@@ -67,6 +67,15 @@ export interface TransactionOptions {
    * into an enforced property.
    */
   readonly access?: 'read write' | 'read only';
+  /**
+   * `repeatable read` starts the transaction at REPEATABLE READ, so every
+   * statement in it reads ONE snapshot of the database — the snapshot taken by its
+   * first statement (P1-32-PRE-OD-FD16B). For a request that assembles one result
+   * from several reads and must not see a write that commits between them: a
+   * frozen report snapshot read page by page. Defaults to the server's READ
+   * COMMITTED, which keeps every existing caller unchanged.
+   */
+  readonly isolation?: 'read committed' | 'repeatable read';
 }
 
 /**
@@ -194,7 +203,11 @@ export async function withTransaction<T>(
   const client = new SerialClient(pooled);
   let rolledBackCleanly = true;
   try {
-    await client.query(`BEGIN ${access === 'read only' ? 'READ ONLY' : 'READ WRITE'}`);
+    await client.query(
+      `BEGIN ${access === 'read only' ? 'READ ONLY' : 'READ WRITE'}${
+        options.isolation === 'repeatable read' ? ' ISOLATION LEVEL REPEATABLE READ' : ''
+      }`
+    );
     // `set_config(..., true)` rather than `SET LOCAL`: SET is a utility statement
     // and cannot take a bind parameter (`SET LOCAL statement_timeout = $1` is a
     // syntax error, verified against PostgreSQL 17). The function form is

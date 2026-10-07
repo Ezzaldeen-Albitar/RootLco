@@ -8,7 +8,7 @@
  * `declaredPermissions` from `scripts/ci/check-permission-parity.mjs` — the same parser
  * the permission-parity gate uses — is run over every `route.ts` under the eight
  * namespaces `docs/phase-1/phase-1-31/security-and-qa-evidence.md:163` names, and SE-0 pins
- * the totals it yields: **47 operations across 34 route files, 13 distinct permission
+ * the totals it yields: **50 operations across 36 route files, 13 distinct permission
  * codes**. An operation added to or removed from any of those namespaces changes the
  * parse, and the probe table below then no longer covers it exactly, so this file fails.
  * That is the property a hand list cannot have.
@@ -26,7 +26,7 @@
  * probe (GET only), the entitlement check, the idempotency reservation, and only then
  * the handler callback. Every P1-31 route parses its path parameters and its body
  * INSIDE that callback — see `warranty-policies/[policyId]/status/route.ts:79-100`,
- * which is the shape all 34 share.
+ * which is the shape all 36 share.
  *
  * So: **the permission gate precedes both validation and every lookup.** SE-5 therefore
  * addresses each operation with random UUIDs and a minimally shaped body, which is
@@ -46,13 +46,13 @@
  *  - **SE-1..SE-4** — self-delegation. An administrator holding `iam.role.manage` and
  *    none of the phase's codes cannot map one onto a role, at the service and at the
  *    database independently. This is the widening CC-16 and CC-20 rest on.
- *  - **SE-5** — least privilege, all 47. A tenant-A caller holding every P1-31 code
+ *  - **SE-5** — least privilege, all 50. A tenant-A caller holding every P1-31 code
  *    EXCEPT the ones the operation declares is refused `ERR-IAM-001`, and the refusal
- *    names exactly the declared codes. **SE-5P** takes the six operations that declare
- *    more than one code and withholds them ONE AT A TIME, fourteen cases in all: an
+ *    names exactly the declared codes. **SE-5P** takes the seven operations that declare
+ *    more than one code and withholds them ONE AT A TIME, sixteen cases in all: an
  *    all-or-nothing probe cannot tell a gate that requires every declared code from one
  *    that requires any of them.
- *  - **SE-6** — cross-tenant, the 42 operations that address a tenant-owned row. A
+ *  - **SE-6** — cross-tenant, the 45 operations that address a tenant-owned row. A
  *    tenant-B caller holding all thirteen codes addresses tenant A's REAL rows. The
  *    pinned refusal is the one the platform already standardises, and which is: an
  *    operation addressed by a resource id answers 404 `ERR-RES-001`, the answer
@@ -65,16 +65,21 @@
  *    request, against an equivalent row set authored by the same routine, must NOT
  *    produce that refusal for the owning tenant — so the tenant-B 404 is tenancy and
  *    not absence.
- *  - **SE-7** — client-asserted scope, the 9 operations that carry a company or branch
+ *  - **SE-7** — client-asserted scope, the 11 operations that carry a company or branch
  *    the caller chose. Every actor here holds an UNRESTRICTED grant, so nothing is being
  *    narrowed by grant scope: the question is whether a caller may name an organisation
- *    that is not its own. All nine answer 403 `ERR-IAM-001` since CC-56, whether the
+ *    that is not its own. All eleven answer 403 `ERR-IAM-001` since CC-56, whether the
  *    scope arrives in the query or in the body. Two variants each — another
  *    organisation's real pair, and a pair that exists nowhere — and the WHOLE disclosed
  *    document is compared against one per-probe expectation, so uniformity across the
  *    two is measured rather than asserted for the status alone. Both variants also
- *    assert a zero row-count delta on the three tables the body-scoped creates write
+ *    assert a zero row-count delta on the four tables the body-scoped creates write
  *    to, so "it refused" also means "it wrote nothing".
+ *
+ * The three report-snapshot operations (P1-32-PRE-OD-FD16B, Owner decision D16) live
+ * under `reports/`, one of the eight namespaces, so the parse includes them and every
+ * probe below covers them: the save is a body-scoped create, the list a query-scoped
+ * read and the snapshot read a resource-id read.
  *
  * Everything the parse yields that a probe does not cover is listed with a REASON and
  * the list is asserted, so a silent gap is not representable.
@@ -137,7 +142,7 @@ import { CredentialPolicy } from '@/modules/iam/domain/credential-policy';
 import { IdentityPolicy } from '@/modules/iam/domain/identity-policy';
 import { REPORT_DATASETS, REPORT_DATASET_CODES, type ReportDatasetCode } from '@/modules/reporting';
 
-// --- the 34 route modules, imported so every probe drives the DEPLOYED handler -------
+// --- the 36 route modules, imported so every probe drives the DEPLOYED handler -------
 
 import {
   DELIVERY_CREATE_OPERATION,
@@ -262,6 +267,16 @@ import {
   REPORT_RUN_OPERATION,
   GET as REPORT_RUN,
 } from '@/app/api/v1/reports/[reportCode]/rows/route';
+import {
+  REPORT_SNAPSHOT_CREATE_OPERATION,
+  POST as REPORT_SNAPSHOT_CREATE,
+  REPORT_SNAPSHOT_LIST_OPERATION,
+  GET as REPORT_SNAPSHOT_LIST,
+} from '@/app/api/v1/reports/[reportCode]/snapshots/route';
+import {
+  REPORT_SNAPSHOT_READ_OPERATION,
+  GET as REPORT_SNAPSHOT_READ,
+} from '@/app/api/v1/reports/[reportCode]/snapshots/[snapshotId]/rows/route';
 import { WARRANTY_LIST_OPERATION, GET as WARRANTY_LIST } from '@/app/api/v1/warranties/route';
 import {
   WARRANTY_DETAIL_OPERATION,
@@ -322,8 +337,10 @@ const P1_31_NAMESPACES = Object.freeze([
 ] as const);
 
 /** Measured totals. Restated from `security-and-qa-evidence.md:163`, not derived from it. */
-const EXPECTED_OPERATIONS = 47;
-const EXPECTED_ROUTE_FILES = 34;
+// 50 over 36 with the report snapshots (P1-32-PRE-OD-FD16B): three operations over two
+// route files under `reports/{reportCode}/snapshots`.
+const EXPECTED_OPERATIONS = 50;
+const EXPECTED_ROUTE_FILES = 36;
 
 interface ParsedOperation {
   readonly id: string;
@@ -590,6 +607,8 @@ interface Targets {
   readonly warrantyId: string;
   readonly warrantyPolicyForIssueId: string;
   readonly reportCode: string;
+  /** A saved report snapshot of tenant A (P1-32-PRE-OD-FD16B). */
+  readonly snapshotId: string;
   readonly receiverPartnerId: string;
   readonly signatureDocumentVersionId: string;
 }
@@ -706,6 +725,9 @@ const pair = (scope: ScopePair, extra: Readonly<Record<string, string>> = {}): s
 const NO_SCOPE_FIELD = {
   none: 'the request carries no company or branch the caller could choose',
 } as const;
+
+/** The one dataset that keeps snapshots (P1-32-PRE-OD-FD16B). */
+const SNAPSHOT_REPORT_CODE = 'invoice_payment_summary';
 
 const PROBES: readonly Probe[] = [
   // --- deliveries ----------------------------------------------------------
@@ -1081,6 +1103,40 @@ const PROBES: readonly Probe[] = [
     addressing: 'query-scope',
     asserts: 'query',
   },
+  // --- report snapshots (P1-32-PRE-OD-FD16B, Owner decision D16) ---------------
+  {
+    id: 'rpt.report-snapshot-create',
+    operation: REPORT_SNAPSHOT_CREATE_OPERATION,
+    url: (t) => `${V1}/reports/${t.reportCode}/snapshots`,
+    body: (_t, scope) => ({ ...scope, from: '2020-01-01', to: '2030-01-01' }),
+    call: (request, t) =>
+      REPORT_SNAPSHOT_CREATE(request, { params: Promise.resolve({ reportCode: t.reportCode }) }),
+    addressing: 'body-scope',
+    asserts: 'body',
+  },
+  {
+    id: 'rpt.report-snapshot-list',
+    operation: REPORT_SNAPSHOT_LIST_OPERATION,
+    url: (t, scope) => `${V1}/reports/${t.reportCode}/snapshots?${pair(scope)}`,
+    call: (request, t) =>
+      REPORT_SNAPSHOT_LIST(request, { params: Promise.resolve({ reportCode: t.reportCode }) }),
+    addressing: 'query-scope',
+    asserts: 'query',
+  },
+  {
+    id: 'rpt.report-snapshot-read',
+    operation: REPORT_SNAPSHOT_READ_OPERATION,
+    // The dataset that keeps snapshots, so the request reaches the stored row: a
+    // tenant's own configuration code keeps none and would answer not-found for
+    // reasons that have nothing to do with tenancy.
+    url: (t) => `${V1}/reports/${SNAPSHOT_REPORT_CODE}/snapshots/${t.snapshotId}/rows`,
+    call: (request, t) =>
+      REPORT_SNAPSHOT_READ(request, {
+        params: Promise.resolve({ reportCode: SNAPSHOT_REPORT_CODE, snapshotId: t.snapshotId }),
+      }),
+    addressing: 'resource-id',
+    asserts: NO_SCOPE_FIELD,
+  },
   // --- warranties --------------------------------------------------------------
   {
     id: 'rpt.report-export',
@@ -1350,6 +1406,7 @@ const invented = (): Targets => ({
   warrantyId: randomUUID(),
   warrantyPolicyForIssueId: randomUUID(),
   reportCode: nextCode('absent'),
+  snapshotId: randomUUID(),
   receiverPartnerId: randomUUID(),
   signatureDocumentVersionId: randomUUID(),
 });
@@ -1461,6 +1518,8 @@ const WRITTEN_TABLES = Object.freeze([
   'sal.delivery_checklist_templates',
   'wty.warranty_policies',
   'org.employees',
+  // The report snapshot save (P1-32-PRE-OD-FD16B) is the fourth body-scoped create.
+  'rpt.report_snapshots',
 ] as const);
 
 const FIXTURE_TENANTS: readonly string[] = [TENANT_A, TENANT_B];
@@ -1629,6 +1688,39 @@ async function authorRealTargets(tag: string): Promise<Targets> {
 
   __resetAuthenticatorForTests();
 
+  /*
+   * One stored report snapshot (P1-32-PRE-OD-FD16B). Written as the administrator,
+   * not through its route, and with NO frozen dataset code, deliberately: saving one
+   * through the route needs `sal.finance.view`, which is not among the thirteen, and a
+   * snapshot that froze it would be invisible to the thirteen-code owner SE-6C acts as
+   * — so its not-found would be authority rather than tenancy. Tenancy is decided
+   * before the frozen codes are, by the same row-level policy, so the row answers the
+   * question SE-6 asks. The period differs per set, so the two sets never collide on
+   * the one-original rule.
+   */
+  const day = tag === 'c' ? '2020-01-01' : '2020-01-03';
+  const next = tag === 'c' ? '2020-01-02' : '2020-01-04';
+  const snapshot = await admin.query<{ id: string }>(
+    `INSERT INTO rpt.report_snapshots
+       (tenant_id, company_id, branch_id, report_code, period_from, period_to_exclusive,
+        timezone_name, as_of, parameters, parameters_digest, required_permissions, columns,
+        rows, row_count, rows_digest, generated_by, created_by)
+     VALUES ($1,$2,$3,$4,$5::date,$6::date,'UTC',$7::timestamptz,$8::jsonb,
+             repeat('0',64),ARRAY[]::text[],'[]'::jsonb,'[]'::jsonb,0,repeat('0',64),$9,$9)
+     RETURNING id`,
+    [
+      TENANT_A,
+      COMPANY_A1,
+      BRANCH_A1,
+      SNAPSHOT_REPORT_CODE,
+      day,
+      next,
+      `${next}T00:00:00Z`,
+      JSON.stringify({ companyId: COMPANY_A1, branchId: BRANCH_A1, from: day, to: next }),
+      USER_A,
+    ]
+  );
+
   return {
     deliveryId: ready.deliveryId,
     deliveredDeliveryId: delivered.deliveryId,
@@ -1644,6 +1736,7 @@ async function authorRealTargets(tag: string): Promise<Targets> {
     warrantyId: warranty.id,
     warrantyPolicyForIssueId: policy.policy.id,
     reportCode,
+    snapshotId: snapshot.rows[0]?.id ?? '',
     receiverPartnerId: PARTNER_A,
     signatureDocumentVersionId: SIGNATURE_DOCUMENT_VERSION,
   };
@@ -1701,7 +1794,7 @@ afterAll(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
-  it('is 47 operations over 34 route files, and every one is readable', () => {
+  it('is 50 operations over 36 route files, and every one is readable', () => {
     expect({
       operations: SURFACE.operations.length,
       declarations: SURFACE.declarations,
@@ -1735,7 +1828,7 @@ describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
     }
   });
 
-  it('derives fourteen one-code-withheld cases over the six multi-code operations', () => {
+  it('derives sixteen one-code-withheld cases over the seven multi-code operations', () => {
     /*
      * Derived from the parse, so an operation that gains or loses a declared code
      * changes this table. The six are named to make the derivation legible, not to
@@ -1743,13 +1836,14 @@ describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
      */
     expect([...new Set(PARTIAL_HOLDING_CASES.map((row) => row.probe.id))].sort()).toEqual([
       'rpt.report-export',
+      'rpt.report-snapshot-create',
       'sal.delivery-complete',
       'sal.delivery-eligibility-read',
       'sal.delivery-readiness-list',
       'sal.delivery-receiver-verify',
       'sal.delivery-signature-attach',
     ]);
-    expect(PARTIAL_HOLDING_CASES).toHaveLength(14);
+    expect(PARTIAL_HOLDING_CASES).toHaveLength(16);
 
     // Each case withholds ONE declared code and its actor holds the other twelve.
     for (const row of PARTIAL_HOLDING_CASES) {
@@ -1773,11 +1867,11 @@ describe('P1-31-SEC-003 SE-0 — the phase operation set, parsed', () => {
       'sal.delivery-checklist-template-list',
       'wty.warranty-policy-list',
     ]);
-    expect(CROSS_TENANT_PROBES).toHaveLength(42);
-    expect(SCOPE_PROBES).toHaveLength(9);
-    expect(scopeSkips).toHaveLength(EXPECTED_OPERATIONS - 9);
+    expect(CROSS_TENANT_PROBES).toHaveLength(45);
+    expect(SCOPE_PROBES).toHaveLength(11);
+    expect(scopeSkips).toHaveLength(EXPECTED_OPERATIONS - 11);
     // Two variants each, so the uniformity CC-14 claims is asserted rather than assumed.
-    expect(SCOPE_CASES).toHaveLength(18);
+    expect(SCOPE_CASES).toHaveLength(22);
 
     // Every skip carries a sentence, so a gap cannot be spelled as an omission.
     for (const probe of crossSkips) {

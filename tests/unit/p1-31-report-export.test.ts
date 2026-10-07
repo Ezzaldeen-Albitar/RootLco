@@ -44,6 +44,7 @@ function page(values: string[], nextCursor: string | null = null): ReportRunView
     branch: { id: input.branchId, name: 'Branch' },
     generatedAt: '2026-09-14T00:00:00Z',
     freshness: 'live',
+    snapshots: false,
     columns: [{ key: 'customer', kind: 'text', drillThrough: null, drillThroughByKind: null }],
     groups: [],
     countsByState: [],

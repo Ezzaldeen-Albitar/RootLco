@@ -282,8 +282,9 @@ export interface ReportRunView {
    *
    * `as_of` — the same live read, with every amount computed as of the moment
    * `asOf` states (Owner decision D16): a payment, credit or reversal that took
-   * effect after it does not move the figures. Still no snapshot: the snapshot
-   * that freezes a report as it was issued is a separate, later change (FD16B).
+   * effect after it does not move the figures. Still recomputed on every read: a
+   * frozen copy of one run is a SNAPSHOT, saved and read through its own
+   * operations (P1-32-PRE-OD-FD16B), never this envelope.
    */
   readonly freshness: 'live' | 'as_of';
   /**
@@ -293,6 +294,11 @@ export interface ReportRunView {
    * keep.
    */
   readonly asOf?: string;
+  /**
+   * Whether a frozen snapshot of this report may be saved and listed
+   * (P1-32-PRE-OD-FD16B). False for every dataset that does not declare one.
+   */
+  readonly snapshots: boolean;
   readonly columns: readonly ReportColumnView[];
   /** Every group of the WHOLE selection, with its measures. Dataset-shaped. */
   readonly groups: readonly ReportGroupView[];
@@ -1136,6 +1142,7 @@ export class ReportRunService extends ApplicationService {
       // `as_of` with the moment for a dataset that computes as of one; `live` and
       // no moment for every other, which would otherwise be a false claim.
       ...(asOf === null ? { freshness: 'live' as const } : { freshness: 'as_of' as const, asOf }),
+      snapshots: definition.snapshot !== undefined,
       columns: definition.columns.map((column) => ({
         key: column.key,
         kind: column.kind,
@@ -1256,7 +1263,7 @@ function assertAsOfWithin(asOf: Date, opens: Date, readAt: Date, path: string): 
  * believed covered a day would be read as "no work orders", which is a wrong
  * answer rather than an empty one.
  */
-function assertPeriod(from: string, to: string): void {
+export function assertPeriod(from: string, to: string): void {
   const violations: Array<{ path: string; rule: string }> = [];
   if (!DAY.test(from)) violations.push({ path: 'query.from', rule: 'invalid_format' });
   if (!DAY.test(to)) violations.push({ path: 'query.to', rule: 'invalid_format' });

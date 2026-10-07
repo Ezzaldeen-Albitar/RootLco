@@ -42,7 +42,7 @@ export interface ReportExportView {
 }
 
 /** Inline generation has no persisted object, storage locator or enduring download grant. */
-const MAX_FILE_BYTES = 8 * 1024 * 1024;
+export const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 function csvCell(value: string | null): string {
   const text = value ?? '';

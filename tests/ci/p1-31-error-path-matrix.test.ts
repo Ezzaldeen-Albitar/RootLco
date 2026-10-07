@@ -94,8 +94,11 @@ const P1_31_NAMESPACES = Object.freeze([
   'warranty-policies',
 ] as const);
 
-const EXPECTED_OPERATIONS = 47;
-const EXPECTED_TABLES = 16;
+// 50 operations and 17 tables with the report snapshots (P1-32-PRE-OD-FD16B, Owner
+// decision D16): three operations under `reports/`, one of the eight namespaces, over
+// one new table, `rpt.report_snapshots`.
+const EXPECTED_OPERATIONS = 50;
+const EXPECTED_TABLES = 17;
 
 // ---------------------------------------------------------------------------
 // Citation resolution
@@ -147,6 +150,7 @@ const POL = 'tests/backend/p1-31-warranty-policy-seam.test.ts';
 const EMP = 'tests/backend/p1-31-delivering-employee-seam.test.ts';
 const CON = 'tests/backend/p1-31-concurrency-and-versioning.test.ts';
 const P111 = 'tests/db/p1-11-isolation.test.ts';
+const SNP = 'tests/backend/od-report-snapshots.test.ts';
 const HARD = 'tests/db/shared-hardening.test.ts';
 
 // ---------------------------------------------------------------------------
@@ -218,6 +222,10 @@ function buildCitations(): Readonly<Record<string, Citations>> {
     'Tenant A cannot see an employee of Tenant B'
   );
   const SE6R = at(ESC, 'SE-6R rpt.report-run over');
+  const DB_SNP = cite(
+    'tests/db/rpt-report-snapshots.test.ts',
+    'shows a snapshot only with rpt.report.read and every frozen code'
+  );
 
   const read = (table: string, databaseNegative: string, crossTenant = SE6_ROW): Citations => ({
     invalidBody: NA_READ,
@@ -335,6 +343,18 @@ function buildCitations(): Readonly<Record<string, Citations>> {
       table: 'rpt.report_configurations',
       databaseNegative: DB_RPT,
     },
+    'rpt.report-snapshot-create': {
+      invalidBody: cite(SNP, 'refuses an invalid snapshot request before saving anything'),
+      missingIfMatch: NA_NOT_GUARDED,
+      staleIfMatch: NA_NOT_GUARDED,
+      replaySameKey: cite(SNP, 'replays a repeated request under the same key'),
+      replayDifferentBody: cite(SNP, 'refuses the same key offered with a different body'),
+      crossTenant: SE6_ROW,
+      table: 'rpt.report_snapshots',
+      databaseNegative: DB_SNP,
+    },
+    'rpt.report-snapshot-list': read('rpt.report_snapshots', DB_SNP),
+    'rpt.report-snapshot-read': read('rpt.report_snapshots', DB_SNP),
     'rpt.report-run': {
       ...read(
         'no rpt row of its own — the dataset reads wo, inv and sal',
@@ -559,6 +579,7 @@ function rowFor(id: string): Citations {
 const SAL_MIGRATION = '20260724094000_sal_delivery.sql';
 const WTY_MIGRATION = '20260724095000_wty_warranty.sql';
 const RPT_MIGRATION = '20260724096000_rpt_reporting.sql';
+const RPT_SNAPSHOT_MIGRATION = '20261008100000_rpt_report_snapshots.sql';
 
 /** One case, named by the suite it lives in and the title it carries. */
 interface CaseRef {
@@ -740,6 +761,17 @@ const PHASE_TABLES: readonly PhaseTable[] = Object.freeze([
     behavioural: [RPT_CASE, P111_CASE],
   },
   {
+    table: 'rpt.report_snapshots',
+    migration: RPT_SNAPSHOT_MIGRATION,
+    structural: 'schema',
+    behavioural: [
+      {
+        file: 'tests/db/rpt-report-snapshots.test.ts',
+        title: 'shows a snapshot only with rpt.report.read and every frozen code',
+      },
+    ],
+  },
+  {
     table: 'rpt.report_configuration_versions',
     migration: RPT_MIGRATION,
     structural: 'schema',
@@ -819,7 +851,7 @@ async function renderErrorPathMatrix(): Promise<string> {
     '- **409 `ERR-CON-001`** — a version-guarded write carrying a stale `If-Match`. Same 11.'
   );
   lines.push(
-    '- **replay same-key** — an identical retry under one `Idempotency-Key` answered with the stored document and executing nothing. Only the 16 operations declaring `idempotent: true` have one.'
+    '- **replay same-key** — an identical retry under one `Idempotency-Key` answered with the stored document and executing nothing. Only the 17 operations declaring `idempotent: true` have one.'
   );
   lines.push(
     "- **replay different-body `ERR-INT-001`** — the SAME key offered with a different body, refused. The half a replay case cannot assert: a route storing the key alone passes the replay case and answers a second, different request with the first one's document."

@@ -55,12 +55,18 @@ const readReport = vi.fn();
 const readReportScopes = vi.fn();
 const runReport = vi.fn();
 const exportReport = vi.fn();
+const listReportSnapshots = vi.fn();
+const readReportSnapshot = vi.fn();
+const saveReportSnapshot = vi.fn();
 vi.mock('@/features/reports/reports-api', () => ({
   listReportCatalogue: (...args: unknown[]) => listReportCatalogue(...args),
   readReport: (...args: unknown[]) => readReport(...args),
   readReportScopes: (...args: unknown[]) => readReportScopes(...args),
   runReport: (...args: unknown[]) => runReport(...args),
   exportReport: (...args: unknown[]) => exportReport(...args),
+  listReportSnapshots: (...args: unknown[]) => listReportSnapshots(...args),
+  readReportSnapshot: (...args: unknown[]) => readReportSnapshot(...args),
+  saveReportSnapshot: (...args: unknown[]) => saveReportSnapshot(...args),
 }));
 vi.mock('@/components/notifications/action-notifications', () => ({ notifyActionResult: vi.fn() }));
 
@@ -226,6 +232,10 @@ beforeEach(() => {
   runReport.mockReset();
   exportReport.mockReset();
   exportReport.mockResolvedValue({ status: 'denied', correlationId: 'export-reference' });
+  listReportSnapshots.mockReset();
+  listReportSnapshots.mockResolvedValue(cataloguePage([]));
+  readReportSnapshot.mockReset();
+  saveReportSnapshot.mockReset();
   PERMISSIONS = [READ];
   listReportCatalogue.mockResolvedValue(cataloguePage([BASELINE, UNRUNNABLE]));
   readReport.mockResolvedValue({ status: 'ok', data: BASELINE, correlationId: null });
@@ -1422,6 +1432,328 @@ describe('D16 — the amounts are as of a stated moment', () => {
     for (const key of ['reports.asOf.endOfPeriod', 'reports.asOf.now', 'reports.asOf.specific']) {
       expect(within(group).getByRole('radio', { name: AR[key] as string })).toBeInTheDocument();
     }
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+});
+
+/*
+ * Owner decision D16, part 2 (P1-32-PRE-OD-FD16B): a frozen snapshot of the report
+ * shown, the snapshots of the period listed with their restatement chain, a frozen
+ * snapshot read with its banner and difference, and a restatement of the latest one
+ * that cannot be saved without a reason. Saving and restating are offered only to an
+ * operator holding the export permission.
+ */
+describe('D16 — snapshots keep a report as it was, and restatements are distinguished', () => {
+  const AS_OF = '2026-09-07T21:00:00.000Z';
+  const SNAP_ENVELOPE = {
+    ...NEW_ENVELOPE,
+    freshness: 'as_of',
+    asOf: AS_OF,
+    snapshots: true,
+  };
+  const ORIGINAL_ID = '55555555-5555-4555-8555-555555555555';
+  const RESTATEMENT_ID = '66666666-6666-4666-8666-666666666666';
+  const SAVER_ID = '77777777-7777-4777-8777-777777777777';
+  const PERIOD = { from: '2026-09-01', to: '2026-09-08', timezone: 'Asia/Amman' };
+  const ORIGINAL = {
+    id: ORIGINAL_ID,
+    reportCode: CODE,
+    period: PERIOD,
+    asOf: AS_OF,
+    generatedAt: '2026-09-08T06:00:00.000Z',
+    generatedBy: { id: SAVER_ID, displayName: 'Rana Haddad' },
+    rowCount: 1,
+    rowsDigest: 'a'.repeat(64),
+    restatesSnapshotId: null,
+    restatedBySnapshotId: RESTATEMENT_ID,
+    restatementReason: null,
+  };
+  const RESTATEMENT = {
+    ...ORIGINAL,
+    id: RESTATEMENT_ID,
+    asOf: '2026-09-10T09:00:00.000Z',
+    generatedAt: '2026-09-10T09:00:00.000Z',
+    generatedBy: { id: SAVER_ID, displayName: null },
+    restatesSnapshotId: ORIGINAL_ID,
+    restatedBySnapshotId: null,
+    restatementReason: 'A late receipt was applied',
+  };
+  const FILTERS = { companyId: COMPANY_ID, branchId: BRANCH_ID };
+  const rowsOf = (snapshotId: string) =>
+    snapshotId === ORIGINAL_ID
+      ? {
+          snapshot: { ...ORIGINAL, filters: FILTERS, difference: null },
+          restates: null,
+          restatedBy: RESTATEMENT,
+          columns: COLUMNS,
+          rows: { items: [ROW], nextCursor: null, hasMore: false },
+        }
+      : {
+          snapshot: {
+            ...RESTATEMENT,
+            filters: FILTERS,
+            difference: {
+              rowsBefore: 1,
+              rowsAfter: 1,
+              rowsAdded: 0,
+              rowsRemoved: 0,
+              rowsChanged: 1,
+              totals: [
+                { currency: 'JOD', measure: 'outstanding', before: '200.0000', after: '150.0000' },
+              ],
+            },
+          },
+          restates: ORIGINAL,
+          restatedBy: null,
+          columns: COLUMNS,
+          rows: { items: [ROW], nextCursor: null, hasMore: false },
+        };
+  const at = (instant: string) => formatReportTime(instant, 'en', 'Asia/Amman');
+  const fill = (template: string, values: Record<string, string>) =>
+    Object.entries(values).reduce(
+      (text, [key, value]) => text.replace(`{${key}}`, value),
+      template
+    );
+
+  beforeEach(() => {
+    runReport.mockResolvedValue(runOk(SNAP_ENVELOPE));
+    listReportSnapshots.mockResolvedValue(cataloguePage([RESTATEMENT, ORIGINAL]));
+    readReportSnapshot.mockImplementation(async ({ snapshotId }: { snapshotId: string }) => ({
+      status: 'ok',
+      data: rowsOf(snapshotId),
+      correlationId: null,
+    }));
+  });
+
+  it('lists the period’s snapshots by name, never by identifier, with the chain visible', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    await showReport();
+    const list = await screen.findByTestId('report-snapshot-list');
+    expect(listReportSnapshots).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportCode: CODE,
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        from: '2026-09-01',
+        to: '2026-09-08',
+      })
+    );
+    const items = within(list).getAllByTestId('report-snapshot-item');
+    expect(items).toHaveLength(2);
+    expect(items[0]).toHaveTextContent(EN['reports.snapshots.kind.restatement'] as string);
+    expect(items[0]).toHaveTextContent(EN['reports.snapshots.nameHidden'] as string);
+    expect(items[1]).toHaveTextContent(EN['reports.snapshots.kind.original'] as string);
+    expect(items[1]).toHaveTextContent(EN['reports.snapshots.kind.restated'] as string);
+    expect(items[1]).toHaveTextContent('Rana Haddad');
+    expect(list.textContent).not.toContain(SAVER_ID);
+  });
+
+  it('saves a snapshot after a confirmation stating the scope, the period and the moment', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    saveReportSnapshot.mockResolvedValue({
+      status: 'success',
+      messageKey: 'reports.snapshots.saved',
+      saved: { ...ORIGINAL, restatedBySnapshotId: null, filters: FILTERS, difference: null },
+    });
+    await showReport();
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.save'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Workshop company');
+    expect(dialog).toHaveTextContent('Named by the run');
+    expect(dialog).toHaveTextContent('2026-09-01');
+    expect(dialog).toHaveTextContent('2026-09-08');
+    expect(dialog).toHaveTextContent(at(AS_OF));
+    expect(saveReportSnapshot).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['reports.snapshots.saveConfirm'] as string })
+    );
+    await waitFor(() =>
+      expect(saveReportSnapshot).toHaveBeenCalledExactlyOnceWith(CODE, {
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        from: '2026-09-01',
+        to: '2026-09-08',
+        asOf: AS_OF,
+      })
+    );
+    // The list is read again and the saved snapshot opened.
+    await waitFor(() => expect(listReportSnapshots).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(readReportSnapshot).toHaveBeenCalledWith(
+        expect.objectContaining({ snapshotId: ORIGINAL_ID })
+      )
+    );
+  });
+
+  it('says a refused save in its own words, inside the confirmation', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    saveReportSnapshot.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.report_snapshot_exists',
+    });
+    await showReport();
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.save'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['reports.snapshots.saveConfirm'] as string })
+    );
+    expect(
+      await within(dialog).findByText(EN['form.violation.report_snapshot_exists'] as string)
+    ).toBeVisible();
+  });
+
+  it('shows a frozen snapshot with its banner, and the newer one that restated it', async () => {
+    PERMISSIONS = [READ];
+    await showReport();
+    const user = userEvent.setup();
+    const list = await screen.findByTestId('report-snapshot-list');
+    const original = within(list).getAllByTestId('report-snapshot-item')[1] as HTMLElement;
+    await user.click(
+      within(original).getByRole('button', { name: EN['reports.snapshots.view'] as string })
+    );
+    const banner = await screen.findByTestId('report-snapshot-banner');
+    expect(banner).toHaveTextContent(
+      fill(EN['reports.snapshots.banner'] as string, {
+        moment: at(AS_OF),
+        savedAt: at(ORIGINAL.generatedAt),
+        person: 'Rana Haddad',
+      })
+    );
+    const restated = screen.getByTestId('report-snapshot-restated');
+    expect(restated).toHaveTextContent('A late receipt was applied');
+    expect(restated).toHaveTextContent(at(RESTATEMENT.generatedAt));
+    // The frozen rows, in the report's own table.
+    expect(
+      screen.getByRole('table', { name: EN['reports.snapshots.rowsCaption'] as string })
+    ).toHaveTextContent('W-000123');
+    await user.click(
+      within(restated).getByRole('button', { name: EN['reports.snapshots.showNewer'] as string })
+    );
+    await waitFor(() =>
+      expect(readReportSnapshot).toHaveBeenLastCalledWith(
+        expect.objectContaining({ snapshotId: RESTATEMENT_ID })
+      )
+    );
+    const difference = await screen.findByTestId('report-snapshot-difference');
+    expect(difference).toHaveTextContent(
+      fill(EN['reports.snapshots.difference.rows'] as string, {
+        added: '0',
+        removed: '0',
+        changed: '1',
+      })
+    );
+    expect(difference).toHaveTextContent('200.000');
+    expect(difference).toHaveTextContent('150.000');
+    expect(screen.getByTestId('report-snapshot-restates')).toHaveTextContent(
+      'A late receipt was applied'
+    );
+  });
+
+  it('restates only the latest snapshot, and only with a reason', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    saveReportSnapshot.mockResolvedValue({
+      status: 'success',
+      messageKey: 'reports.snapshots.restatedSaved',
+      saved: { ...RESTATEMENT, id: ORIGINAL_ID, filters: FILTERS, difference: null },
+    });
+    await showReport();
+    const user = userEvent.setup();
+    const list = await screen.findByTestId('report-snapshot-list');
+    // The restated original offers no restatement of its own.
+    await user.click(
+      within(within(list).getAllByTestId('report-snapshot-item')[1] as HTMLElement).getByRole(
+        'button',
+        { name: EN['reports.snapshots.view'] as string }
+      )
+    );
+    await screen.findByTestId('report-snapshot-banner');
+    expect(
+      screen.queryByRole('button', { name: EN['reports.snapshots.restate'] as string })
+    ).toBeNull();
+    // The latest does.
+    await user.click(
+      within(within(list).getAllByTestId('report-snapshot-item')[0] as HTMLElement).getByRole(
+        'button',
+        { name: EN['reports.snapshots.view'] as string }
+      )
+    );
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.restate'] as string })
+    );
+    const form = await screen.findByTestId('report-snapshot-restate');
+    await user.click(
+      within(form).getByRole('button', { name: EN['reports.snapshots.restateConfirm'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['reports.snapshots.reasonRequired'] as string)
+    ).toBeVisible();
+    expect(saveReportSnapshot).not.toHaveBeenCalled();
+    await user.type(
+      within(form).getByRole('textbox', { name: labelled('reports.snapshots.reason') }),
+      'Corrected allocation'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['reports.snapshots.restateConfirm'] as string })
+    );
+    await waitFor(() =>
+      expect(saveReportSnapshot).toHaveBeenCalledExactlyOnceWith(CODE, {
+        companyId: COMPANY_ID,
+        branchId: BRANCH_ID,
+        from: '2026-09-01',
+        to: '2026-09-08',
+        asOf: AS_OF,
+        restatesSnapshotId: RESTATEMENT_ID,
+        reason: 'Corrected allocation',
+      })
+    );
+  });
+
+  it('offers neither save nor restate without the export permission', async () => {
+    PERMISSIONS = [READ];
+    await showReport();
+    const user = userEvent.setup();
+    const list = await screen.findByTestId('report-snapshot-list');
+    expect(
+      screen.queryByRole('button', { name: EN['reports.snapshots.save'] as string })
+    ).toBeNull();
+    await user.click(
+      within(within(list).getAllByTestId('report-snapshot-item')[0] as HTMLElement).getByRole(
+        'button',
+        { name: EN['reports.snapshots.view'] as string }
+      )
+    );
+    await screen.findByTestId('report-snapshot-banner');
+    expect(
+      screen.queryByRole('button', { name: EN['reports.snapshots.restate'] as string })
+    ).toBeNull();
+  });
+
+  it('shows no snapshots for a report that keeps none', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    runReport.mockResolvedValue(runOk({ ...SNAP_ENVELOPE, snapshots: false }));
+    await showReport();
+    await screen.findByTestId('report-as-of');
+    expect(screen.queryByTestId('report-snapshots')).toBeNull();
+    expect(listReportSnapshots).not.toHaveBeenCalled();
+  });
+
+  it('reads in Arabic as Arabic, right to left', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    const { container } = await showReport('ar');
+    const panel = await within(container).findByTestId('report-snapshots');
+    expect(panel).toHaveTextContent(AR['reports.snapshots.heading'] as string);
+    expect(
+      within(panel).getByRole('button', { name: AR['reports.snapshots.save'] as string })
+    ).toBeVisible();
+    const list = await within(container).findByTestId('report-snapshot-list');
+    expect(list).toHaveTextContent(AR['reports.snapshots.kind.restatement'] as string);
+    expect(list).toHaveTextContent(AR['reports.snapshots.nameHidden'] as string);
     expect(document.documentElement.dir).toBe('rtl');
   });
 });

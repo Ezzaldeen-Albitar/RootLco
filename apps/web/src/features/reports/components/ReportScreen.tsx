@@ -62,6 +62,7 @@ import {
 } from './ReportShell';
 import { ReportScopeForm } from './ReportScopeForm';
 import { ReportExportPanel } from './ReportExportPanel';
+import { ReportSnapshotsPanel } from './ReportSnapshotsPanel';
 import { useCursorTrail } from './use-cursor-trail';
 import { useWorkingReportScope } from './use-working-report-scope';
 
@@ -164,6 +165,7 @@ export function ReportScreen({
   definition,
   scopeOptions,
   canExport = false,
+  canSnapshot = false,
   named = {},
 }: {
   readonly locale: Locale;
@@ -171,6 +173,12 @@ export function ReportScreen({
   readonly definition: ReportDefinition;
   readonly scopeOptions: ReadState<ReportScopeOptions>;
   readonly canExport?: boolean;
+  /**
+   * Whether the operator may save and restate a frozen snapshot of a report that
+   * keeps them (Owner decision D16, P1-32-PRE-OD-FD16B): `rpt.export`, which the
+   * backend requires to save one. Reading the snapshots needs only the report.
+   */
+  readonly canSnapshot?: boolean;
   /**
    * The selection the ADDRESS named — the overview's drill-through, or a link
    * somebody kept. Resolved against the caller's own directory by
@@ -294,6 +302,7 @@ export function ReportScreen({
           companyName={chosenCompany?.legalName ?? null}
           branchName={chosenBranch?.name ?? null}
           canExport={canExport}
+          canSnapshot={canSnapshot}
         />
       )}
     </div>
@@ -331,6 +340,7 @@ function ReportResults({
   companyName,
   branchName,
   canExport,
+  canSnapshot,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -341,6 +351,7 @@ function ReportResults({
   readonly companyName: string | null;
   readonly branchName: string | null;
   readonly canExport: boolean;
+  readonly canSnapshot: boolean;
 }) {
   const { companyId, branchId, from, to } = submitted;
   /*
@@ -505,6 +516,36 @@ function ReportResults({
         asOfMoment={asOfMoment}
       />
 
+      {run.snapshots === true ? (
+        <ReportSnapshotsPanel
+          locale={locale}
+          messages={messages}
+          reportCode={reportCode}
+          selection={{
+            companyId: run.filters?.companyId ?? submitted.companyId,
+            branchId: run.filters?.branchId ?? submitted.branchId,
+            from: run.period.from,
+            to: run.period.to,
+          }}
+          companyName={companyName}
+          branchName={run.branch?.name ?? branchName}
+          zone={run.period.timezone}
+          asOf={asOf}
+          asOfMoment={asOfMoment}
+          canSave={canSnapshot}
+          renderRows={(columns, frozen) => (
+            <RowsTable
+              locale={locale}
+              messages={messages}
+              zone={run.period.timezone}
+              columns={columns}
+              rows={frozen}
+              captionKey="reports.snapshots.rowsCaption"
+            />
+          )}
+        />
+      ) : null}
+
       {groups.length === 0 ? null : (
         <GroupTable messages={messages} groups={groups} locale={locale} />
       )}
@@ -514,45 +555,14 @@ function ReportResults({
           {translate(messages, 'reports.run.noRows')}
         </p>
       ) : (
-        <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-          <table className="w-full border-collapse">
-            <caption className="sr-only">{translate(messages, 'reports.run.rowsCaption')}</caption>
-            <thead className="bg-table-header">
-              <tr>
-                {run.columns.map((column) => {
-                  const heading = fieldHeading(messages, column.key);
-                  return (
-                    <th key={column.key} scope="col" className={REPORT_TABLE_HEADER}>
-                      {heading === null ? <MachineName value={column.key} /> : heading}
-                    </th>
-                  );
-                })}
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, index) => (
-                // The operation publishes no row identifier — a report row is a
-                // projection, not a record — so the position in the page is the
-                // key. It is stable for the page being rendered, which is what a
-                // key is for.
-                <tr key={`${String(index)}`} className="border-t border-border-subtle">
-                  {run.columns.map((column) => (
-                    <td key={column.key} className={REPORT_TABLE_CELL}>
-                      <CellValue
-                        locale={locale}
-                        messages={messages}
-                        zone={run.period.timezone}
-                        column={column}
-                        row={row}
-                        cell={row.cells.find((candidate) => candidate.key === column.key) ?? null}
-                      />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <RowsTable
+          locale={locale}
+          messages={messages}
+          zone={run.period.timezone}
+          columns={run.columns}
+          rows={rows}
+          captionKey="reports.run.rowsCaption"
+        />
       )}
 
       <div className="flex flex-wrap items-center gap-2">
@@ -577,6 +587,68 @@ function ReportResults({
         {translate(messages, 'reports.run.pagingNote')}
       </p>
     </section>
+  );
+}
+
+/**
+ * A page of report rows, live or frozen in a snapshot (P1-32-PRE-OD-FD16B): one
+ * table, so a saved row reads exactly as the live one did.
+ */
+function RowsTable({
+  locale,
+  messages,
+  zone,
+  columns,
+  rows,
+  captionKey,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly zone: string;
+  readonly columns: readonly ReportColumn[];
+  readonly rows: readonly ReportRow[];
+  readonly captionKey: keyof Messages;
+}) {
+  return (
+    <div className="overflow-x-auto rounded-lg border border-border bg-surface">
+      <table className="w-full border-collapse">
+        <caption className="sr-only">{translate(messages, captionKey)}</caption>
+        <thead className="bg-table-header">
+          <tr>
+            {columns.map((column) => {
+              const heading = fieldHeading(messages, column.key);
+              return (
+                <th key={column.key} scope="col" className={REPORT_TABLE_HEADER}>
+                  {heading === null ? <MachineName value={column.key} /> : heading}
+                </th>
+              );
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            // The operation publishes no row identifier — a report row is a
+            // projection, not a record — so the position in the page is the
+            // key. It is stable for the page being rendered, which is what a
+            // key is for.
+            <tr key={`${String(index)}`} className="border-t border-border-subtle">
+              {columns.map((column) => (
+                <td key={column.key} className={REPORT_TABLE_CELL}>
+                  <CellValue
+                    locale={locale}
+                    messages={messages}
+                    zone={zone}
+                    column={column}
+                    row={row}
+                    cell={row.cells.find((candidate) => candidate.key === column.key) ?? null}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 

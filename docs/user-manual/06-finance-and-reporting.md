@@ -1506,7 +1506,20 @@ Three things to expect in the cells:
 
 ### 6.5.4a As-of versus snapshot — end-of-period amounts in "Invoices and payments"
 
-**IMPLEMENTED (UI)** — Owner decision D16, part 1 (as-of amounts). The snapshot half is not built.
+**IMPLEMENTED (UI)** — Owner decision D16: as-of amounts (part 1) and saved snapshots with
+restatements (part 2, 6.5.4b).
+
+Three words, and they mean different things:
+
+- **As of** — the report is worked out again from the records every time it is read, as they stood
+  at a stated moment. Payments, allocations, credit notes and reversals keep the moment they were
+  recorded and cannot be backdated, so reading the same period as of the same moment gives the same
+  figures.
+- **Snapshot** — a saved copy of one reading of the report, exactly as it was shown: the branch,
+  the period, the moment, and every row. It is never changed afterwards.
+- **Restatement** — a later snapshot of the same branch and period that names the snapshot it
+  replaces, says why, and shows what changed. The earlier snapshot is kept, marked as restated.
+  Nothing is overwritten.
 
 - **The documents are chosen by the period.** The invoices, receipts and credit notes listed are the
   ones dated inside the period, exactly as before.
@@ -1539,13 +1552,58 @@ Three things to expect in the cells:
 - **In the exported file** every record of this report carries the moment, beside its freshness
   (6.6). The files of the other reports carry no moment, because their amounts are not worked out as
   of one.
-- **What this is not: a snapshot.** The report is still read from the live records each time; it is
-  not a stored copy. Payments, allocations, credit notes and reversals take their moment from the
-  system clock when they are recorded and cannot be backdated, which is what makes an as-of reading
-  repeatable. Keeping an issued copy of a period's report and marking a later correction as a
-  restatement are the second part of this decision and are not available yet. Closing a period and
-  financial statements are not part of it.
+- **What this is not: a snapshot.** The report on the screen is still read from the records each
+  time; it is not a stored copy. Payments, allocations, credit notes and reversals take their moment
+  from the system clock when they are recorded and cannot be backdated, which is what makes an as-of
+  reading repeatable. To keep the report exactly as it was shown, save a snapshot (6.5.4b). Closing a
+  period and financial statements are not part of this decision.
 - The other three reports are read as they are now and say so; they do not offer a moment.
+
+### 6.5.4b Saved snapshots and restatements — "Invoices and payments"
+
+**IMPLEMENTED (UI)** — Owner decision D16, part 2. Only the "Invoices and payments" report keeps
+snapshots; the other reports do not offer them.
+
+Below the report, "Saved snapshots" <!-- reports.snapshots.heading --> lists the snapshots saved for
+the branch and period you are looking at, newest first: when each was saved, who saved it, the
+moment its amounts are as of, how many rows it holds, and whether it is an "Original"
+<!-- reports.snapshots.kind.original --> or a "Restatement" <!-- reports.snapshots.kind.restatement -->
+
+. A snapshot that a later one replaced says "Restated later" <!-- reports.snapshots.kind.restated -->
+. People are shown by name; where your account may not see names, the list says "a person whose
+name is not shown to you" <!-- reports.snapshots.nameHidden --> rather than showing an identifier.
+
+- **Saving a snapshot.** Press "Save snapshot" <!-- reports.snapshots.save --> . The confirmation
+  states the company, the branch, the period and the moment the amounts are as of, and that the
+  snapshot cannot be changed after it is saved. The snapshot holds exactly what the report shows,
+  as of the moment shown. Only one original snapshot can be saved for a branch and period; a second
+  attempt is refused with "A snapshot of this report for this branch and period is already saved.
+  To replace it, restate the latest snapshot with a reason." <!-- form.violation.report_snapshot_exists -->
+- **Opening a snapshot.** Press "View" <!-- reports.snapshots.view --> . The snapshot reads
+  "Snapshot as of {moment} · saved {savedAt} by {person}" <!-- reports.snapshots.banner --> , and
+  its rows are shown in the same table as the report, exactly as they were saved. A payment, credit
+  note or reversal recorded later does not change them. A snapshot that was replaced says "Restated
+  on {date} by {person}. Reason: {reason}" <!-- reports.snapshots.restatedBanner --> , with "Show the
+  newer snapshot" <!-- reports.snapshots.showNewer --> . A restatement says which snapshot it
+  restates and why, and "What changed from the earlier snapshot"
+  <!-- reports.snapshots.difference.heading --> : how many rows were added, removed and changed, and
+  each amount per currency before and after. Amounts in different currencies are never added
+  together.
+- **Restating.** Only the latest snapshot of a period can be restated: open it and press "Restate"
+  <!-- reports.snapshots.restate --> . A reason is required ("Say why the snapshot is being
+  restated." <!-- reports.snapshots.reasonRequired --> ). The restatement saves the report as it is
+  shown now, for the same branch and period, and the earlier snapshot is kept and marked. Restating
+  a snapshot that was already replaced is refused: "That snapshot has already been restated.
+  Restate the latest snapshot instead." <!-- form.violation.report_snapshot_not_latest -->
+- **Too large.** A report too large to keep is refused: "This report is too large to keep as a
+  snapshot. Choose a shorter period." <!-- form.violation.report_snapshot_too_large --> The limit is
+  the same one the export uses.
+- **Who may do what.** Saving and restating need the export permission, and the buttons are shown
+  only to accounts that hold it. Reading the saved snapshots needs only the permission to read the
+  report and to see its amounts. A dedicated permission for snapshots is an open question for the
+  Owner.
+- Every saved snapshot is recorded in the audit log with the report, the period, the moment, the
+  number of rows and a fingerprint of the saved rows (6.7).
 
 ### 6.5.5 Drill-through from a report row
 

@@ -5714,6 +5714,49 @@ Report configuration (tenant-scoped, versioned).
 | `deleted_at`             | `timestamptz` | internal | yes   | Soft-delete timestamp (NULL = live).                                                            |
 | `deleted_by`             | `uuid`        | internal | yes   | Soft-deleting actor.                                                                            |
 
+### `rpt.report_snapshots`
+
+P1-32-PRE-OD-FD16B (Owner decision D16). A frozen copy of ONE run of a report — its period, zone,
+as-of moment, filters, columns and every row — written once and never changed: SELECT and INSERT
+only for `app_runtime`, SELECT for `app_readonly`, and `rpt.guard_report_snapshot` refuses every
+UPDATE. A restatement is a later snapshot of the same report, scope, period and filters that names
+the one it replaces (`restates_snapshot_id`), with a required non-blank `restatement_reason` and a
+`difference` summary; `uq_report_snapshots_original` admits one original per (tenant, company,
+branch, report, period, filters digest) and `uq_report_snapshots_restates` one restatement per
+snapshot, so the chain is linear. The guard stamps `generated_by`, `created_by`, `generated_at` and
+`created_at` from the session for `app_runtime` and its login members, `row_count` and the sha256
+digests (`rows_digest`, `parameters_digest`, over the canonical jsonb text) for every writer, and
+admits a restatement only of the same report, period and filters. `sel_report_snapshots_scope`
+admits a row only with `rpt.report.read` and every code in `required_permissions`, each in the
+row's own company and branch; `ins_report_snapshots_scope` also requires `rpt.export` and pins
+`generated_by` to the signed-in user.
+
+| Column                 | Type          | class      | Null? | Purpose                                                                                                         |
+| ---------------------- | ------------- | ---------- | ----- | --------------------------------------------------------------------------------------------------------------- |
+| `id`                   | `uuid`        | internal   | no    | Primary key (UUID).                                                                                             |
+| `tenant_id`            | `uuid`        | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                 |
+| `company_id`           | `uuid`        | internal   | no    | Company of the reported branch.                                                                                 |
+| `branch_id`            | `uuid`        | internal   | no    | Reported branch; composite FK -> `org.branches(tenant_id, company_id, id)` RESTRICT.                            |
+| `report_code`          | `text`        | internal   | no    | The registered dataset; `^[a-z][a-z0-9_]{1,62}$`.                                                               |
+| `period_from`          | `date`        | internal   | no    | First day included, in the branch's zone.                                                                       |
+| `period_to_exclusive`  | `date`        | internal   | no    | First day excluded; CHECK `period_from < period_to_exclusive`.                                                  |
+| `timezone_name`        | `text`        | internal   | no    | The IANA zone the period was resolved in (the branch's).                                                        |
+| `as_of`                | `timestamptz` | internal   | no    | The moment the stored amounts were computed as of.                                                              |
+| `parameters`           | `jsonb`       | internal   | no    | The filters the run used (company, branch, period), a JSON object.                                              |
+| `parameters_digest`    | `text`        | internal   | no    | sha256 (hex) of the canonical jsonb text of `parameters`; stamped.                                              |
+| `required_permissions` | `text[]`      | internal   | no    | The dataset's permission codes, frozen at creation; a reader needs every one (RLS).                             |
+| `columns`              | `jsonb`       | internal   | no    | The report's columns as published (key, kind, drill-through templates), a JSON array.                           |
+| `rows`                 | `jsonb`       | restricted | no    | Every row of the run as published (cells of key, label, value; amounts as decimal strings), a JSON array.       |
+| `row_count`            | `integer`     | internal   | no    | Number of rows; stamped; CHECK equals `jsonb_array_length(rows)`.                                               |
+| `rows_digest`          | `text`        | internal   | no    | sha256 (hex) of the canonical jsonb text of `rows`; stamped.                                                    |
+| `generated_at`         | `timestamptz` | internal   | no    | When it was saved; stamped from `now()` for the request path.                                                   |
+| `generated_by`         | `uuid`        | internal   | no    | Who saved it; stamped from `iam.current_user_id()` for the request path.                                        |
+| `restates_snapshot_id` | `uuid`        | internal   | yes   | The snapshot this one restates; composite FK -> `rpt.report_snapshots(tenant_id, company_id, branch_id, id)`.   |
+| `restatement_reason`   | `text`        | restricted | yes   | Why it was restated; required and non-blank exactly when `restates_snapshot_id` is set; at most 500 characters. |
+| `difference`           | `jsonb`       | restricted | yes   | For a restatement: rows added, removed and changed, and totals per currency before and after; NULL otherwise.   |
+| `created_at`           | `timestamptz` | internal   | no    | Row creation timestamp; stamped with `generated_at`.                                                            |
+| `created_by`           | `uuid`        | internal   | no    | Creating actor; stamped with `generated_by`.                                                                    |
+
 ### `rpt.saved_filters`
 
 User-owned saved filter (owner-only RLS).

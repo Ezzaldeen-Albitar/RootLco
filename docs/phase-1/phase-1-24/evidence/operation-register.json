@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 513,
-    "openapiPaths": 403,
-    "openapiOperations": 513,
+    "operations": 516,
+    "openapiPaths": 405,
+    "openapiOperations": 516,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 34,
     "permissionCodes": 134,
-    "auditActions": 298
+    "auditActions": 299
   },
   "counts": {
-    "Covered": 513
+    "Covered": 516
   },
   "operations": [
     {
@@ -12887,6 +12887,143 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/reports/[reportCode]/rows/route.ts"
+    },
+    {
+      "id": "rpt.report-snapshot-create",
+      "domain": "reporting",
+      "method": "POST",
+      "route": "/api/v1/reports/{reportCode}/snapshots",
+      "permissions": ["rpt.export", "rpt.report.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "transactional write",
+      "auditClass": "financial",
+      "auditAction": "rpt.report.snapshot_created",
+      "idempotent": true,
+      "versionGuarded": false,
+      "openapi": "POST /api/v1/reports/{reportCode}/snapshots",
+      "documentedResponses": ["201", "401", "403", "409", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "idempotency",
+        "audit",
+        "isolation",
+        "denial"
+      ],
+      "providedEvidence": [
+        "audit",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "idempotency",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/od-report-snapshots.test.ts",
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts",
+        "tests/ci/p1-31-grant-map.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/reports/[reportCode]/snapshots/route.ts"
+    },
+    {
+      "id": "rpt.report-snapshot-list",
+      "domain": "reporting",
+      "method": "GET",
+      "route": "/api/v1/reports/{reportCode}/snapshots",
+      "permissions": ["rpt.report.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/reports/{reportCode}/snapshots",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/od-report-snapshots.test.ts",
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts",
+        "tests/ci/p1-31-grant-map.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/reports/[reportCode]/snapshots/route.ts"
+    },
+    {
+      "id": "rpt.report-snapshot-read",
+      "domain": "reporting",
+      "method": "GET",
+      "route": "/api/v1/reports/{reportCode}/snapshots/{snapshotId}/rows",
+      "permissions": ["rpt.report.read"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/reports/{reportCode}/snapshots/{snapshotId}/rows",
+      "documentedResponses": ["200", "401", "403", "404", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "isolation",
+        "denial",
+        "pagination"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": [
+        "tests/backend/od-report-snapshots.test.ts",
+        "tests/backend/p1-31-privilege-escalation.test.ts",
+        "tests/ci/p1-31-error-path-matrix.test.ts",
+        "tests/ci/p1-31-grant-map.test.ts"
+      ],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/reports/[reportCode]/snapshots/[snapshotId]/rows/route.ts"
     },
     {
       "id": "sal.counter-sale-create",
