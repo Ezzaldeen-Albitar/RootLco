@@ -8,11 +8,24 @@
  * identity row uses removed — and a phrase counts as present when it, or its
  * reversal, is found. Digits are left-to-right in both languages and match as
  * written.
+ *
+ * One more fold, for the lam-alef ligature. A font that draws lam followed by
+ * alef as ONE glyph maps it back to the two letters in logical order, inside a
+ * run that is otherwise in visual order — so the pair reads the other way round
+ * from the letters around it, and whether that happens depends on the font the
+ * machine has. Folding both orders of the pair to one makes the comparison
+ * independent of it.
  */
-const IGNORED = /[\s·—‎‏⁦-⁩.,:;()'"’-]/gu;
+const IGNORED = /[\s\u00b7\u2014\u200e\u200f\u2066-\u2069.,:;()'"\u2019-]/gu;
+const LAM_ALEF = /\u0644\u0627/gu;
+const ALEF_LAM = '\u0627\u0644';
 
 export function fold(text: string): string {
-  return text.normalize('NFKC').replace(IGNORED, '');
+  return text.normalize('NFKC').replace(IGNORED, '').replace(LAM_ALEF, ALEF_LAM);
+}
+
+function reverse(text: string): string {
+  return [...text.normalize('NFKC')].reverse().join('');
 }
 
 function occurrences(haystack: string, needle: string): number {
@@ -29,9 +42,10 @@ function occurrences(haystack: string, needle: string): number {
 /** How many times `phrase` was printed in `text`, read in either direction. */
 export function timesPrinted(text: string, phrase: string): number {
   const haystack = fold(text);
-  const needle = fold(phrase);
-  const reversed = [...needle].reverse().join('');
-  return Math.max(occurrences(haystack, needle), occurrences(haystack, reversed));
+  return Math.max(
+    occurrences(haystack, fold(phrase)),
+    occurrences(haystack, fold(reverse(phrase)))
+  );
 }
 
 export function printed(text: string, phrase: string): boolean {
