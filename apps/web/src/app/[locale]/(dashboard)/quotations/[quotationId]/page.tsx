@@ -85,19 +85,28 @@ export default async function QuotationDetailPage({
     if (job.status === 'ok') workOrder = job.data.workOrder;
   }
 
-  return shell(
-    <QuotationDetailScreen
-      locale={locale}
-      messages={messages}
-      quotation={detail.data}
-      workOrder={workOrder}
-      canManage={holds(session.permissions, QUOTATION_PERMISSIONS.manage)}
-      canDecide={holds(session.permissions, QUOTATION_PERMISSIONS.decide)}
-      canReadLimits={holds(session.permissions, QUOTATION_PERMISSIONS.limitsRead)}
-      canReadServices={holds(session.permissions, SERVICE_PERMISSIONS.read)}
-      canReadItems={holds(session.permissions, QUOTATION_PERMISSIONS.itemRead)}
-    />,
-    true
+  /*
+   * The header and the body share one print scope, as the invoice page does
+   * (finance retest DF-R2-1): while the quotation's printable copy is open, the
+   * page title and its description stay off the paper and the copy prints alone.
+   */
+  return (
+    <div data-print-scope="document">
+      {shell(
+        <QuotationDetailScreen
+          locale={locale}
+          messages={messages}
+          quotation={detail.data}
+          workOrder={workOrder}
+          canManage={holds(session.permissions, QUOTATION_PERMISSIONS.manage)}
+          canDecide={holds(session.permissions, QUOTATION_PERMISSIONS.decide)}
+          canReadLimits={holds(session.permissions, QUOTATION_PERMISSIONS.limitsRead)}
+          canReadServices={holds(session.permissions, SERVICE_PERMISSIONS.read)}
+          canReadItems={holds(session.permissions, QUOTATION_PERMISSIONS.itemRead)}
+        />,
+        true
+      )}
+    </div>
   );
 }
 

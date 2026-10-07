@@ -810,6 +810,37 @@ whoever raised a credit note cannot approve it." <!-- creditNotes.detail.approva
 
 **Screenshot** — no screenshot available at this version.
 
+### 6.2a.1 Print a credit note — IMPLEMENTED (UI)
+
+- **Label:** "Show printable copy" <!-- creditNotes.print.open --> under "Printable credit note" <!-- creditNotes.print.heading -->
+  , below an open credit note.
+- **Who:** anyone who can open the note — `sal.credit.manage` and `sal.finance.view`, the same as the
+  screen. There is no separate print permission; whether printing gets permissions of its own is an
+  open question for the Owner.
+- **Steps:** open the note, press "Show printable copy", check the copy, press "Print" <!-- creditNotes.print.print -->
+  to open your browser's own print dialogue, then press "Hide printable copy" <!-- creditNotes.print.close --> .
+  The copy reads the note again when you open it, so it shows the note as it stands now.
+- **Result:** a copy headed "Credit note" <!-- creditNotes.print.title --> with its "Reference" <!-- creditNotes.print.referenceLabel -->
+  and its approval state; then the invoice it credits (by number), the customer, the amount, why it
+  was raised, who requested it and when, who approved, rejected or withdrew it and when (or that it
+  is not approved yet), the rejection reason when there is one, and where it came from — by hand, or
+  the customer return with the item, the quantity and when it was received. People are named, never
+  shown by reference; a name you may not see reads "Name not shown".
+- **Restrictions:**
+  - **A credit note has no number of its own.** The copy is identified by a reference made from what
+    the note already holds: "Credit note for invoice {invoice}, requested {requested}" <!-- creditNotes.print.reference -->
+    , and its footer says "Credit notes do not have a number of their own yet. This copy is
+    identified by the invoice it credits and the time it was requested." <!-- creditNotes.print.noNumber -->
+    Numbering credit notes, and the legal fields of a tax document, wait on the accounting
+    questions put to the Owner.
+  - **Only the copy reaches the paper**, and unsaved work on the page is named beside the Print
+    button and never discarded (see 4C.3.6a).
+  - The amount is written with the currency's decimals and never rounded. An Arabic copy reads right
+    to left, with dates in order.
+- **If it goes wrong:** "The printable copy could not be prepared because the credit note could not
+  be read just now. Try again." <!-- creditNotes.print.unavailable --> with "Try again" <!-- creditNotes.print.retry --> .
+- **Screenshot:** no screenshot available at this version.
+
 ### 6.2.11 Setting up invoice numbering for a branch
 
 **IMPLEMENTED (UI)**, with an important limitation

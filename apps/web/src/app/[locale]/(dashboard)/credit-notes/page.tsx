@@ -79,8 +79,13 @@ export default async function CreditNotesPage({
     ? query['creditNoteId'][0]
     : query['creditNoteId'];
 
+  /*
+   * The header and the body share one print scope, as the invoice page does
+   * (finance retest DF-R2-1): while a credit note's printable copy is open, the
+   * page title and its description stay off the paper and the copy prints alone.
+   */
   return (
-    <>
+    <div data-print-scope="document">
       <PageHeader
         locale={locale}
         messages={messages}
@@ -99,7 +104,7 @@ export default async function CreditNotesPage({
           canOpenReturns={holds(session.permissions, BILLING_PERMISSIONS.returnsRead)}
         />
       </PageBody>
-    </>
+    </div>
   );
 }
 

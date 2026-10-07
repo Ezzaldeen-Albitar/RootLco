@@ -131,6 +131,7 @@ import {
   type CreditNoteEcho,
   type CreditNoteState,
 } from '../billing-contract';
+import { CreditNotePrintPanel } from './CreditNotePrint';
 import { CreditNoteRequestForm } from './CreditNoteRequestForm';
 import { OutcomeNote, When } from './shared';
 
@@ -193,8 +194,14 @@ export function CreditNotesScreen({
   // Bumped when a note changes state, so the branch list reads again.
   const [epoch, setEpoch] = useState(0);
 
+  /*
+   * `data-print-scope`: while a note's printable copy is open, paper carries the
+   * copy and not the panels around it (`styles/print/_index.scss`). The copy's
+   * panel is its own direct child of the scope; every other panel stays mounted,
+   * so a half-typed request is never lost by printing.
+   */
   return (
-    <div className="flex min-h-0 flex-col gap-4">
+    <div data-print-scope="document" className="flex min-h-0 flex-col gap-4">
       <p className="text-caption text-text-muted">{translate(messages, 'creditNotes.explain')}</p>
 
       {notice === null ? null : (
@@ -219,6 +226,17 @@ export function CreditNotesScreen({
             setEpoch((n) => n + 1);
           }}
           onListChanged={() => setEpoch((n) => n + 1)}
+        />
+      )}
+
+      {chosen === null ? null : (
+        <CreditNotePrintPanel
+          // Its own key: a sibling keyed like the detail would collide with it.
+          key={`print:${chosen}`}
+          locale={locale}
+          messages={messages}
+          creditNoteId={chosen}
+          epoch={epoch}
         />
       )}
 

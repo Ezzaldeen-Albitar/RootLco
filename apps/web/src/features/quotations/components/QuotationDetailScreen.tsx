@@ -82,6 +82,7 @@ import {
   validateLines,
   type DraftLine,
 } from './shared';
+import { QuotationPrintPanel } from './QuotationPrint';
 
 /**
  * One quotation (P1-30, `W3`, FE-004 revisions, FE-007 approval display, and
@@ -211,8 +212,14 @@ export function QuotationDetailScreen({
       ? workOrder.customer.displayName
       : null;
 
+  /*
+   * `data-print-scope`: while the printable copy is open, paper carries the copy
+   * and not the working panels around it (`styles/print/_index.scss`). The copy's
+   * panel is its own direct child of the scope, so every other panel is left off
+   * the paper — and stays mounted, so nothing typed into a form is lost.
+   */
   return (
-    <div className="flex flex-col gap-4">
+    <div data-print-scope="document" className="flex flex-col gap-4">
       <section
         aria-labelledby="quotation-summary-heading"
         className="rounded-lg border border-border bg-surface p-4"
@@ -295,6 +302,14 @@ export function QuotationDetailScreen({
           </p>
         )}
       </section>
+
+      <QuotationPrintPanel
+        key={quotation.recordVersion}
+        locale={locale}
+        messages={messages}
+        quotation={quotation}
+        workOrder={workOrder}
+      />
 
       <RevisionsPanel
         key={quotation.recordVersion}
