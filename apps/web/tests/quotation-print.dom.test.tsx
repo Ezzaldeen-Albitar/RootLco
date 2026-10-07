@@ -236,8 +236,8 @@ const header = (over: Record<string, unknown>) => ({
   ...over,
 });
 
-function renderScreen(locale: 'en' | 'ar' = 'en', q = quotation()) {
-  const ui = inBranch(
+function screenUi(locale: 'en' | 'ar', q: ReturnType<typeof quotation>) {
+  return inBranch(
     <QuotationDetailScreen
       locale={locale}
       messages={locale === 'en' ? en : ar}
@@ -250,6 +250,10 @@ function renderScreen(locale: 'en' | 'ar' = 'en', q = quotation()) {
     />,
     { locale }
   );
+}
+
+function renderScreen(locale: 'en' | 'ar' = 'en', q = quotation()) {
+  const ui = screenUi(locale, q);
   return locale === 'en' ? renderLtr(ui) : renderRtl(ui);
 }
 
@@ -392,6 +396,29 @@ describe('the printable quotation', () => {
     const print = vi.spyOn(window, 'print').mockImplementation(() => undefined);
     await user.click(printButton);
     expect(print).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps one print panel when the quotation is read again at a higher version', async () => {
+    // A reload after issue, a decision or a new revision raises recordVersion,
+    // which remounts the print panel. Its key must not collide with a sibling's,
+    // or React leaves the old panel behind and the paper carries two copies.
+    const duplicateKey = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const { container, rerender } = renderScreen();
+    const panels = () => container.querySelectorAll('[data-testid="quotation-print-panel"]');
+    expect(panels()).toHaveLength(1);
+
+    rerender(withMui(screenUi('en', quotation({ recordVersion: 6 })), 'en'));
+    await waitFor(() => expect(panels()).toHaveLength(1));
+    expect(
+      duplicateKey.mock.calls.some((call) =>
+        String(call[0]).includes('two children with the same key')
+      )
+    ).toBe(false);
+
+    const { panel } = await openCopy();
+    await waitFor(() => expect(documentIn(panel)).not.toBeNull());
+    const scope = container.querySelector('[data-print-scope]') as HTMLElement;
+    expect(scope.querySelectorAll('[data-print="document"]')).toHaveLength(1);
   });
 
   it('says the copy is unavailable when a read fails, and prints once it is read again', async () => {

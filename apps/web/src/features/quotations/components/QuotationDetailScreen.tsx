@@ -304,7 +304,7 @@ export function QuotationDetailScreen({
       </section>
 
       <QuotationPrintPanel
-        key={quotation.recordVersion}
+        key={`print:${quotation.recordVersion}`}
         locale={locale}
         messages={messages}
         quotation={quotation}
