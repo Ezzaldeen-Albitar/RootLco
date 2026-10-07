@@ -139,3 +139,34 @@ established backup, rehearsal and forward-apply procedure; never by reset.
 
 The preserved period snapshot and the marking of restatements (FD16B); period close and financial
 statements, which wait for the accounting questionnaire.
+
+## 10. Review outcome (recorded with P1-32-PRE-OD-FD16B)
+
+The planner's review of #529 accepted these four choices as they were built. They are recorded here
+so the reasons travel with the change that made them; none of them is altered by FD16B.
+
+- **Documents dated after a mid-period moment are left out.** The period chooses the documents, and
+  a moment inside the period lists only those that existed at that moment: an invoice issued, a
+  receipt received or a credit note approved after it is not shown, because it did not exist yet.
+- **A reversed receipt follows the report's existing rule, as of the moment.** A receipt whose
+  approved reversal took effect at or before the moment is left out, as a reversed receipt has
+  always been left out of this report; one reversed after the moment is listed as it stood then.
+- **Only this dataset's CSV carries a per-record `asOf` column.** Every record of an export of
+  `invoice_payment_summary` states the moment beside `freshness`; the files of the other three
+  reports, which are not computed as of a moment, are unchanged and claim no moment.
+- **The backdating guards hold `app_runtime` and its login members, and exempt row-security
+  bypassing roles.** The three stamping triggers apply to exactly the population the request path
+  uses; a superuser or a provisioning connection that already bypasses every row policy on these
+  tables is not held to them, the same boundary as `svc.record_pricing_approval_policy_version`
+  (`20261007150000`).
+
+Three residuals were corrected in FD16B, in the application only (no schema change):
+
+- "Now" is the database transaction's `now()`, read in the same statement as the period's bounds,
+  rather than the application server's clock or the browser's; the web sends the word `now` and the
+  API resolves it.
+- An export refusal of the moment names `body.asOf`, where an export carries it; a rows read still
+  names `query.asOf`.
+- The paging cursor of this report carries its moment: a later page asked for without `asOf` is
+  computed as of the cursor's moment, and a different moment beside the cursor is refused
+  (`query.cursor`, `as_of_mismatch`).

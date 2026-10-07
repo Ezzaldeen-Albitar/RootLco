@@ -439,8 +439,9 @@ export function isReportPeriod(from: string, to: string): boolean {
  *
  *   * `end` — the report's own default: the end of the period once it has
  *     passed, the moment of reading before then. Nothing is sent.
- *   * `now` — the moment of reading, taken by the Server Action just before the
- *     request rather than by the browser, whose clock may run ahead.
+ *   * `now` — the moment of reading, sent as the word `now` and resolved by the
+ *     API on the database clock (P1-32-PRE-OD-FD16B), never by the browser or the
+ *     Server Action, whose clocks may run ahead.
  *   * `at` — a moment the operator chose, an ISO-8601 instant.
  *
  * Only the choice is kept; the moment the server ANSWERED with is what the screen

@@ -1524,10 +1524,21 @@ Three things to expect in the cells:
   . A moment before the period starts, or later than now, is refused; so is a date and time only
   partly typed ("The date and time are not finished. Complete them, or clear them." <!-- reports.asOf.incomplete -->
   ).
+- **"Now" is the system's own clock.** The moment of reading is taken by the system at the moment it
+  reads the records, on the same clock every payment, allocation, credit note and reversal was
+  stamped by, never by the clock of the computer you are using. Every page of one report, and its
+  export, uses the moment the first page stated.
 - **So a later payment, credit or reversal changes only a report whose moment is after it.** Last
   month's report, read as of the end of last month, stays as it was when a payment is applied, a
   credit note approved or a receipt reversed today. The same report read as of now shows today's
   figures.
+- **What a moment inside the period shows.** Only the documents that existed at that moment are
+  listed: an invoice issued, a receipt received or a credit note approved after it is left out. A
+  receipt whose reversal took effect by that moment is left out, as a reversed receipt always is in
+  this report; a receipt reversed after it is listed as it stood then.
+- **In the exported file** every record of this report carries the moment, beside its freshness
+  (6.6). The files of the other reports carry no moment, because their amounts are not worked out as
+  of one.
 - **What this is not: a snapshot.** The report is still read from the live records each time; it is
   not a stored copy. Payments, allocations, credit notes and reversals take their moment from the
   system clock when they are recorded and cannot be backdated, which is what makes an as-of reading

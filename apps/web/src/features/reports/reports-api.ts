@@ -130,9 +130,10 @@ export async function runReport(input: {
   readonly to: string;
   /**
    * The moment the amounts are asked for as of (Owner decision D16): an ISO-8601
-   * instant, `'now'` for the moment this action runs, or null/absent for the
-   * report's own default. Only a report that computes its amounts as of a moment
-   * is sent one; the screen offers the choice only after such a report answered.
+   * instant, `'now'` for the moment the API reads the report, or null/absent for
+   * the report's own default. Only a report that computes its amounts as of a
+   * moment is sent one; the screen offers the choice only after such a report
+   * answered.
    */
   readonly asOf?: string | null;
   readonly cursor: string | null;
@@ -167,9 +168,10 @@ export async function runReport(input: {
       {
         from: input.from,
         to: input.to,
-        // "Now" is this action's own clock, read just before the request, so the
-        // moment cannot be later than the server's reading of it.
-        asOf: requested === 'now' ? new Date().toISOString() : requested,
+        // "Now" travels as the word and the API resolves it on the DATABASE clock,
+        // the one every compared instant was stamped by (P1-32-PRE-OD-FD16B). An
+        // instant read here could run ahead of it and be refused as in the future.
+        asOf: requested,
         cursor: input.cursor,
         limit: reportPageSize(input.limit),
       }

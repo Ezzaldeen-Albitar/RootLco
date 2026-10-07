@@ -698,6 +698,29 @@ describe('the unit a line is counted in', () => {
     expect(within(container).getByRole('table')).toHaveTextContent('Drum 200 L');
   });
 
+  it('prints a seeded code by the name it was stored with when that name is not the seeded one', () => {
+    // The code is one the platform seeds, but the line's unit carries another
+    // name: the catalogue's word would show a name the record does not hold
+    // (P1-32-PRE-OD-FD16B).
+    const renamed = { ...partLine, unit: { code: 'set', name: 'Kit of four' } };
+    const ui = inBranch(
+      <QuotationDocument
+        locale="ar"
+        messages={ar}
+        quotation={quotation() as never}
+        revision={revision({ lines: [renamed] }) as never}
+        decisions={decisions() as never}
+        workOrder={workOrder as never}
+        branchName={TEST_BRANCH.name}
+      />,
+      { locale: 'ar' }
+    );
+    const { container } = renderRtl(ui);
+    const table = within(container).getByRole('table');
+    expect(table).toHaveTextContent('Kit of four');
+    expect(table.textContent).not.toContain(AR['units.name.set'] as string);
+  });
+
   it('shows the Arabic name on the quotation screen’s own lines too', async () => {
     renderScreen('ar');
     const lines = await screen.findByText('BRK-PAD-01');

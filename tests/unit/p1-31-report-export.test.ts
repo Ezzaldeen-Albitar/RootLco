@@ -72,7 +72,10 @@ describe('P1-31 report export disclosure', () => {
     expect(result.file).toMatchObject({ mediaType: 'text/csv', encoding: 'utf-8' });
     expect(result.file.content).toContain('"ثاني","ثاني"');
     expect(result.file.content).toContain('"Asia/Amman"');
-    expect(run).toHaveBeenNthCalledWith(2, db, expect.objectContaining({ cursor: 'cursor-1' }));
+    // The moment travels in the export BODY, so a refusal names body.asOf (FD16B).
+    expect(run).toHaveBeenNthCalledWith(2, db, expect.objectContaining({ cursor: 'cursor-1' }), {
+      asOfPath: 'body.asOf',
+    });
     expect(calls.audit).toHaveBeenCalledWith(
       db,
       expect.objectContaining({

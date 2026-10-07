@@ -609,9 +609,10 @@ describe('explicit scoped report export', () => {
 
 /*
  * Owner decision D16 (P1-32-PRE-OD-FD16A): the moment a report's amounts are as
- * of travels as an instant the operator chose, as this action's own "now", or not
- * at all — and an export file is accepted only when it states the moment it was
- * asked for.
+ * of travels as an instant the operator chose, as the word `now`, or not at all —
+ * and an export file is accepted only when it states the moment it was asked for.
+ * "Now" is the API's to resolve, on the database clock every compared instant was
+ * stamped by, never this action's own clock (P1-32-PRE-OD-FD16B).
  */
 describe('the as-of moment (D16)', () => {
   const AS_OF = '2026-09-07T21:00:00.000Z';
@@ -639,15 +640,14 @@ describe('the as-of moment (D16)', () => {
     );
   });
 
-  it('turns "now" into this action’s own clock, read just before the request', async () => {
+  it('sends "now" as the word, so the API reads the moment on the database clock', async () => {
     transport(() => ok(RUN));
-    const before = Date.now();
     await runReport({ ...runInput, asOf: 'now' });
-    const after = Date.now();
-    const sent = new URL(`http://x${requestedRun() ?? ''}`).searchParams.get('asOf') ?? '';
-    expect(contract.isReportInstant(sent)).toBe(true);
-    expect(Date.parse(sent)).toBeGreaterThanOrEqual(before);
-    expect(Date.parse(sent)).toBeLessThanOrEqual(after);
+    const sent = new URL(`http://x${requestedRun() ?? ''}`).searchParams.get('asOf');
+    // Never an instant read off this server's clock, which may run ahead of the
+    // database's and would then be refused as a moment after the read.
+    expect(sent).toBe('now');
+    expect(contract.isReportInstant(sent ?? '')).toBe(false);
   });
 
   it('refuses a moment without an offset before a request is spent', async () => {

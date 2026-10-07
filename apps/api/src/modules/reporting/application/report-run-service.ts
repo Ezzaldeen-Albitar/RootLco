@@ -89,13 +89,16 @@
  * D-17 requires the conversion to be CONSISTENT and two repositories writing the
  * comparison from memory is how two reports over one period stop adding up.
  */
+import { Buffer } from 'node:buffer';
 import { ApplicationService } from '@/server/layering';
 import { AppFailure } from '@/server/errors/app-failure';
 import { callerHoldsPermission } from '@/server/auth/authorization';
 import type { DbHandle } from '@/server/db/transaction';
 import {
   buildPageWithCursors,
+  encodeCursor,
   pageRequest,
+  type Cursor,
   type OrderingContract,
   type Page,
 } from '@/server/db/pagination';
@@ -321,15 +324,38 @@ export interface ReportRunInput {
   readonly to: string;
   /**
    * The moment the amounts are computed as of, an ISO-8601 instant with an offset
-   * (Owner decision D16). Accepted only by a dataset that declares `asOf`; absent,
+   * (Owner decision D16), or `'now'` for the database's own reading of the present
+   * (P1-32-PRE-OD-FD16B). Accepted only by a dataset that declares `asOf`; absent,
    * that dataset uses the period's exclusive end once it has passed and the read
-   * time before then. A caller paging through one report passes the `asOf` the
-   * first page answered with, so every page is computed as of the same moment.
+   * time before then. The read time is always the DATABASE transaction's `now()`,
+   * never the application server's clock or the browser's.
+   *
+   * A later page needs no `asOf`: the cursor carries the moment the first page was
+   * computed as of, and a cursor whose moment differs from an `asOf` sent beside
+   * it is refused rather than mixing two moments in one report.
    */
   readonly asOf?: string | undefined;
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
 }
+
+/**
+ * Where a run's `asOf` arrived from, so a refusal names the part of the request
+ * the caller actually sent: the query of a rows read, the body of an export or of
+ * a snapshot (P1-32-PRE-OD-FD16B).
+ */
+export interface ReportRunOrigin {
+  readonly asOfPath: 'query.asOf' | 'body.asOf';
+}
+
+/** The origin of a rows read, and the default. */
+export const REPORT_RUN_QUERY: ReportRunOrigin = Object.freeze({ asOfPath: 'query.asOf' });
+
+/** The origin of an export or a snapshot: the moment travels in the request body. */
+export const REPORT_RUN_BODY: ReportRunOrigin = Object.freeze({ asOfPath: 'body.asOf' });
+
+/** The `asOf` a caller sends for "the present", resolved by the database's clock. */
+export const REPORT_AS_OF_NOW = 'now';
 
 /** What a resolver is handed once the period and the scope are settled. */
 interface ResolverInput extends ReportPeriodInput {
@@ -856,7 +882,11 @@ const runInvoicePaymentSummary: ReportResolver = async (db, input) => {
     return left.id < right.id ? 1 : -1;
   });
 
-  const documents = buildPageWithCursors(merged, request, INVOICE_PAYMENT_DOCUMENT_ORDER);
+  const built = buildPageWithCursors(merged, request, INVOICE_PAYMENT_DOCUMENT_ORDER);
+  // The next page is bound to THIS moment (P1-32-PRE-OD-FD16B): the cursor carries
+  // it, so a later page asked for without `asOf` is computed as of the same moment
+  // and one asked for with a different moment is refused.
+  const documents = { ...built, nextCursor: bindCursorMoment(built.nextCursor, input.asOf) };
   // ONE statement for the page. The CRM read checks `crm.customer.read` itself
   // and resolves nothing for a caller who does not hold it, so an unentitled
   // caller sees every id and no name rather than a refusal or a uuid dressed up
@@ -982,14 +1012,24 @@ export class ReportRunService extends ApplicationService {
    * report and a code that never existed. The catalogue must not become a way to
    * enumerate what the platform can run.
    */
-  async run(db: DbHandle, input: ReportRunInput): Promise<ReportRunView> {
+  async run(
+    db: DbHandle,
+    input: ReportRunInput,
+    origin: ReportRunOrigin = REPORT_RUN_QUERY
+  ): Promise<ReportRunView> {
     if (!isReportDatasetCode(input.reportCode)) {
       throw new AppFailure('ERR-RES-001', { message: 'Report not found.' });
     }
     const definition: ReportDatasetDefinition = reportDataset(input.reportCode);
     assertPeriod(input.from, input.to);
     const takesAsOf = datasetTakesAsOf(definition);
-    const requestedAsOf = parseAsOf(input.asOf, takesAsOf);
+    const requestedAsOf = parseAsOf(input.asOf, takesAsOf, origin.asOfPath);
+    // The moment a later page's cursor was minted at, read before anything else so
+    // a cursor that carries none is refused as malformed (P1-32-PRE-OD-FD16B).
+    const cursorAsOf =
+      takesAsOf && input.cursor !== undefined && input.cursor !== ''
+        ? cursorMoment(input.cursor)
+        : null;
 
     // FIRST. See the file header: resolving the branch before this would let a
     // caller who cannot read the data learn whether a branch exists.
@@ -1036,19 +1076,37 @@ export class ReportRunService extends ApplicationService {
 
     // D16: the moment every amount is computed as of. The period's bounds are read
     // with the expression the period predicate compares against, in the branch's
-    // zone, so the default lands exactly where the selection stops.
+    // zone, so the default lands exactly where the selection stops. "Now" is the
+    // DATABASE transaction's `now()`, read in the same statement: the clock every
+    // compared instant was stamped by (P1-32-PRE-OD-FD16B).
     let asOf: string | null = null;
     if (takesAsOf) {
-      const readAt = new Date();
       const bounds = await this.repository.periodInstants(db, {
         from: input.from,
         toExclusive: input.to,
         timezoneName: branch.timezoneName,
       });
-      if (requestedAsOf === null) {
+      const readAt = bounds.readAt;
+      if (cursorAsOf !== null) {
+        // A later page: the cursor's moment decides, and a different one beside it
+        // would mix two moments in one report.
+        if (
+          requestedAsOf !== null &&
+          (requestedAsOf === REPORT_AS_OF_NOW || requestedAsOf.getTime() !== cursorAsOf.getTime())
+        ) {
+          throw new AppFailure('ERR-VAL-001', {
+            message: 'This page belongs to a report computed as of a different moment.',
+            safeDetails: { violations: [{ path: 'query.cursor', rule: 'as_of_mismatch' }] },
+          });
+        }
+        assertAsOfWithin(cursorAsOf, bounds.opens, readAt, 'query.cursor');
+        asOf = cursorAsOf.toISOString();
+      } else if (requestedAsOf === null) {
         asOf = (bounds.closes.getTime() <= readAt.getTime() ? bounds.closes : readAt).toISOString();
+      } else if (requestedAsOf === REPORT_AS_OF_NOW) {
+        asOf = readAt.toISOString();
       } else {
-        assertAsOfWithin(requestedAsOf, bounds.opens, readAt);
+        assertAsOfWithin(requestedAsOf, bounds.opens, readAt, origin.asOfPath);
         asOf = requestedAsOf.toISOString();
       }
     }
@@ -1108,22 +1166,66 @@ export class ReportRunService extends ApplicationService {
  * report that silently dropped the parameter would be read as figures at that
  * moment when they are live.
  */
-function parseAsOf(raw: string | undefined, takesAsOf: boolean): Date | null {
+function parseAsOf(
+  raw: string | undefined,
+  takesAsOf: boolean,
+  path: ReportRunOrigin['asOfPath']
+): Date | typeof REPORT_AS_OF_NOW | null {
   if (raw === undefined) return null;
   if (!takesAsOf) {
     throw new AppFailure('ERR-VAL-001', {
       message: 'This report does not compute its amounts as of a moment.',
-      safeDetails: { violations: [{ path: 'query.asOf', rule: 'not_supported' }] },
+      safeDetails: { violations: [{ path, rule: 'not_supported' }] },
     });
   }
+  // "Now" is the database's reading, resolved once the transaction is open.
+  if (raw === REPORT_AS_OF_NOW) return REPORT_AS_OF_NOW;
   const parsed = INSTANT.test(raw) ? new Date(raw) : null;
   if (parsed === null || Number.isNaN(parsed.getTime())) {
     throw new AppFailure('ERR-VAL-001', {
       message: 'The as-of moment is not a valid instant.',
-      safeDetails: { violations: [{ path: 'query.asOf', rule: 'invalid_format' }] },
+      safeDetails: { violations: [{ path, rule: 'invalid_format' }] },
     });
   }
   return parsed;
+}
+
+/** A cursor as this module mints it for a report computed as of a moment. */
+interface MomentCursor extends Cursor {
+  /** The moment, ISO-8601 UTC, every page of the report is computed as of. */
+  readonly a: string;
+}
+
+/**
+ * The moment a cursor was minted at (P1-32-PRE-OD-FD16B).
+ *
+ * The ordering, the position and the tie-break are still checked by
+ * `pageRequest`; this reads only the moment, and refuses a cursor that carries
+ * none (one minted before the moment was bound to the cursor, or one assembled
+ * by hand) exactly as any other malformed cursor is refused.
+ */
+function cursorMoment(raw: string): Date {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8'));
+  } catch {
+    throw new AppFailure('ERR-PAG-001', { message: 'Cursor is not decodable' });
+  }
+  const moment =
+    typeof parsed === 'object' && parsed !== null ? (parsed as Partial<MomentCursor>).a : undefined;
+  const instant = typeof moment === 'string' && INSTANT.test(moment) ? new Date(moment) : null;
+  if (instant === null || Number.isNaN(instant.getTime())) {
+    throw new AppFailure('ERR-PAG-001', { message: 'Cursor is not bound to a report moment' });
+  }
+  return instant;
+}
+
+/** The next-page cursor with the report's moment bound into it, or null at the end. */
+function bindCursorMoment(cursor: string | null, asOf: string): string | null {
+  if (cursor === null) return null;
+  const decoded = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')) as Cursor;
+  const bound: MomentCursor = { k: decoded.k, v: decoded.v, i: decoded.i, a: asOf };
+  return encodeCursor(bound);
 }
 
 /**
@@ -1131,7 +1233,7 @@ function parseAsOf(raw: string | undefined, takesAsOf: boolean): Date | null {
  * before the period opens — the documents it chooses had not begun — and not after
  * the read, which would be a figure for a moment that has not happened yet.
  */
-function assertAsOfWithin(asOf: Date, opens: Date, readAt: Date): void {
+function assertAsOfWithin(asOf: Date, opens: Date, readAt: Date, path: string): void {
   const rule =
     asOf.getTime() < opens.getTime()
       ? 'before_period_start'
@@ -1141,7 +1243,7 @@ function assertAsOfWithin(asOf: Date, opens: Date, readAt: Date): void {
   if (rule === null) return;
   throw new AppFailure('ERR-VAL-001', {
     message: 'The as-of moment must fall between the start of the period and now.',
-    safeDetails: { violations: [{ path: 'query.asOf', rule }] },
+    safeDetails: { violations: [{ path, rule }] },
   });
 }
 

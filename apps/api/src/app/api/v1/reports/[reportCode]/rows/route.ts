@@ -88,8 +88,11 @@ const Query = z
      * Accepted only by a report that computes its amounts as of a moment; any other
      * refuses it. Absent, such a report uses the period's exclusive end once it has
      * passed and the read time before then, and answers with the moment it used.
+     * `now` asks for the read time itself: the DATABASE transaction's `now()`, the
+     * clock every compared instant was stamped by, never the caller's clock
+     * (P1-32-PRE-OD-FD16B). A later page needs none: its cursor carries the moment.
      */
-    asOf: z.iso.datetime({ offset: true }).optional(),
+    asOf: z.union([z.literal('now'), z.iso.datetime({ offset: true })]).optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
