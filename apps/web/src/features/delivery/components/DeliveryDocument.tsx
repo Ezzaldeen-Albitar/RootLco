@@ -144,6 +144,8 @@ export function DeliveryDocument({
   return (
     <PrintDocument
       title={translate(messages, 'delivery.document.title')}
+      // A handover has no number of its own; the job it hands over names it.
+      reference={workOrder.kind === 'read' ? workOrder.value.workOrder.displayNumber : null}
       brand={<BrandMark />}
       header={
         <>

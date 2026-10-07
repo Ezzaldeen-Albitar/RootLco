@@ -377,6 +377,42 @@ describe('the readings step — odometer (FE-013)', () => {
     expect(recordOdometerAction).not.toHaveBeenCalled();
   });
 
+  it('refuses a moment typed only in part as unfinished, not as missing, and sends nothing', async () => {
+    // A partly typed moment holds no value, so the form used to answer it with
+    // the "give the date and time" sentence meant for an empty one (2026-10-07
+    // browser retest). The field reports it as unfinished, and that is said.
+    const user = userEvent.setup();
+    renderLtr(
+      <UiFoundationProvider locale="en" text={muiTextOf(getMessages('en'))}>
+        {inBranch(<ReadingsStep {...stepProps()} />, {
+          snapshot: branchSnapshot([VISIT_BRANCH]),
+        })}
+      </UiFoundationProvider>
+    );
+    const form = await screen.findByRole('form', { name: EN['receptions.odometer.record']! });
+    await user.type(
+      within(form).getByRole('textbox', { name: EN['vehicles.odometer.reading']! }),
+      '120500'
+    );
+    await user.selectOptions(
+      within(form).getByRole('combobox', { name: EN['vehicles.odometer.unit']! }),
+      'km'
+    );
+    const moment = within(form).getByRole('group', {
+      name: new RegExp(`^${EN['vehicles.odometer.observedAt']}`),
+    });
+    // Day and month only.
+    await user.click(within(moment).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('1308');
+    await user.click(within(form).getByRole('button', { name: EN['receptions.odometer.record']! }));
+
+    expect(await within(form).findByText(EN['field.dateTimeIncomplete']!)).toBeVisible();
+    expect(within(form).queryByText(EN['vehicles.odometer.error.observedAt']!)).toBeNull();
+    expect(within(form).queryByText(EN['field.required']!)).toBeNull();
+    expect(moment).toHaveAttribute('aria-invalid', 'true');
+    expect(recordOdometerAction).not.toHaveBeenCalled();
+  });
+
   it('takes no moment on a visit whose branch clock is not published, and says so', async () => {
     // No working context lists the visit's branch: a moment typed on a guessed
     // clock would be sent off by the branch's real offset.

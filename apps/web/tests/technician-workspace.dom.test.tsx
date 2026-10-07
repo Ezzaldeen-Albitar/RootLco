@@ -541,6 +541,34 @@ describe('a refused clock or correction says what is wrong', () => {
     expect(correctLaborSession).not.toHaveBeenCalled();
   });
 
+  it('says a time typed only in part is unfinished, never that it is required, and sends nothing', async () => {
+    // A partly typed moment holds no value, and the form used to answer it with
+    // "This field is required." (2026-10-07 browser retest).
+    listLaborSessions.mockResolvedValue(page([stopped]));
+    const user = await openJob({ ...ALL, canCorrectLabor: true });
+    await user.click(
+      await screen.findByRole('button', { name: EN['technicians.workspace.correctHeading']! })
+    );
+    const ended = await screen.findByRole('group', {
+      name: startsWith(EN['technicians.workspace.correctEndedAt']!),
+    });
+    // The end emptied and typed again: day and month only.
+    await user.click(within(ended).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('{Control>}a{/Control}{Backspace}');
+    await user.keyboard('2607');
+    await user.type(
+      screen.getByLabelText(new RegExp(`^${EN['technicians.workspace.correctReason']!}`)),
+      'Clocked out early'
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['technicians.workspace.correctSubmit']! })
+    );
+    expect(await screen.findByText(EN['field.dateTimeIncomplete']!)).toBeVisible();
+    expect(screen.queryByText(EN['field.required']!)).toBeNull();
+    await waitFor(() => expect(ended).toHaveAttribute('aria-invalid', 'true'));
+    expect(correctLaborSession).not.toHaveBeenCalled();
+  });
+
   it('closes the correction form only when the correction was accepted', async () => {
     listLaborSessions.mockResolvedValue(page([stopped]));
     correctLaborSession.mockResolvedValue({ status: 'success', attempt: 1 });
@@ -592,6 +620,32 @@ describe('the work log takes its moment on the branch clock', () => {
       entry: 'Road test done.',
       loggedAt: '2026-07-26T14:30:00+03:00',
     });
+  });
+});
+
+describe('the work log refuses a moment typed only in part', () => {
+  it('says it is unfinished, and does not send the entry to be stamped now instead', async () => {
+    // "When the work happened" is optional, so a partly typed one, holding no
+    // value, used to be dropped silently and the entry stamped with the time it
+    // was sent (2026-10-07 browser retest).
+    const user = userEvent.setup();
+    renderScreen();
+    await user.click(await screen.findByRole('button', OPEN));
+    await user.type(
+      await screen.findByRole('textbox', { name: new RegExp(EN['technicians.workspace.entry']!) }),
+      'Road test done.'
+    );
+    const when = screen.getByRole('group', {
+      name: startsWith(EN['technicians.workspace.loggedAt']!),
+    });
+    // Day and month only.
+    await user.click(within(when).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('2607');
+    await user.click(screen.getByRole('button', { name: EN['technicians.workspace.addEntry']! }));
+    expect(await screen.findByText(EN['field.dateTimeIncomplete']!)).toBeVisible();
+    expect(screen.queryByText(EN['field.required']!)).toBeNull();
+    await waitFor(() => expect(when).toHaveAttribute('aria-invalid', 'true'));
+    expect(recordWorkLog).not.toHaveBeenCalled();
   });
 });
 

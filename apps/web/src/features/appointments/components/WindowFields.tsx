@@ -1,10 +1,11 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { ZonedDateTimeField } from '@/components/forms/mui/DateField';
+import { ZonedDateTimeField, type MomentProblem } from '@/components/forms/mui/DateField';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
+import { INCOMPLETE_DATE_TIME_KEY } from '@/lib/forms/use-unfinished-entries';
 import { validateWindow } from '../appointments-contract';
 import { WINDOW_ISSUE_KEY } from '../window-support';
 
@@ -18,9 +19,11 @@ import { WINDOW_ISSUE_KEY } from '../window-support';
  * emits the instant with that zone's offset FOR THAT MOMENT —
  * `2026-09-22T09:30:00+03:00` — daylight saving answered per instant. So the
  * draft holds exactly what the routes accept; nothing is composed here. `''`
- * is "no moment": nothing typed, or a moment typed only in part. A half-typed
- * moment is therefore refused as a missing one, on its own field, and the
- * refused form's cursor lands on the part still to type.
+ * is "no moment": nothing typed, or a moment typed only in part. The two are
+ * told apart by the field itself, which reports a partly typed moment through
+ * `onProblem`; the caller hands that report back to `windowErrors`, so a
+ * half-typed moment is refused as unfinished — never as missing — on its own
+ * field, and the refused form's cursor lands on the part still to type.
  *
  * ## Whose clock
  *
@@ -53,12 +56,25 @@ export interface WindowDraft {
 
 export const EMPTY_WINDOW: WindowDraft = Object.freeze({ from: '', to: '' });
 
+/** Which half of the window its field reports as only partly typed. */
+export interface WindowUnfinished {
+  readonly from?: boolean | undefined;
+  readonly to?: boolean | undefined;
+}
+
 /**
  * Local refusals for the drafted window, as translation keys. Empty when the
  * window is sendable. Runs the CONTRACT's own validators, so this screen and the
  * adapter cannot disagree about legality.
+ *
+ * A half its field reports as partly typed (`unfinished`, from `onProblem`) is
+ * refused as unfinished rather than as missing: it holds no value, so the
+ * contract alone would call it empty.
  */
-export function windowErrors(draft: WindowDraft): {
+export function windowErrors(
+  draft: WindowDraft,
+  unfinished: WindowUnfinished = {}
+): {
   readonly from?: string;
   readonly to?: string;
 } {
@@ -66,6 +82,8 @@ export function windowErrors(draft: WindowDraft): {
   const result: { from?: string; to?: string } = {};
   if (issues.from) result.from = WINDOW_ISSUE_KEY[issues.from];
   if (issues.to) result.to = WINDOW_ISSUE_KEY[issues.to];
+  if (unfinished.from === true && draft.from === '') result.from = INCOMPLETE_DATE_TIME_KEY;
+  if (unfinished.to === true && draft.to === '') result.to = INCOMPLETE_DATE_TIME_KEY;
   return result;
 }
 
@@ -78,6 +96,7 @@ export function WindowFields({
   draft,
   onChange,
   onEdit,
+  onProblem,
   errors,
   serverError,
   timezone,
@@ -93,6 +112,11 @@ export function WindowFields({
   readonly onChange: (next: WindowDraft) => void;
   /** Called before a half is changed — the caller withdraws that half's complaint. */
   readonly onEdit?: ((half: 'from' | 'to') => void) | undefined;
+  /**
+   * What a half's field finds wrong, as it changes — `'incomplete'` while that
+   * half is only partly typed. The caller passes it on to `windowErrors`.
+   */
+  readonly onProblem?: ((half: 'from' | 'to', problem: MomentProblem) => void) | undefined;
   /** Local (submit-time) refusals, as translation keys, by half. */
   readonly errors: { readonly from?: string | undefined; readonly to?: string | undefined };
   /**
@@ -133,6 +157,7 @@ export function WindowFields({
             value={draft.from}
             timezone={zone}
             onEdit={() => onEdit?.('from')}
+            onProblem={(problem) => onProblem?.('from', problem)}
             onChange={(from) => onChange({ ...draft, from })}
             error={errors.from ? translateDynamic(messages, errors.from) : undefined}
             testId={`${testId}-from`}
@@ -144,6 +169,7 @@ export function WindowFields({
             value={draft.to}
             timezone={zone}
             onEdit={() => onEdit?.('to')}
+            onProblem={(problem) => onProblem?.('to', problem)}
             onChange={(to) => onChange({ ...draft, to })}
             error={errors.to ? translateDynamic(messages, errors.to) : undefined}
             testId={`${testId}-to`}

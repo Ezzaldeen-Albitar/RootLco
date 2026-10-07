@@ -42,6 +42,7 @@ import {
   type WorkLogEntry,
 } from '../technicians-contract';
 import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
+import { INCOMPLETE_DATE_TIME_KEY, useUnfinishedEntries } from '@/lib/forms/use-unfinished-entries';
 
 /**
  * One job of the technician's queue, opened for execution (P1-29, `W4`).
@@ -582,12 +583,16 @@ function SessionRow({
     Object.keys(localErrors).length > 0 ? localErrors : fieldErrors,
     { startedAt, endedAt, reason }
   );
+  // Which time is only partly typed, as its field reports it: it holds no value,
+  // and is refused as unfinished rather than as missing.
+  const unfinished = useUnfinishedEntries();
 
   const discard = () => {
     setStartedAt(session.startedAt);
     setEndedAt(session.endedAt ?? '');
     setReason('');
     setLocalErrors({});
+    unfinished.reset();
   };
   /*
    * Unsaved work, declared to the shell, so a branch changed in the header asks
@@ -618,8 +623,16 @@ function SessionRow({
 
   const submit = () => {
     const missing: Record<string, string> = {};
-    if (startedAt === '') missing['startedAt'] = 'field.required';
-    if (endedAt === '') missing['endedAt'] = 'field.required';
+    if (startedAt === '') {
+      missing['startedAt'] = unfinished.isUnfinished('startedAt')
+        ? INCOMPLETE_DATE_TIME_KEY
+        : 'field.required';
+    }
+    if (endedAt === '') {
+      missing['endedAt'] = unfinished.isUnfinished('endedAt')
+        ? INCOMPLETE_DATE_TIME_KEY
+        : 'field.required';
+    }
     if (startedAt !== '' && endedAt !== '' && Date.parse(endedAt) <= Date.parse(startedAt)) {
       missing['endedAt'] = 'technicians.workspace.correctInverted';
     }
@@ -688,6 +701,7 @@ function SessionRow({
             name={`startedAt-${session.id}`}
             value={startedAt}
             onChange={setStartedAt}
+            onProblem={unfinished.noteProblem('startedAt')}
             error={errorFor('startedAt')}
             required
           />
@@ -697,6 +711,7 @@ function SessionRow({
             name={`endedAt-${session.id}`}
             value={endedAt}
             onChange={setEndedAt}
+            onProblem={unfinished.noteProblem('endedAt')}
             min={startedAt === '' ? undefined : startedAt}
             error={errorFor('endedAt')}
             required
@@ -753,6 +768,9 @@ function WorkLogPanel({
   const [problem, setProblem] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const { errors, formRef } = useHeldRefusal(fieldErrors, { entry: text, loggedAt });
+  // A moment only partly typed holds no value; sent as it stands, the entry would
+  // be stamped "now" instead of the moment being typed. So it is refused.
+  const unfinished = useUnfinishedEntries();
 
   /*
    * Unsaved work, declared to the shell, so a branch changed in the header asks
@@ -766,8 +784,13 @@ function WorkLogPanel({
 
   const add = async () => {
     setProblem(null);
-    if (text.trim().length === 0) {
-      setFieldErrors({ entry: 'field.required' });
+    const missing: Record<string, string> = {};
+    if (text.trim().length === 0) missing['entry'] = 'field.required';
+    if (loggedAt === '' && unfinished.isUnfinished('loggedAt')) {
+      missing['loggedAt'] = INCOMPLETE_DATE_TIME_KEY;
+    }
+    if (Object.keys(missing).length > 0) {
+      setFieldErrors(missing);
       return;
     }
     setFieldErrors({});
@@ -844,6 +867,7 @@ function WorkLogPanel({
               description={translate(messages, 'technicians.workspace.loggedAtHint')}
               value={loggedAt}
               onChange={setLoggedAt}
+              onProblem={unfinished.noteProblem('loggedAt')}
               error={errorFor('loggedAt')}
             />
             <Button type="submit" variant="contained" disabled={busy} aria-busy={busy || undefined}>

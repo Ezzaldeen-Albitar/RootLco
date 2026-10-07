@@ -913,7 +913,10 @@ describe('FE-014 — no invoice yet: the preview and creating one', () => {
     const row = name.closest('tr') as HTMLElement;
     expect(within(row).getByText('Front axle')).toBeVisible();
     expect(within(row).getByText('BRK-01')).toHaveAttribute('dir', 'ltr');
-    expect(within(row).getByText('Each')).toBeVisible();
+    // A unit the platform seeded is worded in the reader's language, not by the
+    // English name it was stored with.
+    expect(within(row).getByText(AR['units.name.each'] as string)).toBeVisible();
+    expect(row.textContent).not.toContain('Each');
     expect(within(row).getByText(AR['invoices.lineType.part'] as string)).toBeVisible();
     expect(row.closest('[dir="rtl"]')).not.toBeNull();
   });

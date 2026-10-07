@@ -524,6 +524,18 @@ describe('the printed copy of an invoice that billed part of its revision', () =
     expect(screen.queryByTestId('invoice-print-line-discount')).toBeNull();
   });
 
+  it('names itself, title and invoice number, in a head row drawn only on paper', () => {
+    // Every printed page after the first otherwise said nothing about which
+    // invoice it belonged to (2026-10-07 browser retest).
+    renderCopy([serviceInvoiceLine('1.000')]);
+    const identity = screen.getByTestId('print-document-identity');
+    expect(identity.tagName).toBe('THEAD');
+    const classes = identity.className.split(/\s+/);
+    expect(classes).toContain('hidden');
+    expect(classes).toContain('print:table-header-group');
+    expect(identity).toHaveTextContent(`${EN['invoices.print.title']} · INV-000101`);
+  });
+
   it('states the revision subtotal when it billed every line of the revision whole', () => {
     const whole = {
       ...serviceInvoiceLine('1.000'),

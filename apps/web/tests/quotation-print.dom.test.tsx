@@ -311,7 +311,7 @@ describe('the printable quotation', () => {
     // A real table, so the header repeats on every printed page.
     const table = within(paper).getByRole('table');
     expect(table.querySelector('thead')).not.toBeNull();
-    expect(table.querySelectorAll('tbody tr')).toHaveLength(2);
+    expect(table.querySelectorAll(':scope > tbody > tr')).toHaveLength(2);
     expect(within(paper).getByTestId('quotation-print-totals')).toHaveTextContent(
       EN['quotations.print.totalsHeading'] as string
     );
@@ -616,5 +616,93 @@ describe('the quotation money figure, at the currency minor unit', () => {
     expect(container).toHaveTextContent('1,500 JPY');
     expect(container).toHaveTextContent('1,650 JPY');
     expect(container.textContent).not.toContain('1,650.0');
+  });
+});
+
+/**
+ * The copy names itself at the top of every printed page (2026-10-07 browser
+ * retest): only the first page carried the title and number, so a second page
+ * on its own said nothing about which quotation it belonged to. The repeated row
+ * is a table head the browser draws on each page, kept off the screen.
+ */
+describe('the quotation copy names itself on every printed page', () => {
+  it('repeats the title and the quotation number in a head row drawn only on paper', () => {
+    renderLtr(
+      inBranch(
+        <QuotationDocument
+          locale="en"
+          messages={en}
+          quotation={quotation() as never}
+          revision={revision() as never}
+          decisions={decisions() as never}
+          workOrder={workOrder as never}
+          branchName={TEST_BRANCH.name}
+        />
+      )
+    );
+    const identity = screen.getByTestId('print-document-identity');
+    expect(identity.tagName).toBe('THEAD');
+    const classes = identity.className.split(/\s+/);
+    // Not shown on screen; a repeating table head on paper.
+    expect(classes).toContain('hidden');
+    expect(classes).toContain('print:table-header-group');
+    expect(identity).toHaveTextContent(`${EN['quotations.print.title']} · QUO-000077`);
+    // The first page is unchanged: the title is still its heading.
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+      EN['quotations.print.title'] as string
+    );
+  });
+});
+
+/**
+ * Unit names in the reader's language (2026-10-07 browser retest): a line's
+ * unit is a snapshot of the unit's stored name, and the platform's own units
+ * were seeded in English, so an Arabic copy printed "Set". A seeded code is
+ * worded by the catalogue; any other code keeps the name it was stored with.
+ */
+describe('the unit a line is counted in', () => {
+  it('prints a unit the platform seeded by its Arabic name on an Arabic copy', () => {
+    const ui = inBranch(
+      <QuotationDocument
+        locale="ar"
+        messages={ar}
+        quotation={quotation() as never}
+        revision={revision({ lines: [partLine] }) as never}
+        decisions={decisions() as never}
+        workOrder={workOrder as never}
+        branchName={TEST_BRANCH.name}
+      />,
+      { locale: 'ar' }
+    );
+    const { container } = renderRtl(ui);
+    const table = within(container).getByRole('table');
+    expect(table).toHaveTextContent(AR['units.name.set'] as string);
+    expect(table.textContent).not.toContain('Set');
+  });
+
+  it('prints a unit the platform did not seed by the name it was stored with', () => {
+    const own = { ...partLine, unit: { code: 'drum_200', name: 'Drum 200 L' } };
+    const ui = inBranch(
+      <QuotationDocument
+        locale="ar"
+        messages={ar}
+        quotation={quotation() as never}
+        revision={revision({ lines: [own] }) as never}
+        decisions={decisions() as never}
+        workOrder={workOrder as never}
+        branchName={TEST_BRANCH.name}
+      />,
+      { locale: 'ar' }
+    );
+    const { container } = renderRtl(ui);
+    expect(within(container).getByRole('table')).toHaveTextContent('Drum 200 L');
+  });
+
+  it('shows the Arabic name on the quotation screen’s own lines too', async () => {
+    renderScreen('ar');
+    const lines = await screen.findByText('BRK-PAD-01');
+    const row = lines.closest('tr') as HTMLElement;
+    expect(row).toHaveTextContent(AR['units.name.set'] as string);
+    expect(row.textContent).not.toContain('Set');
   });
 });

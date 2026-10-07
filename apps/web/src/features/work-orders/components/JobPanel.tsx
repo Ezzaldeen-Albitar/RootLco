@@ -23,6 +23,7 @@ import {
   type WorkOrderJob,
 } from '../work-orders-contract';
 import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
+import { INCOMPLETE_DATE_TIME_KEY, useUnfinishedEntries } from '@/lib/forms/use-unfinished-entries';
 
 /**
  * One job of the work order: its department routing and its technicians
@@ -328,6 +329,9 @@ function AssignmentPanel({
    * again.
    */
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  // Which bound of the window is only partly typed, as its field reports it: it
+  // holds no value, and is refused as unfinished rather than as missing.
+  const unfinished = useUnfinishedEntries();
   // Question f: each missing field is marked, the cursor goes to the first, and
   // a complaint goes once its field changes (route sweep B3).
   const { errors: refusalErrors, formRef: refusalFormRef } = useHeldRefusal(fieldErrors, {
@@ -386,8 +390,16 @@ function AssignmentPanel({
   const assign = async () => {
     const missing: Record<string, string> = {};
     if (technicianProfileId.trim() === '') missing['technicianProfileId'] = 'field.required';
-    if (from === '') missing['windowFrom'] = 'field.required';
-    if (to === '') missing['windowTo'] = 'field.required';
+    if (from === '') {
+      missing['windowFrom'] = unfinished.isUnfinished('windowFrom')
+        ? INCOMPLETE_DATE_TIME_KEY
+        : 'field.required';
+    }
+    if (to === '') {
+      missing['windowTo'] = unfinished.isUnfinished('windowTo')
+        ? INCOMPLETE_DATE_TIME_KEY
+        : 'field.required';
+    }
     if (from !== '' && to !== '' && Date.parse(to) <= Date.parse(from)) {
       missing['windowTo'] = 'workOrders.detail.windowInverted';
     }
@@ -539,6 +551,7 @@ function AssignmentPanel({
                 required
                 value={from}
                 onChange={setFrom}
+                onProblem={unfinished.noteProblem('windowFrom')}
                 error={errorFor('windowFrom')}
               />
               <ZonedDateTimeField
@@ -549,6 +562,7 @@ function AssignmentPanel({
                 required
                 value={to}
                 onChange={setTo}
+                onProblem={unfinished.noteProblem('windowTo')}
                 min={from === '' ? undefined : from}
                 error={errorFor('windowTo')}
               />
