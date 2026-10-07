@@ -185,18 +185,27 @@ export class ReportCatalogueRepository extends Repository {
    * documents against, so the as-of moment a report defaults to — the period's
    * exclusive end — is exactly the instant its selection stops at. No table is
    * read; the zone is a bind parameter, never interpolated.
+   *
+   * `readAt` is the DATABASE's reading of "now": the transaction's own `now()`
+   * (P1-32-PRE-OD-FD16B). Every instant a report compares — `issued_at`,
+   * `received_at`, `allocated_at`, `reversed_at` — is stamped by `now()` in the
+   * transaction that wrote it, so the default moment and "as of now" are read on
+   * that same clock rather than on the application server's or the browser's. It
+   * is constant for the whole transaction, so every page one request reads sees
+   * the same "now".
    */
   async periodInstants(
     db: DbHandle,
     period: { readonly from: string; readonly toExclusive: string; readonly timezoneName: string }
-  ): Promise<{ readonly opens: Date; readonly closes: Date }> {
+  ): Promise<{ readonly opens: Date; readonly closes: Date; readonly readAt: Date }> {
     this.assertContext(db);
-    const row = await this.runOne<{ opens: Date; closes: Date }>(
+    const row = await this.runOne<{ opens: Date; closes: Date; read_at: Date }>(
       db,
-      `SELECT ${localMidnight(1, 3)} AS opens, ${localMidnight(2, 3)} AS closes`,
+      `SELECT ${localMidnight(1, 3)} AS opens, ${localMidnight(2, 3)} AS closes,
+              now() AS read_at`,
       [period.from, period.toExclusive, period.timezoneName]
     );
     if (row === null) throw new Error('periodInstants: the bounds query returned no row');
-    return row;
+    return { opens: row.opens, closes: row.closes, readAt: row.read_at };
   }
 }

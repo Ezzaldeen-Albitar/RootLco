@@ -160,6 +160,35 @@ export interface ReportDatasetDefinition {
   readonly requiredPermissions: readonly string[];
   readonly parameterSchema: readonly ReportParameterDefinition[];
   readonly columns: readonly ReportColumnDefinition[];
+  /**
+   * Present exactly when a frozen snapshot of this report may be saved (Owner
+   * decision D16, P1-32-PRE-OD-FD16B). A dataset without it refuses a snapshot.
+   */
+  readonly snapshot?: ReportSnapshotDefinition;
+}
+
+/**
+ * How a dataset's frozen snapshots are kept and compared (P1-32-PRE-OD-FD16B).
+ *
+ * Only a dataset whose amounts are computed as of a moment may declare one: a
+ * snapshot states the moment it was computed as of, and a live dataset has none.
+ */
+export interface ReportSnapshotDefinition {
+  /**
+   * The column whose `value` identifies a row across two snapshots of the same
+   * period, so a restatement can say which rows were added, removed or changed.
+   */
+  readonly identityColumn: string;
+  /** The column naming the currency every `money` cell of the row is in. */
+  readonly currencyColumn: string;
+  /**
+   * Columns stored as the saver saw them but shown to a reader only when the
+   * reader holds the named code in the snapshot's branch; otherwise the cell is
+   * read as empty. The party NAME of `invoice_payment_summary` is the one today:
+   * the run names a party only for a caller holding `crm.customer.read`, and a
+   * snapshot must not become a way around that.
+   */
+  readonly withheldColumns: readonly { readonly key: string; readonly permission: string }[];
 }
 
 /** `from` and `to` — the closed-open calendar period every dataset accepts. */
@@ -553,6 +582,16 @@ export const REPORT_DATASETS = Object.freeze({
       // receipt and a credit note. Never folded into `status`.
       Object.freeze({ key: 'creditStatus', kind: 'text' }),
     ]),
+    // A frozen copy of a run may be saved, and a restatement compared with the
+    // snapshot it replaces, document by document and currency by currency (Owner
+    // decision D16, P1-32-PRE-OD-FD16B).
+    snapshot: Object.freeze({
+      identityColumn: 'document',
+      currencyColumn: 'currency',
+      withheldColumns: Object.freeze([
+        Object.freeze({ key: 'partyName', permission: 'crm.customer.read' }),
+      ]),
+    }),
   }),
 } as const satisfies Record<string, ReportDatasetDefinition>);
 

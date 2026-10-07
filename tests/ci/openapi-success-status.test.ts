@@ -110,7 +110,9 @@ describe('every operation publishes the success status it returns', () => {
     // rejection and the withdrawal 200.
     // 513 with the discount request withdrawal (P1-32-PRE-OD-FD8): one operation over
     // one new route module, answering 200.
-    expect(actual.size).toBe(513);
+    // 516 with the report snapshots (P1-32-PRE-OD-FD16B): three operations over two
+    // new route modules — the save answers 201, the list and the read 200.
+    expect(actual.size).toBe(516);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -184,7 +186,9 @@ describe('every operation publishes the success status it returns', () => {
     // version and answers a literal 201; the approval decision answers 200.
     // 139 -> 141 with the receipt-reversal request and the replacement receipt
     // (P1-32-PRE-OD-FD4), both creates answering 201.
-    expect(counts[201]).toBe(141);
+    // 141 -> 142 with the report snapshot save (P1-32-PRE-OD-FD16B), a create
+    // answering 201.
+    expect(counts[201]).toBe(142);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -263,7 +267,9 @@ describe('every operation publishes the success status it returns', () => {
     // (P1-32-PRE-OD-FD4), each answering 200.
     // 370 -> 371 with the discount request withdrawal (P1-32-PRE-OD-FD8), answering
     // 200 as the decision does.
-    expect(counts[200]).toBe(371);
+    // 371 -> 373 with the report snapshot list and read (P1-32-PRE-OD-FD16B), two
+    // GETs answering 200.
+    expect(counts[200]).toBe(373);
   });
 
   it('reads the handler, not the declaration', () => {

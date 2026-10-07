@@ -362,6 +362,7 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // revisions, rec visits, veh vehicles/odometer) deleted below, so P1-11 unwinds
   // first. Children before parents. sal.financial_events has no FK into sal (its
   // source_id is a plain uuid), so it can go anywhere in this block.
+  await deleteFrom('rpt.report_snapshots');
   await deleteFrom('rpt.saved_filters');
   await deleteFrom('rpt.report_configuration_versions');
   await deleteFrom('rpt.report_configurations');

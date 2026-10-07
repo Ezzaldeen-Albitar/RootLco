@@ -149,6 +149,121 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "rpt.report_snapshots.as_of": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.report_snapshots.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_snapshots.columns": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "jsonb"
+    },
+    "rpt.report_snapshots.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_snapshots.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.report_snapshots.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_snapshots.difference": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "jsonb"
+    },
+    "rpt.report_snapshots.generated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "rpt.report_snapshots.generated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_snapshots.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_snapshots.parameters": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "jsonb"
+    },
+    "rpt.report_snapshots.parameters_digest": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rpt.report_snapshots.period_from": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "rpt.report_snapshots.period_to_exclusive": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "rpt.report_snapshots.report_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rpt.report_snapshots.required_permissions": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "ARRAY"
+    },
+    "rpt.report_snapshots.restatement_reason": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rpt.report_snapshots.restates_snapshot_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_snapshots.row_count": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "rpt.report_snapshots.rows": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "jsonb"
+    },
+    "rpt.report_snapshots.rows_digest": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "rpt.report_snapshots.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "rpt.report_snapshots.timezone_name": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
     "rpt.saved_filters.created_at": {
       "classification": "internal",
       "searchable": false,

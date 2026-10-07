@@ -10,7 +10,12 @@ import { isFormulaRiskyCell } from '@/modules/shared-services';
 import type { ReportCatalogueRepository } from '../data/report-catalogue-repository';
 import { isReportDatasetCode, reportDataset } from '../domain/report-datasets';
 import { assertReportConfiguration } from './report-configuration-policy';
-import type { ReportRunInput, ReportRunService, ReportRunView } from './report-run-service';
+import {
+  REPORT_RUN_BODY,
+  type ReportRunInput,
+  type ReportRunService,
+  type ReportRunView,
+} from './report-run-service';
 
 export interface ReportExportInput extends Omit<ReportRunInput, 'cursor' | 'limit'> {
   readonly reason: string;
@@ -37,7 +42,7 @@ export interface ReportExportView {
 }
 
 /** Inline generation has no persisted object, storage locator or enduring download grant. */
-const MAX_FILE_BYTES = 8 * 1024 * 1024;
+export const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 function csvCell(value: string | null): string {
   const text = value ?? '';
@@ -126,12 +131,17 @@ export class ReportExportService extends ApplicationService {
       // Reuse every dataset permission, tenant restriction and period rule; no alternate SQL.
       // Every page after the first is computed as of the moment the first one
       // resolved, so a default "now" cannot drift between the pages of one file.
-      const page = await this.runs.run(db, {
-        ...input,
-        ...(first?.asOf === undefined ? {} : { asOf: first.asOf }),
-        cursor,
-        limit: Math.min(MAX_PAGE_SIZE, maxRows - rowCount + 1),
-      });
+      // The moment travels in the BODY of an export, so a refusal names `body.asOf`.
+      const page = await this.runs.run(
+        db,
+        {
+          ...input,
+          ...(first?.asOf === undefined ? {} : { asOf: first.asOf }),
+          cursor,
+          limit: Math.min(MAX_PAGE_SIZE, maxRows - rowCount + 1),
+        },
+        REPORT_RUN_BODY
+      );
       if (!first) {
         first = page;
         append(

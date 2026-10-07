@@ -1825,8 +1825,15 @@ describe('the merged page is a page of the union', () => {
     // orders receipts alone and this report orders a merge of three kinds of
     // document, so re-using one across the two would silently produce a wrong
     // page — a page missing every invoice and every credit note.
+    // It carries a moment inside the period (P1-32-PRE-OD-FD16B binds one to every
+    // cursor of this report), so what refuses it is the ordering, not the moment.
     const foreign = Buffer.from(
-      JSON.stringify({ k: 'sal.receipts:received_at_desc', v: middle, i: receiptUsd })
+      JSON.stringify({
+        k: 'sal.receipts:received_at_desc',
+        v: middle,
+        i: receiptUsd,
+        a: periodCloses,
+      })
     ).toString('base64url');
     const response = await report({ limit: '2', cursor: foreign });
     expect(response.status).toBe(400);
@@ -2068,6 +2075,12 @@ describe('D16 — the amounts are as of a stated moment, and later events do not
     __resetRateLimitForTests();
   });
 
+  /** The database's own clock, in milliseconds — the clock `now` is read on. */
+  async function databaseNow(): Promise<number> {
+    const row = await admin.query<{ now: Date }>(`SELECT clock_timestamp() AS now`);
+    return (row.rows[0]?.now ?? new Date(0)).getTime();
+  }
+
   function d16Report(extra: Record<string, string> = {}): Promise<Response> {
     return run({
       companyId: COMPANY_S,
@@ -2184,10 +2197,14 @@ describe('D16 — the amounts are as of a stated moment, and later events do not
 
   it('reads the same period as of now on request, and then agrees with the live figures', async () => {
     authAs(FIN_RPT_FULL);
-    const asOf = new Date().toISOString();
-    const view = await body(await d16Report({ asOf }));
+    // `now` is resolved by the API on the DATABASE clock (P1-32-PRE-OD-FD16B), so
+    // the moment is bracketed by that clock rather than by this process's.
+    const before = await databaseNow();
+    const view = await body(await d16Report({ asOf: 'now' }));
+    const after = await databaseNow();
     expect(view.freshness).toBe('as_of');
-    expect(view.asOf).toBe(asOf);
+    expect(new Date(view.asOf ?? '').getTime()).toBeGreaterThanOrEqual(before);
+    expect(new Date(view.asOf ?? '').getTime()).toBeLessThanOrEqual(after);
     const invoiceRow = rowFor(view, invoiceLate.invoiceId) ?? none;
     expect(cellValue(invoiceRow, 'outstanding')).toBe(
       await openReceivableOf(invoiceLate.invoiceId)
@@ -2230,11 +2247,12 @@ describe('D16 — the amounts are as of a stated moment, and later events do not
 
   it('reads a period that has not closed as of the read time by default', async () => {
     authAs(FIN_RPT_FULL);
-    const before = Date.now();
+    // The read time is the database transaction's `now()` (P1-32-PRE-OD-FD16B).
+    const before = await databaseNow();
     const view = await body(
       await run({ companyId: COMPANY_S, branchId: BRANCH_S1, from: D16_FROM, to: '2099-01-01' })
     );
-    const after = Date.now();
+    const after = await databaseNow();
     expect(view.freshness).toBe('as_of');
     const asOf = new Date(view.asOf ?? '').getTime();
     expect(asOf).toBeGreaterThanOrEqual(before);
@@ -2262,6 +2280,29 @@ describe('D16 — the amounts are as of a stated moment, and later events do not
     expect((await d16Report({ asOf: d16Opens })).status).toBe(200);
   });
 
+  it('pages as of the first page’s moment, and refuses a different moment beside its cursor', async () => {
+    authAs(FIN_RPT_FULL);
+    // A moment inside the period, after the second receipt: three documents.
+    const asOf = shift(d16Opens, 14 * HOUR);
+    const first = await body(await d16Report({ asOf, limit: '1' }));
+    expect(first.asOf).toBe(asOf);
+    expect(first.rows.nextCursor).not.toBeNull();
+    // A later page without `asOf` is computed as of the cursor's moment, not the
+    // default end of the period (P1-32-PRE-OD-FD16B).
+    const next = await body(await d16Report({ limit: '1', cursor: first.rows.nextCursor ?? '' }));
+    expect(next.asOf).toBe(asOf);
+    const mixed = await d16Report({
+      asOf: d16Closes,
+      limit: '1',
+      cursor: first.rows.nextCursor ?? '',
+    });
+    expect(mixed.status).toBe(422);
+    expect(await mixed.json()).toMatchObject({
+      code: 'ERR-VAL-001',
+      violations: [{ path: 'query.cursor', rule: 'as_of_mismatch' }],
+    });
+  });
+
   it('is refused by a report that does not compute its amounts as of a moment', async () => {
     authAs(FIN_RPT_FULL);
     const response = await run(
@@ -2278,6 +2319,33 @@ describe('D16 — the amounts are as of a stated moment, and later events do not
     expect(await response.json()).toMatchObject({
       code: 'ERR-VAL-001',
       violations: [{ path: 'query.asOf', rule: 'not_supported' }],
+    });
+  });
+
+  it('names the body when an export’s moment is refused', async () => {
+    await withExplicitReportConfiguration(async () => {
+      authAs(EXPORT_FULL);
+      const segment = `${REPORT_CODE}:export`;
+      const response = await EXPORT_REPORT(
+        new Request(`http://localhost/api/v1/reports/${segment}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            companyId: COMPANY_S,
+            branchId: BRANCH_S1,
+            from: D16_FROM,
+            to: D16_TO,
+            asOf: shift(d16Opens, -SECOND),
+            reason: 'FD16B early export',
+          }),
+        }),
+        { params: Promise.resolve({ reportCode: segment }) }
+      );
+      expect(response.status).toBe(422);
+      expect(await response.json()).toMatchObject({
+        code: 'ERR-VAL-001',
+        violations: [{ path: 'body.asOf', rule: 'before_period_start' }],
+      });
     });
   });
 

@@ -44,6 +44,7 @@ function page(values: string[], nextCursor: string | null = null): ReportRunView
     branch: { id: input.branchId, name: 'Branch' },
     generatedAt: '2026-09-14T00:00:00Z',
     freshness: 'live',
+    snapshots: false,
     columns: [{ key: 'customer', kind: 'text', drillThrough: null, drillThroughByKind: null }],
     groups: [],
     countsByState: [],
@@ -72,7 +73,10 @@ describe('P1-31 report export disclosure', () => {
     expect(result.file).toMatchObject({ mediaType: 'text/csv', encoding: 'utf-8' });
     expect(result.file.content).toContain('"ثاني","ثاني"');
     expect(result.file.content).toContain('"Asia/Amman"');
-    expect(run).toHaveBeenNthCalledWith(2, db, expect.objectContaining({ cursor: 'cursor-1' }));
+    // The moment travels in the export BODY, so a refusal names body.asOf (FD16B).
+    expect(run).toHaveBeenNthCalledWith(2, db, expect.objectContaining({ cursor: 'cursor-1' }), {
+      asOfPath: 'body.asOf',
+    });
     expect(calls.audit).toHaveBeenCalledWith(
       db,
       expect.objectContaining({

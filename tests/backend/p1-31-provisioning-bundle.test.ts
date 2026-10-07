@@ -1106,6 +1106,10 @@ describe('P1-31 P-1 — the derivation', () => {
       // P-12 adds a separately authorized report disclosure; CC-04 still excludes
       // this permission from the administrator bundle. No bundle grant is added.
       'rpt.report-export',
+      // P1-32-PRE-OD-FD16B (Owner decision D16): saving a frozen report snapshot is
+      // declared under the same code. CC-04 still excludes it from the bundle, so the
+      // Owner's exclusion now also decides who may save a snapshot; no grant is added.
+      'rpt.report-snapshot-create',
       'shared.export-authorize',
       'shared.export-catalogue',
     ]);

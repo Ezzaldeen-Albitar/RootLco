@@ -169,9 +169,14 @@ const P1_31_NAMESPACES = Object.freeze([
  * 34 route files, and the phase declares 13 permission codes. The PRIVILEGED count is
  * still 24 because the export operation declares `auditClass: 'export'` rather than
  * `privileged`; the asymmetry the paragraph describes is unchanged.)
+ *
+ * (P1-32-PRE-OD-FD16B, Owner decision D16: the three report-snapshot operations live in
+ * two new route files under `reports/`, so the declaration total is 50 over 36 route
+ * files. The PRIVILEGED count is still 24: the save declares `auditClass: 'financial'`
+ * and the list and the read `none`.)
  */
 const EXPECTED_PRIVILEGED = 24;
-const EXPECTED_ROUTE_FILES = 34;
+const EXPECTED_ROUTE_FILES = 36;
 
 interface PrivilegedDeclaration {
   readonly id: string;
@@ -1446,7 +1451,7 @@ describe('P1-31-SEC-004 E-0 — the privileged write set, parsed', () => {
       unregistered: [],
     });
     // The parse saw every declaration in those files, not merely the audited ones.
-    expect(SURFACE.declarations).toBe(47);
+    expect(SURFACE.declarations).toBe(50);
   });
 
   it('names, for each of the 24, an action the catalogue registers as privileged', () => {

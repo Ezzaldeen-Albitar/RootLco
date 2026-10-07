@@ -13,27 +13,38 @@ import { translateDynamic } from '@/i18n/get-messages';
  *
  * Any other code is a unit a tenant named itself, in whatever language it chose:
  * its stored name is shown exactly as stored, never translated or guessed at.
+ *
+ * A seeded CODE is translated only while the line still carries the seeded
+ * English NAME (P1-32-PRE-OD-FD16B). A name that differs was given to that line's
+ * unit by someone, and replacing it with the catalogue's word would show a name
+ * the record does not hold; it is shown as stored.
  */
-export const SEEDED_UNIT_CODES: readonly string[] = Object.freeze([
-  'each',
-  'piece',
-  'set',
-  'pair',
-  'hour',
-  'litre',
-  'millilitre',
-  'kilogram',
-  'gram',
-  'metre',
-  'centimetre',
-  'square_metre',
-]);
+export const SEEDED_UNIT_NAMES: Readonly<Record<string, string>> = Object.freeze({
+  each: 'Each',
+  piece: 'Piece',
+  set: 'Set',
+  pair: 'Pair',
+  hour: 'Hour',
+  litre: 'Litre',
+  millilitre: 'Millilitre',
+  kilogram: 'Kilogram',
+  gram: 'Gram',
+  metre: 'Metre',
+  centimetre: 'Centimetre',
+  square_metre: 'Square metre',
+});
+
+/** The codes `supabase/seeds/07_inv_units_of_measure.sql` seeds. */
+export const SEEDED_UNIT_CODES: readonly string[] = Object.freeze(Object.keys(SEEDED_UNIT_NAMES));
 
 export function unitName(
   messages: Messages,
   unit: { readonly code: string; readonly name: string }
 ): string {
-  return SEEDED_UNIT_CODES.includes(unit.code)
+  const seeded = Object.prototype.hasOwnProperty.call(SEEDED_UNIT_NAMES, unit.code)
+    ? SEEDED_UNIT_NAMES[unit.code]
+    : undefined;
+  return seeded !== undefined && unit.name === seeded
     ? translateDynamic(messages, `units.name.${unit.code}`)
     : unit.name;
 }

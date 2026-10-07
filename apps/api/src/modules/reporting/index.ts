@@ -26,8 +26,25 @@ import { ReportRunService } from './application/report-run-service';
 import { ReportExportService } from './application/report-export-service';
 import { ReportConfigurationRepository } from './data/report-configuration-repository';
 import { ReportConfigurationService } from './application/report-configuration-service';
+import { ReportSnapshotRepository } from './data/report-snapshot-repository';
+import { ReportSnapshotService } from './application/report-snapshot-service';
 
 export type { ReportExportInput, ReportExportView } from './application/report-export-service';
+export {
+  MAX_RESTATEMENT_REASON,
+  REPORT_SNAPSHOT_RULES,
+  type ReportSnapshotCreatedView,
+  type ReportSnapshotCreateInput,
+  type ReportSnapshotDifferenceView,
+  type ReportSnapshotListInput,
+  type ReportSnapshotListView,
+  type ReportSnapshotPersonView,
+  type ReportSnapshotReadInput,
+  type ReportSnapshotRowsView,
+  type ReportSnapshotSummaryView,
+  type ReportSnapshotTotalView,
+  type ReportSnapshotView,
+} from './application/report-snapshot-service';
 export type {
   ReportDefinitionSource,
   ReportDefinitionView,
@@ -91,6 +108,7 @@ export {
   type ReportDatasetDefinition,
   type ReportDrillThroughByKind,
   type ReportParameterDefinition,
+  type ReportSnapshotDefinition,
 } from './domain/report-datasets';
 
 export const reportingModule = composeModule({
@@ -104,5 +122,11 @@ export const reportingModule = composeModule({
       new ReportRunService(new ReportCatalogueRepository())
     ),
     configurations: new ReportConfigurationService(new ReportConfigurationRepository()),
+    // Frozen copies of a run and their restatements (Owner decision D16,
+    // P1-32-PRE-OD-FD16B). The rows are read through the same run service.
+    snapshots: new ReportSnapshotService(
+      new ReportSnapshotRepository(),
+      new ReportRunService(new ReportCatalogueRepository())
+    ),
   }),
 });

@@ -370,13 +370,17 @@ describe('a refusal arrives as a refusal, never as an empty report', () => {
 });
 
 describe('the report adapter boundary', () => {
-  it('publishes four reads and the explicit export action', () => {
+  it('publishes four reads, the explicit export action and the three snapshot actions', () => {
+    // The snapshot list, read and save (P1-32-PRE-OD-FD16B, Owner decision D16).
     expect(Object.keys(adapters).sort()).toEqual([
       'exportReport',
       'listReportCatalogue',
+      'listReportSnapshots',
       'readReport',
       'readReportScopes',
+      'readReportSnapshot',
       'runReport',
+      'saveReportSnapshot',
     ]);
   });
 
@@ -609,9 +613,10 @@ describe('explicit scoped report export', () => {
 
 /*
  * Owner decision D16 (P1-32-PRE-OD-FD16A): the moment a report's amounts are as
- * of travels as an instant the operator chose, as this action's own "now", or not
- * at all — and an export file is accepted only when it states the moment it was
- * asked for.
+ * of travels as an instant the operator chose, as the word `now`, or not at all —
+ * and an export file is accepted only when it states the moment it was asked for.
+ * "Now" is the API's to resolve, on the database clock every compared instant was
+ * stamped by, never this action's own clock (P1-32-PRE-OD-FD16B).
  */
 describe('the as-of moment (D16)', () => {
   const AS_OF = '2026-09-07T21:00:00.000Z';
@@ -639,15 +644,14 @@ describe('the as-of moment (D16)', () => {
     );
   });
 
-  it('turns "now" into this action’s own clock, read just before the request', async () => {
+  it('sends "now" as the word, so the API reads the moment on the database clock', async () => {
     transport(() => ok(RUN));
-    const before = Date.now();
     await runReport({ ...runInput, asOf: 'now' });
-    const after = Date.now();
-    const sent = new URL(`http://x${requestedRun() ?? ''}`).searchParams.get('asOf') ?? '';
-    expect(contract.isReportInstant(sent)).toBe(true);
-    expect(Date.parse(sent)).toBeGreaterThanOrEqual(before);
-    expect(Date.parse(sent)).toBeLessThanOrEqual(after);
+    const sent = new URL(`http://x${requestedRun() ?? ''}`).searchParams.get('asOf');
+    // Never an instant read off this server's clock, which may run ahead of the
+    // database's and would then be refused as a moment after the read.
+    expect(sent).toBe('now');
+    expect(contract.isReportInstant(sent ?? '')).toBe(false);
   });
 
   it('refuses a moment without an offset before a request is spent', async () => {
@@ -683,6 +687,125 @@ describe('the as-of moment (D16)', () => {
   it('refuses an export moment without an offset before spending a request', async () => {
     const state = await exportReport(CODE, { ...EXPORT_BODY, asOf: '2026-09-03T12:00:00' });
     expect(state.status).toBe('invalid');
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * Owner decision D16, part 2 (P1-32-PRE-OD-FD16B): the snapshot adapters. The list
+ * names the branch pair as the read's target and the period it shows; the read
+ * names the snapshot and no scope; the save sends exactly the scope, the period
+ * and the moment shown, and a restatement is not sent without a reason.
+ */
+describe('report snapshots (D16)', () => {
+  const SNAP = 'invoice_payment_summary';
+  const SNAPSHOT_ID = '55555555-5555-4555-8555-555555555555';
+  const AS_OF = '2026-09-07T21:00:00.000Z';
+  const BODY = {
+    companyId: COMPANY_ID,
+    branchId: BRANCH_ID,
+    from: '2026-09-01',
+    to: '2026-09-08',
+    asOf: AS_OF,
+  };
+  const saved = (extra: Record<string, unknown> = {}) => ({
+    snapshot: {
+      id: SNAPSHOT_ID,
+      reportCode: SNAP,
+      period: { from: '2026-09-01', to: '2026-09-08', timezone: 'Asia/Amman' },
+      asOf: AS_OF,
+      generatedAt: '2026-09-08T06:00:00.000Z',
+      generatedBy: { id: SNAPSHOT_ID, displayName: null },
+      rowCount: 0,
+      rowsDigest: 'a'.repeat(64),
+      restatesSnapshotId: null,
+      restatedBySnapshotId: null,
+      restatementReason: null,
+      filters: { companyId: COMPANY_ID, branchId: BRANCH_ID },
+      difference: null,
+      ...extra,
+    },
+  });
+
+  it('lists a period’s snapshots with the branch pair as the target', async () => {
+    transport(() => ok({ items: [], nextCursor: null, hasMore: false }));
+    const state = await adapters.listReportSnapshots({
+      reportCode: SNAP,
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+      from: '2026-09-01',
+      to: '2026-09-08',
+      cursor: null,
+      limit: REPORT_PAGE_SIZE,
+    });
+    expect(state.status).toBe('ok');
+    const url = new URL(`http://x${requested()[0] ?? ''}`);
+    expect(url.pathname).toBe(`/api/v1/reports/${SNAP}/snapshots`);
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+      from: '2026-09-01',
+      to: '2026-09-08',
+      limit: String(REPORT_PAGE_SIZE),
+    });
+  });
+
+  it('reads one snapshot by its id, sending no scope', async () => {
+    transport(() => ok({}));
+    await adapters.readReportSnapshot({
+      reportCode: SNAP,
+      snapshotId: SNAPSHOT_ID,
+      cursor: CURSOR,
+      limit: REPORT_PAGE_SIZE,
+    });
+    expect(requested()).toEqual([
+      `/api/v1/reports/${SNAP}/snapshots/${SNAPSHOT_ID}/rows?cursor=${CURSOR}&limit=${String(REPORT_PAGE_SIZE)}`,
+    ]);
+  });
+
+  it('saves exactly the scope, the period and the moment shown', async () => {
+    transport(() => ok({}));
+    send.mockResolvedValue(ok(saved()));
+    const state = await adapters.saveReportSnapshot(SNAP, BODY);
+    expect(state.status).toBe('success');
+    expect(send).toHaveBeenCalledExactlyOnceWith('POST', `/api/v1/reports/${SNAP}/snapshots`, BODY);
+    // A snapshot of another period, or as of another moment, is not accepted as this one.
+    for (const data of [
+      saved({ period: { from: '2026-08-01', to: '2026-08-08', timezone: 'Asia/Amman' } }),
+      saved({ asOf: '2026-09-01T00:00:00.000Z' }),
+    ]) {
+      send.mockResolvedValue(ok(data));
+      expect((await adapters.saveReportSnapshot(SNAP, BODY)).status).toBe('error');
+    }
+  });
+
+  it('refuses a restatement without a reason before spending a request', async () => {
+    transport(() => ok({}));
+    const state = await adapters.saveReportSnapshot(SNAP, {
+      ...BODY,
+      restatesSnapshotId: SNAPSHOT_ID,
+      reason: '   ',
+    });
+    expect(state.status).toBe('invalid');
+    expect(state.fieldErrors).toEqual({ reason: 'reports.snapshots.reasonRequired' });
+    expect(send).not.toHaveBeenCalled();
+    send.mockResolvedValue(ok(saved({ restatesSnapshotId: SNAPSHOT_ID })));
+    await adapters.saveReportSnapshot(SNAP, {
+      ...BODY,
+      restatesSnapshotId: SNAPSHOT_ID,
+      reason: '  A late receipt  ',
+    });
+    expect(send).toHaveBeenCalledExactlyOnceWith('POST', `/api/v1/reports/${SNAP}/snapshots`, {
+      ...BODY,
+      restatesSnapshotId: SNAPSHOT_ID,
+      reason: 'A late receipt',
+    });
+  });
+
+  it('refuses a branch the caller’s directory does not list, and sends nothing', async () => {
+    transport(() => ok({}));
+    const state = await adapters.saveReportSnapshot(SNAP, { ...BODY, branchId: OTHER_BRANCH_ID });
+    expect(state.status).toBe('denied');
     expect(send).not.toHaveBeenCalled();
   });
 });

@@ -2242,6 +2242,22 @@ export const MANIFEST = {
     required: ['denial', 'stale-version'],
     note: 'P1-31 prerequisite P-11. The act the catalogue reads: its lateral picks the newest version whose OWN status is published. If-Match is the VERSION counter and not the configuration one - the opposite choice from svc.service-version-publish, whose guard is the parent because the protected function it calls locks the parent first, and there is no protected function here. TWO REFUSALS COME FROM THE DATABASE AND BOTH ARE MAPPED RATHER THAN LEFT AS A BARE SQLSTATE: a SECOND version published while one is live violates uq_report_configuration_versions_published and is reported as version_already_published, and REPUBLISHING the same version is an update of a published row, which rpt.guard_report_version_freeze raises as a check_violation and which is reported as version_immutable. The repository writes published_at = now() explicitly for exactly that reason - letting the trigger stamp the column would make a repeat publication a silent no-op that advanced record_version and told the caller nothing - and the suite proves the refusal on real rows with a CURRENT If-Match, so the freeze guard and not the version guard is what refuses it. Publishing a version does NOT publish its configuration and does NOT make the report runnable: executable stays the literal false',
   },
+  // ---- Owner decision D16, part 2 (P1-32-PRE-OD-FD16B): report snapshots ----
+  'rpt.report-snapshot-create': {
+    files: ['tests/backend/od-report-snapshots.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'audit', 'idempotency'],
+    note: 'Saves a frozen copy of one run of invoice_payment_summary - period, zone, as-of moment, filters, columns and every row - in rpt.report_snapshots, read page by page through the report run inside ONE transaction opened at REPEATABLE READ, capped by the export row and byte bounds. Declares rpt.export and rpt.report.read at the branch; the service adds every dataset code. The suite proves a payment applied after the save leaves the stored rows and digest unchanged while the live read as of now moves; a restatement names the latest snapshot, carries a reason and a difference, and marks the restated one; each refusal by rule (an original already saved, a restatement of a non-latest snapshot, no reason, a report that keeps none, too large) answers its own rule and leaves one business-refusal record (ADR-023 D12); a replay under the same key returns the one snapshot and one audit record; two concurrent saves of one period leave one row and one refusal, never a 500; a caller without the money, without rpt.export or granted only in the sibling branch is refused, and saves nothing',
+  },
+  'rpt.report-snapshot-list': {
+    files: ['tests/backend/od-report-snapshots.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'A branch report snapshots, newest first, metadata only - as-of, period, saved at, saved by (named only for a reader holding iam.user.read), row count, digest, restates and restated-by, reason - and never the rows. Declares rpt.report.read at the branch; the service adds the dataset codes and row-level security admits a snapshot only with every code it froze. Another tenant, a caller without the money and a caller granted only in the sibling branch are refused',
+  },
+  'rpt.report-snapshot-read': {
+    files: ['tests/backend/od-report-snapshots.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'A saved snapshot frozen rows a page at a time in their stored order, with its metadata, the snapshot it restates, the one that restated it and the difference. The branch is the snapshot own, checked after the row is read; row-level security hides it - 404, never 403 - from another tenant, from a caller without the frozen codes and from a caller granted only elsewhere. The party name is stored as the saver saw it and withheld from a reader without crm.customer.read',
+  },
   // ---- P1-23 document surface ----------------------------------------------
   'shared.document-read': {
     files: ['tests/backend/p1-23-document-retention.test.ts'],
