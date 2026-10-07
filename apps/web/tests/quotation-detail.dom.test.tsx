@@ -14,6 +14,7 @@ import {
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { getMessages } from '@/i18n/get-messages';
+import { holdPickerBlur } from './support/held-picker-blur';
 
 /**
  * One quotation, rendered (P1-30, `W3`, FE-004 revisions, FE-007 approval
@@ -309,6 +310,33 @@ async function typeMoment(user: ReturnType<typeof userEvent.setup>, key: string,
   const group = screen.getByRole('group', { name: labelled(key) });
   await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
   await user.keyboard(digits);
+}
+
+/**
+ * The named part of a moment holds the cursor with its whole text selected, so
+ * the next digit replaces it. A cursor collapsed at the start of the part would
+ * make the first digit of the year `2YYYY`, which the picker discards, and
+ * `2026` would arrive as `0261`. Asserted at once, never waited for: the
+ * field selects the part in the same step that focuses it. `refusedExpiry`
+ * holds the picker's delayed blur update back until after the refusal
+ * (`holdPickerBlur`), the order in which the picker itself selects nothing.
+ * Falsified by removing that selection (`selectFocusedPart` in
+ * `DateField.tsx`): the partly typed case then fails here, every run, with the
+ * range collapsed at the start of the year (and, past this check, `2026` is
+ * not taken as the year). The impossible entry is re-entered on its day, a
+ * different part from the one the picker last held, so the picker re-renders
+ * and selects the day itself; that case guards the cursor's place, not this
+ * fix.
+ */
+function expectPartSelected(group: HTMLElement, partKey: string) {
+  const part = within(group).getByRole('spinbutton', { name: EN[partKey] as string });
+  expect(document.activeElement).toBe(part);
+  const selection = document.getSelection();
+  const range = selection !== null && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+  expect(range).not.toBeNull();
+  expect(range?.collapsed).toBe(false);
+  expect(range !== null && part.contains(range.startContainer)).toBe(true);
+  expect(range !== null && part.contains(range.endContainer)).toBe(true);
 }
 
 beforeEach(() => {
@@ -703,18 +731,31 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
    * !== null` (and, for the partial entry, by removing the field's `'incomplete'`
    * report): the question then opens and the issue is sent with no expiry.
    */
-  async function refusedExpiry(user: ReturnType<typeof userEvent.setup>, digits: string) {
+  async function refusedExpiry(
+    user: ReturnType<typeof userEvent.setup>,
+    digits: string,
+    partKey: string
+  ) {
     renderDetail({}, quotation({ currentRevision: revision({ status: 'draft', issuedAt: null }) }));
     const form = screen.getByRole('form', { name: EN['quotations.issue.heading'] as string });
     await typeMoment(user, 'quotations.issue.expiresAt', digits);
+    const group = screen.getByRole('group', { name: labelled('quotations.issue.expiresAt') });
+    // The refusal is made to land before the picker records that the cursor
+    // left it, the order a loaded runner produces by chance.
+    const releaseBlur = holdPickerBlur(group);
     await user.click(
       within(form).getByRole('button', { name: EN['quotations.issue.submit'] as string })
     );
-    const group = screen.getByRole('group', { name: labelled('quotations.issue.expiresAt') });
     await waitFor(() => expect(group).toHaveAttribute('aria-invalid', 'true'));
     expect(within(form).getByText(EN['quotations.issue.dateFormat'] as string)).toBeInTheDocument();
     // The cursor is put back into the expiry, and nothing was asked or sent.
     await waitFor(() => expect(group.contains(document.activeElement)).toBe(true));
+    // ...on the part to finish, already selected, so typing replaces it.
+    expectPartSelected(group, partKey);
+    // The picker's blur update was indeed still held back, and once it runs
+    // the part stays entered and selected.
+    expect(releaseBlur()).toBeGreaterThan(0);
+    expectPartSelected(group, partKey);
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(issueQuotation).not.toHaveBeenCalled();
     return { form, group };
@@ -722,7 +763,7 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
 
   it('refuses a partly typed expiry on the field, keeps what was typed, and issues once it is finished', async () => {
     const user = userEvent.setup();
-    const { form, group } = await refusedExpiry(user, '0112');
+    const { form, group } = await refusedExpiry(user, '0112', 'mui.pickers.year');
     // The cursor waits on the empty year; finishing the entry withdraws the complaint.
     await user.keyboard('20261000');
     await waitFor(() => expect(group).not.toHaveAttribute('aria-invalid'));
@@ -742,7 +783,7 @@ describe('guarded writes send the QUOTATION version and renew it', () => {
 
   it('refuses an impossible expiry on the field and sends nothing', async () => {
     const user = userEvent.setup();
-    const { form } = await refusedExpiry(user, '310220261000');
+    const { form } = await refusedExpiry(user, '310220261000', 'mui.pickers.day');
     // Asking again with the entry unchanged is refused again.
     await user.click(
       within(form).getByRole('button', { name: EN['quotations.issue.submit'] as string })

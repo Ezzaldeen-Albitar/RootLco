@@ -47,6 +47,7 @@ import {
   renderLtr,
   renderRtl,
 } from './render';
+import { holdPickerBlur } from './support/held-picker-blur';
 
 /**
  * The Material UI form fields (ADR-022 PR1) keep `FieldFrame`'s contract:
@@ -330,22 +331,51 @@ describe('a refused half-typed day is finished where it was left', () => {
     const catalogue = getMessages(locale);
     const year = catalogue['mui.pickers.year'];
 
-    async function refuseHalfTyped(user: ReturnType<typeof userEvent.setup>) {
+    /**
+     * With `holdBlur`, the refusal lands before the picker records that the
+     * cursor left it (`holdPickerBlur`) — the order a loaded runner produces by
+     * chance, and the one in which the picker itself selects nothing.
+     */
+    async function refuseHalfTyped(
+      user: ReturnType<typeof userEvent.setup>,
+      { holdBlur = false }: { readonly holdBlur?: boolean } = {}
+    ) {
       const onDay = vi.fn();
       mount(<HalfDayForm onDay={onDay} />, locale);
       const group = screen.getByRole('group', { name: /^Visit day/ });
       await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
       await user.keyboard('0103');
+      const releaseBlur = holdBlur ? holdPickerBlur(group) : () => 0;
       await user.click(screen.getByRole('button', { name: 'Save' }));
       await waitFor(() => expect(group).toHaveAttribute('aria-invalid', 'true'));
-      return { group, onDay };
+      return { group, onDay, releaseBlur };
     }
 
     it(`puts the cursor on the empty year after the refusal, and typing finishes the day (${locale})`, async () => {
       const user = userEvent.setup();
-      const { group, onDay } = await refuseHalfTyped(user);
+      const { group, onDay, releaseBlur } = await refuseHalfTyped(user, { holdBlur: true });
       const yearPart = within(group).getByRole('spinbutton', { name: year });
       await waitFor(() => expect(document.activeElement).toBe(yearPart));
+      // The year is entered already selected, in the same step that focuses
+      // it, so the first digit replaces the empty year instead of landing in
+      // front of it. Asserted at once, never waited for, and again once the
+      // held blur update has run. Falsified by removing `selectFocusedPart`
+      // in `DateField.tsx`: this case then fails in both locales, every run,
+      // with the range collapsed at the start of the year (and, past this
+      // check, `2027` is not taken as the year).
+      const expectYearSelected = () => {
+        expect(document.activeElement).toBe(yearPart);
+        const selection = document.getSelection();
+        const range =
+          selection !== null && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+        expect(range).not.toBeNull();
+        expect(range?.collapsed).toBe(false);
+        expect(range !== null && yearPart.contains(range.startContainer)).toBe(true);
+        expect(range !== null && yearPart.contains(range.endContainer)).toBe(true);
+      };
+      expectYearSelected();
+      expect(releaseBlur()).toBeGreaterThan(0);
+      expectYearSelected();
       await user.keyboard('2027');
       expect(onDay).toHaveBeenLastCalledWith('2027-03-01');
       await waitFor(() => expect(group).not.toHaveAttribute('aria-invalid'));
