@@ -27,6 +27,12 @@
  *  - the report catalogue does not list `invoice_payment_summary` to it, while it
  *    lists `work_orders_by_status` (whose code it holds), and a finance reader is
  *    listed the finance report — so the narrowing is per dataset, not blanket;
+ *  - the single-definition read of `invoice_payment_summary` answers 404
+ *    `ERR-RES-001`, the answer of a code that never existed, and 200 to the
+ *    finance reader;
+ *  - a published tenant configuration of the finance report is hidden from it
+ *    and listed to the finance reader, while a tenant row whose code is not a
+ *    registered dataset is listed to both;
  *  - the run, the export and the snapshot list of `invoice_payment_summary` answer
  *    403, and the saved snapshot answers as absent.
  *
@@ -87,7 +93,7 @@ import { GET as READ_RECEIPT } from '@/app/api/v1/payments/[paymentId]/route';
 import { GET as LIST_DELIVERY_READINESS } from '@/app/api/v1/delivery-readiness/route';
 import { GET as READ_COST_HISTORY } from '@/app/api/v1/items/[itemId]/cost-history/route';
 import { GET as LIST_REPORTS } from '@/app/api/v1/reports/route';
-import { POST as EXPORT_REPORT } from '@/app/api/v1/reports/[reportCode]/route';
+import { GET as READ_REPORT, POST as EXPORT_REPORT } from '@/app/api/v1/reports/[reportCode]/route';
 import { GET as RUN_REPORT } from '@/app/api/v1/reports/[reportCode]/rows/route';
 import {
   GET as LIST_SNAPSHOTS,
@@ -106,6 +112,8 @@ const WORK_ORDER_REPORT = 'work_orders_by_status';
 /** A closed past period no other suite saves a snapshot of in this branch. */
 const SNAPSHOT_FROM = '2026-03-02';
 const SNAPSHOT_TO = '2026-03-03';
+/** A tenant report code the platform implements no dataset for. */
+const TENANT_ONLY_REPORT = 'od_d17_tenant_report';
 
 const QUOTATION_CODES = [
   'quo.quotation.read',
@@ -233,6 +241,38 @@ interface Fixture {
 
 let fixture: Fixture;
 const snapshotIds: string[] = [];
+const configurationIds: string[] = [];
+
+/** A published tenant configuration of one report code, with its published version. */
+async function publishedConfiguration(reportCode: string): Promise<string> {
+  const id = randomUUID();
+  configurationIds.push(id);
+  await admin.query(
+    `INSERT INTO rpt.report_configurations
+       (id, tenant_id, report_code, name, scope_level, export_permission_code,
+        owner_user_id, status, created_by)
+     VALUES ($1,$2,$3,$4,'branch','rpt.export',$5,'published',$5)`,
+    [id, TENANT_A, reportCode, `D17 configured ${reportCode}`, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO rpt.report_configuration_versions
+       (tenant_id, report_configuration_id, version_number, parameter_schema,
+        status, published_at, created_by)
+     VALUES ($1,$2,1,'{}'::jsonb,'published',now(),$3)`,
+    [TENANT_A, id, USER_A]
+  );
+  return id;
+}
+
+/** Retires the configurations this file created, so the baselines answer again. */
+async function retireConfigurations(): Promise<void> {
+  if (configurationIds.length === 0) return;
+  await admin.query(
+    `UPDATE rpt.report_configurations SET deleted_at = now(), deleted_by = $3
+      WHERE tenant_id = $1 AND id = ANY($2::uuid[]) AND deleted_at IS NULL`,
+    [TENANT_A, configurationIds, USER_A]
+  );
+}
 
 /** A part with a branch selling price, so the quotation carries a real sales total. */
 async function pricedPart(): Promise<string> {
@@ -409,6 +449,17 @@ afterAll(async () => {
         snapshotIds,
       ]);
     }
+    if (configurationIds.length > 0) {
+      await admin.query(
+        `DELETE FROM rpt.report_configuration_versions
+          WHERE tenant_id = $1 AND report_configuration_id = ANY($2::uuid[])`,
+        [TENANT_A, configurationIds]
+      );
+      await admin.query(
+        `DELETE FROM rpt.report_configurations WHERE tenant_id = $1 AND id = ANY($2::uuid[])`,
+        [TENANT_A, configurationIds]
+      );
+    }
     await cleanP1_22Fixtures();
     await cleanBackendFixtures(admin);
     await cleanP1_21Fixtures();
@@ -563,6 +614,16 @@ describe('D17: a quotation user who reads reports is not offered the finance rep
     return (await bodyOf<CatalogueBody>(response)).items.map((item) => item.reportCode);
   }
 
+  async function readDefinition(as: Principal, reportCode: string): Promise<Response> {
+    authAs(as);
+    return get(READ_REPORT, `/api/v1/reports/${reportCode}`, { reportCode });
+  }
+
+  async function expectAbsent(response: Response): Promise<void> {
+    expect(response.status, await response.clone().text()).toBe(404);
+    expect((await bodyOf<{ code: string }>(response)).code).toBe('ERR-RES-001');
+  }
+
   it('lists the reports whose codes it holds and not the invoice-and-payment report', async () => {
     const codes = await catalogueCodes(QUOTATION_REPORTS);
     expect(codes).toContain(WORK_ORDER_REPORT);
@@ -574,6 +635,43 @@ describe('D17: a quotation user who reads reports is not offered the finance rep
     expect(codes).toContain(FINANCE_REPORT);
     // And not the work-order report, whose code that caller does not hold.
     expect(codes).not.toContain(WORK_ORDER_REPORT);
+  });
+
+  it('answers the finance definition as absent by code, and serves it to a finance reader', async () => {
+    await expectAbsent(await readDefinition(QUOTATION_REPORTS, FINANCE_REPORT));
+    // The same answer as a code that never existed: existence is not revealed.
+    await expectAbsent(await readDefinition(QUOTATION_REPORTS, 'od_d17_never_existed'));
+    // Non-vacuity: the read itself answers this caller for a report it can run.
+    const workOrders = await readDefinition(QUOTATION_REPORTS, WORK_ORDER_REPORT);
+    expect(workOrders.status, await workOrders.clone().text()).toBe(200);
+
+    const finance = await readDefinition(FINANCE_REPORTS, FINANCE_REPORT);
+    expect(finance.status, await finance.clone().text()).toBe(200);
+    expect((await bodyOf<{ titleKey: string | null }>(finance)).titleKey).toBe(
+      `reports.${FINANCE_REPORT}.title`
+    );
+  });
+
+  it('hides a tenant customisation of the finance report, and lists an unregistered tenant code to both', async () => {
+    try {
+      await publishedConfiguration(FINANCE_REPORT);
+      await publishedConfiguration(TENANT_ONLY_REPORT);
+
+      const quotationCodes = await catalogueCodes(QUOTATION_REPORTS);
+      expect(quotationCodes).not.toContain(FINANCE_REPORT);
+      expect(quotationCodes).toContain(TENANT_ONLY_REPORT);
+      await expectAbsent(await readDefinition(QUOTATION_REPORTS, FINANCE_REPORT));
+
+      const financeCodes = await catalogueCodes(FINANCE_REPORTS);
+      expect(financeCodes).toContain(FINANCE_REPORT);
+      expect(financeCodes).toContain(TENANT_ONLY_REPORT);
+      // The finance reader is served the tenant's row, not the baseline.
+      const finance = await readDefinition(FINANCE_REPORTS, FINANCE_REPORT);
+      expect(finance.status, await finance.clone().text()).toBe(200);
+      expect((await bodyOf<{ source: string }>(finance)).source).toBe('tenant');
+    } finally {
+      await retireConfigurations();
+    }
   });
 
   it('refuses the run, the export and the snapshot list of the finance report', async () => {

@@ -175,6 +175,19 @@ async function runnableDatasetCodes(db: DbHandle): Promise<ReadonlySet<string>> 
   return runnable;
 }
 
+/**
+ * Whether the caller holds every code ONE registered dataset declares somewhere
+ * in its tenant — the single-code form of `runnableDatasetCodes`, for the
+ * by-code read (ADR-023 D17).
+ */
+async function datasetRunnable(db: DbHandle, reportCode: string): Promise<boolean> {
+  if (!isReportDatasetCode(reportCode)) return true;
+  for (const permission of reportDataset(reportCode).requiredPermissions) {
+    if (!(await callerHoldsPermissionAnywhere(db, permission))) return false;
+  }
+  return true;
+}
+
 /** A registered code is listed only when runnable; any other code as before. */
 const listedFor = (view: ReportDefinitionView, runnable: ReadonlySet<string>): boolean =>
   !isReportDatasetCode(view.reportCode) || runnable.has(view.reportCode);
@@ -270,16 +283,28 @@ export class ReportCatalogueService extends ApplicationService {
    * implements, so a tenant that has configured nothing can still read (and run)
    * `work_orders_by_status`, and one that has configured it sees its own scope,
    * export permission and filter allowlist.
+   *
+   * The list's D17 rule holds here too: a registered dataset whose codes the
+   * caller holds nowhere in the tenant answers `ERR-RES-001`, the same answer
+   * as a code that never existed, so the by-code read cannot reveal a report's
+   * existence or title to a caller who could never run it.
    */
   async readByCode(db: DbHandle, reportCode: string): Promise<ReportDefinitionView> {
     const row = await this.repository.findByCode(db, reportCode);
-    if (row?.status === 'published') return toView(row);
-    if (row === null && isReportDatasetCode(reportCode)) {
+    if (row?.status === 'published' && (await datasetRunnable(db, reportCode))) {
+      return toView(row);
+    }
+    if (
+      row === null &&
+      isReportDatasetCode(reportCode) &&
+      (await datasetRunnable(db, reportCode))
+    ) {
       return baselineView(reportDataset(reportCode));
     }
-    // A draft, an archived report, another tenant's report and a code that
-    // never existed all answer identically. The catalogue must not be usable
-    // to discover which report codes a tenant has configured.
+    // A draft, an archived report, another tenant's report, a code that never
+    // existed and a report this caller could never run all answer identically.
+    // The catalogue must not be usable to discover which report codes a tenant
+    // has configured.
     throw new AppFailure('ERR-RES-001', { message: 'Report not found.' });
   }
 }
