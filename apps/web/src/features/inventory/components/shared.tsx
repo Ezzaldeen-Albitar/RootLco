@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Button from '@mui/material/Button';
 
-import { SelectField, type SelectOption } from '@/components/forms/Field';
-import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormSelectField, type FormSelectOption } from '@/components/forms/mui/FormSelectField';
 import type { BranchOption } from '@/features/services/services-contract';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
@@ -28,6 +28,13 @@ import type {
  * attempt worth making — because a read in flight is a WAIT, never a refusal,
  * and the two used to render identically. Quantities are decimal strings and
  * are rendered as such.
+ *
+ * Every control here is on Material UI (ADR-022): the branch, location and
+ * category pickers are `FormSelectField` (a native select, F6) and the retry is
+ * Material's button. `P1-32-PRE-OD-MUI7A1` put the location and category
+ * pickers on Material behind a `material` flag; `P1-32-PRE-OD-INV1B` removed the
+ * flag and the older drawing and moved `BranchPairPicker`, so no later slice
+ * edits this file to move a screen.
  */
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -285,12 +292,12 @@ export function BranchPairPicker({
   if (branches.phase === 'listed') {
     const { items } = branches;
     return (
-      <SelectField
+      <FormSelectField
         label={label}
         required
         value={stale ? '' : value.branchId}
-        onChange={(event) => {
-          const chosen = items.find((branch) => branch.id === event.target.value);
+        onChange={(next) => {
+          const chosen = items.find((branch) => branch.id === next);
           onChange(
             chosen ? { companyId: chosen.companyId, branchId: chosen.id } : { ...EMPTY_PAIR }
           );
@@ -358,9 +365,9 @@ export function BranchPairPicker({
       ) : (
         // `type="button"`: every caller renders this picker inside a form.
         <div>
-          <button type="button" onClick={retry} className={SECONDARY_BUTTON}>
+          <Button type="button" variant="outlined" onClick={retry}>
             {translate(messages, 'state.retry')}
-          </button>
+          </Button>
         </div>
       )}
     </div>
@@ -494,7 +501,6 @@ export function LocationPicker({
   onChange,
   required,
   error,
-  material = false,
 }: {
   readonly messages: Messages;
   readonly locations: Locations;
@@ -504,12 +510,6 @@ export function LocationPicker({
   readonly onChange: (next: string) => void;
   readonly required?: boolean;
   readonly error?: string | undefined;
-  /**
-   * Draw it on Material UI (`FormSelectField`, ADR-022) — the same native
-   * select, label, description and error. Off unless stated, so each screen
-   * that shares this picker moves with its own slice and suite.
-   */
-  readonly material?: boolean;
 }) {
   const note = locations.refused
     ? translateDynamic(messages, locations.refused)
@@ -520,27 +520,13 @@ export function LocationPicker({
     value: location.id,
     label: `${location.locationCode} — ${location.name}`,
   }));
-  if (material) {
-    return (
-      <FormSelectField
-        label={label}
-        required={required}
-        description={note}
-        value={value}
-        onChange={onChange}
-        options={options}
-        placeholder={placeholder}
-        error={error}
-      />
-    );
-  }
   return (
-    <SelectField
+    <FormSelectField
       label={label}
-      {...(required ? { required: true } : {})}
-      {...(note ? { description: note } : {})}
+      required={required}
+      description={note}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={onChange}
       options={options}
       placeholder={placeholder}
       error={error}
@@ -625,7 +611,6 @@ export function CategoryPicker({
   onChange,
   required,
   error,
-  material = false,
 }: {
   readonly messages: Messages;
   readonly categories: Categories;
@@ -637,31 +622,15 @@ export function CategoryPicker({
   readonly onChange: (next: string) => void;
   readonly required?: boolean;
   readonly error?: string | undefined;
-  /** Draw it on Material UI (`FormSelectField`). See `LocationPicker`. */
-  readonly material?: boolean;
 }) {
   const { options, note } = categoryChoices(messages, categories, help);
-  if (material) {
-    return (
-      <FormSelectField
-        label={label}
-        required={required}
-        description={note}
-        value={value}
-        onChange={onChange}
-        options={options}
-        placeholder={placeholder}
-        error={error}
-      />
-    );
-  }
   return (
-    <SelectField
+    <FormSelectField
       label={label}
-      {...(required ? { required: true } : {})}
-      {...(note ? { description: note } : {})}
+      required={required}
+      description={note}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={onChange}
       options={options}
       placeholder={placeholder}
       error={error}
@@ -678,7 +647,7 @@ export function categoryChoices(
   messages: Messages,
   categories: Categories,
   help?: string | undefined
-): { readonly options: readonly SelectOption[]; readonly note: string | undefined } {
+): { readonly options: readonly FormSelectOption[]; readonly note: string | undefined } {
   const truncated = categories.truncated
     ? translate(messages, 'inventory.setup.categories.truncated')
     : undefined;

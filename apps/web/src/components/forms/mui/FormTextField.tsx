@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import InputAdornment from '@mui/material/InputAdornment';
 import TextField from '@mui/material/TextField';
 import {
@@ -22,6 +22,13 @@ export interface FormTextFieldProps extends MuiFieldBaseProps {
   readonly value: string;
   readonly onChange: (value: string) => void;
   readonly onBlur?: (() => void) | undefined;
+  /**
+   * A key pressed in the box — for a box whose Enter means "search now" rather
+   * than "submit the form" (`ItemFinder`). It reaches the box's root before
+   * anything else; `preventDefault` there keeps the key from the form. Unset,
+   * the keys behave as the browser's.
+   */
+  readonly onKeyDown?: ((event: KeyboardEvent<HTMLDivElement>) => void) | undefined;
   readonly placeholder?: string | undefined;
   readonly maxLength?: number | undefined;
   readonly autoComplete?: string | undefined;
@@ -57,6 +64,7 @@ export function FormTextField({
   value,
   onChange,
   onBlur,
+  onKeyDown,
   placeholder,
   maxLength,
   autoComplete,
@@ -92,6 +100,7 @@ export function FormTextField({
         onChange(event.target.value);
       }}
       onBlur={onBlur}
+      onKeyDown={onKeyDown}
       helperText={<FieldHelper description={description} error={error} wiring={wiring} />}
       data-testid={testId}
       slotProps={{

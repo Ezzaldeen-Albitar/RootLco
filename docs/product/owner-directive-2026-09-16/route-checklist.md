@@ -1722,22 +1722,22 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
 | `/crm/customers/new/[kind]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
 | `/crm/customers`                                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/adjustments`                              | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
+| `/inventory/adjustments`                              | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
 | `/inventory/categories`                               | form fields, `OperationalGrid`, `TreePicker`, states                                          | F1–F4; G1–G9; H1–H5; S1–S4                       | built on Material UI — see below the table                          | focused suites, en and ar — see below     |
-| `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/counts`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/goods-receipts`                           | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
+| `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/counts`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/goods-receipts`                           | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
 | `/inventory/items/[itemId]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/labels`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states                       | F1–F6; G1–G9; P1–P10; E1–E2, E4; S1–S4           | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/opening-stock`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory`                                          | `FilterToolbar`, form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states      | F1–F6; G1–G9; P1–P10; T1, T5; E1–E2, E4; S1–S4   | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/setup`                                    | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/transfers`                                | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/unit-conversions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/vehicle-specifications`                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
+| `/inventory/labels`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states                       | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table                                      | focused suites, en and ar — see below     |
+| `/inventory/opening-stock`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory`                                          | `FilterToolbar`, form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states      | F1–F6; G1–G9; P1–P10; T1, T5; E1–E4; S1–S4       | migrated — see below the table                                      | focused suites, en and ar — see below     |
+| `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/setup`                                    | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/transfers`                                | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/unit-conversions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/vehicle-specifications`                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
 | `/invoices`                                           | form fields, `EntityPicker`, `ConfirmDialog`, `ReasonDialog`, states                          | F1–F6; P1–P10; D1–D5; S1–S4                      | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/`                                                   | `FilterToolbar`, `MetricCard`, `ChartPanel`, states                                           | S1–S4; T1–T6, T8; M1–M6                          | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/payments`                                           | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, form fields, `ConfirmDialog`, states      | F1–F6; G1–G9, G12; P1–P10; D1–D4; S1–S4          | migrated — see below the table                                      | focused suites, en and ar — see below     |
@@ -3227,20 +3227,26 @@ still the operator's midnight six days ago, and a typed expiry is still the inst
 typed. E3 (the working branch's clock) is deliberately not applied; moving these onto the branch's
 clock is a behaviour change left for a decision.
 
+**Closed by `P1-32-PRE-OD-INV1B`:** both moments are now on the branch's clock (E3), the rule
+every business moment follows (Owner decision D-17); `useOperatorZone` is gone. See the INV1b
+section below.
+
 The shared pieces (`features/inventory/components/`):
 
 - `pickers.tsx` — `ItemPicker` and `ReferenceBox` take `material` (off unless stated), the
   `WorkOrderPicker` / `CustomerPicker` precedent: on, the picker is `EntityPicker` and its archived
   switch `FormCheckboxField`, and the box is `FormTextField`; off, both are exactly as before.
-  `IssuedPartPicker` has no caller on these routes and is unchanged.
+  `IssuedPartPicker` has no caller on these routes and is unchanged. (INV1b removed the flag and the
+  older drawing, and moved `IssuedPartPicker`.)
 - `shared.tsx` — `LocationPicker` and `CategoryPicker` take `material` the same way;
   `categoryChoices` hands a toolbar the category options and line. `BranchPairPicker`,
-  `OutcomeNote`, `Qty` and the badges are unchanged.
+  `OutcomeNote`, `Qty` and the badges are unchanged. (INV1b removed the flag and the older drawing,
+  and moved `BranchPairPicker`.)
 - `stock-operations.tsx` — adds `useOperatorZone`. `BranchTargetForm`, the one piece these routes
   draw, holds no legacy field and is unchanged; `ItemFinder` and `BranchListView` serve only screens
-  of later slices and are unchanged.
+  of later slices and are unchanged. (INV1b moved both.)
 - `ScanBox.tsx` — unchanged: no route of this slice draws it (the counter and the label printer
-  do), so it moves with them.
+  do), so it moves with them. (Still so after INV1b: it moves with INV6.)
 
 Every other inventory screen that imports these files (parts, setup, opening stock, transfers,
 goods receipts, adjustments, counts, counter sales, customer returns, labels, unit conversions,
@@ -3313,11 +3319,12 @@ Known limitations of this slice, one line each:
   column, the ledger shows each movement's source reference and a location the branch list does not
   hold by its reference, and the replayed-reservation notice prints the reservation reference.
 - The moments are on the operator's clock, not the branch's (above); a laptop on another zone sees
-  another window, exactly as before.
+  another window, exactly as before. **Closed by INV1b** — both are on the branch's clock.
 - A partly typed expiry or ledger moment holds `''`, so the unsaved-work guard does not see it; the
   native boxes behaved the same way.
 - `ScanBox`, `ItemFinder`, `BranchListView`, `BranchPairPicker` and `IssuedPartPicker` are not on
-  Material yet; each moves with the screens that draw it.
+  Material yet; each moves with the screens that draw it. **Resolved by INV1b** for all but
+  `ScanBox`, which only the counter and the label printer draw and which moves with INV6.
 - The availability, reservation and catalogue loaders do not pass `useServerTable`'s abort signal
   on to their Server Actions: a superseded read is dropped, not cancelled (as before).
 - The item page has no unsaved-work guard on its two forms (as before); it is addressed to no
@@ -3327,6 +3334,106 @@ Known limitations of this slice, one line each:
 - Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
   they run in hosted CI. The web tier gains cases in existing files (no web test file added or
   removed).
+
+### Shared inventory pieces on Material UI, and the moments on the branch's clock (`P1-32-PRE-OD-INV1B`)
+
+Finishes what the MUI7A1 slice left partly converted in the shared inventory files, so the later
+inventory slices (INV2–INV6) move their screens without editing a shared file; closes the two
+MUI7A1 review residuals; and moves the two moments MUI7A1 kept on the browser's clock onto the
+branch's. No backend file, read, write, permission code, route or branch scope changed
+(`route-branch-scope.ts` unchanged).
+
+The shared pieces (`apps/web/src/features/inventory/components/`), now on the shared wrappers only:
+
+- `pickers.tsx` — `ItemPicker` and `IssuedPartPicker` are `EntityPicker`, the archived switch
+  `FormCheckboxField`, `ReferenceBox` `FormTextField`. The `material` flag and the `SearchPicker` /
+  `components/forms/Field` drawings are gone; nothing in the file imports either.
+- `shared.tsx` — `LocationPicker`, `CategoryPicker` and `BranchPairPicker` are `FormSelectField`
+  (native, F6); the branch pair's retry is Material's button; `categoryChoices` returns
+  `FormSelectOption`, which `FormSelectField` now declares itself (structurally the older
+  `SelectOption`, so no caller changed). Nothing in the file imports `components/forms/Field`.
+- `stock-operations.tsx` — `ItemFinder` is `FormTextField`, Material's button and
+  `FormSelectField`; Enter in its box still searches and never sends the form. `BranchListView` draws
+  its four outcomes as the shared states in the list's own words: the wait as `MuiLoadingState` with
+  the list's sentence, an empty branch as `MuiEmptyState` with the list's sentence, a failure as
+  `MuiReadFailureState` with the list's sentence, its reference, and a retry only for an outage; a
+  `BranchList` failure now carries its status and reference, and every key is typed
+  `keyof Messages`. `BranchTargetForm` holds no field of its own; the branch it states is
+  `WorkingBranchField`, the working context's control, which serves 23 screens across the product
+  and is not an inventory piece, so it is not moved here. `PANEL`, `LINK` and `DANGER_BUTTON` are
+  layout class strings, not controls, and stay for the screens (billing refunds and credit notes
+  among them) that still draw their own sections.
+- `ScanBox.tsx` — unchanged: only the counter (`/inventory/counter-sales`) and the label printer
+  (`/inventory/labels`) draw it, so it moves with INV6.
+
+Who draws them, so the adoption rows above read "shared pieces only" for every inventory
+route not yet migrated: the item picker and the box on `/inventory/parts`; the issued-part picker
+on `/inventory/customer-returns`; the location picker on every stock route; the category picker on
+`/inventory/vehicle-specifications` (and on `/services`); the branch pair on `/inventory/parts`,
+`/inventory/setup` (and on `/pricing`, `/pricing/[priceListId]`); the item finder on adjustments,
+counter sales, goods receipts, labels, transfers, unit conversions and the material requirements
+panel; the branch list on adjustments, counter sales, customer returns, goods receipts, counts and
+transfers. Billing refunds and credit notes (`BranchTargetForm`, `PANEL`) and attention
+(`useBranches`) draw nothing that changed; their suites pass unchanged.
+
+The MUI7A1 review residuals:
+
+- The item page's two loading states say the panel's own sentence again ("Reading the codes…",
+  "Reading the prices…", en and ar) — `MuiLoadingState` takes an optional `labelKey`, so
+  `inventory.identifiers.loading` and `inventory.prices.loading` are no longer orphaned; unset,
+  "Loading" as before.
+- `usePanel`'s refused and unavailable keys and the panel's failed `messageKey` are typed
+  `keyof Messages`, so the cast on `descriptionKey` is gone.
+
+The two moments are on the branch's clock. The reservation expiry on `/inventory` and the ledger's
+window on `/inventory/movements` are business moments, so they are typed, shown and sent on the
+clock of the branch the screen is addressed to (`useStockTargetZone`, from the working context's
+`branches[].timezone`), the rule `DateTimeField` E3 states and Owner decision D-17 records
+(`apps/api/src/server/db/period.ts`); no recorded rule puts inventory moments on the browser's
+clock. The ledger opens at the branch's midnight six days ago. With no known zone for the branch,
+each moment field says it needs a branch with a known clock and draws no picker, and the ledger
+opens with no lower bound — never the browser's midnight.
+
+Wrapper extensions, each tested: `FormTextField` takes `onKeyDown` (`mui-form-fields.dom`);
+`MuiLoadingState` takes `labelKey` (`mui-states.dom`, en and ar); `FormSelectField` declares
+`FormSelectOption` / `FormSelectOptionGroup` (types only).
+
+Preserved, each held by the consumers' suites (all inventory suites, refunds, credit-note print,
+attention, pricing, price-list detail, services catalogue, invoices) and the neighbour suites
+(`form-reset-*`, `i18n`, `unsaved-navigation`, `route-branch-scope*`, `cancellable-reads*`):
+the same reads with the same arguments, the same page refusals and per-control codes, the same
+minimum search lengths and late-reply drops, the same unsaved-work rules, the typed-reference
+fallbacks, quantities and prices as the server's and the typed strings.
+
+Added cases: the branch list's five outcomes in en and ar (`inventory-transfers.dom`); Enter in
+the item finder searches and sends nothing (`inventory-transfers.dom`); the item page's loading
+sentences in en and ar (`inventory-item-codes.dom`); a branch fourteen hours ahead of UTC whose
+typed expiry and ledger moment are sent as that branch's instants, not the browser's, and a branch
+with no known zone that draws no picker (`inventory.dom`, `inventory-movements.dom`).
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- `inventory-parts.dom` and `inventory-customer-returns.dom`: a match is chosen as an `option` of
+  the combobox's listbox (found on the screen, under `PICKER_OPTION_WAIT_MS`) instead of a `button`
+  in the panel, and a chosen item is read as the combobox's value (`chosenIn`) instead of the
+  `…-picker-chosen` test id — the MUI7A1 precedent.
+
+Deliberate behaviour changes:
+
+- The reservation expiry and the ledger's window are on the branch's clock, not the browser's (two
+  existing assertions now name the branch's instant: `inventory.dom` expiry, `inventory-movements.dom`
+  first window and typed moment).
+- A branch list's failure shows the shared heading above the list's sentence and the reference; an
+  ended session links back to signing in instead of saying the sentence alone; an empty branch is
+  said under "Nothing here yet".
+
+Known limitations, one line each:
+
+- `WorkingBranchField` (inside `BranchTargetForm`) still draws its refusal's branch select with the
+  older field; it is a working-context component shared by 23 screens and moves on its own.
+- `ScanBox` is not on Material yet; it moves with INV6.
+- Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in hosted
+  CI. No web test file was added or removed.
 
 ### Item category tree and the category picker on Material UI (`P1-32-PRE-OD-INV2B`)
 

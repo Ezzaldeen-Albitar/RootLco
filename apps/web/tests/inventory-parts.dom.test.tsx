@@ -24,6 +24,17 @@ import {
   switchExpectingQuestion,
   switchWithoutQuestion,
 } from './support/branch-switch';
+import { PICKER_OPTION_WAIT_MS } from './support/picker-option';
+
+/**
+ * What an item picker holds. Since `P1-32-PRE-OD-INV1B` the inventory pickers
+ * are `EntityPicker`: one combobox whose value is the chosen record's name, and
+ * matches that are options of its listbox (in a portal, so found on the screen).
+ */
+function chosenIn(scope: HTMLElement, labelKey: string): string {
+  return (within(scope).getByRole('combobox', { name: EN[labelKey] as string }) as HTMLInputElement)
+    .value;
+}
 
 /*
  * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
@@ -1143,9 +1154,8 @@ describe('the item and the required part are found, not typed (route sweep B2)',
       })
     );
     const form = await issueForm();
-    expect(within(form).getByTestId('issue-item-picker-chosen')).toHaveTextContent(
-      'Front brake pads'
-    );
+    // The chosen item is the combobox's own value (`EntityPicker`, INV1b).
+    expect(chosenIn(form, 'inventory.issue.item')).toContain('Front brake pads');
     expect(within(form).queryByDisplayValue(ITEM_ID)).toBeNull();
     expect(
       await within(form).findByRole('option', { name: 'Front brake pads — 2.000 set' })
@@ -1209,7 +1219,14 @@ describe('the item and the required part are found, not typed (route sweep B2)',
       within(form).getByLabelText(EN['inventory.issue.item'] as string),
       'BRK{Enter}'
     );
-    await user.click(await within(form).findByRole('button', { name: 'BRK-001 — Brake pad' }));
+    // A match is an option of the combobox's listbox, drawn in a portal (INV1b).
+    await user.click(
+      await screen.findByRole(
+        'option',
+        { name: 'BRK-001 — Brake pad' },
+        { timeout: PICKER_OPTION_WAIT_MS }
+      )
+    );
     await user.click(
       within(form).getByRole('button', { name: EN['inventory.issue.submit'] as string })
     );
@@ -1428,10 +1445,17 @@ describe('the item and the required part are found, not typed (route sweep B2)',
     await user.type(box, 'K{Enter}');
     await waitFor(() => expect(held['BRK']?.length).toBeGreaterThan(0));
     for (const resolve of held['BRK'] ?? []) resolve(found('BRK-001', 'Brake pad'));
-    expect(await within(form).findByRole('button', { name: 'BRK-001 — Brake pad' })).toBeVisible();
+    expect(
+      await screen.findByRole(
+        'option',
+        { name: 'BRK-001 — Brake pad' },
+        { timeout: PICKER_OPTION_WAIT_MS }
+      )
+    ).toBeVisible();
     for (const resolve of held['BR'] ?? []) resolve(found('BRA-900', 'Bracket'));
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(within(form).queryByRole('button', { name: /BRA-900/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: /BRA-900/ })).toBeNull();
+    expect(screen.getByRole('option', { name: 'BRK-001 — Brake pad' })).toBeVisible();
   });
 
   it('with the catalogue read, the reserve form opens on the item the requirement names, in words', async () => {
@@ -1447,7 +1471,7 @@ describe('the item and the required part are found, not typed (route sweep B2)',
     const form = await screen.findByRole('form', {
       name: EN['inventory.parts.reserve.heading'] as string,
     });
-    expect(within(form).getByTestId('parts-reserve-item-picker-chosen')).toHaveTextContent(
+    expect(chosenIn(form, 'inventory.reserve.item')).toContain(
       EN['inventory.itemPicker.fromRequirement'] as string
     );
     expect(within(form).queryByDisplayValue(ITEM_ID)).toBeNull();

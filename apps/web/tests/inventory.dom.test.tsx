@@ -1653,12 +1653,16 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
    * count; every row action names what it acts on; an outage is "unavailable,
    * try again" and the retry reads again; a refused field is marked on itself;
    * the item is found through the combobox; the expiry is a moment on the
-   * operator's own clock, and an unfinished one is refused before anything is
-   * sent.
+   * BRANCH's clock (`P1-32-PRE-OD-INV1B`), and an unfinished one is refused
+   * before anything is sent.
    */
   const CATALOGUES = { en: EN, ar: AR } as const;
 
-  function renderIn(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+  function renderIn(
+    locale: 'en' | 'ar',
+    over: Record<string, unknown> = {},
+    snapshot?: ReturnType<typeof branchSnapshot>
+  ) {
     const messages = locale === 'en' ? en : ar;
     const ui = inBranch(
       <InventoryScreen
@@ -1669,7 +1673,10 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
         canOperate
         {...over}
       />,
-      locale === 'en' ? {} : { locale: 'ar' }
+      {
+        ...(locale === 'en' ? {} : { locale: 'ar' as const }),
+        ...(snapshot === undefined ? {} : { snapshot }),
+      }
     );
     return locale === 'en' ? renderLtr(ui) : renderRtl(ui);
   }
@@ -1805,9 +1812,13 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
     }
   );
 
-  async function openReserveForm(user: User, locale: 'en' | 'ar') {
+  async function openReserveForm(
+    user: User,
+    locale: 'en' | 'ar',
+    snapshot?: ReturnType<typeof branchSnapshot>
+  ) {
     const T = CATALOGUES[locale];
-    renderIn(locale);
+    renderIn(locale, {}, snapshot);
     await chooseBranch();
     await user.click(
       within(
@@ -1850,8 +1861,8 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
   );
 
   /** The reserve form, filled but for its expiry, and the group of the expiry's parts. */
-  async function readyToReserve(user: User) {
-    const form = await openReserveForm(user, 'en');
+  async function readyToReserve(user: User, snapshot?: ReturnType<typeof branchSnapshot>) {
+    const form = await openReserveForm(user, 'en', snapshot);
     await chooseItem(user, form, 'inventory.reserve.item');
     await user.selectOptions(
       within(form).getByLabelText(labelled('inventory.reserve.location')),
@@ -1880,7 +1891,7 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
     expect(createReservation).not.toHaveBeenCalled();
   });
 
-  it('sends a whole expiry as the instant of the wall time typed, on the operator\u2019s own clock', async () => {
+  it('sends a whole expiry as the instant of the wall time typed, on the branch\u2019s clock', async () => {
     const user = userEvent.setup();
     createReservation.mockResolvedValue({
       state: { status: 'success', messageKey: 'inventory.reserve.success', attempt: 1 },
@@ -1898,8 +1909,50 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
       itemId: ITEM_ID,
       locationId: LOCATION_ID,
       quantity: '1',
-      // The wall time typed, on this browser's clock — what the native box sent.
-      expiresAt: new Date(2026, 8, 1, 8, 0).toISOString(),
+      // The wall time typed, on the working branch's clock (Asia/Riyadh, UTC+3,
+      // no daylight saving) — not this browser's (P1-32-PRE-OD-INV1B).
+      expiresAt: new Date('2026-09-01T08:00:00+03:00').toISOString(),
     });
+  });
+
+  it('reads a typed expiry on the branch\u2019s clock even where the browser keeps another (INV1B)', async () => {
+    /*
+     * A branch fourteen hours ahead of UTC: no browser running this suite keeps
+     * that zone, so the instant on the branch's clock and the instant of the
+     * same wall time on the browser's clock are different instants, and only
+     * the first may be sent.
+     */
+    const AHEAD = { ...TEST_BRANCH, timezone: 'Pacific/Kiritimati' };
+    const user = userEvent.setup();
+    createReservation.mockResolvedValue({
+      state: { status: 'success', messageKey: 'inventory.reserve.success', attempt: 1 },
+      created: { id: 'new-res', quantity: '1.000', status: 'active', replayed: false },
+    });
+    const { expiry, submit } = await readyToReserve(user, branchSnapshot([AHEAD]));
+    await user.click(within(expiry).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('010920260800');
+    await waitFor(() =>
+      expect(expiry.parentElement?.querySelector('input')).toHaveValue('01/09/2026 08:00')
+    );
+    await user.click(submit);
+    await waitFor(() => expect(createReservation).toHaveBeenCalledTimes(1));
+    const sent = (createReservation.mock.calls[0]?.[0] as { expiresAt: string }).expiresAt;
+    expect(sent).toBe('2026-08-31T18:00:00.000Z');
+    // The browser's reading of the same wall time is another instant entirely.
+    expect(sent).not.toBe(new Date(2026, 8, 1, 8, 0).toISOString());
+  });
+
+  it('draws no expiry picker where the branch\u2019s clock is not known, and never takes the browser\u2019s (INV1B)', async () => {
+    const UNKNOWN = { ...TEST_BRANCH, timezone: '' };
+    const user = userEvent.setup();
+    const form = await openReserveForm(user, 'en', branchSnapshot([UNKNOWN]));
+    expect(within(form).getByTestId('reserve-expires-at')).toHaveAttribute(
+      'data-zone-refused',
+      'true'
+    );
+    expect(within(form).getByTestId('date-time-requires-branch')).toBeVisible();
+    expect(
+      within(form).queryByRole('group', { name: labelled('inventory.reserve.expiresAt') })
+    ).toBeNull();
   });
 });

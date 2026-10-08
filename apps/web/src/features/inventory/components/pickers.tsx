@@ -4,11 +4,9 @@ import { useCallback, useState } from 'react';
 import { regexes } from 'zod';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
-import { CheckboxField, TextField } from '@/components/forms/Field';
 import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { EntityPicker } from '@/components/pickers/EntityPicker';
-import { SearchPicker } from '@/components/search/SearchPicker';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -34,7 +32,7 @@ import {
  * took the part handed to a job, as a typed reference: a 36-character string no
  * shelf label, packing slip or job card prints. Each is now FOUND by what an
  * operator holds — a stock code or a name, a job number, a plate — through the
- * shared `SearchPicker`, so it behaves as every other picker in the product: the
+ * shared `EntityPicker`, so it behaves as every other picker in the product: the
  * search is the server's and never reaches the address, a superseded reply is
  * dropped, a working-context switch forgets the term and the choice, and the
  * caller's complaint lands on the control.
@@ -50,14 +48,16 @@ import {
  * anything is sent, and counted as unsaved work only inside a form that writes.
  * With the catalogue read there is no box.
  *
- * ## On Material UI when asked
+ * ## On Material UI (ADR-022)
  *
- * `material` draws the item picker on `EntityPicker` (one combobox and a
- * listbox, ADR-022) and the reference box on `FormTextField`, the way
- * `WorkOrderPicker` and `CustomerPicker` do: the same read, the same minimum,
- * the same archived switch, the same unsaved-work rule and the same sentences.
- * Off unless stated, so each inventory screen and its suite move one at a time;
- * `IssuedPartPicker` has no caller on Material yet and stays as it is.
+ * Every picker here is `EntityPicker` — one combobox and a listbox — and the
+ * reference box is `FormTextField`; the archived switch is `FormCheckboxField`.
+ * The same read, the same minimum, the same archived switch, the same
+ * unsaved-work rule and the same sentences as the `SearchPicker` they replace.
+ * `P1-32-PRE-OD-MUI7A1` put the item picker and the box on Material behind a
+ * `material` flag for the screens it moved; `P1-32-PRE-OD-INV1B` removed the
+ * flag and the older drawing, and moved `IssuedPartPicker` too, so the screens
+ * still to move draw these pickers already and no later slice edits this file.
  */
 
 /**
@@ -129,7 +129,6 @@ export function ItemPicker({
   pristineId = null,
   offerArchived = false,
   testId,
-  material = false,
 }: {
   readonly messages: Messages;
   readonly locale: Locale;
@@ -139,7 +138,7 @@ export function ItemPicker({
   /** `inv.item.read`. */
   readonly canSearch: boolean;
   readonly error?: string | undefined;
-  /** False for a list filter — see `SearchPicker`. */
+  /** False for a list filter — see `EntityPicker`. */
   readonly countsAsUnsaved?: boolean;
   /** The item a form opened with; holding it is not unsaved work. */
   readonly pristineId?: string | null;
@@ -149,8 +148,6 @@ export function ItemPicker({
    */
   readonly offerArchived?: boolean;
   readonly testId: string;
-  /** Draw it on Material UI (`EntityPicker`). See the file docblock. */
-  readonly material?: boolean;
 }) {
   const [archived, setArchived] = useState(false);
   const searchArchived = offerArchived && archived;
@@ -201,33 +198,19 @@ export function ItemPicker({
   // A search under the other status is a new search: the term, the pages and
   // any reply still in flight belong to the one it replaces.
   const searchKey = searchArchived ? 'archived' : 'active';
-  const picker = material ? (
-    <EntityPicker<ItemChoice> key={searchKey} {...shared} />
-  ) : (
-    <SearchPicker<ItemChoice> key={searchKey} {...shared} />
-  );
+  const picker = <EntityPicker<ItemChoice> key={searchKey} {...shared} />;
   if (!offerArchived || !canSearch) return picker;
   return (
     <div className="flex flex-col gap-2">
       {picker}
       {value === null ? (
-        material ? (
-          <FormCheckboxField
-            label={translate(messages, 'inventory.itemPicker.searchArchived')}
-            description={translate(messages, 'inventory.itemPicker.searchArchivedHelp')}
-            checked={archived}
-            onChange={setArchived}
-            testId={`${testId}-archived`}
-          />
-        ) : (
-          <CheckboxField
-            label={translate(messages, 'inventory.itemPicker.searchArchived')}
-            description={translate(messages, 'inventory.itemPicker.searchArchivedHelp')}
-            checked={archived}
-            onChange={(event) => setArchived(event.target.checked)}
-            data-testid={`${testId}-archived`}
-          />
-        )
+        <FormCheckboxField
+          label={translate(messages, 'inventory.itemPicker.searchArchived')}
+          description={translate(messages, 'inventory.itemPicker.searchArchivedHelp')}
+          checked={archived}
+          onChange={setArchived}
+          testId={`${testId}-archived`}
+        />
       ) : null}
     </div>
   );
@@ -251,7 +234,6 @@ export function ReferenceBox({
   countsAsUnsaved,
   pristine = '',
   testId,
-  material = false,
 }: {
   readonly label: string;
   readonly help: string;
@@ -263,38 +245,20 @@ export function ReferenceBox({
   /** The value the form opened with. */
   readonly pristine?: string;
   readonly testId: string;
-  /** Draw it on Material UI (`FormTextField`). See the file docblock. */
-  readonly material?: boolean;
 }) {
   useUnsavedGuard(countsAsUnsaved && value.trim() !== pristine.trim());
-  if (material) {
-    return (
-      <FormTextField
-        label={label}
-        description={help}
-        required={required}
-        autoComplete="off"
-        dir="ltr"
-        value={value}
-        onChange={onChange}
-        error={error}
-        testId={testId}
-        spellCheck={false}
-      />
-    );
-  }
   return (
-    <TextField
+    <FormTextField
       label={label}
       description={help}
       required={required}
-      spellCheck={false}
       autoComplete="off"
       dir="ltr"
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={onChange}
       error={error}
-      data-testid={testId}
+      testId={testId}
+      spellCheck={false}
     />
   );
 }
@@ -351,7 +315,7 @@ export function IssuedPartPicker({
       unit: part.unitCode,
     });
   return (
-    <SearchPicker<IssuedPart>
+    <EntityPicker<IssuedPart>
       messages={messages}
       locale={locale}
       label={translate(messages, 'inventory.returns.issue.label')}

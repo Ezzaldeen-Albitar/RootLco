@@ -192,6 +192,7 @@ function BranchReturns({
         </h2>
         <BranchListView
           messages={messages}
+          locale={locale}
           list={list}
           loadingKey="inventory.returns.list.loading"
           noneKey="inventory.returns.list.none"

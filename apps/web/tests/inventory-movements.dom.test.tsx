@@ -210,11 +210,24 @@ const workOrder = {
   vehicle: { vehicleId: 'v', registrationPlate: '12-34567', makeModel: 'Toyota Corolla' },
 };
 
-/** The instant the ledger's arrival window starts: local midnight, six days before today. */
-function recentStart(): number {
-  const now = new Date();
-  return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6).getTime();
+/**
+ * The instant the ledger's arrival window starts: the BRANCH's midnight, six
+ * days before the branch's today (`P1-32-PRE-OD-INV1B`). Worked out here from a
+ * fixed offset rather than with the screen's own helpers, so a mistake in
+ * those cannot agree with itself: `offsetHours` is the branch zone's offset,
+ * and the zones used below keep no daylight saving.
+ */
+function recentStart(offsetHours: number, now: Date = new Date()): number {
+  const shifted = new Date(now.getTime() + offsetHours * 3_600_000);
+  const branchMidnightAsUtc = Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate() - 6
+  );
+  return branchMidnightAsUtc - offsetHours * 3_600_000;
 }
+/** `TEST_BRANCH`'s zone, Asia/Riyadh, is UTC+3 all year. */
+const TEST_BRANCH_OFFSET = 3;
 
 function renderScreen(over: Record<string, unknown> = {}) {
   return renderLtr(
@@ -319,7 +332,7 @@ describe('the ledger reads the recent movements on arrival (route sweep B2)', ()
     });
     const criteria = listMovements.mock.calls[0]?.[1] as Record<string, string>;
     expect(Object.keys(criteria)).toEqual(['occurredFrom']);
-    expect(Date.parse(criteria['occurredFrom'] as string)).toBe(recentStart());
+    expect(Date.parse(criteria['occurredFrom'] as string)).toBe(recentStart(TEST_BRANCH_OFFSET));
     // The window is stated where it can be changed, not hidden.
     expect(momentShown(momentGroup(ledger(), 'inventory.movements.from'))).not.toBe('');
     expect(within(ledger()).getByText(EN['inventory.movements.audited'] as string)).toBeVisible();
@@ -406,7 +419,7 @@ describe('the ledger reads the recent movements on arrival (route sweep B2)', ()
       within(panel).getByLabelText(labelled('inventory.movements.location')),
       LOCATION_ID
     );
-    // Typed part by part, as the operator's own wall clock: 01/09/2026 08:00.
+    // Typed part by part, as the branch's wall clock: 01/09/2026 08:00.
     const from = momentGroup(panel, 'inventory.movements.from');
     await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
     await user.keyboard('010920260800');
@@ -422,8 +435,11 @@ describe('the ledger reads the recent movements on arrival (route sweep B2)', ()
       referenceKind: 'part_issue',
     });
     expect(criteria['occurredFrom']).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
-    // The instant sent is the one typed (zone-safe: both parsed the same way).
-    expect(Date.parse(criteria['occurredFrom'] as string)).toBe(Date.parse('2026-09-01T08:00'));
+    // The instant sent is the wall time typed on the branch's clock (Asia/Riyadh,
+    // UTC+3), not the browser's (P1-32-PRE-OD-INV1B).
+    expect(Date.parse(criteria['occurredFrom'] as string)).toBe(
+      Date.parse('2026-09-01T08:00:00+03:00')
+    );
     expect(criteria['occurredTo']).toBeUndefined();
   });
 
@@ -1008,6 +1024,78 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
       ).toBeVisible();
     }
   );
+
+  it('opens and reads the window on the branch\u2019s clock where the browser keeps another (INV1B)', async () => {
+    /*
+     * A branch fourteen hours ahead of UTC (Pacific/Kiritimati, no daylight
+     * saving): no browser running this suite keeps that zone, so the branch's
+     * midnight and the browser's are different instants, and only the branch's
+     * may open the window; a typed moment is the branch's wall time.
+     */
+    const AHEAD = { ...TEST_BRANCH, timezone: 'Pacific/Kiritimati' };
+    const user = userEvent.setup();
+    renderInLtr(
+      inBranch(
+        <MovementsScreen
+          locale="en"
+          messages={en}
+          initialWorkOrderId={null}
+          canReadBranches={true}
+        />,
+        { snapshot: branchSnapshot([AHEAD]) }
+      )
+    );
+    await chooseBranch();
+    await firstRead();
+    const opened = Date.parse(
+      (listMovements.mock.calls[0]?.[1] as Record<string, string>)['occurredFrom'] as string
+    );
+    expect(opened).toBe(recentStart(14));
+    const now = new Date();
+    const browserMidnight = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() - 6
+    ).getTime();
+    expect(opened).not.toBe(browserMidnight);
+
+    const to = momentGroup(ledger(), 'inventory.movements.to');
+    await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('010920260800');
+    await waitFor(() => expect(momentShown(to)).toBe('01/09/2026 08:00'));
+    await user.click(showButton());
+    await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(2));
+    const sent = (listMovements.mock.calls[1]?.[1] as Record<string, string>)['occurredTo'];
+    expect(sent).toBe('2026-08-31T18:00:00.000Z');
+    expect(sent).not.toBe(new Date(2026, 8, 1, 8, 0).toISOString());
+  });
+
+  it('opens with no window and draws no picker where the branch\u2019s clock is not known (INV1B)', async () => {
+    const UNKNOWN = { ...TEST_BRANCH, timezone: '' };
+    renderInLtr(
+      inBranch(
+        <MovementsScreen
+          locale="en"
+          messages={en}
+          initialWorkOrderId={null}
+          canReadBranches={true}
+        />,
+        { snapshot: branchSnapshot([UNKNOWN]) }
+      )
+    );
+    await chooseBranch();
+    await firstRead();
+    // Never the browser's midnight in place of the branch's: no lower bound at all.
+    expect(listMovements.mock.calls[0]?.[1]).toEqual({});
+    expect(screen.getByTestId('movements-occurred-from')).toHaveAttribute(
+      'data-zone-refused',
+      'true'
+    );
+    expect(screen.getByTestId('movements-occurred-to')).toHaveAttribute(
+      'data-zone-refused',
+      'true'
+    );
+  });
 
   it('refuses a moment only partly typed, on its field, and reads nothing', async () => {
     const user = userEvent.setup();
