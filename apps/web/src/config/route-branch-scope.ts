@@ -306,6 +306,7 @@ export const ROUTE_BRANCH_SCOPES: readonly RouteScopeDeclaration[] = Object.free
   },
   { pattern: '/crm/customers/new/[kind]', scope: 'none', why: TENANT_WIDE },
   { pattern: '/delivery/[deliveryId]', scope: 'none', why: ONE_RECORD },
+  { pattern: '/inventory/categories', scope: 'none', why: TENANT_WIDE },
   { pattern: '/inventory/items/[itemId]', scope: 'none', why: ONE_RECORD },
   { pattern: '/inventory/labels', scope: 'none', why: TENANT_WIDE },
   { pattern: '/inventory/unit-conversions', scope: 'none', why: TENANT_WIDE },

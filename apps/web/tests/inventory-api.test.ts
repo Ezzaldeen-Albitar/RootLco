@@ -45,6 +45,7 @@ const {
   listAvailability,
   listBranches,
   listItemCategories,
+  listItemCategoryPage,
   listItems,
   listLocations,
   listMovements,
@@ -555,6 +556,19 @@ describe('W10 — the setup reads are tenant-wide and assert no scope', () => {
     const units = await listUnitsOfMeasure();
     expect(units.status).toBe('ok');
     expect(String(get.mock.calls[1]?.[0])).toBe('/api/v1/units-of-measure');
+  });
+
+  it('reads one category page at a time for the tree, sending the cursor it was given', async () => {
+    get.mockResolvedValueOnce(ok({ items: [], nextCursor: 'c-2', hasMore: true }));
+    get.mockResolvedValueOnce(ok({ items: [], nextCursor: null, hasMore: false }));
+    const first = await listItemCategoryPage(null);
+    const second = await listItemCategoryPage('c-2');
+    expect(first.status).toBe('ok');
+    expect(second.status).toBe('ok');
+    expect(String(get.mock.calls[0]?.[0])).toBe('/api/v1/item-categories?limit=100');
+    expect(String(get.mock.calls[1]?.[0])).toBe('/api/v1/item-categories?cursor=c-2&limit=100');
+    get.mockResolvedValueOnce(failure('forbidden'));
+    expect((await listItemCategoryPage(null)).status).toBe('denied');
   });
 
   it('reports a refused read as denied, not as an empty catalogue', async () => {

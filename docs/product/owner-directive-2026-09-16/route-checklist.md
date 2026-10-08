@@ -479,6 +479,7 @@ table and `ROUTE_BRANCH_SCOPES` disagree on a route, a scope or a reason.
 | `/crm/customers/[customerId]/work-order/new`          | none     | Hands the customer on to check-in, which is where the branch is asked for.                    |
 | `/crm/customers/new/[kind]`                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
 | `/delivery/[deliveryId]`                              | none     | One record reached by its address; its branch is the record's own.                            |
+| `/inventory/categories`                               | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
 | `/inventory/items/[itemId]`                           | none     | One record reached by its address; its branch is the record's own.                            |
 | `/inventory/labels`                                   | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
 | `/inventory/unit-conversions`                         | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
@@ -1722,6 +1723,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/crm/customers/new/[kind]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
 | `/crm/customers`                                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/inventory/adjustments`                              | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
+| `/inventory/categories`                               | form fields, `OperationalGrid`, `TreePicker`, states                                          | F1–F4; G1–G9; H1–H5; S1–S4                       | built on Material UI — see below the table                          | focused suites, en and ar — see below     |
 | `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/inventory/counts`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
@@ -3325,6 +3327,98 @@ Known limitations of this slice, one line each:
 - Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
   they run in hosted CI. The web tier gains cases in existing files (no web test file added or
   removed).
+
+### Item category tree and the category picker on Material UI (`P1-32-PRE-OD-INV2B`)
+
+Completion plan section 8, "Required category tree delivery": a read-only tree of the item
+categories at a new route, and a reusable category picker over the same data. Built on Material UI
+from the start. No backend file changed; no category write was added.
+
+Route and gates:
+
+- `/inventory/categories` (`app/[locale]/(dashboard)/inventory/categories/page.tsx`) refuses
+  without `inv.item.read` before any read — the code both of its reads declare
+  (`inv.item-category-list`, and `inv.item-search` for a category's items). Branch scope `none`
+  (`route-branch-scope.ts`): categories are the organisation's, and no read is addressed to a
+  branch. The navigation entry `inventory.categories` ("Item categories") sits in the inventory
+  group, gated on the same code, with `tenant` scope.
+- `inv.item.manage` decides only whether the read-only notice offers a link to the existing create
+  form on `/inventory/setup`. Nothing on the page writes.
+
+What the screen does (`features/inventory/components/CategoriesScreen.tsx`, `CategoryTree.tsx`,
+`features/inventory/category-tree.ts`):
+
+- Reads EVERY page of `inv.item-category-list` with its cursor (`listItemCategoryPage`, a hundred a
+  page), active and inactive, through `readAllCategories`. The walk stops — and says the list may be
+  incomplete — only on a repeated cursor or after 500 pages; a failed page fails the whole read
+  rather than drawing half a tree. The older one-page `listItemCategories` and the `shared.tsx`
+  `CategoryPicker` that reads it are unchanged.
+- Builds the hierarchy from `parentCategoryId` with `TreePicker`'s own `treeShape` (H1), so the
+  browsing tree and the picker place every row the same way. A row whose parent is not in the list
+  (or that a cycle would hide — the database refuses both) is drawn at the top level with a note.
+- Draws it with the MUI X Community tree view (`SimpleTreeView`, the component `TreePicker` wraps):
+  each row is the name with its code beside it, an inactive category labelled "Inactive"; open and
+  close per row and "Expand all" / "Collapse all"; the tree view's keyboard model (Up and Down,
+  Right opens and Left closes — mirrored in Arabic — Home and End, `*`, first-letter jump, Space
+  chooses), and Enter chooses the row as well as opening a row with children.
+- Search by name or code (a substring, folded to the page's language) keeps every match under its
+  ancestors, opened, and keeps what lies under a match; clearing it gives back the tree as it was,
+  with the chosen row's ancestors open.
+- The chosen category shows its path as a breadcrumb (`CategoryPath`, every ancestor a button that
+  chooses it), its code, status, number of sub-categories and description, so two categories of
+  the same name in different branches read apart. Its items are an `OperationalGrid` over
+  `listItems({ categoryId })` (G1–G9: server pages, `rowCount` -1, "Page N", no total), the stock
+  code a link to `/inventory/items/[itemId]`; the grid says that only items filed directly under
+  the category are listed, which is what the read answers.
+- A read-only notice states that names and positions cannot be changed here and that renaming,
+  moving and retiring wait on a decision (CAT01, README Q23), and that every item belongs to
+  exactly one category (`inv.item_master.item_category_id` is NOT NULL), instead of drawing a
+  bucket of items without a category.
+- States: loading, an empty catalogue, the shared refused / unavailable / error / ended-session
+  states with a retry that walks every page again, a search that matches nothing, a category with
+  no items.
+
+The picker (`features/inventory/components/CategoryTreePicker.tsx`, `CategoryTreePicker`): one
+category chosen from the whole tree, built on `TreePicker` (H1–H5) over `useAllItemCategories`,
+which the caller owns so a screen reads once. Each row reads `name (code)`, an inactive one says
+so; the chosen category's whole path is said under the tree; a "No category" row (on by default,
+`clearLabel={null}` removes it) clears the choice. While the read is in flight the picker says it
+is loading, and a refused or failed read is a sentence (a retry where retrying can help). It is
+named `CategoryTreePicker` because `shared.tsx` already exports a different `CategoryPicker` (the
+one-page select), which this slice does not touch. No screen adopts it in this slice; the setup
+item form, the vehicle specifications and the material-requirements panel are to move onto it
+later.
+
+Tests (`apps/web/tests/inventory-categories.dom.test.tsx`, new, en and ar for every case): an empty
+catalogue; 260 categories over three cursor pages, all drawn on "Expand all"; a repeated cursor
+stopping with the incomplete-list note; seven levels with every ancestor of a deep match opened and
+the seven-step path; two "Pads" in different branches told apart by their path and code; an
+inactive category labelled; a missing parent drawn at the top with its note; a search with no
+match and the tree given back when cleared; keyboard Home, End, open, close, Down, Up and Enter
+(choosing a leaf, and choosing and opening a parent), with the arrows mirrored in Arabic; the item
+list read with the chosen `categoryId` and linking to the item page; a category with no items; the
+setup link only for `inv.item.manage` and no writing control; the refusal without `inv.item.read`
+reading nothing; an unavailable read retried; right to left in Arabic; the picker choosing from
+all pages, saying the path and clearing, and its refused state. `inventory-api.test.ts` gains the
+page adapter's address and cursor; `navigation.test.ts` gains the entry's key. No existing
+assertion changed, so no selector was changed.
+
+Known limitations of this slice, one line each:
+
+- No figure per category: no read counts a category's items, and none is invented.
+- Names, positions and status cannot be changed (no operation exists); CAT01 is the Owner's
+  decision, and creating a category stays on `/inventory/setup`.
+- A category's items are those filed directly under it, as `inv.item-search` answers; items of its
+  sub-categories are listed when each sub-category is chosen.
+- The search is in the browser over the whole read list (the list read takes no search term); it
+  matches a substring of the name or code, without folding Arabic-Indic digits.
+- The whole tree is read on arrival (one request per hundred categories, under the read's
+  `expensive-read` limit of 30 a minute); a very large catalogue is slower to open, and a refused
+  page shows the shared unavailable state with a retry.
+- The tree view has no virtualisation (a commercial feature); collapsed rows are not mounted.
+- No browser spec covers this route; the Playwright tiers run only in hosted CI.
+- Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
+  they run in hosted CI. The web tier gains one test file (`deliverable-manifest.md` counts it).
 
 ### Finance controls that need no business decision (P1-32-PRE-OD-FIN)
 

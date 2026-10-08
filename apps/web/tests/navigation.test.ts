@@ -112,6 +112,8 @@ describe('the navigation model', () => {
       // parent carries no current-page marker), and the four screens, each gated
       // on `inv.stock.read`.
       'inventory.adjustments',
+      // P1-32-PRE-OD-INV2B: the category tree, read only, gated on `inv.item.read`.
+      'inventory.categories',
       /*
        * P1-32 barcodes and the counter: selling over the counter, taking a part
        * back, and printing labels. Each names the code its own PAGE gates on,

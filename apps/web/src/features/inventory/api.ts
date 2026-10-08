@@ -438,6 +438,20 @@ export async function listItemCategories(): Promise<ReadState<CursorPage<ItemCat
 }
 
 /**
+ * One page of the tenant's item categories (`inv.item-category-list`,
+ * `inv.item.read`), active and inactive, in code order (P1-32-PRE-OD-INV2B).
+ * The category tree walks every page with the cursor this returns, so a
+ * catalogue longer than one page is read whole rather than cut at a hundred.
+ */
+export async function listItemCategoryPage(
+  cursor: string | null
+): Promise<ReadState<CursorPage<ItemCategory>>> {
+  return readOperation<CursorPage<ItemCategory>>(
+    `/api/v1/item-categories${query({ cursor, limit: 100 })}`
+  );
+}
+
+/**
  * The units a tenant may count in (`inv.uom-list`, `inv.item.read`): the
  * platform set plus the tenant's own. No tenant unit WRITER exists (register
  * area B, B-22), so the screen offers this list and says where it comes from.
