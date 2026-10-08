@@ -12893,7 +12893,7 @@
       "domain": "reporting",
       "method": "POST",
       "route": "/api/v1/reports/{reportCode}/snapshots",
-      "permissions": ["rpt.export", "rpt.report.read"],
+      "permissions": ["rpt.report.configure", "rpt.report.read"],
       "public": false,
       "scope": "branch",
       "transaction": "transactional write",
@@ -12929,9 +12929,9 @@
       "tests": [
         "tests/backend/od-report-snapshots.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
-        "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/ci/p1-31-error-path-matrix.test.ts",
-        "tests/ci/p1-31-grant-map.test.ts"
+        "tests/ci/p1-31-grant-map.test.ts",
+        "tests/unit/od-report-snapshot-read-bound.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/reports/[reportCode]/snapshots/route.ts"

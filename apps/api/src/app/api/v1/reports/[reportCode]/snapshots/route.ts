@@ -18,10 +18,13 @@
  *
  * ## Permissions
  *
- * Saving declares `rpt.export` and `rpt.report.read` at the branch, and the
- * service requires every code the dataset needs as well — a snapshot is a durable
- * copy of the figures, and no dedicated snapshot code exists yet (an open Owner
- * question). Listing declares `rpt.report.read`; the service requires the
+ * Saving — an original or a restatement — declares `rpt.report.configure` and
+ * `rpt.report.read` at the branch, and the service requires every code the dataset
+ * needs as well (P1-32-PRE-OD-FD16C). A snapshot is an internal, frozen,
+ * append-only record that only holders of the dataset's codes can read, not an
+ * export out of the platform, so it is not gated on `rpt.export`, which the CSV
+ * export keeps. Interim: a dedicated snapshot code remains an open Owner question.
+ * Listing declares `rpt.report.read`; the service requires the
  * dataset's codes and row-level security admits a snapshot only to a caller
  * holding every code it froze.
  */
@@ -90,7 +93,7 @@ export const REPORT_SNAPSHOT_CREATE_OPERATION = defineOperation({
   method: 'POST',
   path: '/reports/{reportCode}/snapshots',
   summary: 'Save a frozen snapshot of a report run, or restate the latest one with a reason.',
-  permissions: ['rpt.export', 'rpt.report.read'],
+  permissions: ['rpt.report.configure', 'rpt.report.read'],
   scope: 'branch',
   auditClass: 'financial',
   auditAction: 'rpt.report.snapshot_created',

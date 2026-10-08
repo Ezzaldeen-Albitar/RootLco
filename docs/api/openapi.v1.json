@@ -22315,7 +22315,7 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["rpt.export", "rpt.report.read"],
+        "x-required-permissions": ["rpt.report.configure", "rpt.report.read"],
         "x-scope": "branch",
         "x-audit-class": "financial",
         "x-rate-limit-policy": "expensive-read",

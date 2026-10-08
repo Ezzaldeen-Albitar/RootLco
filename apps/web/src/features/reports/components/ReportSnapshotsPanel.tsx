@@ -70,7 +70,7 @@ export function ReportSnapshotsPanel({
   readonly asOf: string | null;
   /** `asOf` as the operator reads it: on the branch's clock, with the zone named. */
   readonly asOfMoment: string | null;
-  /** Whether the save and restate actions are offered (`rpt.export`). */
+  /** Whether the save and restate actions are offered (`rpt.report.configure`). */
   readonly canSave: boolean;
   /** The report's own row table, so a frozen row reads exactly as a live one. */
   readonly renderRows: (columns: readonly ReportColumn[], rows: readonly ReportRow[]) => ReactNode;

@@ -44,12 +44,30 @@
  *
  * ## Who may do what
  *
- * Saving needs `rpt.export`, `rpt.report.read` and every code the dataset
- * requires, in the reported branch: a snapshot is a durable copy of the figures,
- * and no dedicated snapshot code exists (an open Owner question). Reading needs
- * `rpt.report.read` and every code the snapshot froze; row-level security holds
- * both. A column the run names only for some callers — the party name — is stored
- * as the saver saw it and shown to a reader only under the same permission.
+ * Saving — an original or a restatement — needs `rpt.report.configure`,
+ * `rpt.report.read` and every code the dataset requires, in the reported branch
+ * (P1-32-PRE-OD-FD16C). A snapshot is an internal, frozen, append-only record that
+ * only holders of the dataset's codes can read; it is not an export out of the
+ * platform, so it is not gated on `rpt.export`, the platform-wide export switch
+ * that the Owner withholds from every tenant administrator (P1-31 CC-04) and that
+ * the CSV export keeps. This is an interim choice that grants nothing new to
+ * anyone; a dedicated snapshot permission code remains an open Owner question.
+ * Reading needs `rpt.report.read` and every code the snapshot froze; row-level
+ * security holds both. A column the run names only for some callers — the party
+ * name — is stored as the saver saw it and shown to a reader only under the same
+ * permission.
+ *
+ * ## At most DB_POOL_MAX - 2 saves read their pages at once
+ *
+ * The pages are read on a SECOND pooled connection while the request's own
+ * transaction holds the first, so every save in flight holds two. Without a bound,
+ * DB_POOL_MAX / 2 concurrent saves would hold the whole pool waiting for each
+ * other's second connection. `readWholeReport` is the only place this service
+ * acquires a connection of its own, and it admits at most
+ * `snapshotReadCapacity(DB_POOL_MAX)` reads at once in this process — two under the
+ * pool size, never below one — and refuses the next save at once with the
+ * platform's throttling refusal (ERR-RTE-001, 429, Retry-After), as an expensive
+ * read over its rate limit is refused, rather than letting it wait on the pool.
  */
 import { Buffer } from 'node:buffer';
 import { ApplicationService } from '@/server/layering';
@@ -58,6 +76,7 @@ import { appendAudit } from '@/server/audit/audit';
 import { withBusinessRefusal } from '@/server/audit/business-refusals';
 import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
 import { backendConfig } from '@/server/config/backend-config';
+import { metrics, METRICS } from '@/server/observability/metrics';
 import { withSavepoint, withTransaction, type DbHandle } from '@/server/db/transaction';
 import {
   buildPageWithCursors,
@@ -91,6 +110,26 @@ import {
 
 /** The longest restatement reason accepted, as the database's CHECK states. */
 export const MAX_RESTATEMENT_REASON = 500;
+
+/**
+ * How many pooled connections a snapshot read leaves to everything else: the
+ * request transaction of the save itself and one more request.
+ */
+export const SNAPSHOT_READ_POOL_HEADROOM = 2;
+
+/** The Retry-After of a save refused because the snapshot reads are at their bound. */
+export const SNAPSHOT_READ_BUSY_RETRY_SECONDS = 5;
+
+/**
+ * The most snapshot reads one process runs at once for a pool of `poolMax`
+ * connections: `poolMax - 2`, never below one.
+ */
+export function snapshotReadCapacity(poolMax: number): number {
+  return Math.max(1, poolMax - SNAPSHOT_READ_POOL_HEADROOM);
+}
+
+/** Snapshot reads holding their second connection right now, in this process. */
+let snapshotReadsInFlight = 0;
 
 /** The audited entity of a snapshot, as `iam.audit_records.entity_type` spells it. */
 const SNAPSHOT_ENTITY = 'rpt.report_snapshot';
@@ -255,8 +294,13 @@ export class ReportSnapshotService extends ApplicationService {
     assertPeriod(input.from, input.to);
     const target = { companyId: input.companyId, branchId: input.branchId };
     // Every code, in the reported branch, before anything is read: the right to
-    // keep a durable copy of the figures and the right to see them.
-    for (const code of ['rpt.export', 'rpt.report.read', ...definition.requiredPermissions]) {
+    // keep an internal frozen copy of the figures (rpt.report.configure, not the
+    // export switch: P1-32-PRE-OD-FD16C) and the right to see them.
+    for (const code of [
+      'rpt.report.configure',
+      'rpt.report.read',
+      ...definition.requiredPermissions,
+    ]) {
       if (!(await callerHoldsPermission(db, code, target))) denied(code);
     }
     const branch = await iamOrganizationContext().branches.findBranch(db, target);
@@ -287,6 +331,14 @@ export class ReportSnapshotService extends ApplicationService {
       branchId: input.branchId,
       from: input.from,
       to: input.to,
+    };
+    const originalKey = {
+      companyId: input.companyId,
+      branchId: input.branchId,
+      reportCode: definition.code,
+      periodFrom: input.from,
+      periodToExclusive: input.to,
+      parameters,
     };
 
     let restated: ReportSnapshotRow | null = null;
@@ -335,14 +387,7 @@ export class ReportSnapshotService extends ApplicationService {
         );
       }
     } else {
-      const existing = await this.repository.findOriginal(db, {
-        companyId: input.companyId,
-        branchId: input.branchId,
-        reportCode: definition.code,
-        periodFrom: input.from,
-        periodToExclusive: input.to,
-        parameters,
-      });
+      const existing = await this.repository.findOriginal(db, originalKey);
       if (existing !== null) await refuseUnlessRetried(alreadySaved(SNAPSHOT_ENTITY, existing.id));
     }
 
@@ -383,7 +428,16 @@ export class ReportSnapshotService extends ApplicationService {
       if (isSqlState(error, SQLSTATE.uniqueViolation)) {
         const constraint = violatedConstraint(error);
         if (constraint === 'uq_report_snapshots_original') {
-          return refuseUnlessRetried(alreadySaved(branchEntity.entityType, branchEntity.entityId));
+          // Recorded against the original that won, exactly as the check before the
+          // read records it (ADR-023 D12). It committed before this insert failed, so
+          // the request's transaction, back at its savepoint, reads it; the branch is
+          // named only when the winner cannot be read.
+          const winner = await this.winningOriginal(db, originalKey);
+          return refuseUnlessRetried(
+            winner === null
+              ? alreadySaved(branchEntity.entityType, branchEntity.entityId)
+              : alreadySaved(SNAPSHOT_ENTITY, winner.id)
+          );
         }
         if (constraint === 'uq_report_snapshots_restates' && restated !== null) {
           return refuseUnlessRetried(notLatest(restated.id));
@@ -551,6 +605,22 @@ export class ReportSnapshotService extends ApplicationService {
     };
   }
 
+  /**
+   * The original that won a race at `uq_report_snapshots_original`, or null when it
+   * cannot be read. In a savepoint of its own, so a failed read leaves the request's
+   * transaction usable for the retry check and the refusal.
+   */
+  private async winningOriginal(
+    db: DbHandle,
+    key: Parameters<ReportSnapshotRepository['findOriginal']>[1]
+  ): Promise<ReportSnapshotRow | null> {
+    try {
+      return await withSavepoint(db, (nested) => this.repository.findOriginal(nested, key));
+    } catch {
+      return null;
+    }
+  }
+
   /** The route's read code is the operation's; the dataset's codes are checked here. */
   private async authorizeRead(
     db: DbHandle,
@@ -571,21 +641,41 @@ export class ReportSnapshotService extends ApplicationService {
    * Every page of the run, as of ONE moment, in ONE database snapshot: a READ ONLY
    * transaction at REPEATABLE READ of its own, on the caller's context (see the
    * file header for why the request's transaction cannot be that one).
+   *
+   * The ONLY place this service acquires a pooled connection of its own, so it is
+   * where the bound on concurrent snapshot reads is held: a save beyond
+   * `snapshotReadCapacity(DB_POOL_MAX)` is refused at once, before the second
+   * connection is asked for (see the file header).
    */
   private async readWholeReport(
     db: DbHandle,
     input: ReportSnapshotCreateInput,
     refusalEntity: { readonly entityType: string; readonly entityId: string }
   ): Promise<{ first: ReportRunView; asOf: string; rows: ReportRowView[] }> {
-    return withTransaction(
-      db.context,
-      (snapshotDb) => this.readPages(snapshotDb, input, refusalEntity),
-      {
-        access: 'read only',
-        isolation: 'repeatable read',
-        ...(db.connection === undefined ? {} : { connection: db.connection }),
-      }
-    );
+    if (snapshotReadsInFlight >= snapshotReadCapacity(backendConfig().DB_POOL_MAX)) {
+      metrics().increment(METRICS.throttleCount, {
+        policy: 'report-snapshot-read-bound',
+        operation: db.context.operation,
+      });
+      throw new AppFailure('ERR-RTE-001', {
+        message: 'Too many report snapshots are being saved at once. Try again shortly.',
+        safeDetails: { retryAfterSeconds: SNAPSHOT_READ_BUSY_RETRY_SECONDS },
+      });
+    }
+    snapshotReadsInFlight += 1;
+    try {
+      return await withTransaction(
+        db.context,
+        (snapshotDb) => this.readPages(snapshotDb, input, refusalEntity),
+        {
+          access: 'read only',
+          isolation: 'repeatable read',
+          ...(db.connection === undefined ? {} : { connection: db.connection }),
+        }
+      );
+    } finally {
+      snapshotReadsInFlight -= 1;
+    }
   }
 
   /**
