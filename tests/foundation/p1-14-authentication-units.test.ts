@@ -56,6 +56,8 @@ import { CREDIT_NOTE_REJECT_OPERATION } from '@/app/api/v1/credit-notes/[creditN
 import { RECEIPT_REVERSAL_APPROVE_OPERATION } from '@/app/api/v1/receipt-reversals/[reversalId]/approval/route';
 import { RECEIPT_REVERSAL_REJECT_OPERATION } from '@/app/api/v1/receipt-reversals/[reversalId]/rejection/route';
 import { THIRD_PARTY_PERMISSION } from '@/modules/payments';
+import { REFUND_APPROVE_OPERATION } from '@/app/api/v1/refund-requests/[requestId]/approval/route';
+import { REFUND_REJECT_OPERATION } from '@/app/api/v1/refund-requests/[requestId]/rejection/route';
 
 const SECRET = 'unit-test-signing-secret-not-a-real-key';
 const ISSUER = 'https://auth.local.test/auth/v1';
@@ -891,6 +893,8 @@ describe('the branch-scoped action codes published with the working context', ()
   const B2 = '92000000-0000-4000-8000-000000000002';
   const CREDIT = 'sal.credit.approve';
   const REVERSAL = 'sal.reversal.approve';
+  // ADR-023 D2, part 2 (P1-32-PRE-OD-FD2B): deciding a refund request.
+  const REFUND = 'sal.refund.approve';
 
   type Place =
     | { readonly type: 'unrestricted' }
@@ -988,8 +992,12 @@ describe('the branch-scoped action codes published with the working context', ()
       expect(operation.scope).toBe('branch');
       expect(operation.permissions).toContain(REVERSAL);
     }
+    for (const operation of [REFUND_APPROVE_OPERATION, REFUND_REJECT_OPERATION]) {
+      expect(operation.scope).toBe('branch');
+      expect(operation.permissions).toContain(REFUND);
+    }
     expect([...BRANCH_GATED_PERMISSION_CODES].sort()).toEqual(
-      [CREDIT, REVERSAL, THIRD_PARTY_PERMISSION].sort()
+      [CREDIT, REVERSAL, THIRD_PARTY_PERMISSION, REFUND].sort()
     );
   });
 
@@ -998,7 +1006,7 @@ describe('the branch-scoped action codes published with the working context', ()
       who: 'a holder of the codes in one branch only',
       grants: [
         {
-          codes: [CREDIT, REVERSAL, THIRD_PARTY_PERMISSION],
+          codes: [CREDIT, REVERSAL, THIRD_PARTY_PERMISSION, REFUND],
           places: [{ type: 'branch', companyId: C1, branchId: B2 }],
         },
       ],

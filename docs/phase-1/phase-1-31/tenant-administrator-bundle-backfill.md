@@ -433,3 +433,42 @@ counts the code among the twelve an 85-code organisation is offered.
 The seed run and the backfill are operator acts taken after this change merges, never against a
 database without a backup and a rehearsal. This addendum does not claim either was performed
 anywhere.
+
+---
+
+## 14. Addendum — `sal.refund.approve`, seed first, then run selectively (Owner decision D2 of 2026-09-30, part 2)
+
+The Owner decided (ADR-023, D2) that money a customer is owed back is never refunded automatically,
+and that approving a refund and paying it out are separate steps with a second approver.
+`sal.refund.approve` ("Approve and reject refund requests (dual control)") is MINTED for the
+decision in `supabase/seeds/04_iam_permission_catalog.sql` (P1-32-PRE-OD-FD2B). `sal.refund-approve`
+and `sal.refund-reject` declare it; requesting, withdrawing and recording the payout declare
+`sal.payment.record`, which the bundle already carried. `TENANT_ADMINISTRATOR_ROLE` carries it, so
+the bundle is now 98 codes and new organisations receive it at provisioning. No other role gains
+anything.
+
+The shape of the run for existing organisations, the precedent of D4, D13 and D14 (whether to extend
+it to every existing organisation is README question 22, change control CC-OD-58):
+
+- **Seed first.** The code is a new catalogue row, so on an existing database the permission seed
+  (`04_iam_permission_catalog.sql`, idempotent) is re-run BEFORE the backfill.
+- **Selective.** Only the previously authorised QA organisations are named:
+  `--tenant odqa_alpha --tenant odqa_beta`. `--all` is not used, and every other existing
+  organisation is left unchanged: nobody there can approve or reject a refund request until an
+  administrator who holds the code grants it, while a payment recorder can still ask for one.
+- **Customised roles are preserved.** An administrator role showing any sign of customisation is
+  skipped whole and reported with `sal.refund.approve` under `withheld`.
+- **Dry run first.** The dry run lists only the organisations named, and for one already current with
+  the third-party payer widening it offers exactly `sal.refund.approve` and nothing else.
+
+The script needed no change: it reads the bundle from `bootstrap-roles.ts` at run time. **BF-23**
+proves the shape on real rows — two named organisations whose standard role lacks only this code, a
+dry run that lists exactly those two, writes nothing and offers the standard one exactly
+`sal.refund.approve`, the run that then adds it (a payment recorder role it built gains nothing), the
+customised one skipped with the code withheld, an organisation nobody named untouched row for row,
+and a second run a no-op. **BF-10** now counts the code among the thirteen an 85-code organisation is
+offered.
+
+The seed run and the backfill are operator acts taken after this change merges, never against a
+database without a backup and a rehearsal. This addendum does not claim either was performed
+anywhere.

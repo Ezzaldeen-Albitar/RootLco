@@ -2034,6 +2034,156 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "sal.refund_requests.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.obligation_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.invoice_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.payee_partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.refund_requests.amount": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.refund_requests.payment_method_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.refund_requests.approval_state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.refund_requests.requested_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.requested_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.refund_requests.approved_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.approved_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.refund_requests.decided_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.decided_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.refund_requests.decision_reason": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.refund_requests.executed_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.executed_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.refund_requests.payout_reference": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.refund_requests.payout_date": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "date"
+    },
+    "sal.refund_requests.idempotency_key": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.refund_requests.execution_idempotency_key": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.refund_requests.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.refund_requests.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.refund_requests.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_requests.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.refund_requests.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "wty.warranty_coverage.company_id": {
       "classification": "internal",
       "searchable": false,

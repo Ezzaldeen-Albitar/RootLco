@@ -42,12 +42,13 @@ In the left-hand menu <!-- nav.landmark = "Modules" --> you will find:
 | "Commerce" <!-- nav.group.commerce -->             | "Billing" <!-- nav.billing -->                      | `/en/invoices`                 | `sal.invoice.manage`              |
 | "Commerce"                                         | "Payments" <!-- nav.payments -->                    | `/en/payments`                 | `sal.finance.view`                |
 | "Commerce"                                         | "Credit notes" <!-- nav.creditNotes -->             | `/en/credit-notes`             | `sal.credit.manage`               |
+| "Commerce"                                         | "Refunds" <!-- nav.refunds -->                      | `/en/refunds`                  | `sal.finance.view`                |
 | "Records" <!-- nav.group.records -->               | "Reports" <!-- nav.reports -->                      | `/en/reports`                  | `rpt.report.read`                 |
 | "Records" › "Reports"                              | "All reports" <!-- nav.reportsAll -->               | `/en/reports`                  | `rpt.report.read`                 |
 | "Records" › "Reports"                              | "Operational overview" <!-- nav.reportsOverview --> | `/en/reports/overview`         | `rpt.report.read`                 |
 | "Administration" <!-- nav.group.administration --> | "Audit log" <!-- nav.auditLog -->                   | `/en/administration/audit-log` | `iam.audit.view`                  |
 
-In Arabic the same entries read "الفوترة", "المدفوعات", "إشعارات الخصم", "التقارير", "كل التقارير",
+In Arabic the same entries read "الفوترة", "المدفوعات", "إشعارات الخصم", "الاستردادات", "التقارير", "كل التقارير",
 "لمحة تشغيلية عامة" and "سجل التدقيق". Replace `/en/` with `/ar/` in any address.
 
 A menu entry you do not hold the permission for is not shown at all. The interface tells you plainly
@@ -346,10 +347,15 @@ read (Owner decision D7, ADR-023), with the two amounts behind them:
   note was larger than what the invoice still owed (Owner decision D2, ADR-023). The difference is
   then shown as "Refund owed to the customer" <!-- invoices.settlement.refundOwed --> with its
   amount, and "No money is paid back automatically." <!-- invoices.settlement.refundOwedExplain -->
-  The application records that the customer is owed the money; it does not pay it. Asking for a
-  refund, its second approver and paying it out are not in this release. The printed copy shows the
-  same refund status and, when there is one, the refund owed, in its "Payments and credits as of"
-  section.
+  The application records that the customer is owed the money; it does not pay it. It is paid back
+  through a refund request on the invoice's "Refunds" panel (§6.3.7), and the refund position then
+  reads "A refund is waiting for approval" <!-- invoices.refundStatus.requested --> , "A refund is
+  approved, not yet paid back" <!-- invoices.refundStatus.approved --> , "Partly paid back to the
+  customer" <!-- invoices.refundStatus.partly_refunded --> or "Paid back to the customer in full"
+  <!-- invoices.refundStatus.refunded --> . What has been paid back is shown as "Paid back to the
+  customer" <!-- invoices.settlement.refunded --> , and the refund owed is then what is still owed.
+  The printed copy shows the same refund status, the refund still owed and what was paid back, in its
+  "Payments and credits as of" section.
 
 A fully credited invoice therefore reads "Fully credited" and "Nothing to pay" — never "Paid". The
 invoice's own status stays "Issued", so a part sold on it can still be returned.
@@ -1230,7 +1236,8 @@ belongs to a different customer from the one who paid this receipt." <!-- paymen
 
 ### 6.3.7 Reversing a receipt, and refunds
 
-**Reversing a receipt — IMPLEMENTED (UI). Refunds — NOT AVAILABLE.**
+**Reversing a receipt — IMPLEMENTED (UI). Refunds — IMPLEMENTED (UI), without accounting (Owner
+decision D2, part 2).**
 
 A receipt recorded wrongly — the wrong amount typed, the wrong payer chosen, or money applied to
 the wrong invoice — is corrected by reversing the **whole** receipt and recording the right one. A
@@ -1317,13 +1324,76 @@ reversal. The person who asked can never approve or reject their own request.
 
 **What the reversal does not do**
 
-- It is not a refund (refunds are not available in this release).
+- It is not a refund (a refund is paid back through a refund request, below).
 - Reports keep leaving reversed receipts out of the money received, as before — counted from the
   moment the reversal was approved. The "Invoices and payments" report of a closed period shows its
   amounts as of the end of that period, so a receipt reversed afterwards is still shown there as it
   stood then (6.5.4a).
 - Organisations set up before this release: nobody can approve or reject a reversal until an
   administrator who holds `sal.reversal.approve` grants it (Part 3).
+
+**Refunds — paying back what a customer is owed**
+
+When an approved credit note was larger than what the invoice still owed, the customer is owed the
+difference back (§6.2.7). Nothing is paid back automatically, and nothing here is posted to any
+account: the money is paid back outside the application — in cash, by card terminal or by bank
+transfer — and the application records that it was. It happens in three separate steps, on the
+"Refunds" <!-- refunds.panel.heading --> panel of the invoice's own screen, which is shown while the
+customer is owed money back: "The customer is owed money back on this invoice. A refund is asked for,
+approved by a second person, and then recorded once it has been paid back. Nothing is paid back
+automatically." <!-- refunds.panel.explain -->
+
+| Step                          | Who                                                                                |
+| ----------------------------- | ---------------------------------------------------------------------------------- |
+| Ask for a refund              | A person holding `sal.payment.record` in the invoice's branch                      |
+| Withdraw the request          | The person who asked, and nobody else, while it waits                              |
+| Approve or reject the request | A **different** person holding `sal.refund.approve` in the invoice's branch        |
+| Record the payout             | A person holding `sal.payment.record`, once the request is approved, and only once |
+
+Each obligation shows "Owed to the customer" <!-- refunds.owed --> , "Paid back so far"
+<!-- refunds.paidOut --> and "Still owed" <!-- refunds.stillOwed --> , as the service states them.
+
+- **Ask for a refund** <!-- refunds.request.heading --> : enter "Amount to pay back"
+  <!-- refunds.request.amount --> — at most what is still owed — choose "Pay back by"
+  <!-- refunds.request.method --> and write "Why it is paid back" <!-- refunds.request.reason --> , then
+  press "Ask for the refund" <!-- refunds.request.submit --> . The panel says "The refund was asked for.
+  It waits for a second person to approve it, and nothing has been paid back."
+  <!-- refunds.request.recorded --> Only one request at a time waits on what is owed; a rejected or
+  withdrawn request can be followed by a new one, and after a part has been paid back the rest can be
+  asked for.
+- **Approve or reject** — "Approve the refund" <!-- refunds.approve.action --> asks "Approve this
+  refund?" <!-- refunds.approve.confirmTitle --> and says nothing is paid by approving; "Reject"
+  <!-- refunds.reject.action --> asks for "Why it is rejected" <!-- refunds.reject.reason --> . The person
+  who asked sees "You asked for this refund, so another person who can approve refunds must decide it.
+  You can withdraw it while it waits." <!-- refunds.live.ownRequest --> and is offered "Withdraw my
+  request" <!-- refunds.withdraw.action --> instead.
+- **Record the payout** <!-- refunds.execute.heading --> : once the money has been paid back, enter
+  "Payout reference" <!-- refunds.execute.reference --> and "Day it was paid back"
+  <!-- refunds.execute.date --> ; the approved way of paying back is shown and used. Press "Record the
+  payout" <!-- refunds.execute.submit --> . "The payout was recorded. What the customer is still owed
+  has gone down by its amount." <!-- refunds.execute.done --> It is recorded once and cannot be changed.
+  When everything owed has been paid back, it reads "Paid back in full."
+  <!-- refunds.obligationState.settled -->
+- **History** <!-- refunds.history.heading --> lists every request on the invoice: who asked and when,
+  the decision, and the payout's day and reference.
+- **If it goes wrong:** "This is more than the customer is still owed. Enter an amount no greater than
+  what is still owed." <!-- form.violation.refund_exceeds_obligation --> · "A refund for this amount
+  owed is already waiting for approval or for its payout to be recorded."
+  <!-- form.violation.refund_request_live_exists --> · "You asked for this refund, so you cannot approve
+  it. Another person who can approve refunds must approve it."
+  <!-- form.violation.refund_self_approval --> · "This refund has not been approved, so its payout
+  cannot be recorded." <!-- form.violation.refund_not_approved --> · "The payout of this refund has
+  already been recorded." <!-- form.violation.refund_already_executed --> · "The day it was paid back
+  cannot be in the future." <!-- form.violation.refund_payout_date_invalid -->
+
+The "Refunds" <!-- nav.refunds --> page in the menu lists a branch's refund requests, newest first,
+narrowed by status, customer and invoice, and opens the invoice where the next step is taken.
+
+**What refunds do not do yet** (open Owner questions): paying a third party back instead of the
+customer; cancelling what is owed; refund approval limits; a printed refund voucher; refunds in the
+"Invoices and payments" report and its snapshots. Organisations set up before this release: nobody
+can approve or reject a refund until an administrator who holds `sal.refund.approve` grants it
+(Part 3).
 
 ### 6.3.8 Adding a payment method for your organisation
 

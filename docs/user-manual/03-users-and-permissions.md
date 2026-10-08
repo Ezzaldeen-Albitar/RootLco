@@ -815,6 +815,16 @@ it chooses. An organisation created before this decision keeps the set it was gi
 record a third-party payment until an administrator who holds the permission grants it. Part 6,
 §6.3.5a.
 
+**Deciding a refund is its own permission (Owner decision D2, part 2).** A payment recorder
+(`sal.payment.record`) may ask for money a customer is owed to be paid back, may withdraw their own
+request, and records the payout once it has been made. Approving or rejecting the request needs the
+refund-approval permission (`sal.refund.approve`) in the invoice's branch, held by somebody other
+than the person who asked; no credit-note or reversal permission grants it. The standard
+administrator bundle carries it, and an administrator can give it to the finance approver it
+chooses. An organisation created before this decision keeps the set it was given: nobody in it can
+approve or reject a refund until an administrator who holds the permission grants it. Part 6,
+§6.3.7.
+
 ---
 
 ## 3.16 Maker and checker: one administrator is not enough — IMPLEMENTED (UI)

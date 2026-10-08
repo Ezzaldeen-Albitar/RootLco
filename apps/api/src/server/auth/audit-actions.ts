@@ -1962,6 +1962,50 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     description:
       'An approved credit note exceeded what its invoice still owed, so the customer is owed the difference back (ADR-023, D2). sal.approve_credit_note recorded exactly the excess as one open refund obligation, bound by sal.guard_refund_obligation_insert to the approved note, its invoice, the invoice’s customer and currency, in the approving transaction, with its refund_obligation_recorded financial event. An operational record, not an accounting entry: no money was paid, moved or posted, and a refund needs its own request and approval.',
   },
+  // ADR-023 D2, part 2 (P1-32-PRE-OD-FD2B): a refund obligation paid back through a
+  // request, a second person's decision and a one-time payout record. No accounting.
+  {
+    code: 'sal.refund_request.requested',
+    class: 'financial',
+    entityType: 'sal.refund_request',
+    description:
+      'A payment recorder asked for (part of) a refund obligation to be paid back, by a stated payment method and with a reason (ADR-023, D2). sal.guard_refund_request_insert requires sal.payment.record in the obligation’s company and branch, holds the obligation’s row lock, refuses an obligation that is not open, a second live request, an amount above what is still owed on it and a method that is not active, and binds the payee and currency to the obligation’s own; the requester is stamped from the session. A request pays nothing.',
+  },
+  {
+    code: 'sal.refund_request.approved',
+    class: 'approval',
+    entityType: 'sal.refund_request',
+    description:
+      'A pending refund request was approved by someone other than its requester (ADR-023, D2). sal.guard_refund_request_update requires sal.refund.approve in the obligation’s company and branch — no credit-note or receipt-reversal code satisfies it — and stamps the approver and the time. An approval pays nothing: the payout is a separate, one-time step.',
+  },
+  {
+    code: 'sal.refund_request.rejected',
+    class: 'approval',
+    entityType: 'sal.refund_request',
+    description:
+      'A pending refund request was rejected by someone other than its requester, with a stated reason (ADR-023, D2). sal.guard_refund_request_update requires sal.refund.approve in the obligation’s company and branch and a reason that is not blank, and stamps the decider and the time. The obligation stays owed, and the rejection is terminal.',
+  },
+  {
+    code: 'sal.refund_request.withdrawn',
+    class: 'financial',
+    entityType: 'sal.refund_request',
+    description:
+      'The requester withdrew their own pending refund request (ADR-023, D2). Only the person who raised it may withdraw it, which sal.guard_refund_request_update enforces from the session. The obligation stays owed and a corrected request may be raised.',
+  },
+  {
+    code: 'sal.refund_request.executed',
+    class: 'financial',
+    entityType: 'sal.refund_request',
+    description:
+      'The payout of an approved refund request was recorded, once (ADR-023, D2): its reference, the day it was made and the approved payment method. sal.guard_refund_request_update requires sal.payment.record in the obligation’s company and branch, refuses a request that is not approved or already paid out and an amount above what is still owed, and stamps the executor and the time; sal.execute_refund_request wrote the refund_executed financial event in the same transaction. An operational record, not an accounting entry: no account, posting, cash or bank movement.',
+  },
+  {
+    code: 'sal.refund_obligation.settled',
+    class: 'financial',
+    entityType: 'sal.refund_obligation',
+    description:
+      'What had been paid out on a refund obligation reached its amount, so the obligation moved from open to settled in the payout’s transaction (ADR-023, D2). sal.guard_refund_obligation_update admits that transition and no other; a settled obligation takes no further refund request. An operational record, not an accounting entry.',
+  },
   {
     code: 'sal.receipt.recorded',
     class: 'financial',

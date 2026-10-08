@@ -439,7 +439,9 @@ describe('declarations', () => {
     // since Owner decision D4 (2026-09-30, ADR-023) carried sal.reversal.approve,
     // which deciding a receipt reversal declares. 97 since Owner decision D14
     // (2026-09-30, ADR-023) carried the minted sal.payment.third_party.
-    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(97);
+    // 98 since Owner decision D2, part 2 (ADR-023) carried the minted
+    // sal.refund.approve, which deciding a refund request declares.
+    expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).toHaveLength(98);
     expect(TENANT_ADMINISTRATOR_ROLE.permissionCodes).not.toContain('inv.cost.view');
   });
 });

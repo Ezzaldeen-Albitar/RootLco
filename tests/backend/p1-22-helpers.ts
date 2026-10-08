@@ -123,6 +123,12 @@ export const CREDIT_MANAGE = 'sal.credit.manage';
  */
 export const CREDIT_APPROVE = 'sal.credit.approve';
 export const REVERSAL_APPROVE = 'sal.reversal.approve';
+/**
+ * Deciding a refund request (Owner decision D2, part 2, ADR-023, P1-32-PRE-OD-FD2B):
+ * the approval and the rejection declare it. Held by every principal that holds the
+ * full `sal`/`wty` set, as the other decision codes are.
+ */
+export const REFUND_APPROVE = 'sal.refund.approve';
 export const FINANCE_VIEW = 'sal.finance.view';
 export const DELIVERY_MANAGE = 'sal.delivery.manage';
 export const DELIVERY_COMPLETE = 'sal.delivery.complete';
@@ -169,6 +175,7 @@ const ALL_SAL_WTY = [
   CREDIT_MANAGE,
   CREDIT_APPROVE,
   REVERSAL_APPROVE,
+  REFUND_APPROVE,
   FINANCE_VIEW,
   DELIVERY_MANAGE,
   DELIVERY_COMPLETE,
@@ -188,6 +195,7 @@ const CATALOGUE: readonly (readonly [string, string])[] = [
   [CREDIT_MANAGE, 'sal'],
   [CREDIT_APPROVE, 'sal'],
   [REVERSAL_APPROVE, 'sal'],
+  [REFUND_APPROVE, 'sal'],
   [FINANCE_VIEW, 'sal'],
   [DELIVERY_MANAGE, 'sal'],
   [DELIVERY_COMPLETE, 'sal'],
@@ -1396,6 +1404,7 @@ export async function cleanP1_22Fixtures(): Promise<void> {
       'sal.delivery_checklist_templates',
       'sal.payment_allocations',
       'sal.receipt_reversals',
+      'sal.refund_requests',
       'sal.refund_obligations',
       'sal.credit_notes',
       'sal.receipts',

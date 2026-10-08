@@ -577,7 +577,13 @@ describe('the coverage include lists are pinned, because they are the denominato
     // `modules/reporting/data/report-snapshot-repository.ts`. The two routes live
     // under `src/app`, which this include list does not admit. The floors are
     // untouched for the reason above.
-    expect(files.length).toBe(328);
+    // 330 with the refund requests (P1-32-PRE-OD-FD2B, Owner decision D2, part 2),
+    // which add TWO: `modules/billing/application/refund-service.ts` (the request,
+    // the decision, the payout record and the two reads) and
+    // `modules/billing/data/refund-repository.ts`. The seven routes live under
+    // `src/app`, which this include list does not admit. The floors are untouched
+    // for the reason above.
+    expect(files.length).toBe(330);
     expect(backendCoverage?.exclude).toContain(`${API_SRC_PATH}/server/openapi/**`);
     const instrumented = files.filter(
       (file) => !file.startsWith(`${API_SRC_PATH}/server/openapi/`)
@@ -694,6 +700,8 @@ describe('the coverage include lists are pinned, because they are the denominato
     // `server/openapi/`, so the two numbers move by two together.
     // 327 with the report snapshots' two (P1-32-PRE-OD-FD16B), neither under
     // `server/openapi/`, so the two numbers move by two together.
-    expect(instrumented.length).toBe(327);
+    // 329 with the refund requests' two (P1-32-PRE-OD-FD2B), neither under
+    // `server/openapi/`, so the two numbers move by two together.
+    expect(instrumented.length).toBe(329);
   });
 });

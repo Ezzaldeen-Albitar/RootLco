@@ -133,6 +133,7 @@
     "sal.payment.allocate",
     "sal.payment.record",
     "sal.payment.third_party",
+    "sal.refund.approve",
     "sal.reversal.approve",
     "shared.document.manage",
     "shared.document.read",

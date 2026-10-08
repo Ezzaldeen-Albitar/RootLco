@@ -14,6 +14,9 @@ import type {
   CreditNoteRejectBody,
   InvoiceCancelBody,
   InvoiceCreateBody,
+  RefundExecuteBody,
+  RefundRejectBody,
+  RefundRequestBody,
 } from '@/lib/contracts/billing-contract';
 import { fromFailure, success, type ActionState } from '@/lib/forms/action-result';
 import type {
@@ -29,6 +32,11 @@ import type {
   InvoiceStatus,
   IssuedInvoice,
   Outstanding,
+  RefundObligation,
+  RefundRequest,
+  RefundRequestDetail,
+  RefundRequestEcho,
+  RefundRequestState,
   SaleKind,
   VoidedInvoice,
   WorkOrderInvoice,
@@ -519,4 +527,209 @@ export async function listInvoices(
         limit: 10,
       })
   );
+}
+
+/* ------------------------------------------------------------------ *
+ * ADR-023 D2, part 2 (P1-32-PRE-OD-FD2B) — refunds: what a customer is owed
+ * back, the requests to pay it back, their second-person decision and the
+ * one-time record of the payout. Nothing here pays anything: the payout is
+ * made outside the application and recorded here.
+ * ------------------------------------------------------------------ */
+
+/**
+ * A branch's refund obligations (`sal.refund-obligation-list`), narrowed by invoice
+ * and state — what each customer is owed back, what has been paid out and what is
+ * still owed, in the server's figures. `sal.finance.view` alone.
+ */
+export async function listRefundObligations(
+  target: BranchTarget,
+  filter: {
+    readonly invoiceId?: string | undefined;
+    readonly partnerId?: string | undefined;
+    readonly state?: string | undefined;
+  } = {},
+  page: { readonly cursor?: string | null; readonly limit?: number } = {}
+): Promise<ReadState<CursorPage<RefundObligation>>> {
+  return readOperation<CursorPage<RefundObligation>>(
+    '/api/v1/refund-obligations' +
+      branchTargetQuery(target, {
+        invoiceId: filter.invoiceId ?? null,
+        partnerId: filter.partnerId ?? null,
+        state: filter.state ?? null,
+        cursor: page.cursor ?? null,
+        limit: page.limit ?? 50,
+      })
+  );
+}
+
+/**
+ * A branch's refund requests, newest first (`sal.refund-request-list`), narrowed by
+ * invoice, customer, obligation and state. `sal.finance.view` alone; a caller
+ * without it is refused rather than shown an empty list.
+ */
+export async function listRefundRequests(
+  target: BranchTarget,
+  filter: {
+    readonly invoiceId?: string | undefined;
+    readonly partnerId?: string | undefined;
+    readonly obligationId?: string | undefined;
+    readonly state?: RefundRequestState | undefined;
+  } = {},
+  page: { readonly cursor?: string | null; readonly limit?: number } = {}
+): Promise<ReadState<CursorPage<RefundRequest>>> {
+  return readOperation<CursorPage<RefundRequest>>(
+    '/api/v1/refund-requests' +
+      branchTargetQuery(target, {
+        invoiceId: filter.invoiceId ?? null,
+        partnerId: filter.partnerId ?? null,
+        obligationId: filter.obligationId ?? null,
+        state: filter.state ?? null,
+        cursor: page.cursor ?? null,
+        limit: page.limit ?? 50,
+      })
+  );
+}
+
+/** One refund request (`sal.refund-request-detail`), its obligation and the people, by name. */
+export async function readRefundRequest(
+  requestId: string
+): Promise<ReadState<RefundRequestDetail>> {
+  return readOperation<RefundRequestDetail>(
+    `/api/v1/refund-requests/${encodeURIComponent(requestId)}`
+  );
+}
+
+/**
+ * A refused refund step, as the screen states it. A named rule keeps its own
+ * sentence (`form.violation.refund_*`); a conflict with no rule is the version
+ * guard — the request changed since it was read — and is said as that.
+ */
+function refundFailure(result: Parameters<typeof fromFailure>[0], attempt: number): ActionState {
+  const state = fromFailure(result, attempt);
+  if (state.status === 'conflict' && (result.problem?.violations ?? []).length === 0) {
+    return { ...state, messageKey: 'refunds.decision.conflict' };
+  }
+  return state;
+}
+
+/**
+ * Ask for (part of) a refund obligation to be paid back (`sal.refund-request`):
+ * the amount, the payment method and the reason. The transport key is the one the
+ * form holds for THIS attempt, so pressing again after a lost answer replays the
+ * stored request instead of raising a second one. Born pending; pays nothing.
+ */
+export async function requestRefund(
+  obligationId: string,
+  body: RefundRequestBody,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<RefundRequestEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<RefundRequestEcho>(
+    'POST',
+    `/api/v1/refund-obligations/${encodeURIComponent(obligationId)}/refund-requests`,
+    body,
+    { idempotencyKey }
+  );
+  if (!result.ok) return { state: refundFailure(result, attempt), created: null };
+  return {
+    state: { ...success('refunds.request.success', attempt), correlationId: result.correlationId },
+    created: result.data,
+  };
+}
+
+/**
+ * Approve a pending refund request somebody else raised (`sal.refund-approve`). No
+ * body; `ifMatch` is the REQUEST's `recordVersion` as the list published it. An
+ * approval pays nothing: the payout is recorded separately.
+ */
+export async function approveRefund(
+  requestId: string,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<RefundRequestEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<RefundRequestEcho>(
+    'POST',
+    `/api/v1/refund-requests/${encodeURIComponent(requestId)}/approval`,
+    undefined,
+    { ifMatch }
+  );
+  if (!result.ok) return { state: refundFailure(result, attempt), created: null };
+  return {
+    state: { ...success('refunds.approve.success', attempt), correlationId: result.correlationId },
+    created: result.data,
+  };
+}
+
+/** Reject a pending refund request somebody else raised, stating why (`sal.refund-reject`). */
+export async function rejectRefund(
+  requestId: string,
+  body: RefundRejectBody,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<RefundRequestEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<RefundRequestEcho>(
+    'POST',
+    `/api/v1/refund-requests/${encodeURIComponent(requestId)}/rejection`,
+    body,
+    { ifMatch }
+  );
+  if (!result.ok) return { state: refundFailure(result, attempt), created: null };
+  return {
+    state: { ...success('refunds.reject.success', attempt), correlationId: result.correlationId },
+    created: result.data,
+  };
+}
+
+/** Withdraw your own pending refund request (`sal.refund-withdraw`). No body. */
+export async function withdrawRefund(
+  requestId: string,
+  ifMatch: number,
+  attempt = 1
+): Promise<CreateOutcome<RefundRequestEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<RefundRequestEcho>(
+    'POST',
+    `/api/v1/refund-requests/${encodeURIComponent(requestId)}/withdrawal`,
+    undefined,
+    { ifMatch }
+  );
+  if (!result.ok) return { state: refundFailure(result, attempt), created: null };
+  return {
+    state: { ...success('refunds.withdraw.success', attempt), correlationId: result.correlationId },
+    created: result.data,
+  };
+}
+
+/**
+ * Record, once, that an approved refund was paid out (`sal.refund-execute`): the
+ * reference, the day and the approved method. `ifMatch` is the REQUEST's version;
+ * the transport key is the one the form holds for THIS attempt.
+ */
+export async function executeRefund(
+  requestId: string,
+  body: RefundExecuteBody,
+  ifMatch: number,
+  idempotencyKey: string,
+  attempt = 1
+): Promise<CreateOutcome<RefundRequestEcho>> {
+  const client = await authorizedClient();
+  if (!client) return { state: expired(attempt), created: null };
+  const result = await client.send<RefundRequestEcho>(
+    'POST',
+    `/api/v1/refund-requests/${encodeURIComponent(requestId)}/execution`,
+    body,
+    { ifMatch, idempotencyKey }
+  );
+  if (!result.ok) return { state: refundFailure(result, attempt), created: null };
+  return {
+    state: { ...success('refunds.execute.success', attempt), correlationId: result.correlationId },
+    created: result.data,
+  };
 }

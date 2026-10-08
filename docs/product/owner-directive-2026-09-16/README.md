@@ -432,6 +432,11 @@ against the question with its date; every other question is still open.
     raised from 60 to 90 minutes by #493. Slow tests keep being improved; no unlimited retries and
     no extra concurrency.
 
+22. **Refund decision code (CC-OD-58, ADR-023 D2 part 2).** Organisations provisioned earlier cannot
+    approve or reject a refund request after upgrade until `sal.refund.approve` is granted, and the
+    backfill covers only the named QA organisations. Should the backfill extend to every existing
+    organisation, or stay limited with the change stated to them?
+
 ## Code-scanning result on `2c573a24`, consumed once (section 9)
 
 Observed 2026-09-16, read-only, through the check-runs API.

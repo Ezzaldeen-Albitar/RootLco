@@ -116,6 +116,16 @@
  *         allocating clerk role it built gains nothing; the customised one is skipped
  *         whole with the code withheld; an organisation that is NOT named is
  *         untouched row for row; a second run is a no-op
+ *   BF-23 the refund-decision widening (Owner decision D2, part 2, ADR-023,
+ *         P1-32-PRE-OD-FD2B), run the same selective way — in production, after
+ *         seed 04 has been re-run, `--tenant odqa_alpha --tenant odqa_beta`, dry run
+ *         first: two named organisations whose standard role lacks only
+ *         `sal.refund.approve`; the dry run lists ONLY the two named organisations
+ *         and offers the standard one EXACTLY that code, writing nothing; the run
+ *         then adds it, and a payment recorder role it built (the codes that ASK for
+ *         a refund) gains nothing; the customised one is skipped whole with the code
+ *         withheld; an organisation that is NOT named is untouched row for row; a
+ *         second run is a no-op
  *
  * ## Where it runs
  *
@@ -335,6 +345,18 @@ const REVERSAL_APPROVAL_ADDED = Object.freeze(['sal.reversal.approve']);
  */
 const THIRD_PARTY_ADDED = Object.freeze(['sal.payment.third_party']);
 
+/**
+ * Owner decision D2 of 2026-09-30, part 2 (ADR-023, P1-32-PRE-OD-FD2B):
+ * `sal.refund.approve`, which approving and rejecting a refund request declare, for
+ * the standard tenant administrator. MINTED in `04_iam_permission_catalog.sql`, so on
+ * an existing database that seed is re-run FIRST; the backfill then owes a THIRTEENTH
+ * operator run, by the precedent of D4, D13 and D14 a SELECTIVE one — only
+ * `--tenant odqa_alpha --tenant odqa_beta`, dry run first, customised roles preserved,
+ * every other existing organisation left unchanged (README question 22 asks the Owner
+ * whether to extend it). BF-23 measures that shape.
+ */
+const REFUND_APPROVAL_ADDED = Object.freeze(['sal.refund.approve']);
+
 /** Every code widened onto the 67-code bundle since: what a stale organisation lacks. */
 const WIDENED = Object.freeze([
   ...BACKFILLED,
@@ -346,6 +368,7 @@ const WIDENED = Object.freeze([
   ...CREDIT_APPROVAL_ADDED,
   ...REVERSAL_APPROVAL_ADDED,
   ...THIRD_PARTY_ADDED,
+  ...REFUND_APPROVAL_ADDED,
 ]);
 
 /** A real catalogue code the bundle deliberately does NOT carry (P1-31 CC-04). */
@@ -1140,8 +1163,8 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     // the three codes the directive added, the one the credit-note decision added,
     // the one the settings decision added, the four the appointment decision added,
     // the one the credit-approval decision (D13) added, the one the
-    // receipt-reversal decision (D4) added and the one the third-party payer
-    // decision (D14) added.
+    // receipt-reversal decision (D4) added, the one the third-party payer decision
+    // (D14) added and the one the refund decision (D2, part 2) added.
     const since85 = [
       ...OD_QA_ADDED,
       ...CREDIT_ADDED,
@@ -1150,6 +1173,7 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
       ...CREDIT_APPROVAL_ADDED,
       ...REVERSAL_APPROVAL_ADDED,
       ...THIRD_PARTY_ADDED,
+      ...REFUND_APPROVAL_ADDED,
     ];
     const organisation = await provision('odqa');
     await admin.query(
@@ -2189,6 +2213,137 @@ describe('P1-31 D-2 — the five obligations, on real rows', () => {
     expect(await mappingRows(unnamed.tenantAdministratorRoleId)).toEqual(unnamedBefore);
     expect(await codesOfRole(unnamed.tenantAdministratorRoleId)).not.toContain(
       'sal.payment.third_party'
+    );
+    expect(await backfillAuditCount(unnamed.tenantId)).toBe(0);
+
+    // Idempotent: a second run writes nothing and records nothing.
+    const again = await backfill({ tenants: named });
+    expect(again.organisations.map((o) => o.outcome)).toEqual(['unchanged', 'customised']);
+    expect(await mappingRows(standard.tenantAdministratorRoleId)).toEqual(standardAfter);
+    expect(await backfillAuditCount(standard.tenantId)).toBe(1);
+  });
+
+  it('BF-23 the refund-decision widening runs selectively: the dry run lists only the named organisations and offers exactly sal.refund.approve, a payment recorder role it built gains nothing, a named customised one and an unnamed one are untouched, and a second run is a no-op', async () => {
+    // The thirteenth widening provisions three more organisations in this file, and
+    // the provisioning command's per-window limit counts every one before it; the
+    // window is reset so this case measures the backfill, not the throttle.
+    __resetRateLimitForTests();
+    // A standard role lacking only sal.refund.approve: what every organisation
+    // provisioned after D14 and before D2 part 2 holds — which is what the two QA
+    // organisations hold once the third-party payer run has been made for them.
+    const withoutRefundCode = async (label: string): Promise<Provisioned> => {
+      const organisation = await provision(label);
+      await admin.query(
+        `DELETE FROM iam.role_permissions
+          WHERE role_id = $1
+            AND permission_id IN (SELECT id FROM iam.permissions WHERE permission_code = ANY($2::text[]))`,
+        [organisation.tenantAdministratorRoleId, [...REFUND_APPROVAL_ADDED]]
+      );
+      expect(await codesOfRole(organisation.tenantAdministratorRoleId)).toHaveLength(
+        parsedBundle.length - REFUND_APPROVAL_ADDED.length
+      );
+      return organisation;
+    };
+    const standard = await withoutRefundCode('rfastd');
+    const tailored = await withoutRefundCode('rfacus');
+    const unnamed = await withoutRefundCode('rfaoth');
+
+    // The standard organisation builds a payment recorder role of its own that
+    // records and views payments — the codes that ASK for a refund and record its
+    // payout. It must gain nothing: deciding a refund is a separate authority.
+    asOwnerOf(standard);
+    const recorder = await call<{ id: string }>(roleCreateRoute, {
+      path: '/iam/roles',
+      body: {
+        roleCode: `refund_recorder_${RUN}`,
+        name: 'Payment recorder',
+        description: 'Asks for refunds and records their payout',
+      },
+      idempotencyKey: randomUUID(),
+    });
+    expect(recorder.status).toBe(201);
+    const recorderRoleId = recorder.body.id;
+    for (const permissionCode of ['sal.payment.record', 'sal.finance.view']) {
+      asOwnerOf(standard);
+      const mapped = await call(rolePermissionAddRoute, {
+        path: `/iam/roles/${recorderRoleId}/permissions`,
+        params: { roleId: recorderRoleId },
+        body: { permissionCode, effect: 'allow' },
+        idempotencyKey: randomUUID(),
+      });
+      expect(mapped.status).toBe(201);
+    }
+    const recorderBefore = await mappingRows(recorderRoleId);
+
+    // The customised organisation's own decision about its administrator role: one
+    // allow beyond the bundle.
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1, $2, p.id, 'allow', $4 FROM iam.permissions p WHERE p.permission_code = $3`,
+      [tailored.tenantId, tailored.tenantAdministratorRoleId, CUSTOMISATION_CODE, SYSTEM_ACTOR]
+    );
+
+    const standardBefore = await mappingRows(standard.tenantAdministratorRoleId);
+    const tailoredBefore = await mappingRows(tailored.tenantAdministratorRoleId);
+    const unnamedBefore = await mappingRows(unnamed.tenantAdministratorRoleId);
+
+    // Named by tenant CODE, the form the operator types — and ONLY these two.
+    const named = [standard.tenantCode, tailored.tenantCode];
+    const dryRun = await backfill({ tenants: named, dryRun: true });
+    expect(dryRun.outcome).toBe('dry-run');
+    expect(dryRun.organisations.map((o) => o.tenantCode)).toEqual(named);
+    const [offered, skipped] = dryRun.organisations;
+    expect(offered).toMatchObject({
+      tenantId: standard.tenantId,
+      outcome: 'widened',
+      heldBefore: parsedBundle.length - REFUND_APPROVAL_ADDED.length,
+      heldAfter: parsedBundle.length,
+      customisations: [],
+    });
+    // EXACTLY the one code: no withheld code and no code of any other widening.
+    expect(offered?.added).toEqual([...REFUND_APPROVAL_ADDED]);
+    expect(skipped).toMatchObject({
+      tenantId: tailored.tenantId,
+      outcome: 'customised',
+      added: [],
+      customisations: [`beyond-bundle:${CUSTOMISATION_CODE}`],
+      withheld: [...REFUND_APPROVAL_ADDED],
+    });
+    // A dry run writes nothing anywhere.
+    expect(await mappingRows(standard.tenantAdministratorRoleId)).toEqual(standardBefore);
+    expect(await mappingRows(tailored.tenantAdministratorRoleId)).toEqual(tailoredBefore);
+    expect(await backfillAuditCount(standard.tenantId)).toBe(0);
+
+    const applied = await backfill({ tenants: named });
+    expect(applied.widened).toBe(1);
+    expect(applied.customised).toBe(1);
+    expect(only(applied)).toMatchObject({
+      outcome: 'widened',
+      added: [...REFUND_APPROVAL_ADDED],
+    });
+    expect(await codesOfRole(standard.tenantAdministratorRoleId)).toEqual(
+      [...TENANT_ADMINISTRATOR_ROLE.permissionCodes].sort()
+    );
+    const standardAfter = await mappingRows(standard.tenantAdministratorRoleId);
+    for (const row of standardBefore) expect(standardAfter).toContain(row);
+    expect(standardAfter).toHaveLength(standardBefore.length + 1);
+    expect(await backfillAuditCount(standard.tenantId)).toBe(1);
+
+    // The payment recorder role gained nothing.
+    expect(await mappingRows(recorderRoleId)).toEqual(recorderBefore);
+    expect(await codesOfRole(recorderRoleId)).not.toContain('sal.refund.approve');
+
+    // The customised role kept every row and gained nothing, with no audit record.
+    expect(await mappingRows(tailored.tenantAdministratorRoleId)).toEqual(tailoredBefore);
+    expect(await codesOfRole(tailored.tenantAdministratorRoleId)).not.toContain(
+      'sal.refund.approve'
+    );
+    expect(await backfillAuditCount(tailored.tenantId)).toBe(0);
+
+    // The organisation nobody named is untouched, row for row.
+    expect(await mappingRows(unnamed.tenantAdministratorRoleId)).toEqual(unnamedBefore);
+    expect(await codesOfRole(unnamed.tenantAdministratorRoleId)).not.toContain(
+      'sal.refund.approve'
     );
     expect(await backfillAuditCount(unnamed.tenantId)).toBe(0);
 

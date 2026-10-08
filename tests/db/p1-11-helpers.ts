@@ -52,6 +52,8 @@ export const P11_PERMISSIONS: Array<{ code: string; domain: string }> = [
   // ADR-023 D13: deciding a credit note is its own code (seeded beside sal.credit.manage).
   { code: 'sal.credit.approve', domain: 'sal' },
   { code: 'sal.reversal.approve', domain: 'sal' },
+  // ADR-023 D2, part 2 (P1-32-PRE-OD-FD2B): deciding a refund request.
+  { code: 'sal.refund.approve', domain: 'sal' },
   { code: 'sal.delivery.manage', domain: 'sal' },
   { code: 'sal.delivery.complete', domain: 'sal' },
   { code: 'sal.delivery.view', domain: 'sal' },
@@ -225,6 +227,7 @@ export async function cleanP111Committed(admin: Pool): Promise<void> {
     await del('sal.delivery_checklist_templates');
     await del('sal.payment_allocations');
     await del('sal.receipt_reversals');
+    await del('sal.refund_requests');
     await del('sal.refund_obligations');
     await del('sal.credit_notes');
     await del('sal.receipts');

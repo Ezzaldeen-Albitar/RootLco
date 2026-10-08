@@ -931,12 +931,15 @@ describe('no unlabelled money aggregate escapes a P1-22 response', () => {
     const outstandingAudit = auditMoneyLabels(await outstandingResponse.json());
     expect(outstandingAudit.unlabelled).toEqual([]);
     // The D7 settlement (ADR-023) carries two more amounts, each labelled, and D2
-    // (P1-32-PRE-OD-FD2A) a third: what the customer is owed back.
+    // (P1-32-PRE-OD-FD2A) a third: what the customer is owed back; and part 2
+    // (P1-32-PRE-OD-FD2B) two more: what can still be credited and what was paid back.
     expect(outstandingAudit.labelled).toEqual([
       '$.outstanding.amount',
+      '$.settlement.creditable.amount',
       '$.settlement.credited.amount',
       '$.settlement.paid.amount',
       '$.settlement.refundOwed.amount',
+      '$.settlement.refunded.amount',
     ]);
 
     // ---- the receipt detail ------------------------------------------------

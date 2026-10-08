@@ -794,7 +794,7 @@ describe('D2 — an obligation is bound to the credit that created it', () => {
     });
   });
 
-  it('freezes every fact, refuses every state change for now, and is never deleted', async () => {
+  it('freezes every fact, refuses every state change but a paid-out settlement, and is never deleted', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const { invoice } = await paidInvoice(c, 'fd2a_d2_frozen', 100, 100);
       const note = await seedCreditNote(c, invoice, 30);
@@ -805,14 +805,13 @@ describe('D2 — an obligation is bound to the credit that created it', () => {
         id,
       ]);
       await expectFail(c, '42501', `DELETE FROM sal.refund_obligations WHERE id = $1`, [id]);
+      // Settled only once its whole amount has been paid out (P1-32-PRE-OD-FD2B).
       const transition = await refusal(
         c,
         `UPDATE sal.refund_obligations SET state = 'settled' WHERE id = $1`,
         [id]
       );
-      expect(transition.message?.startsWith('refund_obligation_transition_unavailable:')).toBe(
-        true
-      );
+      expect(transition.message?.startsWith('refund_obligation_not_paid_out:')).toBe(true);
     });
     // The owner bypasses every grant but not the trigger.
     await asOwnerRolledBack(async (c) => {

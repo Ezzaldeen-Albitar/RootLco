@@ -102,7 +102,17 @@ const approveCreditNote = vi.fn();
 const withdrawCreditNote = vi.fn();
 const rejectCreditNote = vi.fn();
 const listInvoices = vi.fn();
+// ADR-023 D2, part 2: the refunds panel's reads, answered empty unless a case says.
+const listRefundObligations = vi.fn();
+const listRefundRequests = vi.fn();
 vi.mock('@/features/billing/api', () => ({
+  listRefundObligations: (...args: unknown[]) => listRefundObligations(...args),
+  listRefundRequests: (...args: unknown[]) => listRefundRequests(...args),
+  requestRefund: vi.fn(),
+  approveRefund: vi.fn(),
+  rejectRefund: vi.fn(),
+  withdrawRefund: vi.fn(),
+  executeRefund: vi.fn(),
   readWorkOrderInvoice: (...args: unknown[]) => readWorkOrderInvoice(...args),
   readInvoicePreview: (...args: unknown[]) => readInvoicePreview(...args),
   readInvoice: (...args: unknown[]) => readInvoice(...args),
@@ -117,6 +127,10 @@ vi.mock('@/features/billing/api', () => ({
   withdrawCreditNote: (...args: unknown[]) => withdrawCreditNote(...args),
   rejectCreditNote: (...args: unknown[]) => rejectCreditNote(...args),
   listInvoices: (...args: unknown[]) => listInvoices(...args),
+}));
+
+vi.mock('@/features/payments/api', () => ({
+  listPaymentMethods: async () => ({ status: 'ok', data: { items: [] }, correlationId: 'corr' }),
 }));
 
 // DX-2 (finance QA fixes E): the balance is read through the cancellable route
@@ -475,6 +489,12 @@ beforeEach(() => {
   readOutstanding.mockImplementation(async () => okRead({ ...outstanding }));
   readWorkOrderDetail.mockImplementation(async () =>
     okRead({ workOrder, jobs: [], nextStates: [], reachableStates: [] })
+  );
+  listRefundObligations.mockImplementation(async () =>
+    okRead({ items: [], nextCursor: null, hasMore: false })
+  );
+  listRefundRequests.mockImplementation(async () =>
+    okRead({ items: [], nextCursor: null, hasMore: false })
   );
 });
 
@@ -1402,6 +1422,59 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
     expect(balance).toHaveTextContent(EN['invoices.settlement.refundOwedExplain'] as string);
   });
 
+  it('FD2B: draws the refunds panel while the customer is owed money back, reading this invoice', async () => {
+    listRefundObligations.mockResolvedValue(
+      okRead({ items: [], nextCursor: null, hasMore: false })
+    );
+    listRefundRequests.mockResolvedValue(okRead({ items: [], nextCursor: null, hasMore: false }));
+    readOutstanding.mockImplementation(async () => okRead(owedBack));
+    renderScreen({ ...live() });
+    expect(
+      await screen.findByRole('region', { name: EN['refunds.panel.heading'] as string })
+    ).toBeVisible();
+    await waitFor(() => expect(listRefundObligations).toHaveBeenCalled());
+    expect(listRefundObligations.mock.calls[0]?.[1]).toEqual({ invoiceId: INVOICE_ID });
+  });
+
+  it('FD2B: draws no refunds panel while nobody is owed anything back', async () => {
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    await within(balance).findByTestId('invoice-refund-status');
+    expect(
+      screen.queryByRole('region', { name: EN['refunds.panel.heading'] as string })
+    ).toBeNull();
+    expect(listRefundObligations).not.toHaveBeenCalled();
+  });
+
+  it('FD2B: says what was paid back and what is still owed once part was refunded', async () => {
+    listRefundObligations.mockResolvedValue(
+      okRead({ items: [], nextCursor: null, hasMore: false })
+    );
+    listRefundRequests.mockResolvedValue(okRead({ items: [], nextCursor: null, hasMore: false }));
+    readOutstanding.mockImplementation(async () =>
+      okRead({
+        ...owedBack,
+        settlement: {
+          ...owedBack.settlement,
+          refundStatus: 'partly_refunded',
+          refundOwed: { amount: '20.0000', currency: 'USD' },
+          refunded: { amount: '10.0000', currency: 'USD' },
+        },
+      })
+    );
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    expect(await within(balance).findByTestId('invoice-refund-status')).toHaveTextContent(
+      EN['invoices.refundStatus.partly_refunded'] as string
+    );
+    expect(within(balance).getByTestId('invoice-refunded')).toHaveTextContent(money('10.0000'));
+    expect(within(balance).getByTestId('invoice-refund-owed')).toHaveTextContent(money('20.0000'));
+  });
+
   it('D2: shows no refund owed while nobody is owed anything back', async () => {
     renderScreen({ ...live() });
     const balance = await screen.findByRole('region', {
@@ -1921,6 +1994,46 @@ describe('FE-020 — the printable copy', () => {
     expect(within(document).getByTestId('invoice-print-issued-totals').contains(settlement)).toBe(
       false
     );
+  });
+
+  it('FD2B: prints what was paid back beside what is still owed', async () => {
+    const user = userEvent.setup();
+    listRefundObligations.mockResolvedValue(
+      okRead({ items: [], nextCursor: null, hasMore: false })
+    );
+    listRefundRequests.mockResolvedValue(okRead({ items: [], nextCursor: null, hasMore: false }));
+    readOutstanding.mockImplementation(async () =>
+      okRead({
+        ...outstanding,
+        outstanding: { amount: '0.0000', currency: 'USD' },
+        isSettled: true,
+        settlement: {
+          ...outstanding.settlement,
+          creditStatus: 'partly_credited',
+          paymentStatus: 'paid',
+          refundStatus: 'refunded',
+          credited: { amount: '30.0000', currency: 'USD' },
+          paid: { amount: '165.0000', currency: 'USD' },
+          refundOwed: { amount: '0.0000', currency: 'USD' },
+          refunded: { amount: '30.0000', currency: 'USD' },
+        },
+      })
+    );
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    await within(balance).findByTestId('invoice-refunded');
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    const settlement = within(document).getByTestId('invoice-print-settlement');
+    expect(within(settlement).getByTestId('invoice-print-refund-status')).toHaveTextContent(
+      EN['invoices.refundStatus.refunded'] as string
+    );
+    expect(within(settlement).getByTestId('invoice-print-refunded')).toHaveTextContent(
+      money('30.0000')
+    );
+    expect(within(settlement).queryByTestId('invoice-print-refund-owed')).toBeNull();
   });
 
   it('D2: prints no refund owed while nobody is owed anything back', async () => {

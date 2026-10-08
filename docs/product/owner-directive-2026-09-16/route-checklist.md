@@ -416,7 +416,7 @@ through a call it cannot resolve, or name a path no operation publishes.
 
 ### Scope per route
 
-Counts: 5 union, 29 concrete, 43 none — 77 routes. `route-branch-scope.test.ts` fails when this
+Counts: 5 union, 30 concrete, 43 none — 78 routes. `route-branch-scope.test.ts` fails when this
 table and `ROUTE_BRANCH_SCOPES` disagree on a route, a scope or a reason.
 
 | Route                                                 | Scope    | Why                                                                                           |
@@ -448,6 +448,7 @@ table and `ROUTE_BRANCH_SCOPES` disagree on a route, a scope or a reason.
 | `/payments`                                           | concrete | A payment is recorded in one branch.                                                          |
 | `/pricing`                                            | concrete | The price that applies is resolved for one branch.                                            |
 | `/quotations`                                         | concrete | A quotation is written; a write needs one named branch.                                       |
+| `/refunds`                                            | concrete | Refund requests are read for one branch.                                                      |
 | `/receptions/check-in`                                | concrete | Check-in writes a reception into one branch.                                                  |
 | `/reports/[reportCode]`                               | concrete | A report covers one branch; the report read declares no union.                                |
 | `/reports/overview`                                   | concrete | A report covers one branch; the report read declares no union.                                |
@@ -4507,3 +4508,42 @@ Known limitations, one line each:
 
 - The **Credit notes** screen's invoice finder still lists only invoices with money open; a paid
   invoice is credited from its own screen, which says so.
+
+### Refund requests, second approver and payout (P1-32-PRE-OD-FD2B, ADR-023 D2, part 2)
+
+Owner decision D2, part 2: a refund is asked for, approved by a second person and its payout recorded
+once, as separate steps; no duplicate or excess refund, safely under concurrency. No accounting. One
+forward migration (`20261008140000_sal_refund_requests.sql`), one minted permission code
+(`sal.refund.approve`, carried by the standard tenant administrator bundle for new organisations;
+CC-OD-58), seven new operations and six new audit actions.
+
+| Route                                                     | Operation                      | Who                                                | What changed                                                                                                                                                                                              |
+| --------------------------------------------------------- | ------------------------------ | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /refund-obligations/{obligationId}/refund-requests` | `sal.refund-request`           | `sal.payment.record` and `sal.finance.view`        | NEW. Amount, method and reason; at most what is still owed (`refund_exceeds_obligation`); one live request per obligation (`refund_request_live_exists`); Idempotency-Key; refusals recorded once.        |
+| `POST /refund-requests/{requestId}/approval`              | `sal.refund-approve`           | `sal.refund.approve` and `sal.finance.view`        | NEW. A different person approves (`refund_self_approval`); If-Match on the request; pays nothing.                                                                                                         |
+| `POST /refund-requests/{requestId}/rejection`             | `sal.refund-reject`            | `sal.refund.approve` and `sal.finance.view`        | NEW. A different person rejects, with a reason; If-Match on the request.                                                                                                                                  |
+| `POST /refund-requests/{requestId}/withdrawal`            | `sal.refund-withdraw`          | `sal.payment.record` and `sal.finance.view`        | NEW. The requester withdraws a pending request (`refund_withdraw_not_requester`); If-Match on the request.                                                                                                |
+| `POST /refund-requests/{requestId}/execution`             | `sal.refund-execute`           | `sal.payment.record` and `sal.finance.view`        | NEW. The payout recorded once (`refund_not_approved`, `refund_already_executed`), with reference, day and the approved method; one `refund_executed` event; settles the obligation when paid out in full. |
+| `GET /refund-requests`                                    | `sal.refund-request-list`      | `sal.finance.view` in the branch                   | NEW. A branch's requests, newest first, by customer, invoice, obligation and state.                                                                                                                       |
+| `GET /refund-requests/{requestId}`                        | `sal.refund-request-detail`    | `sal.finance.view`                                 | NEW. One request with its obligation's position and the people, by name.                                                                                                                                  |
+| `GET /refund-obligations`                                 | `sal.refund-obligation-list`   | unchanged                                          | Additive `paidOut` and `stillOwed` on each obligation; `state` reaches `settled`.                                                                                                                         |
+| `GET /invoices/{invoiceId}/outstanding`                   | `sal.invoice-outstanding-read` | unchanged                                          | `refundStatus` adds `requested`, `approved`, `partly_refunded`, `refunded`; additive `settlement.refunded`; `refundOwed` is what is still owed.                                                           |
+| `/invoices` (screen and print), `/refunds` (NEW page)     | the operations above           | as above, each step only to the holder of its code | The refunds panel on the invoice (ask, approve, reject, withdraw, record the payout, history); the refunds list in the finance menu; what was paid back on the screen and the print, en and ar.           |
+
+Wrapper extensions: none. The panel uses the shared `ConfirmDialog`, `ReasonDialog`, `DateField`,
+`FormMoneyField`, `FormSelectField` and `FormTextField`; the list uses `OperationalGrid`,
+`FilterToolbar`, `CustomerPicker` and `InvoicePicker`.
+
+Preserved: every D2 part 1 rule and the residual fixes above; the interim reversal rule while an
+obligation is open; tenant and branch isolation (forced row-level security); money stays a decimal
+string and nothing is computed in the browser; plain refusal sentences in English and Arabic.
+
+Known limitations, one line each:
+
+- No refund voucher is printed.
+- Open policy points, not built: explicit obligations; a third-party payee; cancelling an obligation;
+  refund approval limits (D13 is not applied to refunds); refunds in the D16 report and snapshots.
+- Existing organisations hold `sal.refund.approve` only once it is granted; the seed run and the
+  named-QA backfill are operator steps (CC-OD-58, README question 22).
+- The DB and backend tiers were run on the development machine on a disposable database only for the
+  files named in the pull request; the full tiers run on hosted CI.

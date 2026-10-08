@@ -638,6 +638,19 @@ export interface CreditApprovalEffectRow {
 }
 
 /**
+ * The refund facts of one invoice (D7 `refundStatus`): what its obligations total,
+ * what has been paid out on them, what is still owed, and whether a request waits
+ * for a decision or for its payout.
+ */
+export interface InvoiceRefundPositionRow {
+  readonly obligated: string;
+  readonly refunded: string;
+  readonly stillOwed: string;
+  readonly pendingRequest: boolean;
+  readonly approvedRequest: boolean;
+}
+
+/**
  * One refund obligation (ADR-023 D2, P1-32-PRE-OD-FD2A): money a customer is owed
  * back because an approved credit exceeded what the invoice still owed. The WHOLE
  * row is gated by `sal.finance.view` (`sel_refund_obligations_gated`). An
@@ -655,11 +668,15 @@ export interface RefundObligationRow {
   readonly amount: string;
   /** `credit_excess` only (`ck_refund_obligations_source`). */
   readonly source: string;
-  /** `open` until refund requests exist (FD2B). */
+  /** `open` until what has been paid out reaches its amount, then `settled` (FD2B). */
   readonly state: string;
   readonly createdAt: Date;
   readonly createdBy: string;
   readonly recordVersion: number;
+  /** What its approved refund requests have paid out, `numeric(18,4)` text (FD2B). */
+  readonly paidOut: string;
+  /** Its amount less what has been paid out, computed by PostgreSQL (FD2B). */
+  readonly stillOwed: string;
 }
 
 /** A work order's scope. `sal.invoices` must be created in exactly this scope. */
@@ -996,6 +1013,8 @@ interface RefundObligationSql {
   created_at: Date;
   created_by: string;
   record_version: number;
+  paid_out: string;
+  still_owed: string;
 }
 
 const toRefundObligation = (r: RefundObligationSql): RefundObligationRow => ({
@@ -1012,11 +1031,25 @@ const toRefundObligation = (r: RefundObligationSql): RefundObligationRow => ({
   createdAt: r.created_at,
   createdBy: r.created_by,
   recordVersion: r.record_version,
+  paidOut: r.paid_out,
+  stillOwed: r.still_owed,
 });
+
+/**
+ * What the obligation's approved refund requests have paid out (P1-32-PRE-OD-FD2B),
+ * summed by PostgreSQL; `sal.refund_requests` is gated by `sal.finance.view` exactly
+ * as the obligation is, so the sum never undercounts for a caller who sees the row.
+ */
+const REFUND_OBLIGATION_PAID_OUT = `COALESCE((SELECT sum(rr.amount) FROM sal.refund_requests rr
+    WHERE rr.tenant_id = ro.tenant_id AND rr.company_id = ro.company_id
+      AND rr.branch_id = ro.branch_id AND rr.obligation_id = ro.id
+      AND rr.approval_state = 'approved' AND rr.executed_at IS NOT NULL), 0)`;
 
 const REFUND_OBLIGATION_COLUMNS = `ro.id, ro.company_id, ro.branch_id, ro.partner_id, ro.invoice_id,
   ro.credit_note_id, ro.currency_code, ro.amount::text AS amount, ro.source, ro.state,
-  ro.created_at, ro.created_by, ro.record_version`;
+  ro.created_at, ro.created_by, ro.record_version,
+  (${REFUND_OBLIGATION_PAID_OUT})::numeric(18,4)::text AS paid_out,
+  (ro.amount - ${REFUND_OBLIGATION_PAID_OUT})::numeric(18,4)::text AS still_owed`;
 
 export class BillingRepository extends Repository {
   protected readonly module = 'billing';
@@ -3301,23 +3334,54 @@ export class BillingRepository extends Repository {
   }
 
   /**
-   * What the customer is owed back on one invoice: the sum of its OPEN refund
-   * obligations, `0.0000` when there are none (D7 `refundStatus`).
+   * What the invoice's refund obligations total (cancelled ones aside), what has
+   * been paid out on them, what is still owed on the open ones, and whether a
+   * request waits for a decision or for its payout. Sums in `numeric(18,4)`.
    */
-  public async openRefundOwed(
+  public async invoiceRefundPosition(
     db: DbHandle,
     scope: { readonly invoiceId: string; readonly companyId: string; readonly branchId: string }
-  ): Promise<string> {
+  ): Promise<InvoiceRefundPositionRow> {
     const context = this.assertContext(db);
-    const row = await this.runOne<{ owed: string }>(
+    const row = await this.runOne<{
+      obligated: string;
+      refunded: string;
+      still_owed: string;
+      pending_request: boolean;
+      approved_request: boolean;
+    }>(
       db,
-      `SELECT COALESCE(sum(ro.amount), 0)::numeric(18,4)::text AS owed
-         FROM sal.refund_obligations ro
-        WHERE ro.tenant_id = $1 AND ro.company_id = $2 AND ro.branch_id = $3
-          AND ro.invoice_id = $4 AND ro.state = 'open'`,
+      `WITH ob AS (
+         SELECT ro.id, ro.amount, ro.state,
+                COALESCE((SELECT sum(rr.amount) FROM sal.refund_requests rr
+                           WHERE rr.tenant_id = ro.tenant_id AND rr.company_id = ro.company_id
+                             AND rr.branch_id = ro.branch_id AND rr.obligation_id = ro.id
+                             AND rr.approval_state = 'approved' AND rr.executed_at IS NOT NULL), 0) AS paid
+           FROM sal.refund_obligations ro
+          WHERE ro.tenant_id = $1 AND ro.company_id = $2 AND ro.branch_id = $3
+            AND ro.invoice_id = $4 AND ro.state <> 'cancelled'
+       )
+       SELECT COALESCE(sum(ob.amount), 0)::numeric(18,4)::text AS obligated,
+              COALESCE(sum(ob.paid), 0)::numeric(18,4)::text AS refunded,
+              COALESCE(sum(ob.amount - ob.paid) FILTER (WHERE ob.state = 'open'), 0)::numeric(18,4)::text
+                AS still_owed,
+              EXISTS (SELECT 1 FROM sal.refund_requests rr
+                       WHERE rr.tenant_id = $1 AND rr.company_id = $2 AND rr.branch_id = $3
+                         AND rr.invoice_id = $4 AND rr.approval_state = 'pending') AS pending_request,
+              EXISTS (SELECT 1 FROM sal.refund_requests rr
+                       WHERE rr.tenant_id = $1 AND rr.company_id = $2 AND rr.branch_id = $3
+                         AND rr.invoice_id = $4 AND rr.approval_state = 'approved'
+                         AND rr.executed_at IS NULL) AS approved_request
+         FROM ob`,
       [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId]
     );
-    return row?.owed ?? '0.0000';
+    return {
+      obligated: row?.obligated ?? '0.0000',
+      refunded: row?.refunded ?? '0.0000',
+      stillOwed: row?.still_owed ?? '0.0000',
+      pendingRequest: row?.pending_request === true,
+      approvedRequest: row?.approved_request === true,
+    };
   }
 
   /**

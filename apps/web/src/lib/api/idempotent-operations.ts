@@ -10,7 +10,7 @@
  * The backend requires an `Idempotency-Key` header on every operation it
  * registers as idempotent, and answers `400 ERR-INT-002` without one — before
  * authorization is evaluated. That set is NOT "the POST operations": it is
- * currently 229 operations (PATCH 4, POST 218, PUT 7).
+ * currently 231 operations (PATCH 4, POST 220, PUT 7).
  *
  * The client used to infer the answer from the HTTP method, which was wrong for
  * every non-POST member of that set. This table is the contract instead of a
@@ -24,7 +24,7 @@
  * thirteen of them stating which class a write declares, none of them checkable
  * — because the Web tier held no data from which one could be derived.
  *
- * Currently approval 22, export 2, financial 20, none 225, privileged 234, security 14.
+ * Currently approval 24, export 2, financial 23, none 227, privileged 234, security 14.
  *
  * `(absent)` above would mean an operation the document publishes with NO audit
  * class. It is emitted as the empty string rather than defaulted to `none`,
@@ -49,7 +49,7 @@ export interface PublishedOperation {
   readonly auditClass: string;
 }
 
-/** Every operation the contract publishes. 517 of them. */
+/** Every operation the contract publishes. 524 of them. */
 export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze([
   {
     template: '/additional-work/{requestId}/approval',
@@ -2605,6 +2605,55 @@ export const PUBLISHED_OPERATIONS: readonly PublishedOperation[] = Object.freeze
     operationId: 'sal.refund-obligation-list',
     idempotent: false,
     auditClass: 'none',
+  },
+  {
+    template: '/refund-obligations/{obligationId}/refund-requests',
+    method: 'POST',
+    operationId: 'sal.refund-request',
+    idempotent: true,
+    auditClass: 'financial',
+  },
+  {
+    template: '/refund-requests',
+    method: 'GET',
+    operationId: 'sal.refund-request-list',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/refund-requests/{requestId}',
+    method: 'GET',
+    operationId: 'sal.refund-request-detail',
+    idempotent: false,
+    auditClass: 'none',
+  },
+  {
+    template: '/refund-requests/{requestId}/approval',
+    method: 'POST',
+    operationId: 'sal.refund-approve',
+    idempotent: false,
+    auditClass: 'approval',
+  },
+  {
+    template: '/refund-requests/{requestId}/execution',
+    method: 'POST',
+    operationId: 'sal.refund-execute',
+    idempotent: true,
+    auditClass: 'financial',
+  },
+  {
+    template: '/refund-requests/{requestId}/rejection',
+    method: 'POST',
+    operationId: 'sal.refund-reject',
+    idempotent: false,
+    auditClass: 'approval',
+  },
+  {
+    template: '/refund-requests/{requestId}/withdrawal',
+    method: 'POST',
+    operationId: 'sal.refund-withdraw',
+    idempotent: false,
+    auditClass: 'financial',
   },
   {
     template: '/reorder-levels',
