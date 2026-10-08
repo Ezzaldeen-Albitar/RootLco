@@ -15,10 +15,15 @@ import {
 
 const calls = vi.hoisted(() => ({
   permission: vi.fn(),
+  /** The catalogue's tenant-wide check of a dataset's codes (ADR-023 D17). */
+  anywhere: vi.fn(),
   branch: vi.fn(),
   dataset: vi.fn(),
 }));
-vi.mock('@/server/auth/authorization', () => ({ callerHoldsPermission: calls.permission }));
+vi.mock('@/server/auth/authorization', () => ({
+  callerHoldsPermission: calls.permission,
+  callerHoldsPermissionAnywhere: calls.anywhere,
+}));
 vi.mock('@/modules/iam', () => ({
   iamOrganizationContext: () => ({ branches: { findBranch: calls.branch } }),
 }));
@@ -70,6 +75,7 @@ function repository(row: ReportConfigurationRow | null): ReportCatalogueReposito
 beforeEach(() => {
   vi.clearAllMocks();
   calls.permission.mockResolvedValue(true);
+  calls.anywhere.mockResolvedValue(true);
   calls.branch.mockResolvedValue({ name: 'Reported branch', timezoneName: 'Asia/Amman' });
   calls.dataset.mockResolvedValue({
     counts: [],

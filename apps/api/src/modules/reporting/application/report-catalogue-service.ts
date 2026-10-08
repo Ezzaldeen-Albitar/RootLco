@@ -47,6 +47,7 @@ import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { AppFailure } from '@/server/errors/app-failure';
+import { callerHoldsPermissionAnywhere } from '@/server/auth/authorization';
 import { REPORT_ORDERING } from '../data/report-catalogue-repository';
 import type {
   ReportCatalogueRepository,
@@ -149,6 +150,48 @@ const baselineView = (definition: ReportDatasetDefinition): ReportDefinitionView
   titleKey: definition.titleKey,
 });
 
+/**
+ * The registered dataset codes whose declared permissions the caller holds
+ * somewhere in its tenant. See `listPublished` (ADR-023 D17).
+ */
+async function runnableDatasetCodes(db: DbHandle): Promise<ReadonlySet<string>> {
+  const held = new Map<string, boolean>();
+  const runnable = new Set<string>();
+  for (const code of REPORT_DATASET_CODES) {
+    let all = true;
+    for (const permission of reportDataset(code).requiredPermissions) {
+      let holds = held.get(permission);
+      if (holds === undefined) {
+        holds = await callerHoldsPermissionAnywhere(db, permission);
+        held.set(permission, holds);
+      }
+      if (!holds) {
+        all = false;
+        break;
+      }
+    }
+    if (all) runnable.add(code);
+  }
+  return runnable;
+}
+
+/**
+ * Whether the caller holds every code ONE registered dataset declares somewhere
+ * in its tenant — the single-code form of `runnableDatasetCodes`, for the
+ * by-code read (ADR-023 D17).
+ */
+async function datasetRunnable(db: DbHandle, reportCode: string): Promise<boolean> {
+  if (!isReportDatasetCode(reportCode)) return true;
+  for (const permission of reportDataset(reportCode).requiredPermissions) {
+    if (!(await callerHoldsPermissionAnywhere(db, permission))) return false;
+  }
+  return true;
+}
+
+/** A registered code is listed only when runnable; any other code as before. */
+const listedFor = (view: ReportDefinitionView, runnable: ReadonlySet<string>): boolean =>
+  !isReportDatasetCode(view.reportCode) || runnable.has(view.reportCode);
+
 export class ReportCatalogueService extends ApplicationService {
   protected readonly module = 'reporting';
 
@@ -190,6 +233,25 @@ export class ReportCatalogueService extends ApplicationService {
    * registered codes, so a tenant row sitting on a later page still hides its
    * baseline. What a caller must NOT assume is that the page is sorted by code
    * throughout: it is baselines, then codes ascending.
+   *
+   * ## An entry the caller could never run is not listed (ADR-023 D17)
+   *
+   * A registered dataset declares the codes its rows need
+   * (`requiredPermissions`), and the run, the export and the snapshot reads each
+   * refuse a caller who lacks one. The catalogue used to list every baseline to
+   * every `rpt.report.read` holder all the same, so a caller without
+   * `sal.finance.view` was shown the invoice-and-payment report's title and
+   * offered a report that could only answer 403. An entry whose code is a
+   * registered dataset is therefore listed only to a caller who holds every one
+   * of that dataset's codes SOMEWHERE in the tenant — a baseline and a tenant
+   * row that customises it alike. A tenant row whose code the platform does not
+   * implement declares no dataset codes and is listed as before.
+   *
+   * "Somewhere" rather than "in this branch" because the catalogue is
+   * tenant-wide and names no branch: a caller who holds the codes in one branch
+   * can run the report there. The answer only REMOVES entries, so it narrows the
+   * page and can never widen it; the run still decides per branch, and no
+   * permission or grant changes.
    */
   async listPublished(
     db: DbHandle,
@@ -197,16 +259,17 @@ export class ReportCatalogueService extends ApplicationService {
   ): Promise<Page<ReportDefinitionView>> {
     const request = pageRequest(REPORT_ORDERING, query);
     const page = await this.repository.listPublished(db, request);
-    const rows = page.items.map(toView);
+    const runnable = await runnableDatasetCodes(db);
+    const rows = page.items.map(toView).filter((view) => listedFor(view, runnable));
     // Baselines belong to the FIRST page only. See the docblock above.
     if (request.cursor !== null) return { ...page, items: rows };
 
     const configured = new Set(
       (await this.repository.findByCodes(db, REPORT_DATASET_CODES)).map((row) => row.report_code)
     );
-    const baselines = REPORT_DATASET_CODES.filter((code) => !configured.has(code)).map((code) =>
-      baselineView(reportDataset(code))
-    );
+    const baselines = REPORT_DATASET_CODES.filter(
+      (code) => !configured.has(code) && runnable.has(code)
+    ).map((code) => baselineView(reportDataset(code)));
     return { ...page, items: [...baselines, ...rows] };
   }
 
@@ -220,16 +283,28 @@ export class ReportCatalogueService extends ApplicationService {
    * implements, so a tenant that has configured nothing can still read (and run)
    * `work_orders_by_status`, and one that has configured it sees its own scope,
    * export permission and filter allowlist.
+   *
+   * The list's D17 rule holds here too: a registered dataset whose codes the
+   * caller holds nowhere in the tenant answers `ERR-RES-001`, the same answer
+   * as a code that never existed, so the by-code read cannot reveal a report's
+   * existence or title to a caller who could never run it.
    */
   async readByCode(db: DbHandle, reportCode: string): Promise<ReportDefinitionView> {
     const row = await this.repository.findByCode(db, reportCode);
-    if (row?.status === 'published') return toView(row);
-    if (row === null && isReportDatasetCode(reportCode)) {
+    if (row?.status === 'published' && (await datasetRunnable(db, reportCode))) {
+      return toView(row);
+    }
+    if (
+      row === null &&
+      isReportDatasetCode(reportCode) &&
+      (await datasetRunnable(db, reportCode))
+    ) {
       return baselineView(reportDataset(reportCode));
     }
-    // A draft, an archived report, another tenant's report and a code that
-    // never existed all answer identically. The catalogue must not be usable
-    // to discover which report codes a tenant has configured.
+    // A draft, an archived report, another tenant's report, a code that never
+    // existed and a report this caller could never run all answer identically.
+    // The catalogue must not be usable to discover which report codes a tenant
+    // has configured.
     throw new AppFailure('ERR-RES-001', { message: 'Report not found.' });
   }
 }
