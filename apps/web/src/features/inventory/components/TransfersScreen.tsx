@@ -27,11 +27,31 @@
  * `inv.stock.operate` offers dispatch, receipt, settlement and cancellation;
  * `inv.adjustment.approve` the write-off decision; `org.branch.read` the branch
  * picker.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV4`)
+ *
+ * Both lists are Material's table: each read answers one bounded page of the
+ * branch's list (no cursor — a longer list says it was cut short), so there is
+ * nothing for the operational grid's pager to walk. The direction and the
+ * settlement kind are `FormRadioGroupField`, the quantities `FormNumberField`
+ * (the exact string typed is the string sent), the reasons `FormTextField`, and
+ * every button is Material's. The branch list's states, the item finder and the
+ * location pickers are the shared inventory pieces, drawn by them. What is read,
+ * sent, refused and authorized is unchanged.
  */
 
 import { useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { RadioGroupField, TextAreaField, TextField } from '@/components/forms/Field';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -61,19 +81,10 @@ import {
   type TransferDiscrepancyKind,
   type TransferSettlement,
 } from '../inventory-contract';
-import {
-  LocationPicker,
-  OutcomeNote,
-  PRIMARY_BUTTON,
-  Qty,
-  SECONDARY_BUTTON,
-  useLocations,
-  type Locations,
-} from './shared';
+import { LocationPicker, OutcomeNote, Qty, useLocations, type Locations } from './shared';
 import {
   BranchListView,
   BranchTargetForm,
-  DANGER_BUTTON,
   ItemFinder,
   PANEL,
   StockOperationLinks,
@@ -219,7 +230,7 @@ function BranchTransfers({
         <h2 id="transfers-list-heading" className="text-body font-medium text-text-primary">
           {translate(messages, 'inventory.transfers.list.heading')}
         </h2>
-        <RadioGroupField
+        <FormRadioGroupField
           label={translate(messages, 'inventory.transfers.direction.label')}
           name="transfer-direction"
           value={direction}
@@ -243,135 +254,141 @@ function BranchTransfers({
           truncatedKey="inventory.transfers.list.truncated"
         >
           {(items) => (
-            <table className="w-full text-body">
-              <caption className="sr-only">
-                {translate(messages, 'inventory.transfers.list.caption')}
-              </caption>
-              <thead>
-                <tr className="text-caption text-text-muted">
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.transfers.column.item')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.transfers.column.route')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.transfers.column.dispatched')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.transfers.column.received')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.transfers.column.resolved')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.transfers.column.inTransit')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.transfers.column.status')}
-                  </th>
-                  {canOperate ? (
-                    <th scope="col" className="text-end font-medium">
-                      {translate(messages, 'inventory.transfers.column.actions')}
-                    </th>
-                  ) : null}
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((row) => {
-                  const open = row.status === 'dispatched' || row.status === 'partially_received';
-                  return (
-                    <tr key={row.id} className="border-t border-border align-top">
-                      <td>
-                        <code className="font-mono text-caption" dir="ltr">
-                          {row.sku}
-                        </code>
-                        <span className="block text-caption text-text-muted" dir="ltr">
-                          {formatDateTime(row.dispatchedAt, locale)}
-                        </span>
-                      </td>
-                      <td>
-                        <span dir="ltr">
-                          {row.fromLocationCode ??
-                            translate(messages, 'inventory.transfers.hiddenLocation')}
-                        </span>
-                        {' → '}
-                        <span dir="ltr">
-                          {row.toLocationCode ??
-                            translate(messages, 'inventory.transfers.hiddenLocation')}
-                        </span>
-                      </td>
-                      <td className="text-end">
-                        <Qty value={row.quantity} />
-                      </td>
-                      <td className="text-end">
-                        {row.receivedQuantity === null ? (
-                          <span className="text-caption text-text-muted">
-                            {translate(messages, 'inventory.transfers.nothingReceived')}
+            <TableContainer>
+              <Table size="small">
+                <caption className="sr-only">
+                  {translate(messages, 'inventory.transfers.list.caption')}
+                </caption>
+                <TableHead>
+                  <TableRow>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.transfers.column.item')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.transfers.column.route')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.transfers.column.dispatched')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.transfers.column.received')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.transfers.column.resolved')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.transfers.column.inTransit')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.transfers.column.status')}
+                    </TableCell>
+                    {canOperate ? (
+                      <TableCell scope="col" align="right">
+                        {translate(messages, 'inventory.transfers.column.actions')}
+                      </TableCell>
+                    ) : null}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {items.map((row) => {
+                    const open = row.status === 'dispatched' || row.status === 'partially_received';
+                    return (
+                      <TableRow key={row.id} className="align-top">
+                        <TableCell>
+                          <code className="font-mono text-caption" dir="ltr">
+                            {row.sku}
+                          </code>
+                          <span className="block text-caption text-text-muted" dir="ltr">
+                            {formatDateTime(row.dispatchedAt, locale)}
                           </span>
-                        ) : (
-                          <Qty value={row.receivedQuantity} />
-                        )}
-                      </td>
-                      <td className="text-end">
-                        <Qty value={row.resolvedQuantity} />
-                      </td>
-                      <td className="text-end">
-                        <strong>
-                          <Qty value={row.outstandingQuantity} />
-                        </strong>
-                      </td>
-                      <td>
-                        {translateDynamic(messages, `inventory.transferStatus.${row.status}`)}
-                        {row.cancelReason ? (
-                          <span className="block text-caption text-text-muted">
-                            {row.cancelReason}
+                        </TableCell>
+                        <TableCell>
+                          <span dir="ltr">
+                            {row.fromLocationCode ??
+                              translate(messages, 'inventory.transfers.hiddenLocation')}
                           </span>
-                        ) : null}
-                      </td>
-                      {canOperate ? (
-                        <td className="text-end">
-                          {open ? (
-                            <div className="flex flex-wrap justify-end gap-2">
-                              <button
-                                type="button"
-                                className={SECONDARY_BUTTON}
-                                onClick={() => setAction({ kind: 'receive', row })}
-                              >
-                                {translate(messages, 'inventory.transfers.receive.action')}
-                                <span className="sr-only"> {row.sku}</span>
-                              </button>
-                              <button
-                                type="button"
-                                className={SECONDARY_BUTTON}
-                                onClick={() => setAction({ kind: 'resolve', row })}
-                              >
-                                {translate(messages, 'inventory.transfers.resolve.action')}
-                                <span className="sr-only"> {row.sku}</span>
-                              </button>
-                              {row.status === 'dispatched' ? (
-                                <button
-                                  type="button"
-                                  className={DANGER_BUTTON}
-                                  onClick={() => setAction({ kind: 'cancel', row })}
-                                >
-                                  {translate(messages, 'inventory.transfers.cancel.action')}
-                                  <span className="sr-only"> {row.sku}</span>
-                                </button>
-                              ) : null}
-                            </div>
-                          ) : (
+                          {' → '}
+                          <span dir="ltr">
+                            {row.toLocationCode ??
+                              translate(messages, 'inventory.transfers.hiddenLocation')}
+                          </span>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Qty value={row.quantity} />
+                        </TableCell>
+                        <TableCell align="right">
+                          {row.receivedQuantity === null ? (
                             <span className="text-caption text-text-muted">
-                              {translate(messages, 'inventory.transfers.closed')}
+                              {translate(messages, 'inventory.transfers.nothingReceived')}
                             </span>
+                          ) : (
+                            <Qty value={row.receivedQuantity} />
                           )}
-                        </td>
-                      ) : null}
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Qty value={row.resolvedQuantity} />
+                        </TableCell>
+                        <TableCell align="right">
+                          <strong>
+                            <Qty value={row.outstandingQuantity} />
+                          </strong>
+                        </TableCell>
+                        <TableCell>
+                          {translateDynamic(messages, `inventory.transferStatus.${row.status}`)}
+                          {row.cancelReason ? (
+                            <span className="block text-caption text-text-muted">
+                              {row.cancelReason}
+                            </span>
+                          ) : null}
+                        </TableCell>
+                        {canOperate ? (
+                          <TableCell align="right">
+                            {open ? (
+                              <div className="flex flex-wrap justify-end gap-2">
+                                <Button
+                                  type="button"
+                                  variant="outlined"
+                                  size="small"
+                                  onClick={() => setAction({ kind: 'receive', row })}
+                                >
+                                  {translate(messages, 'inventory.transfers.receive.action')}
+                                  <span className="sr-only"> {row.sku}</span>
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outlined"
+                                  size="small"
+                                  onClick={() => setAction({ kind: 'resolve', row })}
+                                >
+                                  {translate(messages, 'inventory.transfers.resolve.action')}
+                                  <span className="sr-only"> {row.sku}</span>
+                                </Button>
+                                {row.status === 'dispatched' ? (
+                                  <Button
+                                    type="button"
+                                    variant="outlined"
+                                    color="error"
+                                    size="small"
+                                    onClick={() => setAction({ kind: 'cancel', row })}
+                                  >
+                                    {translate(messages, 'inventory.transfers.cancel.action')}
+                                    <span className="sr-only"> {row.sku}</span>
+                                  </Button>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <span className="text-caption text-text-muted">
+                                {translate(messages, 'inventory.transfers.closed')}
+                              </span>
+                            )}
+                          </TableCell>
+                        ) : null}
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
         </BranchListView>
       </section>
@@ -391,78 +408,81 @@ function BranchTransfers({
           truncatedKey="inventory.transfers.writeOffs.truncated"
         >
           {(items) => (
-            <table className="w-full text-body">
-              <caption className="sr-only">
-                {translate(messages, 'inventory.transfers.writeOffs.caption')}
-              </caption>
-              <thead>
-                <tr className="text-caption text-text-muted">
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.transfers.column.item')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.transfers.writeOffs.column.quantity')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.transfers.writeOffs.column.reason')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.transfers.writeOffs.column.decision')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((row) => {
-                  const own = row.requestedBy === currentUserId;
-                  return (
-                    <tr key={row.id} className="border-t border-border align-top">
-                      <td>
-                        <code className="font-mono text-caption" dir="ltr">
-                          {row.sku}
-                        </code>
-                      </td>
-                      <td className="text-end">
-                        <Qty value={row.quantity} />
-                      </td>
-                      <td>
-                        {row.reason}
-                        <span className="block text-caption text-text-muted" dir="ltr">
-                          {formatDateTime(row.createdAt, locale)}
-                        </span>
-                        {own ? (
-                          <span className="block text-caption text-text-muted">
-                            {translate(messages, 'inventory.transfers.writeOffs.byYou')}
+            <TableContainer>
+              <Table size="small">
+                <caption className="sr-only">
+                  {translate(messages, 'inventory.transfers.writeOffs.caption')}
+                </caption>
+                <TableHead>
+                  <TableRow>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.transfers.column.item')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.transfers.writeOffs.column.quantity')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.transfers.writeOffs.column.reason')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.transfers.writeOffs.column.decision')}
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {items.map((row) => {
+                    const own = row.requestedBy === currentUserId;
+                    return (
+                      <TableRow key={row.id} className="align-top">
+                        <TableCell>
+                          <code className="font-mono text-caption" dir="ltr">
+                            {row.sku}
+                          </code>
+                        </TableCell>
+                        <TableCell align="right">
+                          <Qty value={row.quantity} />
+                        </TableCell>
+                        <TableCell>
+                          {row.reason}
+                          <span className="block text-caption text-text-muted" dir="ltr">
+                            {formatDateTime(row.createdAt, locale)}
                           </span>
-                        ) : null}
-                      </td>
-                      <td className="text-end">
-                        {!canApprove ? (
-                          <span className="text-caption text-text-muted">
-                            {translate(messages, 'inventory.transfers.writeOffs.needsApprove')}
-                          </span>
-                        ) : own ? (
-                          <span className="text-caption text-text-muted">
-                            {translate(messages, 'inventory.transfers.writeOffs.ownRequest')}
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className={SECONDARY_BUTTON}
-                            onClick={() => {
-                              setAction(null);
-                              setDeciding(row);
-                            }}
-                          >
-                            {translate(messages, 'inventory.transfers.writeOffs.decide.action')}
-                            <span className="sr-only"> {row.sku}</span>
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                          {own ? (
+                            <span className="block text-caption text-text-muted">
+                              {translate(messages, 'inventory.transfers.writeOffs.byYou')}
+                            </span>
+                          ) : null}
+                        </TableCell>
+                        <TableCell align="right">
+                          {!canApprove ? (
+                            <span className="text-caption text-text-muted">
+                              {translate(messages, 'inventory.transfers.writeOffs.needsApprove')}
+                            </span>
+                          ) : own ? (
+                            <span className="text-caption text-text-muted">
+                              {translate(messages, 'inventory.transfers.writeOffs.ownRequest')}
+                            </span>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outlined"
+                              size="small"
+                              onClick={() => {
+                                setAction(null);
+                                setDeciding(row);
+                              }}
+                            >
+                              {translate(messages, 'inventory.transfers.writeOffs.decide.action')}
+                              <span className="sr-only"> {row.sku}</span>
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
         </BranchListView>
       </section>
@@ -592,34 +612,36 @@ function WriteOffDecisionForm({
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.transfers.writeOffs.decide.explain')}
       </p>
-      <TextAreaField
+      <FormTextField
+        multiline
         label={translate(messages, 'inventory.transfers.writeOffs.decide.reason')}
         required
         rows={2}
         value={reason}
-        onChange={(event) => setReason(event.target.value)}
+        onChange={setReason}
         error={
           error ? translateDynamic(messages, error) : outcomeField(messages, outcome, 'reason')
         }
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div className="flex flex-wrap gap-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.transfers.writeOffs.decide.approve')}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className={DANGER_BUTTON}
+          variant="outlined"
+          color="error"
           disabled={busy}
           onClick={() => {
             void decide('rejected');
           }}
         >
           {translate(messages, 'inventory.transfers.writeOffs.decide.reject')}
-        </button>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+        </Button>
+        <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'inventory.stockOps.close')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -719,26 +741,24 @@ function ReceiveForm({
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.transfers.receive.explain')}
       </p>
-      <TextField
+      <FormNumberField
         label={translate(messages, 'inventory.transfers.receive.quantity')}
         description={translate(messages, 'inventory.stockOps.quantityHelp')}
         required
-        inputMode="decimal"
-        dir="ltr"
         value={quantity}
-        onChange={(event) => setQuantity(event.target.value)}
+        onChange={setQuantity}
         error={
           error ? translateDynamic(messages, error) : outcomeField(messages, outcome, 'quantity')
         }
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div className="flex flex-wrap gap-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.transfers.receive.submit')}
-        </button>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+        </Button>
+        <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'inventory.stockOps.close')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -826,7 +846,7 @@ function ResolveForm({
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.transfers.resolve.explain')}
       </p>
-      <RadioGroupField
+      <FormRadioGroupField
         label={translate(messages, 'inventory.transfers.resolve.kind')}
         name="transfer-resolution-kind"
         required
@@ -837,32 +857,31 @@ function ResolveForm({
           label: translateDynamic(messages, `inventory.transfers.resolve.kind.${value}`),
         }))}
       />
-      <TextField
+      <FormNumberField
         label={translate(messages, 'inventory.transfers.resolve.quantity')}
         description={translate(messages, 'inventory.stockOps.quantityHelp')}
         required
-        inputMode="decimal"
-        dir="ltr"
         value={quantity}
-        onChange={(event) => setQuantity(event.target.value)}
+        onChange={setQuantity}
         error={errorFor('quantity')}
       />
-      <TextAreaField
+      <FormTextField
+        multiline
         label={translate(messages, 'inventory.stockOps.reason')}
         required
         rows={2}
         value={reason}
-        onChange={(event) => setReason(event.target.value)}
+        onChange={setReason}
         error={errorFor('reason')}
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div className="flex flex-wrap gap-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.transfers.resolve.submit')}
-        </button>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+        </Button>
+        <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'inventory.stockOps.close')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -921,24 +940,25 @@ function CancelForm({
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.transfers.cancel.explain')}
       </p>
-      <TextAreaField
+      <FormTextField
+        multiline
         label={translate(messages, 'inventory.stockOps.reason')}
         required
         rows={2}
         value={reason}
-        onChange={(event) => setReason(event.target.value)}
+        onChange={setReason}
         error={
           error ? translateDynamic(messages, error) : outcomeField(messages, outcome, 'reason')
         }
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div className="flex flex-wrap gap-2">
-        <button type="submit" className={DANGER_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" color="error" disabled={busy}>
           {translate(messages, 'inventory.transfers.cancel.submit')}
-        </button>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+        </Button>
+        <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'inventory.stockOps.close')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -1063,28 +1083,27 @@ function DispatchForm({
           error={errorFor('toLocationId')}
         />
       </div>
-      <TextField
+      <FormNumberField
         label={translate(messages, 'inventory.transfers.create.quantity')}
         description={translate(messages, 'inventory.stockOps.quantityHelp')}
         required
-        inputMode="decimal"
-        dir="ltr"
         value={form.quantity}
-        onChange={(event) => setForm((f) => ({ ...f, quantity: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, quantity: next }))}
         error={errorFor('quantity')}
       />
-      <TextAreaField
+      <FormTextField
+        multiline
         label={translate(messages, 'inventory.transfers.create.reason')}
         rows={2}
         value={form.reason}
-        onChange={(event) => setForm((f) => ({ ...f, reason: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, reason: next }))}
         error={errorFor('reason')}
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.transfers.create.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );

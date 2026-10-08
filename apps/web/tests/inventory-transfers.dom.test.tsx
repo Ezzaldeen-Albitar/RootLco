@@ -4,8 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   inBranch,
+  messagesFor,
   renderLtr as renderInLtr,
   renderRtl as renderInRtl,
   BranchSwitch,
@@ -32,11 +35,23 @@ import {
  * keeps the default snapshot — one authorized branch, selected for the operator
  * — true for every case below. A case that needs a different snapshot builds
  * one and renders it explicitly.
+ *
+ * On Material UI since `P1-32-PRE-OD-INV4`: every render also goes under the
+ * product's Material provider, as the locale layout mounts it. The lists are
+ * still tables, the fields still labelled boxes and radios, the actions still
+ * buttons named with what they act on — so the selectors below did not move.
  */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
 const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
-  renderInLtr(inBranch(ui), options);
+  renderInLtr(withMui(inBranch(ui), 'en'), options);
 const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
-  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
+  renderInRtl(withMui(inBranch(ui, { locale: 'ar' }), 'ar'), options);
 import {
   BRANCH_ID,
   COMPANY_ID,
@@ -738,21 +753,24 @@ describe('a half-written transfer and a branch switch', () => {
 
   async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
     renderInLtr(
-      inBranch(
-        <>
-          <BranchSwitch to={TEST_BRANCH.id} label="first" />
-          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
-          <WorkingBranchProbe />
-          <TransfersScreen
-            locale="en"
-            messages={en}
-            currentUserId={USER_ID}
-            canOperate={true}
-            canApprove={true}
-            canReadBranches={true}
-          />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            <TransfersScreen
+              locale="en"
+              messages={en}
+              currentUserId={USER_ID}
+              canOperate={true}
+              canApprove={true}
+              canReadBranches={true}
+            />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        ),
+        'en'
       )
     );
     await user.click(screen.getByRole('button', { name: 'first' }));
@@ -973,5 +991,306 @@ describe('accessibility and Arabic', () => {
     expect(document.documentElement.dir).toBe('rtl');
     // Addressed on arrival in Arabic exactly as in English.
     await waitFor(() => expect(listTransfers).toHaveBeenCalled());
+  });
+});
+
+describe('on Material UI, in both languages (P1-32-PRE-OD-INV4)', () => {
+  /*
+   * The screen moved onto the ADR-022 wrappers: Material's table for both
+   * lists, `FormRadioGroupField` for the direction and the settlement kind,
+   * `FormNumberField` for every quantity, `FormTextField` for every reason and
+   * Material's buttons. Each case here holds, in English and in Arabic, a
+   * property the move must keep: the actions name what they act on, a refused
+   * field is marked on its own box with what was typed kept, a quantity is a
+   * left-to-right text box that sends the string typed, and a write in flight
+   * cannot be sent a second time.
+   */
+  const CATALOGUES = { en: EN, ar: AR } as const;
+  const escapeText = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const anchored = (T: Record<string, string>, key: string) =>
+    new RegExp(`^${escapeText(T[key] as string)}`);
+
+  function renderIn(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    const props = { currentUserId: USER_ID, canOperate: true, canApprove: true, ...over };
+    return locale === 'en'
+      ? renderLtr(<TransfersScreen locale="en" messages={en} {...props} />)
+      : renderRtl(<TransfersScreen locale="ar" messages={ar} {...props} />);
+  }
+  const regionIn = (T: Record<string, string>, key: string) =>
+    screen.getByRole('region', { name: T[key] as string });
+  async function openIn(
+    user: ReturnType<typeof userEvent.setup>,
+    T: Record<string, string>,
+    actionKey: string,
+    headingKey: string
+  ) {
+    const table = await within(regionIn(T, 'inventory.transfers.list.heading')).findByRole('table');
+    await user.click(within(table).getByRole('button', { name: `${T[actionKey]} BRK-001` }));
+    return screen.getByRole('form', { name: anchored(T, headingKey) });
+  }
+  /** The element a marked field names as its error message. */
+  const errorOf = (field: HTMLElement) =>
+    document.getElementById(field.getAttribute('aria-errormessage') ?? '');
+
+  it.each(['en', 'ar'] as const)(
+    'the list is a table whose actions name the item, under a direction radio group (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      renderIn(locale);
+      const list = regionIn(T, 'inventory.transfers.list.heading');
+      const table = await within(list).findByRole('table');
+      for (const key of [
+        'inventory.transfers.receive.action',
+        'inventory.transfers.resolve.action',
+        'inventory.transfers.cancel.action',
+      ]) {
+        expect(within(table).getByRole('button', { name: `${T[key]} BRK-001` })).toBeVisible();
+      }
+      // The server's strings, as they are: dispatched and still in transit.
+      expect(within(table).getAllByText('2.500')).toHaveLength(2);
+      const direction = within(list).getByRole('radiogroup', {
+        name: T['inventory.transfers.direction.label'] as string,
+      });
+      expect(
+        within(direction).getByLabelText(T['inventory.transfers.direction.outbound'] as string)
+      ).toBeChecked();
+      expect(document.documentElement.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'a refused quantity is marked on its own box, what was typed stays, and nothing is sent (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      renderIn(locale);
+      const form = await openIn(
+        user,
+        T,
+        'inventory.transfers.receive.action',
+        'inventory.transfers.receive.heading'
+      );
+      const quantity = within(form).getByLabelText(
+        anchored(T, 'inventory.transfers.receive.quantity')
+      );
+      // A text box with a numeric keypad, read left to right in both languages.
+      expect(quantity).toHaveAttribute('type', 'text');
+      expect(quantity).toHaveAttribute('inputmode', 'decimal');
+      expect(quantity).toHaveAttribute('dir', 'ltr');
+      expect(quantity).toHaveAttribute('aria-required', 'true');
+      expect(quantity).not.toHaveAttribute('aria-invalid');
+      await user.type(quantity, '0');
+      await user.click(
+        within(form).getByRole('button', {
+          name: T['inventory.transfers.receive.submit'] as string,
+        })
+      );
+      await waitFor(() => expect(quantity).toHaveAttribute('aria-invalid', 'true'));
+      expect(errorOf(quantity)).toHaveTextContent(T['inventory.stockOps.quantityFormat'] as string);
+      expect(quantity).toHaveValue('0');
+      expect(receiveTransfer).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'a receipt in flight cannot be sent a second time (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      // The submit is disabled while the first press is answered; a second press
+      // must reach nothing.
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      let answer: (value: unknown) => void = () => undefined;
+      receiveTransfer.mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+      );
+      renderIn(locale);
+      const form = await openIn(
+        user,
+        T,
+        'inventory.transfers.receive.action',
+        'inventory.transfers.receive.heading'
+      );
+      await user.type(
+        within(form).getByLabelText(anchored(T, 'inventory.transfers.receive.quantity')),
+        '1.000'
+      );
+      const submit = within(form).getByRole('button', {
+        name: T['inventory.transfers.receive.submit'] as string,
+      });
+      await user.click(submit);
+      await waitFor(() => expect(submit).toBeDisabled());
+      await user.click(submit);
+      expect(receiveTransfer).toHaveBeenCalledTimes(1);
+      answer(refusedWith('inventory.transfers.receive.refused'));
+      await waitFor(() => expect(submit).toBeEnabled());
+      expect(receiveTransfer).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'a receipt another person already took is refused in words, with its reference, and the typed quantity kept (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      receiveTransfer.mockResolvedValue(refusedWith('form.violation.transfer_not_receivable'));
+      renderIn(locale);
+      const form = await openIn(
+        user,
+        T,
+        'inventory.transfers.receive.action',
+        'inventory.transfers.receive.heading'
+      );
+      const quantity = within(form).getByLabelText(
+        anchored(T, 'inventory.transfers.receive.quantity')
+      );
+      await user.type(quantity, '2.500');
+      await user.click(
+        within(form).getByRole('button', {
+          name: T['inventory.transfers.receive.submit'] as string,
+        })
+      );
+      const alert = await within(form).findByRole('alert');
+      expect(alert).toHaveTextContent(T['form.violation.transfer_not_receivable'] as string);
+      expect(alert).toHaveTextContent('corr-refused');
+      expect(quantity).toHaveValue('2.500');
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'settling: the kind is a required radio group with return to origin chosen, and each refused box is marked (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      renderIn(locale);
+      const form = await openIn(
+        user,
+        T,
+        'inventory.transfers.resolve.action',
+        'inventory.transfers.resolve.heading'
+      );
+      const kind = within(form).getByRole('radiogroup', {
+        name: anchored(T, 'inventory.transfers.resolve.kind'),
+      });
+      expect(kind).toHaveAttribute('aria-required', 'true');
+      expect(
+        within(kind).getByLabelText(
+          T['inventory.transfers.resolve.kind.return_to_origin'] as string
+        )
+      ).toBeChecked();
+      const reason = within(form).getByLabelText(anchored(T, 'inventory.stockOps.reason'));
+      expect(reason.tagName).toBe('TEXTAREA');
+      await user.click(
+        within(form).getByRole('button', {
+          name: T['inventory.transfers.resolve.submit'] as string,
+        })
+      );
+      const quantity = within(form).getByLabelText(
+        anchored(T, 'inventory.transfers.resolve.quantity')
+      );
+      await waitFor(() => expect(quantity).toHaveAttribute('aria-invalid', 'true'));
+      expect(reason).toHaveAttribute('aria-invalid', 'true');
+      expect(errorOf(reason)).toHaveTextContent(T['field.required'] as string);
+      expect(resolveTransferDiscrepancy).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'a write-off decision asks for its reason on the box (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      listTransferWriteOffs.mockResolvedValue(okPage([writeOff()]));
+      renderIn(locale);
+      const table = await within(regionIn(T, 'inventory.transfers.writeOffs.heading')).findByRole(
+        'table'
+      );
+      await user.click(
+        within(table).getByRole('button', {
+          name: `${T['inventory.transfers.writeOffs.decide.action']} BRK-001`,
+        })
+      );
+      const form = screen.getByRole('form', {
+        name: anchored(T, 'inventory.transfers.writeOffs.decide.heading'),
+      });
+      await user.click(
+        within(form).getByRole('button', {
+          name: T['inventory.transfers.writeOffs.decide.approve'] as string,
+        })
+      );
+      const reason = within(form).getByLabelText(
+        anchored(T, 'inventory.transfers.writeOffs.decide.reason')
+      );
+      await waitFor(() => expect(reason).toHaveAttribute('aria-invalid', 'true'));
+      expect(errorOf(reason)).toHaveTextContent(T['field.required'] as string);
+      expect(decideTransferWriteOff).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'a dispatch in flight cannot be sent a second time, and carries the string typed (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup({ pointerEventsCheck: 0 });
+      let answer: (value: unknown) => void = () => undefined;
+      createTransfer.mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+      );
+      renderIn(locale);
+      const form = await screen.findByRole('form', {
+        name: T['inventory.transfers.create.heading'] as string,
+      });
+      await user.type(
+        within(form).getByLabelText(anchored(T, 'inventory.stockOps.item.find')),
+        'BRK'
+      );
+      await user.click(
+        within(form).getByRole('button', { name: T['inventory.stockOps.item.search'] as string })
+      );
+      await within(form).findByRole('option', { name: 'BRK-001 — Brake pad' });
+      await user.selectOptions(
+        within(form).getByLabelText(anchored(T, 'inventory.stockOps.item.label')),
+        ITEM_ID
+      );
+      await within(form).findAllByRole('option', { name: 'WH-1 — Main warehouse' });
+      await user.selectOptions(
+        within(form).getByLabelText(anchored(T, 'inventory.transfers.create.from')),
+        LOCATION_ID
+      );
+      await user.selectOptions(
+        within(form).getByLabelText(anchored(T, 'inventory.transfers.create.to')),
+        OTHER_LOCATION_ID
+      );
+      await user.type(
+        within(form).getByLabelText(anchored(T, 'inventory.transfers.create.quantity')),
+        '2.500'
+      );
+      const submit = within(form).getByRole('button', {
+        name: T['inventory.transfers.create.submit'] as string,
+      });
+      await user.click(submit);
+      await waitFor(() => expect(submit).toBeDisabled());
+      await user.click(submit);
+      expect(createTransfer).toHaveBeenCalledTimes(1);
+      expect(createTransfer.mock.calls[0]?.[0]).toMatchObject({ quantity: '2.500' });
+      answer(refusedWith('inventory.transfers.create.refused'));
+      await waitFor(() => expect(submit).toBeEnabled());
+      expect(createTransfer).toHaveBeenCalledTimes(1);
+    }
+  );
+
+  it('the Arabic screen with a form open has no serious or critical accessibility finding', async () => {
+    const user = userEvent.setup();
+    const { container } = renderIn('ar');
+    await openIn(
+      user,
+      AR,
+      'inventory.transfers.resolve.action',
+      'inventory.transfers.resolve.heading'
+    );
+    expect(await seriousViolations(container)).toEqual([]);
   });
 });
