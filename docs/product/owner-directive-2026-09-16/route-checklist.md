@@ -1672,11 +1672,11 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/inventory/counts`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
 | `/inventory/goods-receipts`                           | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/items/[itemId]`                           | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
+| `/inventory/items/[itemId]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/labels`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
+| `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states                       | F1–F6; G1–G9; P1–P10; E1–E2, E4; S1–S4           | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/opening-stock`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory`                                          | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
+| `/inventory`                                          | `FilterToolbar`, form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states      | F1–F6; G1–G9; P1–P10; T1, T5; E1–E2, E4; S1–S4   | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
 | `/inventory/setup`                                    | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/inventory/transfers`                                | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
@@ -3127,6 +3127,149 @@ Known limitations of this slice, one line each:
   1.5 s keeps that from returning.
 - No authenticated browser spec targets these screens by test id; review round 2 observed hosted
   authenticated-browser job 109551243742 pass on `0a1f7925`.
+
+### Inventory stock, item codes and movements on Material UI (`P1-32-PRE-OD-MUI7A1`)
+
+The first inventory slice of the Owner's interface order: the stock screen, one item's codes and
+prices, and the movement ledger moved onto the shared wrappers, with the shared inventory pieces
+they draw. Nothing about how any of them reads, authorizes or scopes changed: the same reads and
+writes with the same arguments, the same page refusals before any read (`inv.item.read` for
+`/inventory` and the item page, `inv.stock.read` for the ledger), the same per-control codes
+(`inv.stock.read`, `inv.stock.operate`, `inv.item.manage`, `wo.work_order.read`, `inv.item.read`),
+and the same route branch scope, unchanged in `route-branch-scope.ts` — `/inventory` and
+`/inventory/movements` `concrete`, `/inventory/items/[itemId]` `none`. No backend file changed.
+
+What moved to which wrapper:
+
+- `/inventory` — the item catalogue's search is `FilterToolbar`'s box with the item type, the
+  lifecycle and the category as its selects (the category's options and its line are
+  `CategoryPicker`'s, through `categoryChoices`); "Stock-tracked only" and Show sit in the toolbar's
+  actions, and the filters stay drafts until Show or Enter in the box, as before. The catalogue,
+  the availability cells and the reservations are `OperationalGrid` over the same `useServerTable`
+  reads (server paging, `rowCount` -1, the cursor footer, "Page N"); an empty answer is the
+  "No matches" state in each list's own sentence. Release is the reservation grid's row action,
+  named with the stock code and the location. The item filters and the reserve form's item are
+  `ItemPicker` on `EntityPicker`; the job is `WorkOrderPicker` on `EntityPicker`; the typed job
+  reference a caller without `wo.work_order.read` keeps is `ReferenceBox` on `FormTextField`; the
+  locations are `LocationPicker` on `FormSelectField`; the quantity is `FormNumberField`; the
+  quarantine and archived switches are `FormCheckboxField`; the expiry is a `ZonedDateTimeField`.
+- `/inventory/items/[itemId]` — both lists are Material's table (each read answers the item's
+  whole list, so there is nothing for the grid's pager to walk); every field is a `forms/mui`
+  wrapper (the price and the pack quantity `FormNumberField`, so the exact string typed is the
+  string sent); every button is Material's; a read that does not answer is
+  `MuiReadFailureState` carrying the screen's own sentence; loading is `MuiLoadingState`.
+- `/inventory/movements` — the ledger is `OperationalGrid` over the same read; the filters are
+  `forms/mui` wrappers and the same pickers as above; the window's two moments are
+  `ZonedDateTimeField`s; "Read again" for the job from the link is Material's button.
+
+The two moments stay on the operator's own clock. The native `datetime-local` boxes read a typed
+wall time with `new Date`, which is the browser's zone, so the pickers are handed that zone
+explicitly (`useOperatorZone` in `stock-operations.tsx`, read through `lib/format`'s
+`resolvedTimeZone`) and every instant sent is the one sent before: the ledger's first window is
+still the operator's midnight six days ago, and a typed expiry is still the instant of the wall time
+typed. E3 (the working branch's clock) is deliberately not applied; moving these onto the branch's
+clock is a behaviour change left for a decision.
+
+The shared pieces (`features/inventory/components/`):
+
+- `pickers.tsx` — `ItemPicker` and `ReferenceBox` take `material` (off unless stated), the
+  `WorkOrderPicker` / `CustomerPicker` precedent: on, the picker is `EntityPicker` and its archived
+  switch `FormCheckboxField`, and the box is `FormTextField`; off, both are exactly as before.
+  `IssuedPartPicker` has no caller on these routes and is unchanged.
+- `shared.tsx` — `LocationPicker` and `CategoryPicker` take `material` the same way;
+  `categoryChoices` hands a toolbar the category options and line. `BranchPairPicker`,
+  `OutcomeNote`, `Qty` and the badges are unchanged.
+- `stock-operations.tsx` — adds `useOperatorZone`. `BranchTargetForm`, the one piece these routes
+  draw, holds no legacy field and is unchanged; `ItemFinder` and `BranchListView` serve only screens
+  of later slices and are unchanged.
+- `ScanBox.tsx` — unchanged: no route of this slice draws it (the counter and the label printer
+  do), so it moves with them.
+
+Every other inventory screen that imports these files (parts, setup, opening stock, transfers,
+goods receipts, adjustments, counts, counter sales, customer returns, labels, unit conversions,
+vehicle specifications, material requirements) renders the legacy branch of each `material` flag,
+unchanged; their suites pass unchanged.
+
+Wrapper extension, tested in `mui-form-fields.dom.test.tsx`: `FormTextField` takes `spellCheck`,
+so a reference box is never underlined or "corrected" (`ReferenceBox` set it on the older field);
+unset, the browser's default. No component folder became unused by every scanned tree, so
+`MODULE_DISPOSITION` is unchanged (`validate:p1-27-frontend`).
+
+Preserved, each held by a case in `inventory.dom`, `inventory-movements.dom` or
+`inventory-item-codes.dom` (en and ar where marked):
+
+- Permission gates and scope: the page refusals before any read; no stock read without
+  `inv.stock.read`; reserving and releasing only with `inv.stock.operate`; every write on the item
+  page only with `inv.item.manage`; every stock read addressed to the working branch, "All my
+  branches" refused in words and read nothing.
+- Typed-reference fallbacks: without `wo.work_order.read` the job, and without `inv.item.read` the
+  ledger's item, are a labelled box read left to right, never spell-checked, checked for shape
+  before anything is sent (en and ar for the boxes' attributes).
+- Server pagination and no total: each grid is "Page 1" with Next not offered on a last page (en
+  and ar); no grid footer and no count.
+- States: a refusal is the refusal, never an empty list; an outage is "unavailable" with the
+  reference and a retry that reads again (availability, the ledger and the codes, en and ar); an
+  empty answer is "No matches" in the list's own words (en and ar).
+- Stale answers ignored: the ledger's first read for a previous branch is not drawn after a switch;
+  a late picker reply for an earlier term is not drawn under a later one.
+- Field errors: a refused quantity, code or moment is marked on its own field (`aria-invalid` only
+  while refused, the reason as its error message), what was typed stays (the quantity and the
+  code in en and ar, the moments in en).
+- Unsaved work: a half-filled reserve form, an item or job chosen in it, and ledger filters not yet
+  shown ask before a branch switch; a list filter's choice and ledger filters already shown do not.
+- Money and quantity precision: quantities and prices are the server's strings and the exact
+  strings typed; nothing is computed in the browser.
+- Idempotency: one reservation key per opened form, kept across a refusal; one code key per opened
+  form.
+- Arabic and English, right to left, in every suite above.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- `findByRole('table')` → `findByRole('grid')` for the catalogue, availability, reservation and
+  ledger lists (`inventory.dom`, `inventory-movements.dom`): the lists are grids.
+- A match is chosen as an `option` of the combobox's listbox (in a portal, so found on the screen)
+  instead of a `button` inside the panel, under the picker ceiling `PICKER_OPTION_WAIT_MS`.
+- A chosen item or job is read as the combobox's value instead of the `…-picker-chosen` test id
+  (`chosenIn`): `EntityPicker` holds the choice in the box.
+- Release is found by a name anchored at its start (`RELEASE`): its name now carries the stock code
+  and the location.
+- The ledger's window is typed part by part into the picker's spin buttons and read back from the
+  picker's value input (`momentGroup`, `momentShown`) instead of a `datetime-local` box; the
+  instant asserted is the same.
+- Every render goes under `UiFoundationProvider`, as the locale layout mounts it (the pickers need
+  its localization).
+
+Deliberate behaviour changes:
+
+- The prices panel offers a retry after an outage (it offered none); the codes panel's retry is
+  unchanged.
+- An empty list is said under a "No matches" heading, with the same sentence as before.
+- The item search box carries the toolbar's own Search button beside Enter; both ask for the whole
+  form, as Show does.
+- A ledger moment or an expiry only partly typed is refused with "Enter a valid date and time." —
+  the browser's own check refused it before.
+
+Known limitations of this slice, one line each:
+
+- Names instead of identifiers, no backend read added: the reservation grid's work-order column
+  shows the work-order reference, the catalogue shows the item's reference in its "Identifier"
+  column, the ledger shows each movement's source reference and a location the branch list does not
+  hold by its reference, and the replayed-reservation notice prints the reservation reference.
+- The moments are on the operator's clock, not the branch's (above); a laptop on another zone sees
+  another window, exactly as before.
+- A partly typed expiry or ledger moment holds `''`, so the unsaved-work guard does not see it; the
+  native boxes behaved the same way.
+- `ScanBox`, `ItemFinder`, `BranchListView`, `BranchPairPicker` and `IssuedPartPicker` are not on
+  Material yet; each moves with the screens that draw it.
+- The availability, reservation and catalogue loaders do not pass `useServerTable`'s abort signal
+  on to their Server Actions: a superseded read is dropped, not cancelled (as before).
+- The item page has no unsaved-work guard on its two forms (as before); it is addressed to no
+  branch (`none`), so a branch switch does not touch it.
+- No browser spec covers these three routes, so none was changed; the Playwright tiers run only in
+  hosted CI.
+- Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
+  they run in hosted CI. The web tier gains cases in existing files (no web test file added or
+  removed).
 
 ### Finance controls that need no business decision (P1-32-PRE-OD-FIN)
 
