@@ -22,17 +22,20 @@
  * shared browser tab. Both languages, including right to left.
  */
 
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   TEST_BRANCH,
   inBranch,
-  renderLtr as renderInLtr,
-  renderRtl as renderInRtl,
+  messagesFor,
+  renderLtr as renderBareLtr,
+  renderRtl as renderBareRtl,
   BranchSwitch,
   OTHER_BRANCH,
   WorkingBranchProbe,
@@ -56,7 +59,24 @@ import {
  * keeps the default snapshot — one authorized branch, selected for the operator
  * — true for every case below. A case that needs a different snapshot builds
  * one and renders it explicitly.
+ *
+ * Since `P1-32-PRE-OD-INV3` every render also goes under the product's Material
+ * provider, as the locale layout mounts it: the screen's own fields, buttons and
+ * tables are Material's, and a calendar day is an MIT picker (a group of parts,
+ * typed part by part, read back from the picker's own value input). The
+ * selectors below moved with that structure; what each case asserts did not.
  */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderInLtr = (ui: ReactElement, options?: Parameters<typeof renderBareLtr>[1]) =>
+  renderBareLtr(withMui(ui, 'en'), options);
+const renderInRtl = (ui: ReactElement, options?: Parameters<typeof renderBareRtl>[1]) =>
+  renderBareRtl(withMui(ui, 'ar'), options);
 const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
   renderInLtr(inBranch(ui), options);
 const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
@@ -287,15 +307,30 @@ async function openBatch(user: ReturnType<typeof userEvent.setup>) {
     within(panel).getByLabelText(labelled('inventory.opening.batch.code')),
     'OPEN-2026'
   );
-  await user.type(
-    within(panel).getByLabelText(labelled('inventory.opening.batch.asOfDate')),
-    '2026-09-06'
-  );
+  // The count date is an MIT picker: typed part by part, day, month, year.
+  await typeDay(user, panel, labelled('inventory.opening.batch.asOfDate'), '06092026');
   await user.click(
     within(panel).getByRole('button', { name: EN['inventory.opening.batch.open'] as string })
   );
   await waitFor(() => expect(createOpeningBatch).toHaveBeenCalled());
   await screen.findByText(EN['inventory.opening.batch.serverNote'] as string);
+}
+
+/**
+ * Types a calendar day into a date picker inside `scope`, part by part, as an
+ * operator does (day, month, year in both catalogues). Returns the picker's
+ * group, which its label names.
+ */
+async function typeDay(
+  user: ReturnType<typeof userEvent.setup>,
+  scope: HTMLElement,
+  label: RegExp,
+  digits: string
+): Promise<HTMLElement> {
+  const group = within(scope).getByRole('group', { name: label });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(digits);
+  return group;
 }
 
 /** One row's cells as text, so a column assertion is about columns. */
@@ -414,6 +449,114 @@ describe('the chain, in order', () => {
     ).toBeVisible();
     expect(within(panel).getByText(EN['field.required'] as string)).toBeVisible();
     expect(createOpeningBatch).not.toHaveBeenCalled();
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`refuses a count date only partly typed as a date, keeps the code, and sends nothing (${locale})`, async () => {
+      const catalogue = locale === 'ar' ? AR : EN;
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      const user = userEvent.setup();
+      if (locale === 'ar') {
+        renderRtl(
+          <OpeningStockScreen
+            locale="ar"
+            messages={ar}
+            canOperate={true}
+            canApprove={false}
+            canReadBranches={true}
+          />
+        );
+      } else {
+        renderScreen();
+      }
+      await chooseBranch();
+      const panel = screen.getByRole('form', {
+        name: catalogue['inventory.opening.batch.new'] as string,
+      });
+      const code = within(panel).getByLabelText(named('inventory.opening.batch.code'));
+      await user.type(code, 'OPEN-2026');
+      // The day and the month, and not the year.
+      const day = await typeDay(user, panel, named('inventory.opening.batch.asOfDate'), '0609');
+      await user.click(
+        within(panel).getByRole('button', {
+          name: catalogue['inventory.opening.batch.open'] as string,
+        })
+      );
+      await waitFor(() => expect(day).toHaveAttribute('aria-invalid', 'true'));
+      expect(day).toHaveAccessibleDescription(
+        new RegExp(escape(catalogue['inventory.opening.batch.dateFormat'] as string))
+      );
+      // Refused as a date, not as a missing one, and what was typed stays.
+      expect(within(panel).queryByText(catalogue['field.required'] as string)).toBeNull();
+      expect(code).toHaveValue('OPEN-2026');
+      expect(createOpeningBatch).not.toHaveBeenCalled();
+    });
+
+    it(`a batch list that could not be read names its reference and reads again (${locale})`, async () => {
+      const catalogue = locale === 'ar' ? AR : EN;
+      const user = userEvent.setup();
+      listOpeningBatches.mockResolvedValue({
+        status: 'unavailable' as const,
+        correlationId: 'corr-batches',
+      });
+      if (locale === 'ar') {
+        renderRtl(
+          <OpeningStockScreen
+            locale="ar"
+            messages={ar}
+            canOperate={true}
+            canApprove={false}
+            canReadBranches={true}
+          />
+        );
+      } else {
+        renderScreen();
+      }
+      expect(
+        await screen.findByText(catalogue['inventory.opening.batches.unavailable'] as string)
+      ).toBeVisible();
+      expect(screen.getByText('corr-batches')).toBeVisible();
+      const attempts = listOpeningBatches.mock.calls.length;
+      listOpeningBatches.mockResolvedValue(cursor([summary]));
+      await user.click(screen.getByRole('button', { name: catalogue['state.retry'] as string }));
+      await waitFor(() => expect(listOpeningBatches.mock.calls.length).toBeGreaterThan(attempts));
+      expect(
+        await screen.findByRole('table', {
+          name: catalogue['inventory.opening.batches.caption'] as string,
+        })
+      ).toBeVisible();
+    });
+  }
+
+  it('a second press while the approval is out sends nothing more', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    approveOpeningBatch.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    listOpeningBatches.mockResolvedValue(cursor([summary]));
+    const user = userEvent.setup();
+    renderScreen({ canOperate: false, canApprove: true });
+    await chooseBranch();
+    await openListed(user, 'OPEN-2026');
+    const approve = await screen.findByRole('button', {
+      name: EN['inventory.opening.approve.action'] as string,
+    });
+    fireEvent.click(approve);
+    fireEvent.click(approve);
+    expect(approveOpeningBatch).toHaveBeenCalledTimes(1);
+    expect(approve).toBeDisabled();
+    answer(
+      success(
+        { ...draft, status: 'approved', approvedBy: 'user-2', recordVersion: 2 },
+        'inventory.opening.approve.success'
+      )
+    );
+    expect(
+      await screen.findByText(EN['inventory.opening.approve.approved'] as string)
+    ).toBeVisible();
+    expect(approveOpeningBatch).toHaveBeenCalledTimes(1);
   });
 
   it('adds a line with the found item, the chosen location and the quantity as typed, and lists the echo', async () => {

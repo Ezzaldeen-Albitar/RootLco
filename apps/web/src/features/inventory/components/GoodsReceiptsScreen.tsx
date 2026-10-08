@@ -23,11 +23,37 @@
  * Permissions: `inv.stock.read` gates the page; `inv.stock.operate` offers the
  * receipt form and posting; `inv.cost.view` the cost fields and the cost
  * history; `org.branch.read` the branch picker.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV3`)
+ *
+ * Every control this screen draws itself is a shared wrapper: the receipt's
+ * references, notes and currency are `forms/mui` text fields, the quantity and
+ * the unit cost `FormNumberField` (the exact strings typed are the strings
+ * sent; a cost is never rounded or re-formatted on the way), the day received a
+ * `DateField` (the same `YYYY-MM-DD` the native box produced), and every button
+ * is Material's. The receipt list, a receipt's lines, the lines being written
+ * and the cost layers are Material's table — each read answers one page with a
+ * "more exist" flag and no cursor is walked, so there is nothing for
+ * `OperationalGrid`'s pager to do. The item finder, the location select and the
+ * list's wait, empty and failed states are the shared inventory pieces
+ * (`ItemFinder`, `LocationPicker`, `BranchListView`), drawn as those pieces
+ * draw. What is read, sent, authorized and refused is unchanged, and so is who
+ * sees a cost.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Alert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { TextAreaField, TextField } from '@/components/forms/Field';
+import { DateField, type DayProblem } from '@/components/forms/mui/DateField';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
@@ -58,15 +84,7 @@ import {
   type ItemCostHistory,
   type StockTarget,
 } from '../inventory-contract';
-import {
-  LocationPicker,
-  OutcomeNote,
-  PRIMARY_BUTTON,
-  Qty,
-  SECONDARY_BUTTON,
-  useLocations,
-  type Locations,
-} from './shared';
+import { LocationPicker, OutcomeNote, Qty, useLocations, type Locations } from './shared';
 import {
   BranchListView,
   BranchTargetForm,
@@ -193,9 +211,9 @@ function BranchReceipts({
           {translate(messages, 'inventory.receipts.list.heading')}
         </h2>
         {openFailure !== null ? (
-          <p role="alert" className="text-body text-error">
+          <Alert severity="error" role="alert" variant="outlined">
             {translateDynamic(messages, openFailure)}
-          </p>
+          </Alert>
         ) : null}
         <BranchListView
           messages={messages}
@@ -205,61 +223,68 @@ function BranchReceipts({
           truncatedKey="inventory.receipts.list.truncated"
         >
           {(items) => (
-            <table className="w-full text-body">
-              <caption className="sr-only">
-                {translate(messages, 'inventory.receipts.list.caption')}
-              </caption>
-              <thead>
-                <tr className="text-caption text-text-muted">
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.receipts.column.reference')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.receipts.column.supplier')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.receipts.column.receivedOn')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.receipts.column.status')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.receipts.column.lines')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.receipts.column.action')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((row) => (
-                  <tr key={row.id} className="border-t border-border">
-                    <td dir="ltr" className="text-start">
-                      {row.reference ?? translate(messages, 'inventory.receipts.noReference')}
-                    </td>
-                    <td>{row.supplierReference ?? ''}</td>
-                    <td dir="ltr" className="text-start">
-                      {row.receivedOn}
-                    </td>
-                    <td>{translateDynamic(messages, `inventory.receiptStatus.${row.status}`)}</td>
-                    <td className="text-end">{row.lineCount}</td>
-                    <td className="text-end">
-                      <button
-                        type="button"
-                        className={SECONDARY_BUTTON}
-                        disabled={opening !== null}
-                        onClick={() => {
-                          void open(row.id);
-                        }}
-                      >
-                        {translate(messages, 'inventory.receipts.open')}
-                        <span className="sr-only"> {row.reference ?? row.receivedOn}</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <TableContainer>
+              <Table size="small">
+                <caption className="sr-only">
+                  {translate(messages, 'inventory.receipts.list.caption')}
+                </caption>
+                <TableHead>
+                  <TableRow>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.receipts.column.reference')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.receipts.column.supplier')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.receipts.column.receivedOn')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.receipts.column.status')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.receipts.column.lines')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.receipts.column.action')}
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {items.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell>
+                        <span dir="ltr">
+                          {row.reference ?? translate(messages, 'inventory.receipts.noReference')}
+                        </span>
+                      </TableCell>
+                      <TableCell>{row.supplierReference ?? ''}</TableCell>
+                      <TableCell>
+                        <span dir="ltr">{row.receivedOn}</span>
+                      </TableCell>
+                      <TableCell>
+                        {translateDynamic(messages, `inventory.receiptStatus.${row.status}`)}
+                      </TableCell>
+                      <TableCell align="right">{row.lineCount}</TableCell>
+                      <TableCell align="right">
+                        <Button
+                          type="button"
+                          variant="outlined"
+                          size="small"
+                          disabled={opening !== null}
+                          onClick={() => {
+                            void open(row.id);
+                          }}
+                        >
+                          {translate(messages, 'inventory.receipts.open')}
+                          <span className="sr-only"> {row.reference ?? row.receivedOn}</span>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
         </BranchListView>
       </section>
@@ -330,11 +355,16 @@ function ReceiptDetail({
 }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One posting in flight at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
 
   const post = async () => {
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     // The version the server last answered for THIS receipt, never a guess.
     const result = await postGoodsReceipt(receipt.id, receipt.recordVersion);
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -363,42 +393,42 @@ function ReceiptDetail({
         </Fact>
       </dl>
       {receipt.notes ? <p className="text-caption text-text-muted">{receipt.notes}</p> : null}
-      <div className="overflow-x-auto">
-        <table className="w-full text-body">
+      <TableContainer>
+        <Table size="small">
           <caption className="sr-only">
             {translate(messages, 'inventory.receipts.detail.caption')}
           </caption>
-          <thead>
-            <tr className="text-caption text-text-muted">
-              <th scope="col" className="text-start font-medium">
+          <TableHead>
+            <TableRow>
+              <TableCell scope="col">
                 {translate(messages, 'inventory.receipts.line.item')}
-              </th>
-              <th scope="col" className="text-start font-medium">
+              </TableCell>
+              <TableCell scope="col">
                 {translate(messages, 'inventory.receipts.line.location')}
-              </th>
-              <th scope="col" className="text-end font-medium">
+              </TableCell>
+              <TableCell scope="col" align="right">
                 {translate(messages, 'inventory.receipts.line.quantity')}
-              </th>
-              <th scope="col" className="text-start font-medium">
+              </TableCell>
+              <TableCell scope="col">
                 {translate(messages, 'inventory.receipts.line.priced')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+              </TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {receipt.lines.map((line) => (
-              <tr key={line.id} className="border-t border-border">
-                <td>
+              <TableRow key={line.id}>
+                <TableCell>
                   <code className="font-mono text-caption" dir="ltr">
                     {line.sku}
                   </code>
-                </td>
-                <td dir="ltr" className="text-start">
-                  {line.locationCode}
-                </td>
-                <td className="text-end">
+                </TableCell>
+                <TableCell>
+                  <span dir="ltr">{line.locationCode}</span>
+                </TableCell>
+                <TableCell align="right">
                   <Qty value={line.quantity} />
-                </td>
-                <td>
+                </TableCell>
+                <TableCell>
                   {translate(
                     messages,
                     line.hasUnitCost
@@ -408,22 +438,23 @@ function ReceiptDetail({
                   {canViewCost ? (
                     <>
                       {' '}
-                      <button
+                      <Button
                         type="button"
-                        className="text-caption text-primary underline-offset-2 hover:underline"
+                        variant="text"
+                        size="small"
                         onClick={() => onCostHistory(line)}
                       >
                         {translate(messages, 'inventory.receipts.costHistory.show')}
                         <span className="sr-only"> {line.sku}</span>
-                      </button>
+                      </Button>
                     </>
                   ) : null}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableContainer>
       {receipt.status === 'draft' ? (
         canOperate ? (
           <>
@@ -432,16 +463,16 @@ function ReceiptDetail({
             </p>
             <OutcomeNote messages={messages} outcome={outcome} />
             <div>
-              <button
+              <Button
                 type="button"
-                className={PRIMARY_BUTTON}
+                variant="contained"
                 disabled={busy}
                 onClick={() => {
                   void post();
                 }}
               >
                 {translate(messages, 'inventory.receipts.post.action')}
-              </button>
+              </Button>
             </div>
           </>
         ) : (
@@ -456,9 +487,9 @@ function ReceiptDetail({
         </p>
       ) : null}
       <div>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+        <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'inventory.stockOps.close')}
-        </button>
+        </Button>
       </div>
     </section>
   );
@@ -495,6 +526,14 @@ function ReceiptForm({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
+  /*
+   * A day received only partly typed holds no day — its value stays `''`, as for
+   * a field nobody touched — so the picker's own report is kept: it is refused
+   * as a date, not as a missing one, and it is unsaved work.
+   */
+  const [dayUnfinished, setDayUnfinished] = useState(false);
+  // One receipt sent at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
 
   /*
    * Unsaved work, declared to the shell. The receipt is addressed to THIS
@@ -505,7 +544,8 @@ function ReceiptForm({
    * dirty after every save asks about every switch.
    */
   useUnsavedGuard(
-    lines.length > 0 ||
+    dayUnfinished ||
+      lines.length > 0 ||
       item !== null ||
       line.quantity.trim().length > 0 ||
       line.unitCost.trim().length > 0 ||
@@ -553,8 +593,9 @@ function ReceiptForm({
   const submit = async () => {
     const found: Record<string, string> = {};
     const receivedOn = header.receivedOn.trim();
-    if (receivedOn.length === 0) found['receivedOn'] = 'field.required';
-    else if (!ISO_DATE.test(receivedOn)) found['receivedOn'] = 'inventory.opening.batch.dateFormat';
+    if (dayUnfinished || (receivedOn.length > 0 && !ISO_DATE.test(receivedOn))) {
+      found['receivedOn'] = 'inventory.opening.batch.dateFormat';
+    } else if (receivedOn.length === 0) found['receivedOn'] = 'field.required';
     const reference = header.reference.trim();
     if (reference.length > 0 && !LOCATION_CODE.test(reference)) {
       found['reference'] = 'inventory.receipts.referenceFormat';
@@ -566,7 +607,7 @@ function ReceiptForm({
     if (notes.length > MAX_DESCRIPTION) found['notes'] = 'inventory.setup.descriptionTooLong';
     if (lines.length === 0) found['lines'] = 'inventory.receipts.noLines';
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0 || sending.current) return;
 
     const body: GoodsReceiptCreateLine[] = lines.map((draft) => ({
       itemId: draft.item.id,
@@ -576,6 +617,7 @@ function ReceiptForm({
         ? { unitCost: draft.unitCost, currencyCode: draft.currencyCode }
         : {}),
     }));
+    sending.current = true;
     setBusy(true);
     const result = await createGoodsReceipt({
       companyId: target.companyId,
@@ -587,6 +629,7 @@ function ReceiptForm({
       ...(supplierReference.length > 0 ? { supplierReference } : {}),
       ...(notes.length > 0 ? { notes } : {}),
     });
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -616,36 +659,40 @@ function ReceiptForm({
         {translate(messages, 'inventory.receipts.create.explain')}
       </p>
       <div className="grid gap-3 sm:grid-cols-3">
-        <TextField
+        {/*
+          A calendar day on the MIT date picker (ADR-022, E1-E4): the value is
+          the same `YYYY-MM-DD` the native box produced and the route accepts.
+        */}
+        <DateField
           label={translate(messages, 'inventory.receipts.create.receivedOn')}
           required
-          type="date"
-          dir="ltr"
           value={header.receivedOn}
-          onChange={(event) => setHeader((h) => ({ ...h, receivedOn: event.target.value }))}
+          onChange={(next) => setHeader((h) => ({ ...h, receivedOn: next }))}
+          onProblem={(problem: DayProblem) => setDayUnfinished(problem === 'incomplete')}
           error={errorFor('receivedOn')}
         />
-        <TextField
+        <FormTextField
           label={translate(messages, 'inventory.receipts.create.reference')}
           description={translate(messages, 'inventory.receipts.create.referenceHelp')}
           spellCheck={false}
           dir="ltr"
           value={header.reference}
-          onChange={(event) => setHeader((h) => ({ ...h, reference: event.target.value }))}
+          onChange={(next) => setHeader((h) => ({ ...h, reference: next }))}
           error={errorFor('reference')}
         />
-        <TextField
+        <FormTextField
           label={translate(messages, 'inventory.receipts.create.supplier')}
           value={header.supplierReference}
-          onChange={(event) => setHeader((h) => ({ ...h, supplierReference: event.target.value }))}
+          onChange={(next) => setHeader((h) => ({ ...h, supplierReference: next }))}
           error={errorFor('supplierReference')}
         />
       </div>
-      <TextAreaField
+      <FormTextField
         label={translate(messages, 'inventory.receipts.create.notes')}
+        multiline
         rows={2}
         value={header.notes}
-        onChange={(event) => setHeader((h) => ({ ...h, notes: event.target.value }))}
+        onChange={(next) => setHeader((h) => ({ ...h, notes: next }))}
         error={errorFor('notes')}
       />
 
@@ -671,34 +718,35 @@ function ReceiptForm({
             onChange={(next) => setLine((l) => ({ ...l, locationId: next }))}
             error={errorFor('locationId')}
           />
-          <TextField
+          <FormNumberField
             label={translate(messages, 'inventory.receipts.line.quantity')}
             description={translate(messages, 'inventory.stockOps.quantityHelp')}
             required
-            inputMode="decimal"
-            dir="ltr"
             value={line.quantity}
-            onChange={(event) => setLine((l) => ({ ...l, quantity: event.target.value }))}
+            onChange={(next) => setLine((l) => ({ ...l, quantity: next }))}
             error={errorFor('quantity')}
           />
         </div>
         {canViewCost ? (
           <div className="grid gap-3 sm:grid-cols-2">
-            <TextField
+            {/*
+              `FormNumberField`, not the money field: a unit cost carries up to
+              four decimals and is sent exactly as typed, never canonicalised to
+              the currency's minor unit (the currency is typed beside it).
+            */}
+            <FormNumberField
               label={translate(messages, 'inventory.receipts.line.unitCost')}
               description={translate(messages, 'inventory.receipts.line.unitCostHelp')}
-              inputMode="decimal"
-              dir="ltr"
               value={line.unitCost}
-              onChange={(event) => setLine((l) => ({ ...l, unitCost: event.target.value }))}
+              onChange={(next) => setLine((l) => ({ ...l, unitCost: next }))}
               error={errorFor('unitCost')}
             />
-            <TextField
+            <FormTextField
               label={translate(messages, 'inventory.receipts.line.currency')}
               spellCheck={false}
               dir="ltr"
               value={line.currencyCode}
-              onChange={(event) => setLine((l) => ({ ...l, currencyCode: event.target.value }))}
+              onChange={(next) => setLine((l) => ({ ...l, currencyCode: next }))}
               error={errorFor('currencyCode')}
             />
           </div>
@@ -708,73 +756,76 @@ function ReceiptForm({
           </p>
         )}
         <div>
-          <button type="button" className={SECONDARY_BUTTON} onClick={addLine}>
+          <Button type="button" variant="outlined" onClick={addLine}>
             {translate(messages, 'inventory.receipts.line.add')}
-          </button>
+          </Button>
         </div>
       </fieldset>
 
       {lines.length > 0 ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-body">
+        <TableContainer>
+          <Table size="small">
             <caption className="sr-only">
               {translate(messages, 'inventory.receipts.create.linesCaption')}
             </caption>
-            <thead>
-              <tr className="text-caption text-text-muted">
-                <th scope="col" className="text-start font-medium">
+            <TableHead>
+              <TableRow>
+                <TableCell scope="col">
                   {translate(messages, 'inventory.receipts.line.item')}
-                </th>
-                <th scope="col" className="text-start font-medium">
+                </TableCell>
+                <TableCell scope="col">
                   {translate(messages, 'inventory.receipts.line.location')}
-                </th>
-                <th scope="col" className="text-end font-medium">
+                </TableCell>
+                <TableCell scope="col" align="right">
                   {translate(messages, 'inventory.receipts.line.quantity')}
-                </th>
+                </TableCell>
                 {canViewCost ? (
-                  <th scope="col" className="text-end font-medium">
+                  <TableCell scope="col" align="right">
                     {translate(messages, 'inventory.receipts.line.unitCost')}
-                  </th>
+                  </TableCell>
                 ) : null}
-                <th scope="col" className="text-end font-medium">
+                <TableCell scope="col" align="right">
                   {translate(messages, 'inventory.receipts.column.action')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
               {lines.map((draft) => (
-                <tr key={draft.key} className="border-t border-border">
-                  <td>
+                <TableRow key={draft.key}>
+                  <TableCell>
                     <span dir="ltr">{draft.item.sku}</span> — {draft.item.name}
-                  </td>
-                  <td dir="ltr" className="text-start">
-                    {draft.locationCode}
-                  </td>
-                  <td className="text-end">
+                  </TableCell>
+                  <TableCell>
+                    <span dir="ltr">{draft.locationCode}</span>
+                  </TableCell>
+                  <TableCell align="right">
                     <Qty value={draft.quantity} />
-                  </td>
+                  </TableCell>
                   {canViewCost ? (
-                    <td className="text-end" dir="ltr">
-                      {draft.unitCost.length > 0 ? `${draft.unitCost} ${draft.currencyCode}` : ''}
-                    </td>
+                    <TableCell align="right">
+                      <span dir="ltr">
+                        {draft.unitCost.length > 0 ? `${draft.unitCost} ${draft.currencyCode}` : ''}
+                      </span>
+                    </TableCell>
                   ) : null}
-                  <td className="text-end">
-                    <button
+                  <TableCell align="right">
+                    <Button
                       type="button"
-                      className={SECONDARY_BUTTON}
+                      variant="outlined"
+                      size="small"
                       onClick={() =>
                         setLines((current) => current.filter((row) => row.key !== draft.key))
                       }
                     >
                       {translate(messages, 'inventory.receipts.line.remove')}
                       <span className="sr-only"> {draft.item.sku}</span>
-                    </button>
-                  </td>
-                </tr>
+                    </Button>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </TableContainer>
       ) : (
         <p className={errors['lines'] ? 'text-body text-error' : 'text-caption text-text-muted'}>
           {translate(messages, 'inventory.receipts.noLines')}
@@ -782,9 +833,9 @@ function ReceiptForm({
       )}
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.receipts.create.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -841,9 +892,9 @@ function CostHistoryPanel({
         </code>
       </h2>
       {failure !== null ? (
-        <p role="alert" className="text-body text-error">
+        <Alert severity="error" role="alert" variant="outlined">
           {translateDynamic(messages, failure)}
-        </p>
+        </Alert>
       ) : null}
       {history === null && failure === null ? (
         <p role="status" aria-live="polite" className="text-caption text-text-muted">
@@ -878,44 +929,46 @@ function CostHistoryPanel({
             </Fact>
           </dl>
           {history.layers.items.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-body">
+            <TableContainer>
+              <Table size="small">
                 <caption className="sr-only">
                   {translate(messages, 'inventory.receipts.costHistory.caption')}
                 </caption>
-                <thead>
-                  <tr className="text-caption text-text-muted">
-                    <th scope="col" className="text-start font-medium">
+                <TableHead>
+                  <TableRow>
+                    <TableCell scope="col">
                       {translate(messages, 'inventory.receipts.costHistory.when')}
-                    </th>
-                    <th scope="col" className="text-end font-medium">
+                    </TableCell>
+                    <TableCell scope="col" align="right">
                       {translate(messages, 'inventory.receipts.line.quantity')}
-                    </th>
-                    <th scope="col" className="text-end font-medium">
+                    </TableCell>
+                    <TableCell scope="col" align="right">
                       {translate(messages, 'inventory.receipts.line.unitCost')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
                   {history.layers.items.map((layer) => (
-                    <tr key={layer.id} className="border-t border-border">
-                      <td dir="ltr" className="text-start">
-                        {formatDateTime(layer.effectiveAt, locale)}
-                      </td>
-                      <td className="text-end">
+                    <TableRow key={layer.id}>
+                      <TableCell>
+                        <span dir="ltr">{formatDateTime(layer.effectiveAt, locale)}</span>
+                      </TableCell>
+                      <TableCell align="right">
                         <Qty value={layer.quantity} />
-                      </td>
-                      <td className="text-end" dir="ltr">
-                        {formatMoney(
-                          { amount: layer.unitCost, currency: layer.currencyCode },
-                          locale
-                        )}
-                      </td>
-                    </tr>
+                      </TableCell>
+                      <TableCell align="right">
+                        <span dir="ltr">
+                          {formatMoney(
+                            { amount: layer.unitCost, currency: layer.currencyCode },
+                            locale
+                          )}
+                        </span>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
+            </TableContainer>
           ) : null}
           {history.layers.hasMore ? (
             <p className="text-caption text-text-muted">
@@ -925,9 +978,9 @@ function CostHistoryPanel({
         </>
       ) : null}
       <div>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+        <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'inventory.stockOps.close')}
-        </button>
+        </Button>
       </div>
     </section>
   );
