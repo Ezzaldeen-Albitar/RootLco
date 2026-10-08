@@ -1930,14 +1930,14 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     class: 'financial',
     entityType: 'sal.credit_note',
     description:
-      'A credit note was requested against an issued invoice, bounded by that invoice’s open receivable. Born `pending` and worth nothing until approved: sal.stamp_dual_control_maker forces requested_by from the session and nulls the approval fields, so a request can never arrive pre-approved. The currency is read from the parent invoice because no protected constraint compares the two (P1-22-L-02).',
+      'A credit note was requested against an issued invoice, bounded by what that invoice can still be credited — its gross less the credits already approved (ADR-023 D2). Born `pending` and worth nothing until approved: sal.stamp_dual_control_maker forces requested_by from the session and nulls the approval fields, so a request can never arrive pre-approved. The currency is read from the parent invoice because no protected constraint compares the two (P1-22-L-02).',
   },
   {
     code: 'sal.credit_note.approved',
     class: 'approval',
     entityType: 'sal.credit_note',
     description:
-      'A credit note was approved under dual control and became a real reduction of the receivable. sal.guard_dual_control_approval stamps the approver from the session and refuses approved_by = requested_by, so the maker cannot approve their own request; the amount ceiling is re-checked against sal.invoice_open_receivable inside the approving transaction. Since ADR-023 D13 the approver also holds sal.credit.approve in the note’s company and branch and a credit_note approval limit in the note’s currency, set by somebody else, covering every approved credit on the invoice including this one.',
+      'A credit note was approved under dual control and became a real reduction of the receivable. sal.guard_dual_control_approval stamps the approver from the session and refuses approved_by = requested_by, so the maker cannot approve their own request; the amount ceiling — the invoice’s gross less the credits already approved (ADR-023 D2) — is re-checked inside the approving transaction, and a credit above what the invoice still owed leaves the customer owed the excess as a refund obligation (sal.refund_obligation.recorded). Since ADR-023 D13 the approver also holds sal.credit.approve in the note’s company and branch and a credit_note approval limit in the note’s currency, set by somebody else, covering every approved credit on the invoice including this one.',
   },
   {
     code: 'sal.credit_note.withdrawn',
@@ -1952,6 +1952,15 @@ export const AUDIT_ACTIONS: readonly AuditActionDefinition[] = Object.freeze([
     entityType: 'sal.credit_note',
     description:
       'A pending credit note was rejected by someone other than its requester, with a stated reason (ADR-023, D3). sal.guard_credit_note_decision refuses the requester, requires sal.credit.approve (ADR-023 D13) in the note’s company and branch and a reason that is not blank, and stamps the decider and the time. A rejected note credits nothing and is terminal.',
+  },
+  // ADR-023 D2 (P1-32-PRE-OD-FD2A): the excess of an approved credit over what the
+  // invoice still owed, recorded as money the customer is owed back.
+  {
+    code: 'sal.refund_obligation.recorded',
+    class: 'financial',
+    entityType: 'sal.refund_obligation',
+    description:
+      'An approved credit note exceeded what its invoice still owed, so the customer is owed the difference back (ADR-023, D2). sal.approve_credit_note recorded exactly the excess as one open refund obligation, bound by sal.guard_refund_obligation_insert to the approved note, its invoice, the invoice’s customer and currency, in the approving transaction, with its refund_obligation_recorded financial event. An operational record, not an accounting entry: no money was paid, moved or posted, and a refund needs its own request and approval.',
   },
   {
     code: 'sal.receipt.recorded',

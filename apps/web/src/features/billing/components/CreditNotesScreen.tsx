@@ -113,7 +113,7 @@ import { useWorkingContext } from '@/features/working-context/WorkingContextProv
 import type { StockTarget } from '@/features/inventory/inventory-contract';
 import { useReread } from '@/lib/api/use-reread';
 import { unreachable, type ActionState } from '@/lib/forms/action-result';
-import { formatMoney } from '@/lib/money';
+import { formatMoney, isZeroMoney } from '@/lib/money';
 
 import {
   approveCreditNote,
@@ -462,6 +462,26 @@ function BranchCreditNotes({
 }
 
 /**
+ * The approval question, and — when the amount is more than the invoice still owes —
+ * the split the server computed (ADR-023 D2): how much reduces the balance and how
+ * much the customer will be owed back. No money is paid automatically, and no
+ * figure is computed here: both parts are the server's.
+ */
+function approvalQuestion(note: CreditNoteRecord, locale: Locale, messages: Messages): string {
+  const question = formatMessage(translate(messages, 'creditNotes.approve.confirmExplain'), {
+    amount: formatMoney(note.amount, locale),
+    reason: note.reason,
+  });
+  const effect = note.approvalEffect ?? null;
+  if (effect === null || isZeroMoney(effect.refundOwed.amount)) return question;
+  const split = formatMessage(translate(messages, 'creditNotes.approve.refundSplit'), {
+    reduces: formatMoney(effect.reducesBalanceBy, locale),
+    refund: formatMoney(effect.refundOwed, locale),
+  });
+  return `${question} ${split}`;
+}
+
+/**
  * One credit note, read by id — and, while it is waiting, the decisions the
  * signed-in person may take on it (ADR-023, D3).
  *
@@ -788,10 +808,7 @@ function CreditNoteDetail({
             open={asking === 'approve' && decides}
             messages={messages}
             title={translate(messages, 'creditNotes.approve.confirmTitle')}
-            description={formatMessage(translate(messages, 'creditNotes.approve.confirmExplain'), {
-              amount: formatMoney(state.data.amount, locale),
-              reason: state.data.reason,
-            })}
+            description={approvalQuestion(state.data, locale, messages)}
             confirmLabel={translate(messages, 'creditNotes.approve.action')}
             pending={busy}
             onCancel={() => setAsking(null)}

@@ -1373,6 +1373,73 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
     );
   });
 
+  /** A paid invoice credited 30 beyond what it owed: the customer is owed 30 back (ADR-023 D2). */
+  const owedBack = {
+    ...outstanding,
+    outstanding: { amount: '0.0000', currency: 'USD' },
+    isSettled: true,
+    settlement: {
+      creditStatus: 'partly_credited',
+      paymentStatus: 'paid',
+      refundStatus: 'owed',
+      credited: { amount: '30.0000', currency: 'USD' },
+      paid: { amount: '165.0000', currency: 'USD' },
+      refundOwed: { amount: '30.0000', currency: 'USD' },
+    },
+  };
+
+  it('D2: says the customer is owed a refund, and how much, and that nothing is paid automatically', async () => {
+    readOutstanding.mockImplementation(async () => okRead(owedBack));
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    expect(await within(balance).findByTestId('invoice-refund-status')).toHaveTextContent(
+      EN['invoices.refundStatus.owed'] as string
+    );
+    expect(within(balance).getByTestId('invoice-refund-owed')).toHaveTextContent(money('30.0000'));
+    expect(balance).toHaveTextContent(EN['invoices.settlement.refundOwed'] as string);
+    expect(balance).toHaveTextContent(EN['invoices.settlement.refundOwedExplain'] as string);
+  });
+
+  it('D2: shows no refund owed while nobody is owed anything back', async () => {
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    expect(await within(balance).findByTestId('invoice-refund-status')).toHaveTextContent(
+      EN['invoices.refundStatus.none'] as string
+    );
+    expect(within(balance).queryByTestId('invoice-refund-owed')).toBeNull();
+    expect(balance).not.toHaveTextContent(EN['invoices.settlement.refundOwed'] as string);
+  });
+
+  it('D2: says the refund owed in Arabic, right to left', async () => {
+    readOutstanding.mockImplementation(async () => okRead(owedBack));
+    renderRtl(
+      <InvoiceScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        workOrderRefused={null}
+        initialInvoice={live().initialInvoice as never}
+        canViewFinance={true}
+        canIssue={false}
+      />
+    );
+    const balance = await screen.findByRole('region', {
+      name: AR['invoices.outstanding.heading'] as string,
+    });
+    expect(await within(balance).findByTestId('invoice-refund-status')).toHaveTextContent(
+      AR['invoices.refundStatus.owed'] as string
+    );
+    expect(within(balance).getByTestId('invoice-refund-owed')).toHaveTextContent(
+      formatMoney({ amount: '30.0000', currency: 'USD' }, 'ar')
+    );
+    expect(balance).toHaveTextContent(AR['invoices.settlement.refundOwed'] as string);
+  });
+
   /** A settlement of which 70 was paid by an insurer for this invoice's customer (D14). */
   const paidByInsurer = {
     ...outstanding,
@@ -1816,6 +1883,60 @@ describe('FE-020 — the printable copy', () => {
     expect(within(document).getByTestId('invoice-print-issued-totals').contains(settlement)).toBe(
       false
     );
+  });
+
+  it('D2: prints the refund status and what the customer is owed back, apart from the issued totals', async () => {
+    const user = userEvent.setup();
+    readOutstanding.mockImplementation(async () =>
+      okRead({
+        ...outstanding,
+        outstanding: { amount: '0.0000', currency: 'USD' },
+        isSettled: true,
+        settlement: {
+          ...outstanding.settlement,
+          creditStatus: 'partly_credited',
+          paymentStatus: 'paid',
+          refundStatus: 'owed',
+          credited: { amount: '30.0000', currency: 'USD' },
+          paid: { amount: '165.0000', currency: 'USD' },
+          refundOwed: { amount: '30.0000', currency: 'USD' },
+        },
+      })
+    );
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    await within(balance).findByTestId('invoice-refund-owed');
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    const settlement = within(document).getByTestId('invoice-print-settlement');
+    expect(within(settlement).getByTestId('invoice-print-refund-status')).toHaveTextContent(
+      EN['invoices.refundStatus.owed'] as string
+    );
+    expect(within(settlement).getByTestId('invoice-print-refund-owed')).toHaveTextContent(
+      money('30.0000')
+    );
+    expect(settlement).toHaveTextContent(EN['invoices.settlement.refundOwed'] as string);
+    expect(within(document).getByTestId('invoice-print-issued-totals').contains(settlement)).toBe(
+      false
+    );
+  });
+
+  it('D2: prints no refund owed while nobody is owed anything back', async () => {
+    const user = userEvent.setup();
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    await within(balance).findByTestId('invoice-refund-status');
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    const settlement = within(document).getByTestId('invoice-print-settlement');
+    expect(within(settlement).getByTestId('invoice-print-refund-status')).toHaveTextContent(
+      EN['invoices.refundStatus.none'] as string
+    );
+    expect(within(settlement).queryByTestId('invoice-print-refund-owed')).toBeNull();
   });
 
   it('DF-B1: the as-of moment is written on the invoice branch clock when the context knows it', async () => {
@@ -2833,6 +2954,82 @@ describe('raising and approving a credit note', () => {
       within(detail).queryByRole('button', { name: EN['creditNotes.approve.action'] as string })
     ).toBeNull();
     await waitFor(() => expect(listCreditNotes.mock.calls.length).toBeGreaterThan(reads));
+  });
+
+  /** A pending note of 15.50 on an invoice that still owes 5.50: 10.00 would be owed back. */
+  const beyondOwed = () =>
+    pendingNote({
+      approvalEffect: {
+        reducesBalanceBy: { amount: '5.5000', currency: 'USD' },
+        refundOwed: { amount: '10.0000', currency: 'USD' },
+      },
+      refundObligation: null,
+    });
+
+  async function openApproval(user: ReturnType<typeof userEvent.setup>, approveLabel: string) {
+    const detail = await screen.findByRole('region', {
+      name: (approveLabel === EN['creditNotes.approve.action']
+        ? EN['creditNotes.detail.heading']
+        : AR['creditNotes.detail.heading']) as string,
+    });
+    await user.click(await within(detail).findByRole('button', { name: approveLabel }));
+    return screen.findByRole('alertdialog');
+  }
+
+  it('D2: says before approving how much reduces the balance and how much is owed back as a refund', async () => {
+    const user = userEvent.setup();
+    readCreditNote.mockResolvedValue({ status: 'ok', data: beyondOwed(), correlationId: 'corr' });
+    renderLtr(notesScreen(SIGNED_IN, NOTE_ID));
+    const dialog = await openApproval(user, EN['creditNotes.approve.action'] as string);
+    expect(dialog).toHaveTextContent(
+      formatMessage(EN['creditNotes.approve.refundSplit'] as string, {
+        reduces: money('5.5000'),
+        refund: money('10.0000'),
+      })
+    );
+    // Asked, not sent.
+    expect(approveCreditNote).not.toHaveBeenCalled();
+  });
+
+  it('D2: asks no refund question when the amount is within what is still owed', async () => {
+    const user = userEvent.setup();
+    readCreditNote.mockResolvedValue({
+      status: 'ok',
+      data: pendingNote({
+        approvalEffect: {
+          reducesBalanceBy: { amount: '15.5000', currency: 'USD' },
+          refundOwed: { amount: '0.0000', currency: 'USD' },
+        },
+        refundObligation: null,
+      }),
+      correlationId: 'corr',
+    });
+    renderLtr(notesScreen(SIGNED_IN, NOTE_ID));
+    const dialog = await openApproval(user, EN['creditNotes.approve.action'] as string);
+    expect(dialog).toHaveTextContent('Wrong part fitted');
+    const opening = (EN['creditNotes.approve.refundSplit'] as string).split('{')[0] as string;
+    expect(dialog.textContent).not.toContain(opening.trim());
+  });
+
+  it('D2: says the refund split in Arabic, right to left', async () => {
+    const user = userEvent.setup();
+    readCreditNote.mockResolvedValue({ status: 'ok', data: beyondOwed(), correlationId: 'corr' });
+    renderRtl(
+      <CreditNotesScreen
+        locale="ar"
+        messages={ar}
+        initialCreditNoteId={NOTE_ID}
+        currentUserId={SIGNED_IN}
+        canDecide
+      />
+    );
+    const dialog = await openApproval(user, AR['creditNotes.approve.action'] as string);
+    expect(dialog).toHaveTextContent(
+      formatMessage(AR['creditNotes.approve.refundSplit'] as string, {
+        reduces: formatMoney({ amount: '5.5000', currency: 'USD' }, 'ar'),
+        refund: formatMoney({ amount: '10.0000', currency: 'USD' }, 'ar'),
+      })
+    );
   });
 
   const selfRefusal = {

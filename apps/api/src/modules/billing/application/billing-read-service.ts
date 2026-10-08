@@ -54,10 +54,15 @@ import {
   withoutCustomerArms,
   type EntitySearchTerms,
 } from '@/shared/text/search-terms';
-import { CREDIT_NOTE_ORDER, INVOICE_LIST_ORDER } from '../data/billing-repository';
+import {
+  CREDIT_NOTE_ORDER,
+  INVOICE_LIST_ORDER,
+  REFUND_OBLIGATION_ORDER,
+} from '../data/billing-repository';
 import {
   deriveCreditStatus,
   derivePaymentStatus,
+  deriveRefundStatus,
   isBillingStatus,
   type BillingStatus,
   type CreditStatus,
@@ -73,6 +78,7 @@ import type {
   InvoiceListRow,
   InvoiceRow,
   NumberingConfigRow,
+  RefundObligationRow,
 } from '../data/billing-repository';
 
 /**
@@ -277,10 +283,12 @@ export interface OutstandingView {
  *
  * `creditStatus` compares the effective (approved) credits with the eligible
  * total, the invoice's gross; `paymentStatus` compares what was paid with what
- * is still open; `refundStatus` is `none`, because the platform has no refund
- * instrument yet. A fully credited invoice reads `credited` / `nothing_due` —
- * never "settled" or "paid". `credited` and `paid` are the two amounts the
- * statuses were derived from, in the invoice's currency.
+ * is still open; `refundStatus` is `owed` while the customer is owed money back
+ * (an open refund obligation, ADR-023 D2) and `none` otherwise — nothing is ever
+ * paid back automatically. A fully credited invoice reads `credited` /
+ * `nothing_due` — never "settled" or "paid". `credited`, `paid` and
+ * `refundOwed` are the amounts the statuses were derived from, in the invoice's
+ * currency.
  */
 export interface SettlementView {
   readonly creditStatus: CreditStatus;
@@ -288,6 +296,12 @@ export interface SettlementView {
   readonly refundStatus: RefundStatus;
   readonly credited: MoneyView;
   readonly paid: MoneyView;
+  /**
+   * What the customer is owed back: the sum of the invoice's OPEN refund
+   * obligations (ADR-023 D2, P1-32-PRE-OD-FD2A), `0` when none is open. An
+   * operational figure, not an accounting entry. Additive.
+   */
+  readonly refundOwed: MoneyView;
   /**
    * The part of `paid` that somebody other than the invoice's customer paid, as an
    * explicit third-party payment (ADR-023 D14) — an insurer, an employer — oldest
@@ -558,6 +572,44 @@ export interface CreditNoteDetailView extends CreditNoteView {
   readonly decidedByName: string | null;
   readonly invoice: CreditNoteInvoiceView | null;
   readonly sourceReturn: CreditNoteSourceReturnView | null;
+  /**
+   * What approving this PENDING note would do now (ADR-023 D2): how much of it
+   * reduces what the invoice still owes, and how much the customer would be owed
+   * back as a refund — nothing is paid automatically. Computed by the database at
+   * this read; the approval recomputes it under the invoice lock. `null` on every
+   * decided note. Additive.
+   */
+  readonly approvalEffect: CreditApprovalEffectView | null;
+  /** The refund obligation this APPROVED note created, or `null` (D2). Additive. */
+  readonly refundObligation: RefundObligationView | null;
+}
+
+/** The two parts of a pending credit note's amount, in its currency (ADR-023 D2). */
+export interface CreditApprovalEffectView {
+  readonly reducesBalanceBy: MoneyView;
+  readonly refundOwed: MoneyView;
+}
+
+/**
+ * One refund obligation (ADR-023 D2, P1-32-PRE-OD-FD2A): money the customer is
+ * owed back because an approved credit exceeded what the invoice still owed. An
+ * operational record, not an accounting entry: nothing has been paid. `state` is
+ * `open` until refund requests exist (FD2B).
+ */
+export interface RefundObligationView {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  /** The customer owed the money: the invoice's billed party. */
+  readonly partnerId: string;
+  readonly invoiceId: string;
+  readonly creditNoteId: string;
+  readonly amount: MoneyView;
+  readonly source: string;
+  readonly state: string;
+  readonly createdAt: string;
+  readonly createdBy: string;
+  readonly recordVersion: number;
 }
 
 /**
@@ -718,6 +770,24 @@ export const toCreditNoteView = (
   decidedBy: row.decidedBy,
   decidedAt: row.decidedAt?.toISOString() ?? null,
   decisionReason: row.decisionReason,
+  recordVersion: row.recordVersion,
+});
+
+export const toRefundObligationView = (
+  row: RefundObligationRow,
+  units: MinorUnits = NO_MINOR_UNITS
+): RefundObligationView => ({
+  id: row.id,
+  companyId: row.companyId,
+  branchId: row.branchId,
+  partnerId: row.partnerId,
+  invoiceId: row.invoiceId,
+  creditNoteId: row.creditNoteId,
+  amount: moneyView(row.amount, row.currencyCode, units),
+  source: row.source,
+  state: row.state,
+  createdAt: row.createdAt.toISOString(),
+  createdBy: row.createdBy,
   recordVersion: row.recordVersion,
 });
 
@@ -1209,12 +1279,19 @@ export class BillingReadService {
     const shown = truncated ? thirdPartyRows.slice(0, THIRD_PARTY_PAYMENTS_SHOWN) : thirdPartyRows;
     const mayNamePayer =
       shown.length > 0 && (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION));
+    // What the customer is owed back (ADR-023 D2): the open refund obligations.
+    const refundOwed = await this.repository.openRefundOwed(db, {
+      invoiceId: invoice.id,
+      companyId: invoice.companyId,
+      branchId: invoice.branchId,
+    });
     return {
       creditStatus: deriveCreditStatus(credited, Decimal.fromDatabase(position.gross, MONEY)),
       paymentStatus: derivePaymentStatus(paid, Decimal.fromDatabase(openAmount, MONEY)),
-      refundStatus: 'none',
+      refundStatus: deriveRefundStatus(Decimal.fromDatabase(refundOwed, MONEY)),
       credited: moneyView(position.credited, invoice.currencyCode, units),
       paid: moneyView(position.paid, invoice.currencyCode, units),
+      refundOwed: moneyView(refundOwed, invoice.currencyCode, units),
       thirdPartyPayments: shown.map((row) => ({
         receipt: { id: row.receiptId, reference: row.receiptNumber },
         payerName: mayNamePayer ? row.payerDisplayName : null,
@@ -1448,6 +1525,16 @@ export class BillingReadService {
       id === null ? null : (names.get(id)?.displayName ?? null);
     const returned = trace.sourceReturn;
     const units = await this.repository.minorUnitsFor(db, [note.currencyCode]);
+    // ADR-023 D2: what approving a pending note would do, and what an approved one
+    // left the customer owed. Both under the caller's own row security.
+    const effect =
+      note.approvalState === 'pending'
+        ? await this.repository.creditApprovalEffect(db, note)
+        : null;
+    const obligation =
+      note.approvalState === 'approved'
+        ? await this.repository.findRefundObligationForCreditNote(db, note)
+        : null;
     return {
       ...toCreditNoteView(note, units),
       requestedAt: trace.requestedAt.toISOString(),
@@ -1473,7 +1560,49 @@ export class BillingReadService {
               quantity: returned.quantity,
               receivedAt: returned.receivedAt.toISOString(),
             },
+      approvalEffect:
+        effect === null
+          ? null
+          : {
+              reducesBalanceBy: moneyView(effect.reducesBalanceBy, note.currencyCode, units),
+              refundOwed: moneyView(effect.refundOwed, note.currencyCode, units),
+            },
+      refundObligation: obligation === null ? null : toRefundObligationView(obligation, units),
     };
+  }
+
+  /**
+   * One branch's refund obligations, newest first (`sal.refund-obligation-list`,
+   * ADR-023 D2, P1-32-PRE-OD-FD2A), filtered by customer, invoice and state.
+   *
+   * The branch is the read's TARGET, re-authorized here before any row is fetched,
+   * exactly as `listCreditNotes` does; RLS narrows again underneath, and
+   * `sel_refund_obligations_gated` removes every row from a caller without
+   * `sal.finance.view`, which the operation therefore declares.
+   */
+  public async listRefundObligations(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly partnerId?: string | undefined;
+      readonly invoiceId?: string | undefined;
+      readonly state?: string | undefined;
+    },
+    page: { readonly cursor?: string | undefined; readonly limit?: number | undefined },
+    authorizeScope: ScopeAuthorizer
+  ): Promise<Page<RefundObligationView>> {
+    await authorizeScope({ companyId: filter.companyId, branchId: filter.branchId });
+    const result = await this.repository.listRefundObligations(
+      db,
+      filter,
+      pageRequest(REFUND_OBLIGATION_ORDER, page)
+    );
+    const units = await this.repository.minorUnitsFor(
+      db,
+      result.items.map((row) => row.currencyCode)
+    );
+    return { ...result, items: result.items.map((row) => toRefundObligationView(row, units)) };
   }
 
   /**

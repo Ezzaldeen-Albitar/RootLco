@@ -4452,3 +4452,40 @@ Known limitations, one line each:
 
 - The bound counts saves in one process; several application instances each hold their own.
 - A dedicated permission code for snapshots is an open Owner question.
+
+### Credit ceiling and refund obligations (P1-32-PRE-OD-FD2A, ADR-023 D2, part 1)
+
+Owner decision D2, part 1: a credit is at most the issued invoice's total less the credits already
+approved, safely under concurrency, and a credit above what is still owed leaves the customer owed
+the difference as a refund obligation; nothing is paid automatically. One forward migration
+(`20261008121000_sal_refund_obligations.sql`), one new operation, one new audit action
+(`sal.refund_obligation.recorded`), no new permission code. Refund requests, their second approver
+and their payout are part 2 (P1-32-PRE-OD-FD2B).
+
+| Route                                                                           | Operation                                                      | Who                              | What changed                                                                                                                                                                                                                     |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /invoices/{invoiceId}/credit-notes`                                       | `sal.credit-note-create`                                       | unchanged                        | The ceiling is the invoice's total less the approved credits (`credit_note_exceeds_creditable` on `body.amount`, recorded once); a paid invoice can be credited.                                                                 |
+| `POST /credit-notes/{creditNoteId}/approval`                                    | `sal.credit-note-approve`                                      | unchanged                        | The same ceiling under the note and invoice locks (named on `path.creditNoteId`, recorded once); the answer adds `refundObligation` — the obligation the approval left, or `null` — and the obligation has its own audit record. |
+| `GET /credit-notes/{creditNoteId}`                                              | `sal.credit-note-detail`                                       | unchanged                        | Additive: `approvalEffect` on a pending note (what the approval would reduce and what would be owed back, computed by the database) and `refundObligation` on an approved one.                                                   |
+| `GET /invoices/{invoiceId}/outstanding`                                         | `sal.invoice-outstanding-read`                                 | unchanged                        | The open balance never reads below zero; the settlement adds `refundOwed`, and `refundStatus` reads `owed` while an obligation is open.                                                                                          |
+| `GET /refund-obligations`                                                       | `sal.refund-obligation-list`                                   | `sal.finance.view` in the branch | NEW. A branch's refund obligations, newest first, by customer, invoice and state, paged by cursor.                                                                                                                               |
+| `POST /payments/{paymentId}/reversals`, `POST /receipt-reversals/{id}/approval` | `sal.receipt-reversal-request`, `sal.receipt-reversal-approve` | unchanged                        | Interim rule (open policy point): refused as `receipt_reversal_refund_obligation_open`, recorded once, while the receipt paid an invoice with an open obligation.                                                                |
+| `/credit-notes`, `/invoices` (screen and print)                                 | the reads above                                                | as above                         | The approval question says how the amount splits when it is more than what is owed; the invoice and its print show the refund status and "Refund owed to the customer", en and ar.                                               |
+
+Wrapper extensions: none. The split is part of the shared `ConfirmDialog`'s description; the refund
+owed uses the invoice panel's own field and the print's own settlement list.
+
+Preserved: the per-line return limits of D9; the D13 approval limits; tenant and branch isolation;
+plain refusal sentences in English and Arabic; money stays a decimal string and nothing is computed
+in the browser.
+
+Known limitations, one line each:
+
+- The **Raise a credit note** form still offers at most what the invoice still owes, and the invoice
+  screen offers it only while money is open; a credit beyond what is owed arises when a payment
+  arrives between the request and the approval.
+- No refund request, approval or payout exists yet (part 2); an obligation stays open.
+- Open policy points: who may create an explicit obligation; whom to refund when a third party paid
+  (D14); the interim reversal rule; obligations are not yet in the D16 report or its snapshots.
+- The DB and backend tiers were run on the development machine on a disposable database only for the
+  files named in the pull request; the full tiers run on hosted CI.

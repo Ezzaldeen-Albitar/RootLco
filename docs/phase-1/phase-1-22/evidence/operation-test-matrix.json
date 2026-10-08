@@ -1,9 +1,9 @@
 {
   "generatedFrom": "scripts/check-operation-test-coverage.mjs",
   "counts": {
-    "registered": 59,
-    "publicApi": 59,
-    "operationDepth": 59,
+    "registered": 60,
+    "publicApi": 60,
+    "operationDepth": 60,
     "invocationOnly": 0,
     "pending": 0,
     "unitOnly": 0,
@@ -1808,6 +1808,40 @@
         "route",
         "service",
         "stale-version",
+        "success"
+      ],
+      "missing": [],
+      "metadataOnly": false,
+      "unitOnly": false
+    },
+    {
+      "id": "sal.refund-obligation-list",
+      "surface": "public-api",
+      "method": "GET",
+      "path": "/refund-obligations",
+      "public": false,
+      "files": ["tests/backend/od-finance-credit-decisions.test.ts"],
+      "referenced": true,
+      "derived": ["route", "service", "success", "authorization", "isolation"],
+      "declared": ["success", "denial", "cross-tenant", "isolation", "pagination"],
+      "required": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "provided": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
         "success"
       ],
       "missing": [],

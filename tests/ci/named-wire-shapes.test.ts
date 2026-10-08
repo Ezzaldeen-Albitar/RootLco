@@ -222,8 +222,11 @@ describe('every route body serialises a named type', () => {
     // save, the list and the read serialise the NAMED `ReportSnapshotCreatedView`,
     // `ReportSnapshotListView` and `ReportSnapshotRowsView`, so `named` moves by
     // three and `composed` does not.
-    expect(summary.bodies).toBe(516);
-    expect(summary.named).toBe(464);
+    // 517 with the refund obligation list (P1-32-PRE-OD-FD2A, ADR-023 D2): one read
+    // serialising the NAMED `Page<RefundObligationView>`, so `named` moves by one
+    // and `composed` does not.
+    expect(summary.bodies).toBe(517);
+    expect(summary.named).toBe(465);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

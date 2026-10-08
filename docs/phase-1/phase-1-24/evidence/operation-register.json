@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 516,
-    "openapiPaths": 405,
-    "openapiOperations": 516,
+    "operations": 517,
+    "openapiPaths": 406,
+    "openapiOperations": 517,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -11,10 +11,10 @@
     "outboxForeignWriters": 0,
     "errorCodes": 34,
     "permissionCodes": 134,
-    "auditActions": 299
+    "auditActions": 300
   },
   "counts": {
-    "Covered": 516
+    "Covered": 517
   },
   "operations": [
     {
@@ -15102,6 +15102,46 @@
       "tests": ["tests/backend/od-finance-receipt-reversal.test.ts"],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/receipt-reversals/[reversalId]/withdrawal/route.ts"
+    },
+    {
+      "id": "sal.refund-obligation-list",
+      "domain": "billing",
+      "method": "GET",
+      "route": "/api/v1/refund-obligations",
+      "permissions": ["sal.finance.view"],
+      "public": false,
+      "scope": "branch",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/refund-obligations",
+      "documentedResponses": ["200", "401", "403", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "isolation",
+        "denial",
+        "cross-tenant",
+        "pagination"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "pagination",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-finance-credit-decisions.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/refund-obligations/route.ts"
     },
     {
       "id": "sal.work-order-delivery-read",

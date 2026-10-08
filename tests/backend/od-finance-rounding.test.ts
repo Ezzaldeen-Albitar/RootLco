@@ -429,6 +429,8 @@ describe('D1 — a JOD 16% line, quoted, invoiced and paid to the fils', () => {
       refundStatus: 'none',
       credited: { amount: '0.0000', currency: 'JOD', minorUnit: 3 },
       paid: { amount: '14.3200', currency: 'JOD', minorUnit: 3 },
+      // Nothing credited, so nothing owed back (ADR-023 D2).
+      refundOwed: { amount: '0.0000', currency: 'JOD', minorUnit: 3 },
       // Paid by its own customer: no third-party payment (ADR-023 D14).
       thirdPartyPayments: [],
       thirdPartyPaymentsTruncated: false,

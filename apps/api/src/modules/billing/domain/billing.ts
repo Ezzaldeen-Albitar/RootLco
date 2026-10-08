@@ -103,7 +103,11 @@ export const APPROVAL_STATES = Object.freeze([
 ] as const);
 export type ApprovalState = (typeof APPROVAL_STATES)[number];
 
-/** `ck_financial_events_event_type`. Closed at six. */
+/**
+ * `ck_financial_events_event_type`. Closed at seven: `refund_obligation_recorded`
+ * (P1-32-PRE-OD-FD2A, ADR-023 D2) records that a customer is owed money back. No
+ * event is an accounting entry.
+ */
 export const FINANCIAL_EVENT_TYPES = Object.freeze([
   'invoice_issued',
   'receipt_recorded',
@@ -111,6 +115,7 @@ export const FINANCIAL_EVENT_TYPES = Object.freeze([
   'credit_note_issued',
   'receipt_reversed',
   'warranty_split_recorded',
+  'refund_obligation_recorded',
 ] as const);
 export type FinancialEventType = (typeof FINANCIAL_EVENT_TYPES)[number];
 
@@ -121,6 +126,7 @@ export const FINANCIAL_EVENT_SOURCE_TYPES = Object.freeze([
   'payment_allocation',
   'credit_note',
   'receipt_reversal',
+  'refund_obligation',
 ] as const);
 export type FinancialEventSourceType = (typeof FINANCIAL_EVENT_SOURCE_TYPES)[number];
 
@@ -261,18 +267,24 @@ export function assertLegalInvoiceTransition(from: string, to: string): void {
 }
 
 /**
- * Refuses a credit note larger than the invoice's remaining open receivable.
+ * Refuses a credit note larger than what the invoice can still be credited
+ * (ADR-023 D2, P1-32-PRE-OD-FD2A): the issued invoice's gross less the credits
+ * already APPROVED on it. A pending note is not counted; the approval re-checks.
  *
- * `sal.approve_credit_note` performs this comparison too, and this is the one
- * place a duplicated check is worth it: the approval path raises `check_violation`
- * with a message that is not a caller-safe contract, and the caller can act on
- * "exceeds the open amount" while it can act on nothing at all given a 500.
+ * Not the open receivable any more. A paid invoice can be credited, and what the
+ * credit exceeds the open receivable by is recorded as a refund obligation by
+ * `sal.approve_credit_note` — never paid out automatically.
+ *
+ * `sal.approve_credit_note` performs this comparison too, under the note and
+ * invoice locks, and this is the one place a duplicated check is worth it: the
+ * caller can act on "exceeds what can still be credited" while it can act on
+ * nothing at all given a 500.
  */
-export function assertCreditWithinOpenAmount(amount: Decimal, openAmount: Decimal): void {
-  if (amount.greaterThan(openAmount)) {
+export function assertCreditWithinCreditable(amount: Decimal, creditable: Decimal): void {
+  if (amount.greaterThan(creditable)) {
     throw new BillingRuleError(
-      `a credit note of ${amount.toString()} exceeds the invoice's open amount of ` +
-        `${openAmount.toString()}`
+      `a credit note of ${amount.toString()} exceeds the ${creditable.toString()} the ` +
+        'invoice can still be credited'
     );
   }
 }
@@ -332,11 +344,29 @@ export const PAYMENT_STATUSES = Object.freeze([
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
 /**
- * Whether money has been handed back (D7 keeps it separate). The platform has no
- * refund instrument yet (D2 is planned), so the only honest value is `none`.
+ * Whether money is owed back or has been handed back (D7 keeps it separate).
+ *
+ *  - `none` — no open refund obligation;
+ *  - `owed` — at least one open refund obligation (ADR-023 D2, P1-32-PRE-OD-FD2A):
+ *    an approved credit exceeded what the invoice still owed, and the customer is
+ *    owed the difference. Nothing has been paid back.
+ *
+ * Refund requests and their execution (FD2B) add the later states.
  */
-export const REFUND_STATUSES = Object.freeze(['none'] as const);
+export const REFUND_STATUSES = Object.freeze(['none', 'owed'] as const);
 export type RefundStatus = (typeof REFUND_STATUSES)[number];
+
+/**
+ * `ck_refund_obligations_state` (P1-32-PRE-OD-FD2A). Only `open` is reachable until
+ * refund requests exist (FD2B).
+ */
+export const REFUND_OBLIGATION_STATES = Object.freeze(['open', 'settled', 'cancelled'] as const);
+export type RefundObligationState = (typeof REFUND_OBLIGATION_STATES)[number];
+
+/** `owed` while any obligation is open, compared by `Decimal`. */
+export function deriveRefundStatus(openObligations: Decimal): RefundStatus {
+  return openObligations.greaterThan(Decimal.zero(MONEY)) ? 'owed' : 'none';
+}
 
 /** `credited` compared with the eligible total, by `Decimal` — never by `Number()`. */
 export function deriveCreditStatus(credited: Decimal, eligibleTotal: Decimal): CreditStatus {

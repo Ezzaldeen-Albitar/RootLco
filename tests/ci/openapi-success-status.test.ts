@@ -112,7 +112,9 @@ describe('every operation publishes the success status it returns', () => {
     // one new route module, answering 200.
     // 516 with the report snapshots (P1-32-PRE-OD-FD16B): three operations over two
     // new route modules — the save answers 201, the list and the read 200.
-    expect(actual.size).toBe(516);
+    // 517 with the refund obligation list (P1-32-PRE-OD-FD2A): one operation, one
+    // new route module.
+    expect(actual.size).toBe(517);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -269,7 +271,8 @@ describe('every operation publishes the success status it returns', () => {
     // 200 as the decision does.
     // 371 -> 373 with the report snapshot list and read (P1-32-PRE-OD-FD16B), two
     // GETs answering 200.
-    expect(counts[200]).toBe(373);
+    // 374 with the refund obligation list (P1-32-PRE-OD-FD2A), a 200 read.
+    expect(counts[200]).toBe(374);
   });
 
   it('reads the handler, not the declaration', () => {

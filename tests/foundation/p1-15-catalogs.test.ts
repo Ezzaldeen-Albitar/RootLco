@@ -453,6 +453,7 @@ const EXPECTED_AUDIT_ACTIONS = [
   'sal.receipt_reversal.rejected',
   'sal.receipt_reversal.requested',
   'sal.receipt_reversal.withdrawn',
+  'sal.refund_obligation.recorded',
   'shared.document.download_authorized',
   'shared.document.linked',
   'shared.document.retention_evaluated',

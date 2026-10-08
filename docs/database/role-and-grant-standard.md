@@ -508,6 +508,24 @@ receipt's company and branch, the authorising user stamped from the session what
 statement names. `sal.allocate_receipt` is re-created with three more arguments and keeps
 `EXECUTE` for `app_runtime` only. No policy changes, and `app_readonly` keeps `SELECT` only.
 
+### 5.13 Refund obligations (DBCR-P1-32-PRE-OD-FD2A-001, migration `20261008121000`)
+
+One new table, `sal.refund_obligations` (ADR-023 D2, part 1), written only by
+`sal.approve_credit_note` for exactly the excess of an approved credit over what the invoice
+still owed. Forced row-level security: the three policies (`sel_`, `ins_` and
+`upd_refund_obligations_gated`) admit a row only in the caller's tenant, company and branch
+reach with `sal.finance.view`. The BEFORE INSERT guard binds every row to its approved credit
+note, invoice, customer, currency and amount and stamps the creator; the BEFORE UPDATE guard
+freezes every fact and refuses every state change until refund requests exist.
+
+| Object                   | `app_runtime`                        | `app_readonly` |
+| ------------------------ | ------------------------------------ | -------------- |
+| `sal.refund_obligations` | `SELECT`, `INSERT`, `UPDATE (state)` | `SELECT`       |
+
+No DELETE for any application role. The two new trigger functions are `SECURITY INVOKER` with
+`EXECUTE` revoked from PUBLIC; the seven re-issued functions keep their grants. No privilege on
+any existing table changes.
+
 ---
 
 ## 6. How later phases attach real logins

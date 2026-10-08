@@ -763,6 +763,8 @@ describe('FE-014 → FE-015 → FE-019 on one work order', () => {
         refundStatus: 'none',
         credited: { amount: '0.0000', currency: 'USD', minorUnit: 2 },
         paid: { amount: '0.0000', currency: 'USD', minorUnit: 2 },
+        // Nothing credited, so nothing owed back (ADR-023 D2).
+        refundOwed: { amount: '0.0000', currency: 'USD', minorUnit: 2 },
         // Nothing paid, so nothing paid by anybody else (ADR-023 D14).
         thirdPartyPayments: [],
         thirdPartyPaymentsTruncated: false,

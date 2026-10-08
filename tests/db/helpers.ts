@@ -392,6 +392,9 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   // sal.credit_notes — and therefore before the inv block below, which removes
   // the part issues and locations it also cites.
   await deleteFrom('inv.sales_returns');
+  // P1-32-PRE-OD-FD2A (ADR-023 D2): an obligation cites its credit note and invoice
+  // (both ON DELETE RESTRICT), so it goes before them.
+  await deleteFrom('sal.refund_obligations');
   await deleteFrom('sal.credit_notes');
   await deleteFrom('sal.receipts');
   await deleteFrom('sal.invoice_status_history');
