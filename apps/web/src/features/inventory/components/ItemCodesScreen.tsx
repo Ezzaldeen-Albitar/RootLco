@@ -27,12 +27,31 @@
  *
  * Permissions: `inv.item.read` gates the page; `inv.item.manage` — held
  * TENANT-WIDE, which the server checks — offers every write.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-MUI7A1`)
+ *
+ * Both lists are Material's table: each read answers the item's whole list at
+ * once (no cursor), so there is nothing for the operational grid's pager to
+ * walk. Every field is a `forms/mui` wrapper, every button Material's, and a
+ * read that does not answer is the shared Material state carrying this
+ * screen's own sentence, with a retry after an outage. What is read, sent and
+ * authorized is unchanged.
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { SelectField, TextField } from '@/components/forms/Field';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -64,14 +83,27 @@ import {
   type UnitOfMeasureOption,
 } from '../inventory-contract';
 
-import { OutcomeNote, PRIMARY_BUTTON, Qty, SECONDARY_BUTTON, UUID } from './shared';
-import { DANGER_BUTTON, PANEL, outcomeField } from './stock-operations';
+import { OutcomeNote, Qty, UUID } from './shared';
+import { PANEL, outcomeField } from './stock-operations';
 
-/** One read, as one of four outcomes, re-issued after every write that changes it. */
+/**
+ * One read, as one of four outcomes, re-issued after every write that changes it.
+ *
+ * A failure keeps the screen's own sentence and says which failure it is, so it
+ * is drawn as that state (`MuiReadFailureState`): a refusal and an ended session
+ * offer no retry, and everything else — the service did not answer, answered
+ * too slowly, or failed — is "unavailable, try again", as it always read here.
+ */
 type Panel<T> =
   | { readonly phase: 'loading' }
   | { readonly phase: 'read'; readonly data: T }
-  | { readonly phase: 'failed'; readonly messageKey: string; readonly retry: (() => void) | null };
+  | {
+      readonly phase: 'failed';
+      readonly status: 'denied' | 'expired' | 'unavailable';
+      readonly messageKey: string;
+      readonly correlationId: string | null;
+      readonly retry: (() => void) | null;
+    };
 
 function usePanel<T>(
   read: () => Promise<ReadState<T>>,
@@ -102,10 +134,28 @@ function usePanel<T>(
           got.status === 'ok'
             ? { phase: 'read', data: got.data }
             : got.status === 'denied'
-              ? { phase: 'failed', messageKey: refusedKey, retry: null }
+              ? {
+                  phase: 'failed',
+                  status: 'denied',
+                  messageKey: refusedKey,
+                  correlationId: got.correlationId,
+                  retry: null,
+                }
               : got.status === 'expired'
-                ? { phase: 'failed', messageKey: 'state.expired.message', retry: null }
-                : { phase: 'failed', messageKey: unavailableKey, retry: reload },
+                ? {
+                    phase: 'failed',
+                    status: 'expired',
+                    messageKey: 'state.expired.message',
+                    correlationId: got.correlationId,
+                    retry: null,
+                  }
+                : {
+                    phase: 'failed',
+                    status: 'unavailable',
+                    messageKey: unavailableKey,
+                    correlationId: got.correlationId,
+                    retry: reload,
+                  },
       });
     });
     return () => {
@@ -182,10 +232,10 @@ function IdentifiersPanel({
         </p>
       ) : null}
       <div className="sm:max-w-xs">
-        <SelectField
+        <FormSelectField
           label={translate(messages, 'inventory.identifiers.show')}
           value={includeRetired ? 'all' : 'live'}
-          onChange={(event) => setIncludeRetired(event.target.value === 'all')}
+          onChange={(next) => setIncludeRetired(next === 'all')}
           options={[
             { value: 'live', label: translate(messages, 'inventory.identifiers.showLive') },
             { value: 'all', label: translate(messages, 'inventory.identifiers.showAll') },
@@ -194,20 +244,9 @@ function IdentifiersPanel({
       </div>
 
       {panel.phase === 'loading' ? (
-        <p role="status" aria-live="polite" className="text-caption text-text-muted">
-          {translate(messages, 'inventory.identifiers.loading')}
-        </p>
+        <MuiLoadingState messages={messages} variant="inline" />
       ) : panel.phase === 'failed' ? (
-        <>
-          <p className="text-body text-error">{translateDynamic(messages, panel.messageKey)}</p>
-          {panel.retry !== null ? (
-            <div>
-              <button type="button" className={SECONDARY_BUTTON} onClick={panel.retry}>
-                {translate(messages, 'state.retry')}
-              </button>
-            </div>
-          ) : null}
-        </>
+        <PanelFailure locale={locale} messages={messages} panel={panel} />
       ) : (
         <>
           <p className="text-caption text-text-muted">
@@ -225,31 +264,31 @@ function IdentifiersPanel({
               {translate(messages, 'inventory.identifiers.none')}
             </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-body">
+            <TableContainer>
+              <Table size="small">
                 <caption className="sr-only">
                   {translate(messages, 'inventory.identifiers.caption')}
                 </caption>
-                <thead>
-                  <tr className="text-caption text-text-muted">
-                    <th scope="col" className="text-start font-medium">
+                <TableHead>
+                  <TableRow>
+                    <TableCell scope="col">
                       {translate(messages, 'inventory.identifiers.column.kind')}
-                    </th>
-                    <th scope="col" className="text-start font-medium">
+                    </TableCell>
+                    <TableCell scope="col">
                       {translate(messages, 'inventory.identifiers.column.code')}
-                    </th>
-                    <th scope="col" className="text-end font-medium">
+                    </TableCell>
+                    <TableCell scope="col" align="right">
                       {translate(messages, 'inventory.identifiers.column.pack')}
-                    </th>
-                    <th scope="col" className="text-start font-medium">
+                    </TableCell>
+                    <TableCell scope="col">
                       {translate(messages, 'inventory.identifiers.column.state')}
-                    </th>
-                    <th scope="col" className="text-end font-medium">
+                    </TableCell>
+                    <TableCell scope="col" align="right">
                       {translate(messages, 'inventory.identifiers.column.action')}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
                   {panel.data.identifiers.map((row) => (
                     <IdentifierRow
                       key={row.id}
@@ -264,9 +303,9 @@ function IdentifiersPanel({
                       }}
                     />
                   ))}
-                </tbody>
-              </table>
-            </div>
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
         </>
       )}
@@ -317,27 +356,27 @@ function IdentifierRow({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   return (
-    <tr className="border-t border-border align-top">
-      <td>
+    <TableRow className="align-top">
+      <TableCell>
         {translateDynamic(messages, `inventory.identifierKind.${row.kind}`)}
         {row.isPrimary ? (
           <span className="block text-caption text-text-muted">
             {translate(messages, 'inventory.identifiers.primary')}
           </span>
         ) : null}
-      </td>
-      <td>
+      </TableCell>
+      <TableCell>
         <code className="font-mono text-caption" dir="ltr">
           {row.value}
         </code>
         <span className="block text-caption text-text-muted">
           {translateDynamic(messages, `inventory.symbology.${row.symbology}`)}
         </span>
-      </td>
-      <td className="text-end">
+      </TableCell>
+      <TableCell align="right">
         <Qty value={row.packQuantity} /> <span dir="ltr">{row.unit.code}</span>
-      </td>
-      <td>
+      </TableCell>
+      <TableCell>
         {row.retired
           ? translate(messages, 'inventory.identifiers.retired')
           : translate(messages, 'inventory.identifiers.live')}
@@ -345,12 +384,14 @@ function IdentifierRow({
           {formatDateTime(row.retiredAt ?? row.createdAt, locale)}
         </span>
         {outcome !== null ? <OutcomeNote messages={messages} outcome={outcome} /> : null}
-      </td>
-      <td className="text-end">
+      </TableCell>
+      <TableCell align="right">
         {row.retired || !canManage ? null : (
-          <button
+          <Button
             type="button"
-            className={DANGER_BUTTON}
+            variant="outlined"
+            color="error"
+            size="small"
             disabled={busy}
             onClick={() => {
               setBusy(true);
@@ -364,10 +405,10 @@ function IdentifierRow({
           >
             {translate(messages, 'inventory.identifiers.retire.action')}
             <span className="sr-only"> {row.value}</span>
-          </button>
+          </Button>
         )}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -463,55 +504,52 @@ function AddIdentifierForm({
       <p className="text-caption text-text-muted sm:col-span-2">
         {translate(messages, 'inventory.identifiers.add.explain')}
       </p>
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'inventory.identifiers.add.kind')}
         required
         value={form.kind}
-        onChange={(event) =>
-          setForm((f) => ({ ...f, kind: event.target.value as EnterableIdentifierKind }))
-        }
+        onChange={(next) => setForm((f) => ({ ...f, kind: next as EnterableIdentifierKind }))}
         options={ENTERABLE_IDENTIFIER_KINDS.map((kind) => ({
           value: kind,
           label: translateDynamic(messages, `inventory.identifierKind.${kind}`),
         }))}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'inventory.identifiers.add.value')}
         description={translate(messages, 'inventory.identifiers.add.valueHelp')}
         required
         dir="ltr"
         autoComplete="off"
         value={form.value}
-        onChange={(event) => setForm((f) => ({ ...f, value: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, value: next }))}
         error={errorFor('value')}
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'inventory.identifiers.add.unit')}
         description={translate(messages, 'inventory.identifiers.add.unitHelp')}
         value={form.unitId}
-        onChange={(event) => setForm((f) => ({ ...f, unitId: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, unitId: next }))}
         options={(units ?? []).map((unit) => ({
           value: unit.id,
           label: `${unit.code} — ${unit.name}`,
         }))}
         placeholder={translate(messages, 'inventory.identifiers.add.unitDefault')}
       />
-      <TextField
+      {/* A decimal string as typed, never a number input (F5). */}
+      <FormNumberField
         label={translate(messages, 'inventory.identifiers.add.pack')}
         description={translate(messages, 'inventory.identifiers.add.packHelp')}
-        inputMode="decimal"
-        dir="ltr"
         value={form.packQuantity}
-        onChange={(event) => setForm((f) => ({ ...f, packQuantity: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, packQuantity: next }))}
         error={errorFor('packQuantity')}
       />
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.identifiers.add.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -538,9 +576,9 @@ function InternalCodeAction({
       </p>
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button
+        <Button
           type="button"
-          className={SECONDARY_BUTTON}
+          variant="outlined"
           disabled={busy}
           onClick={() => {
             setBusy(true);
@@ -556,7 +594,7 @@ function InternalCodeAction({
           }}
         >
           {translate(messages, 'inventory.identifiers.internal.action')}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -599,36 +637,34 @@ function PricesPanel({
         </p>
       ) : null}
       {panel.phase === 'loading' ? (
-        <p role="status" aria-live="polite" className="text-caption text-text-muted">
-          {translate(messages, 'inventory.prices.loading')}
-        </p>
+        <MuiLoadingState messages={messages} variant="inline" />
       ) : panel.phase === 'failed' ? (
-        <p className="text-body text-error">{translateDynamic(messages, panel.messageKey)}</p>
+        <PanelFailure locale={locale} messages={messages} panel={panel} />
       ) : panel.data.prices.length === 0 ? (
         <p className="text-caption text-text-muted">
           {translate(messages, 'inventory.prices.none')}
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-body">
+        <TableContainer>
+          <Table size="small">
             <caption className="sr-only">{translate(messages, 'inventory.prices.caption')}</caption>
-            <thead>
-              <tr className="text-caption text-text-muted">
-                <th scope="col" className="text-start font-medium">
+            <TableHead>
+              <TableRow>
+                <TableCell scope="col">
                   {translate(messages, 'inventory.prices.column.applies')}
-                </th>
-                <th scope="col" className="text-end font-medium">
+                </TableCell>
+                <TableCell scope="col" align="right">
                   {translate(messages, 'inventory.prices.column.price')}
-                </th>
-                <th scope="col" className="text-start font-medium">
+                </TableCell>
+                <TableCell scope="col">
                   {translate(messages, 'inventory.prices.column.taxClass')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
               {panel.data.prices.map((price) => (
-                <tr key={price.id} className="border-t border-border align-top">
-                  <td>
+                <TableRow key={price.id} className="align-top">
+                  <TableCell>
                     {translate(
                       messages,
                       price.branchId !== null
@@ -637,23 +673,23 @@ function PricesPanel({
                           ? 'inventory.prices.appliesCompany'
                           : 'inventory.prices.appliesTenant'
                     )}
-                  </td>
-                  <td className="text-end">
+                  </TableCell>
+                  <TableCell align="right">
                     <span dir="ltr" className="font-mono text-caption">
                       {formatMoney(
                         { amount: price.unitPrice, currency: price.currencyCode },
                         locale
                       )}
                     </span>
-                  </td>
-                  <td>
+                  </TableCell>
+                  <TableCell>
                     {price.taxClassCode ?? translate(messages, 'inventory.prices.noTaxClass')}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
       {canManage ? (
         <SetPriceForm
@@ -757,14 +793,14 @@ function SetPriceForm({
       <p className="text-caption text-text-muted sm:col-span-2">
         {translate(messages, 'inventory.prices.set.explain')}
       </p>
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'inventory.prices.set.companyField')}
         description={translate(messages, 'inventory.prices.set.companyHelp')}
         value={form.companyId}
-        onChange={(event) =>
+        onChange={(next) =>
           // The branch belongs to the company, so changing one discards the
           // other. Keeping it would send a pair the route refuses.
-          setForm((f) => ({ ...f, companyId: event.target.value, branchId: '' }))
+          setForm((f) => ({ ...f, companyId: next, branchId: '' }))
         }
         options={context.companies.map((company) => ({
           value: company.id,
@@ -773,12 +809,12 @@ function SetPriceForm({
         placeholder={translate(messages, 'inventory.prices.set.everyCompany')}
         error={errorFor('companyId')}
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'inventory.prices.set.branchField')}
         description={translate(messages, 'inventory.prices.set.branchHelp')}
         disabled={form.companyId === ''}
         value={form.branchId}
-        onChange={(event) => setForm((f) => ({ ...f, branchId: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, branchId: next }))}
         options={branchesOfCompany.map((branch) => ({
           value: branch.id,
           label: `${branch.code} — ${branch.name}`,
@@ -793,33 +829,61 @@ function SetPriceForm({
        * discover it from a refusal that used to read "Not found" and nothing
        * else. The refusal now carries its own sentence here; see `setSalePrice`.
        */}
-      <TextField
+      <FormTextField
         label={translate(messages, 'inventory.prices.set.currency')}
         description={translate(messages, 'inventory.prices.set.currencyHelp')}
         required
         dir="ltr"
         value={form.currencyCode}
-        onChange={(event) => setForm((f) => ({ ...f, currencyCode: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, currencyCode: next }))}
         error={errorFor('currencyCode')}
       />
-      <TextField
+      {/*
+        The exact string typed is the string sent (`FormNumberField`, F5): not
+        the money field, which would canonicalise "12.5000" on blur.
+      */}
+      <FormNumberField
         label={translate(messages, 'inventory.prices.set.price')}
         description={translate(messages, 'inventory.prices.set.priceHelp')}
         required
-        inputMode="decimal"
-        dir="ltr"
         value={form.unitPrice}
-        onChange={(event) => setForm((f) => ({ ...f, unitPrice: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, unitPrice: next }))}
         error={errorFor('unitPrice')}
       />
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.prices.set.submit')}
-        </button>
+        </Button>
       </div>
     </form>
+  );
+}
+
+/**
+ * A panel read that did not answer, drawn as the state it is with this screen's
+ * own sentence under the shared heading — and a retry only where trying again
+ * can change the answer.
+ */
+function PanelFailure({
+  locale,
+  messages,
+  panel,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly panel: Extract<Panel<unknown>, { readonly phase: 'failed' }>;
+}) {
+  return (
+    <MuiReadFailureState
+      messages={messages}
+      locale={locale}
+      status={panel.status}
+      correlationId={panel.correlationId}
+      onRetry={panel.retry ?? undefined}
+      descriptionKey={panel.messageKey as keyof Messages}
+    />
   );
 }

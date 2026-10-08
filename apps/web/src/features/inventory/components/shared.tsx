@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { SelectField } from '@/components/forms/Field';
+import { SelectField, type SelectOption } from '@/components/forms/Field';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import type { BranchOption } from '@/features/services/services-contract';
 import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
@@ -492,6 +493,7 @@ export function LocationPicker({
   onChange,
   required,
   error,
+  material = false,
 }: {
   readonly messages: Messages;
   readonly locations: Locations;
@@ -501,12 +503,36 @@ export function LocationPicker({
   readonly onChange: (next: string) => void;
   readonly required?: boolean;
   readonly error?: string | undefined;
+  /**
+   * Draw it on Material UI (`FormSelectField`, ADR-022) — the same native
+   * select, label, description and error. Off unless stated, so each screen
+   * that shares this picker moves with its own slice and suite.
+   */
+  readonly material?: boolean;
 }) {
   const note = locations.refused
     ? translateDynamic(messages, locations.refused)
     : locations.truncated
       ? translate(messages, 'inventory.locations.truncated')
       : undefined;
+  const options = (locations.items ?? []).map((location) => ({
+    value: location.id,
+    label: `${location.locationCode} — ${location.name}`,
+  }));
+  if (material) {
+    return (
+      <FormSelectField
+        label={label}
+        required={required}
+        description={note}
+        value={value}
+        onChange={onChange}
+        options={options}
+        placeholder={placeholder}
+        error={error}
+      />
+    );
+  }
   return (
     <SelectField
       label={label}
@@ -514,10 +540,7 @@ export function LocationPicker({
       {...(note ? { description: note } : {})}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      options={(locations.items ?? []).map((location) => ({
-        value: location.id,
-        label: `${location.locationCode} — ${location.name}`,
-      }))}
+      options={options}
       placeholder={placeholder}
       error={error}
     />
@@ -601,6 +624,7 @@ export function CategoryPicker({
   onChange,
   required,
   error,
+  material = false,
 }: {
   readonly messages: Messages;
   readonly categories: Categories;
@@ -612,13 +636,24 @@ export function CategoryPicker({
   readonly onChange: (next: string) => void;
   readonly required?: boolean;
   readonly error?: string | undefined;
+  /** Draw it on Material UI (`FormSelectField`). See `LocationPicker`. */
+  readonly material?: boolean;
 }) {
-  const truncated = categories.truncated
-    ? translate(messages, 'inventory.setup.categories.truncated')
-    : undefined;
-  const note = categories.refused
-    ? translateDynamic(messages, categories.refused)
-    : [truncated, help].filter(Boolean).join(' ') || undefined;
+  const { options, note } = categoryChoices(messages, categories, help);
+  if (material) {
+    return (
+      <FormSelectField
+        label={label}
+        required={required}
+        description={note}
+        value={value}
+        onChange={onChange}
+        options={options}
+        placeholder={placeholder}
+        error={error}
+      />
+    );
+  }
   return (
     <SelectField
       label={label}
@@ -626,18 +661,38 @@ export function CategoryPicker({
       {...(note ? { description: note } : {})}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      options={(categories.items ?? []).map((category) => ({
-        value: category.id,
-        label:
-          category.status === 'active'
-            ? `${category.code} — ${category.name}`
-            : `${category.code} — ${category.name} (${translate(
-                messages,
-                'inventory.setup.status.inactive'
-              )})`,
-      }))}
+      options={options}
       placeholder={placeholder}
       error={error}
     />
   );
+}
+
+/**
+ * The category list as a select's options and the line under it — what
+ * `CategoryPicker` draws, for a caller that hands the select to a toolbar
+ * (`FilterToolbar`'s `select` filter) rather than drawing it itself.
+ */
+export function categoryChoices(
+  messages: Messages,
+  categories: Categories,
+  help?: string | undefined
+): { readonly options: readonly SelectOption[]; readonly note: string | undefined } {
+  const truncated = categories.truncated
+    ? translate(messages, 'inventory.setup.categories.truncated')
+    : undefined;
+  const note = categories.refused
+    ? translateDynamic(messages, categories.refused)
+    : [truncated, help].filter(Boolean).join(' ') || undefined;
+  const options = (categories.items ?? []).map((category) => ({
+    value: category.id,
+    label:
+      category.status === 'active'
+        ? `${category.code} — ${category.name}`
+        : `${category.code} — ${category.name} (${translate(
+            messages,
+            'inventory.setup.status.inactive'
+          )})`,
+  }));
+  return { options, note };
 }

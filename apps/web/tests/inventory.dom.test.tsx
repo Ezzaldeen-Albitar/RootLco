@@ -1,14 +1,18 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   TEST_BRANCH,
   branchSnapshot,
   inBranch,
-  renderLtr,
-  renderRtl,
+  messagesFor,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
   BranchSwitch,
   OTHER_BRANCH,
   WorkingBranchProbe,
@@ -21,6 +25,7 @@ import {
   switchExpectingQuestion,
   switchWithoutQuestion,
 } from './support/branch-switch';
+import { PICKER_OPTION_WAIT_MS } from './support/picker-option';
 
 /**
  * Inventory, rendered (P1-30, `W4`, FE-008/009/010).
@@ -37,7 +42,26 @@ import {
  * the region they live in — three panels share "Item". The item and the job are
  * found by name (route sweep B2); the job's labelled reference box is what a
  * caller without `wo.work_order.read` keeps.
+ *
+ * On Material UI since `P1-32-PRE-OD-MUI7A1`: every render goes under the
+ * product's Material provider, as the locale layout mounts it. The three lists
+ * are grids (`role="grid"`), the item and the job are comboboxes whose matches
+ * are options in a listbox, and a chosen record is the combobox's own value —
+ * the selectors below moved with that structure; what each case asserts did not.
  */
+
+/** The product's Material provider, as the locale layout mounts it. */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
+  renderInLtr(withMui(ui, 'en'), options);
+const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
+  renderInRtl(withMui(ui, 'ar'), options);
 
 const EN = en as Record<string, string>;
 const AR = ar as Record<string, string>;
@@ -243,17 +267,38 @@ const workOrder = {
 
 type User = ReturnType<typeof userEvent.setup>;
 
-/** Find the item by the start of its code, then choose it by what it says (route sweep B2). */
+/**
+ * Find the item by the start of its code, then choose it by what it says (route
+ * sweep B2). The matches are options in the combobox's listbox, which Material
+ * draws in a portal — so they are found on the screen, not inside the panel.
+ */
 async function chooseItem(user: User, scope: HTMLElement, labelKey: string) {
   await user.type(within(scope).getByLabelText(EN[labelKey] as string), 'BRK{Enter}');
-  await user.click(await within(scope).findByRole('button', { name: 'BRK-001 — Brake pad' }));
+  await user.click(
+    await screen.findByRole(
+      'option',
+      { name: 'BRK-001 — Brake pad' },
+      { timeout: PICKER_OPTION_WAIT_MS }
+    )
+  );
 }
 
 /** Find the job by a name, then choose it. */
 async function chooseJob(user: User, scope: HTMLElement, labelKey: string) {
   await user.type(within(scope).getByLabelText(EN[labelKey] as string), 'Layla{Enter}');
-  await user.click(await within(scope).findByRole('button', { name: /WO-000042/ }));
+  await user.click(
+    await screen.findByRole('option', { name: /WO-000042/ }, { timeout: PICKER_OPTION_WAIT_MS })
+  );
 }
+
+/** What a picker holds: the combobox reads the chosen record's name. */
+function chosenIn(scope: HTMLElement, labelKey: string): string {
+  return (within(scope).getByRole('combobox', { name: EN[labelKey] as string }) as HTMLInputElement)
+    .value;
+}
+
+/** The row action's name carries the row it acts on, so it is matched from its start. */
+const RELEASE = new RegExp(`^${escape(EN['inventory.release.action'] as string)}`);
 
 function renderScreen(over: Record<string, unknown> = {}) {
   // Inside a working context: the branch every stock read is addressed to is
@@ -320,7 +365,7 @@ describe('FE-008 — the item search', () => {
     renderScreen();
     await waitFor(() => expect(listItems).toHaveBeenCalled());
     expect(listItems.mock.calls[0]?.[0]).toEqual({});
-    const table = await within(region('inventory.items.heading')).findByRole('table');
+    const table = await within(region('inventory.items.heading')).findByRole('grid');
     expect(within(table).getByText('BRK-001')).toBeVisible();
     expect(within(table).getByText('Brake pad')).toBeVisible();
     expect(within(table).getByText('EA')).toBeVisible();
@@ -436,7 +481,7 @@ describe('FE-008 — the item search', () => {
     renderScreen();
     await waitFor(() => expect(listItems).toHaveBeenCalled());
     const items = region('inventory.items.heading');
-    const table = await within(items).findByRole('table');
+    const table = await within(items).findByRole('grid');
     expect(within(table).getByText('BRK-001')).toBeVisible();
     expect(await within(items).findByText(EN[key] as string)).toBeVisible();
     const select = within(items).getByLabelText(labelled('inventory.items.category'));
@@ -462,7 +507,7 @@ describe('FE-008 — the item search', () => {
     listItemCategories.mockReturnValue(new Promise(() => {}));
     renderScreen();
     await waitFor(() => expect(listItems).toHaveBeenCalled());
-    expect(await within(region('inventory.items.heading')).findByRole('table')).toBeVisible();
+    expect(await within(region('inventory.items.heading')).findByRole('grid')).toBeVisible();
   });
 
   it('states the truncation WITHOUT losing the disclosure', async () => {
@@ -586,7 +631,7 @@ describe('FE-009 — stock is read only for a named branch', () => {
   it('shows the three quantities exactly as the server sent them and sums nothing', async () => {
     renderScreen({ canReadStock: true, canReadBranches: true });
     await chooseBranch();
-    const table = await within(region('inventory.availability.heading')).findByRole('table');
+    const table = await within(region('inventory.availability.heading')).findByRole('grid');
     expect(within(table).getByText('12.500')).toBeVisible();
     expect(within(table).getByText('2.000')).toBeVisible();
     expect(within(table).getByText('10.500')).toBeVisible();
@@ -639,7 +684,7 @@ describe('FE-009 — stock is read only for a named branch', () => {
     renderScreen({ canReadStock: true, canReadBranches: true });
     await chooseBranch();
     const availability = region('inventory.availability.heading');
-    const table = await within(availability).findByRole('table');
+    const table = await within(availability).findByRole('grid');
     expect(
       within(table).getByRole('columnheader', {
         name: EN['inventory.availability.column.inTransit'] as string,
@@ -696,7 +741,7 @@ describe('FE-010 — reservations', () => {
   it('lists the reservations of the branch with the quantity as a string and no work order named honestly', async () => {
     renderScreen({ canReadStock: true, canReadBranches: true });
     await chooseBranch();
-    const table = await within(region('inventory.reservations.heading')).findByRole('table');
+    const table = await within(region('inventory.reservations.heading')).findByRole('grid');
     expect(within(table).getByText('2.000')).toBeVisible();
     expect(
       within(table).getByText(EN['inventory.reservationStatus.active'] as string)
@@ -711,7 +756,7 @@ describe('FE-010 — reservations', () => {
     listReservations.mockResolvedValue(page([reservation({ workOrderId: WORK_ORDER_ID })]));
     renderScreen({ canReadStock: true, canReadBranches: true });
     await chooseBranch();
-    const table = await within(region('inventory.reservations.heading')).findByRole('table');
+    const table = await within(region('inventory.reservations.heading')).findByRole('grid');
     const link = within(table).getByRole('link', { name: WORK_ORDER_ID });
     expect(link).toHaveAttribute('href', `/en/work-orders/${WORK_ORDER_ID}`);
   });
@@ -740,9 +785,7 @@ describe('FE-010 — reservations', () => {
     await waitFor(() => expect(listReservations).toHaveBeenCalled());
     expect(listReservations.mock.calls[0]?.[1]).toEqual({ workOrderId: WORK_ORDER_ID });
     const reservations = region('inventory.reservations.heading');
-    expect(
-      within(reservations).getByTestId('reservations-work-order-picker-chosen')
-    ).toHaveTextContent('WO-000042');
+    expect(chosenIn(reservations, 'inventory.reservations.workOrder')).toContain('WO-000042');
     expect(within(reservations).queryByText(WORK_ORDER_ID)).toBeNull();
   });
 
@@ -813,13 +856,11 @@ describe('FE-010 — reservations', () => {
     renderScreen({ canReadStock: true, canReadBranches: true, canOperate: false });
     await chooseBranch();
     const reservations = region('inventory.reservations.heading');
-    await within(reservations).findByRole('table');
+    await within(reservations).findByRole('grid');
     expect(
       within(reservations).queryByRole('button', { name: EN['inventory.reserve.open'] as string })
     ).toBeNull();
-    expect(
-      within(reservations).queryByRole('button', { name: EN['inventory.release.action'] as string })
-    ).toBeNull();
+    expect(within(reservations).queryByRole('button', { name: RELEASE })).toBeNull();
   });
 
   it('offers release only on an active reservation', async () => {
@@ -828,10 +869,8 @@ describe('FE-010 — reservations', () => {
     );
     renderScreen({ canReadStock: true, canReadBranches: true, canOperate: true });
     await chooseBranch();
-    const table = await within(region('inventory.reservations.heading')).findByRole('table');
-    expect(
-      within(table).getAllByRole('button', { name: EN['inventory.release.action'] as string })
-    ).toHaveLength(1);
+    const table = await within(region('inventory.reservations.heading')).findByRole('grid');
+    expect(within(table).getAllByRole('button', { name: RELEASE })).toHaveLength(1);
     expect(
       within(table).getByText(EN['inventory.reservationStatus.consumed'] as string)
     ).toBeVisible();
@@ -845,11 +884,9 @@ describe('FE-010 — reservations', () => {
     });
     renderScreen({ canReadStock: true, canReadBranches: true, canOperate: true });
     await chooseBranch();
-    const table = await within(region('inventory.reservations.heading')).findByRole('table');
+    const table = await within(region('inventory.reservations.heading')).findByRole('grid');
     const before = listReservations.mock.calls.length;
-    await user.click(
-      within(table).getByRole('button', { name: EN['inventory.release.action'] as string })
-    );
+    await user.click(within(table).getByRole('button', { name: RELEASE }));
     await waitFor(() => expect(releaseReservation).toHaveBeenCalledWith(RESERVATION_ID, {}));
     expect(await screen.findByText(EN['inventory.release.replayed'] as string)).toBeVisible();
     await waitFor(() => expect(listReservations.mock.calls.length).toBeGreaterThan(before));
@@ -869,10 +906,8 @@ describe('FE-010 — reservations', () => {
     });
     renderScreen({ canReadStock: true, canReadBranches: true, canOperate: true });
     await chooseBranch();
-    const table = await within(region('inventory.reservations.heading')).findByRole('table');
-    await user.click(
-      within(table).getByRole('button', { name: EN['inventory.release.action'] as string })
-    );
+    const table = await within(region('inventory.reservations.heading')).findByRole('grid');
+    await user.click(within(table).getByRole('button', { name: RELEASE }));
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(EN['state.denied.title'] as string);
     expect(alert).toHaveTextContent('ref-77');
@@ -1133,9 +1168,7 @@ describe('the reserve form finds the item and the job by name (route sweep B2)',
       initialWorkOrderId: WORK_ORDER_ID,
       initialWorkOrder: workOrder,
     });
-    expect(within(form).getByTestId('reserve-work-order-picker-chosen')).toHaveTextContent(
-      'WO-000042'
-    );
+    expect(chosenIn(form, 'inventory.reserve.workOrder')).toContain('WO-000042');
   });
 });
 
@@ -1259,9 +1292,7 @@ describe('a reservation being written and a branch switch', () => {
     const form = await screen.findByRole('form', {
       name: EN['inventory.reserve.heading'] as string,
     });
-    expect(within(form).getByTestId('reserve-work-order-picker-chosen')).toHaveTextContent(
-      'WO-000042'
-    );
+    expect(chosenIn(form, 'inventory.reserve.workOrder')).toContain('WO-000042');
     // Holding the job it opened on is not a change: nothing to ask about yet.
     await user.click(
       within(form).getByRole('button', { name: EN['workOrders.picker.change'] as string })
@@ -1289,9 +1320,7 @@ describe('the availability filter finds the item by name (route sweep B2)', () =
     const availability = region('inventory.availability.heading');
     expect(within(availability).queryByDisplayValue(ITEM_ID)).toBeNull();
     await chooseItem(user, availability, 'inventory.availability.item');
-    expect(within(availability).getByTestId('availability-item-picker-chosen')).toHaveTextContent(
-      'BRK-001 — Brake pad'
-    );
+    expect(chosenIn(availability, 'inventory.availability.item')).toBe('BRK-001 — Brake pad');
     await user.click(
       within(availability).getByRole('button', {
         name: EN['inventory.availability.show'] as string,
@@ -1338,15 +1367,15 @@ describe('archived items in the filters, not in the writes (route sweep B2 revie
       within(availability).getByLabelText(EN['inventory.availability.item'] as string),
       'OLD{Enter}'
     );
-    await user.click(await within(availability).findByRole('button', { name: archivedLabel }));
+    await user.click(
+      await screen.findByRole('option', { name: archivedLabel }, { timeout: PICKER_OPTION_WAIT_MS })
+    );
     expect(listItems).toHaveBeenCalledWith(
       { search: 'OLD', lifecycleStatus: 'archived' },
       expect.objectContaining({ pageSize: 10 }),
       null
     );
-    expect(within(availability).getByTestId('availability-item-picker-chosen')).toHaveTextContent(
-      archivedLabel
-    );
+    expect(chosenIn(availability, 'inventory.availability.item')).toBe(archivedLabel);
     await user.click(
       within(availability).getByRole('button', {
         name: EN['inventory.availability.show'] as string,
@@ -1367,7 +1396,9 @@ describe('archived items in the filters, not in the writes (route sweep B2 revie
       within(reservations).getByLabelText(EN['inventory.reservations.item'] as string),
       'OLD{Enter}'
     );
-    await user.click(await within(reservations).findByRole('button', { name: archivedLabel }));
+    await user.click(
+      await screen.findByRole('option', { name: archivedLabel }, { timeout: PICKER_OPTION_WAIT_MS })
+    );
     await user.click(
       within(reservations).getByRole('button', {
         name: EN['inventory.reservations.show'] as string,
@@ -1415,13 +1446,17 @@ describe('archived items in the filters, not in the writes (route sweep B2 revie
     await waitFor(() => expect(held['OLD']?.length).toBeGreaterThan(0));
     for (const resolve of held['OLD'] ?? []) resolve(page([item]));
     expect(
-      await within(availability).findByRole('button', { name: 'BRK-001 — Brake pad' })
+      await screen.findByRole(
+        'option',
+        { name: 'BRK-001 — Brake pad' },
+        { timeout: PICKER_OPTION_WAIT_MS }
+      )
     ).toBeVisible();
     // The reply for "OL" lands last: it answers a term nobody is asking any more.
     for (const resolve of held['OL'] ?? []) resolve(page([archivedItem]));
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(within(availability).queryByRole('button', { name: /OLD-001/ })).toBeNull();
-    expect(within(availability).getByRole('button', { name: 'BRK-001 — Brake pad' })).toBeVisible();
+    expect(screen.queryByRole('option', { name: /OLD-001/ })).toBeNull();
+    expect(screen.getByRole('option', { name: 'BRK-001 — Brake pad' })).toBeVisible();
   });
 });
 
@@ -1470,8 +1505,11 @@ describe('the /inventory route page decides before it reads', () => {
     await renderPage({ locale: 'en' }, { workOrderId: WORK_ORDER_ID });
     await chooseBranch();
     expect(readWorkOrderDetail).toHaveBeenCalledWith(WORK_ORDER_ID);
-    expect(await screen.findByTestId('reservations-work-order-picker-chosen')).toHaveTextContent(
-      'WO-000042'
+    const reservations = await screen.findByRole('region', {
+      name: EN['inventory.reservations.heading'] as string,
+    });
+    await waitFor(() =>
+      expect(chosenIn(reservations, 'inventory.reservations.workOrder')).toContain('WO-000042')
     );
   });
 
@@ -1503,7 +1541,7 @@ describe('Arabic, right to left', () => {
     await waitFor(() => expect(listItems).toHaveBeenCalled());
     expect(await screen.findByText(AR['inventory.items.heading'] as string)).toBeVisible();
     expect(screen.getByText(AR['inventory.stock.noPermission'] as string)).toBeVisible();
-    const table = await screen.findByRole('table');
+    const table = await screen.findByRole('grid');
     expect(within(table).getByText('BRK-001')).toBeVisible();
     expect(within(table).getByText(AR['inventory.itemType.part'] as string)).toBeVisible();
     // CC-16 in Arabic: the category filter is a real select, not a text box.
@@ -1605,5 +1643,263 @@ describe('the branch section states a branch or says why it cannot', () => {
     );
     expect(document.documentElement.dir).toBe('rtl');
     expect(screen.queryAllByRole('textbox')).toEqual([]);
+  });
+});
+
+describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
+  /*
+   * What the move onto the shared wrappers must keep, held in English and in
+   * Arabic: the three lists are server-paged grids that say "Page N" and never a
+   * count; every row action names what it acts on; an outage is "unavailable,
+   * try again" and the retry reads again; a refused field is marked on itself;
+   * the item is found through the combobox; the expiry is a moment on the
+   * operator's own clock, and an unfinished one is refused before anything is
+   * sent.
+   */
+  const CATALOGUES = { en: EN, ar: AR } as const;
+
+  function renderIn(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    const messages = locale === 'en' ? en : ar;
+    const ui = inBranch(
+      <InventoryScreen
+        locale={locale}
+        messages={messages}
+        initialWorkOrderId={null}
+        canReadStock
+        canOperate
+        {...over}
+      />,
+      locale === 'en' ? {} : { locale: 'ar' }
+    );
+    return locale === 'en' ? renderLtr(ui) : renderRtl(ui);
+  }
+
+  it.each(['en', 'ar'] as const)(
+    'draws the three lists as grids named by their captions, paged as "Page 1" with no count (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      renderIn(locale);
+      await chooseBranch();
+      for (const [caption, testId] of [
+        ['inventory.items.caption', 'inventory-items-grid'],
+        ['inventory.availability.caption', 'inventory-availability-grid'],
+        ['inventory.reservations.caption', 'inventory-reservations-grid'],
+      ] as const) {
+        expect(await screen.findByRole('grid', { name: T[caption] as string })).toBeVisible();
+        expect(screen.getByTestId(`${testId}-page`)).toHaveTextContent(
+          (T['mui.pagination.page'] as string).replace('{page}', '1')
+        );
+      }
+      // One page that says nothing more exists: Next is not offered as a live control.
+      const reservations = screen.getByTestId('inventory-reservations-grid');
+      expect(
+        within(reservations).getByRole('button', { name: T['table.nextPage'] as string })
+      ).toBeDisabled();
+      expect(document.documentElement.dir).toBe(locale === 'en' ? 'ltr' : 'rtl');
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'names each Release by the stock code and location it releases (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      renderIn(locale);
+      await chooseBranch();
+      const grid = await screen.findByRole('grid', {
+        name: T['inventory.reservations.caption'] as string,
+      });
+      expect(
+        within(grid).getByRole('button', {
+          name: `${T['inventory.release.action'] as string} BRK-001 WH-1`,
+        })
+      ).toBeVisible();
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'an outage of a stock list is "unavailable" with a retry that reads it again (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      listAvailability.mockResolvedValueOnce({
+        status: 'unavailable' as const,
+        rows: [],
+        nextCursor: null,
+        hasMore: false,
+        correlationId: 'ref-503',
+      });
+      renderIn(locale);
+      await chooseBranch();
+      const availability = screen.getByRole('region', {
+        name: T['inventory.availability.heading'] as string,
+      });
+      expect(
+        await within(availability).findByText(T['state.unavailable.title'] as string)
+      ).toBeVisible();
+      expect(within(availability).getByText('ref-503')).toBeVisible();
+      expect(within(availability).queryByRole('grid')).toBeNull();
+      expect(
+        within(availability).queryByText(T['inventory.availability.none'] as string)
+      ).toBeNull();
+      const before = listAvailability.mock.calls.length;
+      await user.click(
+        within(availability).getByRole('button', { name: T['state.retry'] as string })
+      );
+      await waitFor(() => expect(listAvailability.mock.calls.length).toBe(before + 1));
+      expect(
+        await within(availability).findByRole('grid', {
+          name: T['inventory.availability.caption'] as string,
+        })
+      ).toBeVisible();
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'finds the item through the combobox and holds it as the combobox value (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      renderIn(locale);
+      await chooseBranch();
+      const availability = screen.getByRole('region', {
+        name: T['inventory.availability.heading'] as string,
+      });
+      const box = within(availability).getByRole('combobox', {
+        name: T['inventory.availability.item'] as string,
+      });
+      await user.type(box, 'BRK{Enter}');
+      await user.click(
+        await screen.findByRole(
+          'option',
+          { name: 'BRK-001 — Brake pad' },
+          { timeout: PICKER_OPTION_WAIT_MS }
+        )
+      );
+      expect(box).toHaveValue('BRK-001 — Brake pad');
+      await user.click(
+        within(availability).getByRole('button', {
+          name: T['inventory.availability.show'] as string,
+        })
+      );
+      await waitFor(() =>
+        expect(listAvailability.mock.calls.at(-1)?.[1]).toEqual({ itemId: ITEM_ID })
+      );
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'an empty answer is "no matches" in the list’s own words, never a refusal (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      listReservations.mockResolvedValue(page([]));
+      renderIn(locale);
+      await chooseBranch();
+      const reservations = screen.getByRole('region', {
+        name: T['inventory.reservations.heading'] as string,
+      });
+      expect(
+        await within(reservations).findByText(T['inventory.reservations.none'] as string)
+      ).toBeVisible();
+      expect(within(reservations).getByText(T['state.noResults.title'] as string)).toBeVisible();
+      expect(within(reservations).queryByText(T['state.denied.title'] as string)).toBeNull();
+    }
+  );
+
+  async function openReserveForm(user: User, locale: 'en' | 'ar') {
+    const T = CATALOGUES[locale];
+    renderIn(locale);
+    await chooseBranch();
+    await user.click(
+      within(
+        screen.getByRole('region', { name: T['inventory.reservations.heading'] as string })
+      ).getByRole('button', { name: T['inventory.reserve.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: T['inventory.reserve.heading'] as string,
+    });
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    return form;
+  }
+
+  it.each(['en', 'ar'] as const)(
+    'marks a refused quantity on its own field, and only while it is refused (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      const form = await openReserveForm(user, locale);
+      const quantity = within(form).getByRole('textbox', {
+        name: new RegExp(`^${escape(T['inventory.reserve.quantity'] as string)}`),
+      });
+      // Healthy: the attribute is absent, never "false".
+      expect(quantity).not.toHaveAttribute('aria-invalid');
+      expect(quantity).toHaveAttribute('inputmode', 'decimal');
+      expect(quantity).toHaveAttribute('dir', 'ltr');
+      await user.type(quantity, '0');
+      await user.click(
+        within(form).getByRole('button', { name: T['inventory.reserve.submit'] as string })
+      );
+      await waitFor(() => expect(quantity).toHaveAttribute('aria-invalid', 'true'));
+      const reason = T['inventory.reserve.quantityFormat'] as string;
+      const errorId = quantity.getAttribute('aria-errormessage');
+      expect(errorId).not.toBeNull();
+      expect(document.getElementById(errorId as string)).toHaveTextContent(reason);
+      expect(quantity.getAttribute('aria-describedby')).toContain(errorId as string);
+      expect(quantity).toHaveValue('0');
+      expect(createReservation).not.toHaveBeenCalled();
+    }
+  );
+
+  /** The reserve form, filled but for its expiry, and the group of the expiry's parts. */
+  async function readyToReserve(user: User) {
+    const form = await openReserveForm(user, 'en');
+    await chooseItem(user, form, 'inventory.reserve.item');
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.reserve.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.reserve.quantity')), '1');
+    const expiry = within(form).getByRole('group', {
+      name: labelled('inventory.reserve.expiresAt'),
+    });
+    const submit = within(form).getByRole('button', {
+      name: EN['inventory.reserve.submit'] as string,
+    });
+    return { form, expiry, submit };
+  }
+
+  it('refuses an expiry only partly typed, on its field, and sends nothing', async () => {
+    const user = userEvent.setup();
+    const { form, expiry, submit } = await readyToReserve(user);
+    await user.click(within(expiry).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('01');
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['inventory.reserve.dateFormat'] as string)
+    ).toBeVisible();
+    await waitFor(() => expect(expiry).toHaveAttribute('aria-invalid', 'true'));
+    expect(createReservation).not.toHaveBeenCalled();
+  });
+
+  it('sends a whole expiry as the instant of the wall time typed, on the operator\u2019s own clock', async () => {
+    const user = userEvent.setup();
+    createReservation.mockResolvedValue({
+      state: { status: 'success', messageKey: 'inventory.reserve.success', attempt: 1 },
+      created: { id: 'new-res', quantity: '1.000', status: 'active', replayed: false },
+    });
+    const { expiry, submit } = await readyToReserve(user);
+    await user.click(within(expiry).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('010920260800');
+    await waitFor(() =>
+      expect(expiry.parentElement?.querySelector('input')).toHaveValue('01/09/2026 08:00')
+    );
+    await user.click(submit);
+    await waitFor(() => expect(createReservation).toHaveBeenCalledTimes(1));
+    expect(createReservation.mock.calls[0]?.[0]).toMatchObject({
+      itemId: ITEM_ID,
+      locationId: LOCATION_ID,
+      quantity: '1',
+      // The wall time typed, on this browser's clock — what the native box sent.
+      expiresAt: new Date(2026, 8, 1, 8, 0).toISOString(),
+    });
   });
 });
