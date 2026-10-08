@@ -303,9 +303,10 @@ evidence. A `change-control.md` row owns its disposition, names the C-id and doe
 evidence. Where an earlier finding already records a coupling, it stays the record and no new row
 is opened: PPD-01 and ADR-023 D6 for C-08, PPD-03 for C-17 (`docs/product/README.md:272,274`).
 ADR-023 owns the D1 to D17 decision text and implementation state (its mapping table, "Mapping:
-decision → today → what is missing → tests → pull request", `:270-288` at develop `02a0462c`; the
-line range `:197-214` cited here earlier is where that table stood at `ec91239b`, before later
-additions to ADR-023 moved it), and other records cite it by line. The delivery matrix owns verification state. The accounting section owns the split
+decision → today → what is missing → tests → pull request", `:751-773` at develop `d5ce97b7`,
+re-anchored 2026-10-08; it stood at `:270-288` at develop `02a0462c`, and the line range `:197-214`
+cited here earlier is where it stood at `ec91239b`, before later additions to ADR-023 moved it), and
+other records cite it by line. The delivery matrix owns verification state. The accounting section owns the split
 between invariants, policy and configuration, and between independent and blocked. ADR-024 alone
 owns the module lifecycle definitions and the licence options; the assessment states only today's
 state and links to ADR-024.
@@ -423,6 +424,12 @@ against the question with its date; every other question is still open.
     being stored silently as "medium". Historical data is not rewritten. Neither fix is delivered at
     the time of this record.
 
+    **Corrected 2026-10-08 (P1-32-PRE-OD-WP00): both fixes are delivered.** The step guard and the
+    "not stated" severity by #508 (P1-32-PRE-OD-RWS, merged 2026-10-04 as `1bde8e95`), and chosen
+    files counted as unsaved work by #511 (P1-32-PRE-OD-RCF, merged 2026-10-05 as `6214ae2a`). Their
+    records and residual items are in `route-checklist.md` (sections P1-32-PRE-OD-RWS, `:3951`, and
+    P1-32-PRE-OD-RCF, `:4026`). Rows stored before the fix keep the value they were stored with.
+
 20. **Email verification with the mail provider.** Stage 4 waits on the Owner's choice of recipient.
 21. **CI.** The web-quality job runs close to its 30-minute limit. Should the limit be raised, or the
     job split?
@@ -436,6 +443,153 @@ against the question with its date; every other question is still open.
     approve or reject a refund request after upgrade until `sal.refund.approve` is granted, and the
     backfill covers only the named QA organisations. Should the backfill extend to every existing
     organisation, or stay limited with the change stated to them?
+
+Questions 23 to 28 were added on 2026-10-08 (P1-32-PRE-OD-WP00) for the decision labels of the
+completion plan of 2026-10-08 (outside the repository) that had no canonical id. Each states the
+exact question, the options, the planner's recommendation (not an Owner decision), what it affects,
+and the interim treatment that holds until it is answered.
+
+23. **Item category rename and move (plan label CAT01).** May an organisation rename an item
+    category, and move it under another parent? Today the category API only creates and lists
+    (`apps/api/src/app/api/v1/item-categories/route.ts`: `inv.item-category-create` declares
+    `inv.item.manage`, `inv.item-category-list` declares `inv.item.read`); there is no rename,
+    move or retire operation.
+    - (a) A read-only tree only.
+    - (b) Rename only: a name unique among its siblings within the same scope, under the existing
+      English and Arabic naming rules.
+    - (c) Rename and move, with invariants: no category becomes its own parent or moves under one of
+      its own descendants; a move stays within the same scope; inactive categories and the
+      descendants that move with their parent are treated by a stated rule; each change carries
+      If-Match on the category's version, runs in one transaction and writes one audit event. No
+      deletion and no mass reassignment of items.
+
+    _Recommendation:_ (c), gated by the code that governs category creation today,
+    `inv.item.manage`; no new code. _Affects:_ new inventory operations (each a literal
+    `defineOperation` with its audit action), a forward migration if a version column or a cycle
+    guard is needed, the inventory interface (completion-plan package WP02), the user manual's
+    inventory part, and the inventory acceptance cases. _Interim:_ the category tree is shown
+    read-only and labelled read-only; categories are still created as today.
+
+24. **Cancelling an approved refund that is not yet paid out (plan label FIN03).** Under ADR-023 D2
+    part 2 at most one request per obligation is live (pending, or approved and not yet paid out;
+    `refund_request_live_exists`), each request is paid out once, and an obligation cannot be
+    cancelled (ADR-023 D2 open point (e)). So an approved request that will not be paid blocks every
+    new request on its obligation; paying back in parts is done by several requests. May an approved
+    request that has not been fully paid out be cancelled, and by whom?
+    - (a) No cancellation (today).
+    - (b) A holder of `sal.refund.approve` other than the requester may cancel an approved request
+      that has not been fully paid out, with a reason; the unpaid remainder of the obligation can
+      then be requested again; payouts already recorded stay.
+    - (c) The requester asks for cancellation, and a second person approves it.
+
+    _Recommendation:_ (b). _Affects:_ `sal.refund_requests` and its guard (a forward migration
+    for the new transition), a new refund operation with its audit action and its D12 refusal
+    records, the refunds panel and list in English and Arabic, ADR-023 D2 (a new open point recorded
+    by a further ADR change, not by editing the decision), and the D2 acceptance cases (D2-3, D2-4).
+    _Interim:_ today's behaviour: an approved request not yet paid out blocks a new request on its
+    obligation.
+
+25. **Who may record a refund payout (plan label FIN04).** Today a different person must approve a
+    refund (the approver differs from the requester), and any holder of `sal.payment.record` in the
+    branch records the payout, the requester included (ADR-023 D2 part 2). Must the person who
+    records the payout differ from someone else in the chain?
+    - (a) No restriction beyond today's rule.
+    - (b) The person recording the payout must differ from the approver.
+    - (c) The person recording the payout must differ from both the requester and the approver.
+
+    _Recommendation:_ (b). _Affects:_ the payout command and its database guard (a forward
+    migration), a new refusal code with its D12 record, who is offered the payout form, the D2-3
+    acceptance cases; with (c), an organisation needs three people who can handle a refund.
+    _Interim:_ today's rule stays: the approver differs from the requester, and the recorder is not
+    restricted further.
+
+26. **Credit-note numbering and legal fields (plan label DOC01).** A credit note has no document
+    number today; its print carries a reference composed from the invoice number and the request
+    time (`capability-status.md`, accounting section, row D10). Should credit notes be numbered?
+    - (a) Keep the composed reference.
+    - (b) A credit-note number sequence per company and branch, assigned on approval as invoice
+      numbers are; the legal and tax fields of the document wait on the accounting questionnaire
+      (plan label ACC01; questions 10 to 12).
+
+    _Recommendation:_ (b) for the numbering; the legal fields with the questionnaire. _Affects:_
+    the number-sequence configuration (a new document type, and provisioning the sequence for
+    existing organisations, since a document number has no fallback), the credit-note approval
+    path, the credit-note screens and print, ADR-023 D10, and the D10 print cases (PC-1, PC-2).
+    _Interim:_ the composed reference; no numbering policy is invented.
+
+27. **Report configuration in organisations provisioned earlier (plan label RPT03).** The
+    administrator bundle has carried `rpt.report.configure` since 2026-09-09 (P1-31 P-11;
+    `apps/api/src/modules/iam/domain/bootstrap-roles.ts`). An organisation provisioned before then
+    gains it only through the operator backfill, so its administrators may lack it, cannot grant
+    themselves a code they do not hold, and since #532 cannot save a report snapshot (VL-P132-010).
+    Which existing organisations should receive it?
+    - (a) Named organisations, on request: a dry run, then an audited backfill of their
+      administrator role with `scripts/platform/backfill-tenant-administrator-bundle.mjs`,
+      preserving a customised role (the pattern of CC-OD-53 and CC-OD-58).
+    - (b) Every existing organisation.
+    - (c) None.
+
+    _Recommendation:_ (a); answer together with questions 8 and 22, which ask the same of other
+    codes. _Affects:_ existing organisations' administrator roles, the backfill script's tenant
+    list, the D16 snapshot acceptance cases, and the snapshot-code question (VL-P132-010).
+    _Interim:_ no grant; such an organisation cannot configure a report or save a snapshot until an
+    operator acts on the answer.
+
+28. **The standing promotion pull request #503 (plan label CI01).** #503 (`develop` → `main`)
+    is open; its head is the `develop` branch itself, so it carries no commits of its own, and it
+    has no reviews and no comments (read 2026-10-08). Each push to `develop` re-runs `main`'s full
+    gate on it (22 runs and 1,607 job-minutes from 2026-09-27 to 2026-10-05,
+    `docs/engineering/ci-automation/pr-gate.md`, "What was removed from the development path").
+    Close it, or keep it?
+    - (a) Close it. Nothing is lost: it has no unique commits, reviews or comments. The next
+      promotion opens a new `develop` → `main` pull request after a `main` → `develop` sync.
+    - (b) Keep it open, accepting the repeated `main`-targeted runs.
+
+    Never merge it to stop the runs. _Recommendation:_ (a). _Affects:_ hosted CI minutes, the
+    promotion procedure, and VL-CI-004, whose probe B is "the next synchronize run of the standing
+    promotion pull request" and would move to the next promotion pull request. _Interim:_ #503 stays
+    open and untouched; it is the Owner's.
+
+### Completion plan labels and canonical ids (2026-10-08)
+
+The completion plan of 2026-10-08 (outside the repository) names its decisions with navigation
+labels. They are cross-references only: the canonical ids below stay the record, and a label never
+carries a state of its own. Imported 2026-10-08 (P1-32-PRE-OD-WP00); the 104 audit items and the
+200 requirement ids are crosswalked at the end of `capability-status.md`.
+
+| Label     | Canonical ids (where the decision is recorded)                                                                                                                |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CAT01     | Question 23 (new 2026-10-08)                                                                                                                                  |
+| PLAN01    | CC-OD-24; related CC-OD-49                                                                                                                                    |
+| ACCESS01  | Question 18, its second-company half                                                                                                                          |
+| ACCESS02  | Question 18, its platform-operator half; D-OD-01                                                                                                              |
+| FIN01     | VL-P132-003; ADR-023 D5 and D15, open policy point "the same service approved again"                                                                          |
+| FIN02     | VL-P132-001, VL-P132-002; ADR-023 D8 open points                                                                                                              |
+| FIN03     | Question 24 (new 2026-10-08); nearest existing: ADR-023 D2 open point (e)                                                                                     |
+| FIN04     | Question 25 (new 2026-10-08)                                                                                                                                  |
+| PERM01    | Questions 8, 9 and 22; CC-OD-50 (items 1 to 3 and 7), CC-OD-53, CC-OD-54, CC-OD-58                                                                            |
+| PRINT01   | VL-P132-005; question 9, its print part; CC-OD-50 item 3                                                                                                      |
+| DOC01     | Question 26 (new 2026-10-08); ADR-023 D10                                                                                                                     |
+| RPT01     | VL-P132-008 (Owner decision CC-04 of 2026-09-08)                                                                                                              |
+| RPT02     | VL-P132-010                                                                                                                                                   |
+| RPT03     | Question 27 (new 2026-10-08); related P1-31 O-19 (not among D-32 to D-38) and O-4 (answered as D-34)                                                          |
+| ODO01     | VL-P132-009                                                                                                                                                   |
+| LIC01     | Questions 1 to 7, 13, 14 and 17; ADR-024; CC-OD-33 to CC-OD-39, CC-OD-49. Question 7's method was decided on 2026-10-03; the rest is open                     |
+| ACC01     | Questions 10, 11, 12, 15, 16 and 17; CC-OD-25, CC-OD-47, CC-OD-48; D-OD-12                                                                                    |
+| EMAIL01   | Question 20; P1-15 OD-02 (`docs/phase-1/phase-1-15/open-decisions.md`). The plan's "OD-02" is P1-15's message-provider decision, not this directive's D-OD-02 |
+| AUTH01    | CC-OD-31 (its behaviour half is open); the W9-R1 residual recorded in CC-OD-29                                                                                |
+| GOV01     | P1-31 O-1, O-2, O-3, O-4, O-10 and O-20, answered by the Owner on 2026-09-16 as D-38, D-32, D-33, D-34, D-35 and D-36 (CONDITIONAL PASS); see below           |
+| CI01      | Question 28 (new 2026-10-08); related VL-CI-003, VL-CI-004                                                                                                    |
+| DATA01    | CC-OD-28, CC-OD-15; `docs/product/owner-requirements-2026-09-06.md` area F and H-3                                                                            |
+| RELEASE01 | OIR-01, the product name (`docs/phase-1/phase-1-25/owner-input-required.md`); P1-31 O-11 (not answered by D-32 to D-38); D-OD-05                              |
+
+**GOV01, stated precisely.** The plan presents the P1-31 phase decisions as unanswered. They are
+not: the Owner answered O-1, O-2, O-3, O-4, O-10 and O-20 on 2026-09-16, recorded as D-32 to D-38 in
+`docs/phase-1/phase-1-31/owner-decisions-2026-09-16.md` (D-38: CONDITIONAL PASS for the documented
+P1-31 scope, answering O-1; D-32 answers O-2, D-33 O-3, D-34 O-4, D-35 O-10, D-36 O-20). What is
+still open is narrower: the nine determinations QA-C1 to QA-C5 and SEC-C1 to SEC-C4 are absent, and
+gate conditions 2 and 3 are unsatisfied (`docs/phase-1/phase-1-31/closure-record.md`, the
+verdict and its conditions). P1-31 is not promoted.
 
 ## Code-scanning result on `2c573a24`, consumed once (section 9)
 
