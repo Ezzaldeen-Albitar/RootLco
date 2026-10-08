@@ -7,7 +7,7 @@ import Button from '@mui/material/Button';
 import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import { ZonedDateTimeField, type MomentProblem } from '@/components/forms/mui/DateField';
+import { DateTimeField, type MomentProblem } from '@/components/forms/mui/DateField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { MuiEmptyState } from '@/components/states/MuiStates';
 import { readWorkOrderDetail } from '@/features/work-orders/api';
@@ -17,6 +17,7 @@ import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvid
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import { addDays, dayIn, startOfDay } from '@/lib/branch-time';
 import { formatDateTime } from '@/lib/format';
 
 import { listMovements } from '../api';
@@ -32,7 +33,7 @@ import {
 } from '../inventory-contract';
 import { ItemPicker, REFERENCE, ReferenceBox, type ItemChoice } from './pickers';
 import { LocationPicker, Qty, useLocations } from './shared';
-import { BranchTargetForm, useOperatorZone } from './stock-operations';
+import { BranchTargetForm, useStockTargetZone } from './stock-operations';
 
 /**
  * Stock movements (P1-30, `W5`, FE-013): the ledger of one branch, newest
@@ -71,10 +72,17 @@ import { BranchTargetForm, useOperatorZone } from './stock-operations';
  * The ledger is `OperationalGrid` over the same `useServerTable` read (server
  * paging, no count, the cursor footer); every filter is a `forms/mui` wrapper,
  * the item and the job `EntityPicker` comboboxes, and the two moments MIT
- * pickers. The window is still the operator's own seven days, on the
- * operator's own clock: the native boxes read a typed wall time with
- * `new Date`, so the pickers are handed the browser's zone explicitly and send
- * exactly the instants they did.
+ * pickers.
+ *
+ * ## The window is on the branch's clock (`P1-32-PRE-OD-INV1B`)
+ *
+ * The ledger's window is a business period, so it is the BRANCH's: the first
+ * window opens at the branch's midnight six days ago, and a typed moment is the
+ * wall time on the branch's clock (Owner decision D-17; `DateTimeField` E3).
+ * `P1-32-PRE-OD-MUI7A1` had kept the browser's zone, which the native boxes
+ * read; an operator on a laptop set to another zone saw another window. With
+ * no known zone for the branch the window opens unbounded and each moment field
+ * says why it offers no picker; it never falls back to the browser's clock.
  */
 
 export function MovementsScreen({
@@ -150,13 +158,13 @@ function toInstant(raw: string): string | null | 'invalid' {
 /** How many calendar days, today included, the ledger shows on arrival. */
 const RECENT_DAYS = 7;
 
-/** The start of the first of the recent days — the operator's own midnight — as an instant. */
-function recentWindowStart(now: Date): string {
-  return new Date(
-    now.getFullYear(),
-    now.getMonth(),
-    now.getDate() - (RECENT_DAYS - 1)
-  ).toISOString();
+/**
+ * The start of the first of the recent days — the branch's midnight — as an
+ * instant, or `''` (no lower bound) when the branch's zone is not known.
+ */
+function recentWindowStart(zone: string | undefined, now: Date): string {
+  if (zone === undefined) return '';
+  return startOfDay(zone, addDays(dayIn(zone, now), -(RECENT_DAYS - 1))).toISOString();
 }
 
 /** Everything the filter form holds, as one comparable value. */
@@ -217,11 +225,16 @@ function LedgerPanel({
       live.current = false;
     };
   }, []);
+  /*
+   * The window is the branch's (see the file docblock). The panel is keyed on
+   * the target, so a branch switch opens a new panel on the new branch's clock.
+   */
+  const zone = useStockTargetZone(target);
   const [draft, setDraft] = useState(() => ({
     locationId: '',
     movementType: '',
     referenceKind: '',
-    occurredFrom: recentWindowStart(new Date()),
+    occurredFrom: recentWindowStart(zone, new Date()),
     occurredTo: '',
   }));
   const [item, setItem] = useState<ItemChoice | null>(null);
@@ -238,15 +251,6 @@ function LedgerPanel({
     workOrderReference: workOrderReference.trim(),
   };
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
-  /*
-   * The window's start is the operator's own midnight, which the server's render
-   * cannot know: its clock and zone are not the browser's. The two moment
-   * fields are therefore drawn only once the browser has taken over and its
-   * zone is known, so the markup the server sent and the first browser render
-   * agree; the value itself — and the read it asks for, which only ever runs in
-   * the browser — is the browser's.
-   */
-  const zone = useOperatorZone();
   // A moment only partly typed is no moment: the pickers report it, and it is
   // refused like the malformed entry the native boxes refused.
   const [fromProblem, setFromProblem] = useState<MomentProblem>(null);
@@ -402,7 +406,6 @@ function LedgerPanel({
               countsAsUnsaved={false}
               offerArchived
               testId="movements-item-picker"
-              material
             />
           ) : (
             <ReferenceBox
@@ -413,7 +416,6 @@ function LedgerPanel({
               error={errorFor('itemId')}
               countsAsUnsaved={false}
               testId="movements-item-reference"
-              material
             />
           )}
         </div>
@@ -438,7 +440,6 @@ function LedgerPanel({
               error={errorFor('workOrderId')}
               countsAsUnsaved={false}
               testId="movements-work-order-reference"
-              material
             />
           )}
         </div>
@@ -449,7 +450,6 @@ function LedgerPanel({
           placeholder={translate(messages, 'inventory.availability.anyLocation')}
           value={draft.locationId}
           onChange={(next) => setDraft((d) => ({ ...d, locationId: next }))}
-          material
         />
         <FormSelectField
           label={translate(messages, 'inventory.movements.type')}
@@ -471,31 +471,27 @@ function LedgerPanel({
           }))}
           placeholder={translate(messages, 'inventory.movements.anyReference')}
         />
-        {zone === null ? null : (
-          <>
-            <ZonedDateTimeField
-              messages={messages}
-              label={translate(messages, 'inventory.movements.from')}
-              description={translate(messages, 'inventory.movements.fromHelp')}
-              timezone={zone}
-              value={draft.occurredFrom}
-              onChange={(next) => setDraft((d) => ({ ...d, occurredFrom: next }))}
-              onProblem={setFromProblem}
-              error={errorFor('occurredFrom')}
-              testId="movements-occurred-from"
-            />
-            <ZonedDateTimeField
-              messages={messages}
-              label={translate(messages, 'inventory.movements.to')}
-              timezone={zone}
-              value={draft.occurredTo}
-              onChange={(next) => setDraft((d) => ({ ...d, occurredTo: next }))}
-              onProblem={setToProblem}
-              error={errorFor('occurredTo')}
-              testId="movements-occurred-to"
-            />
-          </>
-        )}
+        <DateTimeField
+          messages={messages}
+          label={translate(messages, 'inventory.movements.from')}
+          description={translate(messages, 'inventory.movements.fromHelp')}
+          timezone={zone}
+          value={draft.occurredFrom}
+          onChange={(next) => setDraft((d) => ({ ...d, occurredFrom: next }))}
+          onProblem={setFromProblem}
+          error={errorFor('occurredFrom')}
+          testId="movements-occurred-from"
+        />
+        <DateTimeField
+          messages={messages}
+          label={translate(messages, 'inventory.movements.to')}
+          timezone={zone}
+          value={draft.occurredTo}
+          onChange={(next) => setDraft((d) => ({ ...d, occurredTo: next }))}
+          onProblem={setToProblem}
+          error={errorFor('occurredTo')}
+          testId="movements-occurred-to"
+        />
         <div className="sm:col-span-2 lg:col-span-4">
           <Button type="submit" variant="contained">
             {translate(messages, 'inventory.movements.show')}

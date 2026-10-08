@@ -616,6 +616,22 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
   });
 
   it.each(['en', 'ar'] as const)(
+    'says what each panel is reading while it waits, in this screen’s own words (%s, INV1b)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      // Neither read answers while the waits are looked at.
+      listIdentifiers.mockReturnValueOnce(new Promise(() => {}));
+      listSalePrices.mockReturnValueOnce(new Promise(() => {}));
+      renderIn(locale);
+      const codes = await screen.findByText(T['inventory.identifiers.loading'] as string);
+      const prices = screen.getByText(T['inventory.prices.loading'] as string);
+      expect(codes.closest('[role="status"]')).toHaveAttribute('aria-live', 'polite');
+      expect(prices.closest('[role="status"]')).toHaveAttribute('aria-live', 'polite');
+      expect(screen.queryByText(T['state.loading'] as string)).toBeNull();
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
     'marks a refused code on its own field, and only while it is refused (%s)',
     async (locale) => {
       const T = CATALOGUES[locale];

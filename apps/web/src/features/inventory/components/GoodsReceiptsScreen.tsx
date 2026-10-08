@@ -199,6 +199,7 @@ function BranchReceipts({
         ) : null}
         <BranchListView
           messages={messages}
+          locale={locale}
           list={list}
           loadingKey="inventory.receipts.list.loading"
           noneKey="inventory.receipts.list.none"

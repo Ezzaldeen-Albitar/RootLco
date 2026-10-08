@@ -1,7 +1,6 @@
 'use client';
 
 import TextField from '@mui/material/TextField';
-import type { SelectOption, SelectOptionGroup } from '@/components/forms/Field';
 import {
   FieldHelper,
   controlAttributes,
@@ -20,12 +19,29 @@ import {
  * select renders a button-like element and a hidden input instead, and would
  * have to re-earn each of those.
  */
+/**
+ * One choice: the value sent and the words shown. The same shape as the older
+ * `SelectField`'s `SelectOption`, declared here so a screen on Material UI needs
+ * nothing from `components/forms/Field` (`P1-32-PRE-OD-INV1B`); the two are
+ * interchangeable, so no caller had to change.
+ */
+export interface FormSelectOption {
+  readonly value: string;
+  readonly label: string;
+}
+
+/** Choices under a heading that is not itself a choice (an `<optgroup>`). */
+export interface FormSelectOptionGroup {
+  readonly label: string;
+  readonly options: readonly FormSelectOption[];
+}
+
 export interface FormSelectFieldProps extends MuiFieldBaseProps {
   readonly value: string;
   readonly onChange: (value: string) => void;
-  readonly options?: readonly SelectOption[];
+  readonly options?: readonly FormSelectOption[];
   /** Rendered after `options`, each as an `<optgroup>`. */
-  readonly groups?: readonly SelectOptionGroup[];
+  readonly groups?: readonly FormSelectOptionGroup[];
   /** An empty first option, for "nothing chosen yet". */
   readonly placeholder?: string | undefined;
 }

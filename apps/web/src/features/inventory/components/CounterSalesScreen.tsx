@@ -785,6 +785,7 @@ function OpenDrafts({
       </p>
       <BranchListView
         messages={messages}
+        locale={locale}
         list={drafts}
         loadingKey="inventory.counterSales.drafts.loading"
         noneKey="inventory.counterSales.drafts.none"
