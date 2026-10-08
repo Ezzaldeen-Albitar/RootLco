@@ -35,6 +35,12 @@ export interface FormTextFieldProps extends MuiFieldBaseProps {
   readonly endAdornment?: ReactNode;
   /** Takes focus when mounted — for the one box a dialog opens to be filled in. */
   readonly autoFocus?: boolean;
+  /**
+   * `false` for a value no dictionary knows — a reference, a code — so the
+   * browser neither underlines it nor offers to "correct" it. Unset, the
+   * browser's default.
+   */
+  readonly spellCheck?: boolean | undefined;
 }
 
 export function FormTextField({
@@ -62,6 +68,7 @@ export function FormTextField({
   startAdornment,
   endAdornment,
   autoFocus = false,
+  spellCheck,
 }: FormTextFieldProps) {
   const wiring = useFieldWiring(description, error, describedBy);
 
@@ -101,6 +108,7 @@ export function FormTextField({
           maxLength,
           inputMode,
           dir,
+          spellCheck,
           ...controlAttributes(wiring, required),
         },
         formHelperText: { component: 'div' },

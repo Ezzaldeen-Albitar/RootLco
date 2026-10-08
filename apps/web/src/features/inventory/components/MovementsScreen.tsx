@@ -1,12 +1,15 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Button from '@mui/material/Button';
 
-import { DataTable, type Column } from '@/components/data-table/DataTable';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { ZonedDateTimeField, type MomentProblem } from '@/components/forms/mui/DateField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { MuiEmptyState } from '@/components/states/MuiStates';
 import { readWorkOrderDetail } from '@/features/work-orders/api';
 import { WorkOrderPicker } from '@/features/work-orders/components/WorkOrderPicker';
 import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
@@ -28,8 +31,8 @@ import {
   type StockTarget,
 } from '../inventory-contract';
 import { ItemPicker, REFERENCE, ReferenceBox, type ItemChoice } from './pickers';
-import { LocationPicker, PRIMARY_BUTTON, Qty, useLocations } from './shared';
-import { BranchTargetForm } from './stock-operations';
+import { LocationPicker, Qty, useLocations } from './shared';
+import { BranchTargetForm, useOperatorZone } from './stock-operations';
 
 /**
  * Stock movements (P1-30, `W5`, FE-013): the ledger of one branch, newest
@@ -62,6 +65,16 @@ import { BranchTargetForm } from './stock-operations';
  * strings. The row names its location by identifier only; the branch's own
  * location list names it, and a location that list does not hold is shown as
  * the identifier it is, never as an invented name.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-MUI7A1`)
+ *
+ * The ledger is `OperationalGrid` over the same `useServerTable` read (server
+ * paging, no count, the cursor footer); every filter is a `forms/mui` wrapper,
+ * the item and the job `EntityPicker` comboboxes, and the two moments MIT
+ * pickers. The window is still the operator's own seven days, on the
+ * operator's own clock: the native boxes read a typed wall time with
+ * `new Date`, so the pickers are handed the browser's zone explicitly and send
+ * exactly the instants they did.
  */
 
 export function MovementsScreen({
@@ -125,7 +138,7 @@ export function MovementsScreen({
   );
 }
 
-/** Turns a `datetime-local` value into the full instant the route demands, or reports it malformed. */
+/** Turns a picker's instant into the full ISO instant the route demands, or reports it malformed. */
 function toInstant(raw: string): string | null | 'invalid' {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return null;
@@ -137,15 +150,14 @@ function toInstant(raw: string): string | null | 'invalid' {
 /** How many calendar days, today included, the ledger shows on arrival. */
 const RECENT_DAYS = 7;
 
-/** The start of the first of the recent days, as a `datetime-local` value in the operator's zone. */
+/** The start of the first of the recent days — the operator's own midnight — as an instant. */
 function recentWindowStart(now: Date): string {
-  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (RECENT_DAYS - 1));
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}T00:00`;
+  return new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate() - (RECENT_DAYS - 1)
+  ).toISOString();
 }
-
-/** Nothing to subscribe to: the value below changes once, from the server's render to the browser's. */
-const noSubscription = () => () => {};
 
 /** Everything the filter form holds, as one comparable value. */
 interface Filters {
@@ -228,16 +240,17 @@ function LedgerPanel({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   /*
    * The window's start is the operator's own midnight, which the server's render
-   * cannot know: its clock and zone are not the browser's. The date box is
-   * therefore drawn empty until the browser has taken over, so the markup the
-   * server sent and the first browser render agree; the value itself — and the
-   * read it asks for, which only ever runs in the browser — is the browser's.
+   * cannot know: its clock and zone are not the browser's. The two moment
+   * fields are therefore drawn only once the browser has taken over and its
+   * zone is known, so the markup the server sent and the first browser render
+   * agree; the value itself — and the read it asks for, which only ever runs in
+   * the browser — is the browser's.
    */
-  const inBrowser = useSyncExternalStore(
-    noSubscription,
-    () => true,
-    () => false
-  );
+  const zone = useOperatorZone();
+  // A moment only partly typed is no moment: the pickers report it, and it is
+  // refused like the malformed entry the native boxes refused.
+  const [fromProblem, setFromProblem] = useState<MomentProblem>(null);
+  const [toProblem, setToProblem] = useState<MomentProblem>(null);
 
   /** The criteria a set of filters asks for, or the fields that refuse to be sent. */
   const criteriaOf = (
@@ -255,9 +268,12 @@ function LedgerPanel({
       found['workOrderId'] = 'inventory.workOrderReference.format';
     }
     const from = toInstant(filters.occurredFrom);
-    if (from === 'invalid') found['occurredFrom'] = 'inventory.reserve.dateFormat';
+    if (from === 'invalid' || fromProblem !== null) {
+      found['occurredFrom'] = 'inventory.reserve.dateFormat';
+    }
     const to = toInstant(filters.occurredTo);
-    if (to === 'invalid') found['occurredTo'] = 'inventory.reserve.dateFormat';
+    if (to === 'invalid' || toProblem !== null)
+      found['occurredTo'] = 'inventory.reserve.dateFormat';
     if (Object.keys(found).length > 0) return { errors: found };
     return {
       criteria: {
@@ -354,14 +370,15 @@ function LedgerPanel({
               </>
             ) : null}
           </p>
-          <button
+          <Button
             type="button"
+            variant="outlined"
+            size="small"
             disabled={link.phase === 'reading'}
             onClick={() => void readLinkAgain()}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             {translate(messages, 'inventory.workOrderLink.readAgain')}
-          </button>
+          </Button>
         </div>
       ) : null}
       <form
@@ -385,6 +402,7 @@ function LedgerPanel({
               countsAsUnsaved={false}
               offerArchived
               testId="movements-item-picker"
+              material
             />
           ) : (
             <ReferenceBox
@@ -395,6 +413,7 @@ function LedgerPanel({
               error={errorFor('itemId')}
               countsAsUnsaved={false}
               testId="movements-item-reference"
+              material
             />
           )}
         </div>
@@ -408,6 +427,7 @@ function LedgerPanel({
               canSearch
               countsAsUnsaved={false}
               testId="movements-work-order-picker"
+              material
             />
           ) : (
             <ReferenceBox
@@ -418,6 +438,7 @@ function LedgerPanel({
               error={errorFor('workOrderId')}
               countsAsUnsaved={false}
               testId="movements-work-order-reference"
+              material
             />
           )}
         </div>
@@ -428,48 +449,57 @@ function LedgerPanel({
           placeholder={translate(messages, 'inventory.availability.anyLocation')}
           value={draft.locationId}
           onChange={(next) => setDraft((d) => ({ ...d, locationId: next }))}
+          material
         />
-        <SelectField
+        <FormSelectField
           label={translate(messages, 'inventory.movements.type')}
           value={draft.movementType}
-          onChange={(event) => setDraft((d) => ({ ...d, movementType: event.target.value }))}
+          onChange={(next) => setDraft((d) => ({ ...d, movementType: next }))}
           options={MOVEMENT_TYPES.map((value) => ({
             value,
             label: translateDynamic(messages, `inventory.movementType.${value}`),
           }))}
           placeholder={translate(messages, 'inventory.movements.anyType')}
         />
-        <SelectField
+        <FormSelectField
           label={translate(messages, 'inventory.movements.referenceKind')}
           value={draft.referenceKind}
-          onChange={(event) => setDraft((d) => ({ ...d, referenceKind: event.target.value }))}
+          onChange={(next) => setDraft((d) => ({ ...d, referenceKind: next }))}
           options={REFERENCE_KINDS.map((value) => ({
             value,
             label: translateDynamic(messages, `inventory.referenceKind.${value}`),
           }))}
           placeholder={translate(messages, 'inventory.movements.anyReference')}
         />
-        <TextField
-          label={translate(messages, 'inventory.movements.from')}
-          description={translate(messages, 'inventory.movements.fromHelp')}
-          type="datetime-local"
-          dir="ltr"
-          value={inBrowser ? draft.occurredFrom : ''}
-          onChange={(event) => setDraft((d) => ({ ...d, occurredFrom: event.target.value }))}
-          error={errorFor('occurredFrom')}
-        />
-        <TextField
-          label={translate(messages, 'inventory.movements.to')}
-          type="datetime-local"
-          dir="ltr"
-          value={draft.occurredTo}
-          onChange={(event) => setDraft((d) => ({ ...d, occurredTo: event.target.value }))}
-          error={errorFor('occurredTo')}
-        />
+        {zone === null ? null : (
+          <>
+            <ZonedDateTimeField
+              messages={messages}
+              label={translate(messages, 'inventory.movements.from')}
+              description={translate(messages, 'inventory.movements.fromHelp')}
+              timezone={zone}
+              value={draft.occurredFrom}
+              onChange={(next) => setDraft((d) => ({ ...d, occurredFrom: next }))}
+              onProblem={setFromProblem}
+              error={errorFor('occurredFrom')}
+              testId="movements-occurred-from"
+            />
+            <ZonedDateTimeField
+              messages={messages}
+              label={translate(messages, 'inventory.movements.to')}
+              timezone={zone}
+              value={draft.occurredTo}
+              onChange={(next) => setDraft((d) => ({ ...d, occurredTo: next }))}
+              onProblem={setToProblem}
+              error={errorFor('occurredTo')}
+              testId="movements-occurred-to"
+            />
+          </>
+        )}
         <div className="sm:col-span-2 lg:col-span-4">
-          <button type="submit" className={PRIMARY_BUTTON}>
+          <Button type="submit" variant="contained">
             {translate(messages, 'inventory.movements.show')}
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -506,7 +536,7 @@ function LedgerResults({
   );
   const table = useServerTable<StockMovement>(load, { initial: INITIAL_REQUEST });
 
-  const columns = useMemo<readonly Column<StockMovement>[]>(
+  const columns = useMemo<readonly OperationalColumn<StockMovement>[]>(
     () => [
       {
         id: 'sequence',
@@ -596,23 +626,22 @@ function LedgerResults({
 
   return (
     <div className="flex min-h-0 flex-col gap-2">
-      <DataTable<StockMovement>
+      <OperationalGrid<StockMovement>
         messages={messages}
+        locale={locale}
+        label={translate(messages, 'inventory.movements.caption')}
         columns={columns}
         rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'inventory.movements.caption')}
+        table={table}
         suppressEmptyState
+        testId="inventory-movements-grid"
       />
-      {table.response && table.response.rows.length === 0 ? (
-        <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
-          {translate(messages, 'inventory.movements.none')}
-        </p>
+      {table.status === 'idle' && table.response && table.response.rows.length === 0 ? (
+        <MuiEmptyState
+          messages={messages}
+          titleKey="state.noResults.title"
+          descriptionKey="inventory.movements.none"
+        />
       ) : null}
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, 'inventory.movements.locationNote')}

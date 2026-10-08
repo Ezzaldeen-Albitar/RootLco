@@ -4,10 +4,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   TEST_BRANCH,
   TEST_COMPANY,
   inBranch,
+  messagesFor,
   renderLtr as renderInLtr,
   renderRtl as renderInRtl,
 } from './render';
@@ -17,11 +20,22 @@ import {
  * chosen from the NAMED lists the working context publishes (Owner directive,
  * `P1-32-PRE-OD-UX`). They used to be typed as references. So every render
  * here goes inside a provider.
+ *
+ * Since `P1-32-PRE-OD-MUI7A1` it also goes under the product's Material
+ * provider, as the locale layout mounts it: the screen's fields, buttons, tables
+ * and read states are Material's now.
  */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
 const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
-  renderInLtr(inBranch(ui), options);
+  renderInLtr(withMui(inBranch(ui), 'en'), options);
 const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
-  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
+  renderInRtl(withMui(inBranch(ui, { locale: 'ar' }), 'ar'), options);
 import {
   BRANCH_ID,
   COMPANY_ID,
@@ -522,4 +536,107 @@ describe('accessibility and Arabic', () => {
       expect(screen.getByText(AR['inventory.identifiers.explain'] as string)).toBeTruthy()
     );
   });
+});
+
+describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
+  /*
+   * What the move onto the shared wrappers must keep, in English and Arabic:
+   * both lists are tables named by their captions; each withdraw control names
+   * the code it withdraws; a read that does not answer is the shared state
+   * carrying this screen's sentence — "unavailable" with a retry that reads
+   * again, a refusal with none; and a refused field is marked on itself and only
+   * while it is refused.
+   */
+  const CATALOGUES = { en: EN, ar: AR } as const;
+  const renderIn = (locale: 'en' | 'ar') =>
+    locale === 'en'
+      ? renderLtr(<ItemCodesScreen locale="en" messages={en} itemId={ITEM_ID} canManage />)
+      : renderRtl(<ItemCodesScreen locale="ar" messages={ar} itemId={ITEM_ID} canManage />);
+
+  it.each(['en', 'ar'] as const)(
+    'draws both lists as tables named by their captions, and names each withdraw by its code (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      renderIn(locale);
+      const codes = await screen.findByRole('table', {
+        name: T['inventory.identifiers.caption'] as string,
+      });
+      expect(
+        within(codes).getByRole('button', {
+          name: `${T['inventory.identifiers.retire.action'] as string} ${MANUFACTURER_CODE}`,
+        })
+      ).toBeVisible();
+      expect(
+        await screen.findByRole('table', { name: T['inventory.prices.caption'] as string })
+      ).toBeVisible();
+      expect(document.documentElement.dir).toBe(locale === 'en' ? 'ltr' : 'rtl');
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'an outage of the codes is "unavailable" in this screen\u2019s words, and the retry reads again (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      listIdentifiers.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'ref-503' });
+      renderIn(locale);
+      expect(await screen.findByText(T['state.unavailable.title'] as string)).toBeVisible();
+      expect(screen.getByText(T['inventory.identifiers.unavailable'] as string)).toBeVisible();
+      expect(screen.getByText('ref-503')).toBeVisible();
+      await user.click(screen.getByRole('button', { name: T['state.retry'] as string }));
+      await waitFor(() => expect(listIdentifiers).toHaveBeenCalledTimes(2));
+      expect(
+        await screen.findByRole('table', { name: T['inventory.identifiers.caption'] as string })
+      ).toBeVisible();
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'a refused read is the refusal in this screen\u2019s words, with no retry (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      listSalePrices.mockResolvedValueOnce({ status: 'denied', correlationId: 'corr' });
+      renderIn(locale);
+      expect(await screen.findByText(T['inventory.prices.refused'] as string)).toBeVisible();
+      expect(screen.getByText(T['state.denied.title'] as string)).toBeVisible();
+      expect(screen.queryByRole('button', { name: T['state.retry'] as string })).toBeNull();
+    }
+  );
+
+  it('an outage of the prices now offers a retry too, which reads them again', async () => {
+    const user = userEvent.setup();
+    listSalePrices.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'ref-504' });
+    renderIn('en');
+    expect(await screen.findByText(EN['inventory.prices.unavailable'] as string)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: EN['state.retry'] as string }));
+    await waitFor(() => expect(listSalePrices).toHaveBeenCalledTimes(2));
+    expect(
+      await screen.findByRole('table', { name: EN['inventory.prices.caption'] as string })
+    ).toBeVisible();
+  });
+
+  it.each(['en', 'ar'] as const)(
+    'marks a refused code on its own field, and only while it is refused (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      renderIn(locale);
+      const value = await screen.findByRole('textbox', {
+        name: new RegExp(
+          `^${(T['inventory.identifiers.add.value'] as string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+        ),
+      });
+      expect(value).not.toHaveAttribute('aria-invalid');
+      expect(value).toHaveAttribute('dir', 'ltr');
+      await user.click(
+        screen.getByRole('button', { name: T['inventory.identifiers.add.submit'] as string })
+      );
+      await waitFor(() => expect(value).toHaveAttribute('aria-invalid', 'true'));
+      const errorId = value.getAttribute('aria-errormessage');
+      expect(document.getElementById(errorId as string)).toHaveTextContent(
+        T['field.required'] as string
+      );
+      expect(addIdentifier).not.toHaveBeenCalled();
+    }
+  );
 });

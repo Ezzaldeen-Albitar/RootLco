@@ -4,10 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   inBranch,
-  renderLtr as renderInLtr,
-  renderRtl as renderInRtl,
+  messagesFor,
+  renderLtr as renderBareLtr,
+  renderRtl as renderBareRtl,
   BranchSwitch,
   OTHER_BRANCH,
   TEST_BRANCH,
@@ -22,6 +25,7 @@ import {
   switchExpectingQuestion,
   switchWithoutQuestion,
 } from './support/branch-switch';
+import { PICKER_OPTION_WAIT_MS } from './support/picker-option';
 
 /*
  * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
@@ -32,7 +36,25 @@ import {
  * keeps the default snapshot — one authorized branch, selected for the operator
  * — true for every case below. A case that needs a different snapshot builds
  * one and renders it explicitly.
+ *
+ * Since `P1-32-PRE-OD-MUI7A1` every render also goes under the product's
+ * Material provider, as the locale layout mounts it: the ledger is a grid
+ * (`role="grid"`), the item and the job are comboboxes whose matches are
+ * options, a chosen record is the combobox's value, and the two moments are MIT
+ * pickers (a group of parts, typed part by part). The selectors below moved with
+ * that structure; what each case asserts did not.
  */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderInLtr = (ui: ReactElement, options?: Parameters<typeof renderBareLtr>[1]) =>
+  renderBareLtr(withMui(ui, 'en'), options);
+const renderInRtl = (ui: ReactElement, options?: Parameters<typeof renderBareRtl>[1]) =>
+  renderBareRtl(withMui(ui, 'ar'), options);
 const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
   renderInLtr(inBranch(ui), options);
 const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
@@ -234,6 +256,23 @@ async function chooseBranch() {
 const showButton = () =>
   within(ledger()).getByRole('button', { name: EN['inventory.movements.show'] as string });
 
+/** What a picker holds: the combobox reads the chosen record's name. */
+function chosenIn(scope: HTMLElement, labelKey: string): string {
+  return (within(scope).getByRole('combobox', { name: EN[labelKey] as string }) as HTMLInputElement)
+    .value;
+}
+
+/** A moment field: the group of its parts, named by its label. */
+const momentGroup = (scope: HTMLElement, labelKey: string) =>
+  within(scope).getByRole('group', { name: labelled(labelKey) });
+
+/** The value the moment field shows, as the picker writes it into its own input. */
+function momentShown(group: HTMLElement): string {
+  const input = group.parentElement?.querySelector('input');
+  if (!input) throw new Error('the picker has no value input');
+  return input.value;
+}
+
 /** The read made on arrival, before anything is touched. */
 async function firstRead() {
   await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(1));
@@ -282,11 +321,9 @@ describe('the ledger reads the recent movements on arrival (route sweep B2)', ()
     expect(Object.keys(criteria)).toEqual(['occurredFrom']);
     expect(Date.parse(criteria['occurredFrom'] as string)).toBe(recentStart());
     // The window is stated where it can be changed, not hidden.
-    expect(within(ledger()).getByLabelText(labelled('inventory.movements.from'))).not.toHaveValue(
-      ''
-    );
+    expect(momentShown(momentGroup(ledger(), 'inventory.movements.from'))).not.toBe('');
     expect(within(ledger()).getByText(EN['inventory.movements.audited'] as string)).toBeVisible();
-    expect(await within(ledger()).findByRole('table')).toBeVisible();
+    expect(await within(ledger()).findByRole('grid')).toBeVisible();
   });
 
   it('asking again with the same filters reads again — each read is the operator’s own act', async () => {
@@ -301,7 +338,7 @@ describe('the ledger reads the recent movements on arrival (route sweep B2)', ()
   it('renders the rows in the order served with the server’s strings, and names the location from the branch list', async () => {
     renderScreen();
     await chooseBranch();
-    const table = await within(ledger()).findByRole('table');
+    const table = await within(ledger()).findByRole('grid');
     const rows = within(table).getAllByRole('row').slice(1);
     expect(within(rows[0] as HTMLElement).getByText('1041')).toBeVisible();
     expect(within(rows[1] as HTMLElement).getByText('1042')).toBeVisible();
@@ -325,7 +362,7 @@ describe('the ledger reads the recent movements on arrival (route sweep B2)', ()
     listMovements.mockResolvedValue(page([movement({ locationId: OTHER_LOCATION })]));
     renderScreen();
     await chooseBranch();
-    const table = await within(ledger()).findByRole('table');
+    const table = await within(ledger()).findByRole('grid');
     expect(within(table).getByText(OTHER_LOCATION)).toHaveAttribute('dir', 'ltr');
   });
 
@@ -340,9 +377,7 @@ describe('the ledger reads the recent movements on arrival (route sweep B2)', ()
     await chooseBranch();
     await firstRead();
     const panel = ledger();
-    expect(within(panel).getByTestId('movements-work-order-picker-chosen')).toHaveTextContent(
-      'WO-000042'
-    );
+    expect(chosenIn(panel, 'inventory.movements.workOrder')).toContain('WO-000042');
     expect((listMovements.mock.calls[0]?.[1] as Record<string, string>)['workOrderId']).toBe(
       WORK_ORDER_ID
     );
@@ -350,7 +385,13 @@ describe('the ledger reads the recent movements on arrival (route sweep B2)', ()
       within(panel).getByLabelText(EN['inventory.movements.item'] as string),
       'BRK{Enter}'
     );
-    await user.click(await within(panel).findByRole('button', { name: 'BRK-001 — Brake pad' }));
+    await user.click(
+      await screen.findByRole(
+        'option',
+        { name: 'BRK-001 — Brake pad' },
+        { timeout: PICKER_OPTION_WAIT_MS }
+      )
+    );
     // The panel itself is named "Movements", which an anchored "Movement" would match; the role narrows it.
     await user.selectOptions(
       within(panel).getByRole('combobox', { name: labelled('inventory.movements.type') }),
@@ -365,9 +406,11 @@ describe('the ledger reads the recent movements on arrival (route sweep B2)', ()
       within(panel).getByLabelText(labelled('inventory.movements.location')),
       LOCATION_ID
     );
-    const from = within(panel).getByLabelText(labelled('inventory.movements.from'));
-    await user.clear(from);
-    await user.type(from, '2026-09-01T08:00');
+    // Typed part by part, as the operator's own wall clock: 01/09/2026 08:00.
+    const from = momentGroup(panel, 'inventory.movements.from');
+    await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('010920260800');
+    await waitFor(() => expect(momentShown(from)).toBe('01/09/2026 08:00'));
     await user.click(showButton());
     await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(2));
     const criteria = listMovements.mock.calls[1]?.[1] as Record<string, string>;
@@ -468,9 +511,9 @@ describe('the item filter and the job from the link (route sweep B2 review)', ()
     await user.click(
       within(panel).getByRole('button', { name: EN['inventory.workOrderLink.readAgain'] as string })
     );
-    expect(
-      await within(panel).findByTestId('movements-work-order-picker-chosen')
-    ).toHaveTextContent('WO-000042');
+    await waitFor(() =>
+      expect(chosenIn(panel, 'inventory.movements.workOrder')).toContain('WO-000042')
+    );
     expect(
       within(panel).queryByText(EN['inventory.workOrderLink.unreadable'] as string)
     ).toBeNull();
@@ -486,7 +529,11 @@ describe('the item filter and the job from the link (route sweep B2 review)', ()
       'OLD{Enter}'
     );
     await user.click(
-      await within(panel).findByRole('button', { name: 'OLD-001 — Retired pad (archived)' })
+      await screen.findByRole(
+        'option',
+        { name: 'OLD-001 — Retired pad (archived)' },
+        { timeout: PICKER_OPTION_WAIT_MS }
+      )
     );
     expect(listItems).toHaveBeenCalledWith(
       { search: 'OLD', lifecycleStatus: 'archived' },
@@ -539,10 +586,10 @@ describe('reading the job from the link again (route sweep B3)', () => {
       within(panel).getByLabelText(EN['inventory.movements.workOrder'] as string),
       'WO-77{Enter}'
     );
-    await user.click(await within(panel).findByRole('button', { name: /WO-000077/ }));
-    expect(within(panel).getByTestId('movements-work-order-picker-chosen')).toHaveTextContent(
-      'WO-000077'
+    await user.click(
+      await screen.findByRole('option', { name: /WO-000077/ }, { timeout: PICKER_OPTION_WAIT_MS })
     );
+    expect(chosenIn(panel, 'inventory.movements.workOrder')).toContain('WO-000077');
 
     answer(okRead({ workOrder, jobs: [], nextStates: [], reachableStates: [] }));
     await waitFor(() =>
@@ -550,9 +597,7 @@ describe('reading the job from the link again (route sweep B3)', () => {
         within(panel).queryByText(EN['inventory.workOrderLink.unreadable'] as string)
       ).toBeNull()
     );
-    expect(within(panel).getByTestId('movements-work-order-picker-chosen')).toHaveTextContent(
-      'WO-000077'
-    );
+    expect(chosenIn(panel, 'inventory.movements.workOrder')).toContain('WO-000077');
   });
 
   it('drops an answer that lands after a branch switch replaced the panel', async () => {
@@ -598,7 +643,7 @@ describe('reading the job from the link again (route sweep B3)', () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     // The panel under the new branch still says the link could not be read,
     // and no job from the earlier panel's read is chosen in it.
-    expect(within(ledger()).queryByTestId('movements-work-order-picker-chosen')).toBeNull();
+    expect(chosenIn(ledger(), 'inventory.movements.workOrder')).toBe('');
     expect(
       within(ledger()).getByText(EN['inventory.workOrderLink.unreadable'] as string)
     ).toBeVisible();
@@ -694,7 +739,13 @@ describe('filters being set and a branch switch', () => {
       within(ledger()).getByLabelText(EN['inventory.movements.item'] as string),
       'BRK{Enter}'
     );
-    await user.click(await within(ledger()).findByRole('button', { name: 'BRK-001 — Brake pad' }));
+    await user.click(
+      await screen.findByRole(
+        'option',
+        { name: 'BRK-001 — Brake pad' },
+        { timeout: PICKER_OPTION_WAIT_MS }
+      )
+    );
     await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
     expect(heldBranch()).toBe(TEST_BRANCH.id);
     await user.click(showButton());
@@ -771,8 +822,9 @@ describe('the /inventory/movements route page decides before it reads', () => {
     await renderPage({ locale: 'en' }, { workOrderId: WORK_ORDER_ID });
     await chooseBranch();
     expect(readWorkOrderDetail).toHaveBeenCalledWith(WORK_ORDER_ID);
-    expect(await screen.findByTestId('movements-work-order-picker-chosen')).toHaveTextContent(
-      'WO-000042'
+    await screen.findByRole('region', { name: EN['inventory.movements.heading'] as string });
+    await waitFor(() =>
+      expect(chosenIn(ledger(), 'inventory.movements.workOrder')).toContain('WO-000042')
     );
     expect(within(ledger()).getByLabelText(EN['inventory.movements.item'] as string)).toBeVisible();
   });
@@ -840,7 +892,7 @@ describe('every movement vocabulary value has a label in both languages', () => 
     );
     renderScreen();
     await chooseBranch();
-    const table = await within(ledger()).findByRole('table');
+    const table = await within(ledger()).findByRole('grid');
     expect(within(table).getByText(EN['inventory.movementType.sale'] as string)).toBeVisible();
     expect(
       within(table).getByText(EN['inventory.referenceKind.invoice_line'] as string)
@@ -887,4 +939,109 @@ describe('Arabic, right to left', () => {
     await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(1));
     expect(screen.getByText(AR['inventory.movements.fromHelp'] as string)).toBeVisible();
   });
+});
+
+describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
+  /*
+   * What the move onto the shared wrappers must keep, in English and Arabic: the
+   * ledger is a server-paged grid that says "Page N" and never a count; the
+   * window is stated in its field on arrival; an outage is "unavailable, try
+   * again" and the retry reads again; a moment only partly typed is refused on
+   * its field and nothing is read; and a caller without the lookups keeps two
+   * reference boxes that read left to right and are never spell-checked.
+   */
+  const CATALOGUES = { en: EN, ar: AR } as const;
+  const escapeIn = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  function renderIn(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    const props = { initialWorkOrderId: null, canReadBranches: true, ...over };
+    return locale === 'en'
+      ? renderLtr(<MovementsScreen locale="en" messages={en} {...props} />)
+      : renderRtl(<MovementsScreen locale="ar" messages={ar} {...props} />);
+  }
+  const ledgerIn = (T: Record<string, string>) =>
+    screen.getByRole('region', { name: T['inventory.movements.heading'] as string });
+
+  it.each(['en', 'ar'] as const)(
+    'draws the ledger as a grid named by its caption, paged as "Page 1" with no count, and states the window (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      renderIn(locale);
+      await firstRead();
+      const grid = await screen.findByRole('grid', {
+        name: T['inventory.movements.caption'] as string,
+      });
+      expect(within(grid).getByText('1042')).toBeVisible();
+      expect(screen.getByTestId('inventory-movements-grid-page')).toHaveTextContent(
+        (T['mui.pagination.page'] as string).replace('{page}', '1')
+      );
+      const from = within(ledgerIn(T)).getByRole('group', {
+        name: new RegExp(`^${escapeIn(T['inventory.movements.from'] as string)}`),
+      });
+      expect(momentShown(from)).not.toBe('');
+      expect(document.documentElement.dir).toBe(locale === 'en' ? 'ltr' : 'rtl');
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'an outage of the ledger is "unavailable" with a retry that reads it again (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      listMovements.mockResolvedValueOnce({
+        status: 'unavailable',
+        rows: [],
+        nextCursor: null,
+        hasMore: false,
+        correlationId: 'ref-503',
+      });
+      renderIn(locale);
+      await firstRead();
+      const panel = ledgerIn(T);
+      expect(await within(panel).findByText(T['state.unavailable.title'] as string)).toBeVisible();
+      expect(within(panel).getByText('ref-503')).toBeVisible();
+      expect(within(panel).queryByText(T['inventory.movements.none'] as string)).toBeNull();
+      await user.click(within(panel).getByRole('button', { name: T['state.retry'] as string }));
+      await waitFor(() => expect(listMovements).toHaveBeenCalledTimes(2));
+      expect(
+        await within(panel).findByRole('grid', { name: T['inventory.movements.caption'] as string })
+      ).toBeVisible();
+    }
+  );
+
+  it('refuses a moment only partly typed, on its field, and reads nothing', async () => {
+    const user = userEvent.setup();
+    renderIn('en');
+    await firstRead();
+    const to = momentGroup(ledger(), 'inventory.movements.to');
+    await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('01');
+    await user.click(showButton());
+    expect(
+      await within(ledger()).findByText(EN['inventory.reserve.dateFormat'] as string)
+    ).toBeVisible();
+    await waitFor(() => expect(to).toHaveAttribute('aria-invalid', 'true'));
+    expect(listMovements).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['en', 'ar'] as const)(
+    'without the lookups, the two reference boxes read left to right and are never spell-checked (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      renderIn(locale);
+      await firstRead();
+      const panel = ledgerIn(T);
+      for (const key of ['inventory.itemPicker.reference', 'inventory.workOrderReference.label']) {
+        const box = within(panel).getByRole('textbox', {
+          name: new RegExp(`^${escapeIn(T[key] as string)}`),
+        });
+        expect(box).toHaveAttribute('dir', 'ltr');
+        expect(box).toHaveAttribute('spellcheck', 'false');
+        expect(box).not.toHaveAttribute('aria-invalid');
+      }
+      expect(
+        within(panel).queryByRole('combobox', { name: T['inventory.movements.item'] as string })
+      ).toBeNull();
+    }
+  );
 });

@@ -2,13 +2,22 @@
 
 import Link from 'next/link';
 import { useCallback, useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
 
-import { DataTable, type Column } from '@/components/data-table/DataTable';
+import {
+  OperationalGrid,
+  type OperationalColumn,
+  type RowAction,
+} from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import { CheckboxField, SelectField, TextField } from '@/components/forms/Field';
-import { SearchBox } from '@/components/search/SearchBox';
+import { FilterToolbar } from '@/components/filters/FilterToolbar';
+import { ZonedDateTimeField, type MomentProblem } from '@/components/forms/mui/DateField';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiEmptyState } from '@/components/states/MuiStates';
 import { WorkOrderPicker } from '@/features/work-orders/components/WorkOrderPicker';
 import type { WorkOrderListEntry } from '@/features/work-orders/work-orders-contract';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
@@ -44,21 +53,19 @@ import {
   type StockTarget,
 } from '../inventory-contract';
 import {
-  CategoryPicker,
   LocationPicker,
   LocationTypeLabel,
   OutcomeNote,
-  PRIMARY_BUTTON,
   Qty,
   ReservationStatusBadge,
-  SECONDARY_BUTTON,
+  categoryChoices,
   useItemCategories,
   useLocations,
   type Locations,
 } from './shared';
 import { ItemPicker, REFERENCE, ReferenceBox, withoutKey, type ItemChoice } from './pickers';
 import { StockAlertIndicator } from './StockAlertIndicator';
-import { BranchTargetForm, LINK } from './stock-operations';
+import { BranchTargetForm, LINK, useOperatorZone } from './stock-operations';
 
 /**
  * Inventory (P1-30, `W4`): item search (FE-008), stock balance (FE-009) and
@@ -102,6 +109,16 @@ import { BranchTargetForm, LINK } from './stock-operations';
  * locations are created on the inventory setup page (W10); a workshop that has
  * recorded none sees an empty product here, and the empty states say so instead
  * of pretending.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-MUI7A1`)
+ *
+ * The three lists are `OperationalGrid` over the same `useServerTable` reads
+ * (server paging, no count, the cursor footer); the item search is
+ * `FilterToolbar`'s box and selects; every form field is a `forms/mui` wrapper;
+ * the item and the job are `EntityPicker` comboboxes. Nothing about what is
+ * read, sent or authorized changed. The reservation expiry is still read on the
+ * operator's own clock, as the native box before it was: the picker is handed
+ * that zone explicitly rather than the branch's.
  */
 
 export function InventoryScreen({
@@ -319,6 +336,13 @@ function ItemSearch({
    * `ItemResults` the whole catalogue would be re-read on every search.
    */
   const categories = useItemCategories();
+  const category = categoryChoices(
+    messages,
+    categories,
+    categories.items !== null && categories.items.length === 0
+      ? translate(messages, 'inventory.items.noCategories')
+      : translate(messages, 'inventory.items.categoryHelp')
+  );
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name];
@@ -353,82 +377,80 @@ function ItemSearch({
       <h2 id="inventory-items-heading" className="text-body font-medium text-text-primary">
         {translate(messages, 'inventory.items.heading')}
       </h2>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
+      {/*
+        One box for the one thing an operator at a parts counter is holding:
+        part of a code, or part of a name — the same toolbar every other board
+        searches with, so the question reads the same way everywhere. The
+        structured filters beside it answer a different question and stay drafts
+        until Show, or Enter in the box, asks for the whole form, as before.
+      */}
+      <FilterToolbar
+        messages={messages}
+        label={translate(messages, 'inventory.items.heading')}
+        testId="inventory-items-toolbar"
+        search={{
+          label: translate(messages, 'inventory.items.search'),
+          placeholder: translate(messages, 'inventory.items.searchPlaceholder'),
+          example: translate(messages, 'inventory.items.searchHelp'),
+          value: draft.search,
+          onChange: (next) => setDraft((d) => ({ ...d, search: next })),
+          onSubmit: submit,
+          maxLength: MAX_NAME,
+          error: errorFor('search'),
         }}
-        noValidate
-        aria-labelledby="inventory-items-heading"
-        className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5"
-      >
-        <div className="sm:col-span-2 lg:col-span-3">
-          {/*
-            One box for the one thing an operator at a parts counter is holding:
-            part of a code, or part of a name. It is the same control every other
-            board searches with, so the question reads the same way everywhere —
-            and the structured filters beside it stay, because they answer a
-            different question. Enter asks at once; the Show button below asks
-            for the whole form, so this box carries no second control of its own.
-          */}
-          <SearchBox
-            messages={messages}
-            label={translate(messages, 'inventory.items.search')}
-            placeholder={translate(messages, 'inventory.items.searchPlaceholder')}
-            example={translate(messages, 'inventory.items.searchHelp')}
-            value={draft.search}
-            onChange={(next) => setDraft((d) => ({ ...d, search: next }))}
-            onSubmit={submit}
-            inlineSubmit={false}
-            maxLength={MAX_NAME}
-            {...(errorFor('search') === undefined ? {} : { error: errorFor('search') as string })}
-          />
-        </div>
-        <SelectField
-          label={translate(messages, 'inventory.items.type')}
-          value={draft.itemType}
-          onChange={(event) => setDraft((d) => ({ ...d, itemType: event.target.value }))}
-          options={ITEM_TYPES.map((value) => ({
-            value,
-            label: translateDynamic(messages, `inventory.itemType.${value}`),
-          }))}
-          placeholder={translate(messages, 'inventory.items.anyType')}
-        />
-        <SelectField
-          label={translate(messages, 'inventory.items.lifecycle')}
-          description={translate(messages, 'inventory.items.lifecycleHelp')}
-          value={draft.lifecycleStatus}
-          onChange={(event) => setDraft((d) => ({ ...d, lifecycleStatus: event.target.value }))}
-          options={ITEM_LIFECYCLE_STATES.map((value) => ({
-            value,
-            label: translateDynamic(messages, `inventory.lifecycle.${value}`),
-          }))}
-          placeholder={translate(messages, 'inventory.items.activeOnly')}
-        />
-        <CategoryPicker
-          messages={messages}
-          categories={categories}
-          label={translate(messages, 'inventory.items.category')}
-          placeholder={translate(messages, 'inventory.items.anyCategory')}
-          help={
-            categories.items !== null && categories.items.length === 0
-              ? translate(messages, 'inventory.items.noCategories')
-              : translate(messages, 'inventory.items.categoryHelp')
-          }
-          value={draft.categoryId}
-          onChange={(next) => setDraft((d) => ({ ...d, categoryId: next }))}
-        />
-        <CheckboxField
-          label={translate(messages, 'inventory.items.trackedOnly')}
-          checked={draft.trackedOnly}
-          onChange={(event) => setDraft((d) => ({ ...d, trackedOnly: event.target.checked }))}
-        />
-        <div className="sm:col-span-2 lg:col-span-5">
-          <button type="submit" className={PRIMARY_BUTTON}>
-            {translate(messages, 'inventory.items.show')}
-          </button>
-        </div>
-      </form>
+        filters={[
+          {
+            kind: 'select',
+            key: 'item-type',
+            label: translate(messages, 'inventory.items.type'),
+            value: draft.itemType,
+            onChange: (next) => setDraft((d) => ({ ...d, itemType: next })),
+            options: ITEM_TYPES.map((value) => ({
+              value,
+              label: translateDynamic(messages, `inventory.itemType.${value}`),
+            })),
+            placeholder: translate(messages, 'inventory.items.anyType'),
+          },
+          {
+            kind: 'select',
+            key: 'item-lifecycle',
+            label: translate(messages, 'inventory.items.lifecycle'),
+            description: translate(messages, 'inventory.items.lifecycleHelp'),
+            value: draft.lifecycleStatus,
+            onChange: (next) => setDraft((d) => ({ ...d, lifecycleStatus: next })),
+            options: ITEM_LIFECYCLE_STATES.map((value) => ({
+              value,
+              label: translateDynamic(messages, `inventory.lifecycle.${value}`),
+            })),
+            placeholder: translate(messages, 'inventory.items.activeOnly'),
+          },
+          {
+            // The tenant's categories, `code — name`, an inactive one labelled
+            // as such; the line under it is `CategoryPicker`'s (CC-16).
+            kind: 'select',
+            key: 'item-category',
+            label: translate(messages, 'inventory.items.category'),
+            description: category.note,
+            value: draft.categoryId,
+            onChange: (next) => setDraft((d) => ({ ...d, categoryId: next })),
+            options: category.options,
+            placeholder: translate(messages, 'inventory.items.anyCategory'),
+          },
+        ]}
+        actions={
+          <>
+            <FormCheckboxField
+              label={translate(messages, 'inventory.items.trackedOnly')}
+              checked={draft.trackedOnly}
+              onChange={(checked) => setDraft((d) => ({ ...d, trackedOnly: checked }))}
+            />
+            {/* `type="button"`: the toolbar's own submit applies a chosen period. */}
+            <Button type="button" variant="contained" onClick={submit}>
+              {translate(messages, 'inventory.items.show')}
+            </Button>
+          </>
+        }
+      />
       <ItemResults
         key={JSON.stringify(criteria)}
         locale={locale}
@@ -454,7 +476,7 @@ function ItemResults({
   );
   const table = useServerTable<InventoryItem>(load, { initial: INITIAL_REQUEST });
 
-  const columns = useMemo<readonly Column<InventoryItem>[]>(
+  const columns = useMemo<readonly OperationalColumn<InventoryItem>[]>(
     () => [
       {
         id: 'sku',
@@ -529,23 +551,22 @@ function ItemResults({
 
   return (
     <div className="flex min-h-0 flex-col gap-2">
-      <DataTable<InventoryItem>
+      <OperationalGrid<InventoryItem>
         messages={messages}
+        locale={locale}
+        label={translate(messages, 'inventory.items.caption')}
         columns={columns}
         rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'inventory.items.caption')}
+        table={table}
         suppressEmptyState
+        testId="inventory-items-grid"
       />
-      {table.response && table.response.rows.length === 0 ? (
-        <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
-          {translate(messages, 'inventory.items.none')}
-        </p>
+      {table.status === 'idle' && table.response && table.response.rows.length === 0 ? (
+        <MuiEmptyState
+          messages={messages}
+          titleKey="state.noResults.title"
+          descriptionKey="inventory.items.none"
+        />
       ) : null}
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, 'inventory.items.noCostNote')}
@@ -613,6 +634,7 @@ function AvailabilityPanel({
             countsAsUnsaved={false}
             offerArchived
             testId="availability-item-picker"
+            material
           />
         </div>
         <LocationPicker
@@ -622,16 +644,17 @@ function AvailabilityPanel({
           placeholder={translate(messages, 'inventory.availability.anyLocation')}
           value={draft.locationId}
           onChange={(next) => setDraft((d) => ({ ...d, locationId: next }))}
+          material
         />
-        <CheckboxField
+        <FormCheckboxField
           label={translate(messages, 'inventory.availability.includeQuarantine')}
           checked={draft.includeQuarantine}
-          onChange={(event) => setDraft((d) => ({ ...d, includeQuarantine: event.target.checked }))}
+          onChange={(checked) => setDraft((d) => ({ ...d, includeQuarantine: checked }))}
         />
         <div className="sm:col-span-3">
-          <button type="submit" className={PRIMARY_BUTTON}>
+          <Button type="submit" variant="contained">
             {translate(messages, 'inventory.availability.show')}
-          </button>
+          </Button>
         </div>
       </form>
       <AvailabilityResults
@@ -663,7 +686,7 @@ function AvailabilityResults({
   );
   const table = useServerTable<StockAvailability>(load, { initial: INITIAL_REQUEST });
 
-  const columns = useMemo<readonly Column<StockAvailability>[]>(
+  const columns = useMemo<readonly OperationalColumn<StockAvailability>[]>(
     () => [
       {
         id: 'sku',
@@ -724,23 +747,22 @@ function AvailabilityResults({
 
   return (
     <div className="flex min-h-0 flex-col gap-2">
-      <DataTable<StockAvailability>
+      <OperationalGrid<StockAvailability>
         messages={messages}
+        locale={locale}
+        label={translate(messages, 'inventory.availability.caption')}
         columns={columns}
         rowId={(row) => `${row.itemId}:${row.locationId}`}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'inventory.availability.caption')}
+        table={table}
         suppressEmptyState
+        testId="inventory-availability-grid"
       />
-      {table.response && table.response.rows.length === 0 ? (
-        <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
-          {translate(messages, 'inventory.availability.none')}
-        </p>
+      {table.status === 'idle' && table.response && table.response.rows.length === 0 ? (
+        <MuiEmptyState
+          messages={messages}
+          titleKey="state.noResults.title"
+          descriptionKey="inventory.availability.none"
+        />
       ) : null}
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, 'inventory.availability.cellNote')}
@@ -845,10 +867,10 @@ function ReservationsPanel({
         aria-labelledby="inventory-reservations-heading"
         className="grid gap-3 sm:grid-cols-2"
       >
-        <SelectField
+        <FormSelectField
           label={translate(messages, 'inventory.reservations.status')}
           value={status}
-          onChange={(event) => setStatus(event.target.value)}
+          onChange={setStatus}
           options={RESERVATION_STATES.map((value) => ({
             value,
             label: translateDynamic(messages, `inventory.reservationStatus.${value}`),
@@ -864,6 +886,7 @@ function ReservationsPanel({
             canSearch
             countsAsUnsaved={false}
             testId="reservations-work-order-picker"
+            material
           />
         ) : (
           <ReferenceBox
@@ -876,6 +899,7 @@ function ReservationsPanel({
             }
             countsAsUnsaved={false}
             testId="reservations-work-order-reference"
+            material
           />
         )}
         <div className="sm:col-span-2">
@@ -889,21 +913,22 @@ function ReservationsPanel({
             countsAsUnsaved={false}
             offerArchived
             testId="reservations-item-picker"
+            material
           />
         </div>
         <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-          <button type="submit" className={PRIMARY_BUTTON}>
+          <Button type="submit" variant="contained">
             {translate(messages, 'inventory.reservations.show')}
-          </button>
+          </Button>
           {canOperate ? (
-            <button
+            <Button
               type="button"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
               aria-expanded={reserving}
               onClick={() => setReserving((open) => !open)}
             >
               {translate(messages, 'inventory.reserve.open')}
-            </button>
+            </Button>
           ) : null}
         </div>
       </form>
@@ -979,7 +1004,7 @@ function ReservationResults({
     }
   };
 
-  const columns = useMemo<readonly Column<StockReservation>[]>(
+  const columns = useMemo<readonly OperationalColumn<StockReservation>[]>(
     () => [
       {
         id: 'sku',
@@ -1040,47 +1065,49 @@ function ReservationResults({
             </span>
           ),
       },
-      {
-        id: 'release',
-        headerKey: 'inventory.reservations.column.actions',
-        cell: (row) =>
-          canOperate && row.status === 'active' ? (
-            <button
-              type="button"
-              className={SECONDARY_BUTTON}
-              disabled={busyId === row.id}
-              onClick={() => {
-                void release(row.id);
-              }}
-            >
-              {translate(messages, 'inventory.release.action')}
-            </button>
-          ) : null,
-      },
     ],
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `release` closes over stable setters only
-    [busyId, canOperate, locale, messages]
+    [locale, messages]
   );
+
+  /*
+   * Release is the row's action, offered only on an active reservation to an
+   * operator who may. Its name carries the stock code and the location, so ten
+   * rows of "Release" are ten different controls to a screen reader.
+   */
+  const rowActions = (row: StockReservation): readonly RowAction[] =>
+    row.status === 'active'
+      ? [
+          {
+            kind: 'button',
+            label: translate(messages, 'inventory.release.action'),
+            about: `${row.sku} ${row.locationCode}`,
+            disabled: busyId === row.id,
+            onClick: () => {
+              void release(row.id);
+            },
+          },
+        ]
+      : [];
 
   return (
     <div className="flex min-h-0 flex-col gap-2">
-      <DataTable<StockReservation>
+      <OperationalGrid<StockReservation>
         messages={messages}
+        locale={locale}
+        label={translate(messages, 'inventory.reservations.caption')}
         columns={columns}
         rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'inventory.reservations.caption')}
+        table={table}
+        rowActions={canOperate ? rowActions : undefined}
         suppressEmptyState
+        testId="inventory-reservations-grid"
       />
-      {table.response && table.response.rows.length === 0 ? (
-        <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
-          {translate(messages, 'inventory.reservations.none')}
-        </p>
+      {table.status === 'idle' && table.response && table.response.rows.length === 0 ? (
+        <MuiEmptyState
+          messages={messages}
+          titleKey="state.noResults.title"
+          descriptionKey="inventory.reservations.none"
+        />
       ) : null}
       <OutcomeNote messages={messages} outcome={outcome} />
     </div>
@@ -1126,6 +1153,14 @@ function ReserveForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * The expiry is read on the operator's own clock, as the native box it
+   * replaced was (`new Date` of a local wall time). The picker is handed that
+   * zone explicitly; a moment only partly typed is reported by the picker
+   * (`'incomplete'`) and refused below, as the browser's own check refused it.
+   */
+  const zone = useOperatorZone();
+  const [expiryProblem, setExpiryProblem] = useState<MomentProblem>(null);
   // The server keeps one reservation per key it is GIVEN in the body (the
   // transport's header key only replays a stored response). One key per opened
   // form, kept across a refusal or a lost answer, so pressing Reserve again
@@ -1152,7 +1187,9 @@ function ReserveForm({
     const workOrderId = canReadWorkOrders ? (workOrder?.id ?? '') : typed;
     let expiresAt: string | null = null;
     const rawExpiry = form.expiresAt.trim();
-    if (rawExpiry.length > 0) {
+    if (expiryProblem !== null) {
+      found['expiresAt'] = 'inventory.reserve.dateFormat';
+    } else if (rawExpiry.length > 0) {
       const parsed = new Date(rawExpiry);
       if (Number.isNaN(parsed.getTime())) found['expiresAt'] = 'inventory.reserve.dateFormat';
       else expiresAt = parsed.toISOString();
@@ -1210,6 +1247,7 @@ function ReserveForm({
           canSearch
           error={errorFor('itemId')}
           testId="reserve-item-picker"
+          material
         />
       </div>
       <LocationPicker
@@ -1221,15 +1259,15 @@ function ReserveForm({
         value={form.locationId}
         onChange={(next) => setForm((f) => ({ ...f, locationId: next }))}
         error={errorFor('locationId')}
+        material
       />
-      <TextField
+      {/* A decimal string as typed, never a number input (F5). */}
+      <FormNumberField
         label={translate(messages, 'inventory.reserve.quantity')}
         description={translate(messages, 'inventory.reserve.quantityHelp')}
         required
-        inputMode="decimal"
-        dir="ltr"
         value={form.quantity}
-        onChange={(event) => setForm((f) => ({ ...f, quantity: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, quantity: next }))}
         error={errorFor('quantity')}
       />
       <div className="sm:col-span-2">
@@ -1243,6 +1281,7 @@ function ReserveForm({
             error={errorFor('workOrderId')}
             pristineId={initialWorkOrder?.id ?? null}
             testId="reserve-work-order-picker"
+            material
           />
         ) : (
           <ReferenceBox
@@ -1257,25 +1296,30 @@ function ReserveForm({
             countsAsUnsaved
             pristine={openedReference}
             testId="reserve-work-order-reference"
+            material
           />
         )}
       </div>
-      <TextField
-        label={translate(messages, 'inventory.reserve.expiresAt')}
-        description={translate(messages, 'inventory.reserve.expiresAtHelp')}
-        type="datetime-local"
-        dir="ltr"
-        value={form.expiresAt}
-        onChange={(event) => setForm((f) => ({ ...f, expiresAt: event.target.value }))}
-        error={errorFor('expiresAt')}
-      />
+      {zone === null ? null : (
+        <ZonedDateTimeField
+          messages={messages}
+          label={translate(messages, 'inventory.reserve.expiresAt')}
+          description={translate(messages, 'inventory.reserve.expiresAtHelp')}
+          timezone={zone}
+          value={form.expiresAt}
+          onChange={(next) => setForm((f) => ({ ...f, expiresAt: next }))}
+          onProblem={setExpiryProblem}
+          error={errorFor('expiresAt')}
+          testId="reserve-expires-at"
+        />
+      )}
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.reserve.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );

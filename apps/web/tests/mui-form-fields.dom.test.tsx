@@ -143,6 +143,22 @@ describe('the FieldFrame contract, on Material UI', () => {
     expect(alert.querySelector('[aria-hidden="true"]')).toHaveTextContent('!');
   });
 
+  it('turns spell-checking off for a value no dictionary knows, and leaves it alone otherwise', () => {
+    // A reference or a code (the inventory reference boxes, `P1-32-PRE-OD-MUI7A1`)
+    // is never underlined or "corrected"; a field that does not ask says nothing.
+    mount(
+      <>
+        <FormTextField label="Reference" value="" onChange={() => undefined} spellCheck={false} />
+        <FormTextField label="Note" value="" onChange={() => undefined} />
+      </>
+    );
+    expect(screen.getByRole('textbox', { name: 'Reference' })).toHaveAttribute(
+      'spellcheck',
+      'false'
+    );
+    expect(screen.getByRole('textbox', { name: 'Note' })).not.toHaveAttribute('spellcheck');
+  });
+
   it('keeps what was typed when a refusal arrives', async () => {
     const user = userEvent.setup();
     function Refused() {
