@@ -4566,7 +4566,7 @@ describe('a refused invoice says which refusal it is (O2)', () => {
     const ambiguous = EN['invoices.refusal.sourceAmbiguous'] as string;
     expect(ambiguous).toMatch(/more than one quotation/);
     expect(ambiguous).toMatch(/cannot be invoiced together yet/);
-    expect(ambiguous).toMatch(/decision by the business owner/);
+    expect(ambiguous).toMatch(/pending an Owner decision/);
     expect(ambiguous).not.toMatch(/\bwill\b/);
   });
 

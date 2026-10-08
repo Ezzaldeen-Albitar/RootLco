@@ -429,7 +429,11 @@ describe('D2 part 2 — the payout', () => {
       violations: [{ path: 'body.payoutDate', rule: REFUND_RULES.payoutDateInvalid }],
     });
     expect(accepted.executeRequest).toHaveBeenCalledTimes(1);
-    expect(accepted.executeRequest.mock.calls[0]?.[2]).toMatchObject({ payoutDate: '2026-10-09' });
+    expect(accepted.executeRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.objectContaining({ payoutDate: '2026-10-09' })
+    );
     expect(accepted.branchToday).toHaveBeenCalledWith(expect.anything(), {
       companyId: COMPANY,
       branchId: BRANCH,
