@@ -270,7 +270,7 @@ beforeEach(async () => {
 // ---------------------------------------------------------------------------
 
 describe('P1-15 / global security posture', () => {
-  it('the repository declares exactly 186 migrations, with the newest fifty-seven named', () => {
+  it('the repository declares exactly 187 migrations, with the newest fifty-eight named', () => {
     // Counted from the repository, not from `supabase_migrations.schema_migrations`:
     // that bookkeeping table is created by the Supabase CLI and does not exist in
     // CI, where the database is built by `npm run db:apply-migrations` against a
@@ -429,10 +429,12 @@ describe('P1-15 / global security posture', () => {
     // FD2A review residuals), widened again rather than slid.
     // Fifty-seven and 186 with the refund requests (P1-32-PRE-OD-FD2B, Owner
     // decision D2, part 2), widened again rather than slid.
-    expect(files).toHaveLength(186);
-    expect(files.at(-57)).toBe('20260831091000_org_tenant_status_transition_guard.sql');
-    expect(files.at(-56)).toBe('20260831092000_org_tenant_status_history_emission.sql');
-    expect(files.at(-55)).toBe('20260831093000_iam_platform_privilege_graph.sql');
+    // Fifty-eight and 187 with the refund branch day and obligation marker
+    // (P1-32-PRE-OD-FRX), widened again rather than slid.
+    expect(files).toHaveLength(187);
+    expect(files.at(-58)).toBe('20260831091000_org_tenant_status_transition_guard.sql');
+    expect(files.at(-57)).toBe('20260831092000_org_tenant_status_history_emission.sql');
+    expect(files.at(-56)).toBe('20260831093000_iam_platform_privilege_graph.sql');
     // The tail GROWS by contributing branch rather than sliding, so that any one
     // migration vanishing in a merge — and taking its grants with it — fails here
     // rather than somewhere confusing.
@@ -444,21 +446,21 @@ describe('P1-15 / global security posture', () => {
     // approval-at-selection-time declaratively, and — deliberately — WITHOUT
     // re-reading mutable status, so a version retired after publication does not
     // retroactively invalidate an event already emitted.
-    expect(files.at(-54)).toBe('20260901090000_org_company_status_lifecycle.sql');
+    expect(files.at(-55)).toBe('20260901090000_org_company_status_lifecycle.sql');
     // PRE-P1-29 Wave C: the legal-company status lifecycle. One migration for one
     // coherent subsystem — the history table, its stamp and coherence guards, the
     // emitter that makes a raw UPDATE record itself, and the transition function.
-    expect(files.at(-53)).toBe('20260901100000_wo_jobs_department_routing.sql');
+    expect(files.at(-54)).toBe('20260901100000_wo_jobs_department_routing.sql');
     // PRE-P1-29 BR-02: the job/department routing relationship. One column, one
     // composite FK, one index — the smallest migration in the tail, and the only
     // one that moves schemaHash while leaving every structural total alone.
-    expect(files.at(-52)).toBe('20260902120000_wo_job_blocker_events.sql');
+    expect(files.at(-53)).toBe('20260902120000_wo_job_blocker_events.sql');
     // 136 is P1-29 W9, the First-Owner bootstrap's two owed privileges: one
     // authority-predicated SELECT policy on iam.permissions (column-scoped to
     // id and permission_code) and EXECUTE on the delegation backstop for
     // app_platform. No object, no role, no permission code; the policy is
     // asserted by name in foundation.test.ts and the count is pinned here.
-    expect(files.at(-51)).toBe('20260902130000_iam_platform_bootstrap_catalogue_and_backstop.sql');
+    expect(files.at(-52)).toBe('20260902130000_iam_platform_bootstrap_catalogue_and_backstop.sql');
     // 137 is the P1-30 tenant-bootstrap corrective slice: schema USAGE on `sal`,
     // SELECT and INSERT on sal.payment_methods, and the two policies that let
     // provisioning give a tenant its own copies of the canonical ASM-14 methods.
@@ -466,7 +468,7 @@ describe('P1-15 / global security posture', () => {
     // method at all — fk_receipts_method resolves (tenant_id, payment_method_id)
     // and a platform row's tenant_id is NULL. No object, no role, no permission
     // code; both policies are asserted by name in foundation.test.ts.
-    expect(files.at(-50)).toBe('20260906090000_sal_payment_method_tenant_bootstrap.sql');
+    expect(files.at(-51)).toBe('20260906090000_sal_payment_method_tenant_bootstrap.sql');
     // 138 is the P1-30 opening-count uniqueness index: one partial unique index on
     // inv.stock_movements, at most one `opening` movement per
     // (tenant, company, branch, item, location). Until it existed, two DRAFT
@@ -478,7 +480,7 @@ describe('P1-15 / global security posture', () => {
     // and no policy: this is the migration that moves schemaHash while leaving
     // every structural total alone, and the index is asserted by definition in
     // tests/backend/p1-30-opening-count-uniqueness.test.ts (OC-0).
-    expect(files.at(-49)).toBe('20260907090000_inv_opening_movement_cell_uniqueness.sql');
+    expect(files.at(-50)).toBe('20260907090000_inv_opening_movement_cell_uniqueness.sql');
     // 139 is P1-31 P-9b, closing CC-14: sal.complete_delivery re-issued with the
     // template join, so only an ACTIVE, non-deleted checklist template gates a
     // handover. Until it existed, deactivating a template withdrew nothing from
@@ -489,7 +491,7 @@ describe('P1-15 / global security posture', () => {
     // hashes function IDENTITY and not BODY. Its behaviour is asserted in
     // tests/db/sal-delivery.test.ts and the eligibility mirror in
     // tests/backend/p1-31-delivery-checklist-template-seam.test.ts.
-    expect(files.at(-48)).toBe('20260909090000_sal_complete_delivery_active_template_gate.sql');
+    expect(files.at(-49)).toBe('20260909090000_sal_complete_delivery_active_template_gate.sql');
     // 140 is P1-31 P-17, the employee register: org.employees, tenant-wide to read
     // and branch-scoped to write, with DELETE granted to no application role. It
     // mints two permission codes (org.employee.read, org.employee.manage) in
@@ -497,14 +499,14 @@ describe('P1-15 / global security posture', () => {
     // .github/ci-baselines/schema-baseline.json rather than here, and it adds no
     // grant, role or policy on a `shared` relation, so every inventory assertion in
     // this file is unchanged by it.
-    expect(files.at(-47)).toBe('20260910090000_org_employees.sql');
+    expect(files.at(-48)).toBe('20260910090000_org_employees.sql');
     // 141 binds sal.delivery_records.delivering_employee_id to that register on
     // (tenant_id, id) and takes an immutable display-name snapshot. The legacy mint
     // is NOT in it — a migration may not INSERT business rows, so that half is
     // scripts/platform/backfill-delivering-employee-identity.mjs — and the review
     // table it creates carries a SELECT policy plus an INSERT policy that refuses
     // every row. Again nothing in `shared` moves.
-    expect(files.at(-46)).toBe('20260910091000_sal_delivery_delivering_employee_identity.sql');
+    expect(files.at(-47)).toBe('20260910091000_sal_delivery_delivering_employee_identity.sql');
     // 142-144 are the P1-32 Platform Owner Console backend, in the order they must
     // replay: the console READ graph (new SELECT policies only), then subscription
     // commerce (priced plan columns, org.tenant_subscription_events and the plan
@@ -512,9 +514,9 @@ describe('P1-15 / global security posture', () => {
     // The last two each add ONE write policy on `shared` — the home-tenant replay
     // record for their own named idempotent operations — which the write-policy
     // inventory below names.
-    expect(files.at(-45)).toBe('20260916090000_platform_console_read_graph.sql');
-    expect(files.at(-44)).toBe('20260916091000_org_subscription_commerce.sql');
-    expect(files.at(-43)).toBe('20260916092000_org_subscription_billing.sql');
+    expect(files.at(-46)).toBe('20260916090000_platform_console_read_graph.sql');
+    expect(files.at(-45)).toBe('20260916091000_org_subscription_commerce.sql');
+    expect(files.at(-44)).toBe('20260916092000_org_subscription_billing.sql');
     // 145 is the Owner directive capacity enforcement: org.capacity_limit,
     // org.capacity_used, org.capacity_usage, org.assert_capacity_available and the
     // org.enforce_capacity trigger on companies, branches and user accounts; two
@@ -523,7 +525,7 @@ describe('P1-15 / global security posture', () => {
     // ins_number_sequences_branch_authority, asserted in the write-policy
     // inventory below, so a branch created after provisioning can be given its
     // invoice, quotation and receipt runs.
-    expect(files.at(-42)).toBe('20260916093000_org_capacity_enforcement.sql');
+    expect(files.at(-43)).toBe('20260916093000_org_capacity_enforcement.sql');
     // 146 is P1-32 friendly search: shared.fold_digits and shared.fold_search_text,
     // and the four existing normalizers re-issued over them so a digit typed on an
     // Arabic keyboard folds instead of being deleted. It recomputes the two stored
@@ -532,11 +534,11 @@ describe('P1-15 / global security posture', () => {
     // relation — the two functions are EXECUTE-granted to the application roles
     // exactly like the normalizers that call them, and are asserted by name in
     // foundation.test.ts and by posture in tests/db/p1-32-text-folding-parity.test.ts.
-    expect(files.at(-41)).toBe('20260916094000_shared_text_folding.sql');
+    expect(files.at(-42)).toBe('20260916094000_shared_text_folding.sql');
     // 147 is the index half of that slice: seven expression indexes, six of them
     // GIN trigram, so the widened contains-matches are index-eligible. Indexes only
     // — nothing in `shared` moves.
-    expect(files.at(-40)).toBe('20260916095000_search_expression_indexes.sql');
+    expect(files.at(-41)).toBe('20260916095000_search_expression_indexes.sql');
     // 148 is the P1-32 organisation-growth slice: the console may add a company,
     // open a branch and establish an administrator inside an organisation that is
     // already running. One function (org.plan_capacity_shortfall) and twenty
@@ -544,49 +546,49 @@ describe('P1-15 / global security posture', () => {
     // console-opened branch owes, read and written, and the replay record of the
     // three new operations, read and written. The two write policies are named in
     // the write-policy inventory below.
-    expect(files.at(-39)).toBe('20260916096000_platform_organization_growth.sql');
+    expect(files.at(-40)).toBe('20260916096000_platform_organization_growth.sql');
     // 149 is the P1-32 preparatory inventory slice: stock transfers with a
     // branch-level transit location, goods receipts with an append-only restricted
     // cost history, and stock counts that raise pending adjustments. It adds six
     // tables, their policies and triggers (asserted by name in foundation.test.ts),
     // and no grant, role or policy on a `shared` relation — so every inventory
     // assertion in this file is unchanged by it.
-    expect(files.at(-38)).toBe('20260917090000_inv_transfers_receipts_counts.sql');
+    expect(files.at(-39)).toBe('20260917090000_inv_transfers_receipts_counts.sql');
     // 150 is P1-32 preparatory slice 2: inv.item_identifiers, its normalisation and
     // check-digit functions and the internal barcode allocator. One table, three
     // tenant policies and no grant, role or policy on a `shared` relation — so every
     // inventory assertion in this file is unchanged by it.
-    expect(files.at(-37)).toBe('20260917091000_inv_item_identifiers.sql');
+    expect(files.at(-38)).toBe('20260917091000_inv_item_identifiers.sql');
     // 151 is the item selling price: inv.item_sale_prices with its resolver and its
     // setter. `svc.price_rules` prices a SERVICE, so nothing could say what a PART
     // costs a customer, and a counter sale had no price to put on its line.
-    expect(files.at(-36)).toBe('20260917092000_inv_item_sale_prices.sql');
+    expect(files.at(-37)).toBe('20260917092000_inv_item_sale_prices.sql');
     // 152 is the counter sale: sal.invoices.sale_kind, the inventory columns on
     // sal.invoice_lines, the `sale` movement with its provenance branch, and the
     // document builder that prices every line inside the database. It touches `sal`
     // and `inv` and again nothing in `shared`.
-    expect(files.at(-35)).toBe('20260917093000_sal_counter_sales.sql');
+    expect(files.at(-36)).toBe('20260917093000_sal_counter_sales.sql');
     // 153 is the sales return: inv.sales_returns, a ceiling that counts the legacy
     // inv.part_returns rows too, and the `sal` primitive that raises the pending
     // credit note. One table, three tenant policies, no `shared` relation touched —
     // so every inventory assertion in this file is unchanged by all three.
-    expect(files.at(-34)).toBe('20260917094000_inv_sales_returns.sql');
+    expect(files.at(-35)).toBe('20260917094000_inv_sales_returns.sql');
     // 154 is P1-32 preparatory slice 3a: inv.item_unit_conversions, exact factors in
     // one direction with no implied reverse and no rounding.
-    expect(files.at(-33)).toBe('20260917095000_inv_item_unit_conversions.sql');
+    expect(files.at(-34)).toBe('20260917095000_inv_item_unit_conversions.sql');
     // 155 is inv.vehicle_fluid_specifications: a sourced capacity that resolves only
     // once confirmed, and never as zero.
-    expect(files.at(-32)).toBe('20260917096000_inv_vehicle_fluid_specifications.sql');
+    expect(files.at(-33)).toBe('20260917096000_inv_vehicle_fluid_specifications.sql');
     // 156 is material demand control: approved requirements, finite two-person
     // exceptions, material requests and their fulfillment links, bounded under the
     // requirement row lock.
-    expect(files.at(-31)).toBe('20260917097000_inv_material_requirements.sql');
+    expect(files.at(-32)).toBe('20260917097000_inv_material_requirements.sql');
     // 157 is the truthful transfer receipt: a short delivery stays in transit until a
     // further receipt, a return to origin or a second-person write-off settles it.
     // Seven tables across the four, their tenant policies, and no grant, role or
     // policy on a `shared` relation — so every inventory assertion in this file is
     // unchanged by them.
-    expect(files.at(-30)).toBe('20260917098000_inv_transfer_partial_receipt.sql');
+    expect(files.at(-31)).toBe('20260917098000_inv_transfer_partial_receipt.sql');
     // 158 is P1-32 preparatory slice 3c: every work-order reservation and part issue
     // is linked at insert to a material request on an APPROVED requirement, or
     // refused; inv.issue_part consumes its reservation before stock leaves; the
@@ -594,14 +596,14 @@ describe('P1-15 / global security posture', () => {
     // reservations stop counting. One function and two triggers, all in `inv`, and
     // no grant, role or policy on a `shared` relation — so every inventory assertion
     // in this file is unchanged by it.
-    expect(files.at(-29)).toBe('20260917099000_inv_material_draw_enforcement.sql');
+    expect(files.at(-30)).toBe('20260917099000_inv_material_draw_enforcement.sql');
     // 159 is the Owner directive operational stock alerts: inv.item_reorder_levels,
     // the threshold the low-stock read compares an available balance against. One
     // table, three policies and two triggers, all in `inv`, reusing
     // shared.touch_row_metadata and org.guard_immutable_columns rather than
     // defining a function of its own — and no grant, role or policy on a `shared`
     // relation, so every shared-surface assertion in this file is unchanged by it.
-    expect(files.at(-28)).toBe('20260918090000_inv_item_reorder_levels.sql');
+    expect(files.at(-29)).toBe('20260918090000_inv_item_reorder_levels.sql');
     // 160 is the discount approval record (P1-32-PRE-OD-DISC-01, -04):
     // quo.discount_approvals with its legacy-draft backfill, the issue guard on
     // quo.quotation_revisions with the database-side discount measurement, and
@@ -609,7 +611,7 @@ describe('P1-15 / global security posture', () => {
     // table, three policies, seven triggers and seven functions, all in `quo` and
     // `svc` — and no grant, role or policy on a `shared` relation, so every
     // shared-surface assertion in this file is unchanged by it.
-    expect(files.at(-27)).toBe('20260925090000_quo_discount_approvals.sql');
+    expect(files.at(-28)).toBe('20260925090000_quo_discount_approvals.sql');
     // 161 is the control plane's read of the three reference registers
     // (P1-32-PRE-OD-REF): GRANT SELECT on shared.currencies, shared.timezones and
     // shared.languages to app_platform, beside three new SELECT policies,
@@ -622,7 +624,7 @@ describe('P1-15 / global security posture', () => {
     // not touch, so no other shared-surface assertion here moves; the new
     // privileges are asserted in tests/db/org-security.test.ts and the policy
     // names in tests/db/foundation.test.ts.
-    expect(files.at(-26)).toBe('20260927090000_shared_reference_platform_read.sql');
+    expect(files.at(-27)).toBe('20260927090000_shared_reference_platform_read.sql');
     // 162 is the finance controls (P1-32-PRE-OD-FIN): a pending dual-control request
     // frozen from insert (a trigger plus UPDATE narrowed to the decision columns on
     // sal.credit_notes and sal.receipt_reversals), the credit-note currency guard,
@@ -630,14 +632,14 @@ describe('P1-15 / global security posture', () => {
     // currency guard on receipts, and the cumulative return credit. Every object and
     // privilege it touches is in `sal` — no grant, role or policy on a `shared`
     // relation — so every shared-surface assertion in this file is unchanged by it.
-    expect(files.at(-25)).toBe('20260930090000_sal_finance_controls.sql');
+    expect(files.at(-26)).toBe('20260930090000_sal_finance_controls.sql');
     // 163 is the minor-unit rounding of line amounts (P1-32-PRE-OD-FD1, ADR-023
     // D1): shared.round_to_minor_unit and shared.fits_minor_unit (functions, with
     // EXECUTE for app_runtime only), a trigger on quo.quotation_items replacing two
     // four-decimal CHECKs, and three functions re-issued under their own names. It
     // adds no table, grant, role or policy on a `shared` RELATION, so every
     // shared-surface assertion in this file is unchanged by it.
-    expect(files.at(-24)).toBe('20260930100000_sal_minor_unit_rounding.sql');
+    expect(files.at(-25)).toBe('20260930100000_sal_minor_unit_rounding.sql');
     // 164 is the credit-note decisions and frozen dates (P1-32-PRE-OD-FD2A,
     // ADR-023 D3): three nullable decision columns and four CHECKs on
     // sal.credit_notes, a decision trigger, sal.withdraw_credit_note and
@@ -645,7 +647,7 @@ describe('P1-15 / global security posture', () => {
     // primitives and the reversal guard, and the runtime UPDATE grant narrowed on
     // issued_at and reversed_at. Every object and privilege it touches is in
     // `sal`, so every shared-surface assertion in this file is unchanged by it.
-    expect(files.at(-23)).toBe('20260930110000_sal_credit_note_decisions.sql');
+    expect(files.at(-24)).toBe('20260930110000_sal_credit_note_decisions.sql');
     // 165 is the credit-approval permission and credit-note approval limits
     // (P1-32-PRE-OD-FD2C, ADR-023 D13): the two approval-limit exclusion constraints
     // re-created with the currency in a credit-note limit's key, the BEFORE INSERT
@@ -654,7 +656,7 @@ describe('P1-15 / global security posture', () => {
     // sal.credit.approve and a credit-note limit over the invoice's cumulative
     // approved credit. No grant, policy or relation changes, and nothing it touches
     // is in `shared`, so every shared-surface assertion in this file is unchanged by it.
-    expect(files.at(-22)).toBe('20261001090000_sal_credit_approval_limits.sql');
+    expect(files.at(-23)).toBe('20261001090000_sal_credit_approval_limits.sql');
     // 166 is the receipt reversal (P1-32-PRE-OD-FD4, ADR-023 D4): three decision
     // columns and five CHECKs on sal.receipt_reversals with the table-wide unique
     // constraint narrowed to the live states, the request, decision and
@@ -665,27 +667,27 @@ describe('P1-15 / global security posture', () => {
     // with sal.record_receipt re-created with one more argument. Every object and
     // privilege it touches is in `sal`, so every shared-surface assertion in this
     // file is unchanged by it.
-    expect(files.at(-21)).toBe('20261002090000_sal_receipt_reversal_requests.sql');
+    expect(files.at(-22)).toBe('20261002090000_sal_receipt_reversal_requests.sql');
     // 167 is the third-party payer rule (P1-32-PRE-OD-FD14, ADR-023 D14): four
     // nullable third-party columns and two CHECKs on sal.payment_allocations, the
     // BEFORE INSERT payer guard, and sal.allocate_receipt re-created with three more
     // arguments (EXECUTE for app_runtime only). Every object and privilege it
     // touches is in `sal`, so every shared-surface assertion in this file is
     // unchanged by it.
-    expect(files.at(-20)).toBe('20261002100000_sal_third_party_allocations.sql');
+    expect(files.at(-21)).toBe('20261002100000_sal_third_party_allocations.sql');
     // 168 is the "not stated" complaint severity (P1-32-PRE-OD-RWS, Owner decision
     // of 2026-10-03): ck_complaints_severity re-created to admit 'not_stated' and
     // the column default moved from 'medium' to 'not_stated', with no row
     // rewritten. No grant, policy, function or relation changes, and nothing it
     // touches is in `shared`, so every shared-surface assertion in this file is
     // unchanged by it.
-    expect(files.at(-19)).toBe('20261004090000_rec_complaint_severity_not_stated.sql');
+    expect(files.at(-20)).toBe('20261004090000_rec_complaint_severity_not_stated.sql');
     // 169 is the quotation acceptance record (P1-32-PRE-OD-FD11, ADR-023 D11): one
     // append-only table, quo.acceptance_records, with SELECT and INSERT for
     // app_runtime, a SELECT and an INSERT policy, and one guard function behind one
     // trigger. Every object and privilege it touches is in `quo`, so every
     // shared-surface assertion in this file is unchanged by it.
-    expect(files.at(-18)).toBe('20261005090000_quo_acceptance_records.sql');
+    expect(files.at(-19)).toBe('20261005090000_quo_acceptance_records.sql');
     // 170 is the quotation part-line snapshot (P1-32-PRE-OD-FD6, ADR-023 D6): six
     // nullable snapshot columns, two foreign keys and two indexes on
     // quo.quotation_items, and one guard function behind one trigger that admits a
@@ -693,7 +695,7 @@ describe('P1-15 / global security posture', () => {
     // and freezes its snapshot. No grant, policy, role or relation is added, and
     // everything it touches is in `quo`, so every shared-surface assertion in this
     // file is unchanged by it.
-    expect(files.at(-17)).toBe('20261005100000_quo_part_line_snapshots.sql');
+    expect(files.at(-18)).toBe('20261005100000_quo_part_line_snapshots.sql');
     // 171 is the invoiced quotation quantities (P1-32-PRE-OD-FD5, ADR-023 D5/D15):
     // uq_invoices_work_order_active replaced by a one-draft and a one-unsourced unique
     // index, one index on sal.invoice_lines, the read function
@@ -702,7 +704,7 @@ describe('P1-15 / global security posture', () => {
     // sal.invoice_line_amounts. No table, policy, role or table grant is added, and
     // everything it touches is in `sal`, so every shared-surface assertion in this
     // file is unchanged by it.
-    expect(files.at(-16)).toBe('20261006090000_sal_invoiced_quotation_quantities.sql');
+    expect(files.at(-17)).toBe('20261006090000_sal_invoiced_quotation_quantities.sql');
     // 172 is the discount self-exemption rule and the discount request withdrawal
     // (P1-32-PRE-OD-FD8, ADR-023 D8 and D3): provenance columns stamped by four
     // trigger functions on svc.pricing_approval_policies, svc.price_rules,
@@ -712,7 +714,7 @@ describe('P1-15 / global security posture', () => {
     // and its UPDATE policy re-created under the same name. No table, role or grant
     // is added, and nothing it touches is in `shared`, so every shared-surface
     // assertion in this file is unchanged by it.
-    expect(files.at(-15)).toBe('20261007090000_quo_discount_self_exemption_and_withdrawal.sql');
+    expect(files.at(-16)).toBe('20261007090000_quo_discount_self_exemption_and_withdrawal.sql');
     // 173 is P1-32-PRE-OD-FD8 fix round 1 (ADR-023 D8): who set a price rule's and an
     // item selling price's amount (two nullable columns each, stamped by the two
     // provenance triggers re-issued under their own names) and its snapshot on
@@ -720,7 +722,7 @@ describe('P1-15 / global security posture', () => {
     // refusing an approver whose limit window the requester moved. No table,
     // function, trigger, grant, role or policy is added and nothing it touches is in
     // `shared`, so every shared-surface assertion in this file is unchanged by it.
-    expect(files.at(-14)).toBe(
+    expect(files.at(-15)).toBe(
       '20261007100000_quo_discount_limit_window_and_amount_provenance.sql'
     );
     // 174 is that fix round 2: iam.approval_limits.window_changed_by, every person who
@@ -728,21 +730,21 @@ describe('P1-15 / global security posture', () => {
     // quo.guard_discount_approval re-issued to read it for the requester and for the
     // approver. No table, grant, role or policy is added and nothing it touches is in
     // `shared`, so every shared-surface assertion in this file is unchanged by it.
-    expect(files.at(-13)).toBe('20261007110000_quo_discount_limit_window_history.sql');
+    expect(files.at(-14)).toBe('20261007110000_quo_discount_limit_window_history.sql');
     // 175 is that fix round 3: quo.revision_discount_needs_approval re-issued so a
     // price the revision's writer set needs another person whatever the discount, and
     // ck_discount_approvals_amounts replaced under its own name to admit a request
     // with no discount only for such a price. No table, column, function, trigger,
     // grant, role or policy is added and nothing it touches is in `shared`, so every
     // shared-surface assertion in this file is unchanged by it.
-    expect(files.at(-12)).toBe('20261007120000_quo_discount_self_set_price_without_discount.sql');
+    expect(files.at(-13)).toBe('20261007120000_quo_discount_self_set_price_without_discount.sql');
     // 176 is that fix round 4: who made a price-list assignment and everyone who
     // changed what it selects (svc.price_list_assignments, one trigger and its
     // function), the line snapshot of the assignment that selected its list, and
     // quo.revision_self_change_basis re-issued to read them. No table, grant, role or
     // policy is added and nothing it touches is in `shared`, so every shared-surface
     // assertion in this file is unchanged by it.
-    expect(files.at(-11)).toBe('20261007130000_quo_price_list_assignment_provenance.sql');
+    expect(files.at(-12)).toBe('20261007130000_quo_price_list_assignment_provenance.sql');
     // 179 (P1-32-PRE-OD-RGF) sorts BEFORE 177 by its filename:
     // tg_role_grants_require_scope and tg_role_grants_delegation_authority
     // re-created DEFERRABLE INITIALLY IMMEDIATE under their own names, functions
@@ -750,7 +752,7 @@ describe('P1-15 / global security posture', () => {
     // event and its ENABLE TRIGGER succeeds on a database that already holds
     // grants. 177 is not edited. No table, column, function, grant, role or policy
     // is added and nothing it touches is in `shared`.
-    expect(files.at(-10)).toBe('20261007135000_iam_role_grant_checks_immediate_for_backfill.sql');
+    expect(files.at(-11)).toBe('20261007135000_iam_role_grant_checks_immediate_for_backfill.sql');
     // 177 is that fix round 5: who issued a role grant and everyone who changed when it
     // holds (iam.role_grants), who added a grant scope (iam.grant_scopes), everyone who
     // withdrew or restored a selling price (inv.item_sale_prices) — three triggers and
@@ -758,20 +760,20 @@ describe('P1-15 / global security posture', () => {
     // quo.revision_self_change_basis re-issued to read them. No table, grant, role or
     // policy is added and nothing it touches is in `shared`, so every shared-surface
     // assertion in this file is unchanged by it.
-    expect(files.at(-9)).toBe('20261007140000_quo_discount_role_grant_provenance.sql');
+    expect(files.at(-10)).toBe('20261007140000_quo_discount_role_grant_provenance.sql');
     // 178 is that fix round 6: svc.record_pricing_approval_policy_version re-issued
     // under its own name and signature, so a threshold version written on the request
     // path starts the day it is recorded and has no end date. No table, column,
     // function, trigger, grant, role or policy is added and nothing it touches is in
     // `shared`; it moves neither schemaHash nor any structural total, because
     // schema-inventory.mjs hashes function IDENTITY and not BODY.
-    expect(files.at(-8)).toBe('20261007150000_quo_discount_threshold_version_dates.sql');
+    expect(files.at(-9)).toBe('20261007150000_quo_discount_threshold_version_dates.sql');
     // 180 (P1-32-PRE-OD-RGF) sorts last: the same two constraint triggers
     // re-created exactly as 20260718092000 and 20260727090000 wrote them,
     // DEFERRABLE INITIALLY DEFERRED. After it the schema is the one 178 left on a
     // database where 179 never ran: neither schemaHash nor any structural total
     // moves.
-    expect(files.at(-7)).toBe('20261007160000_iam_role_grant_checks_deferred_again.sql');
+    expect(files.at(-8)).toBe('20261007160000_iam_role_grant_checks_deferred_again.sql');
     // 181 is the as-of settlement reads (P1-32-PRE-OD-FD16A, Owner decision D16):
     // sal.invoice_open_receivable_as_of and sal.receipt_unallocated_as_of (EXECUTE to
     // app_runtime and app_readonly, as their live counterparts), and three trigger
@@ -779,40 +781,47 @@ describe('P1-15 / global security posture', () => {
     // allocated_at and occurred_at with now() for the runtime login. No table,
     // column, grant, role or policy is added, and everything it touches is in `sal`,
     // so every shared-surface assertion in this file is unchanged by it.
-    expect(files.at(-6)).toBe('20261008090000_sal_settlement_as_of.sql');
+    expect(files.at(-7)).toBe('20261008090000_sal_settlement_as_of.sql');
     // 182 is the report snapshots (P1-32-PRE-OD-FD16B, Owner decision D16): one
     // append-only table in `rpt`, rpt.report_snapshots, its guard trigger function
     // and its two policies. SELECT and INSERT to app_runtime, SELECT to
     // app_readonly. Nothing in `shared` is touched, so every shared-surface
     // assertion in this file is unchanged by it.
-    expect(files.at(-5)).toBe('20261008100000_rpt_report_snapshots.sql');
+    expect(files.at(-6)).toBe('20261008100000_rpt_report_snapshots.sql');
     // 183 is the snapshot save gate (P1-32-PRE-OD-FD16C, Owner decision D16): the
     // INSERT policy of rpt.report_snapshots requires rpt.report.configure in place
     // of rpt.export. One policy predicate in `rpt`; no table, function, grant, role
     // or shared object changes, so every shared-surface assertion in this file is
     // unchanged by it.
-    expect(files.at(-4)).toBe('20261008110000_rpt_report_snapshot_save_gate.sql');
+    expect(files.at(-5)).toBe('20261008110000_rpt_report_snapshot_save_gate.sql');
     // 184 is the refund obligations (P1-32-PRE-OD-FD2A, Owner decision D2): one
     // table in `sal`, sal.refund_obligations, its two guard trigger functions and
     // three policies, and seven `sal` functions re-issued under their own names.
     // SELECT and INSERT and UPDATE (state) to app_runtime, SELECT to app_readonly.
     // Nothing in `shared` is touched, so every shared-surface assertion in this file
     // is unchanged by it.
-    expect(files.at(-3)).toBe('20261008121000_sal_refund_obligations.sql');
+    expect(files.at(-4)).toBe('20261008121000_sal_refund_obligations.sql');
     // 185 is the FD2A review residuals (P1-32-PRE-OD-FD2B, Owner decision D2): two
     // `sal` trigger functions re-issued under their own names — an obligation cites
     // a credit approved in the current transaction, and the credit-note decision
     // trigger holds the D2 ceiling. No table, grant, role or policy changes and
     // nothing in `shared` is touched, so every shared-surface assertion in this file
     // is unchanged by it.
-    expect(files.at(-2)).toBe('20261008130000_sal_refund_obligation_guards.sql');
+    expect(files.at(-3)).toBe('20261008130000_sal_refund_obligation_guards.sql');
     // 186 is the refund requests (P1-32-PRE-OD-FD2B, Owner decision D2, part 2): one
     // table in `sal`, sal.refund_requests, its three trigger functions and three
     // policies, five `sal` primitives, and three `sal` functions re-issued under their
     // own names. SELECT and INSERT and UPDATE of five decision and payout columns to
     // app_runtime, SELECT to app_readonly. Nothing in `shared` is touched, so every
     // shared-surface assertion in this file is unchanged by it.
-    expect(files.at(-1)).toBe('20261008140000_sal_refund_requests.sql');
+    expect(files.at(-2)).toBe('20261008140000_sal_refund_requests.sql');
+    // 187 is the residuals of the CP-20261008-2 retest (P1-32-PRE-OD-FRX): three
+    // `sal` functions re-issued under their own names — the refund payout day is
+    // judged on the branch's own calendar, and sal.approve_credit_note names its
+    // note in a transaction-local marker the obligation guard requires. No table,
+    // grant, role or policy changes and nothing in `shared` is touched, so every
+    // shared-surface assertion in this file is unchanged by it.
+    expect(files.at(-1)).toBe('20261008150000_sal_refund_branch_day_and_obligation_marker.sql');
   });
 
   it('migration 121 changes the shared surface DELIBERATELY, and the change is bounded', () => {

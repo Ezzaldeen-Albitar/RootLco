@@ -35,9 +35,11 @@ import {
   readInvoice,
   readInvoicePreview,
   readWorkOrderInvoice,
+  type InvoicePreviewRead,
 } from '../api';
 import {
   MAX_REASON,
+  invoiceRefusalMessageKey,
   type Invoice,
   type InvoiceDetail,
   type InvoicePreview,
@@ -302,7 +304,12 @@ export function InvoiceScreen({
               figure: null,
             })
           }
-          onConflict={() => changed({ messageKey: 'invoices.create.conflict', figure: null })}
+          onConflict={(rule) =>
+            changed({
+              messageKey: invoiceRefusalMessageKey(rule) ?? 'invoices.create.conflict',
+              figure: null,
+            })
+          }
         />
       ) : (
         <LiveInvoices
@@ -406,7 +413,12 @@ function LiveInvoices({
               figure: null,
             })
           }
-          onConflict={() => onChanged({ messageKey: 'invoices.create.conflict', figure: null })}
+          onConflict={(rule) =>
+            onChanged({
+              messageKey: invoiceRefusalMessageKey(rule) ?? 'invoices.create.conflict',
+              figure: null,
+            })
+          }
         />
       ) : null}
     </>
@@ -731,10 +743,14 @@ function PreviewPanel({
     readonly replayed: boolean;
     readonly invoice: Invoice;
   }) => Promise<void>;
-  /** A refused create most likely means an invoice now exists; the screen re-reads. */
-  readonly onConflict: () => Promise<void>;
+  /**
+   * A refused create: the screen re-reads, and says the refusal's own sentence
+   * when the server named a rule it knows (P1-32-PRE-OD-FRX), the generic one
+   * otherwise.
+   */
+  readonly onConflict: (rule: string | null) => Promise<void>;
 }) {
-  const [preview, setPreview] = useState<ReadState<InvoicePreview> | null>(null);
+  const [preview, setPreview] = useState<InvoicePreviewRead | null>(null);
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
     if (!canViewFinance) return;
@@ -764,6 +780,25 @@ function PreviewPanel({
       {!canViewFinance ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'invoices.preview.needsFinance')}
+        </p>
+      ) : preview !== null &&
+        preview.status !== 'ok' &&
+        invoiceRefusalMessageKey(preview.rule) !== null ? (
+        // A refusal that names its rule is not an outage: say why the work order
+        // cannot be invoiced as it stands, in its own sentence (P1-32-PRE-OD-FRX).
+        <p role="alert" className="text-body text-text-secondary" data-testid="invoice-refusal">
+          {translateDynamic(messages, invoiceRefusalMessageKey(preview.rule) as string)}
+          {preview.correlationId ? (
+            <>
+              {' '}
+              <span className="text-caption text-text-muted">
+                {translate(messages, 'state.correlationId')}{' '}
+                <code className="font-mono" dir="ltr">
+                  {preview.correlationId}
+                </code>
+              </span>
+            </>
+          ) : null}
         </p>
       ) : preview === null || preview.status !== 'ok' ? (
         <ReadRefusal
@@ -1136,7 +1171,7 @@ function CreateForm({
     readonly replayed: boolean;
     readonly invoice: Invoice;
   }) => Promise<void>;
-  readonly onConflict: () => Promise<void>;
+  readonly onConflict: (rule: string | null) => Promise<void>;
 }) {
   /*
    * A different payer is FOUND among customers and chosen by name (Owner
@@ -1213,9 +1248,10 @@ function CreateForm({
         settled = true;
         await onCreated({ replayed: result.created.replayed, invoice: result.created.invoice });
       } else if (result.state.status === 'conflict') {
-        // Most likely an invoice already exists for the order: re-read and show it.
+        // Re-read and show what the order now holds, saying the refusal's own
+        // rule when the server named one (P1-32-PRE-OD-FRX).
         settled = true;
-        await onConflict();
+        await onConflict(result.rule ?? null);
       } else if (Object.keys(result.state.fieldErrors ?? {}).length > 0) {
         setAttempt((n) => n + 1);
       }

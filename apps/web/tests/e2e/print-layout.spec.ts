@@ -275,4 +275,65 @@ test.describe('printed documents', () => {
       }
     });
   }
+
+  /*
+   * P1-32-PRE-OD-FRX, O1. The checkpoint retest printed a counter sale whose third
+   * page held only the identity row, "Balance due" and "Refund": the issued totals
+   * ended one page and the settlement rows began the next. The totals and the
+   * settlement are now one block kept together, so for every length from one line
+   * to past two pages — whichever length puts a page boundary inside that block
+   * in this browser — the issued totals, the settlement heading, "Balance due" and
+   * "Refund" print on ONE page, and no page carries settlement rows without the
+   * totals beside them.
+   */
+  for (const [from, to] of [
+    [1, 8],
+    [9, 16],
+    [17, 24],
+    [25, 32],
+  ] as const) {
+    test(`a counter sale of ${from} to ${to} lines prints its totals and settlement on one page`, async ({
+      page,
+    }, testInfo) => {
+      const locale = localeOf(testInfo);
+      const said = (key: string) =>
+        (MESSAGES[locale] as unknown as Record<string, string>)[key] as string;
+      const issued = said('invoices.print.issuedTotals');
+      const settlementRows = [
+        said('invoices.print.settlementAsOf'),
+        said('invoices.print.balanceDue'),
+        said('invoices.settlement.refund'),
+      ];
+      for (let lines = from; lines <= to; lines += 1) {
+        await load(page, counterSaleCase(locale, lines));
+        const pages = await printToPages(page);
+        const withTotals = pages
+          .map((printedPage, index) => (printed(printedPage.text, issued) ? index : -1))
+          .filter((index) => index >= 0);
+        expect(
+          withTotals.length,
+          `${lines} line(s): the issued totals print on exactly one page
+${summary(pages)}`
+        ).toBe(1);
+        const totalsPage = withTotals[0] as number;
+        for (const row of settlementRows) {
+          expect(
+            pages.findIndex((printedPage) => printed(printedPage.text, row)),
+            `${lines} line(s): "${row}" prints on the page of the issued totals
+${summary(pages)}`
+          ).toBe(totalsPage);
+        }
+        // No page carries settlement rows without the totals beside them.
+        pages.forEach((printedPage, index) => {
+          if (settlementRows.some((row) => printed(printedPage.text, row))) {
+            expect(
+              printed(printedPage.text, issued),
+              `${lines} line(s): page ${index + 1} holds settlement rows without the totals
+${summary(pages)}`
+            ).toBe(true);
+          }
+        });
+      }
+    });
+  }
 });

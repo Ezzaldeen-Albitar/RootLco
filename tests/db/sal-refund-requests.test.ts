@@ -668,6 +668,68 @@ describe('the payout is recorded once, after the approval', () => {
     });
   });
 
+  it('judges "not in the future" on the branch calendar, ahead of or behind the server (P1-32-PRE-OD-FRX)', async () => {
+    /*
+     * The guard used to compare with current_date, the SERVER's day. The branch's
+     * day is (now() AT TIME ZONE timezone_name)::date (D-17). At any instant one of
+     * two real zones disagrees with the server's day: UTC+14 is a day AHEAD once
+     * the UTC hour is 10 or later, UTC-12 a day BEHIND before noon. The case moves
+     * the fixture branch to whichever disagrees now, inside a rolled-back owner
+     * transaction, so it fails against the old comparison either way: ahead, the
+     * branch's today was refused; behind, the server's today was admitted.
+     */
+    await asOwnerRolledBack(async (c) => {
+      const ahead = 'Pacific/Kiritimati';
+      const behind = 'Etc/GMT+12';
+      const server = (await scalar(c, `SELECT current_date::text AS v`)) as string;
+      const dayIn = async (zone: string) =>
+        (await scalar(c, `SELECT ((now() AT TIME ZONE $1)::date)::text AS v`, [zone])) as string;
+      const zone = (await dayIn(ahead)) > server ? ahead : behind;
+      const branchDay = await dayIn(zone);
+      expect(branchDay, `${zone} must disagree with the server day ${server}`).not.toBe(server);
+      await c.query(
+        `INSERT INTO shared.timezones (zone_name, created_by) VALUES ($1, $2)
+         ON CONFLICT (zone_name) DO NOTHING`,
+        [zone, USER_A]
+      );
+      await c.query(`UPDATE org.branches SET timezone_name = $1 WHERE id = $2`, [zone, BRANCH_A1]);
+
+      const { obligation } = await owedBack(c, 'frx_branch_day', 40);
+      const id = await request(c, obligation, 15);
+      await approveAs(c, id);
+      // The day after the branch's today is in the future on every clock that matters.
+      expect(
+        tokenOf(
+          await refusal(c, `SELECT sal.execute_refund_request($1, $2, 'R1', ($3::date + 1))`, [
+            id,
+            P11.PM_CASH,
+            branchDay,
+          ])
+        )
+      ).toBe('refund_payout_date_invalid');
+      if (branchDay < server) {
+        // Behind: the server's today has not arrived at the branch.
+        expect(
+          tokenOf(
+            await refusal(c, `SELECT sal.execute_refund_request($1, $2, 'R1', $3::date)`, [
+              id,
+              P11.PM_CASH,
+              server,
+            ])
+          )
+        ).toBe('refund_payout_date_invalid');
+      }
+      // The branch's own today is recorded — ahead of the server, the old guard
+      // refused exactly this.
+      await execute(c, id, { reference: 'TRF-FRX', date: branchDay });
+      expect(
+        await scalar(c, `SELECT payout_date::text AS v FROM sal.refund_requests WHERE id = $1`, [
+          id,
+        ])
+      ).toBe(branchDay);
+    });
+  });
+
   it('settles the obligation exactly when what has been paid out reaches its amount', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const { obligation } = await owedBack(c, 'fd2b_settle', 40);

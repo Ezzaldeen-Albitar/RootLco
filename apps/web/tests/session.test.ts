@@ -239,8 +239,10 @@ describe('ending a session cross-site', () => {
 
 describe('a 403 is not an expired session', () => {
   it('keeps the cookie — clearing a VALID credential was the lockout', async () => {
-    // `P1-26-F-022`: the account authenticates but lacks `iam.user.read`.
-    // Clearing on 403 produced sign in -> 403 -> cleared -> sign in, for ever.
+    // `P1-26-F-022`: the account authenticated and its session read was refused
+    // (then for lacking `iam.user.read`, which the read no longer declares since
+    // P1-32-PRE-OD-FRX). Clearing on 403 produced sign in -> 403 -> cleared ->
+    // sign in, for ever, and a 403 from any cause must still keep the cookie.
     answerSessionWith(403);
     const target = await redirectTarget(() => requireSession('en'));
     expect(target).toBe('/en/login?reason=forbidden');
@@ -274,6 +276,73 @@ describe('the other failures keep their cookie too', () => {
   it('treats a 200 of the wrong SHAPE as unusable rather than trusting it', async () => {
     answerSessionWith(200, { userId: 'x' });
     expect(await redirectTarget(() => requireSession('en'))).toBe('/en/login?reason=unavailable');
+  });
+});
+
+/**
+ * P1-32-PRE-OD-FRX — the session read is an authenticated self-read.
+ *
+ * It used to require `iam.user.read`, so a role without the user-directory code
+ * — the seeded technician and cashier roles, a quotations-only role — was
+ * refused its own session on every dashboard page and sent back to sign-in with
+ * `reason=forbidden`. The backend now answers any authenticated caller its own
+ * facts; these cases hold the web half of that contract.
+ */
+describe('a role without the user-directory code opens the product', () => {
+  const QUOTATIONS_ONLY = {
+    ...SESSION,
+    permissions: ['quo.quotation.read', 'quo.quotation.manage', 'wo.work_order.read'],
+  };
+
+  function answerByPath(session: unknown) {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const path = new URL(url).pathname;
+        calls.push(path);
+        if (path === '/api/v1/auth/session') return respond(200, session);
+        if (path === WORKING_CONTEXT_PATH) return respond(200, CONTEXT_BODY);
+        return respond(404);
+      })
+    );
+    return calls;
+  }
+
+  it('is answered, not redirected to forbidden, when it holds only quo.* and wo.work_order.read', async () => {
+    answerByPath(QUOTATIONS_ONLY);
+    const session = await requireSession('en');
+    expect(session.permissions).toEqual(QUOTATIONS_ONLY.permissions);
+    expect(session.permissions).not.toContain('iam.user.read');
+    expect(jar.deleted).toEqual([]);
+  });
+
+  it('renders the dashboard layout with its own permissions and working context', async () => {
+    const calls = answerByPath(QUOTATIONS_ONLY);
+    const { default: DashboardLayout } = await import('@/app/[locale]/(dashboard)/layout');
+    // Throws NEXT_REDIRECT if the layout sends the operator anywhere; it must not.
+    const tree = (await DashboardLayout({
+      children: null,
+      params: Promise.resolve({ locale: 'en' }),
+    })) as { props: Record<string, unknown> };
+    const snapshot = tree.props.snapshot as { status: string };
+    expect(snapshot.status).toBe('ready');
+    const scope = tree.props.children as { props: Record<string, unknown> };
+    expect(scope.props.permissions).toEqual(QUOTATIONS_ONLY.permissions);
+    expect(calls).toEqual(['/api/v1/auth/session', WORKING_CONTEXT_PATH]);
+  });
+
+  it('still sends an account holding NO code at all to sign-in as forbidden, cookie kept', async () => {
+    // Answered 200 with its own facts now, where it used to be refused 403 — and
+    // it still opens nothing, so the sign-in page's "not permitted to open the
+    // application" stays the true sentence. The platform session is asked first
+    // (the stub refuses it), which is how the platform operator still reaches
+    // the console.
+    const calls = answerByPath({ ...SESSION, permissions: [] });
+    const target = await redirectTarget(() => requireSession('en'));
+    expect(target).toBe('/en/login?reason=forbidden');
+    expect(jar.deleted).toEqual([]);
+    expect(calls).toContain('/api/v1/platform/session');
   });
 });
 

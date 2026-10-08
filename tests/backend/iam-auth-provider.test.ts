@@ -19,7 +19,7 @@
  *   iam.auth-login: success denial audit
  *   iam.auth-logout: success audit idempotency
  *   iam.auth-session: success
- *   iam.working-context-read: success authorization
+ *   iam.working-context-read: success
  *   iam.auth-password-reset: success denial
  *   iam.auth-password-reset-completion: success denial idempotency
  *   iam.invitation-create: success denial cross-tenant audit outbox
@@ -658,6 +658,35 @@ describe('iam.auth-session', () => {
     expect(summary.tenantId).toBe(TENANT_A);
     expect(summary.email).toBe(EMAIL_ACTIVE);
     expect(Array.isArray(summary.permissions)).toBe(true);
+  });
+
+  /**
+   * P1-32-PRE-OD-FRX. The read is an authenticated self-read: it declares no
+   * permission code, so the service must be safe to answer for a principal that
+   * holds nothing. U_ACTIVE holds no role grant at all in this suite, and the
+   * answer is exactly its own seven facts with an empty permission list — no
+   * other account's identifier, address or name.
+   */
+  it('describeSession answers a principal with no role at all only its own facts', async () => {
+    const summary = await withTransaction(
+      contextFor({ userId: U_ACTIVE, operation: 'iam.auth-session', module: 'iam' }),
+      (db) => authService.describeSession(db)
+    );
+    expect(Object.keys(summary).sort()).toEqual([
+      'branchIds',
+      'companyIds',
+      'displayName',
+      'email',
+      'permissions',
+      'tenantId',
+      'userId',
+    ]);
+    expect(summary.permissions).toEqual([]);
+    expect(summary.displayName).toBe('Auth Active');
+    const serialised = JSON.stringify(summary);
+    for (const other of [U_ADMIN, U_NOAUTH, USER_A, EMAIL_ADMIN, EMAIL_NOAUTH]) {
+      expect(serialised).not.toContain(other);
+    }
   });
 });
 

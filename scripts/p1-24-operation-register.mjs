@@ -170,6 +170,7 @@ function readOperations() {
         summary: scalar(literal, 'summary'),
         permissions: list(literal, 'permissions'),
         public: boolean(literal, 'public'),
+        selfRead: boolean(literal, 'selfRead'),
         scope: scalar(literal, 'scope'),
         auditClass: scalar(literal, 'auditClass'),
         auditAction: scalar(literal, 'auditAction'),
@@ -488,6 +489,9 @@ function build() {
       route: `/api/v1${operation.path}`,
       permissions: operation.permissions,
       public: operation.public,
+      // P1-32-PRE-OD-FRX: an authenticated read of the caller's own facts with no
+      // permission code. Present only when true, so every other row is unchanged.
+      ...(operation.selfRead ? { selfRead: true } : {}),
       scope: operation.scope ?? 'tenant',
       transaction:
         operation.method === 'GET' ? 'read (no business mutation)' : 'transactional write',
@@ -662,7 +666,7 @@ function renderMarkdown(result) {
   for (const row of rows) {
     lines.push(
       `| \`${row.id}\` | ${row.method} | \`${row.route}\` | ${row.scope} | ` +
-        `${row.public ? '_public_' : row.permissions.map((p) => `\`${p}\``).join('<br>')} | ` +
+        `${row.public ? '_public_' : row.selfRead ? '_self-read_' : row.permissions.map((p) => `\`${p}\``).join('<br>')} | ` +
         `${row.auditClass === 'none' ? '—' : row.auditAction} | ` +
         `${row.idempotent ? 'yes' : '—'} | ${row.versionGuarded ? 'yes' : '—'} | ` +
         `${row.providedEvidence.join(' ') || '—'} | ${row.classification} |`

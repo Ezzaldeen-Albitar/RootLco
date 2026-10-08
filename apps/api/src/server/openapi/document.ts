@@ -237,7 +237,10 @@ function standardFailureResponses(operation: RegisteredOperation): JsonObject {
   };
   if (!operation.public) {
     responses['401'] = { $ref: '#/components/responses/Problem' };
-    responses['403'] = { $ref: '#/components/responses/Problem' };
+    // A self-read declares no code and names no scope, so there is nothing for a
+    // 403 to refuse (P1-32-PRE-OD-FRX); publishing one would tell a client it may
+    // be denied its own session.
+    if (!operation.selfRead) responses['403'] = { $ref: '#/components/responses/Problem' };
   }
   if (operation.answersNotFound) responses['404'] = { $ref: '#/components/responses/Problem' };
   if (operation.idempotent) responses['409'] = { $ref: '#/components/responses/Problem' };
@@ -323,6 +326,11 @@ function operationObject(operation: RegisteredOperation): JsonObject {
     // Machine-readable authorization metadata: the same declaration the runtime
     // enforces, so a reviewer can diff intent against behaviour.
     'x-required-permissions': operation.permissions,
+    // An authenticated read of the caller's own facts with no permission code
+    // (P1-32-PRE-OD-FRX). Published so the empty list above reads as a declared
+    // kind and not as a missing guard; `scripts/check-openapi.mjs` accepts an
+    // empty list on a secured operation only beside this flag.
+    ...(operation.selfRead ? { 'x-self-read': true } : {}),
     'x-scope': operation.scope,
     'x-audit-class': operation.auditClass,
     ...(operation.featureFlag ? { 'x-feature-flag': operation.featureFlag } : {}),

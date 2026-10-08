@@ -922,6 +922,58 @@ describe('D2 — an obligation belongs to the approval that created it (FD2B res
   });
 });
 
+describe('D2 — an obligation is written only by the approval of its own note (P1-32-PRE-OD-FRX)', () => {
+  it('refuses a raw obligation for the first of two notes approved in one transaction', async () => {
+    /*
+     * Both notes are approved in THIS transaction, so the "approved in the current
+     * transaction" rule admits either. Gross 100, 50 paid: credit A of 50 is within
+     * what is owed (no obligation); credit B of 50 then exceeds it and is owed back
+     * in full. A raw INSERT of 50 for A now matches the guard's arithmetic
+     * (50 less max(100 - 50 - 50, 0)) — only the transaction-local marker, which
+     * names B during B's approval and is cleared after, refuses it. Defence in
+     * depth, not a security boundary: a session can set the setting itself.
+     */
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { invoice, payer } = await paidInvoice(c, 'frx_marker_same_tx', 100, 50);
+      const noteA = await seedCreditNote(c, invoice, 50);
+      await approveAsSecond(c, noteA);
+      expect(await obligationsOf(c, invoice)).toEqual([]);
+      const noteB = await seedCreditNote(c, invoice, 50);
+      await approveAsSecond(c, noteB);
+      expect((await obligationsOf(c, invoice)).map((row) => row.amount)).toEqual(['50.0000']);
+      // The approval cleared its marker.
+      expect(
+        await scalar(
+          c,
+          `SELECT COALESCE(current_setting('sal.refund_obligation_credit_note', true), '') AS v`
+        )
+      ).toBe('');
+
+      const raw = await refusal(
+        c,
+        `INSERT INTO sal.refund_obligations
+           (tenant_id, company_id, branch_id, partner_id, invoice_id, credit_note_id, currency_code, amount, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,'USD','50.0000',$7)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, payer, invoice, noteA, USER_A]
+      );
+      expect(raw.code).toBe('23514');
+      expect(raw.message?.startsWith('refund_obligation_not_from_approval:')).toBe(true);
+      // A marker naming ANOTHER note does not admit it either.
+      await c.query(`SELECT set_config('sal.refund_obligation_credit_note', $1, true)`, [noteB]);
+      const misnamed = await refusal(
+        c,
+        `INSERT INTO sal.refund_obligations
+           (tenant_id, company_id, branch_id, partner_id, invoice_id, credit_note_id, currency_code, amount, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,'USD','50.0000',$7)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, payer, invoice, noteA, USER_A]
+      );
+      expect(misnamed.message?.startsWith('refund_obligation_not_from_approval:')).toBe(true);
+      // Still exactly B's obligation.
+      expect((await obligationsOf(c, invoice)).map((row) => row.amount)).toEqual(['50.0000']);
+    });
+  });
+});
+
 describe('D2 — the decision trigger holds the ceiling for a raw approval (FD2B residual b)', () => {
   it('refuses a raw UPDATE of approval_state above the gross less the approved credits', async () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {

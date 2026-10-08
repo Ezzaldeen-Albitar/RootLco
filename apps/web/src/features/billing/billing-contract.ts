@@ -755,3 +755,42 @@ export interface CreditNoteEcho {
 
 /** The shape `sal.credit-note-create` accepts, mirrored: unsigned, 14 integer digits, 4 decimals. */
 export const CREDIT_AMOUNT = /^\d{1,14}(\.\d{1,4})?$/;
+
+/**
+ * The rule tokens an invoice create or preview is refused with, each with the
+ * sentence the screen says for it (P1-32-PRE-OD-FRX, defect O2).
+ *
+ * A refused create used to re-read the screen under one generic caption, and a
+ * refused preview showed "unavailable", whatever the server said. Every one of
+ * these refusals is a 409 whose problem names its rule in `violations[0].rule`:
+ * the guard tokens of `INVOICE_SOURCE_REFUSALS`
+ * (`apps/api/src/modules/billing/domain/billing.ts`), `invoice_draft_open`,
+ * `invoice_nothing_to_bill`, and `invoice_source_ambiguous` — two quotations of
+ * one work order both holding approved work to bill, the open point ADR-023
+ * records under D5 and D15 (VL-P132-003) and which waits on the Owner.
+ *
+ * A token missing from this table keeps the generic sentence, so an unknown
+ * rule never reaches the screen as text.
+ */
+export const INVOICE_REFUSAL_MESSAGE_KEYS: Readonly<Record<string, string>> = Object.freeze({
+  invoice_draft_open: 'invoices.refusal.draftOpen',
+  invoice_nothing_to_bill: 'invoices.preview.nothingToBill',
+  invoice_source_ambiguous: 'invoices.refusal.sourceAmbiguous',
+  invoice_source_frozen: 'invoices.refusal.sourceFrozen',
+  invoice_source_foreign: 'invoices.refusal.sourceForeign',
+  invoice_source_mixed: 'invoices.refusal.sourceMixed',
+  invoice_source_line_required: 'invoices.refusal.sourceLineRequired',
+  invoice_source_line_foreign: 'invoices.refusal.sourceLineForeign',
+  invoice_line_type_mismatch: 'invoices.refusal.lineTypeMismatch',
+  invoice_line_not_billable: 'invoices.refusal.lineNotBillable',
+  invoice_quantity_exceeds_approved: 'invoices.refusal.quantityExceedsApproved',
+  invoice_amount_exceeds_approved: 'invoices.refusal.amountExceedsApproved',
+});
+
+/** The sentence key for a refusal's rule, or `null` when the rule is not one of these. */
+export function invoiceRefusalMessageKey(rule: string | null | undefined): string | null {
+  if (typeof rule !== 'string') return null;
+  return Object.prototype.hasOwnProperty.call(INVOICE_REFUSAL_MESSAGE_KEYS, rule)
+    ? (INVOICE_REFUSAL_MESSAGE_KEYS[rule] ?? null)
+    : null;
+}

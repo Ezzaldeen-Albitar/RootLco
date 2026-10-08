@@ -2,6 +2,7 @@
 
 import { authorizedClient } from '@/lib/api/server-client';
 import {
+  STATUS_BY_KIND,
   branchTargetQuery,
   readOperation,
   type BranchTarget,
@@ -108,8 +109,37 @@ export async function readWorkOrderInvoice(
  * approved line answers 404, which the screen states as that, never as an
  * empty preview.
  */
-export async function readInvoicePreview(workOrderId: string): Promise<ReadState<InvoicePreview>> {
-  return readOperation<InvoicePreview>(workOrderPath(workOrderId, '/invoice-preview'));
+/**
+ * A preview read, carrying the rule a refused one names (P1-32-PRE-OD-FRX).
+ *
+ * `rule` is the FIRST violation's rule token of a refusal, or `null`. A 409 on
+ * the preview is never an outage: the work order cannot be invoiced as it
+ * stands, and the rule says why (`invoice_source_ambiguous` for two quotations
+ * with approved work, `invoice_nothing_to_bill` when nothing remains on any of
+ * them). The screen turns a known rule into its own sentence.
+ */
+export type InvoicePreviewRead = ReadState<InvoicePreview> & { readonly rule?: string | null };
+
+export async function readInvoicePreview(workOrderId: string): Promise<InvoicePreviewRead> {
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', correlationId: null };
+  const result = await client.get<InvoicePreview>(workOrderPath(workOrderId, '/invoice-preview'));
+  if (result.ok) {
+    return { status: 'ok', data: result.data, correlationId: result.correlationId };
+  }
+  return {
+    status: STATUS_BY_KIND[result.kind],
+    correlationId: result.correlationId,
+    rule: result.kind === 'conflict' ? refusalRuleOf(result.problem) : null,
+  };
+}
+
+/** The first violation's rule token of a problem, or `null` when it names none. */
+function refusalRuleOf(
+  problem: { readonly violations?: readonly { readonly rule?: unknown }[] } | null | undefined
+): string | null {
+  const rule = problem?.violations?.[0]?.rule;
+  return typeof rule === 'string' && rule.length > 0 ? rule : null;
 }
 
 /** The invoice and its lines (`sal.invoice-detail`); `recordVersion` is what issue and cancel carry. */
@@ -142,13 +172,21 @@ export async function createInvoice(
   body: InvoiceCreateBody,
   idempotencyKey: string,
   attempt = 1
-): Promise<CreateOutcome<CreatedInvoice>> {
+): Promise<CreateOutcome<CreatedInvoice> & { readonly rule?: string | null }> {
   const client = await authorizedClient();
   if (!client) return { state: expired(attempt), created: null };
   const result = await client.send<CreatedInvoice>('POST', '/api/v1/invoices', body, {
     idempotencyKey,
   });
-  if (!result.ok) return { state: fromFailure(result, attempt), created: null };
+  if (!result.ok) {
+    // The rule a refused create names (P1-32-PRE-OD-FRX): the screen says it in
+    // its own sentence instead of the generic re-read caption.
+    return {
+      state: fromFailure(result, attempt),
+      created: null,
+      rule: result.kind === 'conflict' ? refusalRuleOf(result.problem) : null,
+    };
+  }
   return {
     state: { ...success('invoices.create.success', attempt), correlationId: result.correlationId },
     created: result.data,

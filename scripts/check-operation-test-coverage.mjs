@@ -17,8 +17,9 @@
  * `defineOperation({...})` registration**:
  *
  *   every shared operation                     → route · service · success
- *   not `public: true`                         → authorization
+ *   not `public: true`, not `selfRead: true`   → authorization
  *   `public: true`                             → unauthenticated
+ *   `selfRead: true` (P1-32-PRE-OD-FRX)        → self-read
  *   a `{param}` in the path                    → cross-tenant
  *   `idempotent: true`                         → idempotency
  *   `versionGuarded: true`                     → stale-version
@@ -283,6 +284,9 @@ export const isDerivedId = (id) =>
  *   authorization    a caller lacking the declared permission is refused 403
  *   unauthenticated  a `public: true` route answers with NO authenticator
  *                    installed and discloses nothing a session would protect
+ *   self-read        a `selfRead: true` route answers 401 with no session, and
+ *                    answers a caller holding NO permission code 200 with its
+ *                    own facts and nobody else's (P1-32-PRE-OD-FRX)
  *   success          the happy path is asserted end to end
  *   denial           a validation or state refusal is asserted
  *   cross-tenant     a real row belonging to the other tenant is unreachable
@@ -307,6 +311,7 @@ export const EVIDENCE_KINDS = Object.freeze([
   'service',
   'authorization',
   'unauthenticated',
+  'self-read',
   'success',
   'denial',
   'cross-tenant',
@@ -2052,16 +2057,16 @@ export const MANIFEST = {
       'tests/backend/p1-24-iam-route-depth.test.ts',
       'tests/backend/p1-29-w9-owner-bootstrap.test.ts',
     ],
-    required: ['success'],
-    note: 'describeSession resolves identity, scope, permissions',
+    required: ['success', 'self-read'],
+    note: 'describeSession resolves identity, scope, permissions; an authenticated self-read since P1-32-PRE-OD-FRX: no session is a 401, and a caller holding no permission code, or only quo.* and wo.work_order.read, is answered 200 with its own facts and nobody else',
   },
   'iam.working-context-read': {
     files: [
       'tests/backend/iam-auth-provider.test.ts',
       'tests/backend/p1-24-iam-route-depth.test.ts',
     ],
-    required: ['success', 'authorization'],
-    note: 'the caller own companies and branches, narrowed by sel_legal_companies_tenant and sel_branches_scope; a branch-scoped caller sees only its branches, an unrestricted one the whole tenant, a grant-less one nothing, and no other tenant row is ever named',
+    required: ['success', 'self-read'],
+    note: 'the caller own companies and branches, narrowed by sel_legal_companies_tenant and sel_branches_scope; a branch-scoped caller sees only its branches, an unrestricted one the whole tenant, a grant-less one nothing, and no other tenant row is ever named; an authenticated self-read since P1-32-PRE-OD-FRX, so a caller holding no permission code is answered 200 with its own reach and an unauthenticated one 401',
   },
   'iam.auth-password-reset': {
     files: [
@@ -3871,6 +3876,7 @@ export function scanRegisteredOperations(root = REPOSITORY_ROOT) {
               scope: literalString(literal, 'scope'),
               auditClass: literalString(literal, 'auditClass'),
               public: literalTrue(literal, 'public'),
+              selfRead: literalTrue(literal, 'selfRead'),
               idempotent: literalTrue(literal, 'idempotent'),
               versionGuarded: literalTrue(literal, 'versionGuarded'),
               surface:
@@ -3922,7 +3928,12 @@ export function derivedRequirements(operation) {
   }
 
   const required = ['route', 'service', 'success'];
-  required.push(operation.public ? 'unauthenticated' : 'authorization');
+  // A self-read declares no code, so "a caller lacking the declared permission is
+  // refused" has nothing to refuse; what it owes instead is the proof that it is
+  // still authenticated and still answers about the caller alone.
+  required.push(
+    operation.public ? 'unauthenticated' : operation.selfRead ? 'self-read' : 'authorization'
+  );
   // A caller-supplied resource identifier in the path IS the cross-tenant risk.
   if (!operation.public && typeof operation.path === 'string' && operation.path.includes('{')) {
     required.push('cross-tenant');
@@ -4345,7 +4356,9 @@ export function evaluateCoverage({ registered, manifest, readFile }) {
     m.missing.length === 0 &&
     m.provided.includes('route') &&
     m.provided.includes('service') &&
-    (m.provided.includes('authorization') || m.provided.includes('unauthenticated'));
+    (m.provided.includes('authorization') ||
+      m.provided.includes('unauthenticated') ||
+      m.provided.includes('self-read'));
 
   const phaseCounts = (rows) => ({
     registered: rows.length,

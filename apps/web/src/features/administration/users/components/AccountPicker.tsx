@@ -16,10 +16,10 @@ import { listUsers, type UserRow } from '../api';
  *
  * `iam.user-list` (`iam.user.read`), searched on the server by the free-text
  * `search` it publishes. The term is held in memory and never reaches the
- * address. `GET /auth/session` itself requires `iam.user.read`, so an operator
- * who could load an administration screen holds it; a caller who does not is
- * still given the labelled reference box they had before, by the screen that
- * renders this picker — the picker offers no search and says why.
+ * address. Holding `iam.user.read` is not implied by being signed in —
+ * `GET /auth/session` declares no code since P1-32-PRE-OD-FRX — so a caller who
+ * does not hold it is still given the labelled reference box they had before, by
+ * the screen that renders this picker — the picker offers no search and says why.
  *
  * ## Every status is offered
  *

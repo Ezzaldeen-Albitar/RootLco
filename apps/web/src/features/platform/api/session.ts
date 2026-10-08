@@ -92,15 +92,24 @@ export async function requirePlatformSession(locale: Locale): Promise<PlatformSe
  * A session answer that carries no readable permission list keeps the workspace
  * root, where the dashboard page applies the same rule.
  *
- * Only when the tenant read fails and the platform session succeeds does the
- * sign-in go to the console. Anything else keeps today's destination, where the
- * workspace layout explains the problem.
+ * Only when the tenant read opens nothing and the platform session succeeds does
+ * the sign-in go to the console. Anything else keeps today's destination, where
+ * the workspace layout explains the problem.
+ *
+ * "Opens nothing" is a refusal or, since the session read became an authenticated
+ * self-read (P1-32-PRE-OD-FRX), a 200 carrying an EMPTY permission list. The
+ * platform operator holds no tenant role by construction, so its session read
+ * used to answer 403 and now answers its own facts with no code; both mean the
+ * workspace holds nothing for this account, and both still ask the platform.
  */
 export async function destinationAfterSignIn(client: ApiClient, locale: Locale): Promise<string> {
   const tenant = await client.get<unknown>(TENANT_SESSION_PATH, { retries: 0 });
   if (tenant.ok) {
     const permissions = permissionsOf(tenant.data);
-    return permissions === null ? `/${locale}` : landingPath(locale, permissions);
+    if (permissions === null) return `/${locale}`;
+    if (permissions.length > 0) return landingPath(locale, permissions);
+    const platform = await readPlatformSession(client);
+    return platform.ok ? `/${locale}/platform` : `/${locale}`;
   }
   const platform = await readPlatformSession(client);
   return platform.ok ? `/${locale}/platform` : `/${locale}`;

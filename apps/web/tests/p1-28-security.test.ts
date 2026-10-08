@@ -33,11 +33,11 @@ import {
 } from '@/features/receptions/people/receiving-employee-directory';
 import {
   USER_DIRECTORY_ACTOR_OPERATION,
-  USER_DIRECTORY_BOOTSTRAP_OPERATION,
   USER_DIRECTORY_FORBIDDEN_OPERATION,
   USER_DIRECTORY_OPERATIONS,
   USER_DIRECTORY_PERMISSION,
   USER_DIRECTORY_SCOPE,
+  USER_DIRECTORY_SELF_READS,
 } from '@/features/receptions/people/user-directory';
 import type { CheckInCapabilities } from '@/features/receptions/check-in/wizard';
 import { branchTargetQuery, query } from '@/lib/api/read-operation';
@@ -247,6 +247,8 @@ interface RegisterOperation {
   readonly route: string;
   readonly permissions: readonly string[];
   readonly scope: string;
+  /** Present, and true, only on an authenticated self-read (P1-32-PRE-OD-FRX). */
+  readonly selfRead?: boolean;
 }
 
 /** The P1-24 operation register — what the platform actually publishes. */
@@ -518,7 +520,7 @@ describe('P1-28-SEC-001 — the receiving-employee picker, and what iam.user.rea
     expect(screen).toContain("from '../people/receiving-employee-directory'");
   });
 
-  it('iam.user.read is still spent — on ACTOR names, and the bootstrap is still why', () => {
+  it('iam.user.read is still spent — on ACTOR names, and no longer implied by the session', () => {
     /*
      * The old disposition is not deleted, it is narrowed to the population that
      * genuinely has no snapshot: who recorded an inspection, who bound evidence,
@@ -530,9 +532,9 @@ describe('P1-28-SEC-001 — the receiving-employee picker, and what iam.user.rea
       USER_DIRECTORY_PERMISSION
     );
 
-    // Four since the Owner directive (P1-32-PRE-OD-UX) added
-    // `iam.working-context-read`, the caller's own directory-class read.
-    expect(USER_DIRECTORY_OPERATIONS.length).toBe(4);
+    // Two since P1-32-PRE-OD-FRX: the session and working-context reads stopped
+    // registering the directory code when they became authenticated self-reads.
+    expect(USER_DIRECTORY_OPERATIONS.length).toBe(2);
     for (const id of USER_DIRECTORY_OPERATIONS) {
       expect(operation(id).permissions, id).toContain(USER_DIRECTORY_PERMISSION);
     }
@@ -543,9 +545,31 @@ describe('P1-28-SEC-001 — the receiving-employee picker, and what iam.user.rea
     ).map((entry) => entry.id);
     expect(everywhere.sort()).toEqual([...USER_DIRECTORY_OPERATIONS].sort());
 
-    // The argument that makes the code universal, unchanged and still load-bearing.
-    expect(USER_DIRECTORY_BOOTSTRAP_OPERATION).toBe('iam.auth-session');
-    expect(operation('iam.auth-session').permissions).toContain(USER_DIRECTORY_PERMISSION);
+    // The argument that used to make the code universal is gone, and that is
+    // asserted rather than stated: both reads that every page makes declare NO
+    // code and are registered as self-reads. So a caller may open the
+    // application without the directory code, and actor names are resolved only
+    // where the session actually holds it (`readStaffDirectory`).
+    expect([...USER_DIRECTORY_SELF_READS].sort()).toEqual([
+      'iam.auth-session',
+      'iam.working-context-read',
+    ]);
+    for (const id of USER_DIRECTORY_SELF_READS) {
+      expect(operation(id).permissions, id).toEqual([]);
+      expect(operation(id).selfRead, id).toBe(true);
+    }
+    const wizardPage = webFile(
+      'app',
+      '[locale]',
+      '(dashboard)',
+      'receptions',
+      'check-in',
+      '[receptionId]',
+      'page.tsx'
+    );
+    expect(wizardPage).toContain(
+      'readStaffDirectory: holds(session.permissions, USER_DIRECTORY_PERMISSION)'
+    );
   });
 
   it('G-EMP is CLOSED, and the closure is read from the migration rather than asserted', () => {

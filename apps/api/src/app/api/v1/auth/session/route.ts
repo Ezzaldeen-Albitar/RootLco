@@ -14,6 +14,19 @@
  * `cacheCategory: 'never'` and the pipeline's `Cache-Control: no-store, private`
  * are both deliberate: a cached permission list is a stale permission list, and
  * a revoked grant must stop working immediately.
+ *
+ * ## An authenticated self-read, not a directory read (P1-32-PRE-OD-FRX)
+ *
+ * It used to declare `iam.user.read`, the code that opens the tenant's user
+ * directory. Every dashboard page reads this before it renders, so a role that
+ * legitimately lacks that code — the seeded technician and cashier roles, a
+ * quotations-only role — was refused its own session and could not open the
+ * product at all. It now registers as `selfRead`: the pipeline still requires an
+ * authenticated, resolved, non-revoked session (no session is a 401), and the
+ * body is the caller's own identity, scope and permissions and nothing about
+ * anybody else. A principal holding no role at all is answered with its own
+ * facts and an empty permission list. Other people's names stay behind
+ * `iam.user-detail`, which keeps `iam.user.read`.
  */
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
@@ -28,7 +41,10 @@ export const SESSION_OPERATION = defineOperation({
   method: 'GET',
   path: '/auth/session',
   summary: 'Describe the current session, its resolved scope, and its permissions.',
-  permissions: ['iam.user.read'],
+  selfRead: true,
+  selfReadReason:
+    'Answers the authenticated caller its own identity, resolved scope and permissions, and ' +
+    'nothing about any other account; every product page reads it before it renders.',
   scope: 'tenant',
   auditClass: 'none',
   rateLimitPolicy: 'low-risk-metadata',

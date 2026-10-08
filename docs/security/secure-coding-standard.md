@@ -37,6 +37,25 @@ Each rule carries its honest status today and its primary ASVS 5.0.0 anchor
 | R11 | **Safe concurrency.** Shared mutable state is serialized (database: `FOR UPDATE` per [transaction-and-concurrency-standard.md](../database/transaction-and-concurrency-standard.md)); check-then-act sequences are made atomic.                                                                     | V15.4              | Database pattern verified by the 50-worker tests; application scope with backend phases                       |
 | R12 | **No dynamic code execution on untrusted input.** No `eval`, `new Function`, or template execution built from user data.                                                                                                                                                                            | V1.3/V15           | Binding; trivially satisfied today, checked in review                                                         |
 
+### R4 and the authenticated self-read (P1-32-PRE-OD-FRX)
+
+Every API operation declares the permission codes it requires, or is `public: true` with a written
+reason and no session at all. One further kind exists, and it is closed: `selfRead: true`, with a
+written `selfReadReason`, accepted only for the ids in `SELF_READ_OPERATION_IDS`
+(`apps/api/src/server/auth/operation-registry.ts`) — today `iam.auth-session` and
+`iam.working-context-read`. A self-read still requires an authenticated, resolved, non-revoked
+session (no session is a 401), declares no permission code, is a tenant-scope `GET` with no audit
+class, no target and no write semantics, and answers only facts about the caller: its own identity,
+scope and permissions, and the companies and branches its own grants reach. The registry refuses the
+kind for any other id, `scripts/check-authorization-coverage.mjs` holds the same list against every
+literal declaration, and the published contract marks it with `x-self-read`.
+
+The defect it closes: both reads used to declare `iam.user.read`, the user-directory code, so a role
+that lacked it — the seeded technician and cashier roles, a quotations-only role — was refused its
+own session on every product page and could not open the application. Deny-by-default is unchanged:
+the directory itself (`iam.user-list`, `iam.user-detail`) keeps `iam.user.read`, and a role without
+it still sees other people's names as unavailable. No grant, role bundle or backfill moved.
+
 ## 3. Review enforcement
 
 Every pull request is checked against this table under the
