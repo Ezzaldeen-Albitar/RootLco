@@ -152,3 +152,14 @@ never by reset.
 
 Period close and financial statements, which wait for the accounting questionnaire. A dedicated
 snapshot permission code is an open Owner question.
+
+## 9. Addendum — the save gate (P1-32-PRE-OD-FD16C)
+
+The `rpt.export` requirement described in sections 2 and 3 left no tenant account able to save a
+snapshot: `rpt.export` is withheld from every tenant administrator by the Owner decision CC-04 and
+cannot be granted by delegation. Migration `20261008110000_rpt_report_snapshot_save_gate.sql`
+replaces it with `rpt.report.configure` in `ins_report_snapshots_scope`, and the operation and the
+service moved with it; the bound on concurrent snapshot reads and the race-path refusal entity
+landed in the same change. See
+[DBCR-P1-32-PRE-OD-FD16C-001](DBCR-P1-32-PRE-OD-FD16C-001-rpt-report-snapshot-save-gate.md). This
+DBCR's migration is unchanged.

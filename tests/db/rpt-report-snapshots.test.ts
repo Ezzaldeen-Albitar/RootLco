@@ -46,19 +46,23 @@ const READER = 'd16b0000-0000-4000-8000-000000000012';
 const NO_FINANCE = 'd16b0000-0000-4000-8000-000000000013';
 const NO_REPORT_READ = 'd16b0000-0000-4000-8000-000000000014';
 const SCOPED_ELSEWHERE = 'd16b0000-0000-4000-8000-000000000015';
-const READER_NO_EXPORT = READER;
+/** rpt.report.read, the frozen code and the export switch, but not rpt.report.configure. */
+const EXPORT_ONLY = 'd16b0000-0000-4000-8000-000000000016';
+const READER_NO_CONFIGURE = READER;
 
 const ROLE_SAVER = 'd16b0000-0000-4000-8000-000000000021';
 const ROLE_READER = 'd16b0000-0000-4000-8000-000000000022';
 const ROLE_NO_FINANCE = 'd16b0000-0000-4000-8000-000000000023';
 const ROLE_NO_REPORT_READ = 'd16b0000-0000-4000-8000-000000000024';
+const ROLE_EXPORT_ONLY = 'd16b0000-0000-4000-8000-000000000025';
 const SCOPED_GRANT = 'd16b0000-0000-4000-8000-000000000031';
 
 const ROLES: ReadonlyArray<readonly [string, string, readonly string[]]> = [
-  [ROLE_SAVER, 'd16b_saver', ['rpt.report.read', 'sal.finance.view', 'rpt.export']],
+  [ROLE_SAVER, 'd16b_saver', ['rpt.report.read', 'sal.finance.view', 'rpt.report.configure']],
   [ROLE_READER, 'd16b_reader', ['rpt.report.read', 'sal.finance.view']],
-  [ROLE_NO_FINANCE, 'd16b_no_finance', ['rpt.report.read', 'rpt.export']],
-  [ROLE_NO_REPORT_READ, 'd16b_no_report_read', ['sal.finance.view', 'rpt.export']],
+  [ROLE_NO_FINANCE, 'd16b_no_finance', ['rpt.report.read', 'rpt.report.configure']],
+  [ROLE_NO_REPORT_READ, 'd16b_no_report_read', ['sal.finance.view', 'rpt.report.configure']],
+  [ROLE_EXPORT_ONLY, 'd16c_export_only', ['rpt.report.read', 'sal.finance.view', 'rpt.export']],
 ];
 
 const ctx = (userId: string) => ({ tenantId: TENANT_A, userId });
@@ -159,6 +163,7 @@ beforeAll(async () => {
     [NO_FINANCE, 'd16b-no-finance'],
     [NO_REPORT_READ, 'd16b-no-report-read'],
     [SCOPED_ELSEWHERE, 'd16b-scoped'],
+    [EXPORT_ONLY, 'd16c-export-only'],
   ] as const) {
     await admin.query(
       `INSERT INTO iam.user_accounts
@@ -189,6 +194,7 @@ beforeAll(async () => {
       [READER, ROLE_READER],
       [NO_FINANCE, ROLE_NO_FINANCE],
       [NO_REPORT_READ, ROLE_NO_REPORT_READ],
+      [EXPORT_ONLY, ROLE_EXPORT_ONLY],
     ] as const) {
       await client.query(
         `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
@@ -362,8 +368,26 @@ describe('row-level security', () => {
     expect(await visible(NO_FINANCE, id, readonly)).toBe(0);
   });
 
-  it('refuses a snapshot from a caller without rpt.export or without the frozen codes', async () => {
-    for (const userId of [READER_NO_EXPORT, NO_FINANCE, NO_REPORT_READ]) {
+  it('admits a snapshot with rpt.report.configure, rpt.report.read and the frozen codes', async () => {
+    // P1-32-PRE-OD-FD16C: SAVER holds no rpt.export at all.
+    await withRolledBackTx(runtime, ctx(SAVER), async (c) => {
+      expect(
+        await sqlState(c, () => insertSnapshot(c, { from: '2026-02-01', to: '2026-03-01' }))
+      ).toBeNull();
+    });
+  });
+
+  it('refuses a snapshot from a caller with the export switch but not rpt.report.configure', async () => {
+    // The export switch was the save gate of 20261008100000; it no longer suffices.
+    await withRolledBackTx(runtime, ctx(EXPORT_ONLY), async (c) => {
+      expect(await sqlState(c, () => insertSnapshot(c, { generatedBy: EXPORT_ONLY }))).toBe(
+        '42501'
+      );
+    });
+  });
+
+  it('refuses a snapshot from a caller without rpt.report.configure or without the frozen codes', async () => {
+    for (const userId of [READER_NO_CONFIGURE, NO_FINANCE, NO_REPORT_READ]) {
       await withRolledBackTx(runtime, ctx(userId), async (c) => {
         expect(await sqlState(c, () => insertSnapshot(c)), userId).toBe('42501');
       });

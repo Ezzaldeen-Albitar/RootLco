@@ -2098,8 +2098,10 @@ describe('P1-31-SEC-001 SE-5M — the declared codes are SUFFICIENT, not merely 
         held: [...operation.codes].sort(),
       });
     }
-    // Fourteen distinct sets across the forty-seven, so fourteen accounts.
-    expect(MINIMAL_ACTORS.size).toBe(14);
+    // Fifteen distinct sets across the fifty, so fifteen accounts. The fifteenth is
+    // rpt.report.configure + rpt.report.read, the snapshot save of
+    // P1-32-PRE-OD-FD16C, which no longer shares rpt.export with the CSV export.
+    expect(MINIMAL_ACTORS.size).toBe(15);
 
     // And every code any minimal caller holds is a real catalogue row: a misspelling
     // would silently grant nothing and turn each SUFFICIENCY case below into a probe

@@ -105,6 +105,7 @@ const WORK_ORDER_ID = '44444444-4444-4444-8444-444444444444';
 const PARTNER_ID = '88888888-8888-4888-8888-888888888888';
 const CODE = 'work_orders_by_status';
 const READ = 'rpt.report.read';
+const CONFIGURE = 'rpt.report.configure';
 
 const SCOPES = {
   status: 'ok' as const,
@@ -1526,7 +1527,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
   });
 
   it('lists the period’s snapshots by name, never by identifier, with the chain visible', async () => {
-    PERMISSIONS = [READ, 'rpt.export'];
+    PERMISSIONS = [READ, CONFIGURE];
     await showReport();
     const list = await screen.findByTestId('report-snapshot-list');
     expect(listReportSnapshots).toHaveBeenCalledWith(
@@ -1549,7 +1550,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
   });
 
   it('saves a snapshot after a confirmation stating the scope, the period and the moment', async () => {
-    PERMISSIONS = [READ, 'rpt.export'];
+    PERMISSIONS = [READ, CONFIGURE];
     saveReportSnapshot.mockResolvedValue({
       status: 'success',
       messageKey: 'reports.snapshots.saved',
@@ -1589,7 +1590,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
   });
 
   it('says a refused save in its own words, inside the confirmation', async () => {
-    PERMISSIONS = [READ, 'rpt.export'];
+    PERMISSIONS = [READ, CONFIGURE];
     saveReportSnapshot.mockResolvedValue({
       status: 'conflict',
       messageKey: 'form.violation.report_snapshot_exists',
@@ -1656,7 +1657,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
   });
 
   it('restates only the latest snapshot, and only with a reason', async () => {
-    PERMISSIONS = [READ, 'rpt.export'];
+    PERMISSIONS = [READ, CONFIGURE];
     saveReportSnapshot.mockResolvedValue({
       status: 'success',
       messageKey: 'reports.snapshots.restatedSaved',
@@ -1714,8 +1715,31 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
     );
   });
 
-  it('offers neither save nor restate without the export permission', async () => {
-    PERMISSIONS = [READ];
+  it('offers save and restate with the configure permission, without the export switch', async () => {
+    // P1-32-PRE-OD-FD16C: a snapshot is saved under rpt.report.configure. The
+    // export switch is withheld from every tenant administrator, so gating the
+    // actions on it left no tenant account able to save one.
+    PERMISSIONS = [READ, CONFIGURE];
+    await showReport();
+    const user = userEvent.setup();
+    const list = await screen.findByTestId('report-snapshot-list');
+    expect(
+      screen.getByRole('button', { name: EN['reports.snapshots.save'] as string })
+    ).toBeVisible();
+    await user.click(
+      within(within(list).getAllByTestId('report-snapshot-item')[0] as HTMLElement).getByRole(
+        'button',
+        { name: EN['reports.snapshots.view'] as string }
+      )
+    );
+    await screen.findByTestId('report-snapshot-banner');
+    expect(
+      screen.getByRole('button', { name: EN['reports.snapshots.restate'] as string })
+    ).toBeVisible();
+  });
+
+  it('offers neither save nor restate without the configure permission, even with export', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
     await showReport();
     const user = userEvent.setup();
     const list = await screen.findByTestId('report-snapshot-list');
@@ -1735,7 +1759,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
   });
 
   it('shows no snapshots for a report that keeps none', async () => {
-    PERMISSIONS = [READ, 'rpt.export'];
+    PERMISSIONS = [READ, CONFIGURE];
     runReport.mockResolvedValue(runOk({ ...SNAP_ENVELOPE, snapshots: false }));
     await showReport();
     await screen.findByTestId('report-as-of');
@@ -1744,7 +1768,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
   });
 
   it('reads in Arabic as Arabic, right to left', async () => {
-    PERMISSIONS = [READ, 'rpt.export'];
+    PERMISSIONS = [READ, CONFIGURE];
     const { container } = await showReport('ar');
     const panel = await within(container).findByTestId('report-snapshots');
     expect(panel).toHaveTextContent(AR['reports.snapshots.heading'] as string);

@@ -175,8 +175,9 @@ export function ReportScreen({
   readonly canExport?: boolean;
   /**
    * Whether the operator may save and restate a frozen snapshot of a report that
-   * keeps them (Owner decision D16, P1-32-PRE-OD-FD16B): `rpt.export`, which the
-   * backend requires to save one. Reading the snapshots needs only the report.
+   * keeps them (Owner decision D16, P1-32-PRE-OD-FD16C): `rpt.report.configure`,
+   * which the backend requires to save one with the report's own codes. Reading
+   * the snapshots needs only the report.
    */
   readonly canSnapshot?: boolean;
   /**

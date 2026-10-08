@@ -1516,7 +1516,9 @@ Three words, and they mean different things:
   recorded and cannot be backdated, so reading the same period as of the same moment gives the same
   figures.
 - **Snapshot** — a saved copy of one reading of the report, exactly as it was shown: the branch,
-  the period, the moment, and every row. It is never changed afterwards.
+  the period, the moment, and every row. It is never changed afterwards. It stays inside the
+  application and only people allowed to see the report's amounts can read it, so it is not an
+  export. Saving one needs the permission to configure reports (6.5.4b).
 - **Restatement** — a later snapshot of the same branch and period that names the snapshot it
   replaces, says why, and shows what changed. The earlier snapshot is kept, marked as restated.
   Nothing is overwritten.
@@ -1599,10 +1601,17 @@ name is not shown to you" <!-- reports.snapshots.nameHidden --> rather than show
 - **Too large.** A report too large to keep is refused: "This report is too large to keep as a
   snapshot. Choose a shorter period." <!-- form.violation.report_snapshot_too_large --> The limit is
   the same one the export uses.
-- **Who may do what.** Saving and restating need the export permission, and the buttons are shown
-  only to accounts that hold it. Reading the saved snapshots needs only the permission to read the
-  report and to see its amounts. A dedicated permission for snapshots is an open question for the
-  Owner.
+- **Who may do what.** Saving and restating need the permission to configure reports, together with
+  the permission to read the report and to see its amounts, in the branch. The buttons are shown only
+  to accounts that hold it. The export permission is not needed and is not enough on its own: a
+  snapshot stays inside the application, while the export permission is for files that leave it, and
+  it is not given to company administrators. The administrator role of a new organisation already
+  holds the permission to configure reports. Reading the saved snapshots needs only the permission to
+  read the report and to see its amounts. A dedicated permission for snapshots is an open question
+  for the Owner; until it is decided, the permission to configure reports is used.
+- **Many saves at once.** When too many snapshots are being saved at the same moment, a save is
+  refused straight away and can be tried again a few seconds later; nothing is saved by the refused
+  attempt.
 - Every saved snapshot is recorded in the audit log with the report, the period, the moment, the
   number of rows and a fingerprint of the saved rows (6.7).
 
