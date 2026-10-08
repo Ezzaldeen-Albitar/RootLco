@@ -5060,6 +5060,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/backend/p1-32-inventory-operations.test.ts"
       ],
@@ -7736,6 +7737,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-30-a2-inventory-reads.test.ts",
         "tests/backend/p1-30-w5-parts-movements.test.ts"
       ],
@@ -12420,6 +12422,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-23-authorization.test.ts",
         "tests/backend/p1-23-reporting.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
@@ -12875,6 +12878,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/backend/p1-31-report-engine-inventory-movements.test.ts",
         "tests/backend/p1-31-report-engine-invoice-payment.test.ts",
@@ -13227,6 +13231,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-22-credit-note.test.ts",
         "tests/backend/p1-31-provisioning-bundle.test.ts",
         "tests/backend/p1-31-report-engine-invoice-payment.test.ts"
@@ -13253,6 +13258,7 @@
       "providedEvidence": ["authorization", "denial", "isolation", "route", "service", "success"],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-22-credit-note.test.ts",
         "tests/backend/p1-31-provisioning-bundle.test.ts"
       ],
@@ -14035,6 +14041,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-31-delivery-list-seam.test.ts",
         "tests/backend/p1-31-delivery-read-seam.test.ts",
         "tests/backend/p1-31-delivery-readiness-seam.test.ts",
@@ -14081,6 +14088,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-31-delivery-readiness-seam.test.ts",
         "tests/backend/p1-31-privilege-escalation.test.ts",
         "tests/ci/p1-31-error-path-matrix.test.ts"
@@ -14451,6 +14459,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-22-currency-coherence.test.ts",
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
         "tests/backend/p1-22-isolation.test.ts",
@@ -14548,7 +14557,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-30-w6-invoices.test.ts"],
+      "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
+        "tests/backend/p1-30-w6-invoices.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/invoices/route.ts"
     },
@@ -14587,6 +14599,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-22-currency-coherence.test.ts",
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
         "tests/backend/p1-22-isolation.test.ts",
@@ -14630,6 +14643,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-22-invoice-lifecycle.test.ts",
         "tests/backend/p1-22-isolation.test.ts",
         "tests/backend/p1-30-w6-invoices.test.ts"
@@ -14802,6 +14816,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-22-currency-coherence.test.ts",
         "tests/backend/p1-22-isolation.test.ts",
         "tests/backend/p1-22-payments.test.ts",
@@ -14849,6 +14864,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-22-isolation.test.ts",
         "tests/backend/p1-30-a2-published-reads.test.ts",
         "tests/backend/p1-30-w7-payments.test.ts",
@@ -15121,7 +15137,10 @@
         "success"
       ],
       "missingEvidence": [],
-      "tests": ["tests/backend/p1-31-delivery-read-seam.test.ts"],
+      "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
+        "tests/backend/p1-31-delivery-read-seam.test.ts"
+      ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/work-orders/[workOrderId]/delivery/route.ts"
     },
@@ -15160,6 +15179,7 @@
       ],
       "missingEvidence": [],
       "tests": [
+        "tests/backend/od-d17-quotation-finance-visibility.test.ts",
         "tests/backend/p1-30-a2-published-reads.test.ts",
         "tests/backend/p1-30-w6-invoices.test.ts"
       ],
