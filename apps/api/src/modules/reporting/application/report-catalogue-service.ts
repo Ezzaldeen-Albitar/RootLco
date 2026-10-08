@@ -47,6 +47,7 @@ import { ApplicationService } from '@/server/layering';
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { AppFailure } from '@/server/errors/app-failure';
+import { callerHoldsPermissionAnywhere } from '@/server/auth/authorization';
 import { REPORT_ORDERING } from '../data/report-catalogue-repository';
 import type {
   ReportCatalogueRepository,
@@ -149,6 +150,35 @@ const baselineView = (definition: ReportDatasetDefinition): ReportDefinitionView
   titleKey: definition.titleKey,
 });
 
+/**
+ * The registered dataset codes whose declared permissions the caller holds
+ * somewhere in its tenant. See `listPublished` (ADR-023 D17).
+ */
+async function runnableDatasetCodes(db: DbHandle): Promise<ReadonlySet<string>> {
+  const held = new Map<string, boolean>();
+  const runnable = new Set<string>();
+  for (const code of REPORT_DATASET_CODES) {
+    let all = true;
+    for (const permission of reportDataset(code).requiredPermissions) {
+      let holds = held.get(permission);
+      if (holds === undefined) {
+        holds = await callerHoldsPermissionAnywhere(db, permission);
+        held.set(permission, holds);
+      }
+      if (!holds) {
+        all = false;
+        break;
+      }
+    }
+    if (all) runnable.add(code);
+  }
+  return runnable;
+}
+
+/** A registered code is listed only when runnable; any other code as before. */
+const listedFor = (view: ReportDefinitionView, runnable: ReadonlySet<string>): boolean =>
+  !isReportDatasetCode(view.reportCode) || runnable.has(view.reportCode);
+
 export class ReportCatalogueService extends ApplicationService {
   protected readonly module = 'reporting';
 
@@ -190,6 +220,25 @@ export class ReportCatalogueService extends ApplicationService {
    * registered codes, so a tenant row sitting on a later page still hides its
    * baseline. What a caller must NOT assume is that the page is sorted by code
    * throughout: it is baselines, then codes ascending.
+   *
+   * ## An entry the caller could never run is not listed (ADR-023 D17)
+   *
+   * A registered dataset declares the codes its rows need
+   * (`requiredPermissions`), and the run, the export and the snapshot reads each
+   * refuse a caller who lacks one. The catalogue used to list every baseline to
+   * every `rpt.report.read` holder all the same, so a caller without
+   * `sal.finance.view` was shown the invoice-and-payment report's title and
+   * offered a report that could only answer 403. An entry whose code is a
+   * registered dataset is therefore listed only to a caller who holds every one
+   * of that dataset's codes SOMEWHERE in the tenant — a baseline and a tenant
+   * row that customises it alike. A tenant row whose code the platform does not
+   * implement declares no dataset codes and is listed as before.
+   *
+   * "Somewhere" rather than "in this branch" because the catalogue is
+   * tenant-wide and names no branch: a caller who holds the codes in one branch
+   * can run the report there. The answer only REMOVES entries, so it narrows the
+   * page and can never widen it; the run still decides per branch, and no
+   * permission or grant changes.
    */
   async listPublished(
     db: DbHandle,
@@ -197,16 +246,17 @@ export class ReportCatalogueService extends ApplicationService {
   ): Promise<Page<ReportDefinitionView>> {
     const request = pageRequest(REPORT_ORDERING, query);
     const page = await this.repository.listPublished(db, request);
-    const rows = page.items.map(toView);
+    const runnable = await runnableDatasetCodes(db);
+    const rows = page.items.map(toView).filter((view) => listedFor(view, runnable));
     // Baselines belong to the FIRST page only. See the docblock above.
     if (request.cursor !== null) return { ...page, items: rows };
 
     const configured = new Set(
       (await this.repository.findByCodes(db, REPORT_DATASET_CODES)).map((row) => row.report_code)
     );
-    const baselines = REPORT_DATASET_CODES.filter((code) => !configured.has(code)).map((code) =>
-      baselineView(reportDataset(code))
-    );
+    const baselines = REPORT_DATASET_CODES.filter(
+      (code) => !configured.has(code) && runnable.has(code)
+    ).map((code) => baselineView(reportDataset(code)));
     return { ...page, items: [...baselines, ...rows] };
   }
 

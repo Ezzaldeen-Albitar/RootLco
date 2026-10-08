@@ -1507,6 +1507,44 @@ describe('the /quotations/[quotationId] route page renders the read as what it w
     expect(summary.textContent).not.toContain(WORK_ORDER_ID);
   });
 
+  it('shows a quotation user the sales totals and no invoice link, settlement, balance or cost (D17)', async () => {
+    // ADR-023 D17: the quotation codes, the work-order read and the customer read,
+    // and nothing of `sal.*`, `inv.*` or `rpt.*`.
+    PERMISSIONS = [
+      'quo.quotation.read',
+      'quo.quotation.manage',
+      'quo.decision.record',
+      'wo.work_order.read',
+      'crm.customer.read',
+    ];
+    readQuotation.mockResolvedValue(okRead(quotation()));
+    readWorkOrderDetail.mockResolvedValue(
+      okRead({ workOrder, jobs: [], nextStates: [], reachableStates: [] })
+    );
+    const { container } = await renderPage({ locale: 'en', quotationId: QUOTATION_ID });
+
+    // The sales prices and totals ARE shown: the captured grand total, with its code.
+    const current = region('quotations.current.heading');
+    expect(within(current).getByText(EN['quotations.totals.grand'] as string)).toBeVisible();
+    expect(within(current).getAllByText(/440/).length).toBeGreaterThan(0);
+    await waitFor(() => expect(readWorkOrderDetail).toHaveBeenCalledWith(WORK_ORDER_ID));
+
+    // No way into the finance screens, and no word of them. The printable copy's
+    // footer is the one sentence that names them, to say the copy shows none.
+    const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? '');
+    expect(
+      hrefs.filter((href) =>
+        /\/(invoices|payments|credit-notes|delivery-readiness|counter-sales)\b/.test(href)
+      )
+    ).toEqual([]);
+    const text = (container.textContent ?? '')
+      .split(EN['quotations.print.footer'] as string)
+      .join(' ');
+    expect(text).not.toMatch(
+      /invoice|payment|receipt|settle|balance|outstanding|credit|cost|margin/i
+    );
+  });
+
   it('a locale it does not serve is not found', async () => {
     PERMISSIONS = ['quo.quotation.read'];
     await expect(renderPage({ locale: 'xx', quotationId: QUOTATION_ID })).rejects.toThrow(
