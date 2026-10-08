@@ -1721,15 +1721,15 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
 | `/crm/customers/new/[kind]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
 | `/crm/customers`                                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/adjustments`                              | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
+| `/inventory/adjustments`                              | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/inventory/counts`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/goods-receipts`                           | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
+| `/inventory/goods-receipts`                           | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/items/[itemId]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/labels`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states                       | F1–F6; G1–G9; P1–P10; E1–E2, E4; S1–S4           | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/opening-stock`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
+| `/inventory/opening-stock`                            | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory`                                          | `FilterToolbar`, form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states      | F1–F6; G1–G9; P1–P10; T1, T5; E1–E2, E4; S1–S4   | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
 | `/inventory/setup`                                    | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
@@ -3325,6 +3325,139 @@ Known limitations of this slice, one line each:
 - Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
   they run in hosted CI. The web tier gains cases in existing files (no web test file added or
   removed).
+
+### Inventory receiving: opening stock, goods receipts and adjustments on Material UI (`P1-32-PRE-OD-INV3`)
+
+The second inventory slice of the Owner's interface order: the opening-stock chain, goods receipts
+with the cost history, and stock adjustments moved onto the shared wrappers. Nothing about how any
+of them reads, authorizes or scopes changed: the same reads and writes with the same arguments
+(`GET /api/v1/opening-inventory-batches` and `/{id}`, `POST` the batch, `/{id}/lines` and
+`/{id}/approval`; `GET /api/v1/goods-receipts` and `/{id}`, `POST /goods-receipts` and
+`/{id}/posting` with the receipt's `recordVersion` as If-Match, the item cost history;
+`GET /api/v1/stock-adjustments`, `POST /stock-adjustments` and `/{id}/approval`), the same page
+refusal before any read (`inv.stock.read` on all three), the same per-control codes
+(`inv.stock.operate`, `inv.adjustment.approve`, `inv.cost.view`), and the same route branch scope,
+unchanged in `route-branch-scope.ts` — all three `concrete`. No backend file, permission code or
+route changed; the server's one-opening-per-stock-cell rule, the maker ≠ checker refusals and the
+cost gate are untouched and still rendered as before.
+
+What moved to which wrapper:
+
+- `/inventory/opening-stock` — the batch code, the notes and the item search are `FormTextField`;
+  the found item is `FormSelectField`; the counted quantity is `FormNumberField`, so the string
+  typed is the string sent; the count's date is a `DateField` (the same `YYYY-MM-DD` the native box
+  produced); every button is Material's. The batch list and the counted lines are Material's table;
+  the list's empty answer is `MuiEmptyState` with the list's own sentence, and a list that could not
+  be read is `MuiReadFailureState` with the list's own sentence (a retry and the reference after an
+  outage, none after a refusal or an ended session). A batch that cannot be opened is Material's
+  error alert with the same sentence.
+- `/inventory/goods-receipts` — the reference, the supplier's reference, the notes and the currency
+  are `FormTextField`; the quantity and the unit cost are `FormNumberField` (a cost of up to four
+  decimals is sent exactly as typed, never canonicalised to the currency's minor unit, so the money
+  field is deliberately not used); the day received is a `DateField`; every button is Material's.
+  The receipt list, a receipt's lines, the lines being written and the cost layers are Material's
+  table; a failed receipt or cost-history read is Material's error alert with the same sentence.
+- `/inventory/adjustments` — the status filter is `FormSelectField`, the quantity
+  `FormNumberField`, the change (in or out) `FormRadioGroupField`, the two reasons multi-line
+  `FormTextField`; every button is Material's (Reject is the outlined error button). The list is
+  Material's table, the decision still a row action named with the stock code.
+
+Why Material's table and not `OperationalGrid`: each of these reads answers one page of up to fifty
+rows with a "more exist" flag, and the screen walks no cursor (the "more exist" sentence is said
+above the table, as before). G1–G4 describe a server-paged read the screens do not make, so the
+grid's pager would have nothing to do — the same reason the item page's two lists became Material
+tables in `P1-32-PRE-OD-MUI7A1`. Paging these lists would change what is read, which this slice does
+not do.
+
+The shared inventory pieces are consumed, not changed: `ItemFinder` (receipts, adjustments),
+`LocationPicker` (all three), `BranchListView` and `useBranchList` (receipts, adjustments),
+`BranchTargetForm`, `StockOperationLinks`, `OutcomeNote`, `Qty` and `Fact` are imported as they are,
+and no `material` flag is passed. `P1-32-PRE-OD-INV1B` (PR #543) moves `ItemFinder`,
+`LocationPicker` and `BranchListView` onto the wrappers inside their own files, so these three
+routes draw them on Material as soon as it lands, without an edit here.
+
+Wrapper correction, tested in `mui-form-fields.dom.test.tsx` (en and ar): a required `DateField`
+or `DateTimeField` put `aria-required` on its `group`, which WAI-ARIA does not allow (axe
+`aria-allowed-attr`, serious) — found by the receipts suite's accessibility case once the day
+received became a picker. Required is now announced on each part instead (every part is a
+`spinbutton`, which may carry it); the asterisk, the absent native `required` and every other
+attribute are unchanged. The case that asserted the attribute on the group now asserts it on each
+part, and a required day is checked to have no serious or critical finding.
+
+Preserved, each held by a case in `inventory-opening-stock.dom`, `inventory-goods-receipts.dom` or
+`inventory-adjustments.dom` (en and ar where marked):
+
+- Permission gates and scope: the page refusals before any read; the batch and line forms only with
+  `inv.stock.operate`, the approval only with `inv.adjustment.approve` (and the second-person hint
+  when the counter is refused, never beside the already-opened-cell refusal, en and ar); the receipt
+  form and posting only with `inv.stock.operate`; the cost fields and the cost history only with
+  `inv.cost.view`, and a line says only whether it is priced; the decision offered only on someone
+  else's pending request, with the reason said on the row otherwise; every read and write addressed
+  to the working branch.
+- Reversal and approval rules: posting sends the version the read answered; a refused posting, a
+  refused decision and every stock refusal rule are said in words; an approved batch takes no more
+  lines and links to the stock and the movements; the list is read again after every write.
+- States: an empty branch, a refused list and an unreadable batch are three different sentences; a
+  list outage names its reference and reads again (en and ar); a refusal offers no retry.
+- Field errors: a refused code, quantity or day is marked on its own field with the reason as its
+  error message, and what was typed stays (the quantity in en and ar on receipts and adjustments,
+  the day in en and ar on opening stock and receipts); the already-counted cell is said beside the
+  location with the quantity kept.
+- Incomplete dates: a day only partly typed is refused as a date, never as missing, and nothing is
+  sent (en and ar).
+- Unsaved work: a half-filled batch, line, receipt or request — a partly typed day included — asks
+  before a branch switch; staying keeps it, discarding opens the form empty under the new branch; an
+  untouched form switches without asking.
+- Duplicate submits: a second press while an approval, a decision or a receipt is being sent sends
+  nothing more; one receipt idempotency key per opened form, renewed after a save.
+- Money and quantity precision: quantities, unit costs and the server's figures are strings, sent
+  and shown as typed or as published; a cost history figure goes through the one money formatter.
+- Arabic and English, right to left, in every suite above.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- A calendar day is typed part by part into the picker's spin buttons (`typeDay`) and read back from
+  the picker's value input (`dayShown`) instead of a `type="date"` box; the day sent is the same.
+- Every render goes under `UiFoundationProvider`, as the locale layout mounts it (the pickers need
+  its localization).
+
+New cases: a partly typed count date and day received refused as a date (en and ar); a batch list
+outage naming its reference and reading again (en and ar); a refused quantity marked on its own field
+with the keypad and direction of a number box (receipts and adjustments, en and ar); a partly typed
+day received counted as unsaved work; a second press while an approval, a decision or a receipt is
+out (en); the adjustment list named and decided in Arabic.
+
+Deliberate behaviour changes:
+
+- A day only partly typed is refused with "Enter a date as year, month and day." and counts as
+  unsaved work; the native box handed such an entry over as empty, which was refused as "This field
+  is required." and asked nothing before a switch.
+- The count date's help and the date refusal no longer name the `YYYY-MM-DD` form (en and ar): the
+  picker writes the day, the month and the year in the catalogue's order.
+- The batch list's empty answer is said under the shared "Nothing here yet" heading with the same
+  sentence; an outage under the shared "unavailable" heading with the same sentence, the reference
+  and the retry; an ended session as the shared state with the way back to signing in.
+- A second press while a write is out sends nothing; before, the button was disabled only once the
+  screen had re-rendered.
+
+Known limitations of this slice, one line each:
+
+- `ItemFinder`, `LocationPicker` and `BranchListView` keep their current drawing until
+  `P1-32-PRE-OD-INV1B` lands (above); this slice does not edit them.
+- The lists show the first page of up to fifty with the "more exist" sentence and no way to the
+  rest (as before); a paged read would be a backend-visible change.
+- Codes are shown where names would be better (a receipt line's item is its stock code, a location
+  its code), as before; no read was added.
+- The opening-stock line form still finds its item with a search box and a select, not
+  `EntityPicker` (the same `listItems` read of 25 active items as before).
+- The adjustment decision is an inline panel, not a dialog, as before; opening it does not move the
+  cursor into it.
+- A refused form does not move the cursor to its first refused field (as before;
+  `useFocusFirstInvalid` is not wired on these forms).
+- No browser spec covers these three routes, so none was changed; the Playwright tiers run only in
+  hosted CI.
+- Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in hosted
+  CI. The web tier gains cases in existing files (no web test file added or removed).
 
 ### Finance controls that need no business decision (P1-32-PRE-OD-FIN)
 
