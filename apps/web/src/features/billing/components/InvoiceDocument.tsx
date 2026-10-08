@@ -286,19 +286,25 @@ export function InvoiceDocument({
           </div>
         </dl>
       }
-      footer={
-        <p>
-          {descriptions.kind === 'source'
-            ? translate(messages, 'invoices.print.descriptionsFromQuotation')
-            : descriptions.kind === 'items'
-              ? translate(messages, 'invoices.print.descriptionsFromItems')
-              : descriptions.kind === 'unavailable'
-                ? translate(messages, 'invoices.print.descriptionsUnavailable')
-                : translate(messages, 'invoices.print.descriptionsNeedFinance')}
-          {amountsVisible ? null : <> {translate(messages, 'invoices.print.amountsUnavailable')}</>}
-        </p>
-      }
     >
+      {/*
+        Where the line descriptions come from, and whether amounts are shown, said
+        once ABOVE the lines it describes. It used to be the document's footer, and
+        a counter sale whose last block ended near the foot of a page printed one
+        more page holding only the identity row and "Each line is described by the
+        item that was sold." (local runtime QA). Above the table it always prints
+        with the lines, so no page is spent on it alone.
+      */}
+      <p className="mb-3 text-supporting text-text-muted" data-testid="invoice-print-lines-note">
+        {descriptions.kind === 'source'
+          ? translate(messages, 'invoices.print.descriptionsFromQuotation')
+          : descriptions.kind === 'items'
+            ? translate(messages, 'invoices.print.descriptionsFromItems')
+            : descriptions.kind === 'unavailable'
+              ? translate(messages, 'invoices.print.descriptionsUnavailable')
+              : translate(messages, 'invoices.print.descriptionsNeedFinance')}
+        {amountsVisible ? null : <> {translate(messages, 'invoices.print.amountsUnavailable')}</>}
+      </p>
       <PrintTable
         headers={headers}
         rows={rows}
