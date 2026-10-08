@@ -3394,7 +3394,7 @@
   "invoices.refusal.lineNotBillable": "A quotation line this invoice would bill can no longer be billed: it was invoiced, replaced or refused in the meantime. The invoice was not created and the screen was re-read; check what remains to bill.",
   "invoices.refusal.lineTypeMismatch": "A line of this invoice is not the same kind, service or part, as the quotation line it bills, so the invoice was not created.",
   "invoices.refusal.quantityExceedsApproved": "Someone else invoiced part of this approved quantity first, so this invoice would have billed more than remains. The invoice was not created and the screen was re-read; check what remains to bill.",
-  "invoices.refusal.sourceAmbiguous": "Approved lines on more than one quotation of this work order cannot be invoiced together yet. The rule for it is pending an Owner decision. For now a work order is invoiced from one quotation with approved work at a time.",
+  "invoices.refusal.sourceAmbiguous": "Approved lines on more than one quotation of this work order cannot be invoiced together yet. The rule for it is pending an Owner decision. This invoice cannot be created until that decision is made.",
   "invoices.refusal.sourceForeign": "The quotation this invoice would bill is not one of this work order's quotations, so the invoice was not created.",
   "invoices.refusal.sourceFrozen": "The quotation revision an invoice bills can no longer be changed, so this change was not made. The screen was re-read.",
   "invoices.refusal.sourceLineForeign": "A line of this invoice names a quotation line that is not on the quotation being billed, so the invoice was not created.",
