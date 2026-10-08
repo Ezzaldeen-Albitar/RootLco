@@ -99,6 +99,32 @@
     display: none;
   }
 
+  // ...and the boxes that HOLD that document print as nothing at all: no page
+  // padding, no panel border or padding, no flex or grid. On screen the copy
+  // sits in a panel inside the page body; on paper those frames are chrome, and
+  // they are what pushed the copy off its first page (checkpoint browser QA at
+  // 3cf622c3). Since the document became one outer table — the head row that
+  // repeats its title and reference on every page — Chromium moves that table
+  // whole onto the next page when the space left above it is a little short and
+  // the next page would hold it. A frame's padding above the copy was enough
+  // for that: the invoice printed a blank first page carrying only its panel's
+  // border, a document that used to fit one page. With every frame released,
+  // the copy starts at the very top of the first page, where there is no "next
+  // page" to prefer, so it breaks where its own content breaks.
+  //
+  // `:has()` in both parts: the scope that holds an open document, and each box
+  // between it and the document. The document itself is not one of them (an
+  // element does not contain itself) and keeps its own print geometry. Block,
+  // for the reason the shell rule above gives.
+  [data-print-scope]:has([data-print='document']),
+  [data-print-scope]:has([data-print='document']) :has([data-print='document']) {
+    display: block;
+    margin: 0;
+    border: 0;
+    padding: 0;
+    box-shadow: none;
+  }
+
   // The notification region is a `div`, so the `nav`/`button` rule above does
   // not reach it: a toast that happened to be open would print onto the
   // document, with its dismiss control stripped and no way to tell it apart

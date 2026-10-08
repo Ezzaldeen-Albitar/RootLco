@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { renderLtr, renderRtl } from './render';
+import { onPaper } from './support/print-paper';
 
 /**
  * The printable handover sheet, rendered (P1-31, FE-007).
@@ -619,5 +620,33 @@ describe('printing', () => {
     expect(scope.children.length).toBeGreaterThan(1);
     const summary = screen.getByRole('heading', { name: EN['delivery.summary.heading'] as string });
     expect(holding()[0]?.contains(summary)).toBe(false);
+  });
+
+  it('prints the sheet without the page heading once it is open, and the page as it is while it is closed', async () => {
+    // Checkpoint browser QA at 3cf622c3: the printed handover began with the
+    // page's own heading and description, above the sheet, in both languages.
+    // The route now puts its header and its body in one print scope, as the
+    // invoice page does (DF-R2-1), so the header is left off while a sheet is
+    // open.
+    const tree = await DeliveryPage({
+      params: Promise.resolve({ locale: 'en', deliveryId: DELIVERY_ID }),
+    });
+    renderLtr(tree as React.ReactElement);
+    await screen.findByRole('button', { name: EN['delivery.document.open'] as string });
+    // The page's own title, not the sheet's heading of the same words.
+    const title = () =>
+      screen
+        .getAllByRole('heading', { level: 1, name: EN['delivery.detail.title'] as string })
+        .find((heading) => heading.closest('[data-print="document"]') === null) as HTMLElement;
+    const description = () => screen.getByText(EN['delivery.detail.description'] as string);
+    expect(title()).toBeDefined();
+    expect(onPaper(title())).toBe(true);
+    expect(onPaper(description())).toBe(true);
+
+    await openDocument();
+    const sheet = document.querySelector('[data-print="document"]') as HTMLElement;
+    expect(onPaper(sheet)).toBe(true);
+    expect(onPaper(title())).toBe(false);
+    expect(onPaper(description())).toBe(false);
   });
 });

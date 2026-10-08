@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import type { ReactElement } from 'react';
+import { Fragment, type ReactElement } from 'react';
 
 /** The acknowledgement route, read as SOURCE — a spy cannot see an absent call. */
 const ACKNOWLEDGEMENT_PAGE = join(
@@ -139,6 +139,29 @@ function findProps(node: unknown, marker: string): Record<string, unknown> | nul
     if (found) return found;
   }
   return null;
+}
+
+/**
+ * The children an element's children become in the DOM: a fragment adds none
+ * of its own, so its children are its parent's.
+ */
+function domChildren(props: Record<string, unknown>): ReactElement<Record<string, unknown>>[] {
+  const children = props['children'];
+  return (Array.isArray(children) ? children : [children]).flatMap((child: unknown) => {
+    if (child === null || typeof child !== 'object' || !('props' in child)) return [];
+    const element = child as ReactElement<Record<string, unknown>>;
+    return element.type === Fragment ? domChildren(element.props) : [element];
+  });
+}
+
+/** Every print scope in a returned element tree, outermost first. */
+function printScopes(node: unknown): Record<string, unknown>[] {
+  if (node === null || typeof node !== 'object') return [];
+  if (Array.isArray(node)) return node.flatMap(printScopes);
+  const props = (node as ReactElement<Record<string, unknown>>).props;
+  if (!props || typeof props !== 'object') return [];
+  const own = 'data-print-scope' in props ? [props as Record<string, unknown>] : [];
+  return [...own, ...printScopes((props as { children?: unknown }).children)];
 }
 
 const page = {
@@ -315,8 +338,11 @@ describe('the acknowledgement route', () => {
      */
     PERMISSIONS = [RECEPTION_PERMISSIONS.read];
     const tree = await AcknowledgementPage({ params });
-    const scope = findProps(tree, 'data-print-scope');
-    expect(scope).not.toBeNull();
+    // The scope the sheet itself sits in; the page's outer scope is the next case's.
+    const scope = printScopes(tree).find((each) =>
+      domChildren(each).some((child) => 'sections' in child.props)
+    );
+    expect(scope).toBeDefined();
     const children = (Array.isArray(scope?.['children']) ? scope['children'] : []) as {
       props: Record<string, unknown>;
     }[];
@@ -326,6 +352,33 @@ describe('the acknowledgement route', () => {
     expect(toolbar, 'no print toolbar beside the sheet').toBeDefined();
     expect(sheet, 'the sheet is not a direct child of the print scope').toBeDefined();
     expect(toolbar?.props['backHref']).toBe(`/en/receptions/check-in/${DETAIL.id}`);
+  });
+
+  it('prints the sheet without the page heading: the header and the body share an outer print scope', async () => {
+    /*
+     * Checkpoint browser QA at 3cf622c3: the printed acknowledgement carried the
+     * page's own title and description above the sheet, and in English the
+     * sheet then started on a second page. The header sat outside every print
+     * scope. Now the header and the body are the two children of an outer
+     * scope, as on the invoice page (DF-R2-1), so while the sheet is on the page
+     * the scope rule leaves the header off the paper.
+     */
+    PERMISSIONS = [RECEPTION_PERMISSIONS.read];
+    const tree = await AcknowledgementPage({ params });
+    const scopes = printScopes(tree);
+    expect(scopes).toHaveLength(2);
+    const children = domChildren(scopes[0] as Record<string, unknown>);
+    expect(children).toHaveLength(2);
+    const header = children.filter(
+      (child) => findProps(child, 'titleKey')?.['titleKey'] === 'receptions.acknowledgement.title'
+    );
+    const body = children.filter((child) => findProps(child, 'sections') !== null);
+    expect(header, 'the page header is not a child of the outer print scope').toHaveLength(1);
+    expect(body, 'the sheet is not inside the outer print scope').toHaveLength(1);
+    expect(header[0], 'the header and the sheet share one child').not.toBe(body[0]);
+    expect(findProps(header[0], 'descriptionKey')?.['descriptionKey']).toBe(
+      'receptions.acknowledgement.description'
+    );
   });
 
   it('reads the three sections on the server, so the first paint is the sheet', async () => {
