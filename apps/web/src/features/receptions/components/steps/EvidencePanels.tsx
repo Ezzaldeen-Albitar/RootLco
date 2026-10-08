@@ -212,10 +212,11 @@ const NO_PEOPLE: PersonNames = new Map();
  * disposition leaned on that: the picker discloses the directory anyway, so
  * resolving a name beside it adds nothing. `DBCR-P1-18-002` took the picker off
  * `iam.user-list` entirely, so the argument has to stand on its own — and it
- * does, on the stronger half it always had. `GET /auth/session` requires
- * `iam.user.read`, so every operator who can load the application holds it; and
- * the identifiers resolved here are ALREADY on the page. Turning one into the
- * name of the person it names discloses nothing the reader was not looking at.
+ * does, on the stronger half it always had: the identifiers resolved here are
+ * ALREADY on the page, and turning one into the name of the person it names
+ * discloses nothing the reader was not looking at. (It no longer leans on the
+ * session read: `GET /auth/session` declares no code since P1-32-PRE-OD-FRX, so
+ * an operator who can load the application need not hold `iam.user.read`.)
  *
  * Without the permission the hook makes no request at all and every identifier
  * resolves to `denied` — the same posture every P1-28 route takes toward a gate

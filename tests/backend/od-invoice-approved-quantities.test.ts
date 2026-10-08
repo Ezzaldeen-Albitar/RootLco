@@ -784,10 +784,15 @@ describe('two quotations on one work order', () => {
 
     const previewed = await preview(order.workOrderId);
     expect(previewed.status).toBe(409);
-    expect((await bodyOf<Problem>(previewed)).code).toBe('ERR-CON-001');
+    const previewProblem = await bodyOf<Problem>(previewed);
+    expect(previewProblem.code).toBe('ERR-CON-001');
+    // P1-32-PRE-OD-FRX: the conflict names its rule, so the screen can say which
+    // refusal this is instead of a generic caption.
+    expect(previewProblem.violations).toEqual([
+      { path: 'path.workOrderId', rule: 'invoice_source_ambiguous' },
+    ]);
     const made = await createInvoice(order.workOrderId);
-    expect(made.status).toBe(409);
-    expect((await bodyOf<Problem>(made)).code).toBe('ERR-CON-001');
+    await refusedWith(made, 'invoice_source_ambiguous');
     expect(await liveInvoiceCount(order.workOrderId)).toBe(0);
 
     // The delivery gate's financial blocker: no live invoice (null, which the gate
@@ -887,7 +892,15 @@ describe('two quotations on one work order', () => {
     expect(await liveInvoiceCount(order.workOrderId)).toBe(2);
     const after = await preview(order.workOrderId);
     expect(after.status).toBe(409);
-    expect((await bodyOf<Problem>(after)).code).toBe('ERR-CON-001');
+    const afterProblem = await bodyOf<Problem>(after);
+    expect(afterProblem.code).toBe('ERR-CON-001');
+    // Two quotations, and neither has anything left: nothing is ambiguous about
+    // what remains, so the rule is the one a fully invoiced source names
+    // (P1-32-PRE-OD-FRX), on the preview's route parameter and on the create.
+    expect(afterProblem.violations).toEqual([
+      { path: 'path.workOrderId', rule: 'invoice_nothing_to_bill' },
+    ]);
+    await refusedWith(await createInvoice(order.workOrderId), 'invoice_nothing_to_bill');
   });
 });
 

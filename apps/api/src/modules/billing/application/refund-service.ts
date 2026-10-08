@@ -697,7 +697,12 @@ export class RefundService {
         'A refund is paid out by the method it was approved with.'
       );
     }
-    if (input.payoutDate > (await this.repository.today(db))) {
+    // "Not in the future" on the branch's own calendar (P1-32-PRE-OD-FRX, D-17).
+    const branchToday = await this.repository.branchToday(db, {
+      companyId: request.companyId,
+      branchId: request.branchId,
+    });
+    if (input.payoutDate > branchToday) {
       fieldError(
         'body.payoutDate',
         REFUND_RULES.payoutDateInvalid,

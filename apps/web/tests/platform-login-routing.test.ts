@@ -203,6 +203,27 @@ describe('sign-in decides the destination on the server', () => {
     ]);
   });
 
+  it('sends the platform operator to the console when its workspace session answers with no code', async () => {
+    // P1-32-PRE-OD-FRX: the workspace session read is an authenticated self-read,
+    // so the platform operator (no tenant role by construction) is answered its
+    // own facts with an EMPTY permission list where it used to be refused 403.
+    // The workspace still opens nothing for it, so the platform is still asked.
+    backend({ tenant: 200, platform: 200, tenantBody: { ...TENANT_SESSION, permissions: [] } });
+    const target = await redirectTarget(() => loginAction({ status: 'idle' }, credentials('ar')));
+    expect(target).toBe('/ar/platform');
+    expect(calls).toEqual([
+      '/api/v1/auth/login',
+      '/api/v1/auth/session',
+      '/api/v1/platform/session',
+    ]);
+  });
+
+  it('keeps the workspace root for an account with no code that the platform does not admit', async () => {
+    backend({ tenant: 200, platform: 403, tenantBody: { ...TENANT_SESSION, permissions: [] } });
+    const target = await redirectTarget(() => loginAction({ status: 'idle' }, credentials()));
+    expect(target).toBe('/en');
+  });
+
   it('keeps the workspace destination when neither session admits the account', async () => {
     backend({ tenant: 403, platform: 403 });
     const target = await redirectTarget(() => loginAction({ status: 'idle' }, credentials()));
@@ -243,6 +264,13 @@ describe('the workspace root routes a platform operator instead of stranding the
 
   it('keeps reason=forbidden when the platform refuses too', async () => {
     backend({ tenant: 403, platform: 403 });
+    expect(await redirectTarget(() => requireSession('en'))).toBe('/en/login?reason=forbidden');
+  });
+
+  it('routes a workspace session answered with no code exactly as a refused one (P1-32-PRE-OD-FRX)', async () => {
+    backend({ tenant: 200, platform: 200, tenantBody: { ...TENANT_SESSION, permissions: [] } });
+    expect(await redirectTarget(() => requireSession('en'))).toBe('/en/platform');
+    backend({ tenant: 200, platform: 403, tenantBody: { ...TENANT_SESSION, permissions: [] } });
     expect(await redirectTarget(() => requireSession('en'))).toBe('/en/login?reason=forbidden');
   });
 

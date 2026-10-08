@@ -32,6 +32,7 @@ import {
 import { findSearchedOption } from './support/picker-option';
 import { CLIENT_READ_TIMEOUT_MS } from '@/lib/api/read-budget';
 import type { BranchPermissions } from '@/features/working-context/working-context-contract';
+import { INVOICE_REFUSAL_MESSAGE_KEYS } from '@/features/billing/billing-contract';
 
 /*
  * On the shared Material UI wrappers since the sales and finance slice
@@ -4522,5 +4523,150 @@ describe('finance QA fixes D — the printed copy', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+/**
+ * P1-32-PRE-OD-FRX, defect O2 — a refused invoice create or preview says WHICH
+ * refusal it is.
+ *
+ * The create used to re-read under one generic caption and the preview to show
+ * "unavailable" for every 409. Each rule the server names in
+ * `violations[0].rule` now has its own sentence, in English and Arabic, and an
+ * unknown rule keeps the generic one.
+ */
+describe('a refused invoice says which refusal it is (O2)', () => {
+  const RULES = Object.entries(INVOICE_REFUSAL_MESSAGE_KEYS);
+
+  it('covers every invoice refusal token, each with a sentence in both catalogues', () => {
+    expect(RULES.map(([rule]) => rule).sort()).toEqual(
+      [
+        'invoice_amount_exceeds_approved',
+        'invoice_draft_open',
+        'invoice_line_not_billable',
+        'invoice_line_type_mismatch',
+        'invoice_nothing_to_bill',
+        'invoice_quantity_exceeds_approved',
+        'invoice_source_ambiguous',
+        'invoice_source_foreign',
+        'invoice_source_frozen',
+        'invoice_source_line_foreign',
+        'invoice_source_line_required',
+        'invoice_source_mixed',
+      ].sort()
+    );
+    for (const [rule, key] of RULES) {
+      expect(EN[key], `${rule} en`).toBeTruthy();
+      expect(AR[key], `${rule} ar`).toBeTruthy();
+      expect(AR[key], `${rule} ar is Arabic`).toMatch(/[؀-ۿ]/);
+      expect(EN[key], rule).not.toBe(EN['invoices.create.conflict']);
+    }
+    // The two-quotation sentence says plainly what cannot be done, and why it
+    // waits, without promising what will happen next.
+    const ambiguous = EN['invoices.refusal.sourceAmbiguous'] as string;
+    expect(ambiguous).toMatch(/more than one quotation/);
+    expect(ambiguous).toMatch(/cannot be invoiced together yet/);
+    expect(ambiguous).toMatch(/decision by the business owner/);
+    expect(ambiguous).not.toMatch(/\bwill\b/);
+  });
+
+  for (const [rule, key] of RULES) {
+    it(`a create refused with ${rule} re-reads and says its own sentence`, async () => {
+      const user = userEvent.setup();
+      createInvoice.mockResolvedValue({
+        state: {
+          status: 'conflict',
+          messageKey: 'state.conflict.title',
+          attempt: 1,
+          correlationId: 'ref-409',
+        },
+        created: null,
+        rule,
+      });
+      renderScreen();
+      const form = await screen.findByRole('form', {
+        name: EN['invoices.create.heading'] as string,
+      });
+      await user.click(
+        within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
+      );
+      await waitFor(() => expect(createInvoice).toHaveBeenCalledTimes(1));
+      expect(await screen.findByText(EN[key] as string)).toBeVisible();
+      expect(screen.queryByText(EN['invoices.create.conflict'] as string)).toBeNull();
+      // The screen re-read the work order's invoice, as before.
+      await waitFor(() => expect(readWorkOrderInvoice).toHaveBeenCalled());
+    });
+
+    it(`a preview refused with ${rule} says its own sentence with its reference, and offers no create`, async () => {
+      readInvoicePreview.mockImplementation(async () => ({
+        status: 'error',
+        correlationId: 'ref-409',
+        rule,
+      }));
+      renderScreen();
+      const panel = region('invoices.preview.heading');
+      const said = await within(panel).findByTestId('invoice-refusal');
+      expect(said).toHaveTextContent(EN[key] as string);
+      expect(within(panel).getByText('ref-409')).toBeVisible();
+      expect(within(panel).queryByText(EN['invoices.preview.unavailable'] as string)).toBeNull();
+      expect(within(panel).queryByRole('form')).toBeNull();
+    });
+  }
+
+  it('keeps the generic sentence for a rule it does not know, on the create and the preview', async () => {
+    const user = userEvent.setup();
+    createInvoice.mockResolvedValue({
+      state: {
+        status: 'conflict',
+        messageKey: 'state.conflict.title',
+        attempt: 1,
+        correlationId: 'ref-409',
+      },
+      created: null,
+      rule: 'some_rule_nobody_wrote',
+    });
+    renderScreen();
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    await user.click(
+      within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
+    );
+    expect(await screen.findByText(EN['invoices.create.conflict'] as string)).toBeVisible();
+  });
+
+  it('keeps "unavailable" for a refused preview that names no rule', async () => {
+    readInvoicePreview.mockImplementation(async () => ({
+      status: 'error',
+      correlationId: 'ref-409',
+      rule: 'some_rule_nobody_wrote',
+    }));
+    renderScreen();
+    const panel = region('invoices.preview.heading');
+    expect(
+      await within(panel).findByText(EN['invoices.preview.unavailable'] as string)
+    ).toBeVisible();
+    expect(within(panel).queryByTestId('invoice-refusal')).toBeNull();
+  });
+
+  it('says the two-quotation refusal in Arabic on the preview', async () => {
+    readInvoicePreview.mockImplementation(async () => ({
+      status: 'error',
+      correlationId: 'ref-409',
+      rule: 'invoice_source_ambiguous',
+    }));
+    renderRtl(
+      <InvoiceScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        workOrderRefused={null}
+        initialInvoice={orderRead(null) as never}
+        canViewFinance={true}
+        canIssue={false}
+      />
+    );
+    const panel = screen.getByRole('region', { name: AR['invoices.preview.heading'] as string });
+    const said = await within(panel).findByTestId('invoice-refusal');
+    expect(said).toHaveTextContent(AR['invoices.refusal.sourceAmbiguous'] as string);
   });
 });

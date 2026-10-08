@@ -131,6 +131,12 @@ export async function evaluatePermissions(
   options: EvaluationOptions = {}
 ): Promise<AuthorizationDecision> {
   if (operation.public) return { allowed: true, failedPermissions: [] };
+  // An authenticated self-read (P1-32-PRE-OD-FRX) declares no code by
+  // construction: the pipeline has already authenticated the caller and resolved
+  // its context, and the operation answers only the caller's own facts. Stated
+  // here rather than left to an empty loop, so the decision is a declaration the
+  // registry vetted and not an accident of an empty list.
+  if (operation.selfRead) return { allowed: true, failedPermissions: [] };
 
   // `forceScoped` says "a caller discovered this scope and named it", which is
   // a stronger statement than the declaration makes. It only ever ADDS scope to
@@ -742,6 +748,12 @@ export async function requireScopedPermissions(
   // restored by an omission, and it would look completely correct at the call
   // site. The public exemption stays: a public operation has no principal to
   // narrow.
+  //
+  // A self-read (P1-32-PRE-OD-FRX) never reaches a deferred scope check: it names
+  // no target and declares no code to judge against one. Reaching here with it is
+  // a defect at the call site, and `evaluatePermissions` would allow it, so it is
+  // refused before that can happen, target or not.
+  if (operation.selfRead) refuseSelfReadTarget(db, operation, target, { always: true });
   if (!operation.public && target.companyId === undefined && target.branchId === undefined) {
     const context: RequestContext = db.context;
     metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
@@ -826,6 +838,10 @@ export async function requireScopeTargetInTenant(
   target: AuthorizationTarget
 ): Promise<void> {
   if (operation.public) return;
+  // A self-read names no target (P1-32-PRE-OD-FRX). One that arrives here with any
+  // half of a target is a defect at its call site, and it fails closed with the
+  // same refusal rather than being resolved.
+  if (operation.selfRead) refuseSelfReadTarget(db, operation, target);
   if (target.companyId === undefined || target.branchId === undefined) return;
 
   const context: RequestContext = db.context;
@@ -939,6 +955,8 @@ export async function requireScopeClaimInTenant(
   claim: AuthorizationTarget
 ): Promise<void> {
   if (operation.public) return;
+  // A self-read is a GET that claims no scope; see `requireScopeTargetInTenant`.
+  if (operation.selfRead) refuseSelfReadTarget(db, operation, claim);
 
   const companyId = claim.companyId;
   const branchId = claim.branchId;
@@ -976,6 +994,42 @@ export async function requireScopeClaimInTenant(
         ? 'the named company is not visible '
         : 'the named company and branch are not visible ') +
       `to the caller inside its tenant`,
+  });
+}
+
+/**
+ * Refuses a self-read that was handed a scope (P1-32-PRE-OD-FRX).
+ *
+ * A self-read is registered as a tenant-scope GET with no permission code, and
+ * the registry refuses one that declares a target-shaped feature. So a company or
+ * branch arriving here is a defect at a call site, never a request to honour. It
+ * fails closed with the uniform `ERR-IAM-001`, naming the operation and never the
+ * company or branch. With `always`, it refuses even an empty target: the deferred
+ * scope check has no business with a self-read at all.
+ */
+function refuseSelfReadTarget(
+  db: DbHandle,
+  operation: RegisteredOperation,
+  target: AuthorizationTarget,
+  options: { readonly always?: boolean } = {}
+): void {
+  const named = target.companyId !== undefined || target.branchId !== undefined;
+  if (!named && options.always !== true) return;
+
+  const context: RequestContext = db.context;
+  metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
+  log.warn('Authorization denied', {
+    ...contextLogFields(context),
+    result: 'denied',
+    errorCode: 'ERR-IAM-001',
+    context: { reason: 'self-read-given-a-scope', declaredScope: operation.scope },
+  });
+  throw new AppFailure('ERR-IAM-001', {
+    // `safeDetails` first, for the mutation-matrix anchor reason
+    // `requireScopeTargetInTenant` states. A self-read declares no code, so the
+    // list is empty.
+    safeDetails: { requiredPermissions: operation.permissions },
+    message: `Denied ${operation.id}: a self-read answers about the caller and names no scope`,
   });
 }
 

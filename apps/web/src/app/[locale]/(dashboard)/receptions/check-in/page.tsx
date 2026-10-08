@@ -93,12 +93,13 @@ export default async function CheckInStartPage({
    * (`reception-catalogue/receiving-employees/route.ts`), and
    * `CheckInStartScreen`'s own docblock said so while this page did not.
    *
-   * Behaviourally inert today, in both directions, and the alignment is the
-   * point rather than a defect closed. `GET /api/v1/auth/session` itself
-   * declares `iam.user.read`, so nobody who reaches this dashboard lacks it;
-   * and `CheckInStartScreen` returns `PermissionDeniedState` when `canCreate`
-   * is false, so the effective gate on the whole form already was
-   * `rec.reception.manage`. What was wrong is that the page, the screen's
+   * Behaviourally inert when it was aligned, and the alignment is the point
+   * rather than a defect closed. `GET /api/v1/auth/session` then declared
+   * `iam.user.read`, so nobody who reached this dashboard lacked it (since
+   * P1-32-PRE-OD-FRX it declares no code, and the superseded gate would now
+   * refuse an operator the operation admits); and `CheckInStartScreen` returns
+   * `PermissionDeniedState` when `canCreate` is false, so the effective gate on
+   * the whole form already was `rec.reception.manage`. What was wrong is that the page, the screen's
    * docblock, the operation and the binding test did not all name the same code
    * — and the binding test pinned the superseded one, so agreeing with the
    * operation used to turn it red.

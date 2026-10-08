@@ -14,6 +14,10 @@
  *
  * A route with no declaration, a declaration with no route, a declaration with
  * no permissions, or a `public: true` with no reason all fail the build. The
+ * one permission-free authenticated kind, `selfRead: true` (P1-32-PRE-OD-FRX),
+ * passes only for an id in `SELF_READ_OPERATION_IDS` below — the same closed list
+ * the registry holds — with a `selfReadReason`, no permission code, `GET`, and
+ * not also `public`. The
  * report lists every operation with its permission codes, so authorization
  * coverage is reviewable at a glance rather than by reading eleven route files.
  *
@@ -167,6 +171,8 @@ function extractDeclarations(source, file) {
       permissions: readArray(body, 'permissions') ?? [],
       isPublic: readBoolean(body, 'public') === true,
       publicReason: readString(body, 'publicReason'),
+      isSelfRead: readBoolean(body, 'selfRead') === true,
+      selfReadReason: readString(body, 'selfReadReason'),
       auditClass: readString(body, 'auditClass') ?? 'none',
       auditAction: readString(body, 'auditAction'),
     });
@@ -201,6 +207,29 @@ function readAuditActionCatalog() {
 
 const auditActionCatalog = readAuditActionCatalog();
 
+/**
+ * The operations allowed to register as an authenticated self-read — the copy of
+ * `SELF_READ_OPERATION_IDS` in `server/auth/operation-registry.ts` this gate holds
+ * every literal declaration to (P1-32-PRE-OD-FRX). Two copies on purpose: the
+ * registry refuses at module load what a test imports, and this refuses what no
+ * test imports. Read from the registry source as well, so the two cannot drift.
+ */
+const SELF_READ_OPERATION_IDS = Object.freeze(['iam.auth-session', 'iam.working-context-read']);
+
+function readRegistrySelfReadIds() {
+  const file = join(SRC, 'server', 'auth', 'operation-registry.ts');
+  if (!existsSync(file)) return null;
+  const source = stripComments(readFileSync(file, 'utf8'));
+  const start = source.indexOf('const SELF_READ_OPERATION_IDS');
+  if (start < 0) return null;
+  const open = source.indexOf('Object.freeze([', start);
+  const close = open < 0 ? -1 : source.indexOf('])', open);
+  if (open < 0 || close < 0) return null;
+  return [...source.slice(open, close).matchAll(/'([^']+)'/g)].map((match) => match[1]);
+}
+
+const registrySelfReadIds = readRegistrySelfReadIds();
+
 const sourceFiles = walk(SRC, (name) => /\.(ts|tsx)$/.test(name));
 const declarations = [];
 for (const file of sourceFiles) {
@@ -225,8 +254,33 @@ for (const declaration of declarations) {
     failures.push(`${declaration.file}: defineOperation without a literal id`);
     continue;
   }
-  if (!declaration.isPublic && declaration.permissions.length === 0) {
+  if (!declaration.isPublic && !declaration.isSelfRead && declaration.permissions.length === 0) {
     failures.push(`${label}: declares no permission codes and is not marked public`);
+  }
+  if (declaration.isSelfRead) {
+    if (!SELF_READ_OPERATION_IDS.includes(declaration.id)) {
+      failures.push(
+        `${label}: declares selfRead but is not one of the reviewed self-reads ` +
+          `(${SELF_READ_OPERATION_IDS.join(', ')})`
+      );
+    }
+    if (!declaration.selfReadReason) {
+      failures.push(`${label}: is a self-read but gives no selfReadReason`);
+    }
+    if (declaration.isPublic) {
+      failures.push(`${label}: is both public and a self-read; a self-read is authenticated`);
+    }
+    if (declaration.permissions.length > 0) {
+      failures.push(`${label}: is a self-read and also declares permission codes`);
+    }
+    if (declaration.method !== 'GET') {
+      failures.push(`${label}: is a self-read and is not a GET`);
+    }
+    if (declaration.auditClass !== 'none') {
+      failures.push(
+        `${label}: is a self-read and declares audit class "${declaration.auditClass}"`
+      );
+    }
   }
   if (declaration.isPublic && !declaration.publicReason) {
     failures.push(`${label}: is public but gives no publicReason`);
@@ -247,6 +301,21 @@ for (const declaration of declarations) {
           `"${declaration.auditAction}" as "${registeredClass}"`
       );
     }
+  }
+}
+
+if (
+  registrySelfReadIds === null ||
+  [...registrySelfReadIds].sort().join(',') !== [...SELF_READ_OPERATION_IDS].sort().join(',')
+) {
+  failures.push(
+    `${API_SRC_PATH}/server/auth/operation-registry.ts: SELF_READ_OPERATION_IDS could not be read ` +
+      `or does not equal this gate's list (${SELF_READ_OPERATION_IDS.join(', ')})`
+  );
+}
+for (const id of SELF_READ_OPERATION_IDS) {
+  if (!declarations.some((declaration) => declaration.id === id && declaration.isSelfRead)) {
+    failures.push(`${id}: listed as a self-read but no literal declaration says selfRead: true`);
   }
 }
 
@@ -298,7 +367,11 @@ const report = declarations
     id: declaration.id,
     module: declaration.module,
     route: `${declaration.method} ${declaration.path}`,
-    permissions: declaration.isPublic ? ['(public)'] : declaration.permissions,
+    permissions: declaration.isPublic
+      ? ['(public)']
+      : declaration.isSelfRead
+        ? ['(self-read)']
+        : declaration.permissions,
     auditClass: declaration.auditClass,
   }));
 

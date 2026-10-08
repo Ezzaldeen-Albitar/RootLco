@@ -216,6 +216,34 @@ describe('resolveCommercialSource — a revision with an approved line', () => {
     });
     expect(codeOf(() => resolveCommercialSource([accepted, partly], 'wo'))).toBe('ERR-CON-001');
   });
+
+  it('names the rule of each conflict, at the path the caller gave (P1-32-PRE-OD-FRX)', () => {
+    const violationsOf = (fn: () => unknown): unknown => {
+      try {
+        fn();
+      } catch (error) {
+        return (error as { safeDetails?: { violations?: unknown } }).safeDetails?.violations;
+      }
+      return undefined;
+    };
+    const pending = (quotationId: string) =>
+      candidate({ quotationId, revisionId: `r-${quotationId}`, billableCount: 1 });
+    // Two quotations with approved work still to bill: the open point itself.
+    expect(
+      violationsOf(() => resolveCommercialSource([pending('q1'), pending('q2')], 'wo'))
+    ).toEqual([{ path: 'body.workOrderId', rule: 'invoice_source_ambiguous' }]);
+    expect(
+      violationsOf(() =>
+        resolveCommercialSource([pending('q1'), pending('q2')], 'wo', 'path.workOrderId')
+      )
+    ).toEqual([{ path: 'path.workOrderId', rule: 'invoice_source_ambiguous' }]);
+    // Two quotations and nothing left on either: nothing to bill, not ambiguity.
+    const spent = (quotationId: string) =>
+      candidate({ quotationId, revisionId: `r-${quotationId}`, billableCount: 0 });
+    expect(violationsOf(() => resolveCommercialSource([spent('q1'), spent('q2')], 'wo'))).toEqual([
+      { path: 'body.workOrderId', rule: 'invoice_nothing_to_bill' },
+    ]);
+  });
 });
 
 function sourceLine(over: Partial<CommercialSourceLineRow> = {}): CommercialSourceLineRow {

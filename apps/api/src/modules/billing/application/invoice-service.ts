@@ -92,6 +92,7 @@ import {
   billableLines,
   describeInvoiceSource,
   describeLineItems,
+  INVOICE_NOTHING_TO_BILL_RULE,
   resolveCommercialSource,
   toCreditNoteView,
   toInvoiceLineView,
@@ -713,8 +714,11 @@ function refuseDuplicateInvoice(error: unknown, workOrderId: string): never {
 
 /** The rule a create refused because the work order already has a draft invoice. */
 export const INVOICE_DRAFT_OPEN_RULE = 'invoice_draft_open';
-/** The rule a create refused because nothing approved remains to bill (ADR-023 D5/D15). */
-export const INVOICE_NOTHING_TO_BILL_RULE = 'invoice_nothing_to_bill';
+/**
+ * The rule a create refused because nothing approved remains to bill (ADR-023
+ * D5/D15). Defined beside `resolveCommercialSource`, which names it too.
+ */
+export { INVOICE_NOTHING_TO_BILL_RULE };
 
 /**
  * Translates a refusal by one of the sal invoice source guards (ADR-023 D5/D15).

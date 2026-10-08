@@ -124,7 +124,8 @@ function repository(over: Record<string, unknown> = {}) {
     rejectRequest: vi.fn(async () => undefined),
     withdrawRequest: vi.fn(async () => undefined),
     executeRequest: vi.fn(async () => undefined),
-    today: vi.fn(async () => '2026-10-08'),
+    // The branch's own calendar day (P1-32-PRE-OD-FRX), not the database's.
+    branchToday: vi.fn(async () => '2026-10-08'),
     listRequests: vi.fn(),
     minorUnitsFor: vi.fn(async () => new Map([['USD', 2]])),
     ...over,
@@ -394,6 +395,59 @@ describe('D2 part 2 — the payout', () => {
       violations: [{ path: 'body.payoutDate', rule: REFUND_RULES.payoutDateInvalid }],
     });
     expect(businessRefusalOf(future)).toBeUndefined();
+  });
+
+  it('judges the day on the request branch calendar, which may be ahead of the server (P1-32-PRE-OD-FRX)', async () => {
+    // The branch's today is the 9th while a server in another zone still reads the
+    // 8th: a payout dated the branch's today is recorded, the day after refused.
+    // The write is a stand-in that stops the call once the date check let it
+    // through: what follows it (the audit record) needs a database.
+    const ahead = () =>
+      repository({
+        findRequest: vi.fn(async () => request({ approvalState: 'approved' })),
+        branchToday: vi.fn(async () => '2026-10-09'),
+        executeRequest: vi.fn(async () => {
+          throw new Error('reached the payout write');
+        }),
+      });
+    const accepted = ahead();
+    const outcome = await new RefundService(accepted as never)
+      .executeRefund(
+        handle(REQUESTER),
+        REQUEST,
+        { ...payout, payoutDate: '2026-10-09' },
+        2,
+        allowed
+      )
+      .then(
+        () => null,
+        (error: unknown) => error
+      );
+    // The date check let the branch's today through to the write; whatever the
+    // stand-in then stopped, it was not the date rule.
+    expect((outcome as { safeDetails?: unknown } | null)?.safeDetails).not.toEqual({
+      violations: [{ path: 'body.payoutDate', rule: REFUND_RULES.payoutDateInvalid }],
+    });
+    expect(accepted.executeRequest).toHaveBeenCalledTimes(1);
+    expect(accepted.executeRequest.mock.calls[0]?.[2]).toMatchObject({ payoutDate: '2026-10-09' });
+    expect(accepted.branchToday).toHaveBeenCalledWith(expect.anything(), {
+      companyId: COMPANY,
+      branchId: BRANCH,
+    });
+    const refused = ahead();
+    const tomorrow = await failureOf(() =>
+      new RefundService(refused as never).executeRefund(
+        handle(REQUESTER),
+        REQUEST,
+        { ...payout, payoutDate: '2026-10-10' },
+        2,
+        allowed
+      )
+    );
+    expect(tomorrow.safeDetails).toEqual({
+      violations: [{ path: 'body.payoutDate', rule: REFUND_RULES.payoutDateInvalid }],
+    });
+    expect(refused.executeRequest).not.toHaveBeenCalled();
   });
 
   it('answers a repeat under the payout key before comparing the version, and refuses any other repeat', async () => {
