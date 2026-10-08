@@ -195,6 +195,7 @@ function BranchAdjustments({
         </div>
         <BranchListView
           messages={messages}
+          locale={locale}
           list={list}
           loadingKey="inventory.adjustments.list.loading"
           noneKey="inventory.adjustments.list.none"

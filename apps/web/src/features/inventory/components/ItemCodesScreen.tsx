@@ -100,15 +100,15 @@ type Panel<T> =
   | {
       readonly phase: 'failed';
       readonly status: 'denied' | 'expired' | 'unavailable';
-      readonly messageKey: string;
+      readonly messageKey: keyof Messages;
       readonly correlationId: string | null;
       readonly retry: (() => void) | null;
     };
 
 function usePanel<T>(
   read: () => Promise<ReadState<T>>,
-  refusedKey: string,
-  unavailableKey: string,
+  refusedKey: keyof Messages,
+  unavailableKey: keyof Messages,
   /** Extra inputs that make a DIFFERENT request, so an old answer is not shown for a new one. */
   variant = ''
 ): { readonly panel: Panel<T>; readonly reload: () => void } {
@@ -244,7 +244,11 @@ function IdentifiersPanel({
       </div>
 
       {panel.phase === 'loading' ? (
-        <MuiLoadingState messages={messages} variant="inline" />
+        <MuiLoadingState
+          messages={messages}
+          variant="inline"
+          labelKey="inventory.identifiers.loading"
+        />
       ) : panel.phase === 'failed' ? (
         <PanelFailure locale={locale} messages={messages} panel={panel} />
       ) : (
@@ -637,7 +641,7 @@ function PricesPanel({
         </p>
       ) : null}
       {panel.phase === 'loading' ? (
-        <MuiLoadingState messages={messages} variant="inline" />
+        <MuiLoadingState messages={messages} variant="inline" labelKey="inventory.prices.loading" />
       ) : panel.phase === 'failed' ? (
         <PanelFailure locale={locale} messages={messages} panel={panel} />
       ) : panel.data.prices.length === 0 ? (
@@ -883,7 +887,7 @@ function PanelFailure({
       status={panel.status}
       correlationId={panel.correlationId}
       onRetry={panel.retry ?? undefined}
-      descriptionKey={panel.messageKey as keyof Messages}
+      descriptionKey={panel.messageKey}
     />
   );
 }

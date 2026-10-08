@@ -160,6 +160,42 @@ describe('the FieldFrame contract, on Material UI', () => {
     expect(screen.getByRole('textbox', { name: 'Note' })).not.toHaveAttribute('spellcheck');
   });
 
+  it('hands a key pressed in the box to the caller, which may keep Enter from the form (INV1b)', async () => {
+    // `ItemFinder`: Enter in its search box searches now and never submits the
+    // stock form around it. A box that does not ask lets the form have it.
+    const user = userEvent.setup();
+    const submitted = vi.fn();
+    const searched = vi.fn();
+    mount(
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitted();
+        }}
+      >
+        <FormTextField
+          label="Find"
+          value=""
+          onChange={() => undefined}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              searched();
+            }
+          }}
+        />
+        <FormTextField label="Note" value="" onChange={() => undefined} />
+        <button type="submit">Save</button>
+      </form>
+    );
+    await user.type(screen.getByRole('textbox', { name: 'Find' }), '{Enter}');
+    expect(searched).toHaveBeenCalledTimes(1);
+    expect(submitted).not.toHaveBeenCalled();
+    await user.type(screen.getByRole('textbox', { name: 'Note' }), '{Enter}');
+    expect(submitted).toHaveBeenCalledTimes(1);
+    expect(searched).toHaveBeenCalledTimes(1);
+  });
+
   it('keeps what was typed when a refusal arrives', async () => {
     const user = userEvent.setup();
     function Refused() {
