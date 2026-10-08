@@ -499,6 +499,16 @@ function SettlementSection({
             </dd>
           </>
         ) : null}
+        {settlement.refunded !== undefined && !isZeroMoney(settlement.refunded.amount) ? (
+          <>
+            <dt className="text-text-muted">
+              {translate(messages, 'invoices.settlement.refunded')}
+            </dt>
+            <dd className="text-end" data-testid="invoice-print-refunded">
+              <Money money={settlement.refunded} locale={locale} />
+            </dd>
+          </>
+        ) : null}
       </dl>
       {thirdParty.length > 0 ? (
         // What a third party paid for the customer is part of the settlement as

@@ -500,7 +500,10 @@ describe('W9 — the bootstrap the provisioning operation now carries', () => {
     // 97 with `sal.payment.third_party`, MINTED by Owner decision D14 of 2026-09-30
     // (ADR-023): a receipt applied to another customer's invoice as an explicit,
     // authorised third-party payment. Consulted, not declared, by the allocation.
-    expect(expected).toHaveLength(97);
+    // 98 with `sal.refund.approve` (Owner decision D2, part 2, ADR-023): approving and
+    // rejecting a refund request somebody else raised.
+    expect(expected).toHaveLength(98);
+    expect(expected).toContain('sal.refund.approve');
     expect(expected).toContain('sal.payment.third_party');
     expect(expected).toContain('sal.reversal.approve');
     expect(expected).toContain('sal.credit.approve');

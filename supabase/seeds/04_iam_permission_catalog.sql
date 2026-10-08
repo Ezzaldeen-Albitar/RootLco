@@ -119,6 +119,12 @@ INSERT INTO iam.permissions (permission_code, domain, description, risk_level, c
   -- approves nothing.
   ('sal.credit.approve',       'sal', 'Approve and reject credit notes within a credit-note approval limit', 'high', '00000000-0000-4000-8000-000000000001'),
   ('sal.reversal.approve',     'sal', 'Approve receipt reversals (dual control)',   'high',   '00000000-0000-4000-8000-000000000001'),
+  -- Owner decision D2, part 2 (ADR-023, P1-32-PRE-OD-FD2B): deciding a refund request
+  -- is a second person's authority of its own. Approving and rejecting declare it;
+  -- requesting, withdrawing and recording the payout declare sal.payment.record.
+  -- The approver is never the requester, and an approval pays nothing: the payout
+  -- is a separate, one-time step.
+  ('sal.refund.approve',       'sal', 'Approve and reject refund requests (dual control)', 'high', '00000000-0000-4000-8000-000000000001'),
   ('sal.finance.view',         'sal', 'View financial amounts (invoices/receipts/events)', 'high', '00000000-0000-4000-8000-000000000001'),
   -- Phase 1-11 — Delivery & Custody (sal)
   ('sal.delivery.manage',      'sal', 'Manage deliveries, receivers, signatures',  'medium', '00000000-0000-4000-8000-000000000001'),

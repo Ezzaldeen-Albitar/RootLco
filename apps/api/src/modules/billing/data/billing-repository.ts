@@ -403,6 +403,13 @@ export interface InvoiceListRow extends InvoiceRow {
   readonly payerPartyType: string | null;
   /** `round(sal.invoice_open_receivable(id), 4)` as a decimal STRING. */
   readonly openAmount: string;
+  /**
+   * What the invoice can still be credited (ADR-023 D2, P1-32-PRE-OD-FD2B): the
+   * gross of an issued or credited invoice less its APPROVED credit notes, as a
+   * decimal STRING — the predicates `creditCeiling` and `sal.approve_credit_note`
+   * apply.
+   */
+  readonly creditableAmount: string;
 }
 
 /**
@@ -631,6 +638,19 @@ export interface CreditApprovalEffectRow {
 }
 
 /**
+ * The refund facts of one invoice (D7 `refundStatus`): what its obligations total,
+ * what has been paid out on them, what is still owed, and whether a request waits
+ * for a decision or for its payout.
+ */
+export interface InvoiceRefundPositionRow {
+  readonly obligated: string;
+  readonly refunded: string;
+  readonly stillOwed: string;
+  readonly pendingRequest: boolean;
+  readonly approvedRequest: boolean;
+}
+
+/**
  * One refund obligation (ADR-023 D2, P1-32-PRE-OD-FD2A): money a customer is owed
  * back because an approved credit exceeded what the invoice still owed. The WHOLE
  * row is gated by `sal.finance.view` (`sel_refund_obligations_gated`). An
@@ -648,11 +668,15 @@ export interface RefundObligationRow {
   readonly amount: string;
   /** `credit_excess` only (`ck_refund_obligations_source`). */
   readonly source: string;
-  /** `open` until refund requests exist (FD2B). */
+  /** `open` until what has been paid out reaches its amount, then `settled` (FD2B). */
   readonly state: string;
   readonly createdAt: Date;
   readonly createdBy: string;
   readonly recordVersion: number;
+  /** What its approved refund requests have paid out, `numeric(18,4)` text (FD2B). */
+  readonly paidOut: string;
+  /** Its amount less what has been paid out, computed by PostgreSQL (FD2B). */
+  readonly stillOwed: string;
 }
 
 /** A work order's scope. `sal.invoices` must be created in exactly this scope. */
@@ -989,6 +1013,8 @@ interface RefundObligationSql {
   created_at: Date;
   created_by: string;
   record_version: number;
+  paid_out: string;
+  still_owed: string;
 }
 
 const toRefundObligation = (r: RefundObligationSql): RefundObligationRow => ({
@@ -1005,11 +1031,25 @@ const toRefundObligation = (r: RefundObligationSql): RefundObligationRow => ({
   createdAt: r.created_at,
   createdBy: r.created_by,
   recordVersion: r.record_version,
+  paidOut: r.paid_out,
+  stillOwed: r.still_owed,
 });
+
+/**
+ * What the obligation's approved refund requests have paid out (P1-32-PRE-OD-FD2B),
+ * summed by PostgreSQL; `sal.refund_requests` is gated by `sal.finance.view` exactly
+ * as the obligation is, so the sum never undercounts for a caller who sees the row.
+ */
+const REFUND_OBLIGATION_PAID_OUT = `COALESCE((SELECT sum(rr.amount) FROM sal.refund_requests rr
+    WHERE rr.tenant_id = ro.tenant_id AND rr.company_id = ro.company_id
+      AND rr.branch_id = ro.branch_id AND rr.obligation_id = ro.id
+      AND rr.approval_state = 'approved' AND rr.executed_at IS NOT NULL), 0)`;
 
 const REFUND_OBLIGATION_COLUMNS = `ro.id, ro.company_id, ro.branch_id, ro.partner_id, ro.invoice_id,
   ro.credit_note_id, ro.currency_code, ro.amount::text AS amount, ro.source, ro.state,
-  ro.created_at, ro.created_by, ro.record_version`;
+  ro.created_at, ro.created_by, ro.record_version,
+  (${REFUND_OBLIGATION_PAID_OUT})::numeric(18,4)::text AS paid_out,
+  (ro.amount - ${REFUND_OBLIGATION_PAID_OUT})::numeric(18,4)::text AS still_owed`;
 
 export class BillingRepository extends Repository {
   protected readonly module = 'billing';
@@ -3066,6 +3106,7 @@ export class BillingRepository extends Repository {
       InvoiceSql & {
         sort_value: string;
         open_amount: string;
+        creditable_amount: string;
         payer_display_name: string | null;
         payer_display_number: string | null;
         payer_party_type: string | null;
@@ -3088,6 +3129,11 @@ export class BillingRepository extends Repository {
               a.tax_total::text   AS tax_total,
               a.gross_total::text AS gross_total,
               round(sal.invoice_open_receivable(i.id), 4)::text AS open_amount,
+              (CASE WHEN i.status IN ('issued', 'credited') THEN COALESCE(a.gross_total, 0) ELSE 0 END
+                 - COALESCE((SELECT sum(cn.amount) FROM sal.credit_notes cn
+                              WHERE cn.tenant_id = i.tenant_id AND cn.invoice_id = i.id
+                                AND cn.approval_state = 'approved'), 0))::numeric(18,4)::text
+                AS creditable_amount,
               pp.display_name   AS payer_display_name,
               pp.display_number AS payer_display_number,
               pp.party_type     AS payer_party_type,
@@ -3115,6 +3161,7 @@ export class BillingRepository extends Repository {
           payerDisplayNumber: row.payer_display_number,
           payerPartyType: row.payer_party_type,
           openAmount: row.open_amount,
+          creditableAmount: row.creditable_amount,
         },
         sortValue: row.sort_value,
         id: row.id,
@@ -3242,6 +3289,33 @@ export class BillingRepository extends Repository {
     return row ? { reducesBalanceBy: row.reduces, refundOwed: row.refund } : null;
   }
 
+  /**
+   * What an APPROVED note did (ADR-023 D2, P1-32-PRE-OD-FD2B): the part of its
+   * amount that reduced what the invoice still owed, and the part the customer is
+   * owed back — its refund obligation's amount, `0.0000` when it left none. Both
+   * computed by PostgreSQL in `numeric`, so the approval's answer can state the
+   * split without the browser subtracting money.
+   */
+  public async appliedCreditEffect(
+    db: DbHandle,
+    note: { readonly id: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<CreditApprovalEffectRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ reduces: string; refund: string }>(
+      db,
+      `SELECT (c.amount - COALESCE(ro.amount, 0))::numeric(18,4)::text AS reduces,
+              COALESCE(ro.amount, 0)::numeric(18,4)::text AS refund
+         FROM sal.credit_notes c
+         LEFT JOIN sal.refund_obligations ro
+           ON ro.tenant_id = c.tenant_id AND ro.company_id = c.company_id
+          AND ro.branch_id = c.branch_id AND ro.credit_note_id = c.id
+        WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3 AND c.id = $4
+          AND c.approval_state = 'approved'`,
+      [context.principal.tenantId, note.companyId, note.branchId, note.id]
+    );
+    return row ? { reducesBalanceBy: row.reduces, refundOwed: row.refund } : null;
+  }
+
   /** The refund obligation an approved credit note created, or `null` (at most one). */
   public async findRefundObligationForCreditNote(
     db: DbHandle,
@@ -3260,23 +3334,54 @@ export class BillingRepository extends Repository {
   }
 
   /**
-   * What the customer is owed back on one invoice: the sum of its OPEN refund
-   * obligations, `0.0000` when there are none (D7 `refundStatus`).
+   * What the invoice's refund obligations total (cancelled ones aside), what has
+   * been paid out on them, what is still owed on the open ones, and whether a
+   * request waits for a decision or for its payout. Sums in `numeric(18,4)`.
    */
-  public async openRefundOwed(
+  public async invoiceRefundPosition(
     db: DbHandle,
     scope: { readonly invoiceId: string; readonly companyId: string; readonly branchId: string }
-  ): Promise<string> {
+  ): Promise<InvoiceRefundPositionRow> {
     const context = this.assertContext(db);
-    const row = await this.runOne<{ owed: string }>(
+    const row = await this.runOne<{
+      obligated: string;
+      refunded: string;
+      still_owed: string;
+      pending_request: boolean;
+      approved_request: boolean;
+    }>(
       db,
-      `SELECT COALESCE(sum(ro.amount), 0)::numeric(18,4)::text AS owed
-         FROM sal.refund_obligations ro
-        WHERE ro.tenant_id = $1 AND ro.company_id = $2 AND ro.branch_id = $3
-          AND ro.invoice_id = $4 AND ro.state = 'open'`,
+      `WITH ob AS (
+         SELECT ro.id, ro.amount, ro.state,
+                COALESCE((SELECT sum(rr.amount) FROM sal.refund_requests rr
+                           WHERE rr.tenant_id = ro.tenant_id AND rr.company_id = ro.company_id
+                             AND rr.branch_id = ro.branch_id AND rr.obligation_id = ro.id
+                             AND rr.approval_state = 'approved' AND rr.executed_at IS NOT NULL), 0) AS paid
+           FROM sal.refund_obligations ro
+          WHERE ro.tenant_id = $1 AND ro.company_id = $2 AND ro.branch_id = $3
+            AND ro.invoice_id = $4 AND ro.state <> 'cancelled'
+       )
+       SELECT COALESCE(sum(ob.amount), 0)::numeric(18,4)::text AS obligated,
+              COALESCE(sum(ob.paid), 0)::numeric(18,4)::text AS refunded,
+              COALESCE(sum(ob.amount - ob.paid) FILTER (WHERE ob.state = 'open'), 0)::numeric(18,4)::text
+                AS still_owed,
+              EXISTS (SELECT 1 FROM sal.refund_requests rr
+                       WHERE rr.tenant_id = $1 AND rr.company_id = $2 AND rr.branch_id = $3
+                         AND rr.invoice_id = $4 AND rr.approval_state = 'pending') AS pending_request,
+              EXISTS (SELECT 1 FROM sal.refund_requests rr
+                       WHERE rr.tenant_id = $1 AND rr.company_id = $2 AND rr.branch_id = $3
+                         AND rr.invoice_id = $4 AND rr.approval_state = 'approved'
+                         AND rr.executed_at IS NULL) AS approved_request
+         FROM ob`,
       [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId]
     );
-    return row?.owed ?? '0.0000';
+    return {
+      obligated: row?.obligated ?? '0.0000',
+      refunded: row?.refunded ?? '0.0000',
+      stillOwed: row?.still_owed ?? '0.0000',
+      pendingRequest: row?.pending_request === true,
+      approvedRequest: row?.approved_request === true,
+    };
   }
 
   /**

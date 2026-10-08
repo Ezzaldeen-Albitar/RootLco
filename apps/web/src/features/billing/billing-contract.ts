@@ -77,6 +77,13 @@ export const BILLING_PERMISSIONS = {
   /** Credit notes — both reads, the request and the withdrawal declare it (DEF-T-07). */
   creditManage: 'sal.credit.manage',
   /**
+   * Asking for a refund, withdrawing your own request and recording its payout
+   * (ADR-023 D2, part 2) — the code that records a receipt.
+   */
+  paymentRecord: 'sal.payment.record',
+  /** Approving and rejecting somebody else's refund request (ADR-023 D2, part 2). */
+  refundApprove: 'sal.refund.approve',
+  /**
    * Deciding a credit note — the approval and the rejection declare it (Owner
    * decision D13, ADR-023). An approval also needs a credit-note approval limit,
    * which the server checks; holding the code is what makes the decision offered.
@@ -109,11 +116,21 @@ export const PAYMENT_STATUSES = ['open', 'partly_paid', 'paid', 'nothing_due'] a
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
 /**
- * Money owed back or handed back (D7). `owed`: an approved credit exceeded what the
- * invoice still owed, so the customer is owed the difference (ADR-023 D2); nothing
- * has been paid back. Refund requests and their execution add later states.
+ * Money owed back or handed back (D7), as the server derives it (ADR-023 D2):
+ * `owed` — an approved credit exceeded what the invoice still owed, and nothing has
+ * been asked for or paid back yet; `requested` — a refund request waits for a second
+ * person's decision; `approved` — a request is approved and its payout not yet
+ * recorded; `partly_refunded` — part was paid back, the rest is still owed;
+ * `refunded` — everything owed was paid back. Nothing is paid back automatically.
  */
-export const REFUND_STATUSES = ['none', 'owed'] as const;
+export const REFUND_STATUSES = [
+  'none',
+  'owed',
+  'requested',
+  'approved',
+  'partly_refunded',
+  'refunded',
+] as const;
 export type RefundStatus = (typeof REFUND_STATUSES)[number];
 
 /** `SettlementView` — three separate positions of an issued invoice, and the two amounts behind them. */
@@ -128,6 +145,18 @@ export interface Settlement {
    * (ADR-023 D2), the server's sum; absent from a server before D2.
    */
   readonly refundOwed?: MoneyView;
+  /**
+   * What has been paid back to the customer — the recorded payouts of the invoice's
+   * refund requests (ADR-023 D2, P1-32-PRE-OD-FD2B), the server's sum; absent from a
+   * server before it.
+   */
+  readonly refunded?: MoneyView;
+  /**
+   * What the invoice can still be credited — its total less the credit notes already
+   * approved (ADR-023 D2) — as the server states it. The credit-note form caps at
+   * this, not at what is still owed; absent from a server before P1-32-PRE-OD-FD2B.
+   */
+  readonly creditable?: MoneyView;
   /**
    * The part of `paid` somebody other than the customer paid as a third-party
    * payment (ADR-023 D14), oldest first; absent from a server before D14.
@@ -227,6 +256,12 @@ export interface InvoicePayer {
 export interface InvoiceListEntry extends Invoice {
   readonly payer: InvoicePayer;
   readonly outstanding: MoneyView | null;
+  /**
+   * What the invoice can still be credited — its total less the credit notes already
+   * approved (ADR-023 D2) — `null` exactly when `outstanding` is; absent from a server
+   * before P1-32-PRE-OD-FD2B. The credit-note form caps at this.
+   */
+  readonly creditable?: MoneyView | null;
 }
 
 /** The shortest and longest box `sal.invoice-list` accepts, mirrored. */
@@ -602,7 +637,97 @@ export interface RefundObligation {
   readonly invoiceId: string;
   readonly creditNoteId: string;
   readonly amount: MoneyView;
+  /** `open` until what has been paid out reaches its amount, then `settled`. */
   readonly state: string;
+  readonly companyId?: string;
+  readonly branchId?: string;
+  readonly partnerId?: string;
+  readonly createdAt?: string;
+  readonly recordVersion?: number;
+  /** What has been paid out on it, the server's sum (P1-32-PRE-OD-FD2B). */
+  readonly paidOut?: MoneyView;
+  /** Its amount less what has been paid out, the server's figure (P1-32-PRE-OD-FD2B). */
+  readonly stillOwed?: MoneyView;
+}
+
+/**
+ * A refund request as the server reads it (`RefundRequestView`, ADR-023 D2 part 2):
+ * its decision, and `executed` once its payout is recorded.
+ */
+export const REFUND_REQUEST_STATES = [
+  'pending',
+  'approved',
+  'executed',
+  'rejected',
+  'withdrawn',
+] as const;
+export type RefundRequestState = (typeof REFUND_REQUEST_STATES)[number];
+
+/** A request's and a rejection's reason, mirrored: at most this many characters. */
+export const MAX_REFUND_REASON = 2000;
+/** A payout reference, mirrored: at most this many characters. */
+export const MAX_PAYOUT_REFERENCE = 200;
+
+/** `RefundMethodView` — the tenant payment method a refund is paid by. */
+export interface RefundMethod {
+  readonly id: string;
+  readonly kind: string;
+  readonly displayName: string;
+}
+
+/** `RefundRequestView` (ADR-023 D2, part 2). No figure here is computed by the screen. */
+export interface RefundRequest {
+  readonly id: string;
+  readonly obligationId: string;
+  readonly invoiceId: string;
+  /** `null` when the invoice header is not readable to the caller. */
+  readonly invoiceNumber: string | null;
+  /** The invoice's work order — where its screen opens — or `null` (a counter sale). */
+  readonly workOrderId: string | null;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly payeePartnerId: string;
+  readonly state: RefundRequestState;
+  readonly amount: MoneyView;
+  /** `null` only when the method row is not readable. */
+  readonly paymentMethod: RefundMethod | null;
+  readonly reason: string;
+  readonly requestedBy: string;
+  readonly requestedAt: string;
+  readonly decidedBy: string | null;
+  readonly decidedAt: string | null;
+  readonly decisionReason: string | null;
+  readonly executedBy: string | null;
+  readonly executedAt: string | null;
+  readonly payoutReference: string | null;
+  /** `YYYY-MM-DD`. */
+  readonly payoutDate: string | null;
+  readonly recordVersion: number;
+}
+
+/** `RefundObligationPositionView` — where an obligation stands, in the server's figures. */
+export interface RefundObligationPosition {
+  readonly id: string;
+  readonly state: string;
+  readonly amount: MoneyView;
+  readonly paidOut: MoneyView;
+  readonly stillOwed: MoneyView;
+  readonly recordVersion: number;
+}
+
+/** The echo of every refund command — `RefundRequestResult`. */
+export interface RefundRequestEcho {
+  readonly refundRequest: RefundRequest;
+  readonly obligation: RefundObligationPosition;
+  readonly replayed: boolean;
+}
+
+/** `RefundRequestDetailView` — one request with its obligation and the people, by name. */
+export interface RefundRequestDetail extends RefundRequest {
+  readonly requestedByName: string | null;
+  readonly decidedByName: string | null;
+  readonly executedByName: string | null;
+  readonly obligation: RefundObligationPosition;
 }
 
 /*
@@ -619,6 +744,13 @@ export interface CreditNoteEcho {
   readonly creditNote: CreditNote;
   /** True when the key (create) or an already-approved note (approve) was met again. */
   readonly replayed: boolean;
+  /**
+   * On an APPROVAL only (`CreditNoteApprovalResult`, ADR-023 D2): how the approved
+   * amount split — what it took off the balance and what the customer is owed back,
+   * zero when nothing — as the server computed it. Absent on the other commands
+   * and from a server before P1-32-PRE-OD-FD2B.
+   */
+  readonly approvalEffect?: CreditApprovalEffect | null;
 }
 
 /** The shape `sal.credit-note-create` accepts, mirrored: unsigned, 14 integer digits, 4 decimals. */

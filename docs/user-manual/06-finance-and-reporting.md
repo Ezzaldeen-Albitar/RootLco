@@ -42,12 +42,13 @@ In the left-hand menu <!-- nav.landmark = "Modules" --> you will find:
 | "Commerce" <!-- nav.group.commerce -->             | "Billing" <!-- nav.billing -->                      | `/en/invoices`                 | `sal.invoice.manage`              |
 | "Commerce"                                         | "Payments" <!-- nav.payments -->                    | `/en/payments`                 | `sal.finance.view`                |
 | "Commerce"                                         | "Credit notes" <!-- nav.creditNotes -->             | `/en/credit-notes`             | `sal.credit.manage`               |
+| "Commerce"                                         | "Refunds" <!-- nav.refunds -->                      | `/en/refunds`                  | `sal.finance.view`                |
 | "Records" <!-- nav.group.records -->               | "Reports" <!-- nav.reports -->                      | `/en/reports`                  | `rpt.report.read`                 |
 | "Records" › "Reports"                              | "All reports" <!-- nav.reportsAll -->               | `/en/reports`                  | `rpt.report.read`                 |
 | "Records" › "Reports"                              | "Operational overview" <!-- nav.reportsOverview --> | `/en/reports/overview`         | `rpt.report.read`                 |
 | "Administration" <!-- nav.group.administration --> | "Audit log" <!-- nav.auditLog -->                   | `/en/administration/audit-log` | `iam.audit.view`                  |
 
-In Arabic the same entries read "الفوترة", "المدفوعات", "إشعارات الخصم", "التقارير", "كل التقارير",
+In Arabic the same entries read "الفوترة", "المدفوعات", "إشعارات الخصم", "الاستردادات", "التقارير", "كل التقارير",
 "لمحة تشغيلية عامة" and "سجل التدقيق". Replace `/en/` with `/ar/` in any address.
 
 A menu entry you do not hold the permission for is not shown at all. The interface tells you plainly
@@ -346,10 +347,15 @@ read (Owner decision D7, ADR-023), with the two amounts behind them:
   note was larger than what the invoice still owed (Owner decision D2, ADR-023). The difference is
   then shown as "Refund owed to the customer" <!-- invoices.settlement.refundOwed --> with its
   amount, and "No money is paid back automatically." <!-- invoices.settlement.refundOwedExplain -->
-  The application records that the customer is owed the money; it does not pay it. Asking for a
-  refund, its second approver and paying it out are not in this release. The printed copy shows the
-  same refund status and, when there is one, the refund owed, in its "Payments and credits as of"
-  section.
+  The application records that the customer is owed the money; it does not pay it. It is paid back
+  through a refund request on the invoice's "Refunds" panel (§6.3.7), and the refund position then
+  reads "A refund is waiting for approval" <!-- invoices.refundStatus.requested --> , "A refund is
+  approved, not yet paid back" <!-- invoices.refundStatus.approved --> , "Partly paid back to the
+  customer" <!-- invoices.refundStatus.partly_refunded --> or "Paid back to the customer in full"
+  <!-- invoices.refundStatus.refunded --> . What has been paid back is shown as "Paid back to the
+  customer" <!-- invoices.settlement.refunded --> , and the refund owed is then what is still owed.
+  The printed copy shows the same refund status, the refund still owed and what was paid back, in its
+  "Payments and credits as of" section.
 
 A fully credited invoice therefore reads "Fully credited" and "Nothing to pay" — never "Paid". The
 invoice's own status stays "Issued", so a part sold on it can still be returned.
@@ -549,9 +555,10 @@ never approve it.
 **How much can be credited (Owner decision D2).** The application credits an invoice up to its
 total less the credit notes already approved on it, even once it is paid. Notes still waiting do not
 count when a note is raised; each approval checks again, so two approvals at the same moment can
-never credit more than the invoice's total. The **Raise a credit note** form in this release still
-offers at most what the invoice still owes; a credit can go beyond what is owed when a payment
-arrives between the request and its approval. A request or an approval above that is refused with "This
+never credit more than the invoice's total. The **Raise a credit note** form offers up to what the
+invoice can still be credited, and says that an amount above what is still owed becomes a refund owed
+to the customer once approved. A request or an approval above what can still be credited is refused
+with "This
 amount is more than the invoice can still be credited. Credit notes already approved on the same
 invoice count toward it." <!-- form.violation.credit_note_exceeds_creditable --> When an approved
 credit is larger than what the customer still owes, the balance goes to zero and the rest is
@@ -559,9 +566,9 @@ recorded as a refund owed to the customer (§6.2.7). No money is paid automatica
 posted to any account. While a customer is owed a refund on an invoice, a receipt that paid that
 invoice cannot be reversed: "This receipt paid an invoice on which the customer is owed a refund, so
 it cannot be reversed while that refund is still owed."
-<!-- form.violation.receipt_reversal_refund_obligation_open --> This is a temporary rule while the
+<!-- form.violation.receipt_reversal_refund_obligation_open --> This is an interim rule and an open
 
-refund steps are being built. **While it waits, another authorised person may reject it, saying why, and the
+policy point. **While it waits, another authorised person may reject it, saying why, and the
 person who raised it may withdraw it** (§6.2a). Approved, rejected and withdrawn are final.
 
 **What is still NOT AVAILABLE:**
@@ -737,16 +744,27 @@ it."**, and a counter-sale return moves the stock but not the money.
 
 1. Under **Raise a credit note** <!-- creditNotes.request.heading --> , find the invoice in **Invoice
    to credit** <!-- creditNotes.request.invoice --> by its number or its customer, and choose it.
-   "Only invoices that have been issued and still have money open can be credited."
+   "Only issued invoices that still have money open are listed here. To credit an invoice that is
+   already paid, open the invoice and raise the credit note there."
    <!-- creditNotes.request.invoiceHelp --> What is **Still open on this invoice**
-   <!-- creditNotes.request.open --> is shown beside the amount. On an invoice's own screen the
-   invoice is already chosen and this step is skipped.
+   <!-- creditNotes.request.open --> and what **Can still be credited**
+   <!-- creditNotes.request.creditable --> — the invoice's total less the credit notes already
+   approved on it — are shown beside the amount, with "An amount above what is still open becomes a
+   refund owed to the customer once the note is approved. Nothing is paid back automatically."
+   <!-- creditNotes.request.aboveOwedBecomesRefund --> On an invoice's own screen the invoice is
+   already chosen and this step is skipped; the form is offered there for as long as the invoice can
+   still be credited, even once it is paid.
 2. Enter **Amount to credit** <!-- creditNotes.request.amount --> — in the invoice's currency, more
    than zero, with at most four digits after the point and no finer than the currency's smallest
    coin — and **Why it is being credited** <!-- creditNotes.request.reason --> . An amount finer than
    the currency allows is refused on the box before anything is sent: "This amount has more decimal
    places than the currency allows. Use no more decimal places than the currency's smallest coin,
-   then try again." <!-- form.violation.minor_unit_scale -->
+   then try again." <!-- form.violation.minor_unit_scale --> An amount above what can still be
+   credited is refused on the box too: "This is more than the invoice can still be credited. Enter an
+   amount no greater than what can still be credited." <!-- creditNotes.request.aboveCreditable -->
+   An amount above what is still open, but within what can be credited, is accepted, and the form says
+   "This amount is more than is still open on the invoice: once approved, the balance goes to zero and
+   the rest is owed back to the customer as a refund." <!-- creditNotes.request.partBecomesRefund -->
 3. Press **Raise the credit note** <!-- creditNotes.request.submit --> . The screen says "The credit
    note was raised. It is waiting for a second person to approve it, and nothing is credited until
    then." <!-- creditNotes.request.recorded --> and opens the new note, marked as waiting for
@@ -762,7 +780,9 @@ credit-approval permission and a credit note approval limit that covers it
 1. Open the note from the list (step 3 above).
 2. Check the amount and the reason, and press **Approve this credit note**
    <!-- creditNotes.approve.action --> . "Approving credits this amount against its invoice, so what
-   the customer owes goes down by it." <!-- creditNotes.approve.explain --> The screen asks once more,
+   the customer owes goes down by it. If the amount is more than the customer still owes, the balance
+   goes to zero and the rest is recorded as a refund owed to the customer; nothing is paid back
+   automatically." <!-- creditNotes.approve.explain --> The screen asks once more,
    **Approve this credit note?** <!-- creditNotes.approve.confirmTitle --> , naming the amount and the
    reason. When the amount is more than the invoice still owes, it also says how it splits: "This is
    more than the invoice still owes: approving reduces what is owed by {reduces}, and the customer
@@ -771,7 +791,10 @@ credit-approval permission and a credit note approval limit that covers it
    <!-- overlay.cancel --> .
 3. The screen says "The credit note was approved. What the customer owes on the invoice has gone
    down by its amount." <!-- creditNotes.approve.done --> , the note reads **Approved**, and the list
-   is read again.
+   is read again. When the approval left the customer owed a refund, the screen says how it split
+   instead: "The credit note was approved. What the customer owes on the invoice went down by
+   {reduces}, and {refund} is now owed back to the customer as a refund. Nothing was paid
+   automatically." <!-- creditNotes.approve.doneWithRefund -->
 
 On a note you raised yourself there is no approve button; the note says "You raised this credit
 note, so it is waiting for another approver: a different person who can approve credit notes must
@@ -1213,7 +1236,8 @@ belongs to a different customer from the one who paid this receipt." <!-- paymen
 
 ### 6.3.7 Reversing a receipt, and refunds
 
-**Reversing a receipt — IMPLEMENTED (UI). Refunds — NOT AVAILABLE.**
+**Reversing a receipt — IMPLEMENTED (UI). Refunds — IMPLEMENTED (UI), without accounting (Owner
+decision D2, part 2).**
 
 A receipt recorded wrongly — the wrong amount typed, the wrong payer chosen, or money applied to
 the wrong invoice — is corrected by reversing the **whole** receipt and recording the right one. A
@@ -1300,13 +1324,76 @@ reversal. The person who asked can never approve or reject their own request.
 
 **What the reversal does not do**
 
-- It is not a refund (refunds are not available in this release).
+- It is not a refund (a refund is paid back through a refund request, below).
 - Reports keep leaving reversed receipts out of the money received, as before — counted from the
   moment the reversal was approved. The "Invoices and payments" report of a closed period shows its
   amounts as of the end of that period, so a receipt reversed afterwards is still shown there as it
   stood then (6.5.4a).
 - Organisations set up before this release: nobody can approve or reject a reversal until an
   administrator who holds `sal.reversal.approve` grants it (Part 3).
+
+**Refunds — paying back what a customer is owed**
+
+When an approved credit note was larger than what the invoice still owed, the customer is owed the
+difference back (§6.2.7). Nothing is paid back automatically, and nothing here is posted to any
+account: the money is paid back outside the application — in cash, by card terminal or by bank
+transfer — and the application records that it was. It happens in three separate steps, on the
+"Refunds" <!-- refunds.panel.heading --> panel of the invoice's own screen, which is shown while the
+customer is owed money back: "The customer is owed money back on this invoice. A refund is asked for,
+approved by a second person, and then recorded once it has been paid back. Nothing is paid back
+automatically." <!-- refunds.panel.explain -->
+
+| Step                          | Who                                                                                |
+| ----------------------------- | ---------------------------------------------------------------------------------- |
+| Ask for a refund              | A person holding `sal.payment.record` in the invoice's branch                      |
+| Withdraw the request          | The person who asked, and nobody else, while it waits                              |
+| Approve or reject the request | A **different** person holding `sal.refund.approve` in the invoice's branch        |
+| Record the payout             | A person holding `sal.payment.record`, once the request is approved, and only once |
+
+Each obligation shows "Owed to the customer" <!-- refunds.owed --> , "Paid back so far"
+<!-- refunds.paidOut --> and "Still owed" <!-- refunds.stillOwed --> , as the service states them.
+
+- **Ask for a refund** <!-- refunds.request.heading --> : enter "Amount to pay back"
+  <!-- refunds.request.amount --> — at most what is still owed — choose "Pay back by"
+  <!-- refunds.request.method --> and write "Why it is paid back" <!-- refunds.request.reason --> , then
+  press "Ask for the refund" <!-- refunds.request.submit --> . The panel says "The refund was asked for.
+  It waits for a second person to approve it, and nothing has been paid back."
+  <!-- refunds.request.recorded --> Only one request at a time waits on what is owed; a rejected or
+  withdrawn request can be followed by a new one, and after a part has been paid back the rest can be
+  asked for.
+- **Approve or reject** — "Approve the refund" <!-- refunds.approve.action --> asks "Approve this
+  refund?" <!-- refunds.approve.confirmTitle --> and says nothing is paid by approving; "Reject"
+  <!-- refunds.reject.action --> asks for "Why it is rejected" <!-- refunds.reject.reason --> . The person
+  who asked sees "You asked for this refund, so another person who can approve refunds must decide it.
+  You can withdraw it while it waits." <!-- refunds.live.ownRequest --> and is offered "Withdraw my
+  request" <!-- refunds.withdraw.action --> instead.
+- **Record the payout** <!-- refunds.execute.heading --> : once the money has been paid back, enter
+  "Payout reference" <!-- refunds.execute.reference --> and "Day it was paid back"
+  <!-- refunds.execute.date --> ; the approved way of paying back is shown and used. Press "Record the
+  payout" <!-- refunds.execute.submit --> . "The payout was recorded. What the customer is still owed
+  has gone down by its amount." <!-- refunds.execute.done --> It is recorded once and cannot be changed.
+  When everything owed has been paid back, it reads "Paid back in full."
+  <!-- refunds.obligationState.settled -->
+- **History** <!-- refunds.history.heading --> lists every request on the invoice: who asked and when,
+  the decision, and the payout's day and reference.
+- **If it goes wrong:** "This is more than the customer is still owed. Enter an amount no greater than
+  what is still owed." <!-- form.violation.refund_exceeds_obligation --> · "A refund for this amount
+  owed is already waiting for approval or for its payout to be recorded."
+  <!-- form.violation.refund_request_live_exists --> · "You asked for this refund, so you cannot approve
+  it. Another person who can approve refunds must approve it."
+  <!-- form.violation.refund_self_approval --> · "This refund has not been approved, so its payout
+  cannot be recorded." <!-- form.violation.refund_not_approved --> · "The payout of this refund has
+  already been recorded." <!-- form.violation.refund_already_executed --> · "The day it was paid back
+  cannot be in the future." <!-- form.violation.refund_payout_date_invalid -->
+
+The "Refunds" <!-- nav.refunds --> page in the menu lists a branch's refund requests, newest first,
+narrowed by status, customer and invoice, and opens the invoice where the next step is taken.
+
+**What refunds do not do yet** (open Owner questions): paying a third party back instead of the
+customer; cancelling what is owed; refund approval limits; a printed refund voucher; refunds in the
+"Invoices and payments" report and its snapshots. Organisations set up before this release: nobody
+can approve or reject a refund until an administrator who holds `sal.refund.approve` grants it
+(Part 3).
 
 ### 6.3.8 Adding a payment method for your organisation
 

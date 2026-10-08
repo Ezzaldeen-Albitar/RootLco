@@ -148,6 +148,9 @@ describe('the navigation model', () => {
       // P1-28 Wave D: the Reception entry landed WITH its first screen, the
       // check-in wizard at `/receptions/check-in` (`P1-28-FE-007`).
       'receptions',
+      // P1-32-PRE-OD-FD2B: the branch's refund requests at `/refunds`, gated on
+      // `sal.finance.view` — the code both refund-request reads declare.
+      'refunds',
       // P1-31 FE-011 … FE-014: the report catalogue at `/reports`, gated on
       // `rpt.report.read` — the code all three report operations declare. The
       // rows a given report returns need that report's own dataset codes as

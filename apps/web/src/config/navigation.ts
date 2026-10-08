@@ -608,6 +608,19 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         scope: 'branch',
       },
       {
+        key: 'refunds',
+        labelKey: 'nav.refunds',
+        icon: 'payments',
+        // ADR-023 D2, part 2 (P1-32-PRE-OD-FD2B): a branch's refund requests —
+        // asked, decided and paid out. Gated on `sal.finance.view`, the ONLY code the
+        // list declares; asking, deciding and recording a payout are offered on the
+        // invoice's own refunds panel to the holders of their codes.
+        href: '/refunds',
+        permission: 'sal.finance.view',
+        status: 'available',
+        scope: 'branch',
+      },
+      {
         key: 'delivery',
         labelKey: 'nav.delivery',
         icon: 'delivery',

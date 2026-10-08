@@ -84,6 +84,8 @@ import { BillingRepository } from './data/billing-repository';
 import { BillingReadService } from './application/billing-read-service';
 import { BillingReportPort } from './application/billing-report-port';
 import { InvoiceService } from './application/invoice-service';
+import { RefundRepository } from './data/refund-repository';
+import { RefundService } from './application/refund-service';
 
 // ---- Row-shape types --------------------------------------------------------
 //
@@ -151,6 +153,16 @@ export type {
 } from './application/billing-read-service';
 
 export type {
+  RefundMethodView,
+  RefundObligationPositionView,
+  RefundRequestDetailView,
+  RefundRequestResult,
+  RefundRequestView,
+} from './application/refund-service';
+
+export type { RefundRequestRow } from './data/refund-repository';
+
+export type {
   CreditNoteTotal,
   InvoiceDocumentEntry,
   InvoiceDocumentSummary,
@@ -186,7 +198,9 @@ export {
   INVOICE_STATUSES,
   INVOICE_TRANSITIONS,
   MAX_DESCRIPTION,
+  MAX_PAYOUT_REFERENCE,
   MAX_REASON,
+  MAX_REFUND_REASON,
   MONEY_PRECISION,
   MONEY_SCALE,
   QUANTITY_MAX,
@@ -194,6 +208,10 @@ export {
   CREDIT_STATUSES,
   PAYMENT_STATUSES,
   REFUND_OBLIGATION_STATES,
+  REFUND_PERMISSIONS,
+  REFUND_REQUEST_APPROVAL_STATES,
+  REFUND_REQUEST_STATES,
+  REFUND_RULES,
   REFUND_STATUSES,
   SALE_KINDS,
   assertCreditWithinCreditable,
@@ -207,10 +225,14 @@ export {
   issuePostsStock,
   parseInstrumentAmount,
   parseInvoiceAmount,
+  refundRequestState,
   type ApprovalState,
   type CreditStatus,
   type PaymentStatus,
   type RefundObligationState,
+  type RefundPosition,
+  type RefundRequestApprovalState,
+  type RefundRequestState,
   type RefundStatus,
   type SaleKind,
   type FinancialEventSourceType,
@@ -248,6 +270,10 @@ export const billingModule = composeModule({
       // that service answers for ONE invoice and its shapes are the invoice
       // screen's; a period report over many documents shares none of them.
       reportPort: new BillingReportPort(repository),
+      // ADR-023 D2, part 2 (P1-32-PRE-OD-FD2B): refund requests — the request, the
+      // second person's decision and the one-time payout record. A repository of its
+      // own, because none of its SQL is the invoice screen's.
+      refunds: new RefundService(new RefundRepository()),
     };
   },
 });

@@ -102,7 +102,17 @@ const approveCreditNote = vi.fn();
 const withdrawCreditNote = vi.fn();
 const rejectCreditNote = vi.fn();
 const listInvoices = vi.fn();
+// ADR-023 D2, part 2: the refunds panel's reads, answered empty unless a case says.
+const listRefundObligations = vi.fn();
+const listRefundRequests = vi.fn();
 vi.mock('@/features/billing/api', () => ({
+  listRefundObligations: (...args: unknown[]) => listRefundObligations(...args),
+  listRefundRequests: (...args: unknown[]) => listRefundRequests(...args),
+  requestRefund: vi.fn(),
+  approveRefund: vi.fn(),
+  rejectRefund: vi.fn(),
+  withdrawRefund: vi.fn(),
+  executeRefund: vi.fn(),
   readWorkOrderInvoice: (...args: unknown[]) => readWorkOrderInvoice(...args),
   readInvoicePreview: (...args: unknown[]) => readInvoicePreview(...args),
   readInvoice: (...args: unknown[]) => readInvoice(...args),
@@ -117,6 +127,10 @@ vi.mock('@/features/billing/api', () => ({
   withdrawCreditNote: (...args: unknown[]) => withdrawCreditNote(...args),
   rejectCreditNote: (...args: unknown[]) => rejectCreditNote(...args),
   listInvoices: (...args: unknown[]) => listInvoices(...args),
+}));
+
+vi.mock('@/features/payments/api', () => ({
+  listPaymentMethods: async () => ({ status: 'ok', data: { items: [] }, correlationId: 'corr' }),
 }));
 
 // DX-2 (finance QA fixes E): the balance is read through the cancellable route
@@ -475,6 +489,12 @@ beforeEach(() => {
   readOutstanding.mockImplementation(async () => okRead({ ...outstanding }));
   readWorkOrderDetail.mockImplementation(async () =>
     okRead({ workOrder, jobs: [], nextStates: [], reachableStates: [] })
+  );
+  listRefundObligations.mockImplementation(async () =>
+    okRead({ items: [], nextCursor: null, hasMore: false })
+  );
+  listRefundRequests.mockImplementation(async () =>
+    okRead({ items: [], nextCursor: null, hasMore: false })
   );
 });
 
@@ -1402,6 +1422,59 @@ describe('FE-015 / FE-019 — the invoice, split by finance view', () => {
     expect(balance).toHaveTextContent(EN['invoices.settlement.refundOwedExplain'] as string);
   });
 
+  it('FD2B: draws the refunds panel while the customer is owed money back, reading this invoice', async () => {
+    listRefundObligations.mockResolvedValue(
+      okRead({ items: [], nextCursor: null, hasMore: false })
+    );
+    listRefundRequests.mockResolvedValue(okRead({ items: [], nextCursor: null, hasMore: false }));
+    readOutstanding.mockImplementation(async () => okRead(owedBack));
+    renderScreen({ ...live() });
+    expect(
+      await screen.findByRole('region', { name: EN['refunds.panel.heading'] as string })
+    ).toBeVisible();
+    await waitFor(() => expect(listRefundObligations).toHaveBeenCalled());
+    expect(listRefundObligations.mock.calls[0]?.[1]).toEqual({ invoiceId: INVOICE_ID });
+  });
+
+  it('FD2B: draws no refunds panel while nobody is owed anything back', async () => {
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    await within(balance).findByTestId('invoice-refund-status');
+    expect(
+      screen.queryByRole('region', { name: EN['refunds.panel.heading'] as string })
+    ).toBeNull();
+    expect(listRefundObligations).not.toHaveBeenCalled();
+  });
+
+  it('FD2B: says what was paid back and what is still owed once part was refunded', async () => {
+    listRefundObligations.mockResolvedValue(
+      okRead({ items: [], nextCursor: null, hasMore: false })
+    );
+    listRefundRequests.mockResolvedValue(okRead({ items: [], nextCursor: null, hasMore: false }));
+    readOutstanding.mockImplementation(async () =>
+      okRead({
+        ...owedBack,
+        settlement: {
+          ...owedBack.settlement,
+          refundStatus: 'partly_refunded',
+          refundOwed: { amount: '20.0000', currency: 'USD' },
+          refunded: { amount: '10.0000', currency: 'USD' },
+        },
+      })
+    );
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    expect(await within(balance).findByTestId('invoice-refund-status')).toHaveTextContent(
+      EN['invoices.refundStatus.partly_refunded'] as string
+    );
+    expect(within(balance).getByTestId('invoice-refunded')).toHaveTextContent(money('10.0000'));
+    expect(within(balance).getByTestId('invoice-refund-owed')).toHaveTextContent(money('20.0000'));
+  });
+
   it('D2: shows no refund owed while nobody is owed anything back', async () => {
     renderScreen({ ...live() });
     const balance = await screen.findByRole('region', {
@@ -1921,6 +1994,46 @@ describe('FE-020 — the printable copy', () => {
     expect(within(document).getByTestId('invoice-print-issued-totals').contains(settlement)).toBe(
       false
     );
+  });
+
+  it('FD2B: prints what was paid back beside what is still owed', async () => {
+    const user = userEvent.setup();
+    listRefundObligations.mockResolvedValue(
+      okRead({ items: [], nextCursor: null, hasMore: false })
+    );
+    listRefundRequests.mockResolvedValue(okRead({ items: [], nextCursor: null, hasMore: false }));
+    readOutstanding.mockImplementation(async () =>
+      okRead({
+        ...outstanding,
+        outstanding: { amount: '0.0000', currency: 'USD' },
+        isSettled: true,
+        settlement: {
+          ...outstanding.settlement,
+          creditStatus: 'partly_credited',
+          paymentStatus: 'paid',
+          refundStatus: 'refunded',
+          credited: { amount: '30.0000', currency: 'USD' },
+          paid: { amount: '165.0000', currency: 'USD' },
+          refundOwed: { amount: '0.0000', currency: 'USD' },
+          refunded: { amount: '30.0000', currency: 'USD' },
+        },
+      })
+    );
+    renderScreen({ ...live() });
+    const balance = await screen.findByRole('region', {
+      name: EN['invoices.outstanding.heading'] as string,
+    });
+    await within(balance).findByTestId('invoice-refunded');
+    await user.click(screen.getByRole('button', { name: EN['invoices.print.open'] as string }));
+    const document = await screen.findByRole('article');
+    const settlement = within(document).getByTestId('invoice-print-settlement');
+    expect(within(settlement).getByTestId('invoice-print-refund-status')).toHaveTextContent(
+      EN['invoices.refundStatus.refunded'] as string
+    );
+    expect(within(settlement).getByTestId('invoice-print-refunded')).toHaveTextContent(
+      money('30.0000')
+    );
+    expect(within(settlement).queryByTestId('invoice-print-refund-owed')).toBeNull();
   });
 
   it('D2: prints no refund owed while nobody is owed anything back', async () => {
@@ -2840,7 +2953,7 @@ describe('raising and approving a credit note', () => {
     expect(requestCreditNote.mock.calls[1]?.[2]).toBe(requestCreditNote.mock.calls[0]?.[2]);
   });
 
-  it('refuses an amount above the open receivable before sending, and says pending notes may lower what can be approved', async () => {
+  it('refuses an amount above the cap before sending — the open receivable from a server that states no creditable figure — and says pending notes may lower what can be approved', async () => {
     const user = userEvent.setup();
     renderLtr(notesScreen(SIGNED_IN));
     const form = await requestForm();
@@ -2859,7 +2972,7 @@ describe('raising and approving a credit note', () => {
     expect(requestCreditNote).not.toHaveBeenCalled();
     await waitFor(() => expect(amountBox(form)).toHaveAttribute('aria-invalid', 'true'));
     expect(
-      within(form).getByText(EN['creditNotes.request.aboveOpen'] as string)
+      within(form).getByText(EN['creditNotes.request.aboveCreditable'] as string)
     ).toBeInTheDocument();
     await waitFor(() => expect(amountBox(form)).toHaveFocus());
 
@@ -2872,6 +2985,69 @@ describe('raising and approving a credit note', () => {
       amount: '100.0000',
       reason: 'Too much',
     });
+  });
+
+  it('FD2B: caps at what the invoice can still be credited, not at what is still open, and says the rest becomes a refund owed', async () => {
+    const user = userEvent.setup();
+    // 100 still open, 150 still creditable: the invoice was part-paid (ADR-023 D2).
+    listInvoices.mockResolvedValue(
+      okRead({
+        items: [{ ...invoiceEntry, creditable: { amount: '150.0000', currency: 'USD' } }],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+    renderLtr(notesScreen(SIGNED_IN));
+    const form = await requestForm();
+    await chooseInvoice(user, form);
+    // Both figures are the server's, side by side, with what an excess means.
+    expect(within(form).getByText(money('100.0000'))).toBeVisible();
+    expect(within(form).getByText(money('150.0000'))).toBeVisible();
+    expect(within(form).getByText(EN['creditNotes.request.creditable'] as string)).toBeVisible();
+    expect(
+      within(form).getByText(EN['creditNotes.request.aboveOwedBecomesRefund'] as string)
+    ).toBeVisible();
+
+    // Above the creditable figure: refused before sending.
+    await user.type(amountBox(form), '150.0001');
+    await user.type(reasonBox(form), 'Returned goods');
+    await user.click(submitIn(form));
+    expect(requestCreditNote).not.toHaveBeenCalled();
+    await waitFor(() => expect(amountBox(form)).toHaveAttribute('aria-invalid', 'true'));
+    expect(
+      within(form).getByText(EN['creditNotes.request.aboveCreditable'] as string)
+    ).toBeInTheDocument();
+
+    // Above what is open but within what can be credited: said, and sent.
+    await user.clear(amountBox(form));
+    await user.type(amountBox(form), '120');
+    expect(
+      await within(form).findByText(EN['creditNotes.request.partBecomesRefund'] as string)
+    ).toBeVisible();
+    await user.click(submitIn(form));
+    await waitFor(() => expect(requestCreditNote).toHaveBeenCalledTimes(1));
+    expect(requestCreditNote.mock.calls[0]?.[1]).toEqual({
+      amount: '120.0000',
+      reason: 'Returned goods',
+    });
+  });
+
+  it('FD2B: says nothing about a refund while the amount is within what is still open', async () => {
+    const user = userEvent.setup();
+    listInvoices.mockResolvedValue(
+      okRead({
+        items: [{ ...invoiceEntry, creditable: { amount: '150.0000', currency: 'USD' } }],
+        nextCursor: null,
+        hasMore: false,
+      })
+    );
+    renderLtr(notesScreen(SIGNED_IN));
+    const form = await requestForm();
+    await chooseInvoice(user, form);
+    await user.type(amountBox(form), '100');
+    expect(
+      within(form).queryByText(EN['creditNotes.request.partBecomesRefund'] as string)
+    ).toBeNull();
   });
 
   it('a half-written credit is unsaved work: a branch switch asks first', async () => {
@@ -3030,6 +3206,101 @@ describe('raising and approving a credit note', () => {
         refund: formatMoney({ amount: '10.0000', currency: 'USD' }, 'ar'),
       })
     );
+  });
+
+  /** The approval's answer when it left the customer owed 10.00 (P1-32-PRE-OD-FD2B). */
+  const approvedBeyondOwed = {
+    state: { status: 'success', messageKey: 'creditNotes.approve.success', attempt: 1 },
+    created: {
+      creditNote: approvedNote,
+      replayed: false,
+      approvalEffect: {
+        reducesBalanceBy: { amount: '5.5000', currency: 'USD' },
+        refundOwed: { amount: '10.0000', currency: 'USD' },
+      },
+    },
+  };
+
+  it('FD2B: once approved, says how the amount split and that nothing was paid automatically', async () => {
+    const user = userEvent.setup();
+    readCreditNote.mockResolvedValue({ status: 'ok', data: beyondOwed(), correlationId: 'corr' });
+    approveCreditNote.mockResolvedValueOnce(approvedBeyondOwed);
+    renderLtr(notesScreen(SIGNED_IN, NOTE_ID));
+    const dialog = await openApproval(user, EN['creditNotes.approve.action'] as string);
+    readCreditNote.mockResolvedValue({ status: 'ok', data: approvedNote, correlationId: 'corr' });
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['creditNotes.approve.action'] as string })
+    );
+    await waitFor(() => expect(approveCreditNote).toHaveBeenCalledWith(NOTE_ID));
+    // The two figures are the server's; nothing is subtracted on the screen.
+    expect(
+      await screen.findByText(
+        formatMessage(EN['creditNotes.approve.doneWithRefund'] as string, {
+          reduces: money('5.5000'),
+          refund: money('10.0000'),
+        })
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(EN['creditNotes.approve.done'] as string)).toBeNull();
+  });
+
+  it('FD2B: says the split in Arabic once approved', async () => {
+    const user = userEvent.setup();
+    readCreditNote.mockResolvedValue({ status: 'ok', data: beyondOwed(), correlationId: 'corr' });
+    approveCreditNote.mockResolvedValueOnce(approvedBeyondOwed);
+    renderRtl(
+      <CreditNotesScreen
+        locale="ar"
+        messages={ar}
+        initialCreditNoteId={NOTE_ID}
+        currentUserId={SIGNED_IN}
+        canDecide
+      />
+    );
+    const dialog = await openApproval(user, AR['creditNotes.approve.action'] as string);
+    await user.click(
+      within(dialog).getByRole('button', { name: AR['creditNotes.approve.action'] as string })
+    );
+    expect(
+      await screen.findByText(
+        formatMessage(AR['creditNotes.approve.doneWithRefund'] as string, {
+          reduces: formatMoney({ amount: '5.5000', currency: 'USD' }, 'ar'),
+          refund: formatMoney({ amount: '10.0000', currency: 'USD' }, 'ar'),
+        })
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('FD2B: keeps the plain done message when the approval left nobody owed anything', async () => {
+    const user = userEvent.setup();
+    approveCreditNote.mockResolvedValueOnce({
+      ...approvedBeyondOwed,
+      created: {
+        ...approvedBeyondOwed.created,
+        approvalEffect: {
+          reducesBalanceBy: { amount: '15.5000', currency: 'USD' },
+          refundOwed: { amount: '0.0000', currency: 'USD' },
+        },
+      },
+    });
+    renderLtr(notesScreen(SIGNED_IN, NOTE_ID));
+    const dialog = await openApproval(user, EN['creditNotes.approve.action'] as string);
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['creditNotes.approve.action'] as string })
+    );
+    expect(await screen.findByText(EN['creditNotes.approve.done'] as string)).toBeInTheDocument();
+  });
+
+  it('FD2B: explains before deciding that an amount above what is owed becomes a refund owed', async () => {
+    renderLtr(notesScreen(SIGNED_IN, NOTE_ID));
+    const detail = await screen.findByRole('region', {
+      name: EN['creditNotes.detail.heading'] as string,
+    });
+    expect(
+      await within(detail).findByText(EN['creditNotes.approve.explain'] as string)
+    ).toBeVisible();
+    expect(EN['creditNotes.approve.explain']).toContain('refund owed to the customer');
+    expect(AR['creditNotes.approve.explain']).toContain('كاسترداد');
   });
 
   const selfRefusal = {
@@ -3648,6 +3919,73 @@ describe('raising and approving a credit note', () => {
       });
       expect(await within(balance).findByTestId('invoice-payment-status')).toHaveTextContent(
         EN['invoices.paymentStatus.paid'] as string
+      );
+      expect(
+        screen.queryByRole('form', { name: EN['creditNotes.request.heading'] as string })
+      ).toBeNull();
+    });
+
+    it('FD2B: offers the credit on a PAID invoice the server says can still be credited, capped there', async () => {
+      const user = userEvent.setup();
+      readOutstanding.mockImplementation(async () =>
+        okRead({
+          ...outstanding,
+          outstanding: { amount: '0.0000', currency: 'USD' },
+          isSettled: true,
+          settlement: {
+            ...outstanding.settlement,
+            paymentStatus: 'paid',
+            paid: { amount: '165.0000', currency: 'USD' },
+            creditable: { amount: '165.0000', currency: 'USD' },
+          },
+        })
+      );
+      issuedScreen({ canRaiseCredit: true });
+      const form = await requestForm();
+      expect(within(form).getByText(money('165.0000'))).toBeVisible();
+      await user.type(amountBox(form), '165.0001');
+      await user.type(reasonBox(form), 'Paid for work not done');
+      await user.click(submitIn(form));
+      expect(requestCreditNote).not.toHaveBeenCalled();
+      expect(
+        await within(form).findByText(EN['creditNotes.request.aboveCreditable'] as string)
+      ).toBeInTheDocument();
+      await user.clear(amountBox(form));
+      await user.type(amountBox(form), '50');
+      // Everything above zero still owed is owed back once approved.
+      expect(
+        await within(form).findByText(EN['creditNotes.request.partBecomesRefund'] as string)
+      ).toBeVisible();
+      await user.click(submitIn(form));
+      await waitFor(() =>
+        expect(requestCreditNote).toHaveBeenCalledWith(
+          INVOICE_ID,
+          { amount: '50.0000', reason: 'Paid for work not done' },
+          expect.stringMatching(UUID_SHAPE)
+        )
+      );
+    });
+
+    it('FD2B: offers nothing once the server says nothing more can be credited', async () => {
+      readOutstanding.mockImplementation(async () =>
+        okRead({
+          ...outstanding,
+          outstanding: { amount: '0.0000', currency: 'USD' },
+          isSettled: true,
+          settlement: {
+            ...outstanding.settlement,
+            creditStatus: 'credited',
+            paymentStatus: 'nothing_due',
+            creditable: { amount: '0.0000', currency: 'USD' },
+          },
+        })
+      );
+      issuedScreen({ canRaiseCredit: true });
+      const balance = await screen.findByRole('region', {
+        name: EN['invoices.outstanding.heading'] as string,
+      });
+      expect(await within(balance).findByTestId('invoice-payment-status')).toHaveTextContent(
+        EN['invoices.paymentStatus.nothing_due'] as string
       );
       expect(
         screen.queryByRole('form', { name: EN['creditNotes.request.heading'] as string })

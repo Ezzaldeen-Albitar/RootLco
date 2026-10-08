@@ -510,6 +510,36 @@ describe('a domain that cannot answer says so, and the others still answer', () 
     expect(screen.queryByText(EN['reports.overview.notPublished'] as string)).toBeNull();
   });
 
+  it('says once that no overview report is available when the catalogue holds none of the four, and runs nothing (FD2B)', async () => {
+    listReportCatalogue.mockResolvedValue(CATALOGUE([]));
+    await showOverview();
+    expect(await screen.findByText(EN['reports.overview.noReportsTitle'] as string)).toBeVisible();
+    expect(screen.getByText(EN['reports.overview.noReportsBody'] as string)).toBeVisible();
+    for (const code of [
+      'work_orders_by_status',
+      'technician_labor_time',
+      'inventory_movements',
+      'invoice_payment_summary',
+    ]) {
+      expect(queryPanel(code), code).toBeNull();
+    }
+    expect(runReport).not.toHaveBeenCalled();
+  });
+
+  it('says it in Arabic too (FD2B)', async () => {
+    listReportCatalogue.mockResolvedValue(CATALOGUE([]));
+    await showOverview('ar');
+    expect(await screen.findByText(AR['reports.overview.noReportsTitle'] as string)).toBeVisible();
+    expect(runReport).not.toHaveBeenCalled();
+  });
+
+  it('draws no empty-catalogue notice while any of the four is available (FD2B)', async () => {
+    listReportCatalogue.mockResolvedValue(CATALOGUE([definition('work_orders_by_status')]));
+    await showOverview();
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(EN['reports.overview.noReportsTitle'] as string)).toBeNull();
+  });
+
   it('shows a caller without the finance report neither its title nor its caption (D17)', async () => {
     /*
      * Owner decision D17: a quotation user does not see finance reports. The

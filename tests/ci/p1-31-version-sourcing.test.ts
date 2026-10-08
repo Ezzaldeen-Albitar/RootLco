@@ -173,7 +173,9 @@ describe('the tree as it stands passes, and the run is not vacuous', () => {
       // reversal's versions.
       // 86 with the discount request withdrawal (P1-32-PRE-OD-FD8, ADR-023 D3),
       // If-Match-guarded by the request's version.
-      'P1-31 version sourcing: 11 guarded operation(s) in scope of 86 the contract guards, ' +
+      // 90 with the refund approval, rejection, withdrawal and payout record
+      // (P1-32-PRE-OD-FD2B, ADR-023 D2 part 2), If-Match-guarded by the request's version.
+      'P1-31 version sourcing: 11 guarded operation(s) in scope of 90 the contract guards, ' +
         '5 with a consumer, 6 pending one, 6 in-scope send(s), 5 adapter call site(s), ' +
         // 23 -> 25 with the P1-32 stock-operation adapters: posting a goods receipt and
         // recording a count line each send a version for an inv operation; 26 with the
@@ -187,8 +189,10 @@ describe('the tree as it stands passes, and the run is not vacuous', () => {
         // sal operation; 39 with the receipt panel's reversal request, rejection and
         // withdrawal, each sending the receipt's or the reversal's version for a sal
         // operation; 40 with the quotation screen's discount request withdrawal, which
-        // sends the request's version for a quo operation.
-        '40 versioned send(s) outside the subject.'
+        // sends the request's version for a quo operation; 44 with the invoice's refunds
+        // panel, whose approval, rejection, withdrawal and payout record each send the
+        // refund request's version for a sal operation.
+        '44 versioned send(s) outside the subject.'
     );
     expect(out).toContain(
       'OK: every version-guarded P1-31 command sources its If-Match from a read or a command ' +

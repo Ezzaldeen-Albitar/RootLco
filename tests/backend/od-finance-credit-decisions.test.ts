@@ -1470,3 +1470,92 @@ describe('D2 — sal.refund-obligation-list', () => {
     expect(await crossTenant.text()).not.toContain('credit_excess');
   });
 });
+
+// ---------------------------------------------------------------------------
+// The FD2A review residuals (P1-32-PRE-OD-FD2B): the approval answer states how
+// the approved amount split, and every read the credit-note form is fed states
+// what the invoice can still be credited — never derived in the browser.
+// ---------------------------------------------------------------------------
+
+describe('FD2B residuals — the split and the creditable figure come from the server', () => {
+  interface SplitBody {
+    readonly approvalEffect: { reducesBalanceBy: MoneyBody; refundOwed: MoneyBody } | null;
+  }
+
+  it('answers an approval with the split it made, and the same split on a replay', async () => {
+    const { invoiceId } = await paidInvoice('odfd2b_split_paid');
+    const note = await pendingNote(invoiceId, '30.00');
+    authAs(SAL_APPROVER);
+    const body = await bodyOf<SplitBody>(await approve(note.id));
+    expect(body.approvalEffect).toEqual({
+      reducesBalanceBy: expect.objectContaining({ amount: '0.0000', currency: 'USD' }),
+      refundOwed: expect.objectContaining({ amount: '30.0000', currency: 'USD' }),
+    });
+    authAs(SAL_APPROVER);
+    const replay = await bodyOf<SplitBody & { replayed: boolean }>(await approve(note.id));
+    expect(replay.replayed).toBe(true);
+    expect(replay.approvalEffect?.refundOwed.amount).toBe('30.0000');
+  });
+
+  it('answers an approval within what is owed with nothing owed back', async () => {
+    const invoice = await seedIssuedInvoice('odfd2b_split_within');
+    const note = await pendingNote(invoice.invoiceId, '40.00');
+    authAs(SAL_APPROVER);
+    const body = await bodyOf<SplitBody>(await approve(note.id));
+    expect(body.approvalEffect?.reducesBalanceBy.amount).toBe('40.0000');
+    expect(body.approvalEffect?.refundOwed.amount).toBe('0.0000');
+  });
+
+  it('states what can still be credited on the settlement and on the invoice list — the gross less approved credits, not what is open', async () => {
+    const { invoiceId } = await paidInvoice('odfd2b_creditable');
+    // Paid in full: nothing open, everything still creditable.
+    const before = await bodyOf<{
+      outstanding: MoneyBody;
+      settlement: { creditable: MoneyBody } | null;
+    }>(await readOutstanding(invoiceId));
+    expect(before.outstanding.amount).toBe('0.0000');
+    expect(before.settlement?.creditable.amount).toBe('100.0000');
+
+    const note = await pendingNote(invoiceId, '30.00');
+    // A pending note is not counted.
+    expect(
+      (
+        await bodyOf<{ settlement: { creditable: MoneyBody } | null }>(
+          await readOutstanding(invoiceId)
+        )
+      ).settlement?.creditable.amount
+    ).toBe('100.0000');
+    authAs(SAL_APPROVER);
+    expect((await approve(note.id)).status).toBe(200);
+    expect(
+      (
+        await bodyOf<{ settlement: { creditable: MoneyBody } | null }>(
+          await readOutstanding(invoiceId)
+        )
+      ).settlement?.creditable.amount
+    ).toBe('70.0000');
+
+    authAs(SAL_FULL);
+    const listed = await INVOICE_LIST(
+      new Request(
+        `http://localhost/api/v1/invoices?${new URLSearchParams({
+          companyId: COMPANY_A1,
+          branchId: BRANCH_A1,
+        }).toString()}`,
+        { method: 'GET' }
+      )
+    );
+    expect(listed.status).toBe(200);
+    const row = (
+      await bodyOf<{
+        items: readonly {
+          id: string;
+          outstanding: MoneyBody | null;
+          creditable: MoneyBody | null;
+        }[];
+      }>(listed)
+    ).items.find((item) => item.id === invoiceId);
+    expect(row?.outstanding?.amount).toBe('0.0000');
+    expect(row?.creditable?.amount).toBe('70.0000');
+  });
+});

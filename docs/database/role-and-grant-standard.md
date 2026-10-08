@@ -526,6 +526,28 @@ No DELETE for any application role. The two new trigger functions are `SECURITY 
 `EXECUTE` revoked from PUBLIC; the seven re-issued functions keep their grants. No privilege on
 any existing table changes.
 
+### 5.14 Refund requests (DBCR-P1-32-PRE-OD-FD2B-002, migration `20261008140000`)
+
+One new table, `sal.refund_requests` (ADR-023 D2, part 2): a request to pay back part or all of a
+refund obligation, decided by a second person and paid out once. Forced row-level security: the
+three policies (`sel_`, `ins_` and `upd_refund_requests_gated`) admit a row only in the caller's
+tenant, company and branch reach with `sal.finance.view`. The BEFORE INSERT guard stamps the
+requester and binds the row to its obligation; the BEFORE UPDATE guard holds the decision and the
+payout rules and stamps every decider, executor and date. Written only through five primitives,
+each `SECURITY INVOKER` with `EXECUTE` for `app_runtime` only: `sal.request_refund`,
+`sal.approve_refund_request`, `sal.reject_refund_request`, `sal.withdraw_refund_request` and
+`sal.execute_refund_request`.
+
+| Object                | `app_runtime`                                                                                                            | `app_readonly` |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------- |
+| `sal.refund_requests` | `SELECT`, `INSERT`, `UPDATE (approval_state, decision_reason, payout_reference, payout_date, execution_idempotency_key)` | `SELECT`       |
+
+No DELETE for any application role. The three new trigger functions are `SECURITY INVOKER` with
+`EXECUTE` revoked from PUBLIC; the three re-issued functions keep their grants.
+`sal.refund_obligations` keeps its grants; its update guard now admits `open -> settled` when the
+payouts reach its amount. The permission `sal.refund.approve` is minted by the catalogue seed. No
+privilege on any existing table changes.
+
 ---
 
 ## 6. How later phases attach real logins

@@ -105,6 +105,13 @@ export default async function InvoicesPage({
           }
           canReadCustomers={holds(session.permissions, BILLING_PERMISSIONS.customerRead)}
           canSearchWorkOrders={canReadWorkOrder}
+          // ADR-023 D2, part 2: the refund steps the session's codes allow; the panel
+          // checks each in the invoice's own branch again.
+          refunds={{
+            currentUserId: session.userId,
+            canRequest: holds(session.permissions, BILLING_PERMISSIONS.paymentRecord),
+            canDecide: holds(session.permissions, BILLING_PERMISSIONS.refundApprove),
+          }}
         />
       </PageBody>
     </div>

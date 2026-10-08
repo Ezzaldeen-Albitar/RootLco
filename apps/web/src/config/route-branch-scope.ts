@@ -230,6 +230,11 @@ export const ROUTE_BRANCH_SCOPES: readonly RouteScopeDeclaration[] = Object.free
     why: 'An invoice is written; a write needs one named branch.',
   },
   {
+    pattern: '/refunds',
+    scope: 'concrete',
+    why: 'Refund requests are read for one branch.',
+  },
+  {
     pattern: '/payments',
     scope: 'concrete',
     why: 'A payment is recorded in one branch.',

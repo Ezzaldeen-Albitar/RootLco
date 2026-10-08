@@ -49,6 +49,7 @@ import {
   type WorkOrderInvoice,
 } from '../billing-contract';
 import { CreditNoteRequestForm } from './CreditNoteRequestForm';
+import { RefundsPanel } from './RefundsPanel';
 import { settlementOf, useOutstandingRead, type SettlementRead } from '../use-outstanding-read';
 import { InvoiceDocument, payerNameKey, type PayerName } from './InvoiceDocument';
 import {
@@ -129,6 +130,7 @@ export function InvoiceScreen({
   canSearchWorkOrders = false,
   canReadCustomers = false,
   canRaiseCredit = false,
+  refunds = NO_REFUND_STEPS,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -154,6 +156,13 @@ export function InvoiceScreen({
    * declares both; a cashier holding finance view alone is not offered it.
    */
   readonly canRaiseCredit?: boolean;
+  /**
+   * Who is signed in and which refund steps the session's codes allow (ADR-023 D2,
+   * part 2): asking, withdrawing and recording the payout (`sal.payment.record`),
+   * and deciding (`sal.refund.approve`). The panel checks each in the invoice's own
+   * branch again.
+   */
+  readonly refunds?: RefundSteps;
 }) {
   const router = useRouter();
   const [invoiceRead, setInvoiceRead] = useState<ReadState<WorkOrderInvoice> | null>(
@@ -308,6 +317,7 @@ export function InvoiceScreen({
           canIssue={canIssue}
           canRaiseCredit={canRaiseCredit}
           canReadCustomers={canReadCustomers}
+          refunds={refunds}
           onChanged={changed}
         />
       )}
@@ -336,6 +346,7 @@ function LiveInvoices({
   canIssue,
   canRaiseCredit,
   canReadCustomers,
+  refunds,
   onChanged,
 }: {
   readonly locale: Locale;
@@ -349,6 +360,7 @@ function LiveInvoices({
   readonly canIssue: boolean;
   readonly canRaiseCredit: boolean;
   readonly canReadCustomers: boolean;
+  readonly refunds: RefundSteps;
   readonly onChanged: (notice: WriteNotice | null) => Promise<void>;
 }) {
   const [shownId, setShownId] = useState(current.id);
@@ -375,6 +387,7 @@ function LiveInvoices({
         canViewFinance={canViewFinance}
         canIssue={canIssue}
         canRaiseCredit={canRaiseCredit}
+        refunds={refunds}
         onChanged={onChanged}
       />
       {read.approvedWorkToInvoice && !draftOpen ? (
@@ -1383,6 +1396,32 @@ function PayerText({
  * FE-015 / FE-019 / FE-020 — the invoice, its balance, and the acts on it
  * ------------------------------------------------------------------ */
 
+/** Who is signed in, and which refund steps the session's codes allow (ADR-023 D2). */
+export interface RefundSteps {
+  readonly currentUserId: string | null;
+  readonly canRequest: boolean;
+  readonly canDecide: boolean;
+}
+
+const NO_REFUND_STEPS: RefundSteps = Object.freeze({
+  currentUserId: null,
+  canRequest: false,
+  canDecide: false,
+});
+
+/**
+ * Whether a credit note may still be raised from the invoice's own screen (ADR-023
+ * D2, P1-32-PRE-OD-FD2B): what the server says the invoice can still be credited
+ * is above zero — even once it is paid, since the part of a credit above what is
+ * still owed becomes a refund owed to the customer. A server that does not state
+ * the figure leaves the open balance as the test. A comparison of the server's
+ * string with zero; nothing is computed.
+ */
+function mayStillBeCredited(balance: Outstanding): boolean {
+  const creditable = balance.settlement?.creditable;
+  return creditable === undefined ? !balance.isSettled : !isZeroMoney(creditable.amount);
+}
+
 function InvoicePanel({
   locale,
   messages,
@@ -1391,6 +1430,7 @@ function InvoicePanel({
   canViewFinance,
   canIssue,
   canRaiseCredit,
+  refunds,
   onChanged,
 }: {
   readonly locale: Locale;
@@ -1400,13 +1440,14 @@ function InvoicePanel({
   readonly canViewFinance: boolean;
   readonly canIssue: boolean;
   readonly canRaiseCredit: boolean;
+  readonly refunds: RefundSteps;
   /** Re-reads the order's invoice and remounts the panels; resolves once it has. */
   readonly onChanged: (notice: WriteNotice | null) => Promise<void>;
 }) {
   const [detail, setDetail] = useState<ReadState<InvoiceDetail> | null>(null);
   const [attempt, setAttempt] = useState(0);
   // The balance, read once here for the three panels that need it — the balance
-  // panel, the credit form (offered only while money is still open) and the copy
+  // panel, the credit form (offered while it can still be credited) and the copy
   // — through the cancellable route rather than a Server Action, so the payer
   // lookup cannot hold it up (DX-2, finance QA fixes E).
   const outstanding = useOutstandingRead(
@@ -1458,6 +1499,23 @@ function InvoicePanel({
         onRetry={outstanding.retry}
         customer={payer}
       />
+      {canViewFinance &&
+      balance !== null &&
+      balance.settlement !== null &&
+      balance.settlement.refundStatus !== 'none' ? (
+        <RefundsPanel
+          locale={locale}
+          messages={messages}
+          invoice={{ id: invoice.id, companyId: invoice.companyId, branchId: invoice.branchId }}
+          currentUserId={refunds.currentUserId}
+          canRequest={refunds.canRequest}
+          canDecide={refunds.canDecide}
+          onChanged={() => {
+            // The balance is read again: what is owed back and what was paid back moved.
+            outstanding.retry();
+          }}
+        />
+      ) : null}
       <ActionsPanel
         messages={messages}
         locale={locale}
@@ -1470,7 +1528,7 @@ function InvoicePanel({
       canViewFinance &&
       (detail.data.invoice.status === 'issued' || detail.data.invoice.status === 'credited') &&
       balance !== null &&
-      !balance.isSettled ? (
+      mayStillBeCredited(balance) ? (
         <section
           aria-labelledby="credit-note-request-heading"
           className="flex min-h-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
@@ -1480,7 +1538,14 @@ function InvoicePanel({
           <CreditNoteRequestForm
             locale={locale}
             messages={messages}
-            source={{ kind: 'known', invoice: { id: invoice.id, open: balance.outstanding } }}
+            source={{
+              kind: 'known',
+              invoice: {
+                id: invoice.id,
+                open: balance.outstanding,
+                creditable: balance.settlement?.creditable ?? null,
+              },
+            }}
             onRequested={(echo) =>
               onChanged({
                 messageKey: echo.replayed
@@ -1833,6 +1898,15 @@ function SettlementFields({
           </span>
           <span className="block text-caption text-text-muted">
             {translate(messages, 'invoices.settlement.refundOwedExplain')}
+          </span>
+        </Field>
+      ) : null}
+      {settlement.refunded !== undefined && !isZeroMoney(settlement.refunded.amount) ? (
+        // ADR-023 D2, part 2: what has been paid back — the recorded payouts, the
+        // server's sum.
+        <Field label={translate(messages, 'invoices.settlement.refunded')} wide>
+          <span data-testid="invoice-refunded">
+            <Money money={settlement.refunded} locale={locale} />
           </span>
         </Field>
       ) : null}

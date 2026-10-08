@@ -2774,6 +2774,51 @@ export const MANIFEST = {
     required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
     note: 'A branch refund obligations, newest first: the money a customer is owed back because an approved credit note exceeded what its invoice still owed, recorded by sal.approve_credit_note for exactly the excess and never paid automatically. Narrowed by customer (partnerId), invoice and state; a state outside the vocabulary is a 422. Declares sal.finance.view only, at the branch: sel_refund_obligations_gated removes the whole row from a caller without it, so SAL_NO_FINANCE is refused 403 rather than shown an empty page; SAL_PERMISSION_ELSEWHERE, whose grant sits in the sibling branch, is refused by the scoped check; tenant B is refused. Pages by an opaque cursor',
   },
+  // ADR-023 D2, part 2 (P1-32-PRE-OD-FD2B): refund requests, their second-person
+  // decision and the one-time payout record. No accounting.
+  'sal.refund-request': {
+    files: ['tests/backend/od-finance-refund-requests.test.ts'],
+    required: ['success', 'denial', 'idempotency', 'audit', 'cross-tenant', 'isolation'],
+    note: 'a payment recorder asks for (part of) a refund obligation to be paid back: the payee and currency are the obligation own; an amount above what is still owed on it is refused by name on body.amount and recorded once; an amount finer than the currency is a 422; an inactive method is refused by name on body.paymentMethodId; a second live request is refused by name and recorded once; a replay under the same key answers the stored body with one request and one audit record; a caller without sal.payment.record, or holding it only in another branch, is a 403 recorded once as authorization.denied; another tenant is a 404; no financial event is written; sal.guard_refund_request_insert holds the same rules for a raw insert',
+  },
+  'sal.refund-approve': {
+    files: ['tests/backend/od-finance-refund-requests.test.ts'],
+    required: ['success', 'denial', 'audit', 'stale-version', 'cross-tenant', 'isolation'],
+    note: 'a DIFFERENT holder of sal.refund.approve approves: the requester is refused by name (refund_self_approval) and recorded once; a holder of every other finance decision code but not this one is a 403 recorded once as authorization.denied, as is the code held in another branch only; If-Match is the REQUEST version (stale 409, missing 428); an approval pays nothing and writes no financial event, one audit record; a replay under the new version answers replayed with no second record; another tenant is a 404',
+  },
+  'sal.refund-reject': {
+    files: ['tests/backend/od-finance-refund-requests.test.ts'],
+    required: ['success', 'denial', 'audit', 'stale-version', 'cross-tenant', 'isolation'],
+    note: 'another holder of sal.refund.approve rejects with a reason; the requester is refused by name and withdraws instead; a blank reason is a 422 on body.reason, not a refusal; a rejected request is terminal (an approval afterwards is refused by name as refund_decision_frozen and recorded once) and does not block a corrected request',
+  },
+  'sal.refund-withdraw': {
+    files: ['tests/backend/od-finance-refund-requests.test.ts'],
+    required: ['success', 'denial', 'audit', 'stale-version', 'cross-tenant', 'isolation'],
+    note: 'the requester alone withdraws (refund_withdraw_not_requester for anyone else); If-Match is the REQUEST version, missing is 428; one audit record',
+  },
+  'sal.refund-execute': {
+    files: ['tests/backend/od-finance-refund-requests.test.ts'],
+    required: [
+      'success',
+      'denial',
+      'idempotency',
+      'audit',
+      'stale-version',
+      'cross-tenant',
+      'isolation',
+    ],
+    note: 'the payout of an APPROVED request is recorded once: before approval it is refused by name (refund_not_approved) and recorded once; another method than the approved one is refused by name on body.paymentMethodId; a future payout date is a 422 on body.payoutDate; a caller without sal.payment.record is a 403 recorded once; stale If-Match is a 409; one refund_executed financial event (an operational fact, not an accounting entry) and one audit record; a replay under its key writes neither again; any other repeat is refused by name as refund_already_executed and recorded once; the obligation is settled, with its own audit record, exactly when what has been paid out reaches its amount; refundStatus moves owed, requested, approved, partly_refunded, refunded',
+  },
+  'sal.refund-request-list': {
+    files: ['tests/backend/od-finance-refund-requests.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'a branch refund requests, newest first, narrowed by invoice, customer (partnerId), obligation and state (pending, approved, executed, rejected, withdrawn); a state outside the vocabulary is a 422. Declares sal.finance.view only: SAL_NO_FINANCE is refused 403 rather than shown an empty page, SAL_PERMISSION_ELSEWHERE is refused by the scoped check, tenant B is refused. Pages by an opaque cursor',
+  },
+  'sal.refund-request-detail': {
+    files: ['tests/backend/od-finance-refund-requests.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'one refund request with its obligation position (paid out and still owed) and the people on it by NAME, each null for a reader who may not read users; another tenant is a 404 and a caller without sal.finance.view a 403',
+  },
   'sal.credit-note-detail': {
     files: ['tests/backend/p1-22-credit-note.test.ts'],
     required: ['denial'],

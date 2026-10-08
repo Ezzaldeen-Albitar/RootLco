@@ -102,6 +102,13 @@ export const BODYLESS = Object.freeze({
     'the approval carries nothing but the receipt reversal in the path and the caller as approver',
   'sal.receipt-reversal-withdraw':
     'the withdrawal carries nothing but the receipt reversal in the path, its version as If-Match and the caller as requester',
+  // ADR-023 D2, part 2 (P1-32-PRE-OD-FD2B): the refund request's approval and
+  // withdrawal name the request in the path, its version as If-Match and the caller as
+  // decider; the amount and method were fixed when it was raised.
+  'sal.refund-approve':
+    'the approval carries nothing but the refund request in the path, its version as If-Match and the caller as approver',
+  'sal.refund-withdraw':
+    'the withdrawal carries nothing but the refund request in the path, its version as If-Match and the caller as requester',
   // ADR-023 D3 (P1-32-PRE-OD-FD8): the requester is the caller and the discount
   // request is the path parameter; its version travels as If-Match.
   'quo.discount-approval-withdraw':

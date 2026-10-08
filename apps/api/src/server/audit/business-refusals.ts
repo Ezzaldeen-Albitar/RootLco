@@ -70,7 +70,10 @@
  * authorization layer marks every permission refusal it raises
  * (`requirePermissions`); a service marks a refusal the database raised for the
  * same reason. Only the operations in `PERMISSION_REFUSAL_OPERATIONS` are ever
- * written as `authorization.denied`. Elsewhere a permission refusal is persisted
+ * written as `authorization.denied` — the four above and, since the refund requests of
+ * ADR-023 D2 part 2 (P1-32-PRE-OD-FD2B), the five refund commands, whose decision is
+ * the same kind of dual-control financial approval and whose request, withdrawal and
+ * payout record are recorded the same way rather than as a business rule. Elsewhere a permission refusal is persisted
  * only where a service marks it as a business rule, exactly as before — the
  * receipt-reversal request (`receipt_reversal_request_permission_missing`), a
  * guard permission token on a receipt-reversal withdrawal, the discount decision
@@ -121,6 +124,14 @@ export const PERMISSION_REFUSAL_OPERATIONS: readonly string[] = Object.freeze([
   'sal.credit-note-reject',
   'sal.receipt-reversal-approve',
   'sal.receipt-reversal-reject',
+  // ADR-023 D2, part 2 (P1-32-PRE-OD-FD2B): every refund command. A refusal for want
+  // of `sal.payment.record`, `sal.refund.approve` or `sal.finance.view` in the
+  // obligation's company and branch is one `authorization.denied` record.
+  'sal.refund-request',
+  'sal.refund-approve',
+  'sal.refund-reject',
+  'sal.refund-withdraw',
+  'sal.refund-execute',
 ]);
 
 /**

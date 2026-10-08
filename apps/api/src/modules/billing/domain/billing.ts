@@ -104,9 +104,10 @@ export const APPROVAL_STATES = Object.freeze([
 export type ApprovalState = (typeof APPROVAL_STATES)[number];
 
 /**
- * `ck_financial_events_event_type`. Closed at seven: `refund_obligation_recorded`
- * (P1-32-PRE-OD-FD2A, ADR-023 D2) records that a customer is owed money back. No
- * event is an accounting entry.
+ * `ck_financial_events_event_type`. Closed at eight: `refund_obligation_recorded`
+ * (P1-32-PRE-OD-FD2A, ADR-023 D2) records that a customer is owed money back, and
+ * `refund_executed` (P1-32-PRE-OD-FD2B) that a refund was paid out. No event is an
+ * accounting entry.
  */
 export const FINANCIAL_EVENT_TYPES = Object.freeze([
   'invoice_issued',
@@ -116,6 +117,7 @@ export const FINANCIAL_EVENT_TYPES = Object.freeze([
   'receipt_reversed',
   'warranty_split_recorded',
   'refund_obligation_recorded',
+  'refund_executed',
 ] as const);
 export type FinancialEventType = (typeof FINANCIAL_EVENT_TYPES)[number];
 
@@ -127,6 +129,7 @@ export const FINANCIAL_EVENT_SOURCE_TYPES = Object.freeze([
   'credit_note',
   'receipt_reversal',
   'refund_obligation',
+  'refund_request',
 ] as const);
 export type FinancialEventSourceType = (typeof FINANCIAL_EVENT_SOURCE_TYPES)[number];
 
@@ -344,29 +347,145 @@ export const PAYMENT_STATUSES = Object.freeze([
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
 /**
- * Whether money is owed back or has been handed back (D7 keeps it separate).
+ * Whether money is owed back or has been handed back (D7 keeps it separate),
+ * derived on every read from the invoice's refund obligations and their refund
+ * requests (ADR-023 D2):
  *
- *  - `none` — no open refund obligation;
- *  - `owed` — at least one open refund obligation (ADR-023 D2, P1-32-PRE-OD-FD2A):
- *    an approved credit exceeded what the invoice still owed, and the customer is
- *    owed the difference. Nothing has been paid back.
+ *  - `none` — no refund obligation on the invoice;
+ *  - `owed` — the customer is owed money back and no refund has been asked for or
+ *    paid yet (P1-32-PRE-OD-FD2A);
+ *  - `requested` — a refund request waits for its second person's decision
+ *    (P1-32-PRE-OD-FD2B);
+ *  - `approved` — a refund request is approved and its payout is not yet recorded;
+ *  - `partly_refunded` — part of what is owed has been paid out, the rest is still
+ *    owed and nothing waits;
+ *  - `refunded` — everything owed has been paid out.
  *
- * Refund requests and their execution (FD2B) add the later states.
+ * Nothing is ever paid back automatically, and none of these is an accounting fact.
  */
-export const REFUND_STATUSES = Object.freeze(['none', 'owed'] as const);
+export const REFUND_STATUSES = Object.freeze([
+  'none',
+  'owed',
+  'requested',
+  'approved',
+  'partly_refunded',
+  'refunded',
+] as const);
 export type RefundStatus = (typeof REFUND_STATUSES)[number];
 
 /**
- * `ck_refund_obligations_state` (P1-32-PRE-OD-FD2A). Only `open` is reachable until
- * refund requests exist (FD2B).
+ * `ck_refund_obligations_state`. `open` until what has been paid out on it reaches its
+ * amount, then `settled` (P1-32-PRE-OD-FD2B); `cancelled` is reserved and unreachable
+ * (an open Owner question).
  */
 export const REFUND_OBLIGATION_STATES = Object.freeze(['open', 'settled', 'cancelled'] as const);
 export type RefundObligationState = (typeof REFUND_OBLIGATION_STATES)[number];
 
-/** `owed` while any obligation is open, compared by `Decimal`. */
-export function deriveRefundStatus(openObligations: Decimal): RefundStatus {
-  return openObligations.greaterThan(Decimal.zero(MONEY)) ? 'owed' : 'none';
+/**
+ * The facts `refundStatus` is derived from, for one invoice: what its obligations
+ * total, what has been paid out on them, and whether a request waits for a decision
+ * or for its payout. Amounts are `Decimal`s built from the database's strings.
+ */
+export interface RefundPosition {
+  readonly obligated: Decimal;
+  readonly refunded: Decimal;
+  readonly pendingRequest: boolean;
+  readonly approvedRequest: boolean;
 }
+
+/** `RefundStatus` from a `RefundPosition`, compared by `Decimal` — never by `Number()`. */
+export function deriveRefundStatus(position: RefundPosition): RefundStatus {
+  const zero = Decimal.zero(MONEY);
+  if (!position.obligated.greaterThan(zero)) return 'none';
+  if (!position.refunded.lessThan(position.obligated)) return 'refunded';
+  if (position.approvedRequest) return 'approved';
+  if (position.pendingRequest) return 'requested';
+  return position.refunded.greaterThan(zero) ? 'partly_refunded' : 'owed';
+}
+
+/**
+ * `ck_refund_requests_approval_state` (P1-32-PRE-OD-FD2B, ADR-023 D2). `pending`
+ * until decided; `approved`, `rejected` and `withdrawn` are terminal decisions.
+ * Whether an approved request has been paid out is a separate fact (`executedAt`).
+ */
+export const REFUND_REQUEST_APPROVAL_STATES = Object.freeze([
+  'pending',
+  'approved',
+  'rejected',
+  'withdrawn',
+] as const);
+export type RefundRequestApprovalState = (typeof REFUND_REQUEST_APPROVAL_STATES)[number];
+
+/**
+ * A refund request as a reader sees it: its decision, and `executed` once its
+ * payout is recorded. The list filters by this.
+ */
+export const REFUND_REQUEST_STATES = Object.freeze([
+  'pending',
+  'approved',
+  'executed',
+  'rejected',
+  'withdrawn',
+] as const);
+export type RefundRequestState = (typeof REFUND_REQUEST_STATES)[number];
+
+/** The reader's state of a request: `executed` once paid out, else its decision. */
+export function refundRequestState(
+  approvalState: string,
+  executedAt: Date | null
+): RefundRequestState {
+  if (executedAt !== null) return 'executed';
+  return (REFUND_REQUEST_APPROVAL_STATES as readonly string[]).includes(approvalState)
+    ? (approvalState as RefundRequestState)
+    : 'pending';
+}
+
+/**
+ * Who may do what with a refund request (ADR-023 D2, P1-32-PRE-OD-FD2B).
+ *
+ * Requesting, withdrawing and recording the payout are the payment recorder's acts,
+ * under the code that records a receipt. Approving and rejecting are a different
+ * person's, under a code minted for exactly this decision that no other code
+ * satisfies. Every amount is behind `sal.finance.view` as well.
+ */
+export const REFUND_PERMISSIONS = Object.freeze({
+  request: 'sal.payment.record',
+  decide: 'sal.refund.approve',
+  execute: 'sal.payment.record',
+  view: 'sal.finance.view',
+} as const);
+
+/** A refund request's and a rejection's reason: required, at most this many characters. */
+export const MAX_REFUND_REASON = 2000;
+
+/** A payout reference: required at payout, at most this many characters. */
+export const MAX_PAYOUT_REFERENCE = 200;
+
+/**
+ * The stable rule tokens a refused refund command names (ADR-023 D2, D12). Each is
+ * the token the database guard or primitive raises before the first colon of its
+ * message for the same rule, the token the screen reads from
+ * `safeDetails.violations[].rule`, and the rule a business-refusal record carries.
+ */
+export const REFUND_RULES = Object.freeze({
+  selfApproval: 'refund_self_approval',
+  selfRejection: 'refund_self_rejection',
+  exceedsObligation: 'refund_exceeds_obligation',
+  liveExists: 'refund_request_live_exists',
+  notApproved: 'refund_not_approved',
+  alreadyExecuted: 'refund_already_executed',
+  decided: 'refund_decision_frozen',
+  notRequester: 'refund_withdraw_not_requester',
+  obligationNotOpen: 'refund_obligation_not_open',
+  methodUnavailable: 'refund_request_method_unavailable',
+  payoutMethodMismatch: 'refund_payout_method_mismatch',
+  payoutDateInvalid: 'refund_payout_date_invalid',
+  minorUnit: 'refund_request_minor_unit',
+  requestPermissionMissing: 'refund_request_permission_missing',
+  approvePermissionMissing: 'refund_approve_permission_missing',
+  rejectPermissionMissing: 'refund_reject_permission_missing',
+  executePermissionMissing: 'refund_execute_permission_missing',
+} as const);
 
 /** `credited` compared with the eligible total, by `Decimal` — never by `Number()`. */
 export function deriveCreditStatus(credited: Decimal, eligibleTotal: Decimal): CreditStatus {

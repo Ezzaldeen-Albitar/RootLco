@@ -5534,8 +5534,9 @@ Money a customer is owed back because an approved credit note exceeded what its 
 (P1-32-PRE-OD-FD2A, ADR-023 D2, migration 20261008121000). An operational record, not an
 accounting entry: no account, posting, cash or bank movement. WHOLE ROW gated by
 `sal.finance.view`; forced RLS. Created only by `sal.approve_credit_note`, for exactly the excess,
-one per credit note, with one `refund_obligation_recorded` financial event. Only `open` is
-reachable until refund requests exist (FD2B); no row is deleted.
+one per credit note, with one `refund_obligation_recorded` financial event. Paid back through
+`sal.refund_requests` (FD2B): `open` until what has been paid out reaches its amount, then
+`settled`; no row is deleted.
 
 | Column           | Type            | class      | Null? | Purpose                                                                                                                                                                  |
 | ---------------- | --------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -5549,12 +5550,77 @@ reachable until refund requests exist (FD2B); no row is deleted.
 | `currency_code`  | `text`          | internal   | no    | The invoice's currency (bound by the guard); FK -> `shared.currencies(code)` RESTRICT.                                                                                   |
 | `amount`         | `numeric(18,4)` | restricted | no    | RESTRICTED amount owed (>0, within the currency's minor unit): the credit less the invoice's open receivable just before it, never below zero. Frozen.                   |
 | `source`         | `text`          | internal   | no    | CHECK IN ('credit_excess'). An explicit obligation raised by hand is not built (open Owner question).                                                                    |
-| `state`          | `text`          | internal   | no    | CHECK IN ('open','settled','cancelled'); born `open`; every state change is refused (`refund_obligation_transition_unavailable`) until refund requests are built (FD2B). |
+| `state`          | `text`          | internal   | no    | CHECK IN ('open','settled','cancelled'); born `open`; `settled` once its refund requests have paid out its whole amount (FD2B); every other change is refused.           |
 | `record_version` | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                                   |
 | `created_at`     | `timestamptz`   | internal   | no    | Row creation timestamp; stamped for the request path.                                                                                                                    |
 | `created_by`     | `uuid`          | internal   | no    | The approver whose approval created it; stamped from the session for the request path.                                                                                   |
 | `updated_at`     | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                                                                                         |
 | `updated_by`     | `uuid`          | internal   | yes   | Last-updating actor.                                                                                                                                                     |
+
+### `sal.refund_requests`
+
+A request to pay back part or all of a refund obligation, decided by a second person and paid out
+once (P1-32-PRE-OD-FD2B, ADR-023 D2 part 2, migration 20261008140000). An operational record, not an
+accounting entry: no account, posting, cash or bank movement. WHOLE ROW gated by `sal.finance.view`;
+forced RLS. At most one live request (pending, or approved and not yet paid out) per obligation
+(`uq_refund_requests_obligation_live`). Requested by a holder of `sal.payment.record`; approved or
+rejected by a different holder of `sal.refund.approve`; withdrawn only by the requester; paid out once
+by a holder of `sal.payment.record`, with one `refund_executed` financial event. Every person and date
+is stamped by `sal.guard_refund_request_insert` and `sal.guard_refund_request_update`; no row is
+deleted.
+
+| Column                      | Type            | class      | Null? | Purpose                                                                                                                                                                        |
+| --------------------------- | --------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`                        | `uuid`          | internal   | no    | Primary key (UUID).                                                                                                                                                            |
+| `tenant_id`                 | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                                |
+| `company_id`                | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                                                                                        |
+| `branch_id`                 | `uuid`          | internal   | no    | Branch scope; composite FK -> `org.branches(tenant_id, company_id, id)` RESTRICT.                                                                                              |
+| `obligation_id`             | `uuid`          | internal   | no    | The obligation paid back; composite FK -> `sal.refund_obligations(tenant_id, company_id, branch_id, id)` RESTRICT.                                                             |
+| `invoice_id`                | `uuid`          | internal   | no    | The obligation's invoice (bound by the insert guard); composite FK -> `sal.invoices(...)` RESTRICT.                                                                            |
+| `payee_partner_id`          | `uuid`          | internal   | no    | Who is paid: the obligation's customer (bound by the insert guard); FK -> `crm.business_partners`. A third-party payee is an open Owner question.                              |
+| `currency_code`             | `text`          | internal   | no    | The obligation's currency (bound by the insert guard); FK -> `shared.currencies(code)` RESTRICT.                                                                               |
+| `amount`                    | `numeric(18,4)` | restricted | no    | RESTRICTED amount to pay back (>0, within the currency's minor unit), at most the obligation less what has been paid out on it, under the obligation row lock. Frozen.         |
+| `payment_method_id`         | `uuid`          | internal   | no    | The tenant's payment method (cash, card terminal, bank transfer), active when requested; FK -> `sal.payment_methods(tenant_id, id)` RESTRICT. The payout uses the same method. |
+| `reason`                    | `text`          | internal   | no    | Why the refund is asked for; not blank, at most 2000 characters. Frozen.                                                                                                       |
+| `approval_state`            | `text`          | internal   | no    | CHECK IN ('pending','approved','rejected','withdrawn'); born `pending`; every decision is terminal.                                                                            |
+| `requested_by`              | `uuid`          | internal   | no    | The requester, stamped from the session. Frozen.                                                                                                                               |
+| `requested_at`              | `timestamptz`   | internal   | no    | When requested, stamped with `now()`. Frozen.                                                                                                                                  |
+| `approved_by`               | `uuid`          | internal   | yes   | The approver — never the requester — stamped from the session; only on an approved request.                                                                                    |
+| `approved_at`               | `timestamptz`   | internal   | yes   | When approved, stamped; only on an approved request.                                                                                                                           |
+| `decided_by`                | `uuid`          | internal   | yes   | Who rejected (another person) or withdrew (the requester), stamped; NULL otherwise.                                                                                            |
+| `decided_at`                | `timestamptz`   | internal   | yes   | When rejected or withdrawn, stamped.                                                                                                                                           |
+| `decision_reason`           | `text`          | internal   | yes   | Why it was rejected; required for a rejection, absent otherwise; at most 2000 characters.                                                                                      |
+| `executed_by`               | `uuid`          | internal   | yes   | Who recorded the payout, stamped from the session; set once.                                                                                                                   |
+| `executed_at`               | `timestamptz`   | internal   | yes   | When the payout was recorded, stamped; set once, on an approved request only.                                                                                                  |
+| `payout_reference`          | `text`          | internal   | yes   | The payout's reference as made (a transfer reference, a cash slip number), not blank, at most 200 characters; not a payment credential. Written once.                          |
+| `payout_date`               | `date`          | internal   | yes   | The day the money was paid out, not in the future. Written once.                                                                                                               |
+| `idempotency_key`           | `text`          | internal   | yes   | The request's Idempotency-Key; partial `UNIQUE(tenant_id, idempotency_key)`.                                                                                                   |
+| `execution_idempotency_key` | `text`          | internal   | yes   | The payout's Idempotency-Key; partial `UNIQUE(tenant_id, execution_idempotency_key)`; only with a payout.                                                                      |
+| `record_version`            | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`; the `If-Match` of every decision and the payout.                                                        |
+| `created_at`                | `timestamptz`   | internal   | no    | Row creation timestamp; stamped for the request path.                                                                                                                          |
+| `created_by`                | `uuid`          | internal   | no    | Creating actor; stamped from the session for the request path.                                                                                                                 |
+| `updated_at`                | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                                                                                               |
+| `updated_by`                | `uuid`          | internal   | yes   | Last-updating actor.                                                                                                                                                           |
+
+### Refund requests and their payout (P1-32-PRE-OD-FD2B, migration 20261008140000)
+
+Owner decision D2 (ADR-023), part 2. No accounting.
+
+- `sal.request_refund(p_obligation_id, p_amount, p_payment_method_id, p_reason, p_idempotency_key)`
+  — locks the obligation and raises a pending request; a repeated key answers the request it raised.
+- `sal.approve_refund_request(p_request_id)`, `sal.reject_refund_request(p_request_id, p_reason)`,
+  `sal.withdraw_refund_request(p_request_id)` — lock the obligation, then the request; the decision
+  guard requires `sal.refund.approve` in scope and a person other than the requester for an approval
+  or a rejection, and the requester for a withdrawal.
+- `sal.execute_refund_request(p_request_id, p_payment_method_id, p_payout_reference, p_payout_date,
+p_idempotency_key, p_correlation_id)` — records the payout once, on an approved request, by its
+  approved method; writes the `refund_executed` financial event and settles the obligation when
+  what has been paid out reaches its amount.
+- `sal.refund_obligations.state` moves from `open` to `settled` only that way
+  (`sal.guard_refund_obligation_update`); `cancelled` stays unreachable (open Owner question).
+- `sal.financial_events.event_type` admits `refund_executed` and `source_type` admits
+  `refund_request`; the provenance guard binds the event to the request's amount and currency, and
+  the completeness trigger requires it at commit. No event is an accounting entry.
 
 ### The D2 credit ceiling and the open receivable (P1-32-PRE-OD-FD2A, migration 20261008121000)
 

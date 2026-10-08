@@ -190,7 +190,7 @@ export function CreditNotesScreen({
 }) {
   const [target, setTarget] = useState<StockTarget | null>(null);
   const [chosen, setChosen] = useState<string | null>(initialCreditNoteId);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
   // Bumped when a note changes state, so the branch list reads again.
   const [epoch, setEpoch] = useState(0);
 
@@ -206,7 +206,7 @@ export function CreditNotesScreen({
 
       {notice === null ? null : (
         <p role="status" className="rounded-lg border border-border bg-surface p-3 text-body">
-          {translateDynamic(messages, notice)}
+          {noticeText(notice, messages)}
         </p>
       )}
 
@@ -221,8 +221,8 @@ export function CreditNotesScreen({
           canOpenInvoices={canSearchInvoices}
           canOpenReturns={canOpenReturns}
           onClose={() => setChosen(null)}
-          onDecided={(key) => {
-            setNotice(key);
+          onDecided={(decided) => {
+            setNotice(decided);
             setEpoch((n) => n + 1);
           }}
           onListChanged={() => setEpoch((n) => n + 1)}
@@ -259,7 +259,7 @@ export function CreditNotesScreen({
           chosen={chosen}
           onOpen={setChosen}
           onRequested={(key, creditNoteId) => {
-            setNotice(key);
+            setNotice({ key });
             setChosen(creditNoteId);
           }}
         />
@@ -462,6 +462,21 @@ function BranchCreditNotes({
 }
 
 /**
+ * What the screen says above the panels after a change: a message key, and — for an
+ * approval that left the customer owed a refund — the two figures of the split the
+ * server stated (ADR-023 D2, P1-32-PRE-OD-FD2B). No figure is computed here.
+ */
+interface Notice {
+  readonly key: string;
+  readonly values?: Readonly<Record<string, string>>;
+}
+
+function noticeText(notice: Notice, messages: Messages): string {
+  const text = translateDynamic(messages, notice.key);
+  return notice.values === undefined ? text : formatMessage(text, notice.values);
+}
+
+/**
  * The approval question, and — when the amount is more than the invoice still owes —
  * the split the server computed (ADR-023 D2): how much reduces the balance and how
  * much the customer will be owed back. No money is paid automatically, and no
@@ -526,7 +541,7 @@ function CreditNoteDetail({
   /** Whether the customer-returns screen may be opened from here. */
   readonly canOpenReturns: boolean;
   readonly onClose: () => void;
-  readonly onDecided: (noticeKey: string) => void;
+  readonly onDecided: (notice: Notice) => void;
   /** Asks the branch list to read again: a conflict means its row may be stale too. */
   readonly onListChanged: () => void;
 }) {
@@ -577,7 +592,21 @@ function CreditNoteDetail({
       setAsking(null);
       setOutcome(null);
       setReasonError(undefined);
-      onDecided(result.created.replayed ? notices.replayed : notices.done);
+      // An approval that left the customer owed a refund says how it split, in the
+      // server's two figures (ADR-023 D2): the balance went down by one, the other
+      // is owed back, and nothing was paid.
+      const effect = decision === 'approve' ? (result.created.approvalEffect ?? null) : null;
+      if (!result.created.replayed && effect !== null && !isZeroMoney(effect.refundOwed.amount)) {
+        onDecided({
+          key: 'creditNotes.approve.doneWithRefund',
+          values: {
+            reduces: formatMoney(effect.reducesBalanceBy, locale),
+            refund: formatMoney(effect.refundOwed, locale),
+          },
+        });
+        return true;
+      }
+      onDecided({ key: result.created.replayed ? notices.replayed : notices.done });
       return true;
     }
     const reasonRefusal = result.state.fieldErrors?.['reason'];

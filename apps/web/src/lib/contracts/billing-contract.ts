@@ -69,6 +69,49 @@ export interface CreditNoteRejectBody {
 }
 
 /* ------------------------------------------------------------------ *
+ * ADR-023 D2, part 2 (P1-32-PRE-OD-FD2B) — refund requests. Sent by the
+ * refunds panel of the invoice screen. Approving and withdrawing send no
+ * body and are declared bodyless in the gate.
+ * ------------------------------------------------------------------ */
+
+/**
+ * `sal.refund-request` — `POST /refund-obligations/{obligationId}/refund-requests`.
+ * Idempotent through the transport key; not version-guarded. The payee and the
+ * currency are the obligation's own, never the caller's.
+ */
+export interface RefundRequestBody {
+  /** A decimal string, unsigned, at most fourteen integer digits and four decimals. */
+  readonly amount: string;
+  /** The tenant payment method the money is to be paid back by. */
+  readonly paymentMethodId: string;
+  /** One to two thousand characters, not blank. */
+  readonly reason: string;
+}
+
+/**
+ * `sal.refund-reject` — `POST /refund-requests/{requestId}/rejection`. `If-Match`
+ * required; the requester withdraws instead.
+ */
+export interface RefundRejectBody {
+  /** One to two thousand characters, not blank. */
+  readonly reason: string;
+}
+
+/**
+ * `sal.refund-execute` — `POST /refund-requests/{requestId}/execution`. Idempotent
+ * through the transport key; `If-Match` required. Records, once, that an approved
+ * refund was paid out.
+ */
+export interface RefundExecuteBody {
+  /** The method the request was approved with. */
+  readonly paymentMethodId: string;
+  /** One to two hundred characters, not blank. */
+  readonly payoutReference: string;
+  /** `YYYY-MM-DD`, not in the future. */
+  readonly payoutDate: string;
+}
+
+/* ------------------------------------------------------------------ *
  * P1-32 — the counter sale. Sent by the counter-sale screen under
  * `app/[locale]/(dashboard)/inventory/counter-sales`.
  * ------------------------------------------------------------------ */

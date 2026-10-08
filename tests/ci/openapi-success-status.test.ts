@@ -114,7 +114,9 @@ describe('every operation publishes the success status it returns', () => {
     // new route modules — the save answers 201, the list and the read 200.
     // 517 with the refund obligation list (P1-32-PRE-OD-FD2A): one operation, one
     // new route module.
-    expect(actual.size).toBe(517);
+    // 524 with the refund requests (P1-32-PRE-OD-FD2B): seven operations over seven
+    // new route modules — the request answers 201, the other six 200.
+    expect(actual.size).toBe(524);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -190,7 +192,8 @@ describe('every operation publishes the success status it returns', () => {
     // (P1-32-PRE-OD-FD4), both creates answering 201.
     // 141 -> 142 with the report snapshot save (P1-32-PRE-OD-FD16B), a create
     // answering 201.
-    expect(counts[201]).toBe(142);
+    // 142 -> 143 with the refund request (P1-32-PRE-OD-FD2B), a create answering 201.
+    expect(counts[201]).toBe(143);
     expect(counts[202]).toBe(1);
     // The two P1-30 opening-batch reads (S-17) are GETs returning 200, so
     // 264 -> 266 while 201 and 202 are unchanged.
@@ -272,7 +275,9 @@ describe('every operation publishes the success status it returns', () => {
     // 371 -> 373 with the report snapshot list and read (P1-32-PRE-OD-FD16B), two
     // GETs answering 200.
     // 374 with the refund obligation list (P1-32-PRE-OD-FD2A), a 200 read.
-    expect(counts[200]).toBe(374);
+    // 374 -> 380 with the refund requests (P1-32-PRE-OD-FD2B): the approval, the
+    // rejection, the withdrawal, the payout, the list and the read, each 200.
+    expect(counts[200]).toBe(380);
   });
 
   it('reads the handler, not the declaration', () => {

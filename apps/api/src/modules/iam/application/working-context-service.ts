@@ -75,6 +75,8 @@ export const BRANCH_GATED_PERMISSION_CODES = Object.freeze([
   'sal.reversal.approve',
   // Applying a receipt as a third-party payment (`sal.payment-allocate`, ADR-023 D14).
   'sal.payment.third_party',
+  // Approving or rejecting a refund request (`sal.refund-approve` / `-reject`, ADR-023 D2).
+  'sal.refund.approve',
 ] as const);
 
 /** The per-branch answer for `BRANCH_GATED_PERMISSION_CODES`. */

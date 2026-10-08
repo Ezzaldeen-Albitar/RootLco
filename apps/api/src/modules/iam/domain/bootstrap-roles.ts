@@ -513,6 +513,35 @@
  * customised. Other existing organisations are left unchanged. Both runs are
  * operator acts, not performed by this change.
  *
+ * ## `sal.refund.approve` — deciding a refund request, by Owner decision D2
+ *
+ * The Owner decided on 2026-09-30 (ADR-023, D2) that money a customer is owed back
+ * is never refunded automatically, and that approving a refund and paying it out are
+ * separate steps with a second approver. `sal.refund.approve` ("Approve and reject
+ * refund requests (dual control)") is MINTED for that decision in
+ * `04_iam_permission_catalog.sql` (P1-32-PRE-OD-FD2B); `sal.refund-approve` and
+ * `sal.refund-reject` declare it, while requesting, withdrawing and recording the
+ * payout declare `sal.payment.record`, which this role already carries. No other code
+ * satisfies it — not a credit-note code and not `sal.reversal.approve`.
+ *
+ * The standard tenant administrator carries it for the reason it carries the other
+ * finance decision codes: it is the one standard role that carries them at all, and
+ * it can now delegate the code to the finance approver it chooses. Carrying it changes
+ * no control: the approver is never the requester and holds the code in the
+ * obligation's own company and branch, and an approval pays nothing.
+ *
+ * Organisations provisioned before this entry keep the set they were given, so nobody
+ * in them can approve or reject a refund request until an administrator who holds the
+ * code grants it — a behaviour change disclosed in ADR-023 D2 and recorded as
+ * CC-OD-58. The code is minted by a seed, so `04_iam_permission_catalog.sql` is
+ * re-run on an existing database first; `scripts/platform/backfill-tenant-administrator-bundle.mjs`
+ * then reads this list at run time and, by the precedent of D4, D13 and D14 (an open
+ * Owner question for this code, README question 22), is run only for the previously
+ * authorised QA organisations (`--tenant odqa_alpha --tenant odqa_beta`), dry run
+ * first, skipping and reporting every administrator role an organisation has
+ * customised. Other existing organisations are left unchanged. Both runs are operator
+ * acts, not performed by this change.
+ *
  * ## `org.settings.manage` — the organisation's own settings, by Owner decision
  *
  * The Owner decided on 2026-09-27 that the standard tenant administrator edits its
@@ -775,6 +804,9 @@ export const TENANT_ADMINISTRATOR_ROLE: BootstrapRoleDefinition = Object.freeze(
     // Owner decision D4 (ADR-023): approving and rejecting a receipt reversal that
     // somebody else requested. See the section above.
     'sal.reversal.approve',
+    // Owner decision D2, part 2 (ADR-023, P1-32-PRE-OD-FD2B): approving and rejecting
+    // a refund request somebody else raised. See the section above.
+    'sal.refund.approve',
     // Owner decision D14 (ADR-023): a receipt applied to another customer's
     // invoice as an explicit, authorised third-party payment. Consulted, not
     // declared, by `sal.payment-allocate`. See the section above.

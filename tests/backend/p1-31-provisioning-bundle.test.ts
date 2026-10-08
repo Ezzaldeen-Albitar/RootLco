@@ -163,6 +163,20 @@
  *   P31-B39 the provisioned administrator effectively holds it and can delegate it
  *           onto a role it creates
  *
+ * ## The Owner decision D2 (part 2) on `sal.refund.approve`: deciding a refund
+ *
+ * The Owner decided on 2026-09-30 (ADR-023, D2) that money a customer is owed back
+ * is never refunded automatically, and that approving a refund and paying it out are
+ * separate steps with a second approver. `sal.refund.approve` is MINTED for the
+ * decision (P1-32-PRE-OD-FD2B), and the standard tenant administrator carries it.
+ *
+ *   P31-B40 the code is in the bundle once; exactly the refund approval and rejection
+ *           declare it, branch-scoped with sal.finance.view; requesting,
+ *           withdrawing and paying out keep sal.payment.record; it is a catalogue
+ *           row; first_owner is untouched
+ *   P31-B41 the provisioned administrator effectively holds it and can delegate it
+ *           onto a role it creates
+ *
  * ## The Owner decision on `org.settings.manage`: the organisation's own settings
  *
  * The Owner decided on 2026-09-27 that the standard tenant administrator edits its
@@ -592,6 +606,14 @@ const ADDED_BY_REVERSAL_DECISION = Object.freeze(['sal.reversal.approve']);
  */
 const ADDED_BY_THIRD_PARTY_DECISION = Object.freeze(['sal.payment.third_party']);
 
+/**
+ * The ninth widening after P1-31, on Owner decision D2 of 2026-09-30, part 2
+ * (ADR-023, P1-32-PRE-OD-FD2B): the MINTED code `sal.refund.approve`, which
+ * approving and rejecting a refund request declare. B40–B41 below measure it.
+ * 97 + 1 = 98.
+ */
+const ADDED_BY_REFUND_DECISION = Object.freeze(['sal.refund.approve']);
+
 /** Carried codes that are consulted by an operation rather than declared by one. */
 const CONSULTED_NOT_DECLARED: readonly string[] = ADDED_BY_THIRD_PARTY_DECISION;
 
@@ -605,6 +627,7 @@ const ADDED_AFTER_P1_31 = Object.freeze([
   ...ADDED_BY_CREDIT_APPROVAL_DECISION,
   ...ADDED_BY_REVERSAL_DECISION,
   ...ADDED_BY_THIRD_PARTY_DECISION,
+  ...ADDED_BY_REFUND_DECISION,
 ]);
 
 const IDENTITY_PROVIDER = 'test_harness';
@@ -1291,7 +1314,8 @@ describe('Owner directive 2026-09-17 — the codes the QA campaign found closed'
         ADDED_BY_APPOINTMENT_DECISION.length +
         ADDED_BY_CREDIT_APPROVAL_DECISION.length +
         ADDED_BY_REVERSAL_DECISION.length +
-        ADDED_BY_THIRD_PARTY_DECISION.length
+        ADDED_BY_THIRD_PARTY_DECISION.length +
+        ADDED_BY_REFUND_DECISION.length
     );
     expect(ADDED_BY_OD_QA_CAMPAIGN).toHaveLength(3);
 
@@ -1848,7 +1872,8 @@ describe('Owner decision — sal.credit.manage: credit notes in a provisioned or
         ADDED_BY_APPOINTMENT_DECISION.length +
         ADDED_BY_CREDIT_APPROVAL_DECISION.length +
         ADDED_BY_REVERSAL_DECISION.length +
-        ADDED_BY_THIRD_PARTY_DECISION.length
+        ADDED_BY_THIRD_PARTY_DECISION.length +
+        ADDED_BY_REFUND_DECISION.length
     );
     for (const code of ADDED_BY_CREDIT_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
@@ -2319,7 +2344,10 @@ describe('Owner decision — org.settings.manage: the organisation edits its own
     // 96 since the receipt-reversal decision (ADR-023 D4), which B36 owns; 97
     // since the third-party payer decision (ADR-023 D14), which B38 owns.
     expect(bundle).toHaveLength(
-      95 + ADDED_BY_REVERSAL_DECISION.length + ADDED_BY_THIRD_PARTY_DECISION.length
+      95 +
+        ADDED_BY_REVERSAL_DECISION.length +
+        ADDED_BY_THIRD_PARTY_DECISION.length +
+        ADDED_BY_REFUND_DECISION.length
     );
     for (const code of ADDED_BY_SETTINGS_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
@@ -2820,7 +2848,10 @@ describe('Owner decision — the four appointment codes: the organisation runs i
     // 96 since the receipt-reversal decision (ADR-023 D4), which B36 owns; 97
     // since the third-party payer decision (ADR-023 D14), which B38 owns.
     expect(bundle).toHaveLength(
-      95 + ADDED_BY_REVERSAL_DECISION.length + ADDED_BY_THIRD_PARTY_DECISION.length
+      95 +
+        ADDED_BY_REVERSAL_DECISION.length +
+        ADDED_BY_THIRD_PARTY_DECISION.length +
+        ADDED_BY_REFUND_DECISION.length
     );
     for (const code of ADDED_BY_APPOINTMENT_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
@@ -3061,7 +3092,10 @@ describe('Owner decision D13 — sal.credit.approve: deciding a credit note', ()
     // 96 since the receipt-reversal decision (ADR-023 D4), which B36 owns; 97
     // since the third-party payer decision (ADR-023 D14), which B38 owns.
     expect(bundle).toHaveLength(
-      95 + ADDED_BY_REVERSAL_DECISION.length + ADDED_BY_THIRD_PARTY_DECISION.length
+      95 +
+        ADDED_BY_REVERSAL_DECISION.length +
+        ADDED_BY_THIRD_PARTY_DECISION.length +
+        ADDED_BY_REFUND_DECISION.length
     );
     for (const code of ADDED_BY_CREDIT_APPROVAL_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
@@ -3121,7 +3155,10 @@ describe('Owner decision D4 — sal.reversal.approve: deciding a receipt reversa
   it('P31-B36 the bundle carries sal.reversal.approve once; exactly the receipt-reversal approval and rejection declare it, branch-scoped with sal.finance.view; it is a catalogue row; first_owner is untouched', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
     // 97 since the third-party payer decision (ADR-023 D14), which B38 owns.
-    expect(bundle).toHaveLength(96 + ADDED_BY_THIRD_PARTY_DECISION.length);
+    // 98 since the refund decision (ADR-023 D2, part 2), which B40 owns.
+    expect(bundle).toHaveLength(
+      96 + ADDED_BY_THIRD_PARTY_DECISION.length + ADDED_BY_REFUND_DECISION.length
+    );
     for (const code of ADDED_BY_REVERSAL_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -3182,7 +3219,8 @@ describe('Owner decision D4 — sal.reversal.approve: deciding a receipt reversa
 describe('Owner decision D14 — sal.payment.third_party: a third-party payer', () => {
   it('P31-B38 the bundle carries sal.payment.third_party once; no operation declares it and sal.payment-allocate keeps its two codes; the service and the database consult it; it is a catalogue row; first_owner is untouched', () => {
     const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
-    expect(bundle).toHaveLength(97);
+    // 98 since the refund decision (ADR-023 D2, part 2), which B40 owns.
+    expect(bundle).toHaveLength(97 + ADDED_BY_REFUND_DECISION.length);
     for (const code of ADDED_BY_THIRD_PARTY_DECISION) {
       expect(bundle.filter((c) => c === code)).toHaveLength(1);
       expect(ADDED_ALL).not.toContain(code);
@@ -3248,5 +3286,66 @@ describe('Owner decision D14 — sal.payment.third_party: a third-party payer', 
     const mapped = await mapCode(probe, roleId, 'sal.payment.third_party');
     expect(mapped.status).toBe(201);
     expect(await codesOfRole(roleId)).toEqual(['sal.payment.third_party']);
+  });
+});
+
+describe('Owner decision D2, part 2 — sal.refund.approve: deciding a refund request', () => {
+  it('P31-B40 the bundle carries sal.refund.approve once; exactly the refund approval and rejection declare it, branch-scoped with sal.finance.view; requesting, withdrawing and paying out keep sal.payment.record; it is a catalogue row; first_owner is untouched', () => {
+    const bundle = [...TENANT_ADMINISTRATOR_ROLE.permissionCodes];
+    expect(bundle).toHaveLength(98);
+    for (const code of ADDED_BY_REFUND_DECISION) {
+      expect(bundle.filter((c) => c === code)).toHaveLength(1);
+      expect(ADDED_ALL).not.toContain(code);
+      expect(ADDED_BY_REVERSAL_DECISION).not.toContain(code);
+      expect(ADDED_BY_CREDIT_APPROVAL_DECISION).not.toContain(code);
+    }
+    // Requesting, withdrawing and paying out stay with the recording code, carried.
+    expect(bundle).toContain('sal.payment.record');
+
+    // MINTED by D2 part 2 in the catalogue seed, at high risk.
+    const seed = readFileSync(
+      join(REPOSITORY_ROOT, 'supabase/seeds/04_iam_permission_catalog.sql'),
+      'utf8'
+    );
+    expect(seed).toMatch(/\('sal\.refund\.approve',\s+'sal',.*'high'/);
+
+    const register = JSON.parse(
+      readFileSync(
+        join(REPOSITORY_ROOT, 'docs/phase-1/phase-1-24/evidence/operation-register.json'),
+        'utf8'
+      )
+    ) as { operations: Array<{ id: string; permissions: string[] }> };
+    const declaring = register.operations.filter((op) =>
+      op.permissions.includes('sal.refund.approve')
+    );
+    expect(declaring.map((op) => op.id).sort()).toEqual([
+      'sal.refund-approve',
+      'sal.refund-reject',
+    ]);
+    for (const op of declaring) {
+      expect(op.permissions).toEqual(['sal.refund.approve', 'sal.finance.view']);
+    }
+    for (const id of ['sal.refund-request', 'sal.refund-withdraw', 'sal.refund-execute']) {
+      expect(register.operations.find((op) => op.id === id)?.permissions).toEqual([
+        'sal.payment.record',
+        'sal.finance.view',
+      ]);
+    }
+
+    expect([...FIRST_OWNER_ROLE.permissionCodes]).toEqual([
+      'iam.user.manage',
+      'iam.role.manage',
+      'iam.grant.manage',
+    ]);
+  });
+
+  it('P31-B41 the provisioned administrator effectively holds it, and can delegate it onto a role it creates', async () => {
+    expect(await codesOfRole(probe.tenantAdministratorRoleId)).toContain('sal.refund.approve');
+    expect(await codesHeldBy(probe.ownerAccountId)).toContain('sal.refund.approve');
+
+    const roleId = await newRole(probe, 'refund_approval_delegation_probe');
+    const mapped = await mapCode(probe, roleId, 'sal.refund.approve');
+    expect(mapped.status).toBe(201);
+    expect(await codesOfRole(roleId)).toEqual(['sal.refund.approve']);
   });
 });

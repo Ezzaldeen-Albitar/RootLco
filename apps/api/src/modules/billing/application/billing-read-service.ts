@@ -227,6 +227,13 @@ export interface InvoicePayerView {
 export interface InvoiceListEntryView extends InvoiceView {
   readonly payer: InvoicePayerView;
   readonly outstanding: MoneyView | null;
+  /**
+   * What the invoice can still be credited — its gross less the credit notes
+   * already approved (ADR-023 D2, P1-32-PRE-OD-FD2B) — `null` exactly when
+   * `outstanding` is, for the same reason. The credit-note form caps at this.
+   * Additive.
+   */
+  readonly creditable: MoneyView | null;
 }
 
 /** An invoice with its lines, as the detail read returns it. */
@@ -283,11 +290,12 @@ export interface OutstandingView {
  *
  * `creditStatus` compares the effective (approved) credits with the eligible
  * total, the invoice's gross; `paymentStatus` compares what was paid with what
- * is still open; `refundStatus` is `owed` while the customer is owed money back
- * (an open refund obligation, ADR-023 D2) and `none` otherwise — nothing is ever
- * paid back automatically. A fully credited invoice reads `credited` /
- * `nothing_due` — never "settled" or "paid". `credited`, `paid` and
- * `refundOwed` are the amounts the statuses were derived from, in the invoice's
+ * is still open; `refundStatus` says whether the customer is owed money back and
+ * how far paying it back has got — `none`, `owed`, `requested`, `approved`,
+ * `partly_refunded` or `refunded` (ADR-023 D2, P1-32-PRE-OD-FD2B) — and nothing is
+ * ever paid back automatically. A fully credited invoice reads `credited` /
+ * `nothing_due` — never "settled" or "paid". `credited`, `paid`, `refundOwed` and
+ * `refunded` are the amounts the statuses were derived from, in the invoice's
  * currency.
  */
 export interface SettlementView {
@@ -297,11 +305,27 @@ export interface SettlementView {
   readonly credited: MoneyView;
   readonly paid: MoneyView;
   /**
-   * What the customer is owed back: the sum of the invoice's OPEN refund
-   * obligations (ADR-023 D2, P1-32-PRE-OD-FD2A), `0` when none is open. An
-   * operational figure, not an accounting entry. Additive.
+   * What the customer is still owed back: the invoice's OPEN refund obligations
+   * less what has been paid out on them (ADR-023 D2, P1-32-PRE-OD-FD2A, FD2B), `0`
+   * when nothing is owed. An operational figure, not an accounting entry. Additive.
    */
   readonly refundOwed: MoneyView;
+  /**
+   * What has been paid back to the customer: the payouts recorded on the invoice's
+   * approved refund requests (ADR-023 D2, P1-32-PRE-OD-FD2B), `0` when none. An
+   * operational figure, not an accounting entry. Additive.
+   */
+  readonly refunded: MoneyView;
+  /**
+   * What the invoice can still be credited (ADR-023 D2): its gross less the credit
+   * notes already APPROVED on it, never what is merely still owed. A credit up to
+   * this is accepted even once the invoice is paid; the part of it above what is
+   * still owed becomes a refund owed to the customer. Computed by the database
+   * with the predicates `sal.approve_credit_note` applies; pending notes are not
+   * counted and the approval re-checks under the invoice lock. Additive
+   * (P1-32-PRE-OD-FD2B).
+   */
+  readonly creditable: MoneyView;
   /**
    * The part of `paid` that somebody other than the invoice's customer paid, as an
    * explicit third-party payment (ADR-023 D14) — an insurer, an employer — oldest
@@ -593,8 +617,8 @@ export interface CreditApprovalEffectView {
 /**
  * One refund obligation (ADR-023 D2, P1-32-PRE-OD-FD2A): money the customer is
  * owed back because an approved credit exceeded what the invoice still owed. An
- * operational record, not an accounting entry: nothing has been paid. `state` is
- * `open` until refund requests exist (FD2B).
+ * operational record, not an accounting entry. `state` is `open` until what its
+ * refund requests have paid out reaches its amount, then `settled` (FD2B).
  */
 export interface RefundObligationView {
   readonly id: string;
@@ -610,6 +634,10 @@ export interface RefundObligationView {
   readonly createdAt: string;
   readonly createdBy: string;
   readonly recordVersion: number;
+  /** What its approved refund requests have paid out (P1-32-PRE-OD-FD2B). Additive. */
+  readonly paidOut: MoneyView;
+  /** Its amount less what has been paid out, as the database computes it. Additive. */
+  readonly stillOwed: MoneyView;
 }
 
 /**
@@ -694,6 +722,9 @@ export const toInvoiceListEntryView = (
     : WITHHELD_PAYER,
   outstanding: balanceIsTrustworthy(row)
     ? moneyView(row.openAmount, row.currencyCode, units)
+    : null,
+  creditable: balanceIsTrustworthy(row)
+    ? moneyView(row.creditableAmount, row.currencyCode, units)
     : null,
 });
 
@@ -789,6 +820,8 @@ export const toRefundObligationView = (
   createdAt: row.createdAt.toISOString(),
   createdBy: row.createdBy,
   recordVersion: row.recordVersion,
+  paidOut: moneyView(row.paidOut, row.currencyCode, units),
+  stillOwed: moneyView(row.stillOwed, row.currencyCode, units),
 });
 
 const toNumberingConfigView = (row: NumberingConfigRow): NumberingConfigView => ({
@@ -1279,19 +1312,40 @@ export class BillingReadService {
     const shown = truncated ? thirdPartyRows.slice(0, THIRD_PARTY_PAYMENTS_SHOWN) : thirdPartyRows;
     const mayNamePayer =
       shown.length > 0 && (await callerHoldsPermissionAnywhere(db, CUSTOMER_SEARCH_PERMISSION));
-    // What the customer is owed back (ADR-023 D2): the open refund obligations.
-    const refundOwed = await this.repository.openRefundOwed(db, {
+    // What the customer is owed back and what has been paid back (ADR-023 D2): the
+    // invoice's refund obligations and their refund requests, summed by PostgreSQL.
+    const refunds = await this.repository.invoiceRefundPosition(db, {
       invoiceId: invoice.id,
       companyId: invoice.companyId,
       branchId: invoice.branchId,
     });
+    // What the invoice can still be credited (ADR-023 D2): the ceiling the
+    // credit-note form caps at, stated by the database and never derived here.
+    const ceiling = await this.repository.creditCeiling(db, {
+      invoiceId: invoice.id,
+      companyId: invoice.companyId,
+      branchId: invoice.branchId,
+    });
+    /* c8 ignore next 5 -- the invoice was read in the same transaction. */
+    if (!ceiling) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'billing: an issued invoice has no readable credit ceiling',
+      });
+    }
     return {
       creditStatus: deriveCreditStatus(credited, Decimal.fromDatabase(position.gross, MONEY)),
       paymentStatus: derivePaymentStatus(paid, Decimal.fromDatabase(openAmount, MONEY)),
-      refundStatus: deriveRefundStatus(Decimal.fromDatabase(refundOwed, MONEY)),
+      refundStatus: deriveRefundStatus({
+        obligated: Decimal.fromDatabase(refunds.obligated, MONEY),
+        refunded: Decimal.fromDatabase(refunds.refunded, MONEY),
+        pendingRequest: refunds.pendingRequest,
+        approvedRequest: refunds.approvedRequest,
+      }),
       credited: moneyView(position.credited, invoice.currencyCode, units),
       paid: moneyView(position.paid, invoice.currencyCode, units),
-      refundOwed: moneyView(refundOwed, invoice.currencyCode, units),
+      refundOwed: moneyView(refunds.stillOwed, invoice.currencyCode, units),
+      refunded: moneyView(refunds.refunded, invoice.currencyCode, units),
+      creditable: moneyView(ceiling.creditable, invoice.currencyCode, units),
       thirdPartyPayments: shown.map((row) => ({
         receipt: { id: row.receiptId, reference: row.receiptNumber },
         payerName: mayNamePayer ? row.payerDisplayName : null,

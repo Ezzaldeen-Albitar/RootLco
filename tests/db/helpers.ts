@@ -394,6 +394,7 @@ export async function deleteTenantCascade(admin: Pool, tenantIds: string[]): Pro
   await deleteFrom('inv.sales_returns');
   // P1-32-PRE-OD-FD2A (ADR-023 D2): an obligation cites its credit note and invoice
   // (both ON DELETE RESTRICT), so it goes before them.
+  await deleteFrom('sal.refund_requests');
   await deleteFrom('sal.refund_obligations');
   await deleteFrom('sal.credit_notes');
   await deleteFrom('sal.receipts');

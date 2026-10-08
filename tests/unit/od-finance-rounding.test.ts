@@ -73,20 +73,43 @@ describe('D7 — the credit status is derived from effective credits against the
     expect(deriveCreditStatus(money('100.0000'), money('100'))).toBe('credited');
   });
 
-  it('publishes exactly the three credit statuses, and the two refund statuses of D2 part 1', () => {
+  it('publishes exactly the three credit statuses, and the six refund statuses of D2', () => {
     expect([...CREDIT_STATUSES]).toEqual(['none', 'partly_credited', 'credited']);
-    // ADR-023 D2 (P1-32-PRE-OD-FD2A): `owed` while a refund obligation is open.
-    // Refund requests and their execution (FD2B) add the later states.
-    expect([...REFUND_STATUSES]).toEqual(['none', 'owed']);
+    // ADR-023 D2: `owed` while a refund obligation is open (P1-32-PRE-OD-FD2A); the
+    // request, its approval and its payout add the later states (P1-32-PRE-OD-FD2B).
+    expect([...REFUND_STATUSES]).toEqual([
+      'none',
+      'owed',
+      'requested',
+      'approved',
+      'partly_refunded',
+      'refunded',
+    ]);
   });
 });
 
 describe('D2 — the credit ceiling and the refund status', () => {
-  it('reads owed only while something is owed back, compared by Decimal', () => {
-    expect(deriveRefundStatus(money('0'))).toBe('none');
-    expect(deriveRefundStatus(money('0.0000'))).toBe('none');
-    expect(deriveRefundStatus(money('0.0001'))).toBe('owed');
-    expect(deriveRefundStatus(money('30'))).toBe('owed');
+  it('derives every refund status from the obligations, the payouts and the live request, compared by Decimal', () => {
+    const position = (
+      obligated: string,
+      refunded: string,
+      waits: { pendingRequest?: boolean; approvedRequest?: boolean } = {}
+    ) => ({
+      obligated: money(obligated),
+      refunded: money(refunded),
+      pendingRequest: waits.pendingRequest ?? false,
+      approvedRequest: waits.approvedRequest ?? false,
+    });
+    expect(deriveRefundStatus(position('0', '0'))).toBe('none');
+    expect(deriveRefundStatus(position('0.0000', '0.0000'))).toBe('none');
+    expect(deriveRefundStatus(position('0.0001', '0'))).toBe('owed');
+    expect(deriveRefundStatus(position('30', '0'))).toBe('owed');
+    expect(deriveRefundStatus(position('30', '0', { pendingRequest: true }))).toBe('requested');
+    expect(deriveRefundStatus(position('30', '0', { approvedRequest: true }))).toBe('approved');
+    expect(deriveRefundStatus(position('30', '10'))).toBe('partly_refunded');
+    expect(deriveRefundStatus(position('30', '10', { pendingRequest: true }))).toBe('requested');
+    expect(deriveRefundStatus(position('30', '29.9999'))).toBe('partly_refunded');
+    expect(deriveRefundStatus(position('30', '30'))).toBe('refunded');
   });
 
   it('refuses a credit above what the invoice can still be credited, and admits exactly it', () => {

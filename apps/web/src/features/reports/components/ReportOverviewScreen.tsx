@@ -594,6 +594,21 @@ function OverviewResults({
         </>
       )}
 
+      {/*
+       * When the caller's catalogue holds none of the four, the overview says so
+       * once instead of drawing an empty list (P1-32-PRE-OD-FD2B, review of #535);
+       * nothing was run for it, because nothing was runnable.
+       */}
+      {OVERVIEW_SECTIONS.every(
+        (section) => definitionFor(definitions, section.reportCode) === null
+      ) ? (
+        <EmptyState
+          messages={messages}
+          titleKey="reports.overview.noReportsTitle"
+          descriptionKey="reports.overview.noReportsBody"
+        />
+      ) : null}
+
       {OVERVIEW_SECTIONS.map((section) => {
         /*
          * D17: a section is drawn only for a report the caller's catalogue holds.

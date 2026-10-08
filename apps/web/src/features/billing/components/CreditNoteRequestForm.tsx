@@ -10,10 +10,11 @@
  * ## Two ways in, one form
  *
  * On the credit-notes screen the invoice is FOUND with the invoice picker, in
- * the working branch, narrowed to the invoices that can still be credited —
- * issued, with money still open, as the server decides (`allocatable`). On an
- * invoice's own screen the invoice is already known and the form is offered
- * only while money is still open on it, so there is nothing to find.
+ * the working branch, narrowed to the issued invoices with money still open, as
+ * the server decides (`allocatable`). On an invoice's own screen the invoice is
+ * already known and the form is offered while the server says it can still be
+ * credited — even once it is paid (ADR-023 D2) — so there is nothing to find. A
+ * paid invoice is therefore credited from its own screen.
  *
  * ## What the form does and does not decide
  *
@@ -23,16 +24,23 @@
  * against the minor unit the server published for the invoice's currency
  * (`fitsMinorUnit`), so an amount finer than the currency's smallest coin is
  * refused on the box rather than by the route. It is also
- * compared, digit by digit (`compareMoney`), with the open receivable the server
- * published, and an amount above it is refused here: no credit can exceed it.
+ * compared, digit by digit (`compareMoney`), with what the server says the invoice
+ * can still be CREDITED — its total less the credit notes already approved (Owner
+ * decision D2, ADR-023, P1-32-PRE-OD-FD2B) — and an amount above that is refused
+ * here. It is not capped at what is still owed: since D2 a paid invoice can be
+ * credited, and the part of a credit above what is still owed becomes a refund
+ * owed to the customer once approved — never paid back automatically. The form
+ * says so beside both figures, and says it again when the amount typed is above
+ * what is still owed, which is a comparison of two of the server's strings and
+ * not a subtraction.
  *
- * What the form does NOT show is "open minus the credit notes still pending on
- * this invoice". No read states that sum, and computing it here would mean paging
- * the pending notes and ADDING money in the browser — a second money engine. So
- * the form shows the open receivable the server states and says, beside it, that
- * pending notes may reduce what can be approved. Whether the amount still fits
- * when it is approved is the SERVER's answer, taken under the invoice lock, and a
- * refusal of it is filed under the amount. No arithmetic is done here.
+ * What the form does NOT show is "creditable minus the credit notes still pending
+ * on this invoice". No read states that sum, and computing it here would mean
+ * paging the pending notes and ADDING money in the browser — a second money
+ * engine. So the form shows the figures the server states and says, beside them,
+ * that pending notes may reduce what can be approved. Whether the amount still
+ * fits when it is approved is the SERVER's answer, taken under the invoice lock,
+ * and a refusal of it is filed under the amount. No arithmetic is done here.
  *
  * ## Born pending
  *
@@ -80,6 +88,11 @@ export interface KnownInvoice {
   readonly id: string;
   /** What the server says is still open, shown beside the amount. */
   readonly open: MoneyView | null;
+  /**
+   * What the server says the invoice can still be credited (ADR-023 D2) — the cap.
+   * `null` from a server that does not state it, when the open amount is the cap.
+   */
+  readonly creditable: MoneyView | null;
 }
 
 type Source =
@@ -154,7 +167,21 @@ export function CreditNoteRequestForm({
 
   const invoiceId = source.kind === 'known' ? source.invoice.id : (picked?.id ?? null);
   const open = source.kind === 'known' ? source.invoice.open : (picked?.outstanding ?? null);
-  const currency = open?.currency ?? picked?.currency ?? null;
+  // The cap is what the invoice can still be credited, as the server states it; a
+  // server that does not state it leaves the open amount as the cap.
+  const statedCreditable =
+    source.kind === 'known' ? source.invoice.creditable : (picked?.creditable ?? null);
+  const creditable = statedCreditable ?? open;
+  const currency = open?.currency ?? creditable?.currency ?? picked?.currency ?? null;
+  const typedAmount = amount.trim();
+  // Above what is still owed but within what can be credited: the rest becomes a
+  // refund owed to the customer once approved. Two server strings compared, digit
+  // by digit; nothing is subtracted.
+  const aboveOwed =
+    open !== null &&
+    CREDIT_AMOUNT.test(typedAmount) &&
+    compareMoney(typedAmount, open.amount) > 0 &&
+    (creditable === null || compareMoney(typedAmount, creditable.amount) <= 0);
 
   const submit = async () => {
     const found: Record<string, string> = {};
@@ -168,10 +195,11 @@ export function CreditNoteRequestForm({
       // the balance read published for it (`shared.currencies`, Owner decision D1),
       // so the box says so before anything is sent, in the server's own words.
       found['amount'] = 'form.violation.minor_unit_scale';
-    } else if (open !== null && compareMoney(typed, open.amount) > 0) {
-      // Never above what the server says is still open. Pending notes can lower the
-      // ceiling further; that is the server's answer at approval, not a sum made here.
-      found['amount'] = 'creditNotes.request.aboveOpen';
+    } else if (creditable !== null && compareMoney(typed, creditable.amount) > 0) {
+      // Never above what the server says can still be credited (D2). Pending notes
+      // can lower the ceiling further; that is the server's answer at approval, not
+      // a sum made here.
+      found['amount'] = 'creditNotes.request.aboveCreditable';
     }
     const why = reason.trim();
     if (why.length === 0) found['reason'] = 'field.required';
@@ -259,6 +287,17 @@ export function CreditNoteRequestForm({
             </span>{' '}
             <Money money={open} locale={locale} />
           </p>
+          {statedCreditable !== null ? (
+            <p className="text-body">
+              <span className="text-text-muted">
+                {translate(messages, 'creditNotes.request.creditable')}
+              </span>{' '}
+              <Money money={statedCreditable} locale={locale} />
+            </p>
+          ) : null}
+          <p className="text-caption text-text-muted">
+            {translate(messages, 'creditNotes.request.aboveOwedBecomesRefund')}
+          </p>
           <p className="text-caption text-text-muted">
             {translate(messages, 'creditNotes.request.pendingMayReduce')}
           </p>
@@ -278,6 +317,11 @@ export function CreditNoteRequestForm({
           error={errorFor('amount')}
         />
       </div>
+      {aboveOwed ? (
+        <p role="status" className="text-caption text-text-primary">
+          {translate(messages, 'creditNotes.request.partBecomesRefund')}
+        </p>
+      ) : null}
       <FormTextField
         label={translate(messages, 'creditNotes.request.reason')}
         required

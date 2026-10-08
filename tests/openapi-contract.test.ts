@@ -437,6 +437,13 @@ import '@/app/api/v1/credit-notes/[creditNoteId]/rejection/route';
 import '@/app/api/v1/credit-notes/[creditNoteId]/withdrawal/route';
 // ADR-023 D2 (P1-32-PRE-OD-FD2A): what customers are owed back.
 import '@/app/api/v1/refund-obligations/route';
+import '@/app/api/v1/refund-obligations/[obligationId]/refund-requests/route';
+import '@/app/api/v1/refund-requests/route';
+import '@/app/api/v1/refund-requests/[requestId]/route';
+import '@/app/api/v1/refund-requests/[requestId]/approval/route';
+import '@/app/api/v1/refund-requests/[requestId]/rejection/route';
+import '@/app/api/v1/refund-requests/[requestId]/withdrawal/route';
+import '@/app/api/v1/refund-requests/[requestId]/execution/route';
 import '@/app/api/v1/payments/route';
 import '@/app/api/v1/payments/[paymentId]/route';
 import '@/app/api/v1/payments/[paymentId]/allocations/route';

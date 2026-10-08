@@ -149,6 +149,19 @@ const FOUR = [
   RECEIPT_REVERSAL_REJECT_OPERATION,
 ];
 
+/**
+ * The refund commands (ADR-023 D2, part 2, P1-32-PRE-OD-FD2B): the decision is the
+ * same kind of dual-control financial approval, and the request, the withdrawal and
+ * the payout record are recorded the same way.
+ */
+const REFUND_COMMANDS = [
+  'sal.refund-request',
+  'sal.refund-approve',
+  'sal.refund-reject',
+  'sal.refund-withdraw',
+  'sal.refund-execute',
+];
+
 /** A handle for the seam and the services: answers capability probes, records statements. */
 function fakeHandle(options: { readonly insertThrows?: boolean } = {}): {
   db: DbHandle;
@@ -203,8 +216,11 @@ beforeEach(() => {
 
 describe('D12 extension — the four operations, and only those', () => {
   it('lists exactly the four financial approval decisions, by their declared ids', () => {
-    expect([...PERMISSION_REFUSAL_OPERATIONS].sort()).toEqual(FOUR.map((op) => op.id).sort());
+    expect([...PERMISSION_REFUSAL_OPERATIONS].sort()).toEqual(
+      [...FOUR.map((op) => op.id), ...REFUND_COMMANDS].sort()
+    );
     for (const operation of FOUR) expect(recordsPermissionRefusals(operation.id)).toBe(true);
+    for (const id of REFUND_COMMANDS) expect(recordsPermissionRefusals(id)).toBe(true);
     expect(recordsPermissionRefusals(CREDIT_NOTE_WITHDRAW_OPERATION.id)).toBe(false);
     expect(recordsPermissionRefusals('sal.receipt-reversal-request')).toBe(false);
     expect(PERMISSION_REFUSAL_EVENT).toBe('authorization.denied');
