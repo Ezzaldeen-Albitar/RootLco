@@ -342,6 +342,11 @@ are outside the repository, under the coordinator's `orchestration/evidence/`.
 Listed so that each can be answered once. Where the Owner has answered, the answer is recorded
 against the question with its date; every other question is still open.
 
+The decision pack of 2026-10-08, [`decision-pack-2026-10-08.md`](decision-pack-2026-10-08.md),
+sets out worked examples, the options, the planner's recommendation and the interim treatment for questions 8, 9 and 22 to 27, and for
+the other plan labels linked in the table under "Completion plan labels and canonical ids" below.
+Nothing in it is an Owner decision, and it changes no question below.
+
 1. **Package definitions.** Which modules are sold separately, and which package holds which? In
    particular, are appointments, diagnostics, quality control, warranty and reporting part of every
    workshop package or licensed separately? Diagnostics and quality are code dependencies of work
@@ -379,11 +384,12 @@ against the question with its date; every other question is still open.
 8. **D13 transition (CC-OD-50).** Organisations provisioned earlier cannot approve credit notes after
    upgrade until the code is granted and a limit set, and the backfill covers only the named QA
    organisations. Should the backfill extend to every existing organisation, or stay limited with
-   the change stated to them?
+   the change stated to them? _Decision pack:_ [PERM01](decision-pack-2026-10-08.md#perm01-giving-new-rights-to-existing-organisations).
 9. **D17 transition (CC-OD-50).** Implementing D17 removes finance visibility from users who hold
    quotation codes without the finance permission. Should existing organisations be told in
    advance, with a list of affected roles, or should a defined period pass before the change
-   applies? The same question applies to any future print permission (D10).
+   applies? The same question applies to any future print permission (D10). _Decision pack:_
+   [PERM01](decision-pack-2026-10-08.md#perm01-giving-new-rights-to-existing-organisations), [PRINT01-a](decision-pack-2026-10-08.md#print01-a-a-print-permission-for-each-document), [PRINT01-b](decision-pack-2026-10-08.md#print01-b-quotation-amounts-on-paper) and [PRINT01-c](decision-pack-2026-10-08.md#print01-c-invoice-details-for-a-user-without-finance-visibility).
 10. **Tax permission (CC-OD-50, FC-20).** Once a tax write path exists, who should hold
     `org.tax.manage` in existing and new organisations? No provisioned administrator holds it today,
     and it cannot be delegated. Separately: the records hold FC-20 as a design until the
@@ -442,7 +448,7 @@ against the question with its date; every other question is still open.
 22. **Refund decision code (CC-OD-58, ADR-023 D2 part 2).** Organisations provisioned earlier cannot
     approve or reject a refund request after upgrade until `sal.refund.approve` is granted, and the
     backfill covers only the named QA organisations. Should the backfill extend to every existing
-    organisation, or stay limited with the change stated to them?
+    organisation, or stay limited with the change stated to them? _Decision pack:_ [PERM01](decision-pack-2026-10-08.md#perm01-giving-new-rights-to-existing-organisations).
 
 Questions 23 to 28 were added on 2026-10-08 (P1-32-PRE-OD-WP00) for the decision labels of the
 completion plan of 2026-10-08 (outside the repository) that had no canonical id. Each states the
@@ -468,7 +474,8 @@ and the interim treatment that holds until it is answered.
     `defineOperation` with its audit action), a forward migration if a version column or a cycle
     guard is needed, the inventory interface (completion-plan package WP02), the user manual's
     inventory part, and the inventory acceptance cases. _Interim:_ the category tree is shown
-    read-only and labelled read-only; categories are still created as today.
+    read-only and labelled read-only; categories are still created as today. _Decision pack:_
+    [CAT01](decision-pack-2026-10-08.md#cat01-renaming-and-moving-item-categories), [CAT01-NAME](decision-pack-2026-10-08.md#cat01-name-category-names-among-siblings-and-second-language-names) and [CAT01-TREE](decision-pack-2026-10-08.md#cat01-tree-the-rules-a-category-move-follows).
 
 24. **Cancelling an approved refund that is not yet paid out (plan label FIN03).** Under ADR-023 D2
     part 2 at most one request per obligation is live (pending, or approved and not yet paid out;
@@ -487,7 +494,7 @@ and the interim treatment that holds until it is answered.
     records, the refunds panel and list in English and Arabic, ADR-023 D2 (a new open point recorded
     by a further ADR change, not by editing the decision), and the D2 acceptance cases (D2-3, D2-4).
     _Interim:_ today's behaviour: an approved request not yet paid out blocks a new request on its
-    obligation.
+    obligation. _Decision pack:_ [FIN03](decision-pack-2026-10-08.md#fin03-cancelling-an-approved-refund-that-is-not-yet-paid-out).
 
 25. **Who may record a refund payout (plan label FIN04).** Today a different person must approve a
     refund (the approver differs from the requester), and any holder of `sal.payment.record` in the
@@ -501,7 +508,7 @@ and the interim treatment that holds until it is answered.
     migration), a new refusal code with its D12 record, who is offered the payout form, the D2-3
     acceptance cases; with (c), an organisation needs three people who can handle a refund.
     _Interim:_ today's rule stays: the approver differs from the requester, and the recorder is not
-    restricted further.
+    restricted further. _Decision pack:_ [FIN04](decision-pack-2026-10-08.md#fin04-who-may-record-a-refund-payout).
 
 26. **Credit-note numbering and legal fields (plan label DOC01).** A credit note has no document
     number today; its print carries a reference composed from the invoice number and the request
@@ -515,7 +522,8 @@ and the interim treatment that holds until it is answered.
     the number-sequence configuration (a new document type, and provisioning the sequence for
     existing organisations, since a document number has no fallback), the credit-note approval
     path, the credit-note screens and print, ADR-023 D10, and the D10 print cases (PC-1, PC-2).
-    _Interim:_ the composed reference; no numbering policy is invented.
+    _Interim:_ the composed reference; no numbering policy is invented. _Decision pack:_
+    [DOC01](decision-pack-2026-10-08.md#doc01-credit-note-numbering).
 
 27. **Report configuration in organisations provisioned earlier (plan label RPT03).** The
     administrator bundle has carried `rpt.report.configure` since 2026-09-09 (P1-31 P-11;
@@ -533,7 +541,7 @@ and the interim treatment that holds until it is answered.
     codes. _Affects:_ existing organisations' administrator roles, the backfill script's tenant
     list, the D16 snapshot acceptance cases, and the snapshot-code question (VL-P132-010).
     _Interim:_ no grant; such an organisation cannot configure a report or save a snapshot until an
-    operator acts on the answer.
+    operator acts on the answer. _Decision pack:_ [RPT03](decision-pack-2026-10-08.md#rpt03-report-configuration-in-organisations-provisioned-earlier) and [PERM01](decision-pack-2026-10-08.md#perm01-giving-new-rights-to-existing-organisations).
 
 28. **The standing promotion pull request #503 (plan label CI01).** #503 (`develop` → `main`)
     is open; its head is the `develop` branch itself, so it carries no commits of its own, and it
@@ -555,33 +563,35 @@ and the interim treatment that holds until it is answered.
 The completion plan of 2026-10-08 (outside the repository) names its decisions with navigation
 labels. They are cross-references only: the canonical ids below stay the record, and a label never
 carries a state of its own. Imported 2026-10-08 (P1-32-PRE-OD-WP00); the 104 audit items and the
-200 requirement ids are crosswalked at the end of `capability-status.md`.
+200 requirement ids are crosswalked at the end of `capability-status.md`. The last column links the
+section of the decision pack of 2026-10-08 that prepares each label for the Owner; a link records no
+answer.
 
-| Label     | Canonical ids (where the decision is recorded)                                                                                                                |
-| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| CAT01     | Question 23 (new 2026-10-08)                                                                                                                                  |
-| PLAN01    | CC-OD-24; related CC-OD-49                                                                                                                                    |
-| ACCESS01  | Question 18, its second-company half                                                                                                                          |
-| ACCESS02  | Question 18, its platform-operator half; D-OD-01                                                                                                              |
-| FIN01     | VL-P132-003; ADR-023 D5 and D15, open policy point "the same service approved again"                                                                          |
-| FIN02     | VL-P132-001, VL-P132-002; ADR-023 D8 open points                                                                                                              |
-| FIN03     | Question 24 (new 2026-10-08); nearest existing: ADR-023 D2 open point (e)                                                                                     |
-| FIN04     | Question 25 (new 2026-10-08)                                                                                                                                  |
-| PERM01    | Questions 8, 9 and 22; CC-OD-50 (items 1 to 3 and 7), CC-OD-53, CC-OD-54, CC-OD-58                                                                            |
-| PRINT01   | VL-P132-005; question 9, its print part; CC-OD-50 item 3                                                                                                      |
-| DOC01     | Question 26 (new 2026-10-08); ADR-023 D10                                                                                                                     |
-| RPT01     | VL-P132-008 (Owner decision CC-04 of 2026-09-08)                                                                                                              |
-| RPT02     | VL-P132-010                                                                                                                                                   |
-| RPT03     | Question 27 (new 2026-10-08); related P1-31 O-19 (not among D-32 to D-38) and O-4 (answered as D-34)                                                          |
-| ODO01     | VL-P132-009                                                                                                                                                   |
-| LIC01     | Questions 1 to 7, 13, 14 and 17; ADR-024; CC-OD-33 to CC-OD-39, CC-OD-49. Question 7's method was decided on 2026-10-03; the rest is open                     |
-| ACC01     | Questions 10, 11, 12, 15, 16 and 17; CC-OD-25, CC-OD-47, CC-OD-48; D-OD-12                                                                                    |
-| EMAIL01   | Question 20; P1-15 OD-02 (`docs/phase-1/phase-1-15/open-decisions.md`). The plan's "OD-02" is P1-15's message-provider decision, not this directive's D-OD-02 |
-| AUTH01    | CC-OD-31 (its behaviour half is open); the W9-R1 residual recorded in CC-OD-29                                                                                |
-| GOV01     | P1-31 O-1, O-2, O-3, O-4, O-10 and O-20, answered by the Owner on 2026-09-16 as D-38, D-32, D-33, D-34, D-35 and D-36 (CONDITIONAL PASS); see below           |
-| CI01      | Question 28 (new 2026-10-08); related VL-CI-003, VL-CI-004                                                                                                    |
-| DATA01    | CC-OD-28, CC-OD-15; `docs/product/owner-requirements-2026-09-06.md` area F and H-3                                                                            |
-| RELEASE01 | OIR-01, the product name (`docs/phase-1/phase-1-25/owner-input-required.md`); P1-31 O-11 (not answered by D-32 to D-38); D-OD-05                              |
+| Label     | Canonical ids (where the decision is recorded)                                                                                                                | Decision pack (2026-10-08)                                                                                                                                                                                                                                                                                                                                                |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| CAT01     | Question 23 (new 2026-10-08)                                                                                                                                  | [CAT01](decision-pack-2026-10-08.md#cat01-renaming-and-moving-item-categories), [CAT01-NAME](decision-pack-2026-10-08.md#cat01-name-category-names-among-siblings-and-second-language-names), [CAT01-TREE](decision-pack-2026-10-08.md#cat01-tree-the-rules-a-category-move-follows)                                                                                      |
+| PLAN01    | CC-OD-24; related CC-OD-49                                                                                                                                    | [PLAN01](decision-pack-2026-10-08.md#plan01-the-plan-chosen-when-an-organisation-is-provisioned)                                                                                                                                                                                                                                                                          |
+| ACCESS01  | Question 18, its second-company half                                                                                                                          | not in this pack                                                                                                                                                                                                                                                                                                                                                          |
+| ACCESS02  | Question 18, its platform-operator half; D-OD-01                                                                                                              | not in this pack                                                                                                                                                                                                                                                                                                                                                          |
+| FIN01     | VL-P132-003; ADR-023 D5 and D15, open policy point "the same service approved again"                                                                          | [FIN01](decision-pack-2026-10-08.md#fin01-the-same-service-sold-again-on-a-second-quotation), [FIN01-b](decision-pack-2026-10-08.md#fin01-b-two-quotations-with-approved-work-on-one-work-order), [FIN01-c](decision-pack-2026-10-08.md#fin01-c-a-quantity-or-price-lowered-after-it-was-invoiced)                                                                        |
+| FIN02     | VL-P132-001, VL-P132-002; ADR-023 D8 open points                                                                                                              | [FIN02 part 1](decision-pack-2026-10-08.md#fin02-part-1-who-may-approve-a-discount-vl-p132-001), [FIN02 part 2](decision-pack-2026-10-08.md#fin02-part-2-an-approvers-own-changes-vl-p132-002)                                                                                                                                                                            |
+| FIN03     | Question 24 (new 2026-10-08); nearest existing: ADR-023 D2 open point (e)                                                                                     | [FIN03](decision-pack-2026-10-08.md#fin03-cancelling-an-approved-refund-that-is-not-yet-paid-out)                                                                                                                                                                                                                                                                         |
+| FIN04     | Question 25 (new 2026-10-08)                                                                                                                                  | [FIN04](decision-pack-2026-10-08.md#fin04-who-may-record-a-refund-payout)                                                                                                                                                                                                                                                                                                 |
+| PERM01    | Questions 8, 9 and 22; CC-OD-50 (items 1 to 3 and 7), CC-OD-53, CC-OD-54, CC-OD-58                                                                            | [PERM01](decision-pack-2026-10-08.md#perm01-giving-new-rights-to-existing-organisations)                                                                                                                                                                                                                                                                                  |
+| PRINT01   | VL-P132-005; question 9, its print part; CC-OD-50 item 3                                                                                                      | [PRINT01-a](decision-pack-2026-10-08.md#print01-a-a-print-permission-for-each-document), [PRINT01-b](decision-pack-2026-10-08.md#print01-b-quotation-amounts-on-paper), [PRINT01-c](decision-pack-2026-10-08.md#print01-c-invoice-details-for-a-user-without-finance-visibility), [PRINT01-d](decision-pack-2026-10-08.md#print01-d-payer-and-customer-wording-on-prints) |
+| DOC01     | Question 26 (new 2026-10-08); ADR-023 D10                                                                                                                     | [DOC01](decision-pack-2026-10-08.md#doc01-credit-note-numbering)                                                                                                                                                                                                                                                                                                          |
+| RPT01     | VL-P132-008 (Owner decision CC-04 of 2026-09-08)                                                                                                              | [RPT01](decision-pack-2026-10-08.md#rpt01-who-may-export-a-report-as-csv-vl-p132-008)                                                                                                                                                                                                                                                                                     |
+| RPT02     | VL-P132-010                                                                                                                                                   | [RPT02](decision-pack-2026-10-08.md#rpt02-a-separate-permission-for-saving-report-snapshots-vl-p132-010)                                                                                                                                                                                                                                                                  |
+| RPT03     | Question 27 (new 2026-10-08); related P1-31 O-19 (not among D-32 to D-38) and O-4 (answered as D-34)                                                          | [RPT03](decision-pack-2026-10-08.md#rpt03-report-configuration-in-organisations-provisioned-earlier)                                                                                                                                                                                                                                                                      |
+| ODO01     | VL-P132-009                                                                                                                                                   | [ODO01](decision-pack-2026-10-08.md#odo01-who-may-record-odometer-readings-vl-p132-009)                                                                                                                                                                                                                                                                                   |
+| LIC01     | Questions 1 to 7, 13, 14 and 17; ADR-024; CC-OD-33 to CC-OD-39, CC-OD-49. Question 7's method was decided on 2026-10-03; the rest is open                     | not in this pack                                                                                                                                                                                                                                                                                                                                                          |
+| ACC01     | Questions 10, 11, 12, 15, 16 and 17; CC-OD-25, CC-OD-47, CC-OD-48; D-OD-12                                                                                    | not in this pack                                                                                                                                                                                                                                                                                                                                                          |
+| EMAIL01   | Question 20; P1-15 OD-02 (`docs/phase-1/phase-1-15/open-decisions.md`). The plan's "OD-02" is P1-15's message-provider decision, not this directive's D-OD-02 | not in this pack                                                                                                                                                                                                                                                                                                                                                          |
+| AUTH01    | CC-OD-31 (its behaviour half is open); the W9-R1 residual recorded in CC-OD-29                                                                                | [AUTH01](decision-pack-2026-10-08.md#auth01-signing-other-devices-out-after-a-password-change)                                                                                                                                                                                                                                                                            |
+| GOV01     | P1-31 O-1, O-2, O-3, O-4, O-10 and O-20, answered by the Owner on 2026-09-16 as D-38, D-32, D-33, D-34, D-35 and D-36 (CONDITIONAL PASS); see below           | not in this pack                                                                                                                                                                                                                                                                                                                                                          |
+| CI01      | Question 28 (new 2026-10-08); related VL-CI-003, VL-CI-004                                                                                                    | not in this pack                                                                                                                                                                                                                                                                                                                                                          |
+| DATA01    | CC-OD-28, CC-OD-15; `docs/product/owner-requirements-2026-09-06.md` area F and H-3                                                                            | not in this pack                                                                                                                                                                                                                                                                                                                                                          |
+| RELEASE01 | OIR-01, the product name (`docs/phase-1/phase-1-25/owner-input-required.md`); P1-31 O-11 (not answered by D-32 to D-38); D-OD-05                              | not in this pack                                                                                                                                                                                                                                                                                                                                                          |
 
 **GOV01, stated precisely.** The plan presents the P1-31 phase decisions as unanswered. They are
 not: the Owner answered O-1, O-2, O-3, O-4, O-10 and O-20 on 2026-09-16, recorded as D-32 to D-38 in
