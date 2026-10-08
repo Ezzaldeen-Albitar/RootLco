@@ -1,7 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { SelectField, TextField } from '@/components/forms/Field';
@@ -12,6 +19,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
+import { resolvedTimeZone } from '@/lib/format';
 
 import { listItems } from '../api';
 import { MAX_NAME, QUANTITY, type InventoryItem, type StockTarget } from '../inventory-contract';
@@ -416,6 +424,26 @@ export function ItemFinder({
       </div>
     </div>
   );
+}
+
+/** Nothing to subscribe to: the zone changes once, from the server's render to the browser's. */
+const noSubscription = () => () => {};
+const browserZone = (): string | null => resolvedTimeZone();
+const serverZone = (): string | null => null;
+
+/**
+ * The operator's own clock — the browser's IANA zone — or `null` before the
+ * browser has taken over (the server's render cannot know it).
+ *
+ * The inventory screens moving onto Material UI read two moments on this clock:
+ * the reservation expiry and the movement ledger's window. The native
+ * `datetime-local` boxes they replace read a typed wall time with `new Date`,
+ * which is the browser's zone, so handing the MIT picker this zone explicitly
+ * keeps what is sent exactly as it was (`P1-32-PRE-OD-MUI7A1`). Moving either
+ * onto the branch's clock is a behaviour change, and is not made here.
+ */
+export function useOperatorZone(): string | null {
+  return useSyncExternalStore(noSubscription, browserZone, serverZone);
 }
 
 /** A labelled figure in a summary list, rendered as the server stated it. */

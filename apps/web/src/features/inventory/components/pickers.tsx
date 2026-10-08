@@ -5,6 +5,9 @@ import { regexes } from 'zod';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { CheckboxField, TextField } from '@/components/forms/Field';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { EntityPicker } from '@/components/pickers/EntityPicker';
 import { SearchPicker } from '@/components/search/SearchPicker';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
@@ -46,6 +49,15 @@ import {
  * languages, checked for shape against the server's own identifier rule before
  * anything is sent, and counted as unsaved work only inside a form that writes.
  * With the catalogue read there is no box.
+ *
+ * ## On Material UI when asked
+ *
+ * `material` draws the item picker on `EntityPicker` (one combobox and a
+ * listbox, ADR-022) and the reference box on `FormTextField`, the way
+ * `WorkOrderPicker` and `CustomerPicker` do: the same read, the same minimum,
+ * the same archived switch, the same unsaved-work rule and the same sentences.
+ * Off unless stated, so each inventory screen and its suite move one at a time;
+ * `IssuedPartPicker` has no caller on Material yet and stays as it is.
  */
 
 /**
@@ -117,6 +129,7 @@ export function ItemPicker({
   pristineId = null,
   offerArchived = false,
   testId,
+  material = false,
 }: {
   readonly messages: Messages;
   readonly locale: Locale;
@@ -136,6 +149,8 @@ export function ItemPicker({
    */
   readonly offerArchived?: boolean;
   readonly testId: string;
+  /** Draw it on Material UI (`EntityPicker`). See the file docblock. */
+  readonly material?: boolean;
 }) {
   const [archived, setArchived] = useState(false);
   const searchArchived = offerArchived && archived;
@@ -161,45 +176,58 @@ export function ItemPicker({
     },
     [searchArchived, messages]
   );
-  const picker = (
-    <SearchPicker<ItemChoice>
-      // A search under the other status is a new search: the term, the pages
-      // and any reply still in flight belong to the one it replaces.
-      key={searchArchived ? 'archived' : 'active'}
-      messages={messages}
-      locale={locale}
-      label={label}
-      value={value}
-      onChange={onChange}
-      labelOf={(choice) => choice.label}
-      load={load}
-      canSearch={canSearch}
-      notPermitted={translate(messages, 'inventory.itemPicker.notPermitted')}
-      error={error}
-      minLength={MIN_ITEM_SEARCH}
-      maxLength={MAX_NAME}
-      placeholder={translate(messages, 'inventory.itemPicker.searchPlaceholder')}
-      example={translate(messages, 'inventory.itemPicker.searchExample')}
-      tooShort={translate(messages, 'inventory.itemPicker.tooShort')}
-      resultsLabel={translate(messages, 'inventory.itemPicker.results')}
-      change={translate(messages, 'inventory.itemPicker.change')}
-      pristineId={pristineId}
-      countsAsUnsaved={countsAsUnsaved}
-      testId={testId}
-    />
+  const shared = {
+    messages,
+    locale,
+    label,
+    value,
+    onChange,
+    labelOf: (choice: ItemChoice) => choice.label,
+    load,
+    canSearch,
+    notPermitted: translate(messages, 'inventory.itemPicker.notPermitted'),
+    error,
+    minLength: MIN_ITEM_SEARCH,
+    maxLength: MAX_NAME,
+    placeholder: translate(messages, 'inventory.itemPicker.searchPlaceholder'),
+    example: translate(messages, 'inventory.itemPicker.searchExample'),
+    tooShort: translate(messages, 'inventory.itemPicker.tooShort'),
+    resultsLabel: translate(messages, 'inventory.itemPicker.results'),
+    change: translate(messages, 'inventory.itemPicker.change'),
+    pristineId,
+    countsAsUnsaved,
+    testId,
+  };
+  // A search under the other status is a new search: the term, the pages and
+  // any reply still in flight belong to the one it replaces.
+  const searchKey = searchArchived ? 'archived' : 'active';
+  const picker = material ? (
+    <EntityPicker<ItemChoice> key={searchKey} {...shared} />
+  ) : (
+    <SearchPicker<ItemChoice> key={searchKey} {...shared} />
   );
   if (!offerArchived || !canSearch) return picker;
   return (
     <div className="flex flex-col gap-2">
       {picker}
       {value === null ? (
-        <CheckboxField
-          label={translate(messages, 'inventory.itemPicker.searchArchived')}
-          description={translate(messages, 'inventory.itemPicker.searchArchivedHelp')}
-          checked={archived}
-          onChange={(event) => setArchived(event.target.checked)}
-          data-testid={`${testId}-archived`}
-        />
+        material ? (
+          <FormCheckboxField
+            label={translate(messages, 'inventory.itemPicker.searchArchived')}
+            description={translate(messages, 'inventory.itemPicker.searchArchivedHelp')}
+            checked={archived}
+            onChange={setArchived}
+            testId={`${testId}-archived`}
+          />
+        ) : (
+          <CheckboxField
+            label={translate(messages, 'inventory.itemPicker.searchArchived')}
+            description={translate(messages, 'inventory.itemPicker.searchArchivedHelp')}
+            checked={archived}
+            onChange={(event) => setArchived(event.target.checked)}
+            data-testid={`${testId}-archived`}
+          />
+        )
       ) : null}
     </div>
   );
@@ -223,6 +251,7 @@ export function ReferenceBox({
   countsAsUnsaved,
   pristine = '',
   testId,
+  material = false,
 }: {
   readonly label: string;
   readonly help: string;
@@ -234,8 +263,26 @@ export function ReferenceBox({
   /** The value the form opened with. */
   readonly pristine?: string;
   readonly testId: string;
+  /** Draw it on Material UI (`FormTextField`). See the file docblock. */
+  readonly material?: boolean;
 }) {
   useUnsavedGuard(countsAsUnsaved && value.trim() !== pristine.trim());
+  if (material) {
+    return (
+      <FormTextField
+        label={label}
+        description={help}
+        required={required}
+        autoComplete="off"
+        dir="ltr"
+        value={value}
+        onChange={onChange}
+        error={error}
+        testId={testId}
+        spellCheck={false}
+      />
+    );
+  }
   return (
     <TextField
       label={label}
