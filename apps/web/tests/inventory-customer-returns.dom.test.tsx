@@ -56,6 +56,7 @@ import {
   succeeded,
   warehouse,
 } from './support/stock-operations';
+import { PICKER_OPTION_WAIT_MS } from './support/picker-option';
 
 /**
  * Taking a part back, rendered (P1-32).
@@ -866,7 +867,12 @@ describe('naming the part handed to a job instead of typing its reference (route
       branchId: BRANCH_ID,
     });
     expect(listIssuedParts.mock.calls[0]?.[1]).toEqual({ q: 'Brake' });
-    const match = await screen.findByRole('button', { name: /BRK-001 — Brake pad/ });
+    // A match is an option of the picker's listbox, in a portal (`EntityPicker`, INV1b).
+    const match = await screen.findByRole(
+      'option',
+      { name: /BRK-001 — Brake pad/ },
+      { timeout: PICKER_OPTION_WAIT_MS }
+    );
     // The job's number and both figures, as the server stated them, in the unit.
     expect(match).toHaveTextContent('WO-000042');
     expect(match).toHaveTextContent('4.000 EA');
@@ -893,7 +899,13 @@ describe('naming the part handed to a job instead of typing its reference (route
       screen.getByLabelText(EN['inventory.returns.issue.label'] as string),
       'WO-42{Enter}'
     );
-    await user.click(await screen.findByRole('button', { name: /BRK-001 — Brake pad/ }));
+    await user.click(
+      await screen.findByRole(
+        'option',
+        { name: /BRK-001 — Brake pad/ },
+        { timeout: PICKER_OPTION_WAIT_MS }
+      )
+    );
     await waitFor(() => expect(readReturnable).toHaveBeenCalled());
     await user.click(
       screen.getByRole('button', { name: EN['inventory.returns.create.submit'] as string })
@@ -1001,21 +1013,33 @@ describe('naming the part handed to a job instead of typing its reference (route
     await user.type(search(), 'Bra{Enter}');
     await waitFor(() => expect(heldSearches.length).toBeGreaterThan(0));
     await user.type(search(), 'ke{Enter}');
-    expect(await screen.findByRole('button', { name: /BRK-001 — Brake pad/ })).toBeVisible();
+    expect(
+      await screen.findByRole(
+        'option',
+        { name: /BRK-001 — Brake pad/ },
+        { timeout: PICKER_OPTION_WAIT_MS }
+      )
+    ).toBeVisible();
     for (const resolve of heldSearches) {
       resolve(okRead({ items: [stale], nextCursor: null, hasMore: false }));
     }
     await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(screen.queryByRole('button', { name: /BRA-900/ })).toBeNull();
+    expect(screen.queryByRole('option', { name: /BRA-900/ })).toBeNull();
 
     // What may come back: the clerk changes their mind before the first answer arrives.
-    await user.click(screen.getByRole('button', { name: /BRK-001 — Brake pad/ }));
+    await user.click(screen.getByRole('option', { name: /BRK-001 — Brake pad/ }));
     await waitFor(() => expect(heldReturnable).toHaveLength(1));
     await user.click(
       screen.getByRole('button', { name: EN['inventory.returns.issue.change'] as string })
     );
     await user.type(search(), 'Oil{Enter}');
-    await user.click(await screen.findByRole('button', { name: /OIL-002 — Oil filter/ }));
+    await user.click(
+      await screen.findByRole(
+        'option',
+        { name: /OIL-002 — Oil filter/ },
+        { timeout: PICKER_OPTION_WAIT_MS }
+      )
+    );
     await waitFor(() => expect(screen.getAllByText('7.000').length).toBeGreaterThan(0));
     // The first part's answer lands last: it is not the part on the form.
     heldReturnable[0]?.(returnable({ sourceKind: 'part_issue', sourceId: ISSUE_ID }));

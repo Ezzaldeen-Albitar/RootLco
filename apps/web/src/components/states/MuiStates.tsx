@@ -187,20 +187,25 @@ export function MuiNoResultsState({
  * `rows` draws skeleton rows the height of a table row, so the content that
  * replaces them does not move the page; `inline` draws a small spinner for a
  * control that is waiting (a picker's search). Either way the only thing
- * announced is the word "Loading".
+ * announced is the word "Loading" — or, where a panel says WHAT it is reading
+ * ("Reading the codes…"), that panel's own sentence (`labelKey`), the way
+ * `descriptionKey` lets a failure say what could not be read. Unset, "Loading".
  */
 export function MuiLoadingState({
   messages,
   variant = 'rows',
   rows = 6,
   testId,
+  labelKey,
 }: {
   readonly messages: Messages;
   readonly variant?: 'rows' | 'inline';
   readonly rows?: number;
   readonly testId?: string | undefined;
+  /** The panel's own sentence for the wait, in place of the shared "Loading". */
+  readonly labelKey?: keyof Messages | undefined;
 }) {
-  const label = translate(messages, 'state.loading');
+  const label = translate(messages, labelKey ?? 'state.loading');
   if (variant === 'inline') {
     return (
       <div

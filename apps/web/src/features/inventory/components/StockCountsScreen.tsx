@@ -190,6 +190,7 @@ function BranchCounts({
         ) : null}
         <BranchListView
           messages={messages}
+          locale={locale}
           list={list}
           loadingKey="inventory.counts.list.loading"
           noneKey="inventory.counts.list.none"

@@ -252,6 +252,102 @@ describe('the transfers of a branch', () => {
   });
 });
 
+describe('the branch list as the shared states, in both languages (P1-32-PRE-OD-INV1B)', () => {
+  /*
+   * `BranchListView` (stock-operations.tsx) draws each outcome as the shared
+   * state on Material UI in the list's own words: the wait is announced with
+   * the list's sentence; an empty branch is "nothing here yet", never "no
+   * matches"; a refusal names no retry; an outage keeps its reference and a
+   * retry that reads again; an ended session links back to signing in.
+   */
+  const CATALOGUES = { en: EN, ar: AR } as const;
+  function renderIn(locale: 'en' | 'ar') {
+    const props = { currentUserId: USER_ID, canOperate: true, canApprove: true };
+    return locale === 'en'
+      ? renderLtr(<TransfersScreen locale="en" messages={en} {...props} />)
+      : renderRtl(<TransfersScreen locale="ar" messages={ar} {...props} />);
+  }
+  const listIn = (T: Record<string, string>) =>
+    screen.getByRole('region', { name: T['inventory.transfers.list.heading'] as string });
+
+  it.each(['en', 'ar'] as const)(
+    'announces the wait in the list\u2019s own words (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      listTransfers.mockReturnValue(new Promise(() => {}));
+      renderIn(locale);
+      const waiting = await within(listIn(T)).findByText(
+        T['inventory.transfers.list.loading'] as string
+      );
+      expect(waiting.closest('[role="status"]')).toHaveAttribute('aria-live', 'polite');
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'an empty branch is "nothing here yet" in the list\u2019s words, never "no matches" (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      listTransfers.mockResolvedValue(okPage([]));
+      renderIn(locale);
+      const list = listIn(T);
+      expect(
+        await within(list).findByText(T['inventory.transfers.list.none'] as string)
+      ).toBeVisible();
+      expect(within(list).getByText(T['state.empty.title'] as string)).toBeVisible();
+      expect(within(list).queryByText(T['state.noResults.title'] as string)).toBeNull();
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'a refusal is the refusal in the list\u2019s words, with no retry (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      listTransfers.mockResolvedValue({ status: 'denied', correlationId: 'ref-403' });
+      renderIn(locale);
+      const list = listIn(T);
+      expect(
+        await within(list).findByText(T['inventory.transfers.list.refused'] as string)
+      ).toBeVisible();
+      expect(within(list).getByText(T['state.denied.title'] as string)).toBeVisible();
+      expect(within(list).queryByRole('button', { name: T['state.retry'] as string })).toBeNull();
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'an outage keeps its reference, and the retry reads the list again (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      listTransfers.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'ref-503' });
+      renderIn(locale);
+      const list = listIn(T);
+      expect(
+        await within(list).findByText(T['inventory.transfers.list.unavailable'] as string)
+      ).toBeVisible();
+      expect(within(list).getByText(T['state.unavailable.title'] as string)).toBeVisible();
+      expect(within(list).getByText('ref-503')).toBeVisible();
+      await user.click(within(list).getByRole('button', { name: T['state.retry'] as string }));
+      await waitFor(() => expect(listTransfers).toHaveBeenCalledTimes(2));
+      expect(await within(list).findByRole('table')).toBeVisible();
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'an ended session offers the way back to signing in and no retry (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      listTransfers.mockResolvedValue({ status: 'expired', correlationId: null });
+      renderIn(locale);
+      const list = listIn(T);
+      expect(await within(list).findByText(T['state.expired.title'] as string)).toBeVisible();
+      expect(
+        within(list).getByRole('link', { name: T['auth.backToLogin'] as string })
+      ).toHaveAttribute('href', `/${locale}/login`);
+      expect(within(list).queryByRole('button', { name: T['state.retry'] as string })).toBeNull();
+    }
+  );
+});
+
 describe('receiving what arrived', () => {
   it('a partial receipt sends only what arrived and keeps the remainder on its way', async () => {
     const user = userEvent.setup();
@@ -835,6 +931,30 @@ describe('sending a transfer', () => {
     expect(
       await screen.findByText(EN['inventory.transfers.create.done'] as string, { exact: false })
     ).toBeVisible();
+  });
+
+  it('Enter in the item search searches at once and never sends the form (INV1b)', async () => {
+    // `ItemFinder` on `FormTextField`: the key the older box answered is kept.
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    const form = screen.getByRole('form', {
+      name: EN['inventory.transfers.create.heading'] as string,
+    });
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.stockOps.item.find')),
+      'BRK{Enter}'
+    );
+    await waitFor(() =>
+      expect(listItems).toHaveBeenCalledWith(
+        { search: 'BRK', lifecycleStatus: 'active' },
+        expect.objectContaining({ pageSize: 25 }),
+        null
+      )
+    );
+    expect(await within(form).findByRole('option', { name: 'BRK-001 — Brake pad' })).toBeTruthy();
+    expect(createTransfer).not.toHaveBeenCalled();
+    expect(within(form).queryByText(EN['field.required'] as string)).toBeNull();
   });
 
   it('refuses the same location at both ends before sending', async () => {
