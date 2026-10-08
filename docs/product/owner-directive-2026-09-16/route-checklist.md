@@ -4481,11 +4481,29 @@ in the browser.
 
 Known limitations, one line each:
 
-- The **Raise a credit note** form still offers at most what the invoice still owes, and the invoice
-  screen offers it only while money is open; a credit beyond what is owed arises when a payment
-  arrives between the request and the approval.
 - No refund request, approval or payout exists yet (part 2); an obligation stays open.
 - Open policy points: who may create an explicit obligation; whom to refund when a third party paid
   (D14); the interim reversal rule; obligations are not yet in the D16 report or its snapshots.
 - The DB and backend tiers were run on the development machine on a disposable database only for the
   files named in the pull request; the full tiers run on hosted CI.
+
+### FD2A review residuals (P1-32-PRE-OD-FD2B, ADR-023 D2)
+
+Five small fixes found in the review of #536 and #535, each with a test that fails without it. One
+forward migration (`20261008130000_sal_refund_obligation_guards.sql`); no new operation, permission
+code or audit action.
+
+| Route                                        | Operation                            | Who       | What changed                                                                                                                                                         |
+| -------------------------------------------- | ------------------------------------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /credit-notes/{creditNoteId}/approval` | `sal.credit-note-approve`            | unchanged | Additive `approvalEffect` on the answer: what the approval took off the balance and what the customer is owed back, computed by the database.                        |
+| `GET /invoices/{invoiceId}/outstanding`      | `sal.invoice-outstanding-read`       | unchanged | Additive `settlement.creditable`: the invoice's total less the approved credits, the figure the credit-note form caps at.                                            |
+| `GET /invoices`                              | `sal.invoice-list`                   | unchanged | Additive `creditable` on every row, `null` exactly when `outstanding` is.                                                                                            |
+| (database)                                   | `sal.guard_refund_obligation_insert` | —         | An obligation cites a credit note approved in the same transaction (`refund_obligation_credit_not_current`), so a raw INSERT cannot attach one to an earlier credit. |
+| (database)                                   | `sal.guard_credit_note_decision`     | —         | The D2 ceiling is held by the decision trigger too (`credit_note_exceeds_creditable`), so a raw UPDATE of the approval state cannot exceed it.                       |
+| `/credit-notes`, `/invoices` (screens)       | the reads above                      | as above  | The done message states the split; the approval explanation covers the excess; the form caps at what can still be credited and says the rest becomes a refund owed.  |
+| `/reports` (overview)                        | `rpt.report-catalogue`               | unchanged | With none of the four reports in the caller's catalogue, one empty state instead of an empty list, and no run.                                                       |
+
+Known limitations, one line each:
+
+- The **Credit notes** screen's invoice finder still lists only invoices with money open; a paid
+  invoice is credited from its own screen, which says so.

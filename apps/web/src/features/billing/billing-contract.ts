@@ -129,6 +129,12 @@ export interface Settlement {
    */
   readonly refundOwed?: MoneyView;
   /**
+   * What the invoice can still be credited — its total less the credit notes already
+   * approved (ADR-023 D2) — as the server states it. The credit-note form caps at
+   * this, not at what is still owed; absent from a server before P1-32-PRE-OD-FD2B.
+   */
+  readonly creditable?: MoneyView;
+  /**
    * The part of `paid` somebody other than the customer paid as a third-party
    * payment (ADR-023 D14), oldest first; absent from a server before D14.
    */
@@ -227,6 +233,12 @@ export interface InvoicePayer {
 export interface InvoiceListEntry extends Invoice {
   readonly payer: InvoicePayer;
   readonly outstanding: MoneyView | null;
+  /**
+   * What the invoice can still be credited — its total less the credit notes already
+   * approved (ADR-023 D2) — `null` exactly when `outstanding` is; absent from a server
+   * before P1-32-PRE-OD-FD2B. The credit-note form caps at this.
+   */
+  readonly creditable?: MoneyView | null;
 }
 
 /** The shortest and longest box `sal.invoice-list` accepts, mirrored. */
@@ -619,6 +631,13 @@ export interface CreditNoteEcho {
   readonly creditNote: CreditNote;
   /** True when the key (create) or an already-approved note (approve) was met again. */
   readonly replayed: boolean;
+  /**
+   * On an APPROVAL only (`CreditNoteApprovalResult`, ADR-023 D2): how the approved
+   * amount split — what it took off the balance and what the customer is owed back,
+   * zero when nothing — as the server computed it. Absent on the other commands
+   * and from a server before P1-32-PRE-OD-FD2B.
+   */
+  readonly approvalEffect?: CreditApprovalEffect | null;
 }
 
 /** The shape `sal.credit-note-create` accepts, mirrored: unsigned, 14 integer digits, 4 decimals. */

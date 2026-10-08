@@ -28,6 +28,11 @@
  *    excess; every fact and state is frozen, nothing is deleted, row-level security is
  *    forced; the open receivable never goes below zero and the as-of read agrees; a
  *    receipt behind an open obligation is not reversed (interim rule).
+ *  - The FD2A review residuals (`20261008130000_sal_refund_obligation_guards.sql`,
+ *    P1-32-PRE-OD-FD2B): a raw obligation for a credit approved in an EARLIER
+ *    transaction is refused even when its arithmetic matches; and a raw UPDATE of
+ *    `approval_state` above the gross less the approved credits is refused by the
+ *    decision trigger itself.
  *
  * Runtime cases run on the `app_runtime` login inside rolled-back transactions;
  * owner cases run on the admin connection inside rolled-back transactions.
@@ -860,6 +865,92 @@ describe('D2 — an obligation is bound to the credit that created it', () => {
       )
     ).rows[0]!;
     expect(flags).toEqual({ rls: true, forced: true });
+  });
+});
+
+describe('D2 — an obligation belongs to the approval that created it (FD2B residual a)', () => {
+  it('refuses a raw obligation for a credit approved in an earlier transaction', async () => {
+    /*
+     * The reviewer's case on #536. Gross 100; credit A of 50 approved while nothing
+     * was paid, so A left nobody owed anything; then a receipt of 50, and credit B of
+     * 50 approved, which the customer is rightly owed back in full. A raw INSERT for
+     * A of 50 matched the guard's arithmetic (50 less max(100 - 50 - 50, 0)) and
+     * would have doubled what the customer is owed. A must have been approved in
+     * the transaction that records its obligation, and it was not.
+     */
+    const setup = await runtime.connect();
+    let invoice = '';
+    let noteA = '';
+    try {
+      await setup.query('BEGIN');
+      await setContext(setup, ctxA);
+      invoice = (await paidInvoice(setup, 'fd2b_res_a_earlier', 100, 0)).invoice;
+      noteA = await seedCreditNote(setup, invoice, 50);
+      await approveAsSecond(setup, noteA);
+      await setup.query('COMMIT');
+    } catch (error) {
+      await setup.query('ROLLBACK');
+      throw error;
+    } finally {
+      setup.release();
+    }
+
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      expect(await obligationsOf(c, invoice)).toEqual([]);
+      const receipt = await seedReceipt(c, { amount: 50, payer: P9.SR });
+      await allocateReceipt(c, receipt, invoice, 50);
+      const noteB = await seedCreditNote(c, invoice, 50);
+      await approveAsSecond(c, noteB);
+      expect((await obligationsOf(c, invoice)).map((row) => row.amount)).toEqual(['50.0000']);
+
+      const payer = await scalar(
+        c,
+        `SELECT payer_partner_id::text AS v FROM sal.invoices WHERE id = $1`,
+        [invoice]
+      );
+      const raw = await refusal(
+        c,
+        `INSERT INTO sal.refund_obligations
+           (tenant_id, company_id, branch_id, partner_id, invoice_id, credit_note_id, currency_code, amount, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,'USD','50.0000',$7)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, payer, invoice, noteA, USER_A]
+      );
+      expect(raw.code).toBe('23514');
+      expect(raw.message?.startsWith('refund_obligation_credit_not_current:')).toBe(true);
+      // Still exactly B's obligation, and nothing for A.
+      expect((await obligationsOf(c, invoice)).map((row) => row.amount)).toEqual(['50.0000']);
+    });
+  });
+});
+
+describe('D2 — the decision trigger holds the ceiling for a raw approval (FD2B residual b)', () => {
+  it('refuses a raw UPDATE of approval_state above the gross less the approved credits', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const { invoice } = await paidInvoice(c, 'fd2b_res_b_raw', 100, 0);
+      const first = await seedCreditNote(c, invoice, 60);
+      const second = await seedCreditNote(c, invoice, 60);
+      await approveAsSecond(c, first);
+      // The runtime login may write approval_state, and the approver holds the code
+      // and a limit far above 120: only the ceiling stands in the way.
+      await setUser(c, P11.APPROVER_USER);
+      const raw = await refusal(
+        c,
+        `UPDATE sal.credit_notes SET approval_state = 'approved' WHERE id = $1`,
+        [second]
+      );
+      expect(raw.code).toBe('23514');
+      expect(raw.message?.startsWith('credit_note_exceeds_creditable:')).toBe(true);
+      await setUser(c, USER_A);
+      expect(await stateOf(c, second)).toBe('pending');
+      // Exactly what remains is still admitted through the same raw path.
+      const exact = await seedCreditNote(c, invoice, 40);
+      await setUser(c, P11.APPROVER_USER);
+      await c.query(`UPDATE sal.credit_notes SET approval_state = 'approved' WHERE id = $1`, [
+        exact,
+      ]);
+      await setUser(c, USER_A);
+      expect(await stateOf(c, exact)).toBe('approved');
+    });
   });
 });
 

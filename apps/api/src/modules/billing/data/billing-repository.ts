@@ -403,6 +403,13 @@ export interface InvoiceListRow extends InvoiceRow {
   readonly payerPartyType: string | null;
   /** `round(sal.invoice_open_receivable(id), 4)` as a decimal STRING. */
   readonly openAmount: string;
+  /**
+   * What the invoice can still be credited (ADR-023 D2, P1-32-PRE-OD-FD2B): the
+   * gross of an issued or credited invoice less its APPROVED credit notes, as a
+   * decimal STRING — the predicates `creditCeiling` and `sal.approve_credit_note`
+   * apply.
+   */
+  readonly creditableAmount: string;
 }
 
 /**
@@ -3066,6 +3073,7 @@ export class BillingRepository extends Repository {
       InvoiceSql & {
         sort_value: string;
         open_amount: string;
+        creditable_amount: string;
         payer_display_name: string | null;
         payer_display_number: string | null;
         payer_party_type: string | null;
@@ -3088,6 +3096,11 @@ export class BillingRepository extends Repository {
               a.tax_total::text   AS tax_total,
               a.gross_total::text AS gross_total,
               round(sal.invoice_open_receivable(i.id), 4)::text AS open_amount,
+              (CASE WHEN i.status IN ('issued', 'credited') THEN COALESCE(a.gross_total, 0) ELSE 0 END
+                 - COALESCE((SELECT sum(cn.amount) FROM sal.credit_notes cn
+                              WHERE cn.tenant_id = i.tenant_id AND cn.invoice_id = i.id
+                                AND cn.approval_state = 'approved'), 0))::numeric(18,4)::text
+                AS creditable_amount,
               pp.display_name   AS payer_display_name,
               pp.display_number AS payer_display_number,
               pp.party_type     AS payer_party_type,
@@ -3115,6 +3128,7 @@ export class BillingRepository extends Repository {
           payerDisplayNumber: row.payer_display_number,
           payerPartyType: row.payer_party_type,
           openAmount: row.open_amount,
+          creditableAmount: row.creditable_amount,
         },
         sortValue: row.sort_value,
         id: row.id,
@@ -3237,6 +3251,33 @@ export class BillingRepository extends Repository {
          FROM sal.credit_notes c
          CROSS JOIN LATERAL (SELECT greatest(sal.invoice_open_receivable(c.invoice_id), 0) AS owed) o
         WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3 AND c.id = $4`,
+      [context.principal.tenantId, note.companyId, note.branchId, note.id]
+    );
+    return row ? { reducesBalanceBy: row.reduces, refundOwed: row.refund } : null;
+  }
+
+  /**
+   * What an APPROVED note did (ADR-023 D2, P1-32-PRE-OD-FD2B): the part of its
+   * amount that reduced what the invoice still owed, and the part the customer is
+   * owed back — its refund obligation's amount, `0.0000` when it left none. Both
+   * computed by PostgreSQL in `numeric`, so the approval's answer can state the
+   * split without the browser subtracting money.
+   */
+  public async appliedCreditEffect(
+    db: DbHandle,
+    note: { readonly id: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<CreditApprovalEffectRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ reduces: string; refund: string }>(
+      db,
+      `SELECT (c.amount - COALESCE(ro.amount, 0))::numeric(18,4)::text AS reduces,
+              COALESCE(ro.amount, 0)::numeric(18,4)::text AS refund
+         FROM sal.credit_notes c
+         LEFT JOIN sal.refund_obligations ro
+           ON ro.tenant_id = c.tenant_id AND ro.company_id = c.company_id
+          AND ro.branch_id = c.branch_id AND ro.credit_note_id = c.id
+        WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3 AND c.id = $4
+          AND c.approval_state = 'approved'`,
       [context.principal.tenantId, note.companyId, note.branchId, note.id]
     );
     return row ? { reducesBalanceBy: row.reduces, refundOwed: row.refund } : null;

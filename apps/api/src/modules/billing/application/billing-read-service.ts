@@ -227,6 +227,13 @@ export interface InvoicePayerView {
 export interface InvoiceListEntryView extends InvoiceView {
   readonly payer: InvoicePayerView;
   readonly outstanding: MoneyView | null;
+  /**
+   * What the invoice can still be credited — its gross less the credit notes
+   * already approved (ADR-023 D2, P1-32-PRE-OD-FD2B) — `null` exactly when
+   * `outstanding` is, for the same reason. The credit-note form caps at this.
+   * Additive.
+   */
+  readonly creditable: MoneyView | null;
 }
 
 /** An invoice with its lines, as the detail read returns it. */
@@ -302,6 +309,16 @@ export interface SettlementView {
    * operational figure, not an accounting entry. Additive.
    */
   readonly refundOwed: MoneyView;
+  /**
+   * What the invoice can still be credited (ADR-023 D2): its gross less the credit
+   * notes already APPROVED on it, never what is merely still owed. A credit up to
+   * this is accepted even once the invoice is paid; the part of it above what is
+   * still owed becomes a refund owed to the customer. Computed by the database
+   * with the predicates `sal.approve_credit_note` applies; pending notes are not
+   * counted and the approval re-checks under the invoice lock. Additive
+   * (P1-32-PRE-OD-FD2B).
+   */
+  readonly creditable: MoneyView;
   /**
    * The part of `paid` that somebody other than the invoice's customer paid, as an
    * explicit third-party payment (ADR-023 D14) — an insurer, an employer — oldest
@@ -694,6 +711,9 @@ export const toInvoiceListEntryView = (
     : WITHHELD_PAYER,
   outstanding: balanceIsTrustworthy(row)
     ? moneyView(row.openAmount, row.currencyCode, units)
+    : null,
+  creditable: balanceIsTrustworthy(row)
+    ? moneyView(row.creditableAmount, row.currencyCode, units)
     : null,
 });
 
@@ -1285,6 +1305,19 @@ export class BillingReadService {
       companyId: invoice.companyId,
       branchId: invoice.branchId,
     });
+    // What the invoice can still be credited (ADR-023 D2): the ceiling the
+    // credit-note form caps at, stated by the database and never derived here.
+    const ceiling = await this.repository.creditCeiling(db, {
+      invoiceId: invoice.id,
+      companyId: invoice.companyId,
+      branchId: invoice.branchId,
+    });
+    /* c8 ignore next 5 -- the invoice was read in the same transaction. */
+    if (!ceiling) {
+      throw new AppFailure('ERR-SYS-001', {
+        message: 'billing: an issued invoice has no readable credit ceiling',
+      });
+    }
     return {
       creditStatus: deriveCreditStatus(credited, Decimal.fromDatabase(position.gross, MONEY)),
       paymentStatus: derivePaymentStatus(paid, Decimal.fromDatabase(openAmount, MONEY)),
@@ -1292,6 +1325,7 @@ export class BillingReadService {
       credited: moneyView(position.credited, invoice.currencyCode, units),
       paid: moneyView(position.paid, invoice.currencyCode, units),
       refundOwed: moneyView(refundOwed, invoice.currencyCode, units),
+      creditable: moneyView(ceiling.creditable, invoice.currencyCode, units),
       thirdPartyPayments: shown.map((row) => ({
         receipt: { id: row.receiptId, reference: row.receiptNumber },
         payerName: mayNamePayer ? row.payerDisplayName : null,

@@ -549,9 +549,10 @@ never approve it.
 **How much can be credited (Owner decision D2).** The application credits an invoice up to its
 total less the credit notes already approved on it, even once it is paid. Notes still waiting do not
 count when a note is raised; each approval checks again, so two approvals at the same moment can
-never credit more than the invoice's total. The **Raise a credit note** form in this release still
-offers at most what the invoice still owes; a credit can go beyond what is owed when a payment
-arrives between the request and its approval. A request or an approval above that is refused with "This
+never credit more than the invoice's total. The **Raise a credit note** form offers up to what the
+invoice can still be credited, and says that an amount above what is still owed becomes a refund owed
+to the customer once approved. A request or an approval above what can still be credited is refused
+with "This
 amount is more than the invoice can still be credited. Credit notes already approved on the same
 invoice count toward it." <!-- form.violation.credit_note_exceeds_creditable --> When an approved
 credit is larger than what the customer still owes, the balance goes to zero and the rest is
@@ -559,9 +560,9 @@ recorded as a refund owed to the customer (§6.2.7). No money is paid automatica
 posted to any account. While a customer is owed a refund on an invoice, a receipt that paid that
 invoice cannot be reversed: "This receipt paid an invoice on which the customer is owed a refund, so
 it cannot be reversed while that refund is still owed."
-<!-- form.violation.receipt_reversal_refund_obligation_open --> This is a temporary rule while the
+<!-- form.violation.receipt_reversal_refund_obligation_open --> This is an interim rule and an open
 
-refund steps are being built. **While it waits, another authorised person may reject it, saying why, and the
+policy point. **While it waits, another authorised person may reject it, saying why, and the
 person who raised it may withdraw it** (§6.2a). Approved, rejected and withdrawn are final.
 
 **What is still NOT AVAILABLE:**
@@ -737,16 +738,27 @@ it."**, and a counter-sale return moves the stock but not the money.
 
 1. Under **Raise a credit note** <!-- creditNotes.request.heading --> , find the invoice in **Invoice
    to credit** <!-- creditNotes.request.invoice --> by its number or its customer, and choose it.
-   "Only invoices that have been issued and still have money open can be credited."
+   "Only issued invoices that still have money open are listed here. To credit an invoice that is
+   already paid, open the invoice and raise the credit note there."
    <!-- creditNotes.request.invoiceHelp --> What is **Still open on this invoice**
-   <!-- creditNotes.request.open --> is shown beside the amount. On an invoice's own screen the
-   invoice is already chosen and this step is skipped.
+   <!-- creditNotes.request.open --> and what **Can still be credited**
+   <!-- creditNotes.request.creditable --> — the invoice's total less the credit notes already
+   approved on it — are shown beside the amount, with "An amount above what is still open becomes a
+   refund owed to the customer once the note is approved. Nothing is paid back automatically."
+   <!-- creditNotes.request.aboveOwedBecomesRefund --> On an invoice's own screen the invoice is
+   already chosen and this step is skipped; the form is offered there for as long as the invoice can
+   still be credited, even once it is paid.
 2. Enter **Amount to credit** <!-- creditNotes.request.amount --> — in the invoice's currency, more
    than zero, with at most four digits after the point and no finer than the currency's smallest
    coin — and **Why it is being credited** <!-- creditNotes.request.reason --> . An amount finer than
    the currency allows is refused on the box before anything is sent: "This amount has more decimal
    places than the currency allows. Use no more decimal places than the currency's smallest coin,
-   then try again." <!-- form.violation.minor_unit_scale -->
+   then try again." <!-- form.violation.minor_unit_scale --> An amount above what can still be
+   credited is refused on the box too: "This is more than the invoice can still be credited. Enter an
+   amount no greater than what can still be credited." <!-- creditNotes.request.aboveCreditable -->
+   An amount above what is still open, but within what can be credited, is accepted, and the form says
+   "This amount is more than is still open on the invoice: once approved, the balance goes to zero and
+   the rest is owed back to the customer as a refund." <!-- creditNotes.request.partBecomesRefund -->
 3. Press **Raise the credit note** <!-- creditNotes.request.submit --> . The screen says "The credit
    note was raised. It is waiting for a second person to approve it, and nothing is credited until
    then." <!-- creditNotes.request.recorded --> and opens the new note, marked as waiting for
@@ -762,7 +774,9 @@ credit-approval permission and a credit note approval limit that covers it
 1. Open the note from the list (step 3 above).
 2. Check the amount and the reason, and press **Approve this credit note**
    <!-- creditNotes.approve.action --> . "Approving credits this amount against its invoice, so what
-   the customer owes goes down by it." <!-- creditNotes.approve.explain --> The screen asks once more,
+   the customer owes goes down by it. If the amount is more than the customer still owes, the balance
+   goes to zero and the rest is recorded as a refund owed to the customer; nothing is paid back
+   automatically." <!-- creditNotes.approve.explain --> The screen asks once more,
    **Approve this credit note?** <!-- creditNotes.approve.confirmTitle --> , naming the amount and the
    reason. When the amount is more than the invoice still owes, it also says how it splits: "This is
    more than the invoice still owes: approving reduces what is owed by {reduces}, and the customer
@@ -771,7 +785,10 @@ credit-approval permission and a credit note approval limit that covers it
    <!-- overlay.cancel --> .
 3. The screen says "The credit note was approved. What the customer owes on the invoice has gone
    down by its amount." <!-- creditNotes.approve.done --> , the note reads **Approved**, and the list
-   is read again.
+   is read again. When the approval left the customer owed a refund, the screen says how it split
+   instead: "The credit note was approved. What the customer owes on the invoice went down by
+   {reduces}, and {refund} is now owed back to the customer as a refund. Nothing was paid
+   automatically." <!-- creditNotes.approve.doneWithRefund -->
 
 On a note you raised yourself there is no approve button; the note says "You raised this credit
 note, so it is waiting for another approver: a different person who can approve credit notes must

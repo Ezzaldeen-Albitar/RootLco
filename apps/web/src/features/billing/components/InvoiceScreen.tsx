@@ -1383,6 +1383,19 @@ function PayerText({
  * FE-015 / FE-019 / FE-020 — the invoice, its balance, and the acts on it
  * ------------------------------------------------------------------ */
 
+/**
+ * Whether a credit note may still be raised from the invoice's own screen (ADR-023
+ * D2, P1-32-PRE-OD-FD2B): what the server says the invoice can still be credited
+ * is above zero — even once it is paid, since the part of a credit above what is
+ * still owed becomes a refund owed to the customer. A server that does not state
+ * the figure leaves the open balance as the test. A comparison of the server's
+ * string with zero; nothing is computed.
+ */
+function mayStillBeCredited(balance: Outstanding): boolean {
+  const creditable = balance.settlement?.creditable;
+  return creditable === undefined ? !balance.isSettled : !isZeroMoney(creditable.amount);
+}
+
 function InvoicePanel({
   locale,
   messages,
@@ -1406,7 +1419,7 @@ function InvoicePanel({
   const [detail, setDetail] = useState<ReadState<InvoiceDetail> | null>(null);
   const [attempt, setAttempt] = useState(0);
   // The balance, read once here for the three panels that need it — the balance
-  // panel, the credit form (offered only while money is still open) and the copy
+  // panel, the credit form (offered while it can still be credited) and the copy
   // — through the cancellable route rather than a Server Action, so the payer
   // lookup cannot hold it up (DX-2, finance QA fixes E).
   const outstanding = useOutstandingRead(
@@ -1470,7 +1483,7 @@ function InvoicePanel({
       canViewFinance &&
       (detail.data.invoice.status === 'issued' || detail.data.invoice.status === 'credited') &&
       balance !== null &&
-      !balance.isSettled ? (
+      mayStillBeCredited(balance) ? (
         <section
           aria-labelledby="credit-note-request-heading"
           className="flex min-h-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
@@ -1480,7 +1493,14 @@ function InvoicePanel({
           <CreditNoteRequestForm
             locale={locale}
             messages={messages}
-            source={{ kind: 'known', invoice: { id: invoice.id, open: balance.outstanding } }}
+            source={{
+              kind: 'known',
+              invoice: {
+                id: invoice.id,
+                open: balance.outstanding,
+                creditable: balance.settlement?.creditable ?? null,
+              },
+            }}
             onRequested={(echo) =>
               onChanged({
                 messageKey: echo.replayed

@@ -55,7 +55,7 @@ import { appendAudit } from '@/server/audit/audit';
 import { withBusinessRefusal, withPermissionRefusal } from '@/server/audit/business-refusals';
 import { publishEvent } from '@/server/events/publisher';
 import { isSqlState, sqlState, SQLSTATE, violatedConstraint } from '@/server/db/repository';
-import { Decimal, MONEY } from '@/modules/pricing';
+import { Decimal, MONEY, moneyView } from '@/modules/pricing';
 import { findSequenceDefinition, sharedServicesModule } from '@/modules/shared-services';
 import { inventoryModule } from '@/modules/inventory';
 import { receptionModule } from '@/modules/reception';
@@ -97,6 +97,7 @@ import {
   toInvoiceLineView,
   toInvoiceView,
   toRefundObligationView,
+  type CreditApprovalEffectView,
   type CreditNoteView,
   type RefundObligationView,
   type InvoiceDetailView,
@@ -532,6 +533,13 @@ export interface CreditNoteResult {
  */
 export interface CreditNoteApprovalResult extends CreditNoteResult {
   readonly refundObligation: RefundObligationView | null;
+  /**
+   * What the approval did (P1-32-PRE-OD-FD2B): how much of the note reduced what
+   * the invoice still owed, and how much the customer is owed back — the refund
+   * obligation's amount, zero when it left none. Computed by the database, so the
+   * screen states the split without subtracting money. Additive.
+   */
+  readonly approvalEffect: CreditApprovalEffectView | null;
 }
 
 /**
@@ -1876,6 +1884,7 @@ export class InvoiceService {
         creditNote: toCreditNoteView(note, units),
         replayed: true,
         refundObligation: await this.refundObligationOf(db, note, units),
+        approvalEffect: await this.appliedEffectOf(db, note, units),
       };
     }
     if (note.approvalState !== 'pending') {
@@ -2045,7 +2054,23 @@ export class InvoiceService {
       creditNote: toCreditNoteView(approved, units),
       replayed: false,
       refundObligation: obligation ? toRefundObligationView(obligation, units) : null,
+      approvalEffect: await this.appliedEffectOf(db, approved, units),
     };
+  }
+
+  /** How an approved note split between the balance and a refund owed (D2), as the database states it. */
+  private async appliedEffectOf(
+    db: DbHandle,
+    note: CreditNoteRow,
+    units: ReadonlyMap<string, number>
+  ): Promise<CreditApprovalEffectView | null> {
+    const effect = await this.repository.appliedCreditEffect(db, note);
+    return effect === null
+      ? null
+      : {
+          reducesBalanceBy: moneyView(effect.reducesBalanceBy, note.currencyCode, units),
+          refundOwed: moneyView(effect.refundOwed, note.currencyCode, units),
+        };
   }
 
   /** The refund obligation an approved note left, as the approval answers it (D2). */
