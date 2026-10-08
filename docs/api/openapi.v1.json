@@ -2566,9 +2566,6 @@
           "401": {
             "$ref": "#/components/responses/Problem"
           },
-          "403": {
-            "$ref": "#/components/responses/Problem"
-          },
           "422": {
             "$ref": "#/components/responses/Problem"
           },
@@ -2579,7 +2576,8 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["iam.user.read"],
+        "x-required-permissions": [],
+        "x-self-read": true,
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",
@@ -2620,9 +2618,6 @@
           "401": {
             "$ref": "#/components/responses/Problem"
           },
-          "403": {
-            "$ref": "#/components/responses/Problem"
-          },
           "422": {
             "$ref": "#/components/responses/Problem"
           },
@@ -2633,7 +2628,8 @@
             "$ref": "#/components/responses/Problem"
           }
         },
-        "x-required-permissions": ["iam.user.read"],
+        "x-required-permissions": [],
+        "x-self-read": true,
         "x-scope": "tenant",
         "x-audit-class": "none",
         "x-rate-limit-policy": "low-risk-metadata",

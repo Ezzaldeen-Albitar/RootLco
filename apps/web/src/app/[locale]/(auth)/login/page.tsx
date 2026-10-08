@@ -27,10 +27,11 @@ const REASONS = {
   expired: 'auth.login.reason.expired',
   'signed-out': 'auth.login.reason.signedOut',
   unavailable: 'auth.login.reason.unavailable',
-  // The credentials were accepted and the account may not read its own session
-  // — it does not hold `iam.user.read`. Signing in again will not help, so the
-  // message says so rather than inviting an operator to try the same thing
-  // repeatedly (`P1-26-F-022`).
+  // The credentials were accepted and the account holds nothing the workspace
+  // opens — its session read was refused, or (since P1-32-PRE-OD-FRX, when that
+  // read stopped requiring `iam.user.read`) it answered with no permission code
+  // at all. Signing in again will not help, so the message says so rather than
+  // inviting an operator to try the same thing repeatedly (`P1-26-F-022`).
   forbidden: 'auth.login.reason.forbidden',
 } as const;
 

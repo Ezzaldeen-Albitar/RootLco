@@ -431,10 +431,35 @@ export class RefundRepository extends Repository {
     );
   }
 
-  /** The day on the database's clock, as `YYYY-MM-DD` — what a payout date is checked against. */
-  public async today(db: DbHandle): Promise<string> {
-    const row = await this.runOne<{ today: string }>(db, `SELECT current_date::text AS today`);
-    /* c8 ignore next -- current_date always answers. */
+  /**
+   * The day it currently is on the BRANCH's own calendar, as `YYYY-MM-DD` — what a
+   * payout date is checked against (P1-32-PRE-OD-FRX).
+   *
+   * The platform's branch-local day (Owner decision D-17; `overview-clock-repository.ts`,
+   * `server/db/period.ts`): `(now() AT TIME ZONE org.branches.timezone_name)::date`,
+   * the zone read from the branch row and never interpolated. It used to be the
+   * database's `current_date`, so a branch ahead of the server was refused its own
+   * today and one behind it admitted a day it had not reached.
+   * `sal.guard_refund_request_update` reads the same day
+   * (`20261008150000_sal_refund_branch_day_and_obligation_marker.sql`).
+   *
+   * Read under the caller's own row-level security, in the branch the request was
+   * already authorized in. A branch it cannot see answers the empty string, which
+   * every date is "after", so the payout is refused rather than judged on a clock
+   * that is not the branch's.
+   */
+  public async branchToday(
+    db: DbHandle,
+    branch: { readonly companyId: string; readonly branchId: string }
+  ): Promise<string> {
+    const row = await this.runOne<{ today: string }>(
+      db,
+      `SELECT to_char((now() AT TIME ZONE b.timezone_name)::date, 'YYYY-MM-DD') AS today
+         FROM org.branches b
+        WHERE b.tenant_id = $1 AND b.company_id = $2 AND b.id = $3`,
+      [db.context.principal.tenantId, branch.companyId, branch.branchId]
+    );
+    /* c8 ignore next -- the request was authorized in this branch, so its row is visible. */
     return row?.today ?? '';
   }
 

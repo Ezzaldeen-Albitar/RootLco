@@ -22,6 +22,12 @@
  * It is deliberately verbose to write and is reported by the coverage check, so
  * it can never be the quiet default.
  *
+ * `selfRead: true` is the one other kind, and it is narrower than either: the
+ * caller MUST be authenticated, the operation declares no permission code, and it
+ * answers only facts about the caller itself. It is closed to the two operations
+ * named in `SELF_READ_OPERATION_IDS` (P1-32-PRE-OD-FRX) — see that constant for
+ * why, and for what it does not open.
+ *
  * P1-14 additionally checks `auditAction` against the controlled audit-action
  * catalog (`audit-actions.ts`). Presence was never enough: two operations
  * recording the same fact under different spellings produce an audit trail that
@@ -61,6 +67,13 @@ export interface OperationDeclaration {
   /** Unauthenticated endpoint. Must be justified in `publicReason`. */
   readonly public?: boolean;
   readonly publicReason?: string;
+  /**
+   * An AUTHENTICATED read that declares no permission code and returns only the
+   * caller's own facts (P1-32-PRE-OD-FRX). Must be justified in `selfReadReason`,
+   * and is accepted only for an id in `SELF_READ_OPERATION_IDS`.
+   */
+  readonly selfRead?: boolean;
+  readonly selfReadReason?: string;
   readonly scope?: ScopeRequirement;
   readonly auditClass?: AuditClass;
   /** Audit action code, e.g. `iam.role.granted`. Required unless class is none. */
@@ -165,7 +178,52 @@ export interface RegisteredOperation extends OperationDeclaration {
   readonly scope: ScopeRequirement;
   readonly auditClass: AuditClass;
   readonly public: boolean;
+  readonly selfRead: boolean;
 }
+
+/**
+ * The only operations that may register as an authenticated self-read
+ * (P1-32-PRE-OD-FRX).
+ *
+ * ## The defect this closes
+ *
+ * Both reads used to declare `iam.user.read` — the code that opens the tenant's
+ * user DIRECTORY — because the registry had no way to say "authenticated, and
+ * about nobody but you". Every dashboard page resolves the session through
+ * `GET /auth/session` before it renders, so a role that legitimately lacked the
+ * directory code (the seeded technician and cashier roles, a quotations-only
+ * role) could not open the product at all: sign in, 403 on its own session,
+ * back to sign-in with "not permitted to open the application".
+ *
+ * ## Why a kind and not a permission code everybody holds
+ *
+ * A code every role must carry is a grant a tenant can forget, and a bundle
+ * change nobody has asked for. The honest statement is the one the pipeline
+ * already enforces for every operation: an authenticated, resolved, non-revoked
+ * session in its own tenant. That is what this kind requires, and nothing more.
+ * The precedent is logout (P1-14-R-001), where the token is the authority.
+ *
+ * ## What it does NOT open
+ *
+ * A self-read answers facts about the caller and only the caller — its own
+ * identity, its own resolved scope, its own permissions, the companies and
+ * branches its own grants reach. Nothing about another person is readable
+ * through it. The names of OTHER people still come through `iam.user-detail` /
+ * `iam.user-list`, which keep `iam.user.read`, so a role without that code still
+ * sees "unavailable" in their place.
+ *
+ * ## Why the list is closed
+ *
+ * A permission-free authenticated operation is exactly the shape an unguarded
+ * endpoint would take by accident. So the registry refuses the kind for any id
+ * not named here, and `scripts/check-authorization-coverage.mjs` holds the same
+ * list against every literal declaration: adding a third is a reviewed edit of
+ * both, never a quiet one-line declaration.
+ */
+export const SELF_READ_OPERATION_IDS: readonly string[] = Object.freeze([
+  'iam.auth-session',
+  'iam.working-context-read',
+]);
 
 const registry = new Map<string, RegisteredOperation>();
 
@@ -208,9 +266,17 @@ export function defineOperation(declaration: OperationDeclaration): RegisteredOp
   }
 
   const isPublic = declaration.public === true;
+  const isSelfRead = declaration.selfRead === true;
   const permissions = declaration.permissions ?? [];
 
-  if (!isPublic && permissions.length === 0) {
+  if (isSelfRead) assertSelfReadDeclaration(declaration, isPublic, permissions);
+  if (!isSelfRead && declaration.selfReadReason !== undefined) {
+    throw new OperationRegistrationError(
+      `Operation "${declaration.id}" gives a selfReadReason but is not a self-read.`
+    );
+  }
+
+  if (!isPublic && !isSelfRead && permissions.length === 0) {
     throw new OperationRegistrationError(
       `Operation "${declaration.id}" declares no permission codes. Every operation is ` +
         'authorized server-side; mark it `public: true` with a `publicReason` only if it is ' +
@@ -263,10 +329,70 @@ export function defineOperation(declaration: OperationDeclaration): RegisteredOp
     scope: declaration.scope ?? 'tenant',
     auditClass,
     public: isPublic,
+    selfRead: isSelfRead,
   };
   registry.set(registered.id, registered);
   routeIndex.set(routeKey, registered.id);
   return registered;
+}
+
+/**
+ * The rules a self-read declaration must satisfy (P1-32-PRE-OD-FRX). Each keeps
+ * the kind exactly as narrow as `SELF_READ_OPERATION_IDS` describes: a named,
+ * authenticated, unaudited, tenant-scope GET with no permission code, no target
+ * and no write semantics.
+ */
+function assertSelfReadDeclaration(
+  declaration: OperationDeclaration,
+  isPublic: boolean,
+  permissions: readonly string[]
+): void {
+  const id = declaration.id;
+  if (!SELF_READ_OPERATION_IDS.includes(id)) {
+    throw new OperationRegistrationError(
+      `Operation "${id}" declares selfRead but is not in SELF_READ_OPERATION_IDS. A ` +
+        'permission-free authenticated operation is a reviewed exception, not a declaration.'
+    );
+  }
+  if (isPublic) {
+    throw new OperationRegistrationError(
+      `Operation "${id}" is both public and a self-read. A self-read is authenticated.`
+    );
+  }
+  if (permissions.length > 0) {
+    throw new OperationRegistrationError(
+      `Operation "${id}" is a self-read and also declares permissions. Choose one.`
+    );
+  }
+  if (!declaration.selfReadReason) {
+    throw new OperationRegistrationError(
+      `Operation "${id}" is a self-read but gives no selfReadReason.`
+    );
+  }
+  if (declaration.method !== 'GET') {
+    throw new OperationRegistrationError(`Operation "${id}" is a self-read and must be a GET.`);
+  }
+  if ((declaration.scope ?? 'tenant') !== 'tenant') {
+    throw new OperationRegistrationError(
+      `Operation "${id}" is a self-read and must be tenant-scoped: it names no target.`
+    );
+  }
+  if ((declaration.auditClass ?? 'none') !== 'none') {
+    throw new OperationRegistrationError(
+      `Operation "${id}" is a self-read and may not declare an audit class.`
+    );
+  }
+  if (
+    declaration.idempotent === true ||
+    declaration.versionGuarded === true ||
+    declaration.featureFlag !== undefined ||
+    declaration.branchNarrowing !== undefined
+  ) {
+    throw new OperationRegistrationError(
+      `Operation "${id}" is a self-read and may not declare idempotency, a version guard, a ` +
+        'feature flag or branch narrowing.'
+    );
+  }
 }
 
 export function getOperation(id: string): RegisteredOperation | undefined {

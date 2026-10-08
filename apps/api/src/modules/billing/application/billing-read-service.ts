@@ -874,10 +874,30 @@ const toNumberingConfigView = (row: NumberingConfigRow): NumberingConfigView => 
  *
  * Approval is read from the decision counts, not from `quo.quotations.status`: that
  * column is a cached roll-up and no constraint ties it to `quo.approval_decisions`.
+ *
+ * ## The rule the conflict names (P1-32-PRE-OD-FRX)
+ *
+ * The conflict used to carry no rule token, so the invoice screen could only say
+ * something generic. It now names one, in the violation shape every other invoice
+ * refusal uses, at `violationPath` (`body.workOrderId` for the create, the route
+ * parameter for the preview):
+ *
+ *  - `invoice_source_ambiguous` — two or more quotations still have approved work
+ *    to bill. This is the open point above, and the token says only that: approved
+ *    lines on more than one quotation of one work order are not invoiced together.
+ *  - `invoice_nothing_to_bill` — two or more quotations have approved lines and
+ *    NONE has anything left to bill. Nothing is ambiguous about what remains, so
+ *    the conflict is the same one a single fully invoiced source answers on the
+ *    create path, and it is named the same way.
  */
+export const INVOICE_SOURCE_AMBIGUOUS_RULE = 'invoice_source_ambiguous';
+/** The rule a create refused because nothing approved remains to bill (ADR-023 D5/D15). */
+export const INVOICE_NOTHING_TO_BILL_RULE = 'invoice_nothing_to_bill';
+
 export function resolveCommercialSource(
   candidates: readonly CommercialSourceRow[],
-  workOrderId: string
+  workOrderId: string,
+  violationPath: string = 'body.workOrderId'
 ): CommercialSourceRow {
   const withApproved = candidates.filter((candidate) => candidate.approvedCount > 0);
   const withRemaining = withApproved.filter((candidate) => candidate.billableCount > 0);
@@ -893,12 +913,15 @@ export function resolveCommercialSource(
     });
   }
   if (approved.length > 1) {
+    const rule =
+      withRemaining.length === 0 ? INVOICE_NOTHING_TO_BILL_RULE : INVOICE_SOURCE_AMBIGUOUS_RULE;
     throw new AppFailure('ERR-CON-001', {
       message:
         `Work order ${workOrderId} has ${approved.length} quotations with approved lines, so ` +
         'the commercial source for an invoice is ambiguous. No constraint prevents this — ' +
         'ix_quotations_work_order is not unique — and choosing between two agreed prices is ' +
         'not a decision this backend may make.',
+      safeDetails: { violations: [{ path: violationPath, rule }] },
     });
   }
 
@@ -1405,7 +1428,9 @@ export class BillingReadService {
         companyId: scope.companyId,
         branchId: scope.branchId,
       }),
-      workOrderId
+      workOrderId,
+      // The preview names the work order in its route, not in a body.
+      'path.workOrderId'
     );
 
     const lines = await this.repository.listCommercialSourceLines(db, {

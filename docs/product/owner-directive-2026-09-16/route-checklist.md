@@ -166,7 +166,9 @@ nobody who could do the job before B1 is refused it now.
 - **The discount requester on `/quotations` and `/quotations/[quotationId]`.** Measured, not
   changed: `iam.user-list` needs `iam.user.read`, which `GET /auth/session` also requires, so every
   operator who can load either screen holds it and the picker refuses nobody who could name a
-  requester before.
+  requester before. (Superseded by P1-32-PRE-OD-FRX: `GET /auth/session` declares no
+  code since then, so holding `iam.user.read` is no longer implied by loading a screen; no
+  quotation screen reads `iam.user-list` today.)
 - **The deciding party on `/quotations/[quotationId]`.** Measured, not changed: the server accepts
   a deciding party only when it is the quotation's own payer, so the yes-or-no over that payer
   offers every value the typed box could have sent successfully.
@@ -1377,15 +1379,67 @@ review).** Recorded, not fixed in that slice; one line each:
 7. Locally, the repository aggregate exited 1 at review: three unit tests in two files this PR does not touch timed out at 30 s under concurrent load; run alone with the new test file they passed. The hosted unit-coverage job carries the tier.
 8. The inventory figures were checked at review against the private run output and match; the live database run was not repeated, by design.
 
+## Residual fixes of the CP-20261008-2 retest (P1-32-PRE-OD-FRX)
+
+### Session and working context as self-reads
+
+The retest of CP-20261008-2 found that a role without `iam.user.read` could not open the product:
+every dashboard page reads `GET /api/v1/auth/session` before it renders
+(`apps/web/src/app/[locale]/(dashboard)/layout.tsx`), that read declared `iam.user.read`, and a 403
+on it sends the operator back to sign-in with "not permitted to open the application"
+(P1-26-F-022). The seeded technician and cashier roles do not hold the code, and neither does a role
+built for quotations and work orders only.
+
+- `iam.auth-session` and `iam.working-context-read` are now authenticated self-reads
+  (`selfRead: true`, `docs/security/secure-coding-standard.md`, "R4 and the authenticated
+  self-read"): no permission code, a 401 without a session, and only the caller's own facts in the
+  answer — its identity, scope and permissions, and the companies and branches its own grants reach.
+- The directory stays guarded: `iam.user-list` and `iam.user-detail` keep `iam.user.read`, and names
+  of other people resolved through them still read "unavailable" to a role without it.
+- An account answered with NO permission code at all still opens nothing, so the web keeps sending
+  it to sign-in as `forbidden` with its cookie kept, after asking the platform session first — the
+  platform operator, who holds no tenant role by construction, still lands on the console.
+- No grant, role bundle or backfill changed. Tests: `tests/backend/p1-24-iam-route-depth.test.ts`
+  (a caller holding only `quo.*` and `wo.work_order.read` is answered 200 on both reads; no session
+  is a 401; a principal with no role gets its own facts and nobody else's),
+  `tests/backend/iam-auth-provider.test.ts`, `tests/foundation/operation-registry.test.ts`,
+  `apps/web/tests/session.test.ts` (the dashboard layout renders for that role),
+  `apps/web/tests/platform-login-routing.test.ts`, `apps/web/tests/p1-28-security.test.ts`.
+
+### The other residuals of the same retest
+
+- **`/invoices`, a refused create or preview (O2).** A 409 on `sal.invoice-create` or
+  `sal.invoice-preview` names its rule in `violations[0].rule`, and the screen now says that rule's
+  own sentence, en and ar, instead of the generic re-read caption or "unavailable": the nine invoice
+  source guard tokens, `invoice_draft_open`, `invoice_nothing_to_bill` and the new
+  `invoice_source_ambiguous` — approved lines on more than one quotation of one work order, which
+  cannot be invoiced together yet while ADR-023's D5/D15 open point (VL-P132-003) waits on the
+  Owner. Two quotations with nothing left to bill on either answer `invoice_nothing_to_bill`. An
+  unknown rule keeps the generic sentence. Tests: `apps/web/tests/invoices.dom.test.tsx` (one case
+  per token on the create and on the preview), `tests/backend/od-invoice-approved-quantities.test.ts`,
+  `tests/unit/od-invoice-approved-quantities.test.ts`.
+- **`/invoices` and `/inventory/counter-sales`, the printed copy (O1).** The issued totals and the
+  settlement print as one block that is not split across pages (`invoice-print-totals-block`,
+  `break-inside-avoid`, as the quotation print keeps its totals), so "Balance due" and "Refund" no
+  longer land alone on a page with the identity row. Held by `apps/web/tests/e2e/print-layout.spec.ts`
+  over counter sales of 1 to 32 lines.
+- **`/refunds` and the refunds panel, the payout day.** "Not in the future" is judged on the
+  branch's own calendar (D-17) in the service and in `sal.guard_refund_request_update`
+  (`20261008150000_sal_refund_branch_day_and_obligation_marker.sql`,
+  DBCR-P1-32-PRE-OD-FRX-001); the same migration makes an obligation name the approval that wrote it
+  (defence in depth).
+
 ## Material UI adoption (ADR-022)
 
 ADR-022 makes Material UI and the MUI X Community editions the component layer. Screens move onto
 it one at a time, through shared wrappers that keep the behaviour of the components they replace;
 a screen changes what it renders and nothing about how it reads, searches or refuses. This section
 records each wrapper's contract and, per route, which wrappers apply and whether the route has
-moved. The reception board (`/receptions`) is the first route that has moved (see "`/receptions`
-on Material UI" below the table); every other route reads `not migrated`, and a verification cell
-says `not run` until a route moves and its suite is run in both languages.
+moved. The reception board (`/receptions`) was the first route to move (see "`/receptions` on
+Material UI" below the table); many have moved since, each recorded in its own section below the
+table, and a route built on Material UI from the start says so. A route that has not moved reads
+`not migrated`, and its verification cell says `not run` until it moves and its suite is run in
+both languages.
 
 ### The shared wrappers and what each keeps
 
@@ -1695,6 +1749,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/receptions/check-in/[receptionId]`                  | form fields, `OperationalGrid`, `EntityPicker`, `ZonedDateTimeField`, `ReasonDialog`, states  | F1–F7; G1–G9, G11; P1–P10; E1–E4; D1–D5; S1–S4   | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/receptions/check-in`                                | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F7; G1–G9, G11, G12; P1–P10; S1–S4            | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/receptions`                                         | `FilterToolbar`, `OperationalGrid`, states                                                    | F6; G1–G11; S1–S5; T1–T6                         | migrated — see below the table                                      | focused suites, en and ar — see below     |
+| `/refunds`                                            | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, states                                    | G1–G9; P1–P10; S1–S4                             | built on Material UI (P1-32-PRE-OD-FD2B, ADR-023 D2)                | `refunds.dom.test.tsx`, en and ar         |
 | `/reports/[reportCode]`                               | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
 | `/reports/overview`                                   | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
 | `/reports`                                            | states                                                                                        | S1–S4                                            | not migrated                                                        | not run — nothing migrated                |

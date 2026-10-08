@@ -751,6 +751,72 @@ describe('D2 part 2 — the payout is recorded once, after the approval', () => 
     expect(await executedEvents(pending.id)).toBe(0);
   });
 
+  it('judges the payout day on the branch calendar, not the server one (P1-32-PRE-OD-FRX)', async () => {
+    /*
+     * The service and the database both compared with the database's
+     * current_date. The branch-local day (D-17) is the rule. At any instant one of
+     * two real zones disagrees with the server's day — UTC+14 is ahead from 10:00
+     * UTC, UTC-12 behind before noon — so the fixture branch is moved to whichever
+     * disagrees now for this one case, and moved back. The suite runs its files
+     * one at a time (vitest.config.backend.ts), so no other file reads the branch
+     * meanwhile.
+     */
+    const dayIn = async (zone: string): Promise<string> =>
+      (
+        await admin.query<{ v: string }>(`SELECT ((now() AT TIME ZONE $1)::date)::text AS v`, [
+          zone,
+        ])
+      ).rows[0]!.v;
+    const server = (await admin.query<{ v: string }>(`SELECT current_date::text AS v`)).rows[0]!.v;
+    const zone = (await dayIn('Pacific/Kiritimati')) > server ? 'Pacific/Kiritimati' : 'Etc/GMT+12';
+    const branchDay = await dayIn(zone);
+    expect(branchDay, `${zone} must disagree with the server day ${server}`).not.toBe(server);
+    await admin.query(
+      `INSERT INTO shared.timezones (zone_name, created_by) VALUES ($1, $2)
+       ON CONFLICT (zone_name) DO NOTHING`,
+      [zone, USER_A]
+    );
+    const before = (
+      await admin.query<{ zone: string }>(
+        `SELECT timezone_name AS zone FROM org.branches WHERE id = $1`,
+        [BRANCH_A1]
+      )
+    ).rows[0]!.zone;
+    await admin.query(`UPDATE org.branches SET timezone_name = $1 WHERE id = $2`, [
+      zone,
+      BRANCH_A1,
+    ]);
+    try {
+      const { obligationId } = await owedBack('odfrx_branch_day', '30.00');
+      const approved = await approvedRefund(obligationId, '12.00');
+      const payout = (payoutDate: string) => ({
+        paymentMethodId: PAYMENT_METHOD_A,
+        payoutReference: 'TRF-FRX',
+        payoutDate,
+      });
+      if (branchDay < server) {
+        // Behind: the server's today is still the future at the branch.
+        authAs(SAL_FULL);
+        const early = await execute(approved.id, approved.version, payout(server));
+        expect(early.status).toBe(422);
+        expect((await bodyOf<ProblemBody>(early)).violations).toEqual([
+          { path: 'body.payoutDate', rule: 'refund_payout_date_invalid' },
+        ]);
+      }
+      // The branch's own today is recorded — ahead of the server, the old check
+      // refused exactly this.
+      authAs(SAL_FULL);
+      const recorded = await execute(approved.id, approved.version, payout(branchDay));
+      expect(recorded.status).toBe(200);
+      expect((await bodyOf<RefundResultBody>(recorded)).refundRequest.payoutDate).toBe(branchDay);
+    } finally {
+      await admin.query(`UPDATE org.branches SET timezone_name = $1 WHERE id = $2`, [
+        before,
+        BRANCH_A1,
+      ]);
+    }
+  });
+
   it('records the payout once with one event and one audit record, replays under its key, and refuses another', async () => {
     const { obligationId } = await owedBack('odfd2b_execute', '30.00');
     const approved = await approvedRefund(obligationId, '12.00');

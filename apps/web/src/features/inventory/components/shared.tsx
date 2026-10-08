@@ -65,8 +65,9 @@ export const SECONDARY_BUTTON =
  * `P1-32-PRE-OD-UX`).
  *
  * The working context replaces it: `GET /auth/working-context` publishes the
- * named, active branches this caller is authorized for and is gated on
- * `iam.user.read`, which anyone who can read a session holds. Where it answers
+ * named, active branches this caller is authorized for, and is an authenticated
+ * self-read that declares no permission code (P1-32-PRE-OD-FRX), so anyone
+ * signed in can read their own. Where it answers
  * there is a list. Where it does not, the screen says so in words and names the
  * one control that can change it.
  *

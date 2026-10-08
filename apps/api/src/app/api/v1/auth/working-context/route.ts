@@ -13,11 +13,14 @@
  * navigation through an administration permission would push a tenant towards
  * granting it, which is the opposite of what that permission is for.
  *
- * So this operation carries `iam.user.read` — the code the session read already
- * carries — and returns strictly the caller's own reach. Nothing here is a fact the
- * caller does not already hold: the narrowing is `sel_legal_companies_tenant` and
- * `sel_branches_scope` reading the caller's own resolved grants, and a principal
- * holding no active grant is answered with two empty arrays.
+ * So this operation is an authenticated self-read (P1-32-PRE-OD-FRX), like the
+ * session read beside it, and returns strictly the caller's own reach. Nothing here
+ * is a fact the caller does not already hold: the narrowing is
+ * `sel_legal_companies_tenant` and `sel_branches_scope` reading the caller's own
+ * resolved grants, and a principal holding no active grant is answered with two
+ * empty arrays. It used to carry `iam.user.read`, the code the session read carried,
+ * and so refused every role without the user-directory code the shell it feeds; it
+ * declares no code now, and an unauthenticated request is still a 401.
  *
  * `companySettingsReadableIds` names which of those companies' settings the caller
  * may read, answered by the same two checks `iam.company-settings-read` enforces,
@@ -47,7 +50,10 @@ export const WORKING_CONTEXT_OPERATION = defineOperation({
   method: 'GET',
   path: '/auth/working-context',
   summary: 'List the companies and branches the acting user may work in.',
-  permissions: ['iam.user.read'],
+  selfRead: true,
+  selfReadReason:
+    'Answers the authenticated caller the companies and branches its own grants reach, and ' +
+    'nothing about any other account; the product shell reads it before it renders.',
   scope: 'tenant',
   auditClass: 'none',
   rateLimitPolicy: 'low-risk-metadata',

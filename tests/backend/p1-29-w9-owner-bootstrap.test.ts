@@ -33,7 +33,7 @@
  * Coverage manifest (read by scripts/check-operation-test-coverage.mjs):
  *   platform.organization-provision: route service authorization success denial cross-tenant isolation audit idempotency rollback
  *   iam.auth-login: route service success
- *   iam.auth-session: route service authorization success
+ *   iam.auth-session: route service success
  *   iam.role-create: route service authorization success
  *   iam.role-permission-add: route service authorization success denial
  *   iam.invitation-create: route service authorization success

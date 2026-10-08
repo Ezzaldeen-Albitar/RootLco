@@ -311,76 +311,90 @@ export function InvoiceDocument({
         rows={rows}
         caption={translate(messages, 'invoices.print.linesCaption')}
       />
-      <dl
-        className="mt-6 ms-auto grid max-w-xs grid-cols-2 gap-1 text-body"
-        aria-label={translate(messages, 'invoices.print.issuedTotals')}
-        data-testid="invoice-print-issued-totals"
-      >
-        <dt className="col-span-2 text-caption font-medium text-text-muted">
-          {translate(messages, 'invoices.print.issuedTotals')}
-        </dt>
-        {discounted ? (
-          <>
-            <dt className="text-text-muted">{translate(messages, 'invoices.print.subtotal')}</dt>
-            <dd className="text-end" data-testid="invoice-print-subtotal">
-              <PreviewFigure
-                value={wholeRevision && revision ? revision.subtotal : null}
-                locale={locale}
-                messages={messages}
-              />
-            </dd>
-            <dt className="text-text-muted">{translate(messages, 'invoices.print.discount')}</dt>
-            <dd className="text-end" data-testid="invoice-print-discount-total">
-              <PreviewFigure
-                value={wholeRevision && revision ? revision.discountTotal : null}
-                locale={locale}
-                messages={messages}
-              />
-            </dd>
-          </>
-        ) : null}
-        <dt className="text-text-muted">{translate(messages, 'invoices.detail.net')}</dt>
-        <dd className="text-end">
-          {invoice.totals ? (
-            <Money money={invoice.totals.net} locale={locale} />
-          ) : (
-            <Unavailable messages={messages} />
-          )}
-        </dd>
-        <dt className="text-text-muted">{translate(messages, 'invoices.detail.tax')}</dt>
-        <dd className="text-end">
-          {invoice.totals ? (
-            <Money money={invoice.totals.tax} locale={locale} />
-          ) : (
-            <Unavailable messages={messages} />
-          )}
-        </dd>
-        <dt className="font-medium">{translate(messages, 'invoices.detail.gross')}</dt>
-        <dd className="text-end font-medium">
-          {invoice.totals ? (
-            <Money money={invoice.totals.gross} locale={locale} />
-          ) : (
-            <Unavailable messages={messages} />
-          )}
-        </dd>
-      </dl>
-      {balance !== null && settlement !== null ? (
-        <SettlementSection
-          locale={locale}
-          messages={messages}
-          balance={balance}
-          settlement={settlement}
-          customer={payer}
-          zone={context.branches.find((entry) => entry.id === invoice.branchId)?.timezone || 'UTC'}
-        />
-      ) : settlementUnavailable ? (
-        <p
-          className="mt-6 border-t border-border pt-4 text-body"
-          data-testid="invoice-print-settlement-unavailable"
+      {/*
+        The totals and the settlement print as ONE block (P1-32-PRE-OD-FRX, O1). A
+        counter sale whose lines ended near the foot of a page printed "Balance
+        due" and "Refund" alone on the next page, beside nothing but the identity
+        row, so the copy handed over split the money it states from the money it
+        owes. `break-inside-avoid` on the wrapper keeps the issued totals and the
+        settlement rows on one page, the way the quotation print keeps its totals
+        (`QuotationPrint.tsx`); a block taller than a page still breaks, as print
+        layout must.
+      */}
+      <div className="break-inside-avoid" data-testid="invoice-print-totals-block">
+        <dl
+          className="mt-6 ms-auto grid max-w-xs grid-cols-2 gap-1 text-body"
+          aria-label={translate(messages, 'invoices.print.issuedTotals')}
+          data-testid="invoice-print-issued-totals"
         >
-          {translate(messages, 'invoices.print.settlementUnavailable')}
-        </p>
-      ) : null}
+          <dt className="col-span-2 text-caption font-medium text-text-muted">
+            {translate(messages, 'invoices.print.issuedTotals')}
+          </dt>
+          {discounted ? (
+            <>
+              <dt className="text-text-muted">{translate(messages, 'invoices.print.subtotal')}</dt>
+              <dd className="text-end" data-testid="invoice-print-subtotal">
+                <PreviewFigure
+                  value={wholeRevision && revision ? revision.subtotal : null}
+                  locale={locale}
+                  messages={messages}
+                />
+              </dd>
+              <dt className="text-text-muted">{translate(messages, 'invoices.print.discount')}</dt>
+              <dd className="text-end" data-testid="invoice-print-discount-total">
+                <PreviewFigure
+                  value={wholeRevision && revision ? revision.discountTotal : null}
+                  locale={locale}
+                  messages={messages}
+                />
+              </dd>
+            </>
+          ) : null}
+          <dt className="text-text-muted">{translate(messages, 'invoices.detail.net')}</dt>
+          <dd className="text-end">
+            {invoice.totals ? (
+              <Money money={invoice.totals.net} locale={locale} />
+            ) : (
+              <Unavailable messages={messages} />
+            )}
+          </dd>
+          <dt className="text-text-muted">{translate(messages, 'invoices.detail.tax')}</dt>
+          <dd className="text-end">
+            {invoice.totals ? (
+              <Money money={invoice.totals.tax} locale={locale} />
+            ) : (
+              <Unavailable messages={messages} />
+            )}
+          </dd>
+          <dt className="font-medium">{translate(messages, 'invoices.detail.gross')}</dt>
+          <dd className="text-end font-medium">
+            {invoice.totals ? (
+              <Money money={invoice.totals.gross} locale={locale} />
+            ) : (
+              <Unavailable messages={messages} />
+            )}
+          </dd>
+        </dl>
+        {balance !== null && settlement !== null ? (
+          <SettlementSection
+            locale={locale}
+            messages={messages}
+            balance={balance}
+            settlement={settlement}
+            customer={payer}
+            zone={
+              context.branches.find((entry) => entry.id === invoice.branchId)?.timezone || 'UTC'
+            }
+          />
+        ) : settlementUnavailable ? (
+          <p
+            className="mt-6 border-t border-border pt-4 text-body"
+            data-testid="invoice-print-settlement-unavailable"
+          >
+            {translate(messages, 'invoices.print.settlementUnavailable')}
+          </p>
+        ) : null}
+      </div>
     </PrintDocument>
   );
 }
