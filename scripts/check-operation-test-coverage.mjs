@@ -2768,6 +2768,12 @@ export const MANIFEST = {
     required: ['denial'],
     note: 'the branch is the target and is re-authorized before a row is fetched, so a caller whose grant sits in another branch is refused although the rows ARE inside its permission-blind RLS union (isolation); the CONVERSE is deliberately not claimed — the P1-22 fixture set provisions one branch and leaves BRANCH_A2 and tenant B unprovisioned (tests/backend/p1-22-helpers.ts:627), so no case here shows a note raised elsewhere absent from a page this caller MAY read, and for the same reason the list declares no cross-tenant marker where the detail does; sal.finance.view is DECLARED rather than nulled because sel_credit_notes_gated removes the whole row — a caller without it would otherwise read an empty page indistinguishable from a branch that has credited nothing, which the suite proves by driving the same branch with SAL_NO_FINANCE and asserting 403 rather than an empty page; the page is newest-first on created_at and narrowable to one approval state and one invoice',
   },
+  // ADR-023 D2, part 1 (P1-32-PRE-OD-FD2A): what customers are owed back.
+  'sal.refund-obligation-list': {
+    files: ['tests/backend/od-finance-credit-decisions.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation', 'pagination'],
+    note: 'A branch refund obligations, newest first: the money a customer is owed back because an approved credit note exceeded what its invoice still owed, recorded by sal.approve_credit_note for exactly the excess and never paid automatically. Narrowed by customer (partnerId), invoice and state; a state outside the vocabulary is a 422. Declares sal.finance.view only, at the branch: sel_refund_obligations_gated removes the whole row from a caller without it, so SAL_NO_FINANCE is refused 403 rather than shown an empty page; SAL_PERMISSION_ELSEWHERE, whose grant sits in the sibling branch, is refused by the scoped check; tenant B is refused. Pages by an opaque cursor',
+  },
   'sal.credit-note-detail': {
     files: ['tests/backend/p1-22-credit-note.test.ts'],
     required: ['denial'],

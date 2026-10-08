@@ -121,6 +121,11 @@ export const RECEIPT_REVERSAL_RULES = Object.freeze({
   pendingBlocksAllocation: 'receipt_reversal_pending_blocks_allocation',
   replacementNotReversed: 'receipt_replacement_not_reversed',
   replacementExists: 'receipt_replacement_exists',
+  // ADR-023 D2 (P1-32-PRE-OD-FD2A), an interim rule and an OPEN policy point: a
+  // receipt that paid an invoice whose customer is owed a refund is not reversed
+  // while that refund obligation is open, because the reversal would change the
+  // excess the obligation was computed from.
+  refundObligationOpen: 'receipt_reversal_refund_obligation_open',
 } as const);
 
 /**

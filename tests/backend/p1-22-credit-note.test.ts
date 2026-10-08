@@ -246,14 +246,24 @@ const REFUSAL_KEYS = ['code', 'correlationId', 'status', 'title', 'type'];
  * The regex is over the RAW response bytes rather than a parsed field, so a future edit
  * that started echoing `error.message` into the document would fail here rather than
  * quietly ship a constraint name to a customer-facing client.
+ *
+ * `violations`, when given, is the named rule the refusal must carry and nothing
+ * else (ADR-023 D2 names its ceiling rule on the amount); without it the document
+ * carries no violations at all.
  */
-async function expectCallerSafeConflict(response: Response): Promise<void> {
+async function expectCallerSafeConflict(
+  response: Response,
+  violations?: readonly { readonly path: string; readonly rule: string }[]
+): Promise<void> {
   expect(response.status).toBe(409);
   const raw = await response.text();
   expect(raw).not.toMatch(/ck_|uq_|tg_|guard_|check_violation|23514|sal\./);
-  const problem = JSON.parse(raw) as ProblemBody;
+  const problem = JSON.parse(raw) as ProblemBody & { readonly violations?: unknown };
   expect(problem.code).toBe('ERR-TRN-001');
-  expect(Object.keys(problem).sort()).toEqual(REFUSAL_KEYS);
+  expect(Object.keys(problem).sort()).toEqual(
+    violations === undefined ? REFUSAL_KEYS : [...REFUSAL_KEYS, 'violations'].sort()
+  );
+  if (violations !== undefined) expect(problem.violations).toEqual(violations);
 }
 
 /**
@@ -507,7 +517,7 @@ describe('sal.credit-note-create', () => {
     ).toBe(0);
   });
 
-  it('refuses a credit above the open receivable and accepts one exactly equal (denial)', async () => {
+  it('refuses a credit above what remains creditable and accepts one exactly equal (denial)', async () => {
     const invoice = await seedIssuedInvoice('cn_ceiling');
     expect(await invoiceOpenReceivable(invoice.invoiceId)).toBe('100.0000');
 
@@ -535,7 +545,12 @@ describe('sal.credit-note-create', () => {
         )
     );
     expect(refusal.code).toBe('ERR-TRN-001');
-    expect(refusal.message).toContain("exceeds the invoice's open amount of 100.0000");
+    // ADR-023 D2 (P1-32-PRE-OD-FD2A): the ceiling is the gross less the credits already
+    // approved — on this unpaid invoice the same 100.0000 — and the rule is named.
+    expect(refusal.message).toContain('exceeds the 100.0000 the invoice can still be credited');
+    expect(refusal.safeDetails.violations).toEqual([
+      { path: 'body.amount', rule: 'credit_note_exceeds_creditable' },
+    ]);
     expect(refusal.message).not.toMatch(/ck_|uq_|tg_|guard_|check_violation|23514|SELECT|INSERT/);
 
     // The same overrun through the route: a controlled 409 whose bytes carry no
@@ -545,7 +560,11 @@ describe('sal.credit-note-create', () => {
       amount: '100.01',
       reason: 'One cent over the ceiling',
     });
-    await expectCallerSafeConflict(over);
+    // The controlled 409 now also names the D2 rule on the amount (ADR-023 D2), and
+    // still carries no constraint, trigger or SQLSTATE.
+    await expectCallerSafeConflict(over, [
+      { path: 'body.amount', rule: 'credit_note_exceeds_creditable' },
+    ]);
     expect(await creditNotesFor(invoice.invoiceId)).toBe(0);
 
     // Exactly equal to the open amount is ACCEPTED — the bound is `>`, not `>=`, and a
@@ -855,8 +874,9 @@ describe('sal.credit-note-approve', () => {
     // 60.0000 each fit a 100.0000 invoice when they are raised — pending notes credit
     // nothing — and once the first is approved the second no longer fits. The
     // approval is sent for that second note, and `sal.approve_credit_note` refuses it
-    // under the invoice lock because it exceeds the open receivable. That is not a
-    // self-approval, so no token names it one.
+    // under the invoice lock because it exceeds what the invoice can still be credited
+    // (ADR-023 D2). That is not a self-approval, so no self-approval token names it: the
+    // D2 rule does.
     const other = await seedIssuedInvoice('cn_check_violation_ceiling');
     const first = await pendingNote(other.invoiceId, '60.0000');
     const second = await pendingNote(other.invoiceId, '60.0000');
@@ -874,10 +894,12 @@ describe('sal.credit-note-approve', () => {
       (db, authorizeScope) => misdirected.approveCreditNote(db, target.id, authorizeScope)
     );
     expect(otherRefusal.code).toBe('ERR-TRN-001');
-    expect(otherRefusal.safeDetails.violations).toBeUndefined();
+    expect(otherRefusal.safeDetails.violations).toEqual([
+      { path: 'path.creditNoteId', rule: 'credit_note_exceeds_creditable' },
+    ]);
     expect(JSON.stringify(otherRefusal.safeDetails)).not.toContain('credit_note_self_approval');
     expect(otherRefusal.message).not.toContain('must differ from the requester');
-    expect(otherRefusal.message).toContain('would break a billing invariant');
+    expect(otherRefusal.message).toContain('can still be credited');
 
     // Neither refusal moved the note it was aimed at.
     expect(

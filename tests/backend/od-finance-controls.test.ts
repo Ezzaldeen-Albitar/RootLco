@@ -584,7 +584,7 @@ describe('GAP-04 / GAP-05 / GAP-09 — returns, their credits and the sale they 
 
 describe('GAP-17 — credit approvals under concurrent callers', () => {
   for (const order of ['approval first', 'allocation first'] as const) {
-    it(`a credit approval racing a full allocation: one wins, open never below zero (${order})`, async () => {
+    it(`a credit approval racing a full allocation: serialised, open never below zero (${order})`, async () => {
       const invoice = await seedIssuedInvoice(`odfin_race_alloc_${order.split(' ')[0]}`);
       const note = await pendingCreditNote(invoice.invoiceId, '100.0000', SAL_FULL);
       const receipt = await recordedReceipt('100.0000');
@@ -604,17 +604,34 @@ describe('GAP-17 — credit approvals under concurrent callers', () => {
       const senders = order === 'approval first' ? [approve, allocate] : [allocate, approve];
       const outcomes = await race(holdInvoice(invoice.invoiceId), senders, { staged: true });
 
-      const [winner, loser] = outcomes;
-      expect(winner?.status).toBe(order === 'approval first' ? 200 : 201);
-      expect(loser?.status).toBe(409);
-      expect((await bodyOf<ProblemBody>(loser as Response)).code).toBe('ERR-TRN-001');
-
+      const [winner, second] = outcomes;
       const allocations = await countRowsOf(
         `SELECT count(*)::text AS n FROM sal.payment_allocations WHERE invoice_id = $1`,
         [invoice.invoiceId]
       );
       const credited = await approvedCreditEvents(note);
-      expect(allocations + credited).toBe(1);
+      const owedBack = await countRowsOf(
+        `SELECT count(*)::text AS n FROM sal.refund_obligations
+          WHERE invoice_id = $1 AND amount = 100 AND state = 'open'`,
+        [invoice.invoiceId]
+      );
+      if (order === 'approval first') {
+        // The credit clears the invoice; nothing is left to pay, so the payment is refused.
+        expect(winner?.status).toBe(200);
+        expect(second?.status).toBe(409);
+        expect((await bodyOf<ProblemBody>(second as Response)).code).toBe('ERR-TRN-001');
+        expect(allocations + credited).toBe(1);
+        expect(owedBack).toBe(0);
+      } else {
+        // ADR-023 D2 (P1-32-PRE-OD-FD2A): a paid invoice is still creditable up to its
+        // gross. The approval waits for the payment, sees it, and records the whole
+        // credit as owed back to the customer — once, and nothing is paid out.
+        expect(winner?.status).toBe(201);
+        expect(second?.status).toBe(200);
+        expect(allocations).toBe(1);
+        expect(credited).toBe(1);
+        expect(owedBack).toBe(1);
+      }
       expect(await invoiceOpenReceivable(invoice.invoiceId)).toBe('0.0000');
       expect(await invoiceOpenIsNonNegative(invoice.invoiceId)).toBe(1);
     });

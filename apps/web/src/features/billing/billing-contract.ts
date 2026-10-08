@@ -108,8 +108,12 @@ export type CreditStatus = (typeof CREDIT_STATUSES)[number];
 export const PAYMENT_STATUSES = ['open', 'partly_paid', 'paid', 'nothing_due'] as const;
 export type PaymentStatus = (typeof PAYMENT_STATUSES)[number];
 
-/** Money handed back (D7). The platform has no refund instrument yet, so only `none`. */
-export const REFUND_STATUSES = ['none'] as const;
+/**
+ * Money owed back or handed back (D7). `owed`: an approved credit exceeded what the
+ * invoice still owed, so the customer is owed the difference (ADR-023 D2); nothing
+ * has been paid back. Refund requests and their execution add later states.
+ */
+export const REFUND_STATUSES = ['none', 'owed'] as const;
 export type RefundStatus = (typeof REFUND_STATUSES)[number];
 
 /** `SettlementView` — three separate positions of an issued invoice, and the two amounts behind them. */
@@ -119,6 +123,11 @@ export interface Settlement {
   readonly refundStatus: RefundStatus;
   readonly credited: MoneyView;
   readonly paid: MoneyView;
+  /**
+   * What the customer is owed back — the open refund obligations of the invoice
+   * (ADR-023 D2), the server's sum; absent from a server before D2.
+   */
+  readonly refundOwed?: MoneyView;
   /**
    * The part of `paid` somebody other than the customer paid as a third-party
    * payment (ADR-023 D14), oldest first; absent from a server before D14.
@@ -568,6 +577,32 @@ export interface CreditNoteDetail extends CreditNote {
   readonly invoice: CreditNoteInvoice | null;
   /** `null` when the note was raised by hand rather than by a customer return. */
   readonly sourceReturn: CreditNoteSourceReturn | null;
+  /**
+   * What approving this PENDING note would do, as the server computed it at the read
+   * (ADR-023 D2): how much reduces what is still owed and how much the customer would
+   * be owed back. `null` on a decided note; absent from a server before D2.
+   */
+  readonly approvalEffect?: CreditApprovalEffect | null;
+  /** The refund obligation an APPROVED note left, or `null` (D2). */
+  readonly refundObligation?: RefundObligation | null;
+}
+
+/** `CreditApprovalEffectView` — the two parts of a pending note's amount (ADR-023 D2). */
+export interface CreditApprovalEffect {
+  readonly reducesBalanceBy: MoneyView;
+  readonly refundOwed: MoneyView;
+}
+
+/**
+ * `RefundObligationView` (ADR-023 D2): money a customer is owed back. Nothing has been
+ * paid; `state` is `open` until refunds can be requested.
+ */
+export interface RefundObligation {
+  readonly id: string;
+  readonly invoiceId: string;
+  readonly creditNoteId: string;
+  readonly amount: MoneyView;
+  readonly state: string;
 }
 
 /*

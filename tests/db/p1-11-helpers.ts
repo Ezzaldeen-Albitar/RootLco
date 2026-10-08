@@ -225,6 +225,7 @@ export async function cleanP111Committed(admin: Pool): Promise<void> {
     await del('sal.delivery_checklist_templates');
     await del('sal.payment_allocations');
     await del('sal.receipt_reversals');
+    await del('sal.refund_obligations');
     await del('sal.credit_notes');
     await del('sal.receipts');
     await del('sal.invoice_status_history');

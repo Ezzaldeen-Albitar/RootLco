@@ -224,6 +224,31 @@ describe('D16 — what an invoice owed at a moment', () => {
     });
   });
 
+  // P1-32-PRE-OD-FD2A (ADR-023 D2): a paid invoice can now be credited, and what lies
+  // below zero is a refund obligation's. Neither read answers below zero, at any moment.
+  it('never answers below zero once a credit exceeds what was still owed', async () => {
+    await asOwnerRolledBack(async (c) => {
+      const invoice = (await seedInvoiceWithLine(c, 'fd2a_floor', { net: 100, tax: 0 })).invoice;
+      await issueInvoice(c, invoice);
+      const receipt = await seedReceipt(c, { amount: 100, payer: P9.SR });
+      const allocation = await allocateReceipt(c, receipt, invoice, 100);
+      const credit = await seedCreditNote(c, invoice, 30);
+      await setUser(c, P11.APPROVER_USER);
+      await c.query(`SELECT sal.approve_credit_note($1,NULL)`, [credit]);
+      await setUser(c, USER_A);
+      await restate(c, 'sal.invoices', ['issued_at'], invoice, '-10 days');
+      await restate(c, 'sal.receipts', ['received_at'], receipt, '-9 days');
+      await restate(c, 'sal.payment_allocations', ['allocated_at'], allocation, '-8 days');
+      await restate(c, 'sal.credit_notes', ['approved_at', 'issued_at'], credit, '-4 days');
+      expect(await openAsOf(c, invoice, '-9 days -12 hours')).toBe('100.0000');
+      expect(await openAsOf(c, invoice, '-5 days')).toBe('0.0000');
+      // Paid 100 and credited 30 on a gross of 100: zero, not minus 30.
+      expect(await openAsOf(c, invoice, '-3 days')).toBe('0.0000');
+      expect(await openLive(c, invoice)).toBe('0.0000');
+      expect(await openAsOf(c, invoice, '0 seconds')).toBe('0.0000');
+    });
+  });
+
   it('refuses a missing moment', async () => {
     await asOwnerRolledBack(async (c) => {
       await c.query('SAVEPOINT sp_null');

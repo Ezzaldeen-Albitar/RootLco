@@ -24,8 +24,10 @@ import {
   CREDIT_STATUSES,
   PAYMENT_STATUSES,
   REFUND_STATUSES,
+  assertCreditWithinCreditable,
   deriveCreditStatus,
   derivePaymentStatus,
+  deriveRefundStatus,
 } from '@api/modules/billing/domain/billing';
 import { Decimal, MONEY } from '@api/modules/pricing/domain/decimal';
 import { assertMinorUnitScale } from '@api/server/http/validation';
@@ -71,9 +73,29 @@ describe('D7 — the credit status is derived from effective credits against the
     expect(deriveCreditStatus(money('100.0000'), money('100'))).toBe('credited');
   });
 
-  it('publishes exactly the three credit statuses, and no refund but `none` yet', () => {
+  it('publishes exactly the three credit statuses, and the two refund statuses of D2 part 1', () => {
     expect([...CREDIT_STATUSES]).toEqual(['none', 'partly_credited', 'credited']);
-    expect([...REFUND_STATUSES]).toEqual(['none']);
+    // ADR-023 D2 (P1-32-PRE-OD-FD2A): `owed` while a refund obligation is open.
+    // Refund requests and their execution (FD2B) add the later states.
+    expect([...REFUND_STATUSES]).toEqual(['none', 'owed']);
+  });
+});
+
+describe('D2 — the credit ceiling and the refund status', () => {
+  it('reads owed only while something is owed back, compared by Decimal', () => {
+    expect(deriveRefundStatus(money('0'))).toBe('none');
+    expect(deriveRefundStatus(money('0.0000'))).toBe('none');
+    expect(deriveRefundStatus(money('0.0001'))).toBe('owed');
+    expect(deriveRefundStatus(money('30'))).toBe('owed');
+  });
+
+  it('refuses a credit above what the invoice can still be credited, and admits exactly it', () => {
+    expect(() => assertCreditWithinCreditable(money('100.0000'), money('100'))).not.toThrow();
+    expect(() => assertCreditWithinCreditable(money('100.0001'), money('100'))).toThrow(
+      /can still be credited/
+    );
+    // Nothing left to credit once the approved credits reach the gross.
+    expect(() => assertCreditWithinCreditable(money('0.0001'), money('0'))).toThrow();
   });
 });
 

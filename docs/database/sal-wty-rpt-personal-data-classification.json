@@ -1954,6 +1954,86 @@
       "searchable": false,
       "dataType": "uuid"
     },
+    "sal.refund_obligations.id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_obligations.tenant_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_obligations.company_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_obligations.branch_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_obligations.partner_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_obligations.invoice_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_obligations.credit_note_id": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_obligations.currency_code": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.refund_obligations.amount": {
+      "classification": "restricted",
+      "searchable": false,
+      "dataType": "numeric"
+    },
+    "sal.refund_obligations.source": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.refund_obligations.state": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "text"
+    },
+    "sal.refund_obligations.record_version": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "integer"
+    },
+    "sal.refund_obligations.created_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.refund_obligations.created_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
+    "sal.refund_obligations.updated_at": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "timestamp with time zone"
+    },
+    "sal.refund_obligations.updated_by": {
+      "classification": "internal",
+      "searchable": false,
+      "dataType": "uuid"
+    },
     "wty.warranty_coverage.company_id": {
       "classification": "internal",
       "searchable": false,

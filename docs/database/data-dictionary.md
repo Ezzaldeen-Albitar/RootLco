@@ -5077,30 +5077,30 @@ Verified authorized receiver (WHOLE ROW gated by `sal.delivery.view`).
 
 Credit-note (invoice-linked, WHOLE ROW gated); dual control.
 
-| Column            | Type            | class      | Null? | Purpose                                                                                                |
-| ----------------- | --------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------ |
-| `id`              | `uuid`          | internal   | no    | Primary key (UUID).                                                                                    |
-| `tenant_id`       | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                        |
-| `company_id`      | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                |
-| `branch_id`       | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                 |
-| `invoice_id`      | `uuid`          | internal   | no    | Composite FK -> `sal.invoices(...)` RESTRICT.                                                          |
-| `currency_code`   | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                |
-| `amount`          | `numeric(18,4)` | restricted | no    | RESTRICTED credit amount (>0); credit <= invoice open receivable at approval (under the invoice lock). |
-| `reason`          | `text`          | internal   | no    | Free-text reason.                                                                                      |
-| `approval_state`  | `text`          | internal   | no    | CHECK IN ('pending','approved','rejected','withdrawn'); every state but pending is final (ADR-023 D3). |
-| `requested_by`    | `uuid`          | internal   | no    | Maker; server-stamped `iam.current_user_id()` (H-fin-6).                                               |
-| `approved_by`     | `uuid`          | internal   | yes   | Approver; server-stamped at approval; CHECK `approved_by <> requested_by`.                             |
-| `approved_at`     | `timestamptz`   | internal   | yes   | Approval time (set with approval).                                                                     |
-| `issued_at`       | `timestamptz`   | internal   | yes   | Issue time, stamped by the trigger at approval; frozen afterwards.                                     |
-| `decided_by`      | `uuid`          | internal   | yes   | Who withdrew (the requester) or rejected (another person) the request; stamped by the trigger.         |
-| `decided_at`      | `timestamptz`   | internal   | yes   | When it was withdrawn or rejected; stamped by the trigger, frozen afterwards.                          |
-| `decision_reason` | `text`          | internal   | yes   | Why it was rejected; required, not blank, at most 2000 characters, on a rejection only.                |
-| `idempotency_key` | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                   |
-| `record_version`  | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                 |
-| `created_at`      | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                |
-| `created_by`      | `uuid`          | internal   | no    | Creating actor (user id).                                                                              |
-| `updated_at`      | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                       |
-| `updated_by`      | `uuid`          | internal   | yes   | Last-updating actor.                                                                                   |
+| Column            | Type            | class      | Null? | Purpose                                                                                                                                                                                                                          |
+| ----------------- | --------------- | ---------- | ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`              | `uuid`          | internal   | no    | Primary key (UUID).                                                                                                                                                                                                              |
+| `tenant_id`       | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                                                                                  |
+| `company_id`      | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                                                                                                                                          |
+| `branch_id`       | `uuid`          | internal   | no    | Branch scope (branch composite scope).                                                                                                                                                                                           |
+| `invoice_id`      | `uuid`          | internal   | no    | Composite FK -> `sal.invoices(...)` RESTRICT.                                                                                                                                                                                    |
+| `currency_code`   | `text`          | internal   | no    | ISO currency; FK -> `shared.currencies(code)` RESTRICT.                                                                                                                                                                          |
+| `amount`          | `numeric(18,4)` | restricted | no    | RESTRICTED credit amount (>0); at approval (under the invoice lock) at most the issued invoice gross less the credits already approved (ADR-023 D2); an excess over the open receivable is recorded in `sal.refund_obligations`. |
+| `reason`          | `text`          | internal   | no    | Free-text reason.                                                                                                                                                                                                                |
+| `approval_state`  | `text`          | internal   | no    | CHECK IN ('pending','approved','rejected','withdrawn'); every state but pending is final (ADR-023 D3).                                                                                                                           |
+| `requested_by`    | `uuid`          | internal   | no    | Maker; server-stamped `iam.current_user_id()` (H-fin-6).                                                                                                                                                                         |
+| `approved_by`     | `uuid`          | internal   | yes   | Approver; server-stamped at approval; CHECK `approved_by <> requested_by`.                                                                                                                                                       |
+| `approved_at`     | `timestamptz`   | internal   | yes   | Approval time (set with approval).                                                                                                                                                                                               |
+| `issued_at`       | `timestamptz`   | internal   | yes   | Issue time, stamped by the trigger at approval; frozen afterwards.                                                                                                                                                               |
+| `decided_by`      | `uuid`          | internal   | yes   | Who withdrew (the requester) or rejected (another person) the request; stamped by the trigger.                                                                                                                                   |
+| `decided_at`      | `timestamptz`   | internal   | yes   | When it was withdrawn or rejected; stamped by the trigger, frozen afterwards.                                                                                                                                                    |
+| `decision_reason` | `text`          | internal   | yes   | Why it was rejected; required, not blank, at most 2000 characters, on a rejection only.                                                                                                                                          |
+| `idempotency_key` | `text`          | internal   | yes   | Business idempotency key; partial `UNIQUE(tenant_id, idempotency_key)` (BR-SAL-001).                                                                                                                                             |
+| `record_version`  | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                                                                                           |
+| `created_at`      | `timestamptz`   | internal   | no    | Row creation timestamp.                                                                                                                                                                                                          |
+| `created_by`      | `uuid`          | internal   | no    | Creating actor (user id).                                                                                                                                                                                                        |
+| `updated_at`      | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                                                                                                                                                 |
+| `updated_by`      | `uuid`          | internal   | yes   | Last-updating actor.                                                                                                                                                                                                             |
 
 ### `sal.delivery_checklist_results`
 
@@ -5527,6 +5527,53 @@ Receipt (branch-scoped, WHOLE ROW gated by `sal.finance.view`).
 | `updated_by`                   | `uuid`          | internal   | yes   | Last-updating actor.                                                                                                                                                                                                             |
 | `deleted_at`                   | `timestamptz`   | internal   | yes   | Soft-delete timestamp (NULL = live).                                                                                                                                                                                             |
 | `deleted_by`                   | `uuid`          | internal   | yes   | Soft-deleting actor.                                                                                                                                                                                                             |
+
+### `sal.refund_obligations`
+
+Money a customer is owed back because an approved credit note exceeded what its invoice still owed
+(P1-32-PRE-OD-FD2A, ADR-023 D2, migration 20261008121000). An operational record, not an
+accounting entry: no account, posting, cash or bank movement. WHOLE ROW gated by
+`sal.finance.view`; forced RLS. Created only by `sal.approve_credit_note`, for exactly the excess,
+one per credit note, with one `refund_obligation_recorded` financial event. Only `open` is
+reachable until refund requests exist (FD2B); no row is deleted.
+
+| Column           | Type            | class      | Null? | Purpose                                                                                                                                                                  |
+| ---------------- | --------------- | ---------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`             | `uuid`          | internal   | no    | Primary key (UUID).                                                                                                                                                      |
+| `tenant_id`      | `uuid`          | internal   | no    | Tenant scope; FK -> `org.tenants(id)` RESTRICT.                                                                                                                          |
+| `company_id`     | `uuid`          | internal   | no    | Company scope (branch composite scope).                                                                                                                                  |
+| `branch_id`      | `uuid`          | internal   | no    | Branch scope; composite FK -> `org.branches(tenant_id, company_id, id)` RESTRICT.                                                                                        |
+| `partner_id`     | `uuid`          | internal   | no    | The customer owed the money: the invoice's billed party (`sal.invoices.payer_partner_id`), bound by `sal.guard_refund_obligation_insert`; FK -> `crm.business_partners`. |
+| `invoice_id`     | `uuid`          | internal   | no    | Composite FK -> `sal.invoices(tenant_id, company_id, branch_id, id)` RESTRICT; the credit note's invoice.                                                                |
+| `credit_note_id` | `uuid`          | internal   | no    | The APPROVED credit note whose excess created it; composite FK -> `sal.credit_notes(...)` RESTRICT; `UNIQUE` per credit note (`uq_refund_obligations_credit_note`).      |
+| `currency_code`  | `text`          | internal   | no    | The invoice's currency (bound by the guard); FK -> `shared.currencies(code)` RESTRICT.                                                                                   |
+| `amount`         | `numeric(18,4)` | restricted | no    | RESTRICTED amount owed (>0, within the currency's minor unit): the credit less the invoice's open receivable just before it, never below zero. Frozen.                   |
+| `source`         | `text`          | internal   | no    | CHECK IN ('credit_excess'). An explicit obligation raised by hand is not built (open Owner question).                                                                    |
+| `state`          | `text`          | internal   | no    | CHECK IN ('open','settled','cancelled'); born `open`; every state change is refused (`refund_obligation_transition_unavailable`) until refund requests are built (FD2B). |
+| `record_version` | `integer`       | internal   | no    | Optimistic-concurrency version, bumped by `shared.touch_row_metadata`.                                                                                                   |
+| `created_at`     | `timestamptz`   | internal   | no    | Row creation timestamp; stamped for the request path.                                                                                                                    |
+| `created_by`     | `uuid`          | internal   | no    | The approver whose approval created it; stamped from the session for the request path.                                                                                   |
+| `updated_at`     | `timestamptz`   | internal   | yes   | Last-update timestamp (NULL until first update).                                                                                                                         |
+| `updated_by`     | `uuid`          | internal   | yes   | Last-updating actor.                                                                                                                                                     |
+
+### The D2 credit ceiling and the open receivable (P1-32-PRE-OD-FD2A, migration 20261008121000)
+
+Owner decision D2 (ADR-023), part 1.
+
+- `sal.approve_credit_note(p_credit_id uuid, p_correlation_id uuid)` — the ceiling is the issued
+  invoice's gross less the credits already APPROVED on it, read under the note and invoice locks
+  (`credit_note_exceeds_creditable`). An approved credit above the invoice's open receivable just
+  before it records the excess in `sal.refund_obligations` with its `refund_obligation_recorded`
+  event, in the same transaction.
+- `sal.invoice_open_receivable` and `sal.invoice_open_receivable_as_of` never answer below zero;
+  for a moment at or after the read the two still agree.
+- `sal.financial_events.event_type` admits `refund_obligation_recorded` and `source_type` admits
+  `refund_obligation`; the provenance guard binds the event to the obligation's amount and
+  currency, and the completeness trigger requires it at commit. No event is an accounting entry.
+- Interim rule (open policy point): `sal.guard_receipt_reversal_request` and
+  `sal.approve_receipt_reversal` refuse reversing a receipt that paid an invoice with an open
+  refund obligation (`receipt_reversal_refund_obligation_open`), after share-locking those
+  invoices.
 
 ### As-of settlement reads and request-path instants (P1-32-PRE-OD-FD16A, migration 20261008090000)
 

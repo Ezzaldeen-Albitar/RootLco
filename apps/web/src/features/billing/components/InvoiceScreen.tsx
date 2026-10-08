@@ -24,6 +24,7 @@ import type { ReadState } from '@/lib/api/read-operation';
 import { CLIENT_READ_TIMEOUT_MS } from '@/lib/api/read-budget';
 import { unreachable, type ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { isZeroMoney } from '@/lib/money';
 import { unitName } from '@/lib/unit-name';
 
 import {
@@ -1823,6 +1824,18 @@ function SettlementFields({
           {translateDynamic(messages, `invoices.refundStatus.${settlement.refundStatus}`)}
         </span>
       </Field>
+      {settlement.refundOwed !== undefined && !isZeroMoney(settlement.refundOwed.amount) ? (
+        // ADR-023 D2: what the customer is owed back, the server's sum. Nothing is
+        // paid automatically.
+        <Field label={translate(messages, 'invoices.settlement.refundOwed')} wide>
+          <span data-testid="invoice-refund-owed">
+            <Money money={settlement.refundOwed} locale={locale} />
+          </span>
+          <span className="block text-caption text-text-muted">
+            {translate(messages, 'invoices.settlement.refundOwedExplain')}
+          </span>
+        </Field>
+      ) : null}
       {thirdParty.length > 0 ? (
         <ThirdPartyPayments
           locale={locale}

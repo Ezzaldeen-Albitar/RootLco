@@ -29,9 +29,20 @@
  *    states the moment it was read on the database clock; the invoice list
  *    narrows to one kind of sale.
  *
+ *  - D2, part 1 (P1-32-PRE-OD-FD2A): a credit is bounded by what the invoice can
+ *    still be credited — its gross less the credits already approved — so a paid
+ *    invoice is creditable, and the excess over what it still owed is one open
+ *    refund obligation, audited, with its financial event, shown on the approval,
+ *    the note's detail and the settlement view (`refundStatus` `owed`). Nothing is
+ *    paid. A refused approval past the ceiling is named and recorded once; the
+ *    payment behind an open obligation is not reversed (interim rule); the branch
+ *    list narrows and pages, and refuses a caller without the finance view, another
+ *    branch and another tenant.
+ *
  * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
  *   sal.credit-note-withdraw: route service authorization success denial audit idempotency stale-version isolation cross-tenant
  *   sal.credit-note-reject: route service authorization success denial audit idempotency stale-version isolation cross-tenant
+ *   sal.refund-obligation-list: route service authorization success denial isolation cross-tenant pagination
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Pool } from 'pg';
@@ -67,6 +78,7 @@ import {
   SAL_APPROVER,
   SAL_CREDIT_TRACE,
   SAL_FULL,
+  SAL_NO_FINANCE,
   SAL_PERMISSION_ELSEWHERE,
   SAL_TENANT_B,
   auditCountFor,
@@ -98,6 +110,11 @@ import { POST as SALES_RETURN_CREATE } from '@/app/api/v1/sales-returns/route';
 import { GET as CREDIT_NOTE_DETAIL } from '@/app/api/v1/credit-notes/[creditNoteId]/route';
 import { GET as INVOICE_OUTSTANDING } from '@/app/api/v1/invoices/[invoiceId]/outstanding/route';
 import { GET as INVOICE_LIST } from '@/app/api/v1/invoices/route';
+import { POST as REQUEST_REVERSAL } from '@/app/api/v1/payments/[paymentId]/reversals/route';
+import {
+  GET as REFUND_OBLIGATION_LIST,
+  REFUND_OBLIGATION_LIST_OPERATION,
+} from '@/app/api/v1/refund-obligations/route';
 
 let admin: Pool;
 let runtime: Pool;
@@ -825,6 +842,10 @@ describe('D12 — refusals by business rule are recorded after the rollback', ()
       { params: Promise.resolve({ invoiceId: invoice.invoiceId }) }
     );
     expect(refused.status).toBe(409);
+    // ADR-023 D2: the rule is named on the amount, and no figure is.
+    expect((await bodyOf<ProblemBody>(refused)).violations).toEqual([
+      { path: 'body.amount', rule: 'credit_note_exceeds_creditable' },
+    ]);
     expect(
       await countRowsOf(`SELECT count(*)::text AS n FROM sal.credit_notes WHERE invoice_id = $1`, [
         invoice.invoiceId,
@@ -842,7 +863,7 @@ describe('D12 — refusals by business rule are recorded after the rollback', ()
         actor_id: SAL_FULL.userId,
         detail:
           `operation=sal.credit-note-create entity=sal.invoice/${invoice.invoiceId} ` +
-          'rule=credit_note_exceeds_open_amount outcome=refused',
+          'rule=credit_note_exceeds_creditable outcome=refused',
       },
     ]);
     // Nothing but the rule: no amount, no reason text.
@@ -1173,5 +1194,279 @@ describe('finance checkpoint fixes B — the counter finds its issued sales (DF-
     const foreign = await list({ saleKind: 'counter_sale' });
     expect(foreign.status === 403 || foreign.status === 200).toBe(true);
     if (foreign.status === 200) expect(await ids(foreign)).not.toContain(sale.invoiceId);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ADR-023 D2, part 1 (P1-32-PRE-OD-FD2A): the ceiling is what the invoice can
+// still be credited, the excess of an approved credit over what was still owed is
+// a refund obligation the customer is owed — never paid automatically — and a
+// payment behind an open obligation is not reversed (interim rule).
+// ---------------------------------------------------------------------------
+
+interface MoneyBody {
+  readonly amount: string;
+  readonly currency: string;
+}
+
+interface RefundObligationBody {
+  readonly id: string;
+  readonly invoiceId: string;
+  readonly creditNoteId: string;
+  readonly partnerId: string;
+  readonly amount: MoneyBody;
+  readonly source: string;
+  readonly state: string;
+}
+
+interface ApprovalResultBody extends CreditNoteResultBody {
+  readonly refundObligation: RefundObligationBody | null;
+}
+
+interface RefundObligationPage {
+  readonly items: readonly RefundObligationBody[];
+  readonly nextCursor?: string | null;
+}
+
+/** An issued invoice of 100.0000 paid in full through the routes; returns the receipt too. */
+async function paidInvoice(tag: string): Promise<{ invoiceId: string; receiptId: string }> {
+  const invoice = await seedIssuedInvoice(tag);
+  authAs(SAL_FULL);
+  const recorded = await post(RECORD_PAYMENT, '/api/v1/payments', {
+    companyId: COMPANY_A1,
+    branchId: BRANCH_A1,
+    paymentMethodId: PAYMENT_METHOD_A,
+    payerPartnerId: PARTNER_A,
+    currency: 'USD',
+    amount: '100.00',
+  });
+  if (recorded.status !== 201) throw new Error(`fixture receipt failed: ${await recorded.text()}`);
+  const receiptId = (await bodyOf<{ id: string }>(recorded)).id;
+  authAs(SAL_FULL);
+  const allocated = await (ALLOCATE_PAYMENT as ParamHandler<{ paymentId: string }>)(
+    new Request(`http://localhost/api/v1/payments/${receiptId}/allocations`, {
+      method: 'POST',
+      headers: commandHeaders(randomUUID()),
+      body: JSON.stringify({ invoiceId: invoice.invoiceId, amount: '100.00', currency: 'USD' }),
+    }),
+    { params: Promise.resolve({ paymentId: receiptId }) }
+  );
+  if (allocated.status !== 201) {
+    throw new Error(`fixture allocation failed: ${await allocated.text()}`);
+  }
+  return { invoiceId: invoice.invoiceId, receiptId };
+}
+
+const listObligations = (
+  query: Record<string, string>,
+  principal: Principal = SAL_FULL
+): Promise<Response> => {
+  authAs(principal);
+  const search = new URLSearchParams({
+    companyId: COMPANY_A1,
+    branchId: BRANCH_A1,
+    ...query,
+  });
+  return (REFUND_OBLIGATION_LIST as (request: Request) => Promise<Response>)(
+    new Request(`http://localhost/api/v1/refund-obligations?${search.toString()}`)
+  );
+};
+
+const readNote = (creditNoteId: string, principal: Principal = SAL_FULL): Promise<Response> => {
+  authAs(principal);
+  return (CREDIT_NOTE_DETAIL as ParamHandler<{ creditNoteId: string }>)(
+    new Request(`http://localhost/api/v1/credit-notes/${creditNoteId}`),
+    { params: Promise.resolve({ creditNoteId }) }
+  );
+};
+
+const readOutstanding = (invoiceId: string): Promise<Response> => {
+  authAs(SAL_FULL);
+  return (INVOICE_OUTSTANDING as ParamHandler<{ invoiceId: string }>)(
+    new Request(`http://localhost/api/v1/invoices/${invoiceId}/outstanding`),
+    { params: Promise.resolve({ invoiceId }) }
+  );
+};
+
+describe('D2 — a paid invoice is creditable, and the excess is owed back', () => {
+  it('previews the split, approves, and leaves exactly one open obligation with its audit record', async () => {
+    const { invoiceId } = await paidInvoice('odfd2a_paid');
+    const note = await pendingNote(invoiceId, '30.00');
+
+    // Before the approval the detail says what it would do: nothing left to reduce,
+    // all of it owed back.
+    const preview = await readNote(note.id);
+    expect(preview.status).toBe(200);
+    const previewBody = await bodyOf<{
+      approvalEffect: { reducesBalanceBy: MoneyBody; refundOwed: MoneyBody } | null;
+      refundObligation: RefundObligationBody | null;
+    }>(preview);
+    expect(previewBody.approvalEffect?.reducesBalanceBy.amount).toBe('0.0000');
+    expect(previewBody.approvalEffect?.refundOwed.amount).toBe('30.0000');
+    expect(previewBody.refundObligation).toBeNull();
+
+    authAs(SAL_APPROVER);
+    const approved = await approve(note.id);
+    expect(approved.status).toBe(200);
+    const body = await bodyOf<ApprovalResultBody>(approved);
+    expect(body.creditNote.approvalState).toBe('approved');
+    expect(body.refundObligation).toMatchObject({
+      invoiceId,
+      creditNoteId: note.id,
+      partnerId: PARTNER_A,
+      amount: { amount: '30.0000', currency: 'USD' },
+      source: 'credit_excess',
+      state: 'open',
+    });
+    const obligationId = body.refundObligation?.id ?? '';
+    expect(await auditCountFor('sal.refund_obligation.recorded', obligationId)).toBe(1);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM sal.financial_events
+          WHERE source_id = $1 AND event_type = 'refund_obligation_recorded'`,
+        [obligationId]
+      )
+    ).toBe(1);
+    expect(await invoiceOpenReceivable(invoiceId)).toBe('0.0000');
+
+    // The settlement view (D7) says the customer is owed it.
+    const outstanding = await bodyOf<{
+      settlement: { refundStatus: string; refundOwed: MoneyBody } | null;
+    }>(await readOutstanding(invoiceId));
+    expect(outstanding.settlement?.refundStatus).toBe('owed');
+    expect(outstanding.settlement?.refundOwed.amount).toBe('30.0000');
+
+    // The approved detail names the obligation; a replay of the approval answers it again.
+    const after = await bodyOf<{
+      approvalEffect: unknown;
+      refundObligation: { id: string } | null;
+    }>(await readNote(note.id));
+    expect(after.approvalEffect).toBeNull();
+    expect(after.refundObligation?.id).toBe(obligationId);
+    authAs(SAL_APPROVER);
+    const replay = await bodyOf<ApprovalResultBody>(await approve(note.id));
+    expect(replay.replayed).toBe(true);
+    expect(replay.refundObligation?.id).toBe(obligationId);
+    expect(await auditCountFor('sal.refund_obligation.recorded', obligationId)).toBe(1);
+  });
+
+  it('answers none with no obligation when the credit stays within what is owed', async () => {
+    const invoice = await seedIssuedInvoice('odfd2a_within');
+    const note = await pendingNote(invoice.invoiceId, '40.00');
+    authAs(SAL_APPROVER);
+    const body = await bodyOf<ApprovalResultBody>(await approve(note.id));
+    expect(body.refundObligation).toBeNull();
+    const outstanding = await bodyOf<{
+      settlement: { refundStatus: string; refundOwed: MoneyBody } | null;
+    }>(await readOutstanding(invoice.invoiceId));
+    expect(outstanding.settlement?.refundStatus).toBe('none');
+    expect(outstanding.settlement?.refundOwed.amount).toBe('0.0000');
+  });
+
+  it('refuses an approval past the gross less the approved credits, by name, recorded once', async () => {
+    const { invoiceId } = await paidInvoice('odfd2a_ceiling');
+    const first = await pendingNote(invoiceId, '60.00');
+    const second = await pendingNote(invoiceId, '60.00');
+    authAs(SAL_APPROVER);
+    expect((await approve(first.id)).status).toBe(200);
+    authAs(SAL_APPROVER);
+    const refused = await approve(second.id);
+    expect(refused.status).toBe(409);
+    const problem = await bodyOf<ProblemBody>(refused);
+    expect(problem.code).toBe('ERR-TRN-001');
+    expect(problem.violations).toEqual([
+      { path: 'path.creditNoteId', rule: 'credit_note_exceeds_creditable' },
+    ]);
+    expect(JSON.stringify(problem)).not.toContain('60.00');
+    expect((await storedNote(second.id)).state).toBe('pending');
+    expect(await creditEvents(second.id, 'credit_note_exceeds_creditable')).toBe(1);
+    expect(await approvedCreditEvents(second.id)).toBe(0);
+  });
+
+  it('refuses reversing the payment behind an open obligation, by name, recorded once', async () => {
+    const { invoiceId, receiptId } = await paidInvoice('odfd2a_reversal');
+    const note = await pendingNote(invoiceId, '25.00');
+    authAs(SAL_APPROVER);
+    expect((await approve(note.id)).status).toBe(200);
+
+    const version = (
+      await admin.query<{ v: number }>(
+        `SELECT record_version AS v FROM sal.receipts WHERE id = $1`,
+        [receiptId]
+      )
+    ).rows[0]?.v;
+    authAs(SAL_FULL);
+    const refused = await (REQUEST_REVERSAL as ParamHandler<{ paymentId: string }>)(
+      new Request(`http://localhost/api/v1/payments/${receiptId}/reversals`, {
+        method: 'POST',
+        headers: commandHeaders(randomUUID(), version),
+        body: JSON.stringify({ reason: 'Entered against the wrong invoice' }),
+      }),
+      { params: Promise.resolve({ paymentId: receiptId }) }
+    );
+    expect(refused.status).toBe(409);
+    expect((await bodyOf<ProblemBody>(refused)).violations).toEqual([
+      { path: 'path.paymentId', rule: 'receipt_reversal_refund_obligation_open' },
+    ]);
+    expect(
+      await countRowsOf(
+        `SELECT count(*)::text AS n FROM sal.receipt_reversals WHERE original_receipt_id = $1`,
+        [receiptId]
+      )
+    ).toBe(0);
+    expect(
+      await refusalEvents('sal.receipt', receiptId, 'receipt_reversal_refund_obligation_open')
+    ).toBe(1);
+  });
+});
+
+describe('D2 — sal.refund-obligation-list', () => {
+  it('declares the finance view only, at the branch', () => {
+    expect(REFUND_OBLIGATION_LIST_OPERATION.permissions).toEqual(['sal.finance.view']);
+    expect(REFUND_OBLIGATION_LIST_OPERATION.scope).toBe('branch');
+  });
+
+  it('lists a branch, newest first, narrowed by invoice, customer and state, one page at a time', async () => {
+    const one = await paidInvoice('odfd2a_list_one');
+    const two = await paidInvoice('odfd2a_list_two');
+    for (const invoiceId of [one.invoiceId, two.invoiceId]) {
+      const note = await pendingNote(invoiceId, '10.00');
+      authAs(SAL_APPROVER);
+      expect((await approve(note.id)).status).toBe(200);
+    }
+    const byInvoice = await listObligations({ invoiceId: one.invoiceId });
+    expect(byInvoice.status).toBe(200);
+    const page = await bodyOf<RefundObligationPage>(byInvoice);
+    expect(page.items.map((item) => [item.invoiceId, item.amount.amount, item.state])).toEqual([
+      [one.invoiceId, '10.0000', 'open'],
+    ]);
+    const byCustomer = await bodyOf<RefundObligationPage>(
+      await listObligations({ partnerId: PARTNER_A, state: 'open' })
+    );
+    const invoices = byCustomer.items.map((item) => item.invoiceId);
+    // Newest first.
+    expect(invoices.indexOf(two.invoiceId)).toBeLessThan(invoices.indexOf(one.invoiceId));
+    expect(
+      (await bodyOf<RefundObligationPage>(await listObligations({ state: 'settled' }))).items
+    ).toEqual([]);
+
+    const first = await bodyOf<RefundObligationPage>(await listObligations({ limit: '1' }));
+    expect(first.items).toHaveLength(1);
+    expect(typeof first.nextCursor).toBe('string');
+    const next = await bodyOf<RefundObligationPage>(
+      await listObligations({ limit: '1', cursor: first.nextCursor ?? '' })
+    );
+    expect(next.items).toHaveLength(1);
+    expect(next.items[0]?.id).not.toBe(first.items[0]?.id);
+
+    expect((await listObligations({ state: 'owing' })).status).toBe(422);
+  });
+
+  it('refuses a caller without the finance view, another branch and another tenant', async () => {
+    expect((await listObligations({}, SAL_NO_FINANCE)).status).toBe(403);
+    expect((await listObligations({}, SAL_PERMISSION_ELSEWHERE)).status).toBe(403);
+    const crossTenant = await listObligations({}, SAL_TENANT_B);
+    expect(crossTenant.status).toBe(403);
+    expect(await crossTenant.text()).not.toContain('credit_excess');
   });
 });

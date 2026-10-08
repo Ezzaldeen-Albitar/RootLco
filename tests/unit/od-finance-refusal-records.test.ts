@@ -187,12 +187,8 @@ describe('D12 — a credit-note request above what remains creditable is marked 
     new InvoiceService({
       findInvoiceForUpdate: async () => invoiceRow(status),
       minorUnitForCurrency: async () => 3,
-      openReceivable: async () => ({
-        invoiceId: INVOICE,
-        amount: '49.3800',
-        currencyCode: 'JOD',
-        status,
-      }),
+      // ADR-023 D2: the request is bounded by what the invoice can still be credited.
+      creditCeiling: async () => ({ creditable: '49.3800', owed: '49.3800' }),
     } as unknown as BillingRepository);
   const refusalOf = async (status: string, amount: string): Promise<unknown> => {
     const { db } = fakeHandle();
@@ -215,7 +211,7 @@ describe('D12 — a credit-note request above what remains creditable is marked 
     expect(businessRefusalOf(error)).toEqual({
       entityType: 'sal.invoice',
       entityId: INVOICE,
-      rule: 'credit_note_exceeds_open_amount',
+      rule: 'credit_note_exceeds_creditable',
     });
   });
 

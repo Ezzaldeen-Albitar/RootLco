@@ -341,8 +341,15 @@ read (Owner decision D7, ADR-023), with the two amounts behind them:
   "Paid" <!-- invoices.paymentStatus.paid --> , or "Nothing to pay" <!-- invoices.paymentStatus.nothing_due -->
   when credits cleared the invoice and no money was received. "Paid so far" <!-- invoices.settlement.paid -->
   is the total of the receipts allocated to it, reversed receipts left out.
-- "Refund" <!-- invoices.settlement.refund --> — "No refund" <!-- invoices.refundStatus.none --> . The
-  application has no way to pay money back yet, so nothing else can appear here.
+- "Refund" <!-- invoices.settlement.refund --> — "No refund" <!-- invoices.refundStatus.none --> , or
+  "Owed to the customer, not yet paid back" <!-- invoices.refundStatus.owed --> when an approved credit
+  note was larger than what the invoice still owed (Owner decision D2, ADR-023). The difference is
+  then shown as "Refund owed to the customer" <!-- invoices.settlement.refundOwed --> with its
+  amount, and "No money is paid back automatically." <!-- invoices.settlement.refundOwedExplain -->
+  The application records that the customer is owed the money; it does not pay it. Asking for a
+  refund, its second approver and paying it out are not in this release. The printed copy shows the
+  same refund status and, when there is one, the refund owed, in its "Payments and credits as of"
+  section.
 
 A fully credited invoice therefore reads "Fully credited" and "Nothing to pay" — never "Paid". The
 invoice's own status stays "Issued", so a part sold on it can still be returned.
@@ -537,7 +544,24 @@ issue — NOT AVAILABLE.**
 
 Whichever way it is raised, the note is born waiting for approval and credits nothing. **Approving
 it is a second person's act, on the Credit notes screen** (§6.2a): the person who raised a note can
-never approve it. **While it waits, another authorised person may reject it, saying why, and the
+never approve it.
+
+**How much can be credited (Owner decision D2).** The application credits an invoice up to its
+total less the credit notes already approved on it, even once it is paid. Notes still waiting do not
+count when a note is raised; each approval checks again, so two approvals at the same moment can
+never credit more than the invoice's total. The **Raise a credit note** form in this release still
+offers at most what the invoice still owes; a credit can go beyond what is owed when a payment
+arrives between the request and its approval. A request or an approval above that is refused with "This
+amount is more than the invoice can still be credited. Credit notes already approved on the same
+invoice count toward it." <!-- form.violation.credit_note_exceeds_creditable --> When an approved
+credit is larger than what the customer still owes, the balance goes to zero and the rest is
+recorded as a refund owed to the customer (§6.2.7). No money is paid automatically, and nothing is
+posted to any account. While a customer is owed a refund on an invoice, a receipt that paid that
+invoice cannot be reversed: "This receipt paid an invoice on which the customer is owed a refund, so
+it cannot be reversed while that refund is still owed."
+<!-- form.violation.receipt_reversal_refund_obligation_open --> This is a temporary rule while the
+
+refund steps are being built. **While it waits, another authorised person may reject it, saying why, and the
 person who raised it may withdraw it** (§6.2a). Approved, rejected and withdrawn are final.
 
 **What is still NOT AVAILABLE:**
@@ -740,7 +764,11 @@ credit-approval permission and a credit note approval limit that covers it
    <!-- creditNotes.approve.action --> . "Approving credits this amount against its invoice, so what
    the customer owes goes down by it." <!-- creditNotes.approve.explain --> The screen asks once more,
    **Approve this credit note?** <!-- creditNotes.approve.confirmTitle --> , naming the amount and the
-   reason; press **Approve this credit note** again, or **Cancel** <!-- overlay.cancel --> .
+   reason. When the amount is more than the invoice still owes, it also says how it splits: "This is
+   more than the invoice still owes: approving reduces what is owed by {reduces}, and the customer
+   will be owed {refund} as a refund. No money is paid automatically."
+   <!-- creditNotes.approve.refundSplit --> Press **Approve this credit note** again, or **Cancel**
+   <!-- overlay.cancel --> .
 3. The screen says "The credit note was approved. What the customer owes on the invoice has gone
    down by its amount." <!-- creditNotes.approve.done --> , the note reads **Approved**, and the list
    is read again.

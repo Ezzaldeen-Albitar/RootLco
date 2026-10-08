@@ -283,6 +283,15 @@ export class ReceiptReversalService {
       ).id;
     } catch (error) {
       const token = reversalRefusalToken(error);
+      if (token === RECEIPT_REVERSAL_RULES.refundObligationOpen) {
+        refuse(
+          entity,
+          'path.paymentId',
+          token,
+          `Receipt ${receipt.id} paid an invoice whose customer is owed a refund, so it is not reversed while that refund is open.`,
+          error
+        );
+      }
       if (
         token === RECEIPT_REVERSAL_RULES.exists ||
         token === RECEIPT_REVERSAL_RULES.receiptReversed ||
@@ -684,7 +693,8 @@ export class ReceiptReversalService {
       token === RECEIPT_REVERSAL_RULES.selfRejection ||
       token === RECEIPT_REVERSAL_RULES.notRequester ||
       token === RECEIPT_REVERSAL_RULES.decided ||
-      token === RECEIPT_REVERSAL_RULES.receiptReversed
+      token === RECEIPT_REVERSAL_RULES.receiptReversed ||
+      token === RECEIPT_REVERSAL_RULES.refundObligationOpen
     ) {
       refuse(entity, 'path.reversalId', token, `${what} was refused by the rule ${token}`, error);
     }

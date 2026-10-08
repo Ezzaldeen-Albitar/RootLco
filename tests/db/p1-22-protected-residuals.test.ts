@@ -234,16 +234,29 @@ describe('P1-22 residual 2 (BR-SAL-002) — only the primitive bounds the alloca
 
       // The derivations now report impossible values, which is what an unbounded
       // sum actually costs: a receipt of 100 with 400 more allocated than exists,
-      // and an invoice whose open receivable has gone negative.
+      // and an invoice paid 400 past its gross. Since P1-32-PRE-OD-FD2A (ADR-023 D2)
+      // sal.invoice_open_receivable never answers below zero — what lies below zero
+      // is a refund obligation's to record — so the over-payment is measured here
+      // from the rows themselves, and the derivation is shown floored at zero.
       const unallocated = (
         await c.query<{ u: string }>(`SELECT sal.receipt_unallocated($1)::text AS u`, [receipt])
       ).rows[0]!.u;
       expect(unallocated).toBe('-400.0000');
 
+      const overpaid = (
+        await c.query<{ o: string }>(
+          `SELECT (a.gross_total - (SELECT sum(pa.amount) FROM sal.payment_allocations pa
+                                       WHERE pa.invoice_id = a.invoice_id))::text AS o
+             FROM sal.invoice_amounts a WHERE a.invoice_id = $1`,
+          [invoice]
+        )
+      ).rows[0]!.o;
+      expect(overpaid).toBe('-400.0000');
+
       const open = (
         await c.query<{ o: string }>(`SELECT sal.invoice_open_receivable($1)::text AS o`, [invoice])
       ).rows[0]!.o;
-      expect(open).toBe('-400.0000');
+      expect(open).toBe('0.0000');
     });
   });
 

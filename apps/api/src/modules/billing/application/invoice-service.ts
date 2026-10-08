@@ -17,9 +17,11 @@
  * revision left draft — and summed by PostgreSQL in `numeric`.
  *
  * The only amount a caller may name anywhere in this file is a credit note's, and
- * it is bounded twice: by `assertCreditWithinOpenAmount` against
- * `sal.invoice_open_receivable` read under the invoice lock, and again inside
- * `sal.approve_credit_note` under that function's own lock.
+ * it is bounded twice: by `assertCreditWithinCreditable` against what the invoice
+ * can still be credited (its gross less the credits already approved, ADR-023 D2)
+ * read under the invoice lock, and again inside `sal.approve_credit_note` under
+ * that function's own lock. What a credit exceeds the open receivable by is
+ * recorded by the database as a refund obligation; nothing is paid out.
  *
  * ## What the database owns, and what this service owns alone
  *
@@ -77,7 +79,7 @@ import {
   CREDIT_NOTE_LIMIT_TYPE,
   INVOICE_LINE_TYPES,
   MAX_REASON,
-  assertCreditWithinOpenAmount,
+  assertCreditWithinCreditable,
   assertCurrencyMatches,
   assertInvoiceIsDraft,
   invoiceSourceRefusalOf,
@@ -94,7 +96,9 @@ import {
   toCreditNoteView,
   toInvoiceLineView,
   toInvoiceView,
+  toRefundObligationView,
   type CreditNoteView,
+  type RefundObligationView,
   type InvoiceDetailView,
   type InvoiceView,
 } from './billing-read-service';
@@ -195,7 +199,9 @@ export const CREDIT_NOTE_REFUSAL_RULES = Object.freeze({
   selfRejection: 'credit_note_self_rejection',
   notRequester: 'credit_note_withdraw_not_requester',
   decided: 'credit_note_decision_frozen',
-  exceedsOpenAmount: 'credit_note_exceeds_open_amount',
+  // ADR-023 D2 (P1-32-PRE-OD-FD2A): above the invoice's gross less the credits
+  // already approved. Also the token `sal.approve_credit_note` raises for it.
+  exceedsCreditable: 'credit_note_exceeds_creditable',
   // ADR-023 D13 — the approval permission and the credit-note approval limit. Each
   // is also the token `sal.guard_credit_note_decision` raises for the same rule.
   approvalPermissionMissing: 'credit_approval_permission_missing',
@@ -326,12 +332,28 @@ function decisionRefusalToken(error: unknown): string | null {
   return /^([a-z_]+):/.exec(driverMessage(error) ?? '')?.[1] ?? null;
 }
 
-/** True for `sal.approve_credit_note`'s own ceiling refusal under the invoice lock. */
-function isOpenAmountViolation(error: unknown): boolean {
+/** True for `sal.approve_credit_note`'s own D2 ceiling refusal under the invoice lock. */
+function isCreditableViolation(error: unknown): boolean {
   return (
     isSqlState(error, SQLSTATE.checkViolation) &&
-    (driverMessage(error) ?? '').includes('exceeds invoice open receivable')
+    (driverMessage(error) ?? '').startsWith(`${CREDIT_NOTE_REFUSAL_RULES.exceedsCreditable}:`)
   );
+}
+
+/**
+ * The answer to a credit above what the invoice can still be credited (ADR-023
+ * D2): a conflict with the invoice's state, naming the rule on the field or path
+ * that carried the amount.
+ */
+function creditableFailure(path: string, cause: unknown): AppFailure {
+  return new AppFailure('ERR-TRN-001', {
+    message:
+      cause instanceof BillingRuleError
+        ? cause.message
+        : 'The credit note exceeds what the invoice can still be credited',
+    safeDetails: { violations: [{ path, rule: CREDIT_NOTE_REFUSAL_RULES.exceedsCreditable }] },
+    cause,
+  });
 }
 
 /**
@@ -499,6 +521,17 @@ export interface VoidedInvoice {
 export interface CreditNoteResult {
   readonly creditNote: CreditNoteView;
   readonly replayed: boolean;
+}
+
+/**
+ * The answer to a credit-note APPROVAL (ADR-023 D2, P1-32-PRE-OD-FD2A): the note,
+ * and the refund obligation the approval left — the customer owed back what the
+ * credit exceeded the invoice's open receivable by — or `null` when it left none.
+ * Nothing is paid automatically. Readable only with `sal.finance.view`, which the
+ * operation declares. Additive to `CreditNoteResult`.
+ */
+export interface CreditNoteApprovalResult extends CreditNoteResult {
+  readonly refundObligation: RefundObligationView | null;
 }
 
 /**
@@ -1682,27 +1715,29 @@ export class InvoiceService {
       });
     }
 
-    const open = await this.repository.openReceivable(db, {
+    const ceiling = await this.repository.creditCeiling(db, {
       invoiceId: invoice.id,
       companyId: invoice.companyId,
       branchId: invoice.branchId,
     });
     /* c8 ignore next 5 -- the invoice is held `FOR UPDATE` in this transaction. */
-    if (!open) {
+    if (!ceiling) {
       throw new AppFailure('ERR-SYS-001', {
-        message: 'billing: invoice vanished between the lock and the receivable read',
+        message: 'billing: invoice vanished between the lock and the ceiling read',
       });
     }
-    // A request above what is still creditable is a refusal by business rule
-    // (ADR-023, D12), recorded once after the rollback exactly as the approval's
-    // ceiling refusal is. No note exists yet, so the record names the INVOICE —
-    // the stored row's id — and the rule; never the amount.
+    // A request above what is still creditable — the invoice's gross less the
+    // credits already approved (ADR-023 D2) — is a refusal by business rule (D12),
+    // recorded once after the rollback exactly as the approval's ceiling refusal is.
+    // No note exists yet, so the record names the INVOICE — the stored row's id —
+    // and the rule; never the amount. Pending notes are not counted: the approval
+    // re-checks under the invoice lock.
     try {
-      assertCreditWithinOpenAmount(amount, Decimal.fromDatabase(open.amount, MONEY));
+      assertCreditWithinCreditable(amount, Decimal.fromDatabase(ceiling.creditable, MONEY));
     } catch (error) {
-      refuseCreditRequest(invoice.id, CREDIT_NOTE_REFUSAL_RULES.exceedsOpenAmount, () =>
-        toDomainFailure(error, 'Credit note request')
-      );
+      refuseCreditRequest(invoice.id, CREDIT_NOTE_REFUSAL_RULES.exceedsCreditable, () => {
+        throw creditableFailure('body.amount', error);
+      });
     }
 
     if (input.idempotencyKey !== undefined) {
@@ -1826,7 +1861,7 @@ export class InvoiceService {
     db: DbHandle,
     creditNoteId: string,
     authorizeScope: ScopeAuthorizer
-  ): Promise<CreditNoteResult> {
+  ): Promise<CreditNoteApprovalResult> {
     const note = await this.repository.findCreditNoteForUpdate(db, creditNoteId);
     if (!note) {
       throw new AppFailure('ERR-RES-001', {
@@ -1836,7 +1871,12 @@ export class InvoiceService {
     await this.authorizeApprovalScope(note, authorizeScope);
 
     if (note.approvalState === 'approved') {
-      return { creditNote: toCreditNoteView(note, await this.unitsOf(db, note)), replayed: true };
+      const units = await this.unitsOf(db, note);
+      return {
+        creditNote: toCreditNoteView(note, units),
+        replayed: true,
+        refundObligation: await this.refundObligationOf(db, note, units),
+      };
     }
     if (note.approvalState !== 'pending') {
       refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.decided, () => {
@@ -1874,26 +1914,26 @@ export class InvoiceService {
       });
     }
 
-    const open = await this.repository.openReceivable(db, {
+    const ceiling = await this.repository.creditCeiling(db, {
       invoiceId: invoice.id,
       companyId: invoice.companyId,
       branchId: invoice.branchId,
     });
     /* c8 ignore next 5 -- the invoice is held `FOR UPDATE` in this transaction. */
-    if (!open) {
+    if (!ceiling) {
       throw new AppFailure('ERR-SYS-001', {
-        message: 'billing: invoice vanished between the lock and the receivable read',
+        message: 'billing: invoice vanished between the lock and the ceiling read',
       });
     }
     try {
-      assertCreditWithinOpenAmount(
+      assertCreditWithinCreditable(
         Decimal.fromDatabase(note.amount, MONEY),
-        Decimal.fromDatabase(open.amount, MONEY)
+        Decimal.fromDatabase(ceiling.creditable, MONEY)
       );
     } catch (error) {
-      refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.exceedsOpenAmount, () =>
-        toDomainFailure(error, 'Credit note approval')
-      );
+      refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.exceedsCreditable, () => {
+        throw creditableFailure('path.creditNoteId', error);
+      });
     }
 
     await this.assertCreditApprovalLimit(db, note);
@@ -1923,10 +1963,10 @@ export class InvoiceService {
           });
         });
       }
-      if (isOpenAmountViolation(error)) {
-        refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.exceedsOpenAmount, () =>
-          toDomainFailure(error, 'Credit note approval')
-        );
+      if (isCreditableViolation(error)) {
+        refuseCreditNote(note.id, CREDIT_NOTE_REFUSAL_RULES.exceedsCreditable, () => {
+          throw creditableFailure('path.creditNoteId', error);
+        });
       }
       refuseDatabasePrivilege(error, note.branchId, [], 'Credit note approval');
       toDomainFailure(error, 'Credit note approval');
@@ -1958,6 +1998,29 @@ export class InvoiceService {
       ],
     });
 
+    // ADR-023 D2: the excess of the credit over what the invoice still owed, which
+    // `sal.approve_credit_note` recorded in this transaction as one obligation. Its
+    // own audit record says the customer is owed money; nothing was paid.
+    const obligation = await this.repository.findRefundObligationForCreditNote(db, approved);
+    if (obligation) {
+      await appendAudit(db, {
+        action: 'sal.refund_obligation.recorded',
+        entityType: 'sal.refund_obligation',
+        entityId: obligation.id,
+        companyId: obligation.companyId,
+        branchId: obligation.branchId,
+        requestRef: 'sal.credit-note-approve',
+        details: [
+          { field: 'state', classification: 'internal', value: obligation.state },
+          { field: 'source', classification: 'internal', value: obligation.source },
+          { field: 'creditNoteId', classification: 'internal', value: obligation.creditNoteId },
+          { field: 'invoiceId', classification: 'internal', value: obligation.invoiceId },
+          { field: 'currencyCode', classification: 'internal', value: obligation.currencyCode },
+          { field: 'amount', classification: 'restricted', value: obligation.amount },
+        ],
+      });
+    }
+
     await publishEvent(db, {
       eventType: 'credit-note.issued',
       aggregateId: approved.id,
@@ -1977,10 +2040,22 @@ export class InvoiceService {
       },
     });
 
+    const units = await this.unitsOf(db, approved);
     return {
-      creditNote: toCreditNoteView(approved, await this.unitsOf(db, approved)),
+      creditNote: toCreditNoteView(approved, units),
       replayed: false,
+      refundObligation: obligation ? toRefundObligationView(obligation, units) : null,
     };
+  }
+
+  /** The refund obligation an approved note left, as the approval answers it (D2). */
+  private async refundObligationOf(
+    db: DbHandle,
+    note: CreditNoteRow,
+    units: ReadonlyMap<string, number>
+  ): Promise<RefundObligationView | null> {
+    const obligation = await this.repository.findRefundObligationForCreditNote(db, note);
+    return obligation ? toRefundObligationView(obligation, units) : null;
   }
 
   /**

@@ -9,6 +9,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { formatInZone, zoneLabelAt } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
+import { isZeroMoney } from '@/lib/money';
 
 import type { InvoiceDetail, MoneyView, Outstanding } from '../billing-contract';
 import { Money, ThirdPartyPaymentItems, Unavailable, When } from './shared';
@@ -477,6 +478,21 @@ function SettlementSection({
         <dd className="text-end font-medium" data-testid="invoice-print-balance-due">
           <Money money={balance.outstanding} locale={locale} />
         </dd>
+        {/* ADR-023 D2: the refund status (D7), and what the customer is owed back. */}
+        <dt className="text-text-muted">{translate(messages, 'invoices.settlement.refund')}</dt>
+        <dd className="text-end" data-testid="invoice-print-refund-status">
+          {translateDynamic(messages, `invoices.refundStatus.${settlement.refundStatus}`)}
+        </dd>
+        {settlement.refundOwed !== undefined && !isZeroMoney(settlement.refundOwed.amount) ? (
+          <>
+            <dt className="text-text-muted">
+              {translate(messages, 'invoices.settlement.refundOwed')}
+            </dt>
+            <dd className="text-end" data-testid="invoice-print-refund-owed">
+              <Money money={settlement.refundOwed} locale={locale} />
+            </dd>
+          </>
+        ) : null}
       </dl>
       {thirdParty.length > 0 ? (
         // What a third party paid for the customer is part of the settlement as

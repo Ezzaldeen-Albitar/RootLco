@@ -124,6 +124,16 @@ export const CREDIT_NOTE_ORDER: OrderingContract = Object.freeze({
   direction: 'desc',
 });
 
+/**
+ * Refund obligations are listed newest-first by `created_at` (P1-32-PRE-OD-FD2A,
+ * `sal.refund-obligation-list`). A key of its own, so a cursor minted by another
+ * list is never accepted here.
+ */
+export const REFUND_OBLIGATION_ORDER: OrderingContract = Object.freeze({
+  key: 'sal.refund_obligations:created_at_desc',
+  direction: 'desc',
+});
+
 export const BILLING_SQLSTATE = {
   /**
    * `RAISE … USING ERRCODE = 'no_data_found'`.
@@ -595,6 +605,56 @@ export interface CreditNoteTraceRow {
   } | null;
 }
 
+/**
+ * What an invoice can still be credited and what it still owes (ADR-023 D2,
+ * P1-32-PRE-OD-FD2A), as decimal STRINGS in its currency.
+ *
+ * `creditable` is the issued invoice's gross less the credit notes already
+ * APPROVED on it — `sal.approve_credit_note`'s ceiling, read here so a request is
+ * refused before a note is raised. `owed` is `sal.invoice_open_receivable`, never
+ * below zero. Both `0.0000` for a draft or a voided invoice. Every input is gated
+ * by `sal.finance.view`.
+ */
+export interface CreditCeilingRow {
+  readonly creditable: string;
+  readonly owed: string;
+}
+
+/**
+ * What approving a pending credit note would do, computed by PostgreSQL now: the
+ * part that reduces what the invoice still owes, and the part the customer would
+ * be owed back as a refund (ADR-023 D2). Decimal strings in the note's currency.
+ */
+export interface CreditApprovalEffectRow {
+  readonly reducesBalanceBy: string;
+  readonly refundOwed: string;
+}
+
+/**
+ * One refund obligation (ADR-023 D2, P1-32-PRE-OD-FD2A): money a customer is owed
+ * back because an approved credit exceeded what the invoice still owed. The WHOLE
+ * row is gated by `sal.finance.view` (`sel_refund_obligations_gated`). An
+ * operational record, not an accounting entry.
+ */
+export interface RefundObligationRow {
+  readonly id: string;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly partnerId: string;
+  readonly invoiceId: string;
+  readonly creditNoteId: string;
+  readonly currencyCode: string;
+  /** `numeric(18,4)`, `CHECK (amount > 0)`, within the currency's minor unit. */
+  readonly amount: string;
+  /** `credit_excess` only (`ck_refund_obligations_source`). */
+  readonly source: string;
+  /** `open` until refund requests exist (FD2B). */
+  readonly state: string;
+  readonly createdAt: Date;
+  readonly createdBy: string;
+  readonly recordVersion: number;
+}
+
 /** A work order's scope. `sal.invoices` must be created in exactly this scope. */
 export interface WorkOrderScopeRow {
   readonly workOrderId: string;
@@ -914,6 +974,42 @@ const CREDIT_NOTE_COLUMNS = `c.id, c.company_id, c.branch_id, c.invoice_id, c.cu
   c.amount::text AS amount, c.reason, c.approval_state, c.requested_by, c.approved_by,
   c.approved_at, c.issued_at, c.decided_by, c.decided_at, c.decision_reason,
   c.idempotency_key, c.record_version`;
+
+interface RefundObligationSql {
+  id: string;
+  company_id: string;
+  branch_id: string;
+  partner_id: string;
+  invoice_id: string;
+  credit_note_id: string;
+  currency_code: string;
+  amount: string;
+  source: string;
+  state: string;
+  created_at: Date;
+  created_by: string;
+  record_version: number;
+}
+
+const toRefundObligation = (r: RefundObligationSql): RefundObligationRow => ({
+  id: r.id,
+  companyId: r.company_id,
+  branchId: r.branch_id,
+  partnerId: r.partner_id,
+  invoiceId: r.invoice_id,
+  creditNoteId: r.credit_note_id,
+  currencyCode: r.currency_code,
+  amount: r.amount,
+  source: r.source,
+  state: r.state,
+  createdAt: r.created_at,
+  createdBy: r.created_by,
+  recordVersion: r.record_version,
+});
+
+const REFUND_OBLIGATION_COLUMNS = `ro.id, ro.company_id, ro.branch_id, ro.partner_id, ro.invoice_id,
+  ro.credit_note_id, ro.currency_code, ro.amount::text AS amount, ro.source, ro.state,
+  ro.created_at, ro.created_by, ro.record_version`;
 
 export class BillingRepository extends Repository {
   protected readonly module = 'billing';
@@ -3084,6 +3180,160 @@ export class BillingRepository extends Repository {
       })),
       request,
       CREDIT_NOTE_ORDER
+    );
+  }
+
+  // -------------------------------------------------------------------------
+  // The D2 credit ceiling and refund obligations (P1-32-PRE-OD-FD2A).
+  // -------------------------------------------------------------------------
+
+  /**
+   * What an invoice can still be credited, and what it still owes (ADR-023 D2).
+   *
+   * The same predicates `sal.approve_credit_note` applies under its locks: the
+   * gross of an issued (or credited) invoice less its APPROVED credit notes. Both
+   * figures are cast to `numeric(18,4)` so an empty sum reads at the scale every
+   * other amount carries. The caller holds the invoice lock and has established
+   * that the balance is trustworthy (`balanceIsTrustworthy`).
+   */
+  public async creditCeiling(
+    db: DbHandle,
+    scope: { readonly invoiceId: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<CreditCeilingRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ creditable: string; owed: string }>(
+      db,
+      `SELECT (CASE WHEN i.status IN ('issued', 'credited') THEN COALESCE(a.gross_total, 0) ELSE 0 END
+                 - COALESCE((SELECT sum(cn.amount) FROM sal.credit_notes cn
+                              WHERE cn.tenant_id = i.tenant_id AND cn.invoice_id = i.id
+                                AND cn.approval_state = 'approved'), 0))::numeric(18,4)::text AS creditable,
+              round(sal.invoice_open_receivable(i.id), 4)::numeric(18,4)::text AS owed
+         FROM sal.invoices i
+         LEFT JOIN sal.invoice_amounts a
+           ON a.tenant_id = i.tenant_id AND a.company_id = i.company_id
+          AND a.branch_id = i.branch_id AND a.invoice_id = i.id AND a.deleted_at IS NULL
+        WHERE i.tenant_id = $1 AND i.company_id = $2 AND i.branch_id = $3
+          AND i.id = $4 AND i.deleted_at IS NULL`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId]
+    );
+    return row ? { creditable: row.creditable, owed: row.owed } : null;
+  }
+
+  /**
+   * What approving a PENDING note would do now (ADR-023 D2): the part of its amount
+   * that reduces what the invoice still owes — at most that — and the rest, which
+   * the customer would be owed back. Computed by PostgreSQL in `numeric`, never in
+   * JavaScript. A preview: the approval recomputes it under the invoice lock.
+   */
+  public async creditApprovalEffect(
+    db: DbHandle,
+    note: { readonly id: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<CreditApprovalEffectRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ reduces: string; refund: string }>(
+      db,
+      `SELECT least(c.amount, o.owed)::numeric(18,4)::text AS reduces,
+              (c.amount - least(c.amount, o.owed))::numeric(18,4)::text AS refund
+         FROM sal.credit_notes c
+         CROSS JOIN LATERAL (SELECT greatest(sal.invoice_open_receivable(c.invoice_id), 0) AS owed) o
+        WHERE c.tenant_id = $1 AND c.company_id = $2 AND c.branch_id = $3 AND c.id = $4`,
+      [context.principal.tenantId, note.companyId, note.branchId, note.id]
+    );
+    return row ? { reducesBalanceBy: row.reduces, refundOwed: row.refund } : null;
+  }
+
+  /** The refund obligation an approved credit note created, or `null` (at most one). */
+  public async findRefundObligationForCreditNote(
+    db: DbHandle,
+    note: { readonly id: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<RefundObligationRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<RefundObligationSql>(
+      db,
+      `SELECT ${REFUND_OBLIGATION_COLUMNS}
+         FROM sal.refund_obligations ro
+        WHERE ro.tenant_id = $1 AND ro.company_id = $2 AND ro.branch_id = $3
+          AND ro.credit_note_id = $4`,
+      [context.principal.tenantId, note.companyId, note.branchId, note.id]
+    );
+    return row ? toRefundObligation(row) : null;
+  }
+
+  /**
+   * What the customer is owed back on one invoice: the sum of its OPEN refund
+   * obligations, `0.0000` when there are none (D7 `refundStatus`).
+   */
+  public async openRefundOwed(
+    db: DbHandle,
+    scope: { readonly invoiceId: string; readonly companyId: string; readonly branchId: string }
+  ): Promise<string> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{ owed: string }>(
+      db,
+      `SELECT COALESCE(sum(ro.amount), 0)::numeric(18,4)::text AS owed
+         FROM sal.refund_obligations ro
+        WHERE ro.tenant_id = $1 AND ro.company_id = $2 AND ro.branch_id = $3
+          AND ro.invoice_id = $4 AND ro.state = 'open'`,
+      [context.principal.tenantId, scope.companyId, scope.branchId, scope.invoiceId]
+    );
+    return row?.owed ?? '0.0000';
+  }
+
+  /**
+   * One branch's refund obligations, newest first (`sal.refund-obligation-list`).
+   *
+   * The whole row is gated by `sal.finance.view` (`sel_refund_obligations_gated`),
+   * which the operation declares, so a caller without it is refused rather than
+   * shown an empty page that would read as "nobody is owed anything".
+   */
+  public async listRefundObligations(
+    db: DbHandle,
+    filter: {
+      readonly companyId: string;
+      readonly branchId: string;
+      readonly partnerId?: string | undefined;
+      readonly invoiceId?: string | undefined;
+      readonly state?: string | undefined;
+    },
+    request: PageRequest
+  ): Promise<Page<RefundObligationRow>> {
+    const context = this.assertContext(db);
+    const values: unknown[] = [
+      context.principal.tenantId,
+      filter.companyId,
+      filter.branchId,
+      filter.partnerId ?? null,
+      filter.invoiceId ?? null,
+      filter.state ?? null,
+    ];
+    const keyset = keysetFragment(
+      request,
+      { sort: 'ro.created_at', id: 'ro.id' },
+      REFUND_OBLIGATION_ORDER,
+      values.length + 1
+    );
+    const result = await this.run<RefundObligationSql & { sort_value: string }>(
+      db,
+      `SELECT ${REFUND_OBLIGATION_COLUMNS},
+              ${cursorTimestamp('ro.created_at')} AS sort_value
+         FROM sal.refund_obligations ro
+        WHERE ro.tenant_id = $1 AND ro.company_id = $2 AND ro.branch_id = $3
+          AND ($4::uuid IS NULL OR ro.partner_id = $4)
+          AND ($5::uuid IS NULL OR ro.invoice_id = $5)
+          AND ($6::text IS NULL OR ro.state = $6)
+          ${keyset.predicate}
+        ${keyset.order}
+        ${keyset.limitClause}`,
+      [...values, ...keyset.values]
+    );
+    return buildPageWithCursors(
+      result.rows.map((row) => ({
+        item: toRefundObligation(row),
+        sortValue: row.sort_value,
+        id: row.id,
+      })),
+      request,
+      REFUND_OBLIGATION_ORDER
     );
   }
 }

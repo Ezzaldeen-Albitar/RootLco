@@ -1396,6 +1396,7 @@ export async function cleanP1_22Fixtures(): Promise<void> {
       'sal.delivery_checklist_templates',
       'sal.payment_allocations',
       'sal.receipt_reversals',
+      'sal.refund_obligations',
       'sal.credit_notes',
       'sal.receipts',
       'sal.invoice_status_history',
