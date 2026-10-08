@@ -247,23 +247,20 @@ const REFUSAL_KEYS = ['code', 'correlationId', 'status', 'title', 'type'];
  * that started echoing `error.message` into the document would fail here rather than
  * quietly ship a constraint name to a customer-facing client.
  *
- * `violations`, when given, is the named rule the refusal must carry and nothing
- * else (ADR-023 D2 names its ceiling rule on the amount); without it the document
- * carries no violations at all.
+ * `violations` is the named rule the refusal must carry, and the only key beyond the
+ * bare refusal's (ADR-023 D2 names its ceiling rule on the amount).
  */
 async function expectCallerSafeConflict(
   response: Response,
-  violations?: readonly { readonly path: string; readonly rule: string }[]
+  violations: readonly { readonly path: string; readonly rule: string }[]
 ): Promise<void> {
   expect(response.status).toBe(409);
   const raw = await response.text();
   expect(raw).not.toMatch(/ck_|uq_|tg_|guard_|check_violation|23514|sal\./);
   const problem = JSON.parse(raw) as ProblemBody & { readonly violations?: unknown };
   expect(problem.code).toBe('ERR-TRN-001');
-  expect(Object.keys(problem).sort()).toEqual(
-    violations === undefined ? REFUSAL_KEYS : [...REFUSAL_KEYS, 'violations'].sort()
-  );
-  if (violations !== undefined) expect(problem.violations).toEqual(violations);
+  expect(Object.keys(problem).sort()).toEqual([...REFUSAL_KEYS, 'violations'].sort());
+  expect(problem.violations).toEqual(violations);
 }
 
 /**

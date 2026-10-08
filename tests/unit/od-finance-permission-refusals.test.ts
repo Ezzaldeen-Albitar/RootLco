@@ -541,7 +541,8 @@ describe('D12 extension — a permission the database refused inside the service
       findCreditNoteForUpdate: async () => note,
       rejectCreditNote: async () => Promise.reject(rejectError),
       findInvoiceForUpdate: async () => ({ id: note.invoiceId, currencyCode: 'USD' }),
-      openReceivable: async () => ({ amount: '100.0000' }),
+      // ADR-023 D2: the approval is bounded by what the invoice can still be credited.
+      creditCeiling: async () => ({ creditable: '100.0000', owed: '100.0000' }),
       businessDate: async () => '2026-10-03',
       cumulativeApprovedCreditWith: async () => '10.0000',
       approveCreditNote: async () => Promise.reject(rejectError),
