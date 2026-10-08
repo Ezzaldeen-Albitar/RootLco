@@ -3400,8 +3400,11 @@ list read with the chosen `categoryId` and linking to the item page; a category 
 setup link only for `inv.item.manage` and no writing control; the refusal without `inv.item.read`
 reading nothing; an unavailable read retried; right to left in Arabic; the picker choosing from
 all pages, saying the path and clearing, and its refused state. `inventory-api.test.ts` gains the
-page adapter's address and cursor; `navigation.test.ts` gains the entry's key. No existing
-assertion changed, so no selector was changed.
+page adapter's address and cursor; `navigation.test.ts` gains the entry's key;
+`p1-28-reception-media.test.ts` declares the read-only notice as the fourth catalogue string that
+defers to an Owner decision (its exact pin of open deferrals, which P1-32-PRE-OD-FRX grew to three
+the same way), and the notice says "pending an Owner decision" in English as the pin's matcher
+reads it. No other assertion and no selector changed.
 
 Known limitations of this slice, one line each:
 

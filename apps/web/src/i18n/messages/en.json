@@ -1928,7 +1928,7 @@
   "inventory.categories.picker.none": "No category",
   "inventory.categories.picker.refused": "The categories cannot be shown to this account.",
   "inventory.categories.picker.unavailable": "The categories could not be read just now.",
-  "inventory.categories.readOnly.body": "Category names and positions cannot be changed here. Renaming, moving and retiring a category wait on a decision that has not been made yet.",
+  "inventory.categories.readOnly.body": "Category names and positions cannot be changed here. Renaming, moving and retiring a category are pending an Owner decision.",
   "inventory.categories.readOnly.create": "Create a new category on the inventory setup page",
   "inventory.categories.search.help": "Type part of a name or a code, for example brakes. Each match is shown under the categories above it.",
   "inventory.categories.search.label": "Find a category",

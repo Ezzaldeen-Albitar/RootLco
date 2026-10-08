@@ -1928,7 +1928,7 @@
   "inventory.categories.picker.none": "بلا فئة",
   "inventory.categories.picker.refused": "لا يمكن عرض الفئات لهذا الحساب.",
   "inventory.categories.picker.unavailable": "تعذرت قراءة الفئات الآن.",
-  "inventory.categories.readOnly.body": "لا يمكن تغيير أسماء الفئات ولا مواضعها من هنا. إعادة تسمية الفئة ونقلها وإيقافها بانتظار قرار لم يُتخذ بعد.",
+  "inventory.categories.readOnly.body": "لا يمكن تغيير أسماء الفئات ولا مواضعها من هنا. إعادة تسمية الفئة ونقلها وإيقافها بانتظار قرار من المالك.",
   "inventory.categories.readOnly.create": "أنشئ فئة جديدة من صفحة إعداد المخزون",
   "inventory.categories.search.help": "اكتب جزءًا من الاسم أو الرمز، مثل فرامل. تظهر كل نتيجة تحت الفئات التي تعلوها.",
   "inventory.categories.search.label": "ابحث عن فئة",
