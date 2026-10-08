@@ -2,13 +2,20 @@ import './print/react-jsx';
 import { expect, test, type Page, type TestInfo } from '@playwright/test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { Locale } from '@/i18n/config';
-import { invoiceCase, printCases, SHELL_CHROME, type PrintCase } from './print/fixtures';
+import {
+  counterSaleCase,
+  invoiceCase,
+  MESSAGES,
+  printCases,
+  SHELL_CHROME,
+  type PrintCase,
+} from './print/fixtures';
 import { pdfPages, type PrintedPage } from './print/pdf-text';
 import { applicationStylesheet } from './print/stylesheet';
 import { fold, opening, printed, timesPrinted } from './print/text';
 
 /**
- * The six printable documents, printed to PDF by the browser and read page by
+ * The seven printable documents, printed to PDF by the browser and read page by
  * page.
  *
  * Checkpoint browser QA at 3cf622c3 printed an invoice that fits one page as
@@ -96,6 +103,21 @@ function beginsWith(text: string, phrase: string): boolean {
   return head.sort().join('') === wanted.sort().join('');
 }
 
+/** `text` with the characters of `phrase` taken out once each, in any order. */
+function withoutCharacters(text: string, phrase: string): string {
+  const left = [...fold(text)];
+  for (const character of fold(phrase)) {
+    const at = left.indexOf(character);
+    if (at >= 0) left.splice(at, 1);
+  }
+  return left.join('');
+}
+
+/** Whether two texts hold the same characters, in any order (see `beginsWith`). */
+function sameCharacters(text: string, phrase: string): boolean {
+  return [...fold(text)].sort().join('') === [...fold(phrase)].sort().join('');
+}
+
 function summary(pages: readonly PrintedPage[]): string {
   return pages
     .map((page, index) => `page ${index + 1}: ${page.runs.slice(0, 4).join(' | ')}`)
@@ -163,6 +185,7 @@ async function expectPrintedAsDocument(
 test.describe('printed documents', () => {
   for (const name of [
     'invoice',
+    'counter-sale',
     'receipt',
     'quotation',
     'credit-note',
@@ -208,4 +231,48 @@ test.describe('printed documents', () => {
     const pages = await expectPrintedAsDocument(page, invoiceCase(locale, fitting.lines), testInfo);
     expect(pages.length).toBe(1);
   });
+
+  /*
+   * The local runtime QA printed a counter sale whose third page held only the
+   * identity row and the closing sentence "Each line is described by the item that
+   * was sold." Which length of sale does that depends on the browser's fonts, so
+   * every length from one line to past two pages is printed, in four runs of eight
+   * so each stays inside the suite's per-test time, and no page may hold the
+   * identity row and that note and nothing else.
+   */
+  for (const [from, to] of [
+    [1, 8],
+    [9, 16],
+    [17, 24],
+    [25, 32],
+  ] as const) {
+    test(`a counter sale of ${from} to ${to} lines never prints its closing note alone on a page`, async ({
+      page,
+    }, testInfo) => {
+      const locale = localeOf(testInfo);
+      const note = (MESSAGES[locale] as unknown as Record<string, string>)[
+        'invoices.print.descriptionsFromItems'
+      ] as string;
+      let longest = 0;
+      for (let lines = from; lines <= to; lines += 1) {
+        await load(page, counterSaleCase(locale, lines));
+        const identity = await identityRow(page);
+        const pages = await printToPages(page);
+        longest = Math.max(longest, pages.length);
+        pages.forEach((printedPage, index) => {
+          expect(
+            sameCharacters(withoutCharacters(printedPage.text, identity), note),
+            `${lines} line(s): page ${index + 1} holds only the identity row and the closing note\n${summary(pages)}`
+          ).toBe(false);
+        });
+      }
+      // The longest run reaches a third page, where the defect was seen.
+      if (to === 32) {
+        expect(
+          longest,
+          'the longest sale printed spans at least three pages'
+        ).toBeGreaterThanOrEqual(3);
+      }
+    });
+  }
 });

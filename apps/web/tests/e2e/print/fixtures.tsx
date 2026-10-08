@@ -20,7 +20,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 
 /**
- * The six printable documents, each inside the page that prints it.
+ * The seven printable documents, each inside the page that prints it.
  *
  * Every document is the REAL component with fixture props. What surrounds it is
  * a copy of the page as the application composes it — the shell's boxes, the
@@ -37,7 +37,13 @@ import type { Messages } from '@/i18n/get-messages';
 export const MESSAGES: Record<Locale, Messages> = { en: en as Messages, ar: ar as Messages };
 
 export type DocumentName =
-  'invoice' | 'receipt' | 'quotation' | 'credit-note' | 'delivery' | 'acknowledgement';
+  | 'invoice'
+  | 'counter-sale'
+  | 'receipt'
+  | 'quotation'
+  | 'credit-note'
+  | 'delivery'
+  | 'acknowledgement';
 
 export interface PrintCase {
   readonly document: DocumentName;
@@ -249,6 +255,84 @@ export function invoiceCase(locale: Locale, lines = 2): PrintCase {
               balance={BALANCE}
             />
           </section>
+        </div>
+      </ScopedPage>
+    ),
+  };
+}
+
+// --- the counter sale: `app/[locale]/(dashboard)/inventory/counter-sales/page.tsx`,
+// `CounterSalesScreen` (the screen's scope) and `SaleView` (the sale's scope)
+
+/** A counter sale of `lines` parts: no work order, each line naming the item sold. */
+export function counterSaleDetail(lines: number): InvoiceDetail {
+  const job = invoiceDetail(lines);
+  return {
+    ...job,
+    invoice: {
+      ...job.invoice,
+      workOrderId: null,
+      saleKind: 'counter_sale',
+      quotationRevisionId: null,
+    },
+    lines: job.lines.map((line, index) => ({
+      ...line,
+      lineType: 'part',
+      sourceQuotationItemId: null,
+      source: null,
+      item: {
+        id: `item-${index + 1}`,
+        code: `SKU-TEST-${index + 1}`,
+        name: `Test part of the counter ${index + 1}`,
+      },
+    })),
+    source: null,
+  };
+}
+
+export function counterSaleCase(locale: Locale, lines = 2): PrintCase {
+  const messages = MESSAGES[locale];
+  return {
+    document: 'counter-sale',
+    locale,
+    title: t(locale, 'invoices.print.title'),
+    reference: '000021',
+    chrome: [
+      t(locale, 'inventory.counterSales.description'),
+      t(locale, 'inventory.counterSales.explain'),
+      t(locale, 'invoices.print.heading'),
+    ],
+    page: () => (
+      <ScopedPage
+        locale={locale}
+        titleKey="inventory.counterSales.title"
+        descriptionKey="inventory.counterSales.description"
+      >
+        <div data-print-scope="document" className="flex min-h-0 flex-col gap-4">
+          <UnmarkedPanel label={t(locale, 'inventory.counterSales.explain')} />
+          <div data-print-scope="document" className="flex min-h-0 flex-col gap-4">
+            <WorkingPanel label="Sale panel of the test" />
+            <section
+              aria-labelledby="invoice-print-heading"
+              className="flex min-h-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+              lang={locale}
+            >
+              <div className="flex flex-wrap items-center gap-3" data-print="hide">
+                <h2 id="invoice-print-heading" className="text-body font-medium text-text-primary">
+                  {t(locale, 'invoices.print.heading')}
+                </h2>
+              </div>
+              <InvoiceDocument
+                locale={locale}
+                messages={messages}
+                detail={counterSaleDetail(lines)}
+                descriptions={{ kind: 'items' }}
+                workOrderNumber={null}
+                payer={{ kind: 'named', name: 'Paying customer of the test' }}
+                balance={BALANCE}
+              />
+            </section>
+          </div>
         </div>
       </ScopedPage>
     ),
@@ -811,10 +895,11 @@ function acknowledgementCase(locale: Locale): PrintCase {
   };
 }
 
-/** The six documents, as each prints in `locale`. */
+/** The seven documents, as each prints in `locale`. */
 export function printCases(locale: Locale): PrintCase[] {
   return [
     invoiceCase(locale),
+    counterSaleCase(locale),
     receiptCase(locale),
     quotationCase(locale),
     creditNoteCase(locale),

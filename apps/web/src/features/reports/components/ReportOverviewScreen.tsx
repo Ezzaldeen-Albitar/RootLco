@@ -594,17 +594,27 @@ function OverviewResults({
         </>
       )}
 
-      {OVERVIEW_SECTIONS.map((section) => (
-        <OverviewSectionPanel
-          key={section.reportCode}
-          locale={locale}
-          messages={messages}
-          section={section}
-          definition={definitionFor(definitions, section.reportCode)}
-          outcome={outcomes[section.reportCode] ?? 'unreachable'}
-          selection={selection}
-        />
-      ))}
+      {OVERVIEW_SECTIONS.map((section) => {
+        /*
+         * D17: a section is drawn only for a report the caller's catalogue holds.
+         * An unknown code, an unpublished or archived report and a report this
+         * caller may not read are deliberately one answer — no panel, so neither
+         * its title, its caption nor a link into it is shown.
+         */
+        const definition = definitionFor(definitions, section.reportCode);
+        if (definition === null) return null;
+        return (
+          <OverviewSectionPanel
+            key={section.reportCode}
+            locale={locale}
+            messages={messages}
+            section={section}
+            definition={definition}
+            outcome={outcomes[section.reportCode] ?? 'unreachable'}
+            selection={selection}
+          />
+        );
+      })}
 
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, 'reports.overview.serverNote')}
@@ -687,7 +697,8 @@ function SectionBody({
 }) {
   if (definition === null) {
     // Not in the caller's catalogue: unknown code, unpublished, archived, or a
-    // report this caller may not read. The four are deliberately one answer.
+    // report this caller may not read. The four are deliberately one answer, and
+    // the overview draws no section for any of them, so this is a fallback only.
     return (
       <p className="text-body text-text-secondary" lang={locale}>
         {translate(messages, 'reports.overview.notPublished')}

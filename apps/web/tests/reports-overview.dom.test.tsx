@@ -189,6 +189,9 @@ function allFourPublish() {
 /** The section of one domain, addressed by the report's own name. */
 const panel = (reportCode: string, messages: Record<string, string> = EN) =>
   screen.getByRole('region', { name: messages[`reports.${reportCode}.title`] as string });
+/** The same section, or null when the overview drew none for it. */
+const queryPanel = (reportCode: string, messages: Record<string, string> = EN) =>
+  screen.queryByRole('region', { name: messages[`reports.${reportCode}.title`] as string });
 /** A context fact, addressed by its own label rather than by position. */
 const fact = (key: string) => screen.getByText(EN[key] as string).parentElement as HTMLElement;
 
@@ -492,19 +495,40 @@ describe('a domain that cannot answer says so, and the others still answer', () 
     expect(section.queryByRole('table')).toBeNull();
   });
 
-  it('says a domain the catalogue does not publish is not there, and runs nothing for it', async () => {
+  it('draws no section for a domain the catalogue does not publish, and runs nothing for it', async () => {
     listReportCatalogue.mockResolvedValue(CATALOGUE([definition('work_orders_by_status')]));
     await showOverview();
     await waitFor(() => expect(runReport).toHaveBeenCalledTimes(1));
+    expect(await waitFor(() => panel('work_orders_by_status'))).toBeVisible();
     for (const code of [
       'technician_labor_time',
       'inventory_movements',
       'invoice_payment_summary',
     ]) {
-      expect(
-        within(panel(code)).getByText(EN['reports.overview.notPublished'] as string)
-      ).toBeVisible();
+      expect(queryPanel(code), code).toBeNull();
     }
+    expect(screen.queryByText(EN['reports.overview.notPublished'] as string)).toBeNull();
+  });
+
+  it('shows a caller without the finance report neither its title nor its caption (D17)', async () => {
+    /*
+     * Owner decision D17: a quotation user does not see finance reports. The
+     * catalogue such a caller receives holds no invoice-and-payment entry, so the
+     * overview draws no panel for it — no heading, no caption, no link into it.
+     */
+    listReportCatalogue.mockResolvedValue(
+      CATALOGUE(ALL_FOUR.filter((entry) => entry.reportCode !== 'invoice_payment_summary'))
+    );
+    await showOverview();
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(3));
+    const codes = runReport.mock.calls.map(
+      (call) => (call[0] as { reportCode: string }).reportCode
+    );
+    expect(codes).not.toContain('invoice_payment_summary');
+    expect(await waitFor(() => panel('work_orders_by_status'))).toBeVisible();
+    expect(screen.queryByText(EN['reports.invoice_payment_summary.title'] as string)).toBeNull();
+    expect(screen.queryByText(EN['reports.overview.caption.invoices'] as string)).toBeNull();
+    expect(queryPanel('invoice_payment_summary')).toBeNull();
   });
 
   it('fabricates no summary when the engine published none', async () => {
@@ -844,11 +868,8 @@ describe('the four reads are spent once per branch and period (route sweep B3 re
     // Read again under the catalogue it is now shown under: three runs, because
     // the withdrawn report is no longer one this caller can run.
     await waitFor(() => expect(runsFor(BRANCH_ID)).toBe(7));
-    expect(
-      await within(await waitFor(() => panel('invoice_payment_summary'))).findByText(
-        EN['reports.overview.notPublished'] as string
-      )
-    ).toBeVisible();
+    await waitFor(() => expect(panel('work_orders_by_status')).toBeVisible());
+    expect(queryPanel('invoice_payment_summary')).toBeNull();
   });
 
   describe('the wait the server advised is kept, for every run this page sends', () => {

@@ -246,6 +246,54 @@ describe('the work-order record mounts the handover panel', () => {
   });
 });
 
+/**
+ * ADR-023 D17 (Owner decision): a quotation user sees no invoice, payment, balance
+ * or cost on the work-order record. The quotation codes, the work-order read and
+ * the customer read — nothing of `sal.*` or `inv.*` — draw the record with its
+ * quotation link and with no way into, or word of, the work order's finance.
+ */
+describe('a quotation user sees no finance on the work-order record (D17)', () => {
+  const QUOTATION_USER = [
+    'quo.quotation.read',
+    'quo.quotation.manage',
+    'quo.decision.record',
+    WORK_ORDER_READ,
+    'crm.customer.read',
+  ];
+  const FINANCE_WORDS = /invoice|payment|receipt|settle|balance|outstanding|credit|cost|margin/i;
+  const FINANCE_ROUTES = /\/(invoices|payments|credit-notes|delivery-readiness|counter-sales)\b/;
+
+  it('draws the record and its quotation link, and no invoice link, settlement, balance or cost', async () => {
+    PERMISSIONS = QUOTATION_USER;
+    const { container } = await renderRecord();
+
+    expect(await screen.findByText('WO-000207')).toBeVisible();
+    // Non-vacuity: the quotation link is drawn, so the links below were rendered.
+    expect(
+      screen.getByRole('link', { name: EN['workOrders.detail.quotationsLink'] as string })
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('link', { name: EN['workOrders.detail.invoiceLink'] as string })
+    ).toBeNull();
+    const hrefs = [...container.querySelectorAll('a')].map((a) => a.getAttribute('href') ?? '');
+    expect(hrefs.filter((href) => FINANCE_ROUTES.test(href))).toEqual([]);
+    expect(container.textContent).not.toMatch(FINANCE_WORDS);
+    // No handover panel either: delivery readiness needs the finance view.
+    expect(handoverSection()).toBeNull();
+    expect(readWorkOrderDelivery).not.toHaveBeenCalled();
+  });
+
+  it('draws the invoice link once the invoice code is held, so the absence above is the gate', async () => {
+    PERMISSIONS = [...QUOTATION_USER, 'sal.invoice.manage'];
+    await renderRecord();
+
+    expect(await screen.findByText('WO-000207')).toBeVisible();
+    expect(
+      screen.getByRole('link', { name: EN['workOrders.detail.invoiceLink'] as string })
+    ).toHaveAttribute('href', `/en/invoices?workOrderId=${WORK_ORDER_ID}`);
+  });
+});
+
 describe('the work-order route decides before it reads', () => {
   it('refuses without the work-order read code, and reads neither the record nor a handover', async () => {
     PERMISSIONS = [DELIVERY_VIEW, DELIVERY_MANAGE];
