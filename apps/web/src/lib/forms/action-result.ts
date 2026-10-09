@@ -136,6 +136,12 @@ const STATUS_BY_KIND: Record<ApiFailure['kind'], ActionStatus> = {
 };
 
 /**
+ * The neutral banner a conflict about one named field carries (see `fromFailure`):
+ * the form was not saved, and the field says why.
+ */
+export const FIELD_CONFLICT_KEY = 'form.formError';
+
+/**
  * Maps a client failure onto an action state.
  *
  * `messageKeyOverride` exists for the operations whose failure must be
@@ -196,10 +202,32 @@ export function fromFailure(
   const { fieldErrors, formKeys } = violationKeysOf(failure);
   const stated = formKeys.find((key) => key !== VIOLATION_FALLBACK_KEY);
   const own = messageKeyOverride === undefined && stated === undefined;
-  const values = own ? failureMessageValues(failure) : undefined;
+  /*
+   * A conflict that names the FIELD it is about (P1-32-PRE-OD-INVF,
+   * SETUP-cat-errors / SETUP-item-errors).
+   *
+   * A unique index refusing a duplicate — a category code, a stock code, a
+   * location code — arrives as a conflict carrying a violation on the field
+   * (`body.code` + `duplicate_code`). The field already says the true reason
+   * ("This code is already used."), but the banner beside it fell through to the
+   * kind's key and said "Someone else changed this", and the explanation and the
+   * toast added "Reload to see the current record" — sending the operator to
+   * look for a person and a reload that change nothing. So the banner says only
+   * that the form could not be saved, beside the field that says why, and
+   * `isFieldConflict` keeps the toast off it as for any refused input.
+   *
+   * The status stays `conflict`: a screen that re-reads on a conflict still
+   * does. A conflict that names no field — a stale record version, the genuine
+   * race — is untouched and keeps the concurrency sentence and its reload path.
+   */
+  const namesField = own && failure.kind === 'conflict' && Object.keys(fieldErrors).length > 0;
+  const values = own && !namesField ? failureMessageValues(failure) : undefined;
   return {
     status,
-    messageKey: messageKeyOverride ?? stated ?? refusalMessageKey(failure),
+    messageKey:
+      messageKeyOverride ??
+      stated ??
+      (namesField ? FIELD_CONFLICT_KEY : refusalMessageKey(failure)),
     ...(values !== undefined ? { messageValues: values } : {}),
     ...(Object.keys(fieldErrors).length > 0 ? { fieldErrors } : {}),
     correlationId: failure.correlationId,
@@ -235,6 +263,20 @@ export function fromStateRefusal(failure: ApiFailure, attempt: number): ActionSt
     return { ...state, messageKey: 'state.conflict.transition.title' };
   }
   return state;
+}
+
+/**
+ * Whether a state is a conflict about a field the operator can correct — a
+ * duplicate on a named field — rather than about the record having moved on.
+ * Such a refusal belongs beside the field, like any refused input: no toast,
+ * and no advice to reload.
+ */
+export function isFieldConflict(state: ActionState): boolean {
+  return (
+    state.status === 'conflict' &&
+    state.messageKey === FIELD_CONFLICT_KEY &&
+    Object.keys(state.fieldErrors ?? {}).length > 0
+  );
 }
 
 export function invalid(

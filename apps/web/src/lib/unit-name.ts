@@ -48,3 +48,63 @@ export function unitName(
     ? translateDynamic(messages, `units.name.${unit.code}`)
     : unit.name;
 }
+
+/** A unit as `inv.uom-list` publishes it: enough to find it and to name it. */
+export interface NamedUnit {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
+/**
+ * A unit a record names by its CODE alone — a stock line's unit, a refusal's
+ * figures, a conversion row — named through the unit list the screen holds
+ * (P1-32-PRE-OD-INVF, UNIT-names).
+ *
+ * The code alone cannot say whether the unit kept its standard name, so the
+ * name comes from the list and `unitName` decides from it exactly as it does for
+ * a snapshot. While no list is held — not read yet, or refused — and when the
+ * code names no unit in it, or two units with different names, the code is shown
+ * as it was sent: the screen does not guess which unit was meant.
+ */
+export function unitNameByCode(
+  messages: Messages,
+  code: string,
+  units: readonly NamedUnit[] | null
+): string {
+  if (units === null) return code;
+  const names = new Set(
+    units.filter((unit) => unit.code === code).map((unit) => unitName(messages, unit))
+  );
+  if (names.size !== 1) return code;
+  const [only] = names;
+  return only ?? code;
+}
+
+/** The same, for a record that names its unit by IDENTIFIER: null when the list does not hold it. */
+export function unitNameById(
+  messages: Messages,
+  id: string,
+  units: readonly NamedUnit[] | null
+): string | null {
+  const unit = units?.find((candidate) => candidate.id === id);
+  return unit === undefined ? null : unitName(messages, unit);
+}
+
+/**
+ * The units as the options of a unit picker, each by its name in the reader's
+ * language. A code is added only where two units would otherwise read the same,
+ * so the operator can still tell them apart.
+ */
+export function unitOptions(
+  messages: Messages,
+  units: readonly NamedUnit[]
+): { readonly value: string; readonly label: string }[] {
+  const named = units.map((unit) => ({ unit, name: unitName(messages, unit) }));
+  const seen = new Map<string, number>();
+  for (const { name } of named) seen.set(name, (seen.get(name) ?? 0) + 1);
+  return named.map(({ unit, name }) => ({
+    value: unit.id,
+    label: (seen.get(name) ?? 0) > 1 ? `${name} (${unit.code})` : name,
+  }));
+}

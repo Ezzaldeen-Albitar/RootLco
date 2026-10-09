@@ -430,6 +430,18 @@ declared seeds, `apps/web/tests/invoices.dom.test.tsx`, and
 against the code before the fix and failed there. The hosted result is recorded with its pull
 request, not here.
 
+**Note to the CP-20261009-1 inventory runtime acceptance (P1-32-PRE-OD-INVF, 2026-10-10; no
+ledger row, register row or result changed).** The local runtime acceptance at `2376b1ad`
+recorded ten FAIL rows. Branch `feature/owner-directive-residual-fixes-inv-f`, cut from `develop`
+at `2376b1adecd6583c14e7514d7d953b09dd52206f`, carries fixes for nine of them — UNIT-names,
+SETUP-cat-errors, SETUP-item-errors, SPEC-no-makes, LBL-sheet-print, LBL-roll-print, ATT-clock,
+LANG-identifiers and COUNT-focus — implemented, not yet runtime-retested. Each row keeps the FAIL
+the acceptance recorded until a signed-in retest at a records revision containing the merge says
+otherwise. FRX1-c is not addressed by that branch: the self-read routes' raw-key guard never sees a
+lone `__proto__` key, because Next.js rebuilds the request URL from its parsed query object before
+the route handler runs and that object cannot hold the key; closing it needs a decision on where the
+raw query is read, and the row stays as recorded.
+
 ### Features delivered or planned under this directive
 
 The delivery matrix above owns verification state; ADR-023 owns the implementation state of each D-item; the architecture assessment owns what each FC change is. This table owns the design fields that directive section 12 asks for. The `state:` pointers in the first column cite ADR-023's mapping table at develop `d5ce97b7` (`:751-773`, re-anchored 2026-10-08); the other ADR-023 line numbers in this table are not re-anchored here.

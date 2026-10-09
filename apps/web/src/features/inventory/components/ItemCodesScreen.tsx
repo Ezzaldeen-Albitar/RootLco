@@ -60,6 +60,7 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { formatMoney } from '@/lib/money';
+import { unitName, unitNameByCode, unitOptions, type NamedUnit } from '@/lib/unit-name';
 
 import {
   addIdentifier,
@@ -86,6 +87,7 @@ import {
 } from '../inventory-contract';
 
 import { OutcomeNote, Qty, UUID } from './shared';
+import { useUnitList } from './unit-list';
 import {
   Fact,
   LINK,
@@ -300,7 +302,7 @@ function ItemHeader({
           </Link>
         </Fact>
         <Fact label={translate(messages, 'inventory.identifiers.item.unit')}>
-          <bdi>{item.unitOfMeasure.name}</bdi>{' '}
+          <bdi data-testid="item-header-unit">{unitName(messages, item.unitOfMeasure)}</bdi>{' '}
           <code className="font-mono text-caption" dir="ltr">
             {item.unitOfMeasure.code}
           </code>
@@ -345,6 +347,8 @@ function IdentifiersPanel({
     includeRetired ? 'all' : 'live'
   );
   const [notice, setNotice] = useState<string | null>(null);
+  // A code's pack unit arrives by code; the list names it in the reader's language.
+  const units = useUnitList();
 
   return (
     <section aria-labelledby="item-codes-heading" className={PANEL}>
@@ -428,6 +432,7 @@ function IdentifiersPanel({
                       messages={messages}
                       itemId={itemId}
                       row={row}
+                      units={units}
                       canManage={canManage}
                       onRetired={() => {
                         setNotice('inventory.identifiers.retire.done');
@@ -475,6 +480,7 @@ function IdentifierRow({
   messages,
   itemId,
   row,
+  units,
   canManage,
   onRetired,
 }: {
@@ -482,6 +488,8 @@ function IdentifierRow({
   readonly messages: Messages;
   readonly itemId: string;
   readonly row: ItemIdentifier;
+  /** The units the pack unit is named from; `null` until read, and the code is then shown. */
+  readonly units: readonly NamedUnit[] | null;
   readonly canManage: boolean;
   readonly onRetired: () => void;
 }) {
@@ -508,7 +516,7 @@ function IdentifierRow({
         </span>
       </TableCell>
       <TableCell align="right">
-        <Qty value={row.packQuantity} /> <span dir="ltr">{row.unit.code}</span>
+        <Qty value={row.packQuantity} /> <bdi>{unitNameByCode(messages, row.unit.code, units)}</bdi>
       </TableCell>
       <TableCell>
         {row.retired
@@ -663,10 +671,7 @@ function AddIdentifierForm({
         description={translate(messages, 'inventory.identifiers.add.unitHelp')}
         value={form.unitId}
         onChange={(next) => setForm((f) => ({ ...f, unitId: next }))}
-        options={(units ?? []).map((unit) => ({
-          value: unit.id,
-          label: `${unit.code} — ${unit.name}`,
-        }))}
+        options={unitOptions(messages, units ?? [])}
         placeholder={translate(messages, 'inventory.identifiers.add.unitDefault')}
       />
       {/* A decimal string as typed, never a number input (F5). */}

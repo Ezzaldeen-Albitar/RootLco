@@ -65,6 +65,7 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadFailureStatus } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { unitNameByCode, unitOptions, type NamedUnit } from '@/lib/unit-name';
 
 import {
   listUnitConversions,
@@ -82,6 +83,7 @@ import {
 import { RecordedMoment, useSingleFlight } from './catalogue-pieces';
 import { OutcomeNote } from './shared';
 import { ItemFinder, PANEL } from './stock-operations';
+import { useUnitList } from './unit-list';
 
 type Listing =
   | { readonly phase: 'loading' }
@@ -113,6 +115,8 @@ export function UnitConversionsScreen({
   const [listing, setListing] = useState<Listing>({ phase: 'loading' });
   const [adding, setAdding] = useState(false);
   const opener = useRef<HTMLButtonElement | null>(null);
+  // The rows name their units by code; the list names them in the reader's language.
+  const units = useUnitList();
 
   const reload = useCallback(() => setEpoch((n) => n + 1), []);
 
@@ -272,6 +276,7 @@ export function UnitConversionsScreen({
                       locale={locale}
                       messages={messages}
                       row={row}
+                      units={units}
                       canManage={canManage}
                       onChanged={reload}
                     />
@@ -295,12 +300,15 @@ function ConversionRow({
   locale,
   messages,
   row,
+  units,
   canManage,
   onChanged,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly row: UnitConversion;
+  /** The units the codes are named from; `null` until read, and the code is then shown. */
+  readonly units: readonly NamedUnit[] | null;
   readonly canManage: boolean;
   readonly onChanged: () => void;
 }) {
@@ -325,9 +333,10 @@ function ConversionRow({
     <TableRow>
       <TableCell>
         <span dir="ltr">
-          1 <bdi>{row.fromUomCode}</bdi>
+          1 <bdi>{unitNameByCode(messages, row.fromUomCode, units)}</bdi>
           {' = '}
-          <span className="tabular-nums">{row.factor}</span> <bdi>{row.toUomCode}</bdi>
+          <span className="tabular-nums">{row.factor}</span>{' '}
+          <bdi>{unitNameByCode(messages, row.toUomCode, units)}</bdi>
         </span>
       </TableCell>
       <TableCell>
@@ -475,7 +484,7 @@ function ConversionForm({
       }
     });
 
-  const options = units.map((unit) => ({ value: unit.id, label: `${unit.code} — ${unit.name}` }));
+  const options = unitOptions(messages, units);
 
   return (
     <form

@@ -834,3 +834,52 @@ describe('the item header (P1-32-PRE-OD-INV2A)', () => {
     );
   });
 });
+
+/**
+ * P1-32-PRE-OD-INVF, UNIT-names: the item header showed "Litre" on the Arabic
+ * page. A standard unit that kept its standard name is named in the page
+ * language; a unit somebody renamed keeps the name it was given; and the pack
+ * unit of a code, which arrives by code alone, is named through the unit list.
+ */
+describe('P1-32-PRE-OD-INVF: the unit in the page language', () => {
+  const litre = { id: 'u-litre', code: 'litre', name: 'Litre' };
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: the header names a standard unit in the page language`, async () => {
+      readItemDetail.mockResolvedValue(okRead(detail({ unitOfMeasure: litre })));
+      if (locale === 'en') {
+        renderLtr(manage());
+      } else {
+        renderRtl(<ItemCodesScreen locale="ar" messages={ar} itemId={ITEM_ID} canManage />);
+      }
+      const unit = await screen.findByTestId('item-header-unit');
+      expect(unit.textContent).toBe(locale === 'en' ? 'Litre' : AR['units.name.litre']);
+    });
+
+    it(`${locale}: the header keeps a customised unit name exactly as stored`, async () => {
+      readItemDetail.mockResolvedValue(
+        okRead(detail({ unitOfMeasure: { id: 'u-each', code: 'each', name: 'Carton' } }))
+      );
+      if (locale === 'en') {
+        renderLtr(manage());
+      } else {
+        renderRtl(<ItemCodesScreen locale="ar" messages={ar} itemId={ITEM_ID} canManage />);
+      }
+      const unit = await screen.findByTestId('item-header-unit');
+      expect(unit.textContent).toBe('Carton');
+    });
+  }
+
+  it('ar: a code pack unit known by its code is named through the unit list', async () => {
+    listUnitsOfMeasure.mockResolvedValue(okRead({ items: [litre] }));
+    listIdentifiers.mockResolvedValue(
+      identifierList([identifier({ unit: { id: 'u-litre', code: 'litre' } })])
+    );
+    renderRtl(<ItemCodesScreen locale="ar" messages={ar} itemId={ITEM_ID} canManage />);
+    const rows = await screen.findByRole('table', {
+      name: AR['inventory.identifiers.caption'] as string,
+    });
+    expect(await within(rows).findByText(AR['units.name.litre'] as string)).toBeTruthy();
+    expect(within(rows).queryByText('litre')).toBeNull();
+  });
+});

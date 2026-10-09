@@ -101,7 +101,10 @@ const decideAdjustment = vi.fn();
 const listItems = vi.fn();
 const listLocations = vi.fn();
 const listBranches = vi.fn();
+// P1-32-PRE-OD-INVF: a count's adjustment is named by reading the count.
+const readStockCount = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
+  readStockCount: (...args: unknown[]) => readStockCount(...args),
   listAdjustments: (...args: unknown[]) => listAdjustments(...args),
   createAdjustment: (...args: unknown[]) => createAdjustment(...args),
   decideAdjustment: (...args: unknown[]) => decideAdjustment(...args),
@@ -739,4 +742,143 @@ describe('each request is shown on the branch\u2019s clock (P1-32-PRE-OD-INV5)',
       expectOnClock(within(table).getAllByRole('row')[1] as HTMLElement, ASKED, locale);
     });
   }
+});
+
+/**
+ * P1-32-PRE-OD-INVF, LANG-identifiers: an adjustment a count raised read
+ * "stock count c803b2f1-…" — the reason the database writes for it. The row now
+ * says it was raised by a stock count, when that count began on the branch
+ * clock, and links to the counts; a count that cannot be read is said in words.
+ * The identifier is never shown, and a reason a person typed is shown as typed.
+ */
+describe('P1-32-PRE-OD-INVF: an adjustment raised by a count says so in words', () => {
+  const COUNT_ID = 'c803b2f1-dbc1-4d5a-95f6-963f202b91af';
+  const fromCount = adjustment({ reason: `stock count ${COUNT_ID}` });
+  const count = (adjustmentId: string | null) => ({
+    status: 'ok' as const,
+    data: {
+      id: COUNT_ID,
+      companyId: COMPANY_ID,
+      branchId: BRANCH_ID,
+      locationId: LOCATION_ID,
+      status: 'reconciled',
+      snapshotAt: '2026-10-09T16:00:00Z',
+      countedBy: OTHER_USER_ID,
+      reconciledAt: '2026-10-09T17:00:00Z',
+      cancelledAt: null,
+      cancelReason: null,
+      notes: null,
+      recordVersion: 3,
+      createdAt: '2026-10-09T16:00:00Z',
+      lineCount: 1,
+      countedLineCount: 1,
+      varianceLineCount: 1,
+      absoluteVarianceQty: '1.000',
+      lines: [
+        {
+          id: 'line-1',
+          itemId: ITEM_ID,
+          sku: 'BRK-001',
+          snapshotQty: '3.000',
+          countedQty: '2.000',
+          movementDeltaDuringCount: '0.000',
+          varianceQty: '-1.000',
+          adjustmentId,
+          adjustmentStatus: 'pending',
+        },
+      ],
+    },
+    correlationId: 'corr',
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    const messages = locale === 'en' ? EN : AR;
+
+    it(`${locale}: names the count that raised it, when it began, and links to the counts`, async () => {
+      listAdjustments.mockResolvedValue(okPage([fromCount]));
+      readStockCount.mockResolvedValue(count(THEIRS_ID));
+      if (locale === 'en') {
+        renderScreen();
+      } else {
+        renderRtl(
+          <AdjustmentsScreen
+            locale="ar"
+            messages={ar}
+            currentUserId={USER_ID}
+            canOperate={true}
+            canApprove={true}
+            canReadBranches={true}
+          />
+        );
+      }
+      const origin = await screen.findByTestId('adjustment-from-count');
+      expect(origin).toHaveTextContent(messages['inventory.adjustments.fromCount'] as string);
+      await waitFor(() =>
+        expect(origin).toHaveTextContent(
+          messages['inventory.adjustments.fromCountStarted'] as string
+        )
+      );
+      // Written on the branch clock, which the moment names.
+      expect(origin.querySelector('[data-moment-zone]')?.getAttribute('data-moment-zone')).toBe(
+        'Asia/Riyadh'
+      );
+      expect(
+        within(origin).getByRole('link', {
+          name: messages['inventory.adjustments.fromCountOpen'] as string,
+        })
+      ).toHaveAttribute('href', `/${locale}/inventory/counts`);
+      expect(readStockCount).toHaveBeenCalledWith(COUNT_ID);
+      expect(document.body.textContent).not.toContain(COUNT_ID);
+    });
+
+    it(`${locale}: a count that cannot be read is said in words, never as its reference`, async () => {
+      listAdjustments.mockResolvedValue(okPage([fromCount]));
+      readStockCount.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+      if (locale === 'en') {
+        renderScreen();
+      } else {
+        renderRtl(
+          <AdjustmentsScreen
+            locale="ar"
+            messages={ar}
+            currentUserId={USER_ID}
+            canOperate={true}
+            canApprove={true}
+            canReadBranches={true}
+          />
+        );
+      }
+      const origin = await screen.findByTestId('adjustment-from-count');
+      await waitFor(() =>
+        expect(origin).toHaveTextContent(
+          messages['inventory.adjustments.fromCountUnavailable'] as string
+        )
+      );
+      expect(document.body.textContent).not.toContain(COUNT_ID);
+    });
+  }
+
+  it('a reason a person typed is shown as typed, and no count is read for it', async () => {
+    listAdjustments.mockResolvedValue(okPage([adjustment()]));
+    renderScreen();
+    expect(await screen.findByText('Broken on the shelf')).toBeVisible();
+    expect(screen.queryByTestId('adjustment-from-count')).toBeNull();
+    expect(readStockCount).not.toHaveBeenCalled();
+  });
+
+  it('the decision form says the same, without the reference', async () => {
+    const user = userEvent.setup();
+    listAdjustments.mockResolvedValue(okPage([fromCount]));
+    readStockCount.mockResolvedValue(count(THEIRS_ID));
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    await user.click(
+      await screen.findByRole('button', {
+        name: `${EN['inventory.adjustments.decide.action'] as string} BRK-001`,
+      })
+    );
+    const panels = await screen.findAllByTestId('adjustment-from-count');
+    expect(panels.length).toBe(2);
+    expect(document.body.textContent).not.toContain(COUNT_ID);
+  });
 });

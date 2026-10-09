@@ -64,6 +64,7 @@ import {
   type StockAdjustment,
   type StockTarget,
 } from '../inventory-contract';
+import { AdjustmentReason, useCountOrigins, type CountOrigin } from './count-origin';
 import { LocationPicker, OutcomeNote, Qty, useLocations, type Locations } from './shared';
 import {
   BranchListView,
@@ -165,6 +166,8 @@ function BranchAdjustments({
   const locations = useLocations(target);
   // Each request's moment is written on the branch's clock, named (`P1-32-PRE-OD-INV5`).
   const zone = useStockDisplayZone(target);
+  // A count's adjustment is said as the count that raised it, never its reference.
+  const originOf = useCountOrigins(list.phase === 'listed' ? list.items : null);
   const [deciding, setDeciding] = useState<StockAdjustment | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -255,7 +258,13 @@ function BranchAdjustments({
                           <Qty value={row.quantity} />
                         </TableCell>
                         <TableCell>
-                          {row.reason}
+                          <AdjustmentReason
+                            locale={locale}
+                            messages={messages}
+                            zone={zone}
+                            adjustment={row}
+                            origin={originOf(row)}
+                          />
                           <span className="block text-caption text-text-muted">
                             <StockMoment value={row.createdAt} locale={locale} zone={zone} />
                           </span>
@@ -306,8 +315,11 @@ function BranchAdjustments({
       {deciding !== null ? (
         <DecisionForm
           key={deciding.id}
+          locale={locale}
           messages={messages}
+          zone={zone}
           adjustment={deciding}
+          origin={originOf(deciding)}
           onClose={() => setDeciding(null)}
           onDecided={(key) => {
             setNotice(key);
@@ -338,13 +350,21 @@ function BranchAdjustments({
 }
 
 function DecisionForm({
+  locale,
   messages,
+  zone,
   adjustment,
+  origin,
   onClose,
   onDecided,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
+  /** The branch clock a count's start is written on. */
+  readonly zone: string;
   readonly adjustment: StockAdjustment;
+  /** Where the adjustment came from, said in words (`useCountOrigins`). */
+  readonly origin: CountOrigin;
   readonly onClose: () => void;
   readonly onDecided: (noticeKey: string) => void;
 }) {
@@ -408,7 +428,15 @@ function DecisionForm({
           {adjustment.locationCode}
         </span>
       </p>
-      <p className="text-caption text-text-muted">{adjustment.reason}</p>
+      <p className="text-caption text-text-muted">
+        <AdjustmentReason
+          locale={locale}
+          messages={messages}
+          zone={zone}
+          adjustment={adjustment}
+          origin={origin}
+        />
+      </p>
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.adjustments.decide.explain')}
       </p>

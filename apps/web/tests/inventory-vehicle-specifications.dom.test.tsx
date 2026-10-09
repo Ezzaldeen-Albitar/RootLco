@@ -672,3 +672,121 @@ describe('one write per press, held by the screen while it is answered', () => {
     expect(confirmVehicleSpecification).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * P1-32-PRE-OD-INVF, SPEC-no-makes: with no vehicle make recorded the form said
+ * "Ask for access to the vehicle catalogue" to an operator who already held it.
+ * An empty catalogue that was READ now says it is empty and that makes are not
+ * added here; only a refusal speaks of access. Nothing is added or invented.
+ *
+ * UNIT-names: a capacity names its unit by code, and the list names it.
+ */
+describe('P1-32-PRE-OD-INVF: an empty make catalogue is not a missing permission', () => {
+  const catalogue = (status: 'ok' | 'denied' | 'unavailable') => ({
+    status,
+    options: [],
+    truncated: false,
+    correlationId: 'corr',
+  });
+
+  async function openForm(locale: 'en' | 'ar' = 'en') {
+    const user = userEvent.setup();
+    const messages = locale === 'en' ? EN : AR;
+    if (locale === 'en') {
+      renderScreen({ canManage: true, canReadCatalogue: true });
+    } else {
+      renderRtl(
+        <VehicleSpecificationsScreen
+          locale="ar"
+          messages={ar}
+          canManage={true}
+          canReadCatalogue={true}
+        />
+      );
+    }
+    await user.click(
+      await screen.findByRole('button', {
+        name: messages['inventory.specifications.create.open'] as string,
+      })
+    );
+    return screen.findByRole('form', {
+      name: messages['inventory.specifications.create.heading'] as string,
+    });
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    const messages = locale === 'en' ? EN : AR;
+
+    it(`${locale}: a catalogue read that answered with no makes says none are recorded`, async () => {
+      listMakes.mockImplementation(async () => catalogue('ok'));
+      const form = await openForm(locale);
+      await waitFor(() => expect(listMakes).toHaveBeenCalledTimes(1));
+      expect(
+        await within(form).findByText(
+          messages['inventory.specifications.create.noMakesRecorded'] as string
+        )
+      ).toBeVisible();
+      expect(
+        within(form).queryByText(messages['inventory.specifications.create.noMakes'] as string)
+      ).toBeNull();
+      expect(
+        within(form).queryByLabelText(
+          new RegExp(`^${escape(messages['inventory.specifications.create.make'] as string)}`)
+        )
+      ).toBeNull();
+    });
+
+    it(`${locale}: a refused catalogue read (403) still says to ask for access`, async () => {
+      listMakes.mockImplementation(async () => catalogue('denied'));
+      const form = await openForm(locale);
+      expect(
+        await within(form).findByText(messages['inventory.specifications.create.noMakes'] as string)
+      ).toBeVisible();
+      expect(
+        within(form).queryByText(
+          messages['inventory.specifications.create.noMakesRecorded'] as string
+        )
+      ).toBeNull();
+    });
+  }
+
+  it('a catalogue read that did not answer says so, and claims neither emptiness nor a refusal', async () => {
+    listMakes.mockImplementation(async () => catalogue('unavailable'));
+    const form = await openForm();
+    expect(
+      await within(form).findByText(
+        EN['inventory.specifications.create.makesUnavailable'] as string
+      )
+    ).toBeVisible();
+    expect(
+      within(form).queryByText(EN['inventory.specifications.create.noMakes'] as string)
+    ).toBeNull();
+    expect(
+      within(form).queryByText(EN['inventory.specifications.create.noMakesRecorded'] as string)
+    ).toBeNull();
+  });
+
+  it('ar: a capacity names its standard unit in Arabic', async () => {
+    listUnitsOfMeasure.mockImplementation(async () =>
+      okRead({
+        items: [
+          { id: UOM_ID, scope: 'platform', code: 'litre', name: 'Litre', dimension: 'volume' },
+        ],
+      })
+    );
+    listVehicleSpecifications.mockImplementation(async () =>
+      listing([specification({ uomCode: 'litre' })])
+    );
+    renderRtl(
+      <VehicleSpecificationsScreen
+        locale="ar"
+        messages={ar}
+        canManage={false}
+        canReadCatalogue={false}
+      />
+    );
+    const table = await screen.findByRole('table');
+    expect(await within(table).findByText(AR['units.name.litre'] as string)).toBeVisible();
+    expect(within(table).queryByText('litre')).toBeNull();
+  });
+});

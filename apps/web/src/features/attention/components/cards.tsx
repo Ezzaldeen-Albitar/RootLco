@@ -21,7 +21,8 @@ import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translateDynamic } from '@/i18n/get-messages';
 import type { ReadFailureStatus, ReadState } from '@/lib/api/read-operation';
 import { formatPeriodInZone } from '@/lib/branch-time';
-import { formatDateTime, formatInteger, intlLocale } from '@/lib/format';
+import { formatInteger, intlLocale } from '@/lib/format';
+import { momentText } from '@/features/inventory/components/stock-operations';
 import {
   readAgedInTransitAlerts,
   readCountDiscrepancyAlerts,
@@ -228,6 +229,7 @@ export function AttentionCard({
   ruleText,
   state,
   asOf,
+  zone,
   capped,
   emptyKey,
   isEmpty,
@@ -241,6 +243,12 @@ export function AttentionCard({
   readonly ruleText: string;
   readonly state: AlertState<unknown>;
   readonly asOf: string | null;
+  /**
+   * The clock a moment is written on, named beside it (P1-32-PRE-OD-INVF,
+   * ATT-clock): the working branch's own zone, `UTC` when no single branch is
+   * in force or its zone is not known — never the browser's.
+   */
+  readonly zone: string;
   /** True when the server said another page exists behind this one. */
   readonly capped: boolean;
   readonly emptyKey: string;
@@ -285,7 +293,7 @@ export function AttentionCard({
           <p className="mt-3 text-caption text-text-muted">
             {asOf === null
               ? t('attention.asOfMissing')
-              : formatMessage(t('attention.asOf'), { when: formatDateTime(asOf, locale) })}
+              : formatMessage(t('attention.asOf'), { when: momentText(asOf, locale, zone) })}
           </p>
           {capped ? <p className="text-caption text-text-muted">{t('attention.capped')}</p> : null}
           {footer ?? null}
@@ -343,11 +351,18 @@ export function LowStockCard({
   locale,
   companyId,
   branchId,
+  zone,
 }: {
   readonly messages: Messages;
   readonly locale: Locale;
   readonly companyId: string;
   readonly branchId: string;
+  /**
+   * The clock a moment is written on, named beside it (P1-32-PRE-OD-INVF,
+   * ATT-clock): the working branch's own zone, `UTC` when no single branch is
+   * in force or its zone is not known — never the browser's.
+   */
+  readonly zone: string;
 }) {
   const t = (key: string) => translateDynamic(messages, key);
   const enabled = companyId !== '' && branchId !== '';
@@ -367,6 +382,7 @@ export function LowStockCard({
       state={state}
       onRetry={state.retry}
       asOf={state.phase === 'ok' ? state.data.asOf : null}
+      zone={zone}
       capped={page?.hasMore ?? false}
       emptyKey="attention.lowStock.empty"
       isEmpty={(page?.items.length ?? 0) === 0}
@@ -443,11 +459,18 @@ export function CountDiscrepancyCard({
   locale,
   companyId,
   branchId,
+  zone,
 }: {
   readonly messages: Messages;
   readonly locale: Locale;
   readonly companyId: string;
   readonly branchId: string;
+  /**
+   * The clock a moment is written on, named beside it (P1-32-PRE-OD-INVF,
+   * ATT-clock): the working branch's own zone, `UTC` when no single branch is
+   * in force or its zone is not known — never the browser's.
+   */
+  readonly zone: string;
 }) {
   const t = (key: string) => translateDynamic(messages, key);
   const enabled = companyId !== '' && branchId !== '';
@@ -467,6 +490,7 @@ export function CountDiscrepancyCard({
       state={state}
       onRetry={state.retry}
       asOf={state.phase === 'ok' ? state.data.asOf : null}
+      zone={zone}
       capped={page?.hasMore ?? false}
       emptyKey="attention.discrepancy.empty"
       isEmpty={(page?.items.length ?? 0) === 0}
@@ -494,8 +518,9 @@ export function CountDiscrepancyCard({
                * link to anything. The short reference below is the tie-break the
                * read carries when even those two agree.
                */}
-              <span className="block text-caption text-text-muted" dir="ltr">
-                {row.locationCode} · {formatDateTime(row.countedOn, locale)}
+              <span className="block text-caption text-text-muted">
+                <bdi dir="ltr">{row.locationCode}</bdi> ·{' '}
+                <bdi data-moment-zone={zone}>{momentText(row.countedOn, locale, zone)}</bdi>
               </span>
               <span className="block text-caption text-text-muted" dir="ltr">
                 {formatMessage(t('attention.discrepancy.countRef'), {
@@ -580,6 +605,7 @@ export function UnusualConsumptionCard({
       state={state}
       onRetry={state.retry}
       asOf={state.phase === 'ok' ? state.data.asOf : null}
+      zone={zone}
       capped={page?.hasMore ?? false}
       emptyKey="attention.consumption.empty"
       isEmpty={(page?.items.length ?? 0) === 0}
@@ -645,12 +671,19 @@ export function AgedInTransitCard({
   locale,
   companyId,
   branchId,
+  zone,
   branchName = () => null,
 }: {
   readonly messages: Messages;
   readonly locale: Locale;
   readonly companyId: string;
   readonly branchId: string;
+  /**
+   * The clock a moment is written on, named beside it (P1-32-PRE-OD-INVF,
+   * ATT-clock): the working branch's own zone, `UTC` when no single branch is
+   * in force or its zone is not known — never the browser's.
+   */
+  readonly zone: string;
   /**
    * The name of a branch the caller can see, or `null` where it cannot. Passed
    * in rather than read here: the branch list is already on the screen for the
@@ -682,6 +715,7 @@ export function AgedInTransitCard({
       state={state}
       onRetry={state.retry}
       asOf={state.phase === 'ok' ? state.data.asOf : null}
+      zone={zone}
       capped={page?.hasMore ?? false}
       emptyKey="attention.inTransit.empty"
       isEmpty={(page?.items.length ?? 0) === 0}
@@ -774,10 +808,17 @@ const SEVERITY_UNKNOWN_TONE = 'border-warning-border bg-warning-subtle';
 export function CapacityCard({
   messages,
   locale,
+  zone,
   enabled,
 }: {
   readonly messages: Messages;
   readonly locale: Locale;
+  /**
+   * The clock a moment is written on, named beside it (P1-32-PRE-OD-INVF,
+   * ATT-clock): the working branch's own zone, `UTC` when no single branch is
+   * in force or its zone is not known — never the browser's.
+   */
+  readonly zone: string;
   /** `org.tenant.read`. False means the card is never asked for at all. */
   readonly enabled: boolean;
 }) {
@@ -795,6 +836,7 @@ export function CapacityCard({
       state={state}
       onRetry={state.retry}
       asOf={data?.asOf ?? null}
+      zone={zone}
       capped={false}
       emptyKey="attention.capacity.empty"
       isEmpty={(data?.alerts.length ?? 0) === 0}

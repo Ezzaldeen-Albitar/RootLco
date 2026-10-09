@@ -62,6 +62,7 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadFailureStatus } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { unitNameByCode, unitOptions, type NamedUnit } from '@/lib/unit-name';
 
 import {
   confirmVehicleSpecification,
@@ -86,6 +87,7 @@ import { useAllItemCategories } from './CategoryTree';
 import { CategoryTreePicker } from './CategoryTreePicker';
 import { OutcomeNote, Qty } from './shared';
 import { LINK, PANEL } from './stock-operations';
+import { useUnitList } from './unit-list';
 
 type Listing =
   | { readonly phase: 'loading' }
@@ -118,6 +120,8 @@ export function VehicleSpecificationsScreen({
   const [listing, setListing] = useState<Listing>({ phase: 'loading' });
   const [adding, setAdding] = useState(false);
   const opener = useRef<HTMLButtonElement | null>(null);
+  // The rows name their unit by code; the list names it in the reader's language.
+  const units = useUnitList();
 
   const reload = useCallback(() => setEpoch((n) => n + 1), []);
 
@@ -262,6 +266,7 @@ export function VehicleSpecificationsScreen({
                       locale={locale}
                       messages={messages}
                       row={row}
+                      units={units}
                       canManage={canManage}
                       onChanged={reload}
                     />
@@ -285,12 +290,15 @@ function SpecificationRow({
   locale,
   messages,
   row,
+  units,
   canManage,
   onChanged,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly row: VehicleSpecification;
+  /** The units the code is named from; `null` until read, and the code is then shown. */
+  readonly units: readonly NamedUnit[] | null;
   readonly canManage: boolean;
   readonly onChanged: () => void;
 }) {
@@ -346,7 +354,7 @@ function SpecificationRow({
         <bdi>{row.serviceCondition}</bdi>
       </TableCell>
       <TableCell align="right" className="tabular-nums">
-        <Qty value={row.capacity} /> <bdi>{row.uomCode}</bdi>
+        <Qty value={row.capacity} /> <bdi>{unitNameByCode(messages, row.uomCode, units)}</bdi>
       </TableCell>
       <TableCell>
         <bdi>{row.sourceReference}</bdi>
@@ -402,6 +410,27 @@ const EMPTY_SPECIFICATION = {
   sourceReference: '',
 };
 
+/** What the make catalogue answered the form. */
+type MakesAnswer =
+  | { readonly phase: 'loading' }
+  | { readonly phase: 'listed'; readonly options: readonly CatalogueOption[] }
+  /** No `veh.vehicle.read`, or the read was refused: the one case access is the answer. */
+  | { readonly phase: 'refused' }
+  /** The read did not answer (an outage, an ended session): nothing is known about the makes. */
+  | { readonly phase: 'failed' };
+
+/**
+ * Why no make can be chosen, by what the catalogue answered. A catalogue that
+ * answered with no rows is EMPTY, not withheld: the sentence says so, and that
+ * makes are not added here, rather than sending the operator to ask for access
+ * they already hold. Nothing is added, seeded or invented to fill it.
+ */
+const NO_MAKES_KEY = {
+  listed: 'inventory.specifications.create.noMakesRecorded',
+  refused: 'inventory.specifications.create.noMakes',
+  failed: 'inventory.specifications.create.makesUnavailable',
+} as const satisfies Record<Exclude<MakesAnswer['phase'], 'loading'>, keyof Messages>;
+
 function SpecificationForm({
   locale,
   messages,
@@ -414,7 +443,15 @@ function SpecificationForm({
   readonly onDone: () => void;
 }) {
   const [units, setUnits] = useState<readonly UnitOfMeasureOption[]>([]);
-  const [makes, setMakes] = useState<readonly CatalogueOption[]>([]);
+  /*
+   * The make catalogue as one of four answers (P1-32-PRE-OD-INVF, SPEC-no-makes).
+   * An EMPTY catalogue the operator may read and a catalogue they may not read
+   * used to share one sentence — "ask for access" — so an operator who already
+   * held the access was sent to ask for it. Only a refusal says that now.
+   */
+  const [makes, setMakes] = useState<MakesAnswer>(
+    canReadCatalogue ? { phase: 'loading' } : { phase: 'refused' }
+  );
   /*
    * Stamped with the make it answers for, so a make change shows NO models until
    * that make's own list arrives rather than the previous make's — and without
@@ -471,7 +508,14 @@ function SpecificationForm({
     if (!canReadCatalogue) return;
     let live = true;
     void listMakes().then((result) => {
-      if (live && result.status === 'ok') setMakes(result.options);
+      if (!live) return;
+      setMakes(
+        result.status === 'ok'
+          ? { phase: 'listed', options: result.options }
+          : result.status === 'denied'
+            ? { phase: 'refused' }
+            : { phase: 'failed' }
+      );
     });
     return () => {
       live = false;
@@ -593,14 +637,14 @@ function SpecificationForm({
         {translate(messages, 'inventory.specifications.create.explain')}
       </p>
 
-      {canReadCatalogue && makes.length > 0 ? (
+      {canReadCatalogue && makes.phase === 'listed' && makes.options.length > 0 ? (
         <>
           <FormSelectField
             label={translate(messages, 'inventory.specifications.create.make')}
             required
             value={form.makeId}
             onChange={(makeId) => edit({ makeId, modelId: '' })}
-            options={makes.map((make) => ({ value: make.id, label: make.name }))}
+            options={makes.options.map((make) => ({ value: make.id, label: make.name }))}
             placeholder={translate(messages, 'inventory.specifications.create.chooseMake')}
             error={errorFor('makeId')}
           />
@@ -614,22 +658,23 @@ function SpecificationForm({
             error={errorFor('modelId')}
           />
         </>
-      ) : (
-        /*
-         * No make catalogue, so no make to choose.
-         *
-         * This used to be two boxes asking for a make reference and a model
-         * reference — strings nobody can look up, offered to the operator whose
-         * catalogue read had just been refused. A specification is ABOUT a
-         * make, so without one there is nothing to record, and saying so is the
-         * only honest answer available (Owner directive, `P1-32-PRE-OD-UX`).
-         */
+      ) : /*
+       * No make catalogue, so no make to choose.
+       *
+       * This used to be two boxes asking for a make reference and a model
+       * reference — strings nobody can look up, offered to the operator whose
+       * catalogue read had just been refused. A specification is ABOUT a
+       * make, so without one there is nothing to record, and saying so is the
+       * only honest answer available (Owner directive, `P1-32-PRE-OD-UX`).
+       */
+      makes.phase === 'loading' ? null : (
         <p
           role="status"
           data-testid="specification-no-makes"
+          data-makes={makes.phase}
           className="text-supporting text-text-secondary sm:col-span-2"
         >
-          {translate(messages, 'inventory.specifications.create.noMakes')}
+          {translate(messages, NO_MAKES_KEY[makes.phase])}
         </p>
       )}
 
@@ -697,7 +742,7 @@ function SpecificationForm({
         required
         value={form.uomId}
         onChange={(uomId) => edit({ uomId })}
-        options={units.map((unit) => ({ value: unit.id, label: `${unit.code} — ${unit.name}` }))}
+        options={unitOptions(messages, units)}
         placeholder={translate(messages, 'inventory.material.create.chooseUom')}
         error={errorFor('uomId')}
       />

@@ -82,7 +82,10 @@ const listItemCategoryPage = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   listServiceLines: (...args: unknown[]) => listServiceLines(...args),
 }));
+// P1-32-PRE-OD-INVF: the card names its part by reading the item (LANG-identifiers).
+const readItemDetail = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
+  readItemDetail: (...args: unknown[]) => readItemDetail(...args),
   listMaterialRequirements: (...args: unknown[]) => listMaterialRequirements(...args),
   readMaterialRequirement: (...args: unknown[]) => readMaterialRequirement(...args),
   createMaterialRequirement: (...args: unknown[]) => createMaterialRequirement(...args),
@@ -275,6 +278,7 @@ const allowance = () => screen.getByTestId('material-allowance');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  readItemDetail.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
   listMaterialRequirements.mockImplementation(async () => listing([requirement()]));
   readMaterialRequirement.mockImplementation(async () =>
     okRead({ ...requirement(), exceptions: [] })
@@ -811,6 +815,9 @@ describe('the service line is offered rather than demanded', () => {
 
   it('reads the lines only when the form is opened, and only for this work order', async () => {
     const user = userEvent.setup();
+    // No requirement is listed, so no card needs a line named (P1-32-PRE-OD-INVF):
+    // the form opening is the only thing that asks for the lines.
+    listMaterialRequirements.mockImplementation(async () => listing([]));
     renderPanel({ canRequest: true });
     await waitFor(() => expect(listMaterialRequirements).toHaveBeenCalled());
     expect(listServiceLines).not.toHaveBeenCalled();
@@ -1485,6 +1492,113 @@ describe('the material panel on Material UI (P1-32-PRE-OD-INV5)', () => {
       expect(
         screen.queryByRole('form', { name: EN['inventory.material.create.heading'] as string })
       ).toBeNull();
+    });
+  });
+});
+
+/**
+ * P1-32-PRE-OD-INVF, LANG-identifiers: the requirement card named its service
+ * line by its raw identifier, though the form had offered that line by its
+ * description. The card now says the line's description and the part's name,
+ * read through the reads that already exist, and says in words when either
+ * cannot be read — never the identifier.
+ */
+describe('P1-32-PRE-OD-INVF: a requirement is named, never identified', () => {
+  function renderIn(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    const props = {
+      locale,
+      messages: locale === 'en' ? en : ar,
+      workOrderId: WORK_ORDER_ID,
+      target: { companyId: COMPANY_ID, branchId: BRANCH_ID },
+      currentUserId: USER_ID,
+      canRequest: false,
+      canApprove: false,
+      canDecideException: false,
+      canReadWorkOrder: true,
+      canReadItems: true,
+      chosenId: null,
+      onChoose: vi.fn(),
+      onChanged: vi.fn(),
+      ...over,
+    } as const;
+    return locale === 'en'
+      ? renderLtr(<MaterialRequirementsPanel {...props} />)
+      : renderRtl(<MaterialRequirementsPanel {...props} />);
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    const messages = locale === 'en' ? EN : AR;
+
+    it(`${locale}: the card says the service line and the part by name`, async () => {
+      readItemDetail.mockResolvedValue(okRead({ id: ITEM_ID, name: 'Engine oil 5W-30' }));
+      const { container } = renderIn(locale);
+      const line = await screen.findByTestId('material-service-line');
+      await waitFor(() => expect(line.textContent).toBe('Engine oil change'));
+      const part = screen.getByTestId('material-item');
+      await waitFor(() => expect(part.textContent).toBe('Engine oil 5W-30'));
+      expect(readItemDetail).toHaveBeenCalledWith(ITEM_ID);
+      expect(container.textContent).not.toContain(SERVICE_LINE_ID);
+      expect(container.textContent).not.toContain(ITEM_ID);
+      expect(container.textContent).not.toContain(REQUIREMENT_ID);
+    });
+
+    it(`${locale}: a name that cannot be read is said in words, not as the identifier`, async () => {
+      listServiceLines.mockImplementation(async () => ({
+        status: 'denied' as const,
+        correlationId: 'corr',
+      }));
+      readItemDetail.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+      const { container } = renderIn(locale);
+      const line = await screen.findByTestId('material-service-line');
+      await waitFor(() =>
+        expect(line.textContent).toBe(messages['inventory.material.serviceLineUnavailable'])
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('material-item').textContent).toBe(
+          messages['inventory.material.itemUnavailable']
+        )
+      );
+      expect(container.textContent).not.toContain(SERVICE_LINE_ID);
+      expect(container.textContent).not.toContain(ITEM_ID);
+    });
+  }
+
+  it('without the work order read, no line read is made and the card says the line is not available', async () => {
+    const { container } = renderIn('en', { canReadWorkOrder: false });
+    const line = await screen.findByTestId('material-service-line');
+    expect(line.textContent).toBe(EN['inventory.material.serviceLineUnavailable']);
+    expect(listServiceLines).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain(SERVICE_LINE_ID);
+  });
+
+  it('a service line the work order no longer lists is said to be unavailable', async () => {
+    listServiceLines.mockImplementation(async () => okRead({ items: [] }));
+    renderIn('en');
+    const line = await screen.findByTestId('material-service-line');
+    await waitFor(() =>
+      expect(line.textContent).toBe(EN['inventory.material.serviceLineUnavailable'])
+    );
+  });
+
+  it('choosing the requirement hands the forms its part and unit in words', async () => {
+    const user = userEvent.setup();
+    const onChoose = vi.fn();
+    readItemDetail.mockResolvedValue(okRead({ id: ITEM_ID, name: 'Engine oil 5W-30' }));
+    renderIn('ar', { onChoose });
+    await waitFor(() =>
+      expect(screen.getByTestId('material-item').textContent).toBe('Engine oil 5W-30')
+    );
+    await user.click(screen.getByRole('button', { name: AR['inventory.material.use'] as string }));
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    const [chosen, summary] = onChoose.mock.calls[0] as [
+      { id: string },
+      { what: string; itemName: string | null; unit: string | null },
+    ];
+    expect(chosen.id).toBe(REQUIREMENT_ID);
+    expect(summary).toEqual({
+      what: 'Engine oil 5W-30',
+      itemName: 'Engine oil 5W-30',
+      unit: 'Litre',
     });
   });
 });
