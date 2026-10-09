@@ -1763,7 +1763,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
     ).toBeVisible();
   });
 
-  it('names the snapshot a refused duplicate collides with, and opens it', async () => {
+  it('names the newest snapshot of the period when a duplicate is refused, and opens it', async () => {
     PERMISSIONS = [READ, CONFIGURE];
     saveReportSnapshot.mockResolvedValue({
       status: 'conflict',

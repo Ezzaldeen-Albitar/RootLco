@@ -4348,6 +4348,8 @@ What moved to which wrapper:
 
 Wrapper extensions: none. `ReportFormDialog` is the panel's own and is not a shared wrapper; no
 component folder is newly imported by a scanned tree, so `MODULE_DISPOSITION` is unchanged.
+`ReportFormDialog` stays feature-local (`apps/web/src/features/reports/components/`) pending the
+shared form-dialog consolidation planned for administration wave 2.
 
 Preserved, each held by a case in `reports.dom.test.tsx`, `refunds.dom.test.tsx` or
 `invoices.dom.test.tsx`:
@@ -4400,6 +4402,8 @@ Deliberate behaviour changes:
 - The payout day refuses a day after the branch's today, and a day typed only in part, before
   sending; the server's own refusal (`refund_payout_date_invalid`) is unchanged.
 - A second press while a request, decision or payout is out sends nothing.
+- A refund request that is accepted now also clears the chosen method, with the amount and the
+  reason, so the next request starts with no method chosen; before, the method stayed chosen.
 
 Assertions changed, each with its reason:
 
@@ -4410,7 +4414,8 @@ Assertions changed, each with its reason:
   provider the grid needs.
 - `refunds.dom.test.tsx`: the history's payout day is expected as a written day, not the stored
   text; the Arabic empty-list case expects "No refund requests yet" (`refunds.list.empty`) because
-  that list was not narrowed — "match these choices" is now asserted by a narrowed case.
+  that list was not narrowed — "match these choices" is asserted by narrowed cases in English and
+  Arabic, each with its "Clear the choices" action.
 - No assertion was deleted, weakened or skipped, and no timeout was raised.
 
 Known limitations and recorded gaps, one line each:
@@ -4450,8 +4455,8 @@ Known limitations and recorded gaps, one line each:
 - No web test file was added or removed; the web tier gains cases in existing files.
 
 Checklist correction (WP00 scan): the FD16B table further down said the save and Restate need
-`rpt.export`; both rows now say `rpt.report.configure`, the gate since FD16C, with `rpt.export`
-named as the FD16B gate.
+`rpt.export`; both rows now say `rpt.report.configure`, the gate since FD16C, and the operation row
+says `rpt.export` gates CSV export only, so it cannot be read as still gating the save.
 
 ### Finance controls that need no business decision (P1-32-PRE-OD-FIN)
 
@@ -5732,14 +5737,14 @@ correction of it is a distinguished restatement. One forward migration
 (`rpt.report.snapshot_created`), no new permission code (a dedicated snapshot code is an open Owner
 question).
 
-| Route                                                   | Operation                    | Who                                                                               | What changed                                                                                                                                                                                                                                                         |
-| ------------------------------------------------------- | ---------------------------- | --------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST /reports/{reportCode}/snapshots`                  | `rpt.report-snapshot-create` | `rpt.report.configure` (FD16C; `rpt.export` here), `rpt.report.read`, the codes   | Saves a frozen copy of the report as of the moment shown (idempotent; one consistent read; capped like the export); with `restatesSnapshotId` and a reason, restates the latest snapshot of the period. Refusals by rule are recorded (D12).                         |
-| `GET /reports/{reportCode}/snapshots`                   | `rpt.report-snapshot-list`   | `rpt.report.read` and the report's own codes                                      | The branch's snapshots of the report, newest first, for one period: saved when and by whom, the moment, the rows, the restatement chain. No rows.                                                                                                                    |
-| `GET /reports/{reportCode}/snapshots/{snapshotId}/rows` | `rpt.report-snapshot-read`   | `rpt.report.read` and every code the snapshot froze, in the snapshot's own branch | The frozen rows a page at a time, the snapshot it restates and the one that restated it, and a restatement's difference. Another tenant, branch or a reader without the codes gets not-found. The party name is withheld without `crm.customer.read`.                |
-| `GET /reports/{reportCode}/rows`                        | `rpt.report-run`             | unchanged                                                                         | `asOf=now` is read on the database clock; the cursor carries the moment, so a later page without `asOf` keeps it and a different moment beside it is refused (`query.cursor`, `as_of_mismatch`); the envelope says whether the report keeps snapshots (`snapshots`). |
-| `POST /reports/{reportCode}:export`                     | `rpt.report-export`          | unchanged                                                                         | A refused moment names `body.asOf`.                                                                                                                                                                                                                                  |
-| `/reports/[reportCode]` ("Invoices and payments")       | the five above               | as above; Save and Restate only with `rpt.report.configure` (FD16C)               | "Saved snapshots": save with a confirmation naming scope, period and moment; the list with names, never identifiers; a snapshot's banner, restatement notes and difference; Restate on the latest only, with a required reason; en and ar, right to left.            |
+| Route                                                   | Operation                    | Who                                                                                                                                | What changed                                                                                                                                                                                                                                                         |
+| ------------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /reports/{reportCode}/snapshots`                  | `rpt.report-snapshot-create` | gated by `rpt.report.configure` since FD16C; `rpt.export` gates CSV export only; also `rpt.report.read` and the report's own codes | Saves a frozen copy of the report as of the moment shown (idempotent; one consistent read; capped like the export); with `restatesSnapshotId` and a reason, restates the latest snapshot of the period. Refusals by rule are recorded (D12).                         |
+| `GET /reports/{reportCode}/snapshots`                   | `rpt.report-snapshot-list`   | `rpt.report.read` and the report's own codes                                                                                       | The branch's snapshots of the report, newest first, for one period: saved when and by whom, the moment, the rows, the restatement chain. No rows.                                                                                                                    |
+| `GET /reports/{reportCode}/snapshots/{snapshotId}/rows` | `rpt.report-snapshot-read`   | `rpt.report.read` and every code the snapshot froze, in the snapshot's own branch                                                  | The frozen rows a page at a time, the snapshot it restates and the one that restated it, and a restatement's difference. Another tenant, branch or a reader without the codes gets not-found. The party name is withheld without `crm.customer.read`.                |
+| `GET /reports/{reportCode}/rows`                        | `rpt.report-run`             | unchanged                                                                                                                          | `asOf=now` is read on the database clock; the cursor carries the moment, so a later page without `asOf` keeps it and a different moment beside it is refused (`query.cursor`, `as_of_mismatch`); the envelope says whether the report keeps snapshots (`snapshots`). |
+| `POST /reports/{reportCode}:export`                     | `rpt.report-export`          | unchanged                                                                                                                          | A refused moment names `body.asOf`.                                                                                                                                                                                                                                  |
+| `/reports/[reportCode]` ("Invoices and payments")       | the five above               | as above; Save and Restate only with `rpt.report.configure` (FD16C)                                                                | "Saved snapshots": save with a confirmation naming scope, period and moment; the list with names, never identifiers; a snapshot's banner, restatement notes and difference; Restate on the latest only, with a required reason; en and ar, right to left.            |
 
 Web: "Now" is sent as the word `now`; a seeded unit code shows the catalogue's word only while the
 line still carries the seeded English name (`apps/web/src/lib/unit-name.ts`). No new web route.

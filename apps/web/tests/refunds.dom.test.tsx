@@ -519,6 +519,25 @@ describe('the refunds list', () => {
     expect(screen.queryByText(AR['refunds.list.none'] as string)).toBeNull();
   });
 
+  it('says in Arabic when nothing matches the choices, offering to clear them', async () => {
+    const user = userEvent.setup();
+    listRefundRequests.mockResolvedValue(page([]));
+    list('ar');
+    await screen.findByTestId('refunds-empty');
+    await user.click(
+      within(screen.getByTestId('refunds-toolbar')).getByRole('button', {
+        name: AR['refunds.state.approved'] as string,
+      })
+    );
+    const none = await screen.findByTestId('refunds-no-matches');
+    expect(await screen.findByText(AR['refunds.list.none'] as string)).toBeVisible();
+    expect(none).toHaveTextContent(AR['refunds.list.none'] as string);
+    expect(
+      within(none).getByRole('button', { name: AR['refunds.list.clearChoices'] as string })
+    ).toBeVisible();
+    expect(screen.queryByTestId('refunds-empty')).toBeNull();
+  });
+
   it('says when the choices match nothing, and clearing them reads the whole list again', async () => {
     const user = userEvent.setup();
     listRefundRequests.mockResolvedValue(page([]));
