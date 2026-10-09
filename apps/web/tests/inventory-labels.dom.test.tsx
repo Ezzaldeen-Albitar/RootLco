@@ -3,8 +3,20 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr, renderRtl } from './render';
-import { EN, ITEM_ID, USER_ID, item, itemPage, labelled, okRead } from './support/stock-operations';
+import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { messagesFor, renderLtr as renderBareLtr, renderRtl as renderBareRtl } from './render';
+import {
+  EN,
+  ITEM_ID,
+  USER_ID,
+  item,
+  itemPage,
+  labelled,
+  okRead,
+  seriousViolations,
+} from './support/stock-operations';
 
 /**
  * Labels and the scan box, rendered (P1-32).
@@ -29,6 +41,21 @@ import { EN, ITEM_ID, USER_ID, item, itemPage, labelled, okRead } from './suppor
  */
 
 const AR = ar as Record<string, string>;
+
+/*
+ * Since `P1-32-PRE-OD-INV6` every render goes under the product's Material
+ * provider, as the locale layout mounts it: the scan box, the size and copies
+ * fields and the buttons are Material's. No selector of an existing case moved.
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderLtr = (ui: ReactElement) => renderBareLtr(withMui(ui, 'en'));
+const renderRtl = (ui: ReactElement) => renderBareRtl(withMui(ui, 'ar'));
 
 const readItemLabel = vi.fn();
 const resolveBarcode = vi.fn();
@@ -328,5 +355,122 @@ describe('Arabic', () => {
     renderRtl(<LabelsScreen locale="ar" messages={ar} />);
     expect(document.documentElement.dir).toBe('rtl');
     expect(screen.getByText(AR['inventory.labels.explain'] as string)).toBeTruthy();
+  });
+});
+
+/*
+ * P1-32-PRE-OD-INV6: labels and the scan box on Material UI. What the move must
+ * keep, in both languages: a wedge scan is an Enter-terminated typed code in a
+ * box read left to right; the copies box is a whole-number box whose refusal is
+ * marked on it with what was typed kept; a label that could not be read is said
+ * as what happened, in the screen's own sentence, with a retry only where
+ * retrying can change the answer.
+ */
+describe('on Material UI (INV6)', () => {
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const catalogueOf = (locale: 'en' | 'ar') => (locale === 'ar' ? AR : EN);
+  const namedIn = (catalogue: Record<string, string>) => (key: string) =>
+    new RegExp(`^${escape(catalogue[key] as string)}`);
+  function renderIn(locale: 'en' | 'ar') {
+    return locale === 'ar'
+      ? renderRtl(<LabelsScreen locale="ar" messages={ar} />)
+      : renderLtr(<LabelsScreen locale="en" messages={en} />);
+  }
+  async function wedgeIn(
+    user: ReturnType<typeof userEvent.setup>,
+    catalogue: Record<string, string>,
+    code: string
+  ) {
+    const box = screen.getByLabelText(namedIn(catalogue)('inventory.scan.label'));
+    await user.click(box);
+    await user.keyboard(`${code}{Enter}`);
+    return box;
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`a wedge scan is read left to right and resolved once (${locale})`, async () => {
+      const catalogue = catalogueOf(locale);
+      const user = userEvent.setup();
+      renderIn(locale);
+      const box = await wedgeIn(user, catalogue, GOOD_EAN);
+      expect(box).toHaveAttribute('dir', 'ltr');
+      expect(box).toHaveValue('');
+      await waitFor(() => expect(resolveBarcode).toHaveBeenCalledTimes(1));
+      expect(resolveBarcode.mock.calls[0]?.[0]).toBe(GOOD_EAN);
+      expect(await screen.findByRole('img')).toBeTruthy();
+    });
+
+    it(`the copies box is a whole number read left to right; a refusal is marked on it and kept (${locale})`, async () => {
+      const catalogue = catalogueOf(locale);
+      const print = vi.fn();
+      Object.defineProperty(window, 'print', { value: print, configurable: true });
+      const user = userEvent.setup();
+      renderIn(locale);
+      await wedgeIn(user, catalogue, GOOD_EAN);
+      await screen.findByRole('img');
+      const copies = screen.getByLabelText(namedIn(catalogue)('inventory.labels.format.copies'));
+      expect(copies).toHaveAttribute('dir', 'ltr');
+      expect(copies).toHaveAttribute('inputmode', 'numeric');
+      expect(copies).not.toHaveAttribute('type', 'number');
+      await user.clear(copies);
+      await user.type(copies, '0');
+      await user.click(
+        screen.getByRole('button', { name: catalogue['inventory.labels.print'] as string })
+      );
+      expect(copies).toHaveAttribute('aria-invalid', 'true');
+      expect(copies).toHaveAccessibleDescription(
+        new RegExp(escape(catalogue['inventory.labels.format.copiesRange'] as string))
+      );
+      expect(copies).toHaveValue('0');
+      expect(print).not.toHaveBeenCalled();
+      await user.type(copies, '{Backspace}2');
+      expect(copies).not.toHaveAttribute('aria-invalid');
+    });
+
+    it(`a label that could not be read offers a retry that reads it again (${locale})`, async () => {
+      const catalogue = catalogueOf(locale);
+      readItemLabel.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr-1' });
+      const user = userEvent.setup();
+      renderIn(locale);
+      await wedgeIn(user, catalogue, GOOD_EAN);
+      expect(
+        await screen.findByText(catalogue['inventory.labels.unavailable'] as string)
+      ).toBeVisible();
+      expect(screen.getByText('corr-1')).toBeVisible();
+      expect(screen.queryByRole('img')).toBeNull();
+      await user.click(screen.getByRole('button', { name: catalogue['state.retry'] as string }));
+      expect(await screen.findByRole('img')).toBeTruthy();
+      expect(readItemLabel).toHaveBeenCalledTimes(2);
+    });
+
+    it(`a refused label is a refusal, with no retry (${locale})`, async () => {
+      const catalogue = catalogueOf(locale);
+      readItemLabel.mockResolvedValue({ status: 'denied', correlationId: 'corr-2' });
+      const user = userEvent.setup();
+      renderIn(locale);
+      await wedgeIn(user, catalogue, GOOD_EAN);
+      expect(
+        await screen.findByText(catalogue['inventory.labels.refused'] as string)
+      ).toBeVisible();
+      expect(screen.queryByRole('button', { name: catalogue['state.retry'] as string })).toBeNull();
+      expect(screen.queryByRole('img')).toBeNull();
+    });
+  }
+
+  it('an item the server no longer knows keeps its own sentence', async () => {
+    readItemLabel.mockResolvedValue({ status: 'not-found', correlationId: 'corr-3' });
+    const user = userEvent.setup();
+    renderIn('en');
+    await wedgeIn(user, EN, GOOD_EAN);
+    expect(await screen.findByText(EN['inventory.labels.missing'] as string)).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
+  it('has no serious or critical accessibility finding with a label drawn, in Arabic', async () => {
+    const user = userEvent.setup();
+    const { container } = renderIn('ar');
+    await wedgeIn(user, AR, GOOD_EAN);
+    await screen.findByRole('img');
+    expect(await seriousViolations(container)).toEqual([]);
   });
 });

@@ -29,16 +29,24 @@
  * The idempotency key is derived once at that confirmation, so a retry after a
  * lost answer replays the first write rather than repeating it. Those two rules
  * are the caller's, which is why this component performs no write at all.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV6`)
+ *
+ * The box is `FormTextField` and the three buttons are Material's. Nothing
+ * about how a code arrives changed: Enter in the box (a wedge's terminator, or
+ * a person's key) accepts what was typed and never submits a form around the
+ * box, the Read button does the same, the doubled frame is still ignored and
+ * said, and the camera is still offered only where the browser can use one.
  */
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import Button from '@mui/material/Button';
 
-import { TextField } from '@/components/forms/Field';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 
 import { MAX_IDENTIFIER_VALUE } from '../inventory-contract';
-import { SECONDARY_BUTTON } from './shared';
 
 /**
  * How long the same code is treated as a repeat of the frame before it.
@@ -234,15 +242,15 @@ export function ScanBox({
 
   return (
     <div className="flex flex-col gap-2" data-scan={idPrefix}>
-      <TextField
+      <FormTextField
         label={label}
-        {...(description === undefined ? {} : { description })}
+        description={description}
         value={typed}
         inputMode="text"
         dir="ltr"
         autoComplete="off"
         disabled={disabled}
-        onChange={(event) => setTyped(event.target.value)}
+        onChange={setTyped}
         onKeyDown={(event) => {
           // A wedge scanner ends its transmission with Enter, and a person
           // typing presses the same key. One path serves both.
@@ -254,9 +262,9 @@ export function ScanBox({
         error={tooLong ? translate(messages, 'inventory.scan.tooLong') : undefined}
       />
       <div className="flex flex-wrap items-center gap-2">
-        <button
+        <Button
           type="button"
-          className={SECONDARY_BUTTON}
+          variant="outlined"
           disabled={disabled}
           onClick={() => {
             accept(typed);
@@ -264,30 +272,30 @@ export function ScanBox({
           }}
         >
           {translate(messages, 'inventory.scan.submit')}
-        </button>
+        </Button>
         {cameraCapable && (camera === 'idle' || camera === 'denied' || camera === 'failed') ? (
-          <button
+          <Button
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             disabled={disabled}
             onClick={() => {
               void startCamera();
             }}
           >
             {translate(messages, 'inventory.scan.camera.start')}
-          </button>
+          </Button>
         ) : null}
         {cameraCapable && camera === 'running' ? (
-          <button
+          <Button
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             onClick={() => {
               stopCamera();
               setCamera('idle');
             }}
           >
             {translate(messages, 'inventory.scan.camera.stop')}
-          </button>
+          </Button>
         ) : null}
       </div>
       {noteKey !== null ? (
