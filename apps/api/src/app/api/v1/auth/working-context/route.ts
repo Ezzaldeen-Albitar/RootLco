@@ -28,7 +28,11 @@
  * caller's own authority and nothing more.
  *
  * `scope: 'tenant'`, and there is no company or branch parameter: the request names
- * no target, because naming one is the very thing the caller cannot yet do.
+ * no target, because naming one is the very thing the caller cannot yet do. Any
+ * query parameter at all — `companyId`, `branchId`, `userId` or an unknown name —
+ * is refused with the standard validation error by an empty `.strict()` schema
+ * before anything is read (P1-32-PRE-OD-FRXR); it used to be ignored, which let a
+ * request look as though it could substitute another company or branch.
  *
  * `auditClass: 'none'` matches the session read beside it: a caller reading its own
  * scope writes no audit trail, and the two reads are the same act of a client
@@ -37,12 +41,17 @@
  * `cacheCategory: 'never'`, for the reason the session read gives — a cached reach
  * is a stale reach, and a revoked grant must stop working immediately.
  */
+import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
+import { parseOrFail, searchParamsToObject } from '@/server/http/validation';
 import { iamModule } from '@/modules/iam';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/** Deliberately empty and `.strict()`: any parameter is refused, never ignored. */
+const Query = z.object({}).strict();
 
 export const WORKING_CONTEXT_OPERATION = defineOperation({
   id: 'iam.working-context-read',
@@ -61,7 +70,8 @@ export const WORKING_CONTEXT_OPERATION = defineOperation({
 });
 
 export async function GET(request: Request): Promise<Response> {
-  return handleOperation(WORKING_CONTEXT_OPERATION, request, async ({ db }) => ({
-    body: await iamModule().workingContext.describe(db),
-  }));
+  return handleOperation(WORKING_CONTEXT_OPERATION, request, async ({ db, request: raw }) => {
+    parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query');
+    return { body: await iamModule().workingContext.describe(db) };
+  });
 }

@@ -1429,6 +1429,45 @@ built for quotations and work orders only.
   DBCR-P1-32-PRE-OD-FRX-001); the same migration makes an obligation name the approval that wrote it
   (defence in depth).
 
+### Addendum: the CP-20261008-3 runtime retest (P1-32-PRE-OD-FRXR)
+
+- **`GET /api/v1/auth/session` and `GET /api/v1/auth/working-context` take no query parameter
+  (FRX1-c).** Both answered 200 and silently ignored `?userId=`, `?companyId=` and `?branchId=`, so
+  a request could look as though it substituted another user, company or branch, although the answer
+  stayed the caller's own. Each now parses its query string with an empty `.strict()` schema and
+  refuses ANY parameter — those three, `tenantId`, or a name nobody defined — with the standard
+  validation error (422 `ERR-VAL-001`), whose body carries none of the caller's facts and not the
+  value sent. Without a parameter they answer exactly as before. The web sends no query parameter to
+  either read (`features/authentication/api/session.ts`, `features/platform/api/session.ts`,
+  `features/authentication/actions/profile.ts`, `features/working-context/api.ts`), so no caller
+  changed. The query schema has no property, so the generated OpenAPI document publishes no
+  parameter for either operation and is unchanged. Tests: `tests/backend/p1-24-iam-route-depth.test.ts`
+  (each of the five parameters on each read, and the read without one).
+- **`/invoices`, nothing left to bill (FRX2-nothing).** A work order whose approved work is all
+  invoiced — including one with a second accepted quotation of the same work, which the preview
+  refuses as `invoice_nothing_to_bill` — showed its invoice and no reason, because the
+  remaining-work panel holding that sentence is drawn only while work remains. With no draft open
+  and no approved work left (`approvedWorkToInvoice: false`), the screen now says "Everything
+  approved on the quotation is already invoiced, so there is nothing more to bill.", en and ar, from
+  the read itself; no preview is read for it. A create refused with that rule (or any other) says its
+  sentence as before and keeps the payer typed into the form: the entry is held by the screen, above
+  the panels the re-read remounts. Tests: `apps/web/tests/invoices.dom.test.tsx` ("nothing left to
+  bill is said, and a refusal keeps what was typed").
+- **The printed invoice, counter sale and quotation (FRX3).** Real Chrome printed a 30-line invoice
+  and a 24-line counter sale whose last page held only the identity row and the totals and
+  settlement, and a quotation whose last page held only the identity row and its closing note. The
+  totals block is now the `tail` of the lines table (`PrintTable`): the last line and the block are
+  one row group kept together, which moves to the next page whole, with the column headings
+  repeated, when it does not fit, while every other line still breaks where it falls and the block
+  itself is never split. `break-before: avoid` alone was measured and does not hold here: inside the
+  document's identity table Chromium does not look back into the lines table for an earlier break,
+  and it split the totals block instead. The quotation's decision and its closing note print as one
+  group (`PrintDocument`'s `closing`). Tests: `apps/web/tests/e2e/print-layout.spec.ts` (a 30-line
+  invoice, a 24-line counter sale and a 37-line quotation, and quotations of 1 to 36 lines, en and
+  ar: every page holds more than the identity row, the page of the totals holds the last line, the
+  totals and settlement are not split, and the page of the closing note holds the decision before
+  it; the counter-sale sweep of 1 to 32 lines also asserts the last line beside the totals).
+
 ## Material UI adoption (ADR-022)
 
 ADR-022 makes Material UI and the MUI X Community editions the component layer. Screens move onto

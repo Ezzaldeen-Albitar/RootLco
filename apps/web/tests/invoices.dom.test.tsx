@@ -4670,3 +4670,124 @@ describe('a refused invoice says which refusal it is (O2)', () => {
     expect(said).toHaveTextContent(AR['invoices.refusal.sourceAmbiguous'] as string);
   });
 });
+
+/**
+ * P1-32-PRE-OD-FRXR, FRX2 — nothing left to bill is SAID.
+ *
+ * The CP-20261008-3 runtime retest opened a work order whose approved work was
+ * all invoiced (an issued invoice, and a second accepted quotation of the same
+ * part): the server's preview answered 409 `invoice_nothing_to_bill`, and the
+ * invoice screen said nothing at all, because the remaining-work panel that holds
+ * that sentence is only drawn while work remains. And a create refused with that
+ * rule re-read and remounted the form, so what the operator had typed was gone.
+ */
+describe('nothing left to bill is said, and a refusal keeps what was typed (FRX2)', () => {
+  const NOTHING = 'invoices.preview.nothingToBill';
+  const issued = () => invoice({ status: 'issued', invoiceNumber: 'INV-000123' });
+  const refusedCreate = () =>
+    createInvoice.mockResolvedValue({
+      state: {
+        status: 'conflict',
+        messageKey: 'state.conflict.title',
+        attempt: 1,
+        correlationId: 'ref-409',
+      },
+      created: null,
+      rule: 'invoice_nothing_to_bill',
+    });
+
+  it('an issued invoice with no approved work left says there is nothing more to bill, and reads no preview', async () => {
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(issued()));
+    renderScreen({ initialInvoice: orderRead(issued()) });
+    await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
+    expect(screen.getByTestId('invoice-nothing-to-bill')).toHaveTextContent(EN[NOTHING] as string);
+    // Said from the read itself: no preview is read, and no create is offered.
+    expect(readInvoicePreview).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole('button', { name: EN['invoices.create.submit'] as string })
+    ).toBeNull();
+  });
+
+  it('says it in Arabic, right to left', async () => {
+    readWorkOrderInvoice.mockImplementation(async () => orderRead(issued()));
+    renderRtl(
+      <InvoiceScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        workOrderRefused={null}
+        initialInvoice={orderRead(issued()) as never}
+        canViewFinance={true}
+        canIssue={false}
+      />
+    );
+    const said = await screen.findByTestId('invoice-nothing-to-bill');
+    expect(said).toHaveTextContent(AR[NOTHING] as string);
+    expect(said).toHaveAttribute('lang', 'ar');
+    expect(said.closest('[dir="rtl"]')).not.toBeNull();
+  });
+
+  it('says nothing of the kind while a draft is open, or while approved work remains', async () => {
+    renderScreen({ initialInvoice: orderRead(invoice()) });
+    await screen.findByRole('region', { name: EN['invoices.detail.heading'] as string });
+    expect(screen.queryByTestId('invoice-nothing-to-bill')).toBeNull();
+  });
+
+  it('a create refused with invoice_nothing_to_bill says why and keeps the typed payer reference', async () => {
+    const user = userEvent.setup();
+    refusedCreate();
+    renderScreen({ canReadCustomers: false });
+    const form = await screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+    await user.type(
+      within(form).getByLabelText(labelled('invoices.create.payerReference')),
+      OTHER_PAYER
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['invoices.create.submit'] as string })
+    );
+    await waitFor(() => expect(createInvoice).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(EN[NOTHING] as string)).toBeVisible();
+    await waitFor(() => expect(readWorkOrderInvoice).toHaveBeenCalled());
+    // The re-read offered the form again, and what was typed is still in it.
+    const again = await screen.findByRole('form', {
+      name: EN['invoices.create.heading'] as string,
+    });
+    await waitFor(() =>
+      expect(within(again).getByLabelText(labelled('invoices.create.payerReference'))).toHaveValue(
+        OTHER_PAYER
+      )
+    );
+  });
+
+  it('in Arabic, the refusal is said in Arabic and the typed payer reference is kept', async () => {
+    const user = userEvent.setup();
+    refusedCreate();
+    renderRtl(
+      <InvoiceScreen
+        locale="ar"
+        messages={ar}
+        workOrderId={WORK_ORDER_ID}
+        workOrder={workOrder as never}
+        workOrderRefused={null}
+        initialInvoice={orderRead(null) as never}
+        canViewFinance={true}
+        canIssue={false}
+        canReadCustomers={false}
+      />
+    );
+    const form = await screen.findByRole('form', { name: AR['invoices.create.heading'] as string });
+    const box = () =>
+      within(
+        screen.getByRole('form', { name: AR['invoices.create.heading'] as string })
+      ).getByLabelText(new RegExp(`^${escape(AR['invoices.create.payerReference'] as string)}`));
+    await user.type(box(), OTHER_PAYER);
+    await user.click(
+      within(form).getByRole('button', { name: AR['invoices.create.submit'] as string })
+    );
+    await waitFor(() => expect(createInvoice).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(AR[NOTHING] as string)).toBeVisible();
+    await waitFor(() => expect(readWorkOrderInvoice).toHaveBeenCalled());
+    await waitFor(() => expect(box()).toHaveValue(OTHER_PAYER));
+  });
+});

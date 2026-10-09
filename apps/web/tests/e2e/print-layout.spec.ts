@@ -7,6 +7,7 @@ import {
   invoiceCase,
   MESSAGES,
   printCases,
+  quotationCase,
   SHELL_CHROME,
   type PrintCase,
 } from './print/fixtures';
@@ -316,6 +317,12 @@ test.describe('printed documents', () => {
 ${summary(pages)}`
         ).toBe(1);
         const totalsPage = withTotals[0] as number;
+        // P1-32-PRE-OD-FRXR: and never without a line of the sale beside them.
+        expect(
+          printed((pages[totalsPage] as PrintedPage).text, `Test part of the counter ${lines}`),
+          `${lines} line(s): page ${totalsPage + 1} prints the totals with the last line
+${summary(pages)}`
+        ).toBe(true);
         for (const row of settlementRows) {
           expect(
             pages.findIndex((printedPage) => printed(printedPage.text, row)),
@@ -336,4 +343,161 @@ ${summary(pages)}`
       }
     });
   }
+
+  /*
+   * P1-32-PRE-OD-FRXR, FRX3. The CP-20261008-3 runtime retest printed, in real
+   * Chrome, a 30-line invoice and a 24-line counter sale whose third page held
+   * only the identity row and the totals and settlement — no invoice line — and an
+   * English quotation whose second page held only the identity row and its
+   * one-sentence closing note. The fixed cases are those documents at those
+   * lengths (the quotation at 37 lines, which put its totals or its note on a
+   * page apart in both languages here before the fix); the quotation is also
+   * printed at every length to past three pages, because which length puts a
+   * page boundary at its end depends on the browser's fonts. See
+   * `expectNothingClosingAlone` for what each page must hold.
+   */
+  const closingCases = [
+    {
+      name: 'a 30-line invoice',
+      make: (locale: Locale) => invoiceCase(locale, 30),
+      closing: invoiceClosing(30, 'Test part line 30'),
+    },
+    {
+      name: 'a 24-line counter sale',
+      make: (locale: Locale) => counterSaleCase(locale, 24),
+      closing: invoiceClosing(24, 'Test part of the counter 24'),
+    },
+    {
+      name: 'a 37-line quotation',
+      make: (locale: Locale) => quotationCase(locale, 37),
+      closing: quotationClosing(37),
+    },
+  ] as const;
+
+  for (const each of closingCases) {
+    test(`${each.name} prints its totals with its last line, and nothing alone on a page`, async ({
+      page,
+    }, testInfo) => {
+      const locale = localeOf(testInfo);
+      const pages = await expectPrintedAsDocument(page, each.make(locale), testInfo);
+      expect(pages.length, `${each.name} spans more than one page`).toBeGreaterThan(1);
+      expectNothingClosingAlone(pages, await identityRow(page), locale, each.closing);
+    });
+  }
+
+  for (const [from, to] of [
+    [1, 9],
+    [10, 18],
+    [19, 27],
+    [28, 36],
+  ] as const) {
+    test(`a quotation of ${from} to ${to} lines never prints its totals or its closing note apart`, async ({
+      page,
+    }, testInfo) => {
+      const locale = localeOf(testInfo);
+      let longest = 0;
+      for (let lines = from; lines <= to; lines += 1) {
+        await load(page, quotationCase(locale, lines));
+        const pages = await printToPages(page);
+        longest = Math.max(longest, pages.length);
+        expectNothingClosingAlone(pages, await identityRow(page), locale, quotationClosing(lines));
+      }
+      // The longest run reaches a third page, where the retest saw the note alone.
+      if (to === 36) {
+        expect(
+          longest,
+          'the longest quotation printed spans at least three pages'
+        ).toBeGreaterThanOrEqual(3);
+      }
+    });
+  }
 });
+
+/** What closes a document, and what must print beside it. */
+interface Closing {
+  readonly lines: number;
+  /** The last row of the table, by its text. */
+  readonly lastLine: string;
+  /** The message key of the heading of the totals that close the table. */
+  readonly totals: string;
+  /** Message keys of rows of the same block, which print on the totals' page. */
+  readonly kept: readonly string[];
+  /** The closing note, and the heading of the block it prints with (message keys). */
+  readonly note: { readonly text: string; readonly before: string } | null;
+}
+
+/** An invoice or a counter sale: totals and settlement as one block, no closing note. */
+function invoiceClosing(lines: number, lastLine: string): Closing {
+  return {
+    lines,
+    lastLine,
+    totals: 'invoices.print.issuedTotals',
+    kept: ['invoices.print.balanceDue', 'invoices.settlement.refund'],
+    note: null,
+  };
+}
+
+/** The quotation fixture's last line, its totals heading, and its closing note. */
+function quotationClosing(lines: number): Closing {
+  const service = (lines - 1) % 2 === 0;
+  return {
+    lines,
+    lastLine: `Test ${service ? 'service' : 'part'} line ${lines}`,
+    totals: 'quotations.print.totalsHeading',
+    kept: [],
+    note: { text: 'quotations.print.footer', before: 'quotations.print.decisionHeading' },
+  };
+}
+
+/**
+ * P1-32-PRE-OD-FRXR. No page holds the identity row and nothing else; the page
+ * that prints the totals also prints the table's LAST line, so the totals never
+ * stand alone; the totals block is not split; and the page that prints the
+ * closing note also prints the block before it.
+ */
+function expectNothingClosingAlone(
+  pages: readonly PrintedPage[],
+  identity: string,
+  locale: Locale,
+  closing: Closing
+): void {
+  const said = (key: string) =>
+    (MESSAGES[locale] as unknown as Record<string, string>)[key] as string;
+  const at = `${closing.lines} line(s)`;
+  const holding = (phrase: string) =>
+    pages
+      .map((printedPage, index) => (printed(printedPage.text, phrase) ? index : -1))
+      .filter((index) => index >= 0);
+
+  pages.forEach((printedPage, index) => {
+    expect(
+      withoutCharacters(printedPage.text, identity).length,
+      `${at}: page ${index + 1} holds more than the identity row\n${summary(pages)}`
+    ).toBeGreaterThan(0);
+  });
+
+  const totalsPages = holding(said(closing.totals));
+  expect(totalsPages.length, `${at}: the totals print on exactly one page\n${summary(pages)}`).toBe(
+    1
+  );
+  const totalsPage = totalsPages[0] as number;
+  expect(
+    printed((pages[totalsPage] as PrintedPage).text, closing.lastLine),
+    `${at}: page ${totalsPage + 1} prints the totals AND the last line "${closing.lastLine}"\n${summary(pages)}`
+  ).toBe(true);
+  for (const key of closing.kept) {
+    expect(holding(said(key)), `${at}: "${said(key)}" prints on the page of the totals`).toEqual([
+      totalsPage,
+    ]);
+  }
+
+  if (closing.note !== null) {
+    const notePages = holding(opening(said(closing.note.text)));
+    expect(notePages.length, `${at}: the closing note prints once\n${summary(pages)}`).toBe(1);
+    const notePage = notePages[0] as number;
+    expect(
+      printed((pages[notePage] as PrintedPage).text, said(closing.note.before)),
+      `${at}: page ${notePage + 1} prints the closing note with the block before it\n${summary(pages)}`
+    ).toBe(true);
+  }
+}

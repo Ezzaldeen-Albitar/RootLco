@@ -1270,6 +1270,59 @@ describe('P1-32-PRE-OD-FRX — the session and working-context reads are authent
     expect(directory.status).toBe(403);
     expect(directory.body?.code).toBe('ERR-IAM-001');
   });
+
+  /**
+   * P1-32-PRE-OD-FRXR — FRX1-c of the CP-20261008-3 runtime retest. Both reads
+   * answered 200 and silently IGNORED `?userId=`, `?companyId=` and `?branchId=`,
+   * so a request could look as though it substituted another user, company or
+   * branch. They now refuse every query parameter with the standard validation
+   * error, and the refusal carries none of the caller's own facts either.
+   */
+  const substitutionProbes = [
+    { name: 'userId', value: U24_TARGET },
+    { name: 'companyId', value: COMPANY24_B },
+    { name: 'branchId', value: BRANCH24_B },
+    { name: 'tenantId', value: TENANT_B },
+    { name: 'unknownParameter', value: 'anything' },
+  ] as const;
+
+  for (const entry of selfReads) {
+    for (const probe of substitutionProbes) {
+      it(`${entry.operation.id} refuses a ${probe.name} query parameter with a validation error`, async () => {
+        asQuotationsOnly();
+        const response = await call<ProblemBody & Record<string, unknown>>(entry.handler, {
+          path: entry.path,
+          query: { [probe.name]: probe.value },
+        });
+        expect(response.status).toBe(422);
+        expect(response.body?.code).toBe('ERR-VAL-001');
+        // A problem document, not a session or a working context: none of the
+        // success shape's keys, and neither the caller's facts nor the value it
+        // tried to substitute.
+        for (const key of ['userId', 'tenantId', 'email', 'permissions', 'companies', 'branches']) {
+          expect(response.body, key).not.toHaveProperty(key);
+        }
+        const document = JSON.stringify(response.body);
+        expect(document).not.toContain(U24_QUOTATIONS);
+        expect(document).not.toContain('fx-p24-rt-quotations@example.test');
+        expect(document).not.toContain(TENANT_A);
+        expect(document).not.toContain(COMPANY_A1);
+        expect(document).not.toContain(probe.value);
+      });
+    }
+
+    it(`${entry.operation.id} still answers 200 with the caller's own facts when no parameter is sent`, async () => {
+      asQuotationsOnly();
+      const response = await call<{ userId?: string; tenantId?: string }>(entry.handler, {
+        path: entry.path,
+      });
+      expect(response.status).toBe(200);
+      expect(response.body.tenantId).toBe(TENANT_A);
+      if (entry.operation === SESSION_OPERATION) {
+        expect(response.body.userId).toBe(U24_QUOTATIONS);
+      }
+    });
+  }
 });
 
 describe('P1-24-BE-005 — the public auth routes answer with no authenticator at all', () => {
