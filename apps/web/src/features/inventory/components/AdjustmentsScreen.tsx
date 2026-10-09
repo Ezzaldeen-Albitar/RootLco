@@ -18,11 +18,33 @@
  * Permissions: `inv.stock.read` gates the page; `inv.stock.operate` offers the
  * request form; `inv.adjustment.approve` the decision; `org.branch.read` the
  * branch picker.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV3`)
+ *
+ * Every control this screen draws itself is a shared wrapper: the status, the
+ * quantity, the change and the two reasons are `forms/mui` fields (the quantity
+ * `FormNumberField`, so the string typed is the string sent), every button is
+ * Material's, and the list is Material's table — the read answers one page of
+ * up to fifty with a "more exist" flag and no cursor is walked, so there is
+ * nothing for `OperationalGrid`'s pager to do. The item finder, the location
+ * select and the list's wait, empty and failed states are the shared inventory
+ * pieces (`ItemFinder`, `LocationPicker`, `BranchListView`), drawn as those
+ * pieces draw. What is read, sent, authorized and refused is unchanged.
  */
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { RadioGroupField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
@@ -43,19 +65,10 @@ import {
   type StockAdjustment,
   type StockTarget,
 } from '../inventory-contract';
-import {
-  LocationPicker,
-  OutcomeNote,
-  PRIMARY_BUTTON,
-  Qty,
-  SECONDARY_BUTTON,
-  useLocations,
-  type Locations,
-} from './shared';
+import { LocationPicker, OutcomeNote, Qty, useLocations, type Locations } from './shared';
 import {
   BranchListView,
   BranchTargetForm,
-  DANGER_BUTTON,
   ItemFinder,
   PANEL,
   StockOperationLinks,
@@ -164,11 +177,11 @@ function BranchAdjustments({
           {translate(messages, 'inventory.adjustments.list.heading')}
         </h2>
         <div className="sm:max-w-xs">
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'inventory.adjustments.list.status')}
             value={status}
-            onChange={(event) => {
-              setStatus(event.target.value as AdjustmentState | 'all');
+            onChange={(next) => {
+              setStatus(next as AdjustmentState | 'all');
               setDeciding(null);
             }}
             options={[
@@ -182,103 +195,107 @@ function BranchAdjustments({
         </div>
         <BranchListView
           messages={messages}
+          locale={locale}
           list={list}
           loadingKey="inventory.adjustments.list.loading"
           noneKey="inventory.adjustments.list.none"
           truncatedKey="inventory.adjustments.list.truncated"
         >
           {(items) => (
-            <table className="w-full text-body">
-              <caption className="sr-only">
-                {translate(messages, 'inventory.adjustments.list.caption')}
-              </caption>
-              <thead>
-                <tr className="text-caption text-text-muted">
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.adjustments.column.item')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.adjustments.column.change')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.adjustments.column.quantity')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.adjustments.column.reason')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.adjustments.column.status')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.adjustments.column.decision')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((row) => {
-                  const own = row.requestedBy === currentUserId;
-                  return (
-                    <tr key={row.id} className="border-t border-border align-top">
-                      <td>
-                        <code className="font-mono text-caption" dir="ltr">
-                          {row.sku}
-                        </code>
-                        <span className="block text-caption text-text-muted" dir="ltr">
-                          {row.locationCode}
-                        </span>
-                      </td>
-                      <td>
-                        {translateDynamic(
-                          messages,
-                          `inventory.adjustments.direction.${row.direction}`
-                        )}
-                      </td>
-                      <td className="text-end">
-                        <Qty value={row.quantity} />
-                      </td>
-                      <td>
-                        {row.reason}
-                        <span className="block text-caption text-text-muted" dir="ltr">
-                          {formatDateTime(row.createdAt, locale)}
-                        </span>
-                      </td>
-                      <td>
-                        {translateDynamic(messages, `inventory.adjustmentStatus.${row.status}`)}
-                        {own ? (
-                          <span className="block text-caption text-text-muted">
-                            {translate(messages, 'inventory.adjustments.byYou')}
+            <TableContainer>
+              <Table size="small">
+                <caption className="sr-only">
+                  {translate(messages, 'inventory.adjustments.list.caption')}
+                </caption>
+                <TableHead>
+                  <TableRow>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.adjustments.column.item')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.adjustments.column.change')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.adjustments.column.quantity')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.adjustments.column.reason')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.adjustments.column.status')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.adjustments.column.decision')}
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {items.map((row) => {
+                    const own = row.requestedBy === currentUserId;
+                    return (
+                      <TableRow key={row.id} className="align-top">
+                        <TableCell>
+                          <code className="font-mono text-caption" dir="ltr">
+                            {row.sku}
+                          </code>
+                          <span className="block text-caption text-text-muted" dir="ltr">
+                            {row.locationCode}
                           </span>
-                        ) : null}
-                      </td>
-                      <td className="text-end">
-                        {row.status !== 'pending' ? (
-                          <span className="text-caption text-text-muted">
-                            {translate(messages, 'inventory.adjustments.decided')}
+                        </TableCell>
+                        <TableCell>
+                          {translateDynamic(
+                            messages,
+                            `inventory.adjustments.direction.${row.direction}`
+                          )}
+                        </TableCell>
+                        <TableCell align="right">
+                          <Qty value={row.quantity} />
+                        </TableCell>
+                        <TableCell>
+                          {row.reason}
+                          <span className="block text-caption text-text-muted" dir="ltr">
+                            {formatDateTime(row.createdAt, locale)}
                           </span>
-                        ) : !canApprove ? (
-                          <span className="text-caption text-text-muted">
-                            {translate(messages, 'inventory.adjustments.needsApprove')}
-                          </span>
-                        ) : own ? (
-                          <span className="text-caption text-text-muted">
-                            {translate(messages, 'inventory.adjustments.ownRequest')}
-                          </span>
-                        ) : (
-                          <button
-                            type="button"
-                            className={SECONDARY_BUTTON}
-                            onClick={() => setDeciding(row)}
-                          >
-                            {translate(messages, 'inventory.adjustments.decide.action')}
-                            <span className="sr-only"> {row.sku}</span>
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+                        </TableCell>
+                        <TableCell>
+                          {translateDynamic(messages, `inventory.adjustmentStatus.${row.status}`)}
+                          {own ? (
+                            <span className="block text-caption text-text-muted">
+                              {translate(messages, 'inventory.adjustments.byYou')}
+                            </span>
+                          ) : null}
+                        </TableCell>
+                        <TableCell align="right">
+                          {row.status !== 'pending' ? (
+                            <span className="text-caption text-text-muted">
+                              {translate(messages, 'inventory.adjustments.decided')}
+                            </span>
+                          ) : !canApprove ? (
+                            <span className="text-caption text-text-muted">
+                              {translate(messages, 'inventory.adjustments.needsApprove')}
+                            </span>
+                          ) : own ? (
+                            <span className="text-caption text-text-muted">
+                              {translate(messages, 'inventory.adjustments.ownRequest')}
+                            </span>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outlined"
+                              size="small"
+                              onClick={() => setDeciding(row)}
+                            >
+                              {translate(messages, 'inventory.adjustments.decide.action')}
+                              <span className="sr-only"> {row.sku}</span>
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
         </BranchListView>
       </section>
@@ -332,18 +349,27 @@ function DecisionForm({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * One decision in flight at a time. `busy` disables both buttons, but only
+   * once React has rendered; a second press inside the same moment would
+   * otherwise send a second decision.
+   */
+  const sending = useRef(false);
   // Unsaved work, declared to the shell: a branch switch asks before it closes this.
   useUnsavedGuard(reason.trim().length > 0);
 
   const decide = async (decision: AdjustmentDecision) => {
+    if (sending.current) return;
     const why = reason.trim();
     if (why.length === 0 || why.length > MAX_REASON) {
       setError(why.length === 0 ? 'field.required' : 'inventory.stockOps.reasonTooLong');
       return;
     }
     setError(null);
+    sending.current = true;
     setBusy(true);
     const result = await decideAdjustment(adjustment.id, { decision, reason: why });
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -383,34 +409,36 @@ function DecisionForm({
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.adjustments.decide.explain')}
       </p>
-      <TextAreaField
+      <FormTextField
         label={translate(messages, 'inventory.adjustments.decide.reason')}
         required
+        multiline
         rows={2}
         value={reason}
-        onChange={(event) => setReason(event.target.value)}
+        onChange={setReason}
         error={
           error ? translateDynamic(messages, error) : outcomeField(messages, outcome, 'reason')
         }
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div className="flex flex-wrap gap-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.adjustments.decide.approve')}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className={DANGER_BUTTON}
+          variant="outlined"
+          color="error"
           disabled={busy}
           onClick={() => {
             void decide('rejected');
           }}
         >
           {translate(messages, 'inventory.adjustments.decide.reject')}
-        </button>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+        </Button>
+        <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'inventory.stockOps.close')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -437,6 +465,8 @@ function RequestForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One request in flight at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
   /*
    * Unsaved work, declared to the shell. The request is addressed to THIS
    * branch and names one of its locations, so a switch asks first; a confirmed
@@ -463,7 +493,8 @@ function RequestForm({
     if (reason.length === 0) found['reason'] = 'field.required';
     else if (reason.length > MAX_REASON) found['reason'] = 'inventory.stockOps.reasonTooLong';
     setErrors(found);
-    if (Object.keys(found).length > 0 || item === null) return;
+    if (Object.keys(found).length > 0 || item === null || sending.current) return;
+    sending.current = true;
     setBusy(true);
     const result = await createAdjustment({
       companyId: target.companyId,
@@ -474,6 +505,7 @@ function RequestForm({
       quantity,
       reason,
     });
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -519,18 +551,16 @@ function RequestForm({
           onChange={(next) => setForm((f) => ({ ...f, locationId: next }))}
           error={errorFor('locationId')}
         />
-        <TextField
+        <FormNumberField
           label={translate(messages, 'inventory.adjustments.create.quantity')}
           description={translate(messages, 'inventory.stockOps.quantityHelp')}
           required
-          inputMode="decimal"
-          dir="ltr"
           value={form.quantity}
-          onChange={(event) => setForm((f) => ({ ...f, quantity: event.target.value }))}
+          onChange={(next) => setForm((f) => ({ ...f, quantity: next }))}
           error={errorFor('quantity')}
         />
       </div>
-      <RadioGroupField
+      <FormRadioGroupField
         label={translate(messages, 'inventory.adjustments.create.direction')}
         name="adjustment-direction"
         required
@@ -541,19 +571,20 @@ function RequestForm({
           label: translateDynamic(messages, `inventory.adjustments.direction.${value}`),
         }))}
       />
-      <TextAreaField
+      <FormTextField
         label={translate(messages, 'inventory.stockOps.reason')}
         required
+        multiline
         rows={2}
         value={form.reason}
-        onChange={(event) => setForm((f) => ({ ...f, reason: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, reason: next }))}
         error={errorFor('reason')}
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.adjustments.create.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );

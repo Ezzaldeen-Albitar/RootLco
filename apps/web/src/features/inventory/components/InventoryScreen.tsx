@@ -12,7 +12,7 @@ import {
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
-import { ZonedDateTimeField, type MomentProblem } from '@/components/forms/mui/DateField';
+import type { MomentProblem } from '@/components/forms/mui/DateField';
 import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
 import { FormNumberField } from '@/components/forms/mui/FormNumberField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
@@ -65,7 +65,7 @@ import {
 } from './shared';
 import { ItemPicker, REFERENCE, ReferenceBox, withoutKey, type ItemChoice } from './pickers';
 import { StockAlertIndicator } from './StockAlertIndicator';
-import { BranchTargetForm, LINK, useOperatorZone } from './stock-operations';
+import { BranchTargetForm, LINK, StockMomentField, useStockTargetZone } from './stock-operations';
 
 /**
  * Inventory (P1-30, `W4`): item search (FE-008), stock balance (FE-009) and
@@ -116,9 +116,10 @@ import { BranchTargetForm, LINK, useOperatorZone } from './stock-operations';
  * (server paging, no count, the cursor footer); the item search is
  * `FilterToolbar`'s box and selects; every form field is a `forms/mui` wrapper;
  * the item and the job are `EntityPicker` comboboxes. Nothing about what is
- * read, sent or authorized changed. The reservation expiry is still read on the
- * operator's own clock, as the native box before it was: the picker is handed
- * that zone explicitly rather than the branch's.
+ * read, sent or authorized changed. Since `P1-32-PRE-OD-INV1B` the reservation
+ * expiry is typed and sent on the clock of the branch the reservation is made
+ * in (`useStockTargetZone`), the rule every business moment follows, rather than
+ * on the browser's.
  */
 
 export function InventoryScreen({
@@ -634,7 +635,6 @@ function AvailabilityPanel({
             countsAsUnsaved={false}
             offerArchived
             testId="availability-item-picker"
-            material
           />
         </div>
         <LocationPicker
@@ -644,7 +644,6 @@ function AvailabilityPanel({
           placeholder={translate(messages, 'inventory.availability.anyLocation')}
           value={draft.locationId}
           onChange={(next) => setDraft((d) => ({ ...d, locationId: next }))}
-          material
         />
         <FormCheckboxField
           label={translate(messages, 'inventory.availability.includeQuarantine')}
@@ -899,7 +898,6 @@ function ReservationsPanel({
             }
             countsAsUnsaved={false}
             testId="reservations-work-order-reference"
-            material
           />
         )}
         <div className="sm:col-span-2">
@@ -913,7 +911,6 @@ function ReservationsPanel({
             countsAsUnsaved={false}
             offerArchived
             testId="reservations-item-picker"
-            material
           />
         </div>
         <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
@@ -937,6 +934,7 @@ function ReservationsPanel({
         <ReserveForm
           locale={locale}
           messages={messages}
+          target={target}
           locations={locations}
           initialWorkOrderId={initialWorkOrderId}
           initialWorkOrder={initialWorkOrder}
@@ -1117,6 +1115,7 @@ function ReservationResults({
 function ReserveForm({
   locale,
   messages,
+  target,
   locations,
   initialWorkOrderId,
   initialWorkOrder,
@@ -1125,6 +1124,8 @@ function ReserveForm({
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /** The branch the reservation is made in; its clock is the expiry's. */
+  readonly target: StockTarget;
   readonly locations: Locations;
   readonly initialWorkOrderId: string | null;
   readonly initialWorkOrder: WorkOrderListEntry | null;
@@ -1154,12 +1155,14 @@ function ReserveForm({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   /*
-   * The expiry is read on the operator's own clock, as the native box it
-   * replaced was (`new Date` of a local wall time). The picker is handed that
-   * zone explicitly; a moment only partly typed is reported by the picker
-   * (`'incomplete'`) and refused below, as the browser's own check refused it.
+   * The expiry is a business moment, so it is typed and sent on the BRANCH's
+   * clock — the zone of the branch the reservation is made in — never the
+   * laptop's (`P1-32-PRE-OD-INV1B`, Owner decision D-17). With no known zone
+   * — none set, or one this browser does not recognise — the field says so and
+   * draws no picker on any other clock (`P1-32-PRE-OD-INV1C`). A moment only
+   * partly typed is reported by the picker (`'incomplete'`) and refused below.
    */
-  const zone = useOperatorZone();
+  const zone = useStockTargetZone(target);
   const [expiryProblem, setExpiryProblem] = useState<MomentProblem>(null);
   // The server keeps one reservation per key it is GIVEN in the body (the
   // transport's header key only replays a stored response). One key per opened
@@ -1247,7 +1250,6 @@ function ReserveForm({
           canSearch
           error={errorFor('itemId')}
           testId="reserve-item-picker"
-          material
         />
       </div>
       <LocationPicker
@@ -1259,7 +1261,6 @@ function ReserveForm({
         value={form.locationId}
         onChange={(next) => setForm((f) => ({ ...f, locationId: next }))}
         error={errorFor('locationId')}
-        material
       />
       {/* A decimal string as typed, never a number input (F5). */}
       <FormNumberField
@@ -1296,23 +1297,20 @@ function ReserveForm({
             countsAsUnsaved
             pristine={openedReference}
             testId="reserve-work-order-reference"
-            material
           />
         )}
       </div>
-      {zone === null ? null : (
-        <ZonedDateTimeField
-          messages={messages}
-          label={translate(messages, 'inventory.reserve.expiresAt')}
-          description={translate(messages, 'inventory.reserve.expiresAtHelp')}
-          timezone={zone}
-          value={form.expiresAt}
-          onChange={(next) => setForm((f) => ({ ...f, expiresAt: next }))}
-          onProblem={setExpiryProblem}
-          error={errorFor('expiresAt')}
-          testId="reserve-expires-at"
-        />
-      )}
+      <StockMomentField
+        messages={messages}
+        label={translate(messages, 'inventory.reserve.expiresAt')}
+        description={translate(messages, 'inventory.reserve.expiresAtHelp')}
+        zone={zone}
+        value={form.expiresAt}
+        onChange={(next) => setForm((f) => ({ ...f, expiresAt: next }))}
+        onProblem={setExpiryProblem}
+        error={errorFor('expiresAt')}
+        testId="reserve-expires-at"
+      />
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>

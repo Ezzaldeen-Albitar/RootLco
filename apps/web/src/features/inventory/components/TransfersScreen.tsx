@@ -248,6 +248,7 @@ function BranchTransfers({
         </p>
         <BranchListView
           messages={messages}
+          locale={locale}
           list={list}
           loadingKey="inventory.transfers.list.loading"
           noneKey="inventory.transfers.list.none"
@@ -402,6 +403,7 @@ function BranchTransfers({
         </p>
         <BranchListView
           messages={messages}
+          locale={locale}
           list={writeOffs.list}
           loadingKey="inventory.transfers.writeOffs.loading"
           noneKey="inventory.transfers.writeOffs.none"

@@ -1,29 +1,30 @@
 'use client';
 
 import Link from 'next/link';
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  useSyncExternalStore,
-  type ReactNode,
-} from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import Button from '@mui/material/Button';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
-import { SelectField, TextField } from '@/components/forms/Field';
+import {
+  MomentZoneRefusal,
+  ZonedDateTimeField,
+  type DateTimeFieldProps,
+} from '@/components/forms/mui/DateField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { MuiEmptyState, MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import { WorkingBranchField } from '@/features/working-context/components/WorkingBranchField';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
+import { isKnownZone } from '@/lib/branch-time';
 import type { ActionState } from '@/lib/forms/action-result';
-import { resolvedTimeZone } from '@/lib/format';
 
 import { listItems } from '../api';
 import { MAX_NAME, QUANTITY, type InventoryItem, type StockTarget } from '../inventory-contract';
-import { SECONDARY_BUTTON } from './shared';
 
 /**
  * Pieces the P1-32 stock-operation screens share: transfers, goods receipts,
@@ -38,6 +39,18 @@ import { SECONDARY_BUTTON } from './shared';
  * Nothing here computes a figure. Quantities are the decimal strings the server
  * sent; `isQuantity` checks the SHAPE an operator typed before it is sent, which
  * is text, not arithmetic.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV1B`)
+ *
+ * Every control this file draws is a shared wrapper: `ItemFinder` is a
+ * `FormTextField`, a Material button and a `FormSelectField`; `BranchListView`
+ * draws its wait, its empty answer and its failures as the shared states
+ * (`MuiLoadingState` with the list's own sentence, `MuiEmptyState`,
+ * `MuiReadFailureState` with the list's own sentence under the shared heading).
+ * `BranchTargetForm` holds no field of its own; the branch it states is
+ * `WorkingBranchField`, the working context's own control. The class strings
+ * (`PANEL`, `LINK`, `DANGER_BUTTON`) stay for the screens that still draw their
+ * own sections; they are layout, not controls.
  */
 
 export const PANEL = 'flex flex-col gap-3 rounded-lg border border-border bg-surface p-4';
@@ -57,7 +70,10 @@ export type BranchList<T> =
   | { readonly phase: 'none' }
   | {
       readonly phase: 'failed';
-      readonly messageKey: string;
+      /** Which failure, so it is drawn as that state (`MuiReadFailureState`). */
+      readonly status: 'denied' | 'expired' | 'unavailable';
+      readonly messageKey: keyof Messages;
+      readonly correlationId: string | null;
       readonly retry: (() => void) | null;
     };
 
@@ -69,8 +85,8 @@ export type BranchList<T> =
 export function useBranchList<T>(
   target: StockTarget | null,
   read: (target: StockTarget) => Promise<ReadState<CursorPage<T>>>,
-  refusedKey: string,
-  unavailableKey: string,
+  refusedKey: keyof Messages,
+  unavailableKey: keyof Messages,
   /** Extra inputs that make a different request (a direction, a status). */
   variant = ''
 ): { readonly list: BranchList<T>; readonly reload: () => void } {
@@ -78,7 +94,11 @@ export function useBranchList<T>(
     readonly stamp: string;
     readonly items: readonly T[] | null;
     readonly truncated: boolean;
-    readonly failure: { readonly key: string; readonly retryable: boolean } | null;
+    readonly failure: {
+      readonly status: 'denied' | 'expired' | 'unavailable';
+      readonly key: keyof Messages;
+      readonly correlationId: string | null;
+    } | null;
   } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const reload = useCallback(() => setAttempt((n) => n + 1), []);
@@ -103,12 +123,13 @@ export function useBranchList<T>(
         });
         return;
       }
+      const correlationId = state.correlationId ?? null;
       const failure =
         state.status === 'denied'
-          ? { key: refusedKey, retryable: false }
+          ? { status: 'denied' as const, key: refusedKey, correlationId }
           : state.status === 'expired'
-            ? { key: 'state.expired.message', retryable: false }
-            : { key: unavailableKey, retryable: true };
+            ? { status: 'expired' as const, key: 'state.expired.message' as const, correlationId }
+            : { status: 'unavailable' as const, key: unavailableKey, correlationId };
       setAnswer({ stamp, items: null, truncated: false, failure });
     });
     return () => {
@@ -124,8 +145,11 @@ export function useBranchList<T>(
     return {
       list: {
         phase: 'failed',
+        status: current.failure.status,
         messageKey: current.failure.key,
-        retry: current.failure.retryable ? reload : null,
+        correlationId: current.failure.correlationId,
+        // A retry only where trying again can change the answer (S2).
+        retry: current.failure.status === 'unavailable' ? reload : null,
       },
       reload,
     };
@@ -136,9 +160,20 @@ export function useBranchList<T>(
   return { list: { phase: 'listed', items: current.items, truncated: current.truncated }, reload };
 }
 
-/** The four outcomes of a branch list, with the table the caller renders for `listed`. */
+/**
+ * The four outcomes of a branch list, with the table the caller renders for `listed`.
+ *
+ * Each outcome is the shared state on Material UI, in the list's own words: the
+ * wait is announced with the list's sentence ("Reading the transfers…"); an
+ * empty branch is "nothing here yet" with the list's sentence, never "no
+ * matches", because nothing narrowed it; a failure is drawn as the failure it
+ * is, with the list's sentence under the shared heading, the reference beside
+ * it, and a retry only for an outage. `locale` names the sign-in page an ended
+ * session links back to.
+ */
 export function BranchListView<T>({
   messages,
+  locale,
   list,
   loadingKey,
   noneKey,
@@ -146,40 +181,35 @@ export function BranchListView<T>({
   children,
 }: {
   readonly messages: Messages;
+  readonly locale?: Locale | undefined;
   readonly list: BranchList<T>;
-  readonly loadingKey: string;
-  readonly noneKey: string;
-  readonly truncatedKey: string;
+  readonly loadingKey: keyof Messages;
+  readonly noneKey: keyof Messages;
+  readonly truncatedKey: keyof Messages;
   readonly children: (items: readonly T[]) => ReactNode;
 }) {
   if (list.phase === 'loading') {
-    return (
-      <p role="status" aria-live="polite" className="text-caption text-text-muted">
-        {translateDynamic(messages, loadingKey)}
-      </p>
-    );
+    return <MuiLoadingState messages={messages} variant="inline" labelKey={loadingKey} />;
   }
   if (list.phase === 'none') {
-    return <p className="text-caption text-text-muted">{translateDynamic(messages, noneKey)}</p>;
+    return <MuiEmptyState messages={messages} descriptionKey={noneKey} />;
   }
   if (list.phase === 'failed') {
     return (
-      <>
-        <p className="text-body text-error">{translateDynamic(messages, list.messageKey)}</p>
-        {list.retry !== null ? (
-          <div>
-            <button type="button" className={SECONDARY_BUTTON} onClick={list.retry}>
-              {translate(messages, 'state.retry')}
-            </button>
-          </div>
-        ) : null}
-      </>
+      <MuiReadFailureState
+        messages={messages}
+        locale={locale}
+        status={list.status}
+        correlationId={list.correlationId}
+        onRetry={list.retry ?? undefined}
+        descriptionKey={list.messageKey}
+      />
     );
   }
   return (
     <>
       {list.truncated ? (
-        <p className="text-caption text-text-muted">{translateDynamic(messages, truncatedKey)}</p>
+        <p className="text-caption text-text-muted">{translate(messages, truncatedKey)}</p>
       ) : null}
       <div className="overflow-x-auto">{children(list.items)}</div>
     </>
@@ -379,11 +409,15 @@ export function ItemFinder({
   return (
     <div className="grid gap-3 sm:grid-cols-3" data-finder={idPrefix}>
       <div className="sm:col-span-2">
-        <TextField
+        {/*
+          Enter searches now and never submits the stock form around the
+          finder; an empty term lists the active items, as before.
+        */}
+        <FormTextField
           label={translate(messages, 'inventory.stockOps.item.find')}
           description={translate(messages, 'inventory.stockOps.item.findHelp')}
           value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          onChange={setSearch}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
@@ -394,15 +428,15 @@ export function ItemFinder({
         />
       </div>
       <div className="flex items-end">
-        <button
+        <Button
           type="button"
-          className={SECONDARY_BUTTON}
+          variant="outlined"
           onClick={() => {
             void find();
           }}
         >
           {translate(messages, 'inventory.stockOps.item.search')}
-        </button>
+        </Button>
       </div>
       {note ? (
         <p className="text-caption text-text-muted sm:col-span-3">
@@ -410,13 +444,11 @@ export function ItemFinder({
         </p>
       ) : null}
       <div className="sm:col-span-3">
-        <SelectField
+        <FormSelectField
           label={translate(messages, 'inventory.stockOps.item.label')}
           required={required}
           value={value?.id ?? ''}
-          onChange={(event) =>
-            onChange(options.find((item) => item.id === event.target.value) ?? null)
-          }
+          onChange={(next) => onChange(options.find((item) => item.id === next) ?? null)}
           options={options.map((item) => ({ value: item.id, label: `${item.sku} — ${item.name}` }))}
           placeholder={translate(messages, 'inventory.stockOps.item.choose')}
           error={error}
@@ -426,24 +458,65 @@ export function ItemFinder({
   );
 }
 
-/** Nothing to subscribe to: the zone changes once, from the server's render to the browser's. */
-const noSubscription = () => () => {};
-const browserZone = (): string | null => resolvedTimeZone();
-const serverZone = (): string | null => null;
+/**
+ * The clock of the branch a stock screen is addressed to, as one of three
+ * findings: `known` with its IANA zone as the working context publishes it
+ * (`branches[].timezone`, `org.branches.timezone_name`); `missing` when the
+ * context names no zone for that branch; `unrecognised` when it names one this
+ * browser cannot resolve (`isKnownZone`). The last two differ only in what the
+ * operator is told — neither is a clock.
+ *
+ * The reservation expiry and the movement ledger's window are business moments,
+ * and a business moment is taken on the branch's clock (Owner decision D-17;
+ * `apps/api/src/server/db/period.ts`; `DateTimeField` E3), never the laptop's:
+ * an operator looking at another branch's ledger sees that branch's days, and a
+ * laptop on another zone no longer moves the window by hours
+ * (`P1-32-PRE-OD-INV1B`; `P1-32-PRE-OD-MUI7A1` had kept the browser's zone).
+ * Read from the TARGET's branch rather than from the selection, so the zone and
+ * the pair every read and write is addressed to cannot name two branches.
+ */
+export type StockTargetClock =
+  | { readonly kind: 'known'; readonly zone: string }
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'unrecognised' };
+
+export function useStockTargetClock(target: StockTarget): StockTargetClock {
+  const context = useWorkingContext();
+  const zone = context.branches.find(
+    (branch) => branch.id === target.branchId && branch.companyId === target.companyId
+  )?.timezone;
+  if (zone === undefined || zone.trim() === '') return { kind: 'missing' };
+  return isKnownZone(zone) ? { kind: 'known', zone } : { kind: 'unrecognised' };
+}
+
+/** The target branch's zone when it is a clock this browser knows, else `undefined`. */
+export function useStockTargetZone(target: StockTarget): string | undefined {
+  const clock = useStockTargetClock(target);
+  return clock.kind === 'known' ? clock.zone : undefined;
+}
 
 /**
- * The operator's own clock — the browser's IANA zone — or `null` before the
- * browser has taken over (the server's render cannot know it).
+ * A moment on a stock screen: the picker on the TARGET branch's clock, or —
+ * where that branch's zone is missing or not recognised — the shared refusal
+ * and no picker at all (`P1-32-PRE-OD-INV1C`).
  *
- * The inventory screens moving onto Material UI read two moments on this clock:
- * the reservation expiry and the movement ledger's window. The native
- * `datetime-local` boxes they replace read a typed wall time with `new Date`,
- * which is the browser's zone, so handing the MIT picker this zone explicitly
- * keeps what is sent exactly as it was (`P1-32-PRE-OD-MUI7A1`). Moving either
- * onto the branch's clock is a behaviour change, and is not made here.
+ * `DateTimeField` would fall back to the WORKING branch's zone when handed none;
+ * a stock screen is addressed to its target, so it never consults any other
+ * clock. `ZonedDateTimeField` reads no working context, which is exactly that.
  */
-export function useOperatorZone(): string | null {
-  return useSyncExternalStore(noSubscription, browserZone, serverZone);
+export function StockMomentField({
+  zone,
+  ...props
+}: Omit<DateTimeFieldProps, 'timezone'> & {
+  /** The target branch's zone (`useStockTargetZone`), `undefined` when it is not a clock. */
+  readonly zone: string | undefined;
+}) {
+  if (zone === undefined) {
+    return (
+      <MomentZoneRefusal messages={props.messages} label={props.label} testId={props.testId} />
+    );
+  }
+  return <ZonedDateTimeField {...props} timezone={zone} />;
 }
 
 /** A labelled figure in a summary list, rendered as the server stated it. */

@@ -48,6 +48,7 @@ import {
   renderRtl,
 } from './render';
 import { holdPickerBlur } from './support/held-picker-blur';
+import { seriousViolations } from './support/stock-operations';
 
 /**
  * The Material UI form fields (ADR-022 PR1) keep `FieldFrame`'s contract:
@@ -157,6 +158,42 @@ describe('the FieldFrame contract, on Material UI', () => {
       'false'
     );
     expect(screen.getByRole('textbox', { name: 'Note' })).not.toHaveAttribute('spellcheck');
+  });
+
+  it('hands a key pressed in the box to the caller, which may keep Enter from the form (INV1b)', async () => {
+    // `ItemFinder`: Enter in its search box searches now and never submits the
+    // stock form around it. A box that does not ask lets the form have it.
+    const user = userEvent.setup();
+    const submitted = vi.fn();
+    const searched = vi.fn();
+    mount(
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          submitted();
+        }}
+      >
+        <FormTextField
+          label="Find"
+          value=""
+          onChange={() => undefined}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              searched();
+            }
+          }}
+        />
+        <FormTextField label="Note" value="" onChange={() => undefined} />
+        <button type="submit">Save</button>
+      </form>
+    );
+    await user.type(screen.getByRole('textbox', { name: 'Find' }), '{Enter}');
+    expect(searched).toHaveBeenCalledTimes(1);
+    expect(submitted).not.toHaveBeenCalled();
+    await user.type(screen.getByRole('textbox', { name: 'Note' }), '{Enter}');
+    expect(submitted).toHaveBeenCalledTimes(1);
+    expect(searched).toHaveBeenCalledTimes(1);
   });
 
   it('keeps what was typed when a refusal arrives', async () => {
@@ -783,10 +820,37 @@ describe('DateField and DateTimeField: the FieldFrame contract on a picker', () 
     mount(<DayHost required description="The day the vehicle arrives." />);
     const group = screen.getByRole('group', { name: /^Visit day/ });
     expect(group).not.toHaveAttribute('aria-invalid');
-    expect(group).toHaveAttribute('aria-required', 'true');
     expect(pickerInput(group)).not.toHaveAttribute('required');
     // A part per piece of the date, each its own spin button.
     expect(within(group).getAllByRole('spinbutton')).toHaveLength(3);
+    /*
+     * Required is announced on every part: a `group` may not carry
+     * `aria-required` (axe `aria-allowed-attr`), a `spinbutton` may
+     * (`P1-32-PRE-OD-INV3`; it was asserted on the group before).
+     */
+    for (const part of within(group).getAllByRole('spinbutton')) {
+      expect(part).toHaveAttribute('aria-required', 'true');
+    }
+    expect(group).not.toHaveAttribute('aria-required');
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`a required day has no serious or critical accessibility finding (${locale})`, async () => {
+      const { container } = mount(
+        <DayHost required description="The day the vehicle arrives." />,
+        locale
+      );
+      expect(screen.getAllByRole('spinbutton')).toHaveLength(3);
+      expect(await seriousViolations(container)).toEqual([]);
+    });
+  }
+
+  it('an optional day announces no part as required', () => {
+    mount(<DayHost />);
+    const group = screen.getByRole('group', { name: /^Visit day/ });
+    for (const part of within(group).getAllByRole('spinbutton')) {
+      expect(part).not.toHaveAttribute('aria-required');
+    }
   });
 
   it('marks the group invalid, lists the description then the error, and announces the error', () => {

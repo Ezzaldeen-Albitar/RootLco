@@ -175,6 +175,34 @@ describe('each state says its own sentence', () => {
       'true'
     );
   });
+
+  it('says a panel’s own sentence for the wait when given one, in either language (INV1b)', () => {
+    for (const locale of ['en', 'ar'] as const) {
+      const messages = getMessages(locale);
+      const { unmount } = mount(
+        <MuiLoadingState
+          messages={messages}
+          variant="inline"
+          labelKey="inventory.identifiers.loading"
+        />,
+        locale
+      );
+      const status = screen.getByRole('status');
+      expect(status).toHaveTextContent(messages['inventory.identifiers.loading']);
+      expect(status).not.toHaveTextContent(messages['state.loading']);
+      expect(status).toHaveAttribute('aria-live', 'polite');
+      unmount();
+
+      const second = mount(
+        <MuiLoadingState messages={messages} rows={2} labelKey="inventory.prices.loading" />,
+        locale
+      );
+      const rows = screen.getByTestId('state-loading');
+      expect(rows).toHaveTextContent(messages['inventory.prices.loading']);
+      expect(rows.querySelectorAll('.MuiSkeleton-root')).toHaveLength(2);
+      second.unmount();
+    }
+  });
 });
 
 /*

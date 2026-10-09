@@ -1,9 +1,11 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   BranchSwitch,
   OTHER_BRANCH,
@@ -11,8 +13,9 @@ import {
   WorkingBranchProbe,
   branchSnapshot,
   inBranch,
-  renderLtr as renderInLtr,
-  renderRtl as renderInRtl,
+  messagesFor,
+  renderLtr as renderBareLtr,
+  renderRtl as renderBareRtl,
 } from './render';
 import {
   discardAndSwitch,
@@ -32,7 +35,24 @@ import {
  * keeps the default snapshot — one authorized branch, selected for the operator
  * — true for every case below. A case that needs a different snapshot builds
  * one and renders it explicitly.
+ *
+ * Since `P1-32-PRE-OD-INV3` every render also goes under the product's Material
+ * provider, as the locale layout mounts it: the screen's own fields, buttons and
+ * tables are Material's, and a calendar day is an MIT picker (a group of parts,
+ * typed part by part, read back from the picker's own value input). The
+ * selectors below moved with that structure; what each case asserts did not.
  */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderInLtr = (ui: ReactElement, options?: Parameters<typeof renderBareLtr>[1]) =>
+  renderBareLtr(withMui(ui, 'en'), options);
+const renderInRtl = (ui: ReactElement, options?: Parameters<typeof renderBareRtl>[1]) =>
+  renderBareRtl(withMui(ui, 'ar'), options);
 const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
   renderInLtr(inBranch(ui), options);
 const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
@@ -69,6 +89,7 @@ import {
  */
 
 const AR = ar as Record<string, string>;
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const listGoodsReceipts = vi.fn();
 const readGoodsReceipt = vi.fn();
@@ -171,6 +192,30 @@ function renderScreen(over: Record<string, unknown> = {}) {
   );
 }
 
+/**
+ * Types a calendar day into a date picker inside `scope`, part by part, as an
+ * operator does (day, month, year in both catalogues). Returns the picker's
+ * group, which its label names.
+ */
+async function typeDay(
+  user: ReturnType<typeof userEvent.setup>,
+  scope: HTMLElement,
+  label: RegExp,
+  digits: string
+): Promise<HTMLElement> {
+  const group = within(scope).getByRole('group', { name: label });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(digits);
+  return group;
+}
+
+/** The day a picker shows, as the picker writes it into its own value input. */
+function dayShown(group: HTMLElement): string {
+  const input = group.parentElement?.querySelector('input');
+  if (!input) throw new Error('the picker has no value input');
+  return input.value;
+}
+
 async function openReceipt(user: ReturnType<typeof userEvent.setup>) {
   const table = await within(listRegion()).findByRole('table');
   await user.click(
@@ -217,10 +262,7 @@ describe('recording a receipt', () => {
     await user.click(
       within(form).getByRole('button', { name: EN['inventory.receipts.line.add'] as string })
     );
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.receipts.create.receivedOn')),
-      '2026-09-17'
-    );
+    await typeDay(user, form, labelled('inventory.receipts.create.receivedOn'), '17092026');
     await user.click(
       within(form).getByRole('button', { name: EN['inventory.receipts.create.submit'] as string })
     );
@@ -262,10 +304,7 @@ describe('recording a receipt', () => {
     await user.click(
       within(form).getByRole('button', { name: EN['inventory.receipts.line.add'] as string })
     );
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.receipts.create.receivedOn')),
-      '2026-09-17'
-    );
+    await typeDay(user, form, labelled('inventory.receipts.create.receivedOn'), '17092026');
     await user.click(
       within(form).getByRole('button', { name: EN['inventory.receipts.create.submit'] as string })
     );
@@ -315,10 +354,7 @@ describe('recording a receipt', () => {
     await user.click(
       within(form).getByRole('button', { name: EN['inventory.receipts.line.add'] as string })
     );
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.receipts.create.receivedOn')),
-      '2026-09-17'
-    );
+    await typeDay(user, form, labelled('inventory.receipts.create.receivedOn'), '17092026');
     await user.click(
       within(form).getByRole('button', { name: EN['inventory.receipts.create.submit'] as string })
     );
@@ -337,10 +373,7 @@ describe('recording a receipt', () => {
     renderScreen();
     await chooseBranch(TARGET_FORM);
     const form = createForm();
-    await user.type(
-      within(form).getByLabelText(labelled('inventory.receipts.create.receivedOn')),
-      '2026-09-17'
-    );
+    await typeDay(user, form, labelled('inventory.receipts.create.receivedOn'), '17092026');
     await user.click(
       within(form).getByRole('button', { name: EN['inventory.receipts.create.submit'] as string })
     );
@@ -348,6 +381,110 @@ describe('recording a receipt', () => {
       'text-error'
     );
     expect(createGoodsReceipt).not.toHaveBeenCalled();
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`refuses a day received only partly typed as a date, and sends nothing (${locale})`, async () => {
+      const catalogue = locale === 'ar' ? AR : EN;
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      const user = userEvent.setup();
+      if (locale === 'ar') {
+        renderRtl(
+          <GoodsReceiptsScreen locale="ar" messages={ar} canOperate={true} canViewCost={false} />
+        );
+      } else {
+        renderScreen();
+      }
+      await screen.findByRole('region', { name: catalogue[TARGET_FORM] as string });
+      const form = screen.getByRole('form', {
+        name: catalogue['inventory.receipts.create.heading'] as string,
+      });
+      const supplier = within(form).getByLabelText(named('inventory.receipts.create.supplier'));
+      await user.type(supplier, 'Supplier note 7');
+      // The day and the month, and not the year.
+      const day = await typeDay(user, form, named('inventory.receipts.create.receivedOn'), '1709');
+      await user.click(
+        within(form).getByRole('button', {
+          name: catalogue['inventory.receipts.create.submit'] as string,
+        })
+      );
+      await waitFor(() => expect(day).toHaveAttribute('aria-invalid', 'true'));
+      expect(day).toHaveAccessibleDescription(
+        new RegExp(escape(catalogue['inventory.opening.batch.dateFormat'] as string))
+      );
+      expect(supplier).toHaveValue('Supplier note 7');
+      expect(createGoodsReceipt).not.toHaveBeenCalled();
+    });
+
+    it(`a refused quantity is marked on its own field and kept (${locale})`, async () => {
+      const catalogue = locale === 'ar' ? AR : EN;
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      const user = userEvent.setup();
+      if (locale === 'ar') {
+        renderRtl(
+          <GoodsReceiptsScreen locale="ar" messages={ar} canOperate={true} canViewCost={true} />
+        );
+      } else {
+        renderScreen({ canViewCost: true });
+      }
+      await screen.findByRole('region', { name: catalogue[TARGET_FORM] as string });
+      const form = screen.getByRole('form', {
+        name: catalogue['inventory.receipts.create.heading'] as string,
+      });
+      const quantity = within(form).getByLabelText(named('inventory.receipts.line.quantity'));
+      const cost = within(form).getByLabelText(named('inventory.receipts.line.unitCost'));
+      // Left to right in both languages, with a decimal keypad, never a spin box.
+      expect(quantity).toHaveAttribute('dir', 'ltr');
+      expect(quantity).toHaveAttribute('inputmode', 'decimal');
+      expect(quantity).not.toHaveAttribute('type', 'number');
+      expect(cost).toHaveAttribute('dir', 'ltr');
+      await user.type(quantity, '0');
+      await user.click(
+        within(form).getByRole('button', {
+          name: catalogue['inventory.receipts.line.add'] as string,
+        })
+      );
+      await waitFor(() => expect(quantity).toHaveAttribute('aria-invalid', 'true'));
+      expect(quantity).toHaveAccessibleDescription(
+        new RegExp(escape(catalogue['inventory.stockOps.quantityFormat'] as string))
+      );
+      expect(quantity).toHaveValue('0');
+      expect(cost).not.toHaveAttribute('aria-invalid');
+    });
+  }
+
+  it('a second press while the receipt is being saved sends nothing more', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    createGoodsReceipt.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    const form = createForm();
+    await chooseItem(user, form);
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.receipts.line.location')),
+      LOCATION_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.receipts.line.quantity')), '1');
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.receipts.line.add'] as string })
+    );
+    await typeDay(user, form, labelled('inventory.receipts.create.receivedOn'), '17092026');
+    const save = within(form).getByRole('button', {
+      name: EN['inventory.receipts.create.submit'] as string,
+    });
+    fireEvent.click(save);
+    fireEvent.click(save);
+    expect(createGoodsReceipt).toHaveBeenCalledTimes(1);
+    expect(save).toBeDisabled();
+    answer(succeeded('inventory.receipts.create.success', detail({ recordVersion: 1 })));
+    expect(await screen.findByRole('region', { name: /Goods receipt GR-100/ })).toBeVisible();
+    expect(createGoodsReceipt).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -380,24 +517,33 @@ describe('a half-written receipt and a branch switch', () => {
     await user.click(screen.getByRole('button', { name: 'first' }));
     return screen.findByRole('form', { name: EN['inventory.receipts.create.heading'] as string });
   }
+  // The day received is an MIT picker: a group of parts named by its label.
   const receivedOn = () =>
-    within(createForm()).getByLabelText(
-      labelled('inventory.receipts.create.receivedOn')
-    ) as HTMLInputElement;
+    within(createForm()).getByRole('group', {
+      name: labelled('inventory.receipts.create.receivedOn'),
+    });
 
   it('asks before switching; staying keeps what was typed and the branch', async () => {
     const user = userEvent.setup();
     await openTwoBranches(user);
-    await user.type(receivedOn(), '2026-09-17');
+    await typeDay(user, createForm(), labelled('inventory.receipts.create.receivedOn'), '17092026');
     await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
     expect(heldBranch()).toBe(TEST_BRANCH.id);
-    expect(receivedOn().value).toBe('2026-09-17');
+    expect(dayShown(receivedOn())).toBe('17/09/2026');
+  });
+
+  it('a day only partly typed is unsaved work too, and the switch asks first', async () => {
+    const user = userEvent.setup();
+    await openTwoBranches(user);
+    await typeDay(user, createForm(), labelled('inventory.receipts.create.receivedOn'), '1709');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
   });
 
   it('discarding switches the branch and opens the form empty under it', async () => {
     const user = userEvent.setup();
     await openTwoBranches(user);
-    await user.type(receivedOn(), '2026-09-17');
+    await typeDay(user, createForm(), labelled('inventory.receipts.create.receivedOn'), '17092026');
     await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
     await waitFor(() =>
@@ -406,7 +552,7 @@ describe('a half-written receipt and a branch switch', () => {
         branchId: OTHER_BRANCH.id,
       })
     );
-    expect(receivedOn().value).toBe('');
+    expect(dayShown(receivedOn())).toBe('');
   });
 
   it('an untouched form switches without asking', async () => {

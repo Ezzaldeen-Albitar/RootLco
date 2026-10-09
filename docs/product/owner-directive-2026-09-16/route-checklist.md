@@ -479,6 +479,7 @@ table and `ROUTE_BRANCH_SCOPES` disagree on a route, a scope or a reason.
 | `/crm/customers/[customerId]/work-order/new`          | none     | Hands the customer on to check-in, which is where the branch is asked for.                    |
 | `/crm/customers/new/[kind]`                           | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
 | `/delivery/[deliveryId]`                              | none     | One record reached by its address; its branch is the record's own.                            |
+| `/inventory/categories`                               | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
 | `/inventory/items/[itemId]`                           | none     | One record reached by its address; its branch is the record's own.                            |
 | `/inventory/labels`                                   | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
 | `/inventory/unit-conversions`                         | none     | Tenant-wide administration or records; nothing here is addressed to a branch.                 |
@@ -1626,9 +1627,12 @@ pickers with `FieldFrame`'s contract.
   the operator sees, so a stale offset on the picker's object cannot move the day. A
   `DateTimeField` is a write input and never falls back to the browser's clock: with no
   `timezone` and no single branch with a known zone in force ("All my branches", none chosen), it
-  draws its label and the shared `RequiresConcreteBranch` sentence instead of a picker. In the
-  hour the clocks go back, a typed time is the earlier occurrence, and the field names the offset
-  of the moment it holds.
+  draws its label and the shared `RequiresConcreteBranch` sentence instead of a picker. A zone
+  name the browser does not recognise (`isKnownZone`) is no known zone: `workingZone` returns none
+  for it, so the field refuses rather than drawing a picker on an unknown clock
+  (`P1-32-PRE-OD-INV1C`); `MomentZoneRefusal` is that refusal, for a screen addressed to a branch
+  of its own. In the hour the clocks go back, a typed time is the earlier occurrence, and the field
+  names the offset of the moment it holds.
 - E4. Texts come from the catalogue; Arabic uses `ar-jo-latn`, so digits are Latin.
 
 **`TreePicker`** (`apps/web/src/components/pickers/TreePicker.tsx`) is one record chosen from a
@@ -1681,6 +1685,12 @@ is `label-fit.ts`.
 `MetricCard` and `ChartPanel` are named in the "Applicable" column below for the route that has
 moved onto them (`/`); for every other route their applicability is derived when it moves.
 
+**Planner ruling, 2026-10-09 — cursorless bounded lists.** A list backed by ONE bounded page that
+carries a "more exist" flag and no cursor may be drawn as the Material table with a notice that
+more exist, as the item-codes, receiving and transfers slices draw theirs. `OperationalGrid` (G1–G9,
+`rowCount={-1}`) stays required wherever the read is cursor-paged. The ruling covers the drawing
+only; what is read and how a refusal is said are unchanged.
+
 ### Route adoption
 
 "Applicable" is derived from each route's import graph at this head: `OperationalGrid` where the
@@ -1721,21 +1731,22 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/crm/customers/[customerId]/work-order/new`          | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
 | `/crm/customers/new/[kind]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
 | `/crm/customers`                                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/adjustments`                              | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/counts`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/goods-receipts`                           | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
+| `/inventory/adjustments`                              | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
+| `/inventory/categories`                               | form fields, `OperationalGrid`, `TreePicker`, states                                          | F1–F4; G1–G9; H1–H5; S1–S4                       | built on Material UI — see below the table                          | focused suites, en and ar — see below     |
+| `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/counts`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/goods-receipts`                           | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/items/[itemId]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/labels`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states                       | F1–F6; G1–G9; P1–P10; E1–E2, E4; S1–S4           | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/opening-stock`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory`                                          | `FilterToolbar`, form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states      | F1–F6; G1–G9; P1–P10; T1, T5; E1–E2, E4; S1–S4   | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/setup`                                    | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
+| `/inventory/labels`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states                       | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table (INV1B, INV1C)                       | focused suites, en and ar — see below     |
+| `/inventory/opening-stock`                            | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
+| `/inventory`                                          | `FilterToolbar`, form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states      | F1–F6; G1–G9; P1–P10; T1, T5; E1–E4; S1–S4       | migrated — see below the table (INV1B, INV1C)                       | focused suites, en and ar — see below     |
+| `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/setup`                                    | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
 | `/inventory/transfers`                                | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/unit-conversions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/inventory/vehicle-specifications`                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
+| `/inventory/unit-conversions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/vehicle-specifications`                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
 | `/invoices`                                           | form fields, `EntityPicker`, `ConfirmDialog`, `ReasonDialog`, states                          | F1–F6; P1–P10; D1–D5; S1–S4                      | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/`                                                   | `FilterToolbar`, `MetricCard`, `ChartPanel`, states                                           | S1–S4; T1–T6, T8; M1–M6                          | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/payments`                                           | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, form fields, `ConfirmDialog`, states      | F1–F6; G1–G9, G12; P1–P10; D1–D4; S1–S4          | migrated — see below the table                                      | focused suites, en and ar — see below     |
@@ -3225,20 +3236,26 @@ still the operator's midnight six days ago, and a typed expiry is still the inst
 typed. E3 (the working branch's clock) is deliberately not applied; moving these onto the branch's
 clock is a behaviour change left for a decision.
 
+**Closed by `P1-32-PRE-OD-INV1B`:** both moments are now on the branch's clock (E3), the rule
+every business moment follows (Owner decision D-17); `useOperatorZone` is gone. See the INV1b
+section below.
+
 The shared pieces (`features/inventory/components/`):
 
 - `pickers.tsx` — `ItemPicker` and `ReferenceBox` take `material` (off unless stated), the
   `WorkOrderPicker` / `CustomerPicker` precedent: on, the picker is `EntityPicker` and its archived
   switch `FormCheckboxField`, and the box is `FormTextField`; off, both are exactly as before.
-  `IssuedPartPicker` has no caller on these routes and is unchanged.
+  `IssuedPartPicker` has no caller on these routes and is unchanged. (INV1b removed the flag and the
+  older drawing, and moved `IssuedPartPicker`.)
 - `shared.tsx` — `LocationPicker` and `CategoryPicker` take `material` the same way;
   `categoryChoices` hands a toolbar the category options and line. `BranchPairPicker`,
-  `OutcomeNote`, `Qty` and the badges are unchanged.
+  `OutcomeNote`, `Qty` and the badges are unchanged. (INV1b removed the flag and the older drawing,
+  and moved `BranchPairPicker`.)
 - `stock-operations.tsx` — adds `useOperatorZone`. `BranchTargetForm`, the one piece these routes
   draw, holds no legacy field and is unchanged; `ItemFinder` and `BranchListView` serve only screens
-  of later slices and are unchanged.
+  of later slices and are unchanged. (INV1b moved both.)
 - `ScanBox.tsx` — unchanged: no route of this slice draws it (the counter and the label printer
-  do), so it moves with them.
+  do), so it moves with them. (Still so after INV1b: it moves with INV6.)
 
 Every other inventory screen that imports these files (parts, setup, opening stock, transfers,
 goods receipts, adjustments, counts, counter sales, customer returns, labels, unit conversions,
@@ -3311,11 +3328,12 @@ Known limitations of this slice, one line each:
   column, the ledger shows each movement's source reference and a location the branch list does not
   hold by its reference, and the replayed-reservation notice prints the reservation reference.
 - The moments are on the operator's clock, not the branch's (above); a laptop on another zone sees
-  another window, exactly as before.
+  another window, exactly as before. **Closed by INV1b** — both are on the branch's clock.
 - A partly typed expiry or ledger moment holds `''`, so the unsaved-work guard does not see it; the
   native boxes behaved the same way.
 - `ScanBox`, `ItemFinder`, `BranchListView`, `BranchPairPicker` and `IssuedPartPicker` are not on
-  Material yet; each moves with the screens that draw it.
+  Material yet; each moves with the screens that draw it. **Resolved by INV1b** for all but
+  `ScanBox`, which only the counter and the label printer draw and which moves with INV6.
 - The availability, reservation and catalogue loaders do not pass `useServerTable`'s abort signal
   on to their Server Actions: a superseded read is dropped, not cancelled (as before).
 - The item page has no unsaved-work guard on its two forms (as before); it is addressed to no
@@ -3325,6 +3343,396 @@ Known limitations of this slice, one line each:
 - Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
   they run in hosted CI. The web tier gains cases in existing files (no web test file added or
   removed).
+
+### Shared inventory pieces on Material UI, and the moments on the branch's clock (`P1-32-PRE-OD-INV1B`)
+
+Finishes what the MUI7A1 slice left partly converted in the shared inventory files, so the later
+inventory slices (INV2–INV6) move their screens without editing a shared file; closes the two
+MUI7A1 review residuals; and moves the two moments MUI7A1 kept on the browser's clock onto the
+branch's. No backend file, read, write, permission code, route or branch scope changed
+(`route-branch-scope.ts` unchanged).
+
+The shared pieces (`apps/web/src/features/inventory/components/`), now on the shared wrappers only:
+
+- `pickers.tsx` — `ItemPicker` and `IssuedPartPicker` are `EntityPicker`, the archived switch
+  `FormCheckboxField`, `ReferenceBox` `FormTextField`. The `material` flag and the `SearchPicker` /
+  `components/forms/Field` drawings are gone; nothing in the file imports either.
+- `shared.tsx` — `LocationPicker`, `CategoryPicker` and `BranchPairPicker` are `FormSelectField`
+  (native, F6); the branch pair's retry is Material's button; `categoryChoices` returns
+  `FormSelectOption`, which `FormSelectField` now declares itself (structurally the older
+  `SelectOption`, so no caller changed). Nothing in the file imports `components/forms/Field`.
+- `stock-operations.tsx` — `ItemFinder` is `FormTextField`, Material's button and
+  `FormSelectField`; Enter in its box still searches and never sends the form. `BranchListView` draws
+  its four outcomes as the shared states in the list's own words: the wait as `MuiLoadingState` with
+  the list's sentence, an empty branch as `MuiEmptyState` with the list's sentence, a failure as
+  `MuiReadFailureState` with the list's sentence, its reference, and a retry only for an outage; a
+  `BranchList` failure now carries its status and reference, and every key is typed
+  `keyof Messages`. `BranchTargetForm` holds no field of its own; the branch it states is
+  `WorkingBranchField`, the working context's control, which serves 23 screens across the product
+  and is not an inventory piece, so it is not moved here. `PANEL`, `LINK` and `DANGER_BUTTON` are
+  layout class strings, not controls, and stay for the screens (billing refunds and credit notes
+  among them) that still draw their own sections.
+- `ScanBox.tsx` — unchanged: only the counter (`/inventory/counter-sales`) and the label printer
+  (`/inventory/labels`) draw it, so it moves with INV6.
+
+Who draws them, so the adoption rows above read "shared pieces only" for every inventory
+route not yet migrated: the item picker and the box on `/inventory/parts`; the issued-part picker
+on `/inventory/customer-returns`; the location picker on every stock route; the category picker on
+`/inventory/vehicle-specifications` (and on `/services`); the branch pair on `/inventory/parts`,
+`/inventory/setup` (and on `/pricing`, `/pricing/[priceListId]`); the item finder on adjustments,
+counter sales, goods receipts, labels, transfers, unit conversions and the material requirements
+panel; the branch list on adjustments, counter sales, customer returns, goods receipts, counts and
+transfers. Billing refunds and credit notes (`BranchTargetForm`, `PANEL`) and attention
+(`useBranches`) draw nothing that changed; their suites pass unchanged.
+
+The MUI7A1 review residuals:
+
+- The item page's two loading states say the panel's own sentence again ("Reading the codes…",
+  "Reading the prices…", en and ar) — `MuiLoadingState` takes an optional `labelKey`, so
+  `inventory.identifiers.loading` and `inventory.prices.loading` are no longer orphaned; unset,
+  "Loading" as before.
+- `usePanel`'s refused and unavailable keys and the panel's failed `messageKey` are typed
+  `keyof Messages`, so the cast on `descriptionKey` is gone.
+
+The two moments are on the branch's clock. The reservation expiry on `/inventory` and the ledger's
+window on `/inventory/movements` are business moments, so they are typed, shown and sent on the
+clock of the branch the screen is addressed to (`useStockTargetZone`, from the working context's
+`branches[].timezone`), the rule `DateTimeField` E3 states and Owner decision D-17 records
+(`apps/api/src/server/db/period.ts`); no recorded rule puts inventory moments on the browser's
+clock. The ledger opens at the branch's midnight six days ago. With no known zone for the branch,
+each moment field says it needs a branch with a known clock and draws no picker, and the ledger
+opens with no lower bound — never the browser's midnight. (Superseded by `P1-32-PRE-OD-INV1C`
+below: with no known zone the ledger now reads nothing, and a zone the browser does not recognise
+counts as none.)
+
+**Release note — the operator's clock changed (Owner decision D-17).** Since this slice, the
+reservation expiry on `/inventory` and the movement ledger's window on `/inventory/movements` are
+typed, shown and sent on the clock of the branch the screen is addressed to, no longer on the clock
+of the operator's computer. An operator whose computer keeps another zone than the branch now sees
+and types the branch's wall time: an expiry typed as 08:00 means 08:00 at that branch, and the
+ledger's first seven days are that branch's days. Where the branch's time zone is not set, or is
+not recognised, the moment fields offer no picker and the ledger reads nothing
+(`P1-32-PRE-OD-INV1C`).
+
+Wrapper extensions, each tested: `FormTextField` takes `onKeyDown` (`mui-form-fields.dom`);
+`MuiLoadingState` takes `labelKey` (`mui-states.dom`, en and ar); `FormSelectField` declares
+`FormSelectOption` / `FormSelectOptionGroup` (types only).
+
+Preserved, each held by the consumers' suites (all inventory suites, refunds, credit-note print,
+attention, pricing, price-list detail, services catalogue, invoices) and the neighbour suites
+(`form-reset-*`, `i18n`, `unsaved-navigation`, `route-branch-scope*`, `cancellable-reads*`):
+the same reads with the same arguments, the same page refusals and per-control codes, the same
+minimum search lengths and late-reply drops, the same unsaved-work rules, the typed-reference
+fallbacks, quantities and prices as the server's and the typed strings.
+
+Added cases: the branch list's five outcomes in en and ar (`inventory-transfers.dom`); Enter in
+the item finder searches and sends nothing (`inventory-transfers.dom`); the item page's loading
+sentences in en and ar (`inventory-item-codes.dom`); a branch fourteen hours ahead of UTC whose
+typed expiry and ledger moment are sent as that branch's instants, not the browser's, and a branch
+with no known zone that draws no picker (`inventory.dom`, `inventory-movements.dom`).
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- `inventory-parts.dom` and `inventory-customer-returns.dom`: a match is chosen as an `option` of
+  the combobox's listbox (found on the screen, under `PICKER_OPTION_WAIT_MS`) instead of a `button`
+  in the panel, and a chosen item is read as the combobox's value (`chosenIn`) instead of the
+  `…-picker-chosen` test id — the MUI7A1 precedent.
+
+Deliberate behaviour changes:
+
+- The reservation expiry and the ledger's window are on the branch's clock, not the browser's (two
+  existing assertions now name the branch's instant: `inventory.dom` expiry, `inventory-movements.dom`
+  first window and typed moment).
+- A branch list's failure shows the shared heading above the list's sentence and the reference; an
+  ended session links back to signing in instead of saying the sentence alone; an empty branch is
+  said under "Nothing here yet".
+
+Known limitations, one line each:
+
+- `WorkingBranchField` (inside `BranchTargetForm`) still draws its refusal's branch select with the
+  older field; it is a working-context component shared by 23 screens and moves on its own.
+- `ScanBox` is not on Material yet; it moves with INV6.
+- Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in hosted
+  CI. No web test file was added or removed.
+
+### Item category tree and the category picker on Material UI (`P1-32-PRE-OD-INV2B`)
+
+Completion plan section 8, "Required category tree delivery": a read-only tree of the item
+categories at a new route, and a reusable category picker over the same data. Built on Material UI
+from the start. No backend file changed; no category write was added.
+
+Route and gates:
+
+- `/inventory/categories` (`app/[locale]/(dashboard)/inventory/categories/page.tsx`) refuses
+  without `inv.item.read` before any read — the code both of its reads declare
+  (`inv.item-category-list`, and `inv.item-search` for a category's items). Branch scope `none`
+  (`route-branch-scope.ts`): categories are the organisation's, and no read is addressed to a
+  branch. The navigation entry `inventory.categories` ("Item categories") sits in the inventory
+  group, gated on the same code, with `tenant` scope.
+- `inv.item.manage` decides only whether the read-only notice offers a link to the existing create
+  form on `/inventory/setup`. Nothing on the page writes.
+
+What the screen does (`features/inventory/components/CategoriesScreen.tsx`, `CategoryTree.tsx`,
+`features/inventory/category-tree.ts`):
+
+- Reads EVERY page of `inv.item-category-list` with its cursor (`listItemCategoryPage`, a hundred a
+  page), active and inactive, through `readAllCategories`. The walk stops — and says the list may be
+  incomplete — only on a repeated cursor or after 500 pages; a failed page fails the whole read
+  rather than drawing half a tree. The older one-page `listItemCategories` and the `shared.tsx`
+  `CategoryPicker` that reads it are unchanged.
+- Builds the hierarchy from `parentCategoryId` with `TreePicker`'s own `treeShape` (H1), so the
+  browsing tree and the picker place every row the same way. A row whose parent is not in the list
+  (or that a cycle would hide — the database refuses both) is drawn at the top level with a note.
+- Draws it with the MUI X Community tree view (`SimpleTreeView`, the component `TreePicker` wraps):
+  each row is the name with its code beside it, an inactive category labelled "Inactive"; open and
+  close per row and "Expand all" / "Collapse all"; the tree view's keyboard model (Up and Down,
+  Right opens and Left closes — mirrored in Arabic — Home and End, `*`, first-letter jump, Space
+  chooses), and Enter chooses the row as well as opening a row with children.
+- Search by name or code (a substring, folded to the page's language) keeps every match under its
+  ancestors, opened, and keeps what lies under a match; clearing it gives back the tree as it was,
+  with the chosen row's ancestors open.
+- The chosen category shows its path as a breadcrumb (`CategoryPath`, every ancestor a button that
+  chooses it), its code, status, number of sub-categories and description, so two categories of
+  the same name in different branches read apart. Its items are an `OperationalGrid` over
+  `listItems({ categoryId })` (G1–G9: server pages, `rowCount` -1, "Page N", no total), the stock
+  code a link to `/inventory/items/[itemId]`; the grid says that only items filed directly under
+  the category are listed, which is what the read answers.
+- A read-only notice states that names and positions cannot be changed here and that renaming,
+  moving and retiring wait on a decision (CAT01, README Q23), and that every item belongs to
+  exactly one category (`inv.item_master.item_category_id` is NOT NULL), instead of drawing a
+  bucket of items without a category.
+- States: loading, an empty catalogue, the shared refused / unavailable / error / ended-session
+  states with a retry that walks every page again, a search that matches nothing, a category with
+  no items.
+
+The picker (`features/inventory/components/CategoryTreePicker.tsx`, `CategoryTreePicker`): one
+category chosen from the whole tree, built on `TreePicker` (H1–H5) over `useAllItemCategories`,
+which the caller owns so a screen reads once. Each row reads `name (code)`, an inactive one says
+so; the chosen category's whole path is said under the tree; a "No category" row (on by default,
+`clearLabel={null}` removes it) clears the choice. While the read is in flight the picker says it
+is loading, and a refused or failed read is a sentence (a retry where retrying can help). It is
+named `CategoryTreePicker` because `shared.tsx` already exports a different `CategoryPicker` (the
+one-page select), which this slice does not touch. No screen adopts it in this slice; the setup
+item form, the vehicle specifications and the material-requirements panel are to move onto it
+later.
+
+Tests (`apps/web/tests/inventory-categories.dom.test.tsx`, new, en and ar for every case): an empty
+catalogue; 260 categories over three cursor pages, all drawn on "Expand all"; a repeated cursor
+stopping with the incomplete-list note; seven levels with every ancestor of a deep match opened and
+the seven-step path; two "Pads" in different branches told apart by their path and code; an
+inactive category labelled; a missing parent drawn at the top with its note; a search with no
+match and the tree given back when cleared; keyboard Home, End, open, close, Down, Up and Enter
+(choosing a leaf, and choosing and opening a parent), with the arrows mirrored in Arabic; the item
+list read with the chosen `categoryId` and linking to the item page; a category with no items; the
+setup link only for `inv.item.manage` and no writing control; the refusal without `inv.item.read`
+reading nothing; an unavailable read retried; right to left in Arabic; the picker choosing from
+all pages, saying the path and clearing, and its refused state. `inventory-api.test.ts` gains the
+page adapter's address and cursor; `navigation.test.ts` gains the entry's key;
+`p1-28-reception-media.test.ts` declares the read-only notice as the fourth catalogue string that
+defers to an Owner decision (its exact pin of open deferrals, which P1-32-PRE-OD-FRX grew to three
+the same way), and the notice says "pending an Owner decision" in English as the pin's matcher
+reads it. No other assertion and no selector changed.
+
+Known limitations of this slice, one line each:
+
+- No figure per category: no read counts a category's items, and none is invented.
+- Names, positions and status cannot be changed (no operation exists); CAT01 is the Owner's
+  decision, and creating a category stays on `/inventory/setup`.
+- A category's items are those filed directly under it, as `inv.item-search` answers; items of its
+  sub-categories are listed when each sub-category is chosen.
+- The search is in the browser over the whole read list (the list read takes no search term); it
+  matches a substring of the name or code, without folding Arabic-Indic digits.
+- The whole tree is read on arrival (one request per hundred categories, under the read's
+  `expensive-read` limit of 30 a minute); a very large catalogue is slower to open, and a refused
+  page shows the shared unavailable state with a retry.
+- The tree view has no virtualisation (a commercial feature); collapsed rows are not mounted.
+- No browser spec covers this route; the Playwright tiers run only in hosted CI.
+- Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
+  they run in hosted CI. The web tier gains one test file (`deliverable-manifest.md` counts it).
+
+### Inventory moments with no known branch clock, and the ledger's first window (`P1-32-PRE-OD-INV1C`)
+
+Review follow-ups of #543 (INV1B). Web only: no backend file, read, write, permission code, route,
+branch scope or migration changed (`route-branch-scope.ts` unchanged).
+
+- **An unrecognised zone is no clock.** `useStockTargetZone` already refused a zone the browser
+  does not recognise, but `DateTimeField` then fell back to `workingZone`, which did not check
+  `isKnownZone`, and drew `ZonedDateTimeField` on that same unknown name. Now `workingZone` returns
+  none for a name the browser does not recognise (E3), and the inventory moments are drawn by
+  `StockMomentField` (`stock-operations.tsx`): the picker on the TARGET branch's clock, or the
+  shared refusal (`MomentZoneRefusal`, label plus the "time zone not known" sentence,
+  `data-zone-refused`) and no picker at all — it never consults another branch's clock or the
+  browser's. `useStockTargetClock` tells the three findings apart: known, not set, not recognised.
+  Applies to the reservation expiry on `/inventory` and both window moments on
+  `/inventory/movements`, the only moment fields on the inventory screens.
+- **No clock, no read (planner ruling, 2026-10-09).** Where the branch's zone is not set or not
+  recognised, `/inventory/movements` no longer reads the branch's whole ledger: it reads nothing,
+  says in a status notice that movements cannot be shown yet because the branch's time zone is not
+  set (or is not recognised), and "Show movements" is disabled and described by that notice. The
+  branch's own locations are still read for the location filter.
+- **The first window agrees between server and browser.** The window's start was computed in the
+  ledger panel's state initialiser, during the server's render and again in the browser's, which
+  near the branch's midnight could name two days. `useOpeningWindowStart` now works it out once,
+  in the browser, after it has taken the page over (`useSyncExternalStore`: none on the server and
+  while hydrating); until then the panel draws nothing and reads nothing.
+
+Messages added (en and ar): `inventory.movements.noClock.title`, `…noClock.missing`,
+`…noClock.unrecognised`, plain language.
+
+Added cases: `inventory-movements.dom` — a branch with an empty zone and with `Mars/Base`, in en
+and ar: no ledger read, the notice with the right sentence, both moment fields refused with no
+picker, "Show movements" disabled (four cases); the first window across the branch's midnight —
+the server's render holds no window, hydration raises no mismatch, and the window is the
+browser's day, not the server's; no zone holds no window. `inventory.dom` — the reservation expiry
+with an empty zone and with `Mars/Base`, en and ar, refused with no picker (four cases).
+
+Deliberate behaviour change: the INV1B case "opens with no window and draws no picker where the
+branch's clock is not known" asserted a read with no lower bound; under the ruling it is replaced
+by the cases above, which assert no read at all. No other assertion changed.
+
+Preserved: every other inventory read with the same arguments, the window on a known clock
+(branch's midnight six days back), typed moments sent as the branch's instants, refusals of an
+incomplete or impossible moment, the unsaved-work rules, en and ar, right to left.
+
+Known limitations, one line each:
+
+- On a known clock the ledger panel appears one render after the browser takes the page over;
+  the server's render never drew it (the branch target is itself set after mount).
+- A disabled "Show movements" cannot take focus; the reason is the status notice beside it.
+- `DateField` (calendar days) with an unrecognised working zone now draws on the browser's
+  calendar rather than on the unknown name; a day names no instant, so nothing is sent differently.
+- Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in
+  hosted CI. No web test file was added or removed.
+
+### Inventory receiving: opening stock, goods receipts and adjustments on Material UI (`P1-32-PRE-OD-INV3`)
+
+The second inventory slice of the Owner's interface order: the opening-stock chain, goods receipts
+with the cost history, and stock adjustments moved onto the shared wrappers. Nothing about how any
+of them reads, authorizes or scopes changed: the same reads and writes with the same arguments
+(`GET /api/v1/opening-inventory-batches` and `/{id}`, `POST` the batch, `/{id}/lines` and
+`/{id}/approval`; `GET /api/v1/goods-receipts` and `/{id}`, `POST /goods-receipts` and
+`/{id}/posting` with the receipt's `recordVersion` as If-Match, the item cost history;
+`GET /api/v1/stock-adjustments`, `POST /stock-adjustments` and `/{id}/approval`), the same page
+refusal before any read (`inv.stock.read` on all three), the same per-control codes
+(`inv.stock.operate`, `inv.adjustment.approve`, `inv.cost.view`), and the same route branch scope,
+unchanged in `route-branch-scope.ts` — all three `concrete`. No backend file, permission code or
+route changed; the server's one-opening-per-stock-cell rule, the maker ≠ checker refusals and the
+cost gate are untouched and still rendered as before.
+
+What moved to which wrapper:
+
+- `/inventory/opening-stock` — the batch code, the notes and the item search are `FormTextField`;
+  the found item is `FormSelectField`; the counted quantity is `FormNumberField`, so the string
+  typed is the string sent; the count's date is a `DateField` (the same `YYYY-MM-DD` the native box
+  produced); every button is Material's. The batch list and the counted lines are Material's table;
+  the list's empty answer is `MuiEmptyState` with the list's own sentence, and a list that could not
+  be read is `MuiReadFailureState` with the list's own sentence (a retry and the reference after an
+  outage, none after a refusal or an ended session). A batch that cannot be opened is Material's
+  error alert with the same sentence.
+- `/inventory/goods-receipts` — the reference, the supplier's reference, the notes and the currency
+  are `FormTextField`; the quantity and the unit cost are `FormNumberField` (a cost of up to four
+  decimals is sent exactly as typed, never canonicalised to the currency's minor unit, so the money
+  field is deliberately not used); the day received is a `DateField`; every button is Material's.
+  The receipt list, a receipt's lines, the lines being written and the cost layers are Material's
+  table; a failed receipt or cost-history read is Material's error alert with the same sentence.
+- `/inventory/adjustments` — the status filter is `FormSelectField`, the quantity
+  `FormNumberField`, the change (in or out) `FormRadioGroupField`, the two reasons multi-line
+  `FormTextField`; every button is Material's (Reject is the outlined error button). The list is
+  Material's table, the decision still a row action named with the stock code.
+
+Why Material's table and not `OperationalGrid`: each of these reads answers one page of up to fifty
+rows with a "more exist" flag, and the screen walks no cursor (the "more exist" sentence is said
+above the table, as before). G1–G4 describe a server-paged read the screens do not make, so the
+grid's pager would have nothing to do — the same reason the item page's two lists became Material
+tables in `P1-32-PRE-OD-MUI7A1`. Paging these lists would change what is read, which this slice does
+not do.
+
+The shared inventory pieces are consumed, not changed: `ItemFinder` (receipts, adjustments),
+`LocationPicker` (all three), `BranchListView` and `useBranchList` (receipts, adjustments),
+`BranchTargetForm`, `StockOperationLinks`, `OutcomeNote`, `Qty` and `Fact` are imported as
+`P1-32-PRE-OD-INV1B` left them — the finder, the location select and the list's wait, empty and
+failed states already on the wrappers — so no shared file changed here.
+
+Wrapper correction, tested in `mui-form-fields.dom.test.tsx` (en and ar): a required `DateField`
+or `DateTimeField` put `aria-required` on its `group`, which WAI-ARIA does not allow (axe
+`aria-allowed-attr`, serious) — found by the receipts suite's accessibility case once the day
+received became a picker. Required is now announced on each part instead (every part is a
+`spinbutton`, which may carry it); the asterisk, the absent native `required` and every other
+attribute are unchanged. The case that asserted the attribute on the group now asserts it on each
+part, and a required day is checked to have no serious or critical finding.
+
+Preserved, each held by a case in `inventory-opening-stock.dom`, `inventory-goods-receipts.dom` or
+`inventory-adjustments.dom` (en and ar where marked):
+
+- Permission gates and scope: the page refusals before any read; the batch and line forms only with
+  `inv.stock.operate`, the approval only with `inv.adjustment.approve` (and the second-person hint
+  when the counter is refused, never beside the already-opened-cell refusal, en and ar); the receipt
+  form and posting only with `inv.stock.operate`; the cost fields and the cost history only with
+  `inv.cost.view`, and a line says only whether it is priced; the decision offered only on someone
+  else's pending request, with the reason said on the row otherwise; every read and write addressed
+  to the working branch.
+- Reversal and approval rules: posting sends the version the read answered; a refused posting, a
+  refused decision and every stock refusal rule are said in words; an approved batch takes no more
+  lines and links to the stock and the movements; the list is read again after every write.
+- States: an empty branch, a refused list and an unreadable batch are three different sentences; a
+  list outage names its reference and reads again (en and ar); a refusal offers no retry.
+- Field errors: a refused code, quantity or day is marked on its own field with the reason as its
+  error message, and what was typed stays (the quantity in en and ar on receipts and adjustments,
+  the day in en and ar on opening stock and receipts); the already-counted cell is said beside the
+  location with the quantity kept.
+- Incomplete dates: a day only partly typed is refused as a date, never as missing, and nothing is
+  sent (en and ar).
+- Unsaved work: a half-filled batch, line, receipt or request — a partly typed day included — asks
+  before a branch switch; staying keeps it, discarding opens the form empty under the new branch; an
+  untouched form switches without asking.
+- Duplicate submits: a second press while an approval, a decision or a receipt is being sent sends
+  nothing more; one receipt idempotency key per opened form, renewed after a save.
+- Money and quantity precision: quantities, unit costs and the server's figures are strings, sent
+  and shown as typed or as published; a cost history figure goes through the one money formatter.
+- Arabic and English, right to left, in every suite above.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- A calendar day is typed part by part into the picker's spin buttons (`typeDay`) and read back from
+  the picker's value input (`dayShown`) instead of a `type="date"` box; the day sent is the same.
+- Every render goes under `UiFoundationProvider`, as the locale layout mounts it (the pickers need
+  its localization).
+
+New cases: a partly typed count date and day received refused as a date (en and ar); a batch list
+outage naming its reference and reading again (en and ar); a refused quantity marked on its own field
+with the keypad and direction of a number box (receipts and adjustments, en and ar); a partly typed
+day received counted as unsaved work; a second press while an approval, a decision or a receipt is
+out (en); the adjustment list named and decided in Arabic.
+
+Deliberate behaviour changes:
+
+- A day only partly typed is refused with "Enter a date as year, month and day." and counts as
+  unsaved work; the native box handed such an entry over as empty, which was refused as "This field
+  is required." and asked nothing before a switch.
+- The count date's help and the date refusal no longer name the `YYYY-MM-DD` form (en and ar): the
+  picker writes the day, the month and the year in the catalogue's order.
+- The batch list's empty answer is said under the shared "Nothing here yet" heading with the same
+  sentence; an outage under the shared "unavailable" heading with the same sentence, the reference
+  and the retry; an ended session as the shared state with the way back to signing in.
+- A second press while a write is out sends nothing; before, the button was disabled only once the
+  screen had re-rendered.
+
+Known limitations of this slice, one line each:
+
+- The lists show the first page of up to fifty with the "more exist" sentence and no way to the
+  rest (as before); a paged read would be a backend-visible change.
+- Codes are shown where names would be better (a receipt line's item is its stock code, a location
+  its code), as before; no read was added.
+- The opening-stock line form still finds its item with a search box and a select, not
+  `EntityPicker` (the same `listItems` read of 25 active items as before).
+- The adjustment decision is an inline panel, not a dialog, as before; opening it does not move the
+  cursor into it.
+- A refused form does not move the cursor to its first refused field (as before;
+  `useFocusFirstInvalid` is not wired on these forms).
+- No browser spec covers these three routes, so none was changed; the Playwright tiers run only in
+  hosted CI.
+- Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in hosted
+  CI. The web tier gains cases in existing files (no web test file added or removed).
 
 ### Stock transfers on Material UI (`P1-32-PRE-OD-INV4`)
 
