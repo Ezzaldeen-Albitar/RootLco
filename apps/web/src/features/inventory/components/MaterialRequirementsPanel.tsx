@@ -49,16 +49,37 @@
  * file subtracts nothing: a remainder computed here would be a second answer to
  * a question the server already answered, and would disagree with it the moment
  * a draw landed between the read and the render.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV5`)
+ *
+ * Every control the panel draws is a shared wrapper: the fields are `forms/mui`
+ * (each quantity `FormNumberField`, so the string typed is the string sent),
+ * every button is Material's, and the list's wait, empty answer and failures
+ * are the shared states in the panel's own sentences. The item family is
+ * CHOSEN from the whole category tree (`CategoryTreePicker`) rather than typed
+ * as a reference, and a requirement that names a family says the family's
+ * path and code rather than its identifier. Without `inv.item.read` the
+ * categories cannot be read, so the typed reference stays, exactly as before.
+ *
+ * Each write is held to one at a time by a ref set before anything is awaited;
+ * a half-filled form is unsaved work; a form that opens takes the cursor and
+ * gives it back to the button that opened it when it closes.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import Button from '@mui/material/Button';
 
-import { SelectField, TextField } from '@/components/forms/Field';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiEmptyState, MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { listServiceLines } from '@/features/work-orders/api';
 import type { WorkOrderServiceLine } from '@/features/work-orders/work-orders-contract';
 
@@ -87,14 +108,44 @@ import {
   type UnitOfMeasureOption,
   type VehicleSpecification,
 } from '../inventory-contract';
-import { OutcomeNote, PRIMARY_BUTTON, Qty, SECONDARY_BUTTON, UUID } from './shared';
-import { DANGER_BUTTON, ItemFinder, PANEL, isQuantity } from './stock-operations';
+import { CategoryTreePicker } from './CategoryTreePicker';
+import { pathText, useAllItemCategories, type CategoryList } from './CategoryTree';
+import { OutcomeNote, Qty, UUID } from './shared';
+import {
+  ItemFinder,
+  PANEL,
+  isQuantity,
+  refusalState,
+  useFocusOnOpen,
+  useReturnFocus,
+} from './stock-operations';
 
 /** The requirement list as one of four outcomes; an empty branch and a refusal differ. */
 type Listing =
   | { readonly phase: 'loading' }
   | { readonly phase: 'listed'; readonly rows: readonly MaterialRequirement[] }
-  | { readonly phase: 'failed'; readonly messageKey: string };
+  | {
+      readonly phase: 'failed';
+      readonly status: 'denied' | 'expired' | 'unavailable';
+      readonly messageKey: keyof Messages;
+      readonly correlationId: string | null;
+    };
+
+/** A read that did not answer, as the shared state's status and the panel's own sentence. */
+function failureOf(state: { readonly status: string; readonly correlationId?: string | null }): {
+  readonly status: 'denied' | 'expired' | 'unavailable';
+  readonly messageKey: keyof Messages;
+  readonly correlationId: string | null;
+} {
+  const correlationId = state.correlationId ?? null;
+  if (state.status === 'denied') {
+    return { status: 'denied', messageKey: 'inventory.material.refused', correlationId };
+  }
+  if (state.status === 'expired') {
+    return { status: 'expired', messageKey: 'state.expired.message', correlationId };
+  }
+  return { status: 'unavailable', messageKey: 'inventory.material.unavailable', correlationId };
+}
 
 /**
  * The confirmed capacities on file for the service kind being asked about.
@@ -129,6 +180,7 @@ export function MaterialRequirementsPanel({
   canApprove,
   canDecideException,
   canReadWorkOrder,
+  canReadItems,
   chosenId,
   onChoose,
   onChanged,
@@ -140,6 +192,12 @@ export function MaterialRequirementsPanel({
   readonly target: StockTarget | null;
   /** `wo.work_order.read` — whether the service lines are offered as a picker. */
   readonly canReadWorkOrder: boolean;
+  /**
+   * `inv.item.read` — whether the item categories can be read, so a family is
+   * chosen from the tree and named by its path. Without it the family stays a
+   * typed reference, and a listed family is shown by its reference.
+   */
+  readonly canReadItems: boolean;
   /** The signed-in person, so the panel can say why they cannot decide their own request. */
   readonly currentUserId: string;
   /** `inv.material.request` — asking, re-checking, withdrawing, asking for an exception. */
@@ -158,6 +216,16 @@ export function MaterialRequirementsPanel({
   const [epoch, setEpoch] = useState(0);
   const [adding, setAdding] = useState(false);
   const [open, setOpen] = useState<OpenForm>({ kind: 'none' });
+  const addRef = useReturnFocus<HTMLButtonElement>(adding);
+  /*
+   * The whole category tree, read once for the panel and only when something
+   * on it needs a category: a listed requirement that names a family, or the
+   * form that asks for one. Without `inv.item.read` it is never read.
+   */
+  const namesFamily =
+    listing.phase === 'listed' && listing.rows.some((row) => row.itemCategoryId !== null);
+  const categories = useAllItemCategories(canReadItems && (adding || namesFamily));
+  const categoryList = canReadItems ? categories : null;
 
   const reload = useCallback(() => setEpoch((n) => n + 1), []);
 
@@ -167,14 +235,7 @@ export function MaterialRequirementsPanel({
     void listMaterialRequirements(target, { workOrderId }).then((state) => {
       if (!live) return;
       if (state.status === 'ok') setListing({ phase: 'listed', rows: state.data.items });
-      else
-        setListing({
-          phase: 'failed',
-          messageKey:
-            state.status === 'denied'
-              ? 'inventory.material.refused'
-              : 'inventory.material.unavailable',
-        });
+      else setListing({ phase: 'failed', ...failureOf(state) });
     });
     return () => {
       live = false;
@@ -205,14 +266,15 @@ export function MaterialRequirementsPanel({
         <>
           {canRequest ? (
             <div>
-              <button
+              <Button
+                ref={addRef}
                 type="button"
-                className={SECONDARY_BUTTON}
+                variant="outlined"
                 aria-expanded={adding}
                 onClick={() => setAdding((was) => !was)}
               >
                 {translate(messages, 'inventory.material.create.open')}
-              </button>
+              </Button>
             </div>
           ) : null}
 
@@ -221,20 +283,26 @@ export function MaterialRequirementsPanel({
               messages={messages}
               workOrderId={workOrderId}
               canReadWorkOrder={canReadWorkOrder}
+              categories={categoryList}
               onCreated={afterWrite}
+              onDiscard={() => setAdding(false)}
             />
           ) : null}
 
           {listing.phase === 'loading' ? (
-            <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+            <MuiLoadingState messages={messages} variant="inline" />
           ) : listing.phase === 'failed' ? (
-            <p role="alert" className="text-body text-error">
-              {translateDynamic(messages, listing.messageKey)}
-            </p>
+            <MuiReadFailureState
+              messages={messages}
+              locale={locale}
+              status={listing.status}
+              correlationId={listing.correlationId}
+              // A retry only where trying again can change the answer (S2).
+              onRetry={listing.status === 'unavailable' ? reload : undefined}
+              descriptionKey={listing.messageKey}
+            />
           ) : listing.rows.length === 0 ? (
-            <p className="py-4 text-center text-body text-text-secondary">
-              {translate(messages, 'inventory.material.none')}
-            </p>
+            <MuiEmptyState messages={messages} descriptionKey="inventory.material.none" />
           ) : (
             <ul className="flex flex-col gap-3">
               {listing.rows.map((row) => (
@@ -243,6 +311,7 @@ export function MaterialRequirementsPanel({
                     locale={locale}
                     messages={messages}
                     requirement={row}
+                    categories={categoryList}
                     currentUserId={currentUserId}
                     canRequest={canRequest}
                     canApprove={canApprove}
@@ -271,6 +340,7 @@ function RequirementCard({
   locale,
   messages,
   requirement,
+  categories,
   currentUserId,
   canRequest,
   canApprove,
@@ -284,6 +354,8 @@ function RequirementCard({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly requirement: MaterialRequirement;
+  /** The category tree, or `null` without `inv.item.read`. */
+  readonly categories: CategoryList | null;
   readonly currentUserId: string;
   readonly canRequest: boolean;
   readonly canApprove: boolean;
@@ -296,12 +368,22 @@ function RequirementCard({
 }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One decision or re-check in flight at a time, before `busy` has disabled the buttons.
+  const sending = useRef(false);
   const ownRequest = requirement.requestedBy === currentUserId;
   const decidable = requirement.status === 'pending_approval';
+  const isOpen = (kind: OpenForm['kind']) =>
+    open.kind === kind && open.kind !== 'none' && open.id === requirement.id;
+  const rejectRef = useReturnFocus<HTMLButtonElement>(isOpen('reject'));
+  const exceptionRef = useReturnFocus<HTMLButtonElement>(isOpen('exception'));
+  const cancelRef = useReturnFocus<HTMLButtonElement>(isOpen('cancel'));
 
   const run = async (act: () => Promise<{ readonly state: ActionState }>) => {
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     const result = await act();
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -341,9 +423,11 @@ function RequirementCard({
           ) : requirement.itemCategoryId ? (
             <span>
               {translate(messages, 'inventory.material.itemFamily')}{' '}
-              <code className="font-mono text-caption" dir="ltr">
-                {requirement.itemCategoryId}
-              </code>
+              <CategoryName
+                messages={messages}
+                categories={categories}
+                categoryId={requirement.itemCategoryId}
+              />
             </span>
           ) : (
             <span className="text-text-muted">
@@ -382,90 +466,84 @@ function RequirementCard({
 
       <div className="flex flex-wrap gap-2">
         {requirement.status === 'approved' ? (
-          <button
+          <Button
             type="button"
-            className={SECONDARY_BUTTON}
+            variant={chosen ? 'contained' : 'outlined'}
             aria-pressed={chosen}
             onClick={() => onChoose(requirement)}
           >
             {translate(messages, 'inventory.material.use')}
-          </button>
+          </Button>
         ) : null}
         {canApprove && decidable && !ownRequest ? (
           <>
-            <button
+            <Button
               type="button"
-              className={PRIMARY_BUTTON}
+              variant="contained"
               disabled={busy}
               onClick={() =>
                 void run(() => decideMaterialRequirement(requirement.id, { decision: 'approved' }))
               }
             >
               {translate(messages, 'inventory.material.decide.approve')}
-            </button>
-            <button
+            </Button>
+            <Button
+              ref={rejectRef}
               type="button"
-              className={SECONDARY_BUTTON}
-              aria-expanded={open.kind === 'reject' && open.id === requirement.id}
+              variant="outlined"
+              aria-expanded={isOpen('reject')}
               onClick={() =>
-                onOpen(
-                  open.kind === 'reject' && open.id === requirement.id
-                    ? { kind: 'none' }
-                    : { kind: 'reject', id: requirement.id }
-                )
+                onOpen(isOpen('reject') ? { kind: 'none' } : { kind: 'reject', id: requirement.id })
               }
             >
               {translate(messages, 'inventory.material.decide.reject')}
-            </button>
+            </Button>
           </>
         ) : null}
         {canRequest && requirement.status === 'approval_required' ? (
-          <button
+          <Button
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             disabled={busy}
             onClick={() => void run(() => recheckMaterialRequirement(requirement.id))}
           >
             {translate(messages, 'inventory.material.recheck.action')}
-          </button>
+          </Button>
         ) : null}
         {canRequest && requirement.status === 'approved' ? (
-          <button
+          <Button
+            ref={exceptionRef}
             type="button"
-            className={SECONDARY_BUTTON}
-            aria-expanded={open.kind === 'exception' && open.id === requirement.id}
+            variant="outlined"
+            aria-expanded={isOpen('exception')}
             onClick={() =>
               onOpen(
-                open.kind === 'exception' && open.id === requirement.id
-                  ? { kind: 'none' }
-                  : { kind: 'exception', id: requirement.id }
+                isOpen('exception') ? { kind: 'none' } : { kind: 'exception', id: requirement.id }
               )
             }
           >
             {translate(messages, 'inventory.material.exception.open')}
-          </button>
+          </Button>
         ) : null}
         {canRequest && (requirement.status === 'approved' || decidable) ? (
-          <button
+          <Button
+            ref={cancelRef}
             type="button"
-            className={DANGER_BUTTON}
-            aria-expanded={open.kind === 'cancel' && open.id === requirement.id}
+            variant="outlined"
+            color="error"
+            aria-expanded={isOpen('cancel')}
             onClick={() =>
-              onOpen(
-                open.kind === 'cancel' && open.id === requirement.id
-                  ? { kind: 'none' }
-                  : { kind: 'cancel', id: requirement.id }
-              )
+              onOpen(isOpen('cancel') ? { kind: 'none' } : { kind: 'cancel', id: requirement.id })
             }
           >
             {translate(messages, 'inventory.material.cancel.action')}
-          </button>
+          </Button>
         ) : null}
       </div>
 
       <OutcomeNote messages={messages} outcome={outcome} />
 
-      {open.kind === 'reject' && open.id === requirement.id ? (
+      {isOpen('reject') ? (
         <ReasonForm
           messages={messages}
           headingKey="inventory.material.decide.rejectHeading"
@@ -476,10 +554,11 @@ function RequirementCard({
             decideMaterialRequirement(requirement.id, { decision: 'rejected', reason })
           }
           onDone={onChanged}
+          onDiscard={() => onOpen({ kind: 'none' })}
         />
       ) : null}
 
-      {open.kind === 'cancel' && open.id === requirement.id ? (
+      {isOpen('cancel') ? (
         <ReasonForm
           messages={messages}
           headingKey="inventory.material.cancel.heading"
@@ -488,11 +567,17 @@ function RequirementCard({
           required
           onSubmit={(reason) => cancelMaterialRequirement(requirement.id, { reason })}
           onDone={onChanged}
+          onDiscard={() => onOpen({ kind: 'none' })}
         />
       ) : null}
 
-      {open.kind === 'exception' && open.id === requirement.id ? (
-        <ExceptionForm messages={messages} requirementId={requirement.id} onDone={onChanged} />
+      {isOpen('exception') ? (
+        <ExceptionForm
+          messages={messages}
+          requirementId={requirement.id}
+          onDone={onChanged}
+          onDiscard={() => onOpen({ kind: 'none' })}
+        />
       ) : null}
 
       <ExceptionDisclosure
@@ -538,11 +623,13 @@ function ExceptionDisclosure({
    */
   type Answer =
     | { readonly phase: 'read'; readonly exceptions: readonly MaterialException[] }
-    | { readonly phase: 'failed'; readonly messageKey: string };
+    | ({ readonly phase: 'failed' } & ReturnType<typeof failureOf>);
   const [answer, setAnswer] = useState<{
     readonly stamp: string;
     readonly value: Answer;
   } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const stamp = `${requirementId}#${attempt}`;
 
   useEffect(() => {
     if (!shown) return;
@@ -550,45 +637,43 @@ function ExceptionDisclosure({
     void readMaterialRequirement(requirementId).then((got) => {
       if (!live) return;
       setAnswer({
-        stamp: requirementId,
+        stamp,
         value:
           got.status === 'ok'
             ? { phase: 'read', exceptions: got.data.exceptions }
-            : {
-                phase: 'failed',
-                messageKey:
-                  got.status === 'denied'
-                    ? 'inventory.material.refused'
-                    : 'inventory.material.unavailable',
-              },
+            : { phase: 'failed', ...failureOf(got) },
       });
     });
     return () => {
       live = false;
     };
-  }, [shown, requirementId]);
+  }, [shown, requirementId, stamp]);
 
   const state: Answer | { readonly phase: 'loading' } =
-    answer !== null && answer.stamp === requirementId ? answer.value : { phase: 'loading' };
+    answer !== null && answer.stamp === stamp ? answer.value : { phase: 'loading' };
 
   return (
     <div className="flex flex-col gap-2 border-t border-border pt-2">
       <div>
-        <button
+        <Button
           type="button"
-          className={SECONDARY_BUTTON}
+          variant="outlined"
           aria-expanded={shown}
           onClick={() => setShown((was) => !was)}
         >
           {translate(messages, 'inventory.material.exception.heading')}
-        </button>
+        </Button>
       </div>
       {!shown ? null : state.phase === 'loading' ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+        <MuiLoadingState messages={messages} variant="inline" />
       ) : state.phase === 'failed' ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, state.messageKey)}
-        </p>
+        <MuiReadFailureState
+          messages={messages}
+          status={state.status}
+          correlationId={state.correlationId}
+          onRetry={state.status === 'unavailable' ? () => setAttempt((n) => n + 1) : undefined}
+          descriptionKey={state.messageKey}
+        />
       ) : state.exceptions.length === 0 ? (
         <p className="text-body text-text-secondary">
           {translate(messages, 'inventory.material.exception.none')}
@@ -687,6 +772,44 @@ function AllowanceBar({
   );
 }
 
+/**
+ * The item family a requirement names, by its place in the category tree: the
+ * path of names and the code beside it, so two families of the same name read
+ * apart. While the tree is being read the panel says so; where it cannot be
+ * read at all — no `inv.item.read`, or a refused or failed read — or no longer
+ * holds the family, the reference the requirement carries is shown, as before.
+ */
+function CategoryName({
+  messages,
+  categories,
+  categoryId,
+}: {
+  readonly messages: Messages;
+  readonly categories: CategoryList | null;
+  readonly categoryId: string;
+}) {
+  const read = categories?.read ?? null;
+  if (read !== null && read.status === 'loading') {
+    return <span className="text-text-muted">{translate(messages, 'state.loading')}</span>;
+  }
+  const category = read !== null && read.status === 'ok' ? read.forest.byId.get(categoryId) : null;
+  if (read === null || read.status !== 'ok' || category === undefined || category === null) {
+    return (
+      <code className="font-mono text-caption" dir="ltr">
+        {categoryId}
+      </code>
+    );
+  }
+  return (
+    <span data-testid="material-category-path">
+      <bdi>{pathText(read.forest, categoryId)}</bdi>{' '}
+      <code className="font-mono text-caption" dir="ltr">
+        {category.code}
+      </code>
+    </span>
+  );
+}
+
 function Fact({
   label,
   wide = false,
@@ -694,7 +817,7 @@ function Fact({
 }: {
   readonly label: string;
   readonly wide?: boolean;
-  readonly children: React.ReactNode;
+  readonly children: ReactNode;
 }) {
   return (
     <div className={wide ? 'sm:col-span-2' : ''}>
@@ -723,10 +846,15 @@ function ExceptionList({
 }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One decision in flight at a time, before `busy` has disabled the buttons.
+  const sending = useRef(false);
 
   const decide = async (exceptionId: string, decision: 'approved' | 'rejected') => {
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     const result = await decideMaterialException(exceptionId, { decision });
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -759,22 +887,24 @@ function ExceptionList({
             exception.status === 'pending' &&
             exception.requestedBy !== currentUserId ? (
               <>
-                <button
+                <Button
                   type="button"
-                  className={SECONDARY_BUTTON}
+                  variant="outlined"
+                  size="small"
                   disabled={busy}
                   onClick={() => void decide(exception.id, 'approved')}
                 >
                   {translate(messages, 'inventory.material.exception.approve')}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
-                  className={SECONDARY_BUTTON}
+                  variant="outlined"
+                  size="small"
                   disabled={busy}
                   onClick={() => void decide(exception.id, 'rejected')}
                 >
                   {translate(messages, 'inventory.material.exception.reject')}
-                </button>
+                </Button>
               </>
             ) : null}
             {canDecide &&
@@ -796,15 +926,27 @@ function ExceptionForm({
   messages,
   requirementId,
   onDone,
+  onDiscard,
 }: {
   readonly messages: Messages;
   readonly requirementId: string;
   readonly onDone: () => void;
+  /** A confirmed "discard" (a branch switch, leaving the page) closes the form. */
+  readonly onDiscard: () => void;
 }) {
   const [form, setForm] = useState({ additionalQuantity: '', reason: '' });
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [refusals, setRefusals] = useState(0);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One request in flight at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
+  useUnsavedGuard(
+    form.additionalQuantity.trim().length > 0 || form.reason.trim().length > 0,
+    onDiscard
+  );
+  const formRef = useFocusFirstInvalid(refusalState(errors, refusals, outcome));
+  const firstRef = useFocusOnOpen<HTMLDivElement>();
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -821,10 +963,15 @@ function ExceptionForm({
     if (reason.length === 0) found['reason'] = 'field.required';
     else if (reason.length > MAX_REASON) found['reason'] = 'inventory.return.reasonTooLong';
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
-
+    if (Object.keys(found).length > 0) {
+      setRefusals((n) => n + 1);
+      return;
+    }
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     const result = await requestMaterialException(requirementId, { additionalQuantity, reason });
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -836,6 +983,7 @@ function ExceptionForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -847,30 +995,30 @@ function ExceptionForm({
       <p className="text-caption text-text-muted sm:col-span-2">
         {translate(messages, 'inventory.material.exception.explain')}
       </p>
-      <TextField
-        label={translate(messages, 'inventory.material.exception.quantity')}
-        description={translate(messages, 'inventory.reserve.quantityHelp')}
-        required
-        inputMode="decimal"
-        dir="ltr"
-        value={form.additionalQuantity}
-        onChange={(event) => setForm((f) => ({ ...f, additionalQuantity: event.target.value }))}
-        error={errorFor('additionalQuantity')}
-      />
-      <TextField
+      <div ref={firstRef}>
+        <FormNumberField
+          label={translate(messages, 'inventory.material.exception.quantity')}
+          description={translate(messages, 'inventory.reserve.quantityHelp')}
+          required
+          value={form.additionalQuantity}
+          onChange={(next) => setForm((f) => ({ ...f, additionalQuantity: next }))}
+          error={errorFor('additionalQuantity')}
+        />
+      </div>
+      <FormTextField
         label={translate(messages, 'inventory.material.exception.reason')}
         required
         value={form.reason}
-        onChange={(event) => setForm((f) => ({ ...f, reason: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, reason: next }))}
         error={errorFor('reason')}
       />
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.material.exception.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -888,6 +1036,7 @@ function ReasonForm({
   required,
   onSubmit,
   onDone,
+  onDiscard,
 }: {
   readonly messages: Messages;
   readonly headingKey: string;
@@ -896,25 +1045,39 @@ function ReasonForm({
   readonly required: boolean;
   readonly onSubmit: (reason: string) => Promise<{ readonly state: ActionState }>;
   readonly onDone: () => void;
+  /** A confirmed "discard" (a branch switch, leaving the page) closes the form. */
+  readonly onDiscard: () => void;
 }) {
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | undefined>(undefined);
+  const [refusals, setRefusals] = useState(0);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One answer in flight at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
+  useUnsavedGuard(reason.trim().length > 0, onDiscard);
+  const formRef = useFocusFirstInvalid(
+    refusalState(error ? { reason: error } : {}, refusals, outcome)
+  );
 
   const submit = async () => {
+    if (sending.current) return;
     const value = reason.trim();
     if (required && value.length === 0) {
       setError(translate(messages, 'field.required'));
+      setRefusals((n) => n + 1);
       return;
     }
     if (value.length > MAX_REASON) {
       setError(translate(messages, 'inventory.return.reasonTooLong'));
+      setRefusals((n) => n + 1);
       return;
     }
     setError(undefined);
+    sending.current = true;
     setBusy(true);
     const result = await onSubmit(value);
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -926,6 +1089,7 @@ function ReasonForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -934,18 +1098,19 @@ function ReasonForm({
       aria-label={translateDynamic(messages, headingKey)}
       className="grid gap-3 border-t border-border pt-3"
     >
-      <TextField
+      <FormTextField
         label={translateDynamic(messages, labelKey)}
         required={required}
+        autoFocus
         value={reason}
-        onChange={(event) => setReason(event.target.value)}
+        onChange={setReason}
         error={error}
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translateDynamic(messages, submitKey)}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -982,13 +1147,19 @@ function CreateRequirementForm({
   messages,
   workOrderId,
   canReadWorkOrder,
+  categories,
   onCreated,
+  onDiscard,
 }: {
   readonly messages: Messages;
   readonly workOrderId: string;
   /** `wo.work_order.read` — whether the service lines are requested for the picker. */
   readonly canReadWorkOrder: boolean;
+  /** The whole category tree, or `null` without `inv.item.read` (the family is then typed). */
+  readonly categories: CategoryList | null;
   readonly onCreated: () => void;
+  /** A confirmed "discard" (a branch switch, leaving the page) closes the form. */
+  readonly onDiscard: () => void;
 }) {
   const [lines, setLines] = useState<ServiceLines>(
     canReadWorkOrder ? { phase: 'loading' } : { phase: 'not-offered' }
@@ -1024,7 +1195,7 @@ function CreateRequirementForm({
     };
   }, []);
 
-  const [form, setForm] = useState({
+  const [opened] = useState(() => ({
     basis: 'specification' as 'specification' | 'entered',
     serviceLineId: '',
     itemId: '',
@@ -1035,7 +1206,8 @@ function CreateRequirementForm({
     allowanceQuantity: '',
     uomId: '',
     sourceReference: '',
-  });
+  }));
+  const [form, setForm] = useState(opened);
   /*
    * The chosen item, held beside the form because `ItemFinder` renders the row
    * it was given rather than an identifier. `form.itemId` stays the single
@@ -1043,8 +1215,23 @@ function CreateRequirementForm({
    */
   const [item, setItem] = useState<InventoryItem | null>(null);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [refusals, setRefusals] = useState(0);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One request in flight at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
+  /*
+   * Anything chosen or typed is a request in progress: a branch switch or
+   * leaving the page asks first, and a confirmed discard closes the form.
+   */
+  useUnsavedGuard(
+    (Object.keys(opened) as (keyof typeof opened)[]).some(
+      (key) => form[key].trim() !== opened[key].trim()
+    ),
+    onDiscard
+  );
+  const formRef = useFocusFirstInvalid(refusalState(errors, refusals, outcome));
+  const headingRef = useFocusOnOpen<HTMLHeadingElement>();
 
   /*
    * The confirmed capacities on file for the service kind typed above, read as
@@ -1108,6 +1295,7 @@ function CreateRequirementForm({
   };
 
   const submit = async () => {
+    if (sending.current) return;
     const found: Record<string, string> = {};
     const serviceLineId = form.serviceLineId.trim();
     if (!UUID.test(serviceLineId)) found['serviceLineId'] = 'inventory.common.idFormat';
@@ -1160,10 +1348,15 @@ function CreateRequirementForm({
     }
 
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0) {
+      setRefusals((n) => n + 1);
+      return;
+    }
 
+    sending.current = true;
     setBusy(true);
     const result = await createMaterialRequirement(body);
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -1175,6 +1368,7 @@ function CreateRequirementForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -1184,7 +1378,9 @@ function CreateRequirementForm({
       className="grid gap-3 rounded-md border border-border p-3 sm:grid-cols-2"
     >
       <h3
+        ref={headingRef}
         id="material-create-heading"
+        tabIndex={-1}
         className="text-body font-medium text-text-primary sm:col-span-2"
       >
         {translate(messages, 'inventory.material.create.heading')}
@@ -1204,12 +1400,12 @@ function CreateRequirementForm({
        * leaving a naked identifier field.
        */}
       {lines.phase === 'listed' && lines.rows.length > 0 ? (
-        <SelectField
+        <FormSelectField
           label={translate(messages, 'inventory.material.create.serviceLine')}
           description={translate(messages, 'inventory.material.create.serviceLineChooseHelp')}
           required
           value={form.serviceLineId}
-          onChange={(event) => setForm((f) => ({ ...f, serviceLineId: event.target.value }))}
+          onChange={(next) => setForm((f) => ({ ...f, serviceLineId: next }))}
           options={lines.rows.map((line) => ({
             value: line.id,
             label: `${line.description} — ${line.quantity} ${line.unit}`,
@@ -1218,14 +1414,14 @@ function CreateRequirementForm({
           error={errorFor('serviceLineId')}
         />
       ) : (
-        <TextField
+        <FormTextField
           label={translate(messages, 'inventory.material.create.serviceLineId')}
           description={translateDynamic(messages, serviceLineNoteKey(lines))}
           required
           spellCheck={false}
           dir="ltr"
           value={form.serviceLineId}
-          onChange={(event) => setForm((f) => ({ ...f, serviceLineId: event.target.value }))}
+          onChange={(next) => setForm((f) => ({ ...f, serviceLineId: next }))}
           error={errorFor('serviceLineId')}
         />
       )}
@@ -1253,23 +1449,45 @@ function CreateRequirementForm({
           error={errorFor('itemId')}
         />
       </div>
-      <TextField
-        label={translate(messages, 'inventory.material.create.itemCategoryId')}
-        description={translate(messages, 'inventory.material.create.itemCategoryHelp')}
-        spellCheck={false}
-        dir="ltr"
-        value={form.itemCategoryId}
-        onChange={(event) => setForm((f) => ({ ...f, itemCategoryId: event.target.value }))}
-        error={errorFor('itemCategoryId')}
-      />
-      <SelectField
+      {/*
+       * The item family is CHOSEN from the whole category tree
+       * (`P1-32-PRE-OD-INV5`): every page of the categories, each row its name
+       * and code, the chosen family's path said under the tree. It used to be a
+       * typed 36-character reference no screen prints. Without `inv.item.read`
+       * the categories cannot be read, so that caller keeps the typed box.
+       */}
+      <div className="sm:col-span-2">
+        {categories !== null ? (
+          <CategoryTreePicker
+            messages={messages}
+            categories={categories}
+            label={translate(messages, 'inventory.material.create.itemCategory')}
+            description={translate(messages, 'inventory.material.create.itemCategoryHelp')}
+            value={form.itemCategoryId}
+            onChange={(next) => setForm((f) => ({ ...f, itemCategoryId: next }))}
+            error={errorFor('itemCategoryId')}
+            testId="material-category-picker"
+          />
+        ) : (
+          <FormTextField
+            label={translate(messages, 'inventory.material.create.itemCategoryId')}
+            description={translate(messages, 'inventory.material.create.itemCategoryHelp')}
+            spellCheck={false}
+            dir="ltr"
+            value={form.itemCategoryId}
+            onChange={(next) => setForm((f) => ({ ...f, itemCategoryId: next }))}
+            error={errorFor('itemCategoryId')}
+          />
+        )}
+      </div>
+      <FormSelectField
         label={translate(messages, 'inventory.material.create.basis')}
         description={translate(messages, 'inventory.material.create.basisHelp')}
         value={form.basis}
-        onChange={(event) =>
+        onChange={(next) =>
           setForm((f) => ({
             ...f,
-            basis: event.target.value === 'entered' ? 'entered' : 'specification',
+            basis: next === 'entered' ? 'entered' : 'specification',
           }))
         }
         options={[
@@ -1283,21 +1501,21 @@ function CreateRequirementForm({
 
       {form.basis === 'specification' ? (
         <>
-          <TextField
+          <FormTextField
             label={translate(messages, 'inventory.material.create.serviceCondition')}
             description={translate(messages, 'inventory.material.create.serviceConditionHelp')}
             required
             spellCheck={false}
             dir="ltr"
             value={form.serviceCondition}
-            onChange={(event) => setForm((f) => ({ ...f, serviceCondition: event.target.value }))}
+            onChange={(next) => setForm((f) => ({ ...f, serviceCondition: next }))}
             error={errorFor('serviceCondition')}
           />
-          <TextField
+          <FormTextField
             label={translate(messages, 'inventory.material.create.engineVariant')}
             description={translate(messages, 'inventory.material.create.engineVariantHelp')}
             value={form.engineVariant}
-            onChange={(event) => setForm((f) => ({ ...f, engineVariant: event.target.value }))}
+            onChange={(next) => setForm((f) => ({ ...f, engineVariant: next }))}
             error={errorFor('engineVariant')}
           />
           <div
@@ -1365,21 +1583,19 @@ function CreateRequirementForm({
         </>
       ) : (
         <>
-          <TextField
+          <FormNumberField
             label={translate(messages, 'inventory.material.create.allowanceQuantity')}
             description={translate(messages, 'inventory.material.create.allowanceHelp')}
             required
-            inputMode="decimal"
-            dir="ltr"
             value={form.allowanceQuantity}
-            onChange={(event) => setForm((f) => ({ ...f, allowanceQuantity: event.target.value }))}
+            onChange={(next) => setForm((f) => ({ ...f, allowanceQuantity: next }))}
             error={errorFor('allowanceQuantity')}
           />
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'inventory.material.create.uom')}
             required
             value={form.uomId}
-            onChange={(event) => setForm((f) => ({ ...f, uomId: event.target.value }))}
+            onChange={(next) => setForm((f) => ({ ...f, uomId: next }))}
             options={units.map((unit) => ({
               value: unit.id,
               label: `${unit.code} — ${unit.name}`,
@@ -1387,12 +1603,12 @@ function CreateRequirementForm({
             placeholder={translate(messages, 'inventory.material.create.chooseUom')}
             error={errorFor('uomId')}
           />
-          <TextField
+          <FormTextField
             label={translate(messages, 'inventory.material.create.sourceReference')}
             description={translate(messages, 'inventory.material.create.sourceHelp')}
             required
             value={form.sourceReference}
-            onChange={(event) => setForm((f) => ({ ...f, sourceReference: event.target.value }))}
+            onChange={(next) => setForm((f) => ({ ...f, sourceReference: next }))}
             error={errorFor('sourceReference')}
           />
           <p className="text-caption text-text-muted sm:col-span-2">
@@ -1405,9 +1621,9 @@ function CreateRequirementForm({
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.material.create.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );

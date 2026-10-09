@@ -2340,6 +2340,7 @@
   "inventory.material.create.enteredNote": "The amount and its source are recorded together and stay readable afterwards.",
   "inventory.material.create.explain": "Say which service line the material is for, and either let the confirmed capacity for this vehicle decide the amount, or enter the amount yourself and say where you read it.",
   "inventory.material.create.heading": "Ask for material for one service line",
+  "inventory.material.create.itemCategory": "Part group",
   "inventory.material.create.itemCategoryHelp": "Use a group when any part of that kind may be drawn.",
   "inventory.material.create.itemCategoryId": "Part group reference",
   "inventory.material.create.matchExplain": "These capacities are confirmed and can answer for this vehicle. The vehicle on this job decides which one is used, and the saved request names the one it matched together with where it was read.",

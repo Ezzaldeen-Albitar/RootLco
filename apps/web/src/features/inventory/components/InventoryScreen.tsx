@@ -25,7 +25,6 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
 
 import {
   createReservation,
@@ -65,7 +64,14 @@ import {
 } from './shared';
 import { ItemPicker, REFERENCE, ReferenceBox, withoutKey, type ItemChoice } from './pickers';
 import { StockAlertIndicator } from './StockAlertIndicator';
-import { BranchTargetForm, LINK, StockMomentField, useStockTargetZone } from './stock-operations';
+import {
+  BranchTargetForm,
+  LINK,
+  StockMoment,
+  StockMomentField,
+  useStockDisplayZone,
+  useStockTargetZone,
+} from './stock-operations';
 
 /**
  * Inventory (P1-30, `W4`): item search (FE-008), stock balance (FE-009) and
@@ -983,6 +989,9 @@ function ReservationResults({
     [target, criteria]
   );
   const table = useServerTable<StockReservation>(load, { initial: INITIAL_REQUEST });
+  // The expiry is written on the branch's clock and names it, never on the
+  // browser's (`P1-32-PRE-OD-INV5`); UTC, named, where the clock is not known.
+  const zone = useStockDisplayZone(target);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -1056,7 +1065,7 @@ function ReservationResults({
         headerKey: 'inventory.reservations.column.expires',
         cell: (row) =>
           row.expiresAt ? (
-            <span dir="ltr">{formatDateTime(row.expiresAt, locale)}</span>
+            <StockMoment value={row.expiresAt} locale={locale} zone={zone} />
           ) : (
             <span className="text-text-muted">
               {translate(messages, 'inventory.reservations.noExpiry')}
@@ -1064,7 +1073,7 @@ function ReservationResults({
           ),
       },
     ],
-    [locale, messages]
+    [locale, messages, zone]
   );
 
   /*

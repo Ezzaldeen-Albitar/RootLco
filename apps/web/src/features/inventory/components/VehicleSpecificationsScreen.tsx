@@ -35,7 +35,6 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
 
 import {
   confirmVehicleSpecification,
@@ -63,7 +62,7 @@ import {
   SECONDARY_BUTTON,
   useItemCategories,
 } from './shared';
-import { DANGER_BUTTON, PANEL } from './stock-operations';
+import { DANGER_BUTTON, PANEL, StockMoment, useWorkingDisplayZone } from './stock-operations';
 
 type Listing =
   | { readonly phase: 'loading' }
@@ -255,6 +254,8 @@ function SpecificationRow({
 }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // A capacity belongs to no branch: the working branch's clock, else UTC, named.
+  const zone = useWorkingDisplayZone();
 
   const run = async (act: () => Promise<{ readonly state: ActionState }>) => {
     setBusy(true);
@@ -312,7 +313,7 @@ function SpecificationRow({
         {translateDynamic(messages, `inventory.specifications.status.${row.status}`)}
       </td>
       <td className="px-3 py-2">
-        <span dir="ltr">{formatDateTime(row.createdAt, locale)}</span>
+        <StockMoment value={row.createdAt} locale={locale} zone={zone} />
       </td>
       <td className="px-3 py-2">
         <div className="flex flex-wrap gap-2">

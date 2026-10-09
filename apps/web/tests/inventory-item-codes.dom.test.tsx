@@ -9,6 +9,7 @@ import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   TEST_BRANCH,
   TEST_COMPANY,
+  branchSnapshot,
   inBranch,
   messagesFor,
   renderLtr as renderInLtr,
@@ -40,10 +41,14 @@ import {
   BRANCH_ID,
   COMPANY_ID,
   EN,
+  FAR_ZONE,
   ITEM_ID,
   USER_ID,
+  clockName,
+  expectOnClock,
   labelled,
   okRead,
+  onClock,
   refusedWith,
   seriousViolations,
   succeeded,
@@ -655,4 +660,52 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
       expect(addIdentifier).not.toHaveBeenCalled();
     }
   );
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — an item's codes belong to no branch, so a code's moment
+ * is written on the WORKING branch's clock, named, never on the browser's; under
+ * "All my branches" there is no one branch clock and it is written on UTC, named
+ * UTC.
+ */
+describe('a code\u2019s moment is shown on the working branch\u2019s clock (P1-32-PRE-OD-INV5)', () => {
+  const ADDED = '2026-09-17T12:00:00Z';
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes the code's moment on the working branch's clock with its name (${locale})`, async () => {
+      const T = locale === 'en' ? EN : (ar as Record<string, string>);
+      listIdentifiers.mockResolvedValue(identifierList([identifier({ createdAt: ADDED })]));
+      const render = locale === 'en' ? renderInLtr : renderInRtl;
+      render(
+        withMui(
+          inBranch(
+            <ItemCodesScreen
+              locale={locale}
+              messages={locale === 'en' ? en : ar}
+              itemId={ITEM_ID}
+              canManage
+            />,
+            { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+          ),
+          locale
+        )
+      );
+      const rows = await screen.findByRole('table', {
+        name: T['inventory.identifiers.caption'] as string,
+      });
+      expectOnClock(within(rows).getAllByRole('row')[1] as HTMLElement, ADDED, locale);
+    });
+  }
+
+  it('writes it on UTC, named UTC, where no one branch is in force', async () => {
+    listIdentifiers.mockResolvedValue(identifierList([identifier({ createdAt: ADDED })]));
+    renderInLtr(
+      withMui(<ItemCodesScreen locale="en" messages={en} itemId={ITEM_ID} canManage />, 'en')
+    );
+    const rows = await screen.findByRole('table', {
+      name: EN['inventory.identifiers.caption'] as string,
+    });
+    const row = within(rows).getAllByRole('row')[1] as HTMLElement;
+    expect(row).toHaveTextContent(onClock(ADDED, 'en', 'UTC'));
+    expect(within(row).getByText(clockName(ADDED, 'en', 'UTC'))).toBeVisible();
+  });
 });

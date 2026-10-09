@@ -26,6 +26,7 @@ import {
   switchWithoutQuestion,
 } from './support/branch-switch';
 import { PICKER_OPTION_WAIT_MS } from './support/picker-option';
+import { FAR_ZONE, expectOnClock } from './support/stock-operations';
 
 /**
  * Inventory, rendered (P1-30, `W4`, FE-008/009/010).
@@ -1993,4 +1994,40 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
       expect(document.documentElement.dir).toBe(locale === 'en' ? 'ltr' : 'rtl');
     }
   );
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — a reservation's expiry is DRAWN on the branch's clock,
+ * named, never on the browser's: the branch here keeps a clock no test
+ * environment keeps, so the two cannot read alike. INV1B put the expiry a
+ * person TYPES on the branch's clock; this is the expiry the list SHOWS.
+ */
+describe('the reservation expiry is shown on the branch\u2019s clock (P1-32-PRE-OD-INV5)', () => {
+  const EXPIRES = '2026-09-17T12:00:00Z';
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes the expiry on the branch's clock with its name (${locale})`, async () => {
+      const T = locale === 'en' ? EN : AR;
+      listReservations.mockResolvedValue(page([reservation({ expiresAt: EXPIRES })]));
+      const render = locale === 'en' ? renderLtr : renderRtl;
+      render(
+        inBranch(
+          <InventoryScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            initialWorkOrderId={null}
+            canReadStock={true}
+            canOperate={false}
+            canReadBranches={true}
+          />,
+          { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+        )
+      );
+      const reservations = await screen.findByRole('region', {
+        name: T['inventory.reservations.heading'] as string,
+      });
+      const grid = await within(reservations).findByRole('grid');
+      await within(grid).findByText('2.000');
+      expectOnClock(within(grid).getAllByRole('row')[1] as HTMLElement, EXPIRES, locale);
+    });
+  }
 });

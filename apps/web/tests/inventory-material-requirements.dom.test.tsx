@@ -1,10 +1,46 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactElement } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+  inBranch,
+  messagesFor,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+} from './support/branch-switch';
 import { MATERIAL_REFUSAL_RULES } from '@/features/inventory/inventory-contract';
+
+/*
+ * On Material UI since `P1-32-PRE-OD-INV5`: every render goes under the
+ * product's Material provider and a working context, as the locale layout
+ * mounts them. The fields are still labelled boxes and native selects, the
+ * actions buttons with the same names — so the selectors below did not move.
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderLtr = (ui: ReactElement) => renderInLtr(withMui(inBranch(ui), 'en'));
+const renderRtl = (ui: ReactElement) => renderInRtl(withMui(inBranch(ui, { locale: 'ar' }), 'ar'));
 
 /**
  * What a job is allowed to consume, rendered (P1-32).
@@ -42,6 +78,7 @@ const listUnitsOfMeasure = vi.fn();
 const listVehicleSpecifications = vi.fn();
 const listServiceLines = vi.fn();
 const listItems = vi.fn();
+const listItemCategoryPage = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   listServiceLines: (...args: unknown[]) => listServiceLines(...args),
 }));
@@ -59,6 +96,8 @@ vi.mock('@/features/inventory/api', () => ({
   // DEF-M-05, second half: the item is CHOSEN from the catalogue now, so the
   // search the finder issues belongs to this panel's surface.
   listItems: (...args: unknown[]) => listItems(...args),
+  // P1-32-PRE-OD-INV5: the item family is chosen from, and named by, the category tree.
+  listItemCategoryPage: (...args: unknown[]) => listItemCategoryPage(...args),
 }));
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
@@ -93,6 +132,29 @@ const UOM_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const EXCEPTION_ID = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const MAKE_ID = '12121212-1212-4121-8121-121212121212';
 const MODEL_ID = '13131313-1313-4131-8131-131313131313';
+/** Two item families, one under the other, as `inv.item-category-list` publishes them. */
+const FLUIDS_ID = '14141414-1414-4141-8141-141414141414';
+const OILS_ID = '15151515-1515-4151-8151-151515151515';
+const categoryRows = [
+  {
+    id: FLUIDS_ID,
+    code: 'engine_fluids',
+    name: 'Engine fluids',
+    description: null,
+    parentCategoryId: null,
+    status: 'active',
+    recordVersion: 1,
+  },
+  {
+    id: OILS_ID,
+    code: 'oils',
+    name: 'Oils',
+    description: null,
+    parentCategoryId: FLUIDS_ID,
+    status: 'active',
+    recordVersion: 1,
+  },
+];
 
 const okRead = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 'corr' });
 const listing = (rows: readonly unknown[]) =>
@@ -200,6 +262,7 @@ function renderPanel(over: Record<string, unknown> = {}) {
       canApprove={false}
       canDecideException={false}
       canReadWorkOrder={true}
+      canReadItems={true}
       chosenId={null}
       onChoose={vi.fn()}
       onChanged={vi.fn()}
@@ -230,6 +293,9 @@ beforeEach(() => {
     hasMore: false,
     correlationId: 'corr',
   }));
+  listItemCategoryPage.mockImplementation(async () =>
+    okRead({ items: categoryRows, nextCursor: null, hasMore: false })
+  );
 });
 
 describe('the allowance is the server figure', () => {
@@ -698,6 +764,7 @@ describe('Arabic, right to left', () => {
         canApprove={false}
         canDecideException={false}
         canReadWorkOrder={true}
+        canReadItems={true}
         chosenId={null}
         onChoose={vi.fn()}
         onChanged={vi.fn()}
@@ -839,6 +906,7 @@ describe('a refused request says which rule refused it', () => {
           canApprove={false}
           canDecideException={false}
           canReadWorkOrder={true}
+          canReadItems={true}
           chosenId={null}
           onChoose={vi.fn()}
           onChanged={vi.fn()}
@@ -901,4 +969,509 @@ describe('a refused request says which rule refused it', () => {
       expect(alert).not.toHaveTextContent(AR['state.conflict.blocked.title'] as string);
     });
   }
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — the panel on Material UI, the item family chosen from the
+ * category tree, and the completion standard.
+ *
+ * The properties under test: the family is CHOSEN from the whole category tree
+ * and sent as the chosen category, never typed, in both languages; a listed
+ * family is said by its path and code, never by its reference, in both
+ * languages; without `inv.item.read` the categories are not read and the
+ * typed reference stays; a second press of any write inside ONE `act` sends
+ * nothing more (the ref guard, not a re-rendered disabled button); a refused
+ * quantity is marked on its own box with what was typed kept and the cursor put
+ * there; a half-filled form is unsaved work that a branch switch asks about,
+ * and a confirmed discard closes it; a form that opens takes the cursor, and a
+ * form closed by its own write gives it back to the button that opened it.
+ */
+describe('the material panel on Material UI (P1-32-PRE-OD-INV5)', () => {
+  const CATALOGUE = { en: EN, ar: AR } as const;
+  const escapeText = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const starts = (text: string) => new RegExp(`^${escapeText(text)}`);
+
+  function renderIn(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    const ui = (
+      <MaterialRequirementsPanel
+        locale={locale}
+        messages={locale === 'en' ? en : ar}
+        workOrderId={WORK_ORDER_ID}
+        target={{ companyId: COMPANY_ID, branchId: BRANCH_ID }}
+        currentUserId={USER_ID}
+        canRequest={false}
+        canApprove={false}
+        canDecideException={false}
+        canReadWorkOrder={true}
+        canReadItems={true}
+        chosenId={null}
+        onChoose={vi.fn()}
+        onChanged={vi.fn()}
+        {...over}
+      />
+    );
+    return locale === 'en' ? renderLtr(ui) : renderRtl(ui);
+  }
+
+  /** A deferred answer, so a write stays in flight until the case settles it. */
+  function deferred<T>() {
+    let settle: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((resolve) => {
+      settle = resolve;
+    });
+    return { promise, settle };
+  }
+  const success = (messageKey: string) => ({
+    state: { status: 'success' as const, messageKey, attempt: 1 },
+    created: null,
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`chooses the family from the category tree, says its path, and sends it (${locale})`, async () => {
+      const T = CATALOGUE[locale];
+      createMaterialRequirement.mockResolvedValue(success('inventory.material.create.success'));
+      const user = userEvent.setup();
+      renderIn(locale, { canRequest: true });
+      await user.click(
+        await screen.findByRole('button', { name: T['inventory.material.create.open'] as string })
+      );
+      const form = await screen.findByRole('form', {
+        name: T['inventory.material.create.heading'] as string,
+      });
+      // The typed reference is gone: the family is chosen, never typed.
+      expect(
+        within(form).queryByLabelText(
+          starts(T['inventory.material.create.itemCategoryId'] as string)
+        )
+      ).toBeNull();
+      const tree = await within(form).findByRole('tree', {
+        name: starts(T['inventory.material.create.itemCategory'] as string),
+      });
+      await user.click(within(tree).getByText('Engine fluids (engine_fluids)'));
+      await user.click(await within(tree).findByText('Oils (oils)'));
+      await waitFor(() =>
+        expect(
+          document.getElementById((tree.getAttribute('aria-describedby') ?? '').split(' ')[0] ?? '')
+        ).toHaveTextContent('Engine fluids / Oils')
+      );
+      await user.selectOptions(
+        await within(form).findByLabelText(
+          starts(T['inventory.material.create.serviceLine'] as string)
+        ),
+        SERVICE_LINE_ID
+      );
+      await user.type(
+        within(form).getByLabelText(
+          starts(T['inventory.material.create.serviceCondition'] as string)
+        ),
+        'oil_change'
+      );
+      await user.click(
+        within(form).getByRole('button', { name: T['inventory.material.create.submit'] as string })
+      );
+      await waitFor(() => expect(createMaterialRequirement).toHaveBeenCalledTimes(1));
+      expect(createMaterialRequirement.mock.calls[0]?.[0]).toEqual({
+        basis: 'specification',
+        serviceLineId: SERVICE_LINE_ID,
+        itemCategoryId: OILS_ID,
+        serviceCondition: 'oil_change',
+      });
+    });
+
+    it(`says a listed family by its path and code, never its reference (${locale})`, async () => {
+      const T = CATALOGUE[locale];
+      listMaterialRequirements.mockImplementation(async () =>
+        listing([requirement({ itemId: null, itemCategoryId: OILS_ID })])
+      );
+      renderIn(locale);
+      const path = await screen.findByTestId('material-category-path');
+      expect(path).toHaveTextContent('Engine fluids / Oils');
+      expect(path).toHaveTextContent('oils');
+      expect(
+        screen.getByText(T['inventory.material.itemFamily'] as string, { exact: false })
+      ).toBeVisible();
+      expect(screen.queryByText(OILS_ID)).toBeNull();
+      expect(listItemCategoryPage).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it('reads no category until something on the panel names or asks for one', async () => {
+    renderIn('en');
+    await waitFor(() => expect(listMaterialRequirements).toHaveBeenCalled());
+    await screen.findByTestId('material-allowance');
+    expect(listItemCategoryPage).not.toHaveBeenCalled();
+  });
+
+  it('without the item read, keeps the typed family reference and reads no category', async () => {
+    listMaterialRequirements.mockImplementation(async () =>
+      listing([requirement({ itemId: null, itemCategoryId: OILS_ID })])
+    );
+    const user = userEvent.setup();
+    renderIn('en', { canRequest: true, canReadItems: false });
+    expect(await screen.findByText(OILS_ID)).toBeVisible();
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.material.create.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.material.create.heading'] as string,
+    });
+    expect(
+      within(form).getByLabelText(labelled('inventory.material.create.itemCategoryId'))
+    ).toBeVisible();
+    expect(within(form).queryByRole('tree')).toBeNull();
+    expect(listItemCategoryPage).not.toHaveBeenCalled();
+  });
+
+  it('a refused category read leaves the listed family as its reference', async () => {
+    listItemCategoryPage.mockImplementation(async () => ({
+      status: 'denied' as const,
+      correlationId: 'corr',
+    }));
+    listMaterialRequirements.mockImplementation(async () =>
+      listing([requirement({ itemId: null, itemCategoryId: OILS_ID })])
+    );
+    renderIn('en');
+    expect(await screen.findByText(OILS_ID)).toBeVisible();
+    expect(screen.queryByTestId('material-category-path')).toBeNull();
+  });
+
+  it('a second press of Approve inside the same moment decides once', async () => {
+    const answer = deferred<unknown>();
+    decideMaterialRequirement.mockImplementation(() => answer.promise);
+    listMaterialRequirements.mockImplementation(async () =>
+      listing([
+        requirement({ status: 'pending_approval', requestedBy: OTHER_USER_ID, approvedBy: null }),
+      ])
+    );
+    renderIn('en', { canApprove: true });
+    const approve = await screen.findByRole('button', {
+      name: EN['inventory.material.decide.approve'] as string,
+    });
+    act(() => {
+      approve.click();
+      approve.click();
+    });
+    await waitFor(() => expect(decideMaterialRequirement).toHaveBeenCalledTimes(1));
+    await act(async () => answer.settle(success('inventory.material.decide.success')));
+    expect(decideMaterialRequirement).toHaveBeenCalledTimes(1);
+  });
+
+  it('a second press of "Turn down" inside the same moment sends one rejection', async () => {
+    const answer = deferred<unknown>();
+    decideMaterialRequirement.mockImplementation(() => answer.promise);
+    listMaterialRequirements.mockImplementation(async () =>
+      listing([
+        requirement({ status: 'pending_approval', requestedBy: OTHER_USER_ID, approvedBy: null }),
+      ])
+    );
+    const user = userEvent.setup();
+    renderIn('en', { canApprove: true });
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.decide.reject'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.material.decide.rejectHeading'] as string,
+    });
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.material.decide.reason')),
+      'Too much'
+    );
+    const submit = within(form).getByRole('button', {
+      name: EN['inventory.material.decide.reject'] as string,
+    });
+    act(() => {
+      submit.click();
+      submit.click();
+    });
+    await waitFor(() => expect(decideMaterialRequirement).toHaveBeenCalledTimes(1));
+    await act(async () => answer.settle(success('inventory.material.decide.success')));
+    expect(decideMaterialRequirement).toHaveBeenCalledTimes(1);
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`a second press of "Ask for the extra" inside the same moment asks once (${locale})`, async () => {
+      const T = CATALOGUE[locale];
+      const answer = deferred<unknown>();
+      requestMaterialException.mockImplementation(() => answer.promise);
+      const user = userEvent.setup();
+      renderIn(locale, { canRequest: true });
+      await user.click(
+        await screen.findByRole('button', {
+          name: T['inventory.material.exception.open'] as string,
+        })
+      );
+      const form = await screen.findByRole('form', {
+        name: T['inventory.material.exception.formHeading'] as string,
+      });
+      await user.type(
+        within(form).getByLabelText(starts(T['inventory.material.exception.quantity'] as string)),
+        '0.750'
+      );
+      await user.type(
+        within(form).getByLabelText(starts(T['inventory.material.exception.reason'] as string)),
+        'Overfilled'
+      );
+      const submit = within(form).getByRole('button', {
+        name: T['inventory.material.exception.submit'] as string,
+      });
+      act(() => {
+        submit.click();
+        submit.click();
+      });
+      await waitFor(() => expect(requestMaterialException).toHaveBeenCalledTimes(1));
+      await act(async () => answer.settle(success('inventory.material.exception.success')));
+      expect(requestMaterialException).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it('a second press of "Approve the extra" inside the same moment decides once', async () => {
+    const answer = deferred<unknown>();
+    decideMaterialException.mockImplementation(() => answer.promise);
+    readMaterialRequirement.mockImplementation(async () =>
+      okRead({ ...requirement(), exceptions: [exception({ requestedBy: OTHER_USER_ID })] })
+    );
+    const user = userEvent.setup();
+    renderIn('en', { canDecideException: true });
+    await user.click(
+      await screen.findByRole('button', {
+        name: EN['inventory.material.exception.heading'] as string,
+      })
+    );
+    const approve = await screen.findByRole('button', {
+      name: EN['inventory.material.exception.approve'] as string,
+    });
+    act(() => {
+      approve.click();
+      approve.click();
+    });
+    await waitFor(() => expect(decideMaterialException).toHaveBeenCalledTimes(1));
+    await act(async () => answer.settle(success('inventory.material.exceptionDecision.success')));
+    expect(decideMaterialException).toHaveBeenCalledTimes(1);
+  });
+
+  it('a second press of "Ask for this material" inside the same moment asks once', async () => {
+    const answer = deferred<unknown>();
+    createMaterialRequirement.mockImplementation(() => answer.promise);
+    const user = userEvent.setup();
+    renderIn('en', { canRequest: true });
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.create.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.material.create.heading'] as string,
+    });
+    await user.selectOptions(
+      await within(form).findByLabelText(labelled('inventory.material.create.serviceLine')),
+      SERVICE_LINE_ID
+    );
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.material.create.serviceCondition')),
+      'oil_change'
+    );
+    const submit = within(form).getByRole('button', {
+      name: EN['inventory.material.create.submit'] as string,
+    });
+    act(() => {
+      submit.click();
+      submit.click();
+    });
+    await waitFor(() => expect(createMaterialRequirement).toHaveBeenCalledTimes(1));
+    await act(async () => answer.settle(success('inventory.material.create.success')));
+    expect(createMaterialRequirement).toHaveBeenCalledTimes(1);
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`marks a refused extra quantity on its own box, keeps it and puts the cursor there (${locale})`, async () => {
+      const T = CATALOGUE[locale];
+      const user = userEvent.setup();
+      renderIn(locale, { canRequest: true });
+      await user.click(
+        await screen.findByRole('button', {
+          name: T['inventory.material.exception.open'] as string,
+        })
+      );
+      const form = await screen.findByRole('form', {
+        name: T['inventory.material.exception.formHeading'] as string,
+      });
+      const box = within(form).getByLabelText(
+        starts(T['inventory.material.exception.quantity'] as string)
+      );
+      expect(box).not.toHaveAttribute('aria-invalid');
+      expect(box).toHaveAttribute('dir', 'ltr');
+      await user.type(box, '0');
+      await user.type(
+        within(form).getByLabelText(starts(T['inventory.material.exception.reason'] as string)),
+        'Overfilled'
+      );
+      await user.click(
+        within(form).getByRole('button', {
+          name: T['inventory.material.exception.submit'] as string,
+        })
+      );
+      expect(box).toHaveAttribute('aria-invalid', 'true');
+      expect(within(form).getByText(T['inventory.reserve.quantityFormat'] as string)).toBeVisible();
+      expect(box).toHaveValue('0');
+      await waitFor(() => expect(box).toHaveFocus());
+      expect(requestMaterialException).not.toHaveBeenCalled();
+    });
+  }
+
+  it('a form that opens takes the cursor: the reason box, the extra quantity, the request heading', async () => {
+    listMaterialRequirements.mockImplementation(async () =>
+      listing([
+        requirement({ status: 'pending_approval', requestedBy: OTHER_USER_ID, approvedBy: null }),
+      ])
+    );
+    const user = userEvent.setup();
+    renderIn('en', { canApprove: true, canRequest: true });
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.decide.reject'] as string })
+    );
+    const reject = await screen.findByRole('form', {
+      name: EN['inventory.material.decide.rejectHeading'] as string,
+    });
+    await waitFor(() =>
+      expect(
+        within(reject).getByLabelText(labelled('inventory.material.decide.reason'))
+      ).toHaveFocus()
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.material.create.open'] as string })
+    );
+    const create = await screen.findByRole('form', {
+      name: EN['inventory.material.create.heading'] as string,
+    });
+    await waitFor(() =>
+      expect(
+        within(create).getByRole('heading', {
+          name: EN['inventory.material.create.heading'] as string,
+        })
+      ).toHaveFocus()
+    );
+  });
+
+  it('a form closed by its own write gives the cursor back to the button that opened it', async () => {
+    requestMaterialException.mockResolvedValue(success('inventory.material.exception.success'));
+    const user = userEvent.setup();
+    renderIn('en', { canRequest: true });
+    const open = await screen.findByRole('button', {
+      name: EN['inventory.material.exception.open'] as string,
+    });
+    await user.click(open);
+    const form = await screen.findByRole('form', {
+      name: EN['inventory.material.exception.formHeading'] as string,
+    });
+    await waitFor(() =>
+      expect(
+        within(form).getByLabelText(labelled('inventory.material.exception.quantity'))
+      ).toHaveFocus()
+    );
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.material.exception.quantity')),
+      '0.750'
+    );
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.material.exception.reason')),
+      'Overfilled'
+    );
+    await user.click(
+      within(form).getByRole('button', {
+        name: EN['inventory.material.exception.submit'] as string,
+      })
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('form', {
+          name: EN['inventory.material.exception.formHeading'] as string,
+        })
+      ).toBeNull()
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: EN['inventory.material.exception.open'] as string })
+      ).toHaveFocus()
+    );
+  });
+
+  describe('a half-filled form and a branch switch', () => {
+    afterEach(forgetRememberedBranch);
+
+    function renderTwoBranches() {
+      renderInLtr(
+        withMui(
+          inBranch(
+            <>
+              <BranchSwitch to={TEST_BRANCH.id} label="first" />
+              <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+              <WorkingBranchProbe />
+              <MaterialRequirementsPanel
+                locale="en"
+                messages={en}
+                workOrderId={WORK_ORDER_ID}
+                target={{ companyId: COMPANY_ID, branchId: BRANCH_ID }}
+                currentUserId={USER_ID}
+                canRequest={true}
+                canApprove={false}
+                canDecideException={false}
+                canReadWorkOrder={true}
+                canReadItems={true}
+                chosenId={null}
+                onChoose={vi.fn()}
+                onChanged={vi.fn()}
+              />
+            </>,
+            { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+          ),
+          'en'
+        )
+      );
+    }
+
+    it('a typed extra asks before a switch; staying keeps it, discarding closes the form', async () => {
+      const user = userEvent.setup();
+      renderTwoBranches();
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await user.click(
+        await screen.findByRole('button', {
+          name: EN['inventory.material.exception.open'] as string,
+        })
+      );
+      const form = await screen.findByRole('form', {
+        name: EN['inventory.material.exception.formHeading'] as string,
+      });
+      const reason = within(form).getByLabelText(labelled('inventory.material.exception.reason'));
+      await user.type(reason, 'Overfilled');
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+      expect(heldBranch()).toBe(TEST_BRANCH.id);
+      expect(reason).toHaveValue('Overfilled');
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      expect(
+        screen.queryByRole('form', {
+          name: EN['inventory.material.exception.formHeading'] as string,
+        })
+      ).toBeNull();
+    });
+
+    it('a half-filled request for material asks before a switch, and discarding closes it', async () => {
+      const user = userEvent.setup();
+      renderTwoBranches();
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      await user.click(
+        await screen.findByRole('button', { name: EN['inventory.material.create.open'] as string })
+      );
+      const form = await screen.findByRole('form', {
+        name: EN['inventory.material.create.heading'] as string,
+      });
+      await user.type(
+        within(form).getByLabelText(labelled('inventory.material.create.serviceCondition')),
+        'oil_change'
+      );
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      expect(
+        screen.queryByRole('form', { name: EN['inventory.material.create.heading'] as string })
+      ).toBeNull();
+    });
+  });
 });

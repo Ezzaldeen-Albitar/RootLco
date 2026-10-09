@@ -40,7 +40,6 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
 
 import {
   listUnitConversions,
@@ -56,7 +55,13 @@ import {
   type UnitOfMeasureOption,
 } from '../inventory-contract';
 import { OutcomeNote, PRIMARY_BUTTON, SECONDARY_BUTTON } from './shared';
-import { DANGER_BUTTON, ItemFinder, PANEL } from './stock-operations';
+import {
+  DANGER_BUTTON,
+  ItemFinder,
+  PANEL,
+  StockMoment,
+  useWorkingDisplayZone,
+} from './stock-operations';
 
 type Listing =
   | { readonly phase: 'loading' }
@@ -266,6 +271,8 @@ function ConversionRow({
 }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // A conversion belongs to no branch: the working branch's clock, else UTC, named.
+  const zone = useWorkingDisplayZone();
 
   const retire = async () => {
     setBusy(true);
@@ -304,7 +311,7 @@ function ConversionRow({
         {translateDynamic(messages, `inventory.conversions.status.${row.status}`)}
       </td>
       <td className="px-3 py-2">
-        <span dir="ltr">{formatDateTime(row.createdAt, locale)}</span>
+        <StockMoment value={row.createdAt} locale={locale} zone={zone} />
       </td>
       <td className="px-3 py-2">
         {canManage && row.status === 'active' ? (

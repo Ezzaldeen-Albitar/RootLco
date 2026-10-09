@@ -58,7 +58,6 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
 import { formatMoney } from '@/lib/money';
 
 import {
@@ -84,7 +83,7 @@ import {
 } from '../inventory-contract';
 
 import { OutcomeNote, Qty, UUID } from './shared';
-import { PANEL, outcomeField } from './stock-operations';
+import { PANEL, StockMoment, outcomeField, useWorkingDisplayZone } from './stock-operations';
 
 /**
  * One read, as one of four outcomes, re-issued after every write that changes it.
@@ -359,6 +358,8 @@ function IdentifierRow({
 }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // An item's codes belong to no branch: the working branch's clock, else UTC, named.
+  const zone = useWorkingDisplayZone();
   return (
     <TableRow className="align-top">
       <TableCell>
@@ -384,8 +385,8 @@ function IdentifierRow({
         {row.retired
           ? translate(messages, 'inventory.identifiers.retired')
           : translate(messages, 'inventory.identifiers.live')}
-        <span className="block text-caption text-text-muted" dir="ltr">
-          {formatDateTime(row.retiredAt ?? row.createdAt, locale)}
+        <span className="block text-caption text-text-muted">
+          <StockMoment value={row.retiredAt ?? row.createdAt} locale={locale} zone={zone} />
         </span>
         {outcome !== null ? <OutcomeNote messages={messages} outcome={outcome} /> : null}
       </TableCell>

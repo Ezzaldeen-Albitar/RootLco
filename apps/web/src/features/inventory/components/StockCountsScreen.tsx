@@ -24,19 +24,45 @@
  * Permissions: `inv.stock.read` gates the page; `inv.stock.operate` offers
  * opening, recording, reconciling and cancelling; `org.branch.read` the branch
  * picker.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV5`)
+ *
+ * Every control this screen draws itself is a shared wrapper: the counted
+ * quantity is `FormNumberField` (the string typed is the string sent), the
+ * notes and the cancel reason are multi-line `FormTextField`s, every button is
+ * Material's, and the two lists are Material's table — the count list answers
+ * one bounded page with a "more exist" flag and no cursor (planner ruling of
+ * 2026-10-09), and a count's lines are the whole of that count. The location
+ * select and the list's wait, empty and failed states are the shared inventory
+ * pieces. A count's start is written on the branch's clock, with the clock
+ * named (`StockMoment`), never on the browser's.
+ *
+ * Each write is held to one at a time by a ref set before anything is awaited,
+ * so a second press inside the same frame sends nothing. Opening a count moves
+ * the cursor to its heading, and closing it returns the cursor to the row's
+ * Open button; the cancel form takes the cursor into its reason box and gives
+ * it back to "Cancel count" when it closes.
  */
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { TextAreaField, TextField } from '@/components/forms/Field';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 
 import {
   cancelStockCount,
@@ -55,26 +81,22 @@ import {
   type StockCountSummary,
   type StockTarget,
 } from '../inventory-contract';
-import {
-  LocationPicker,
-  OutcomeNote,
-  PRIMARY_BUTTON,
-  Qty,
-  SECONDARY_BUTTON,
-  useLocations,
-  type Locations,
-} from './shared';
+import { LocationPicker, OutcomeNote, Qty, useLocations, type Locations } from './shared';
 import { StockAlertIndicator } from './StockAlertIndicator';
 import {
   BranchListView,
   BranchTargetForm,
-  DANGER_BUTTON,
   Fact,
   LINK,
   PANEL,
+  StockMoment,
   StockOperationLinks,
   outcomeField,
+  refusalState,
   useBranchList,
+  useFocusOnOpen,
+  useReturnFocus,
+  useStockDisplayZone,
 } from './stock-operations';
 
 /** The count on screen, with the location code it was chosen by (the detail carries none). */
@@ -161,14 +183,38 @@ function BranchCounts({
     'inventory.counts.list.unavailable'
   );
   const locations = useLocations(target);
+  const zone = useStockDisplayZone(target);
   const [shown, setShown] = useState<ShownCount | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [openFailure, setOpenFailure] = useState<string | null>(null);
+  // One read of a count at a time, before `opening` has disabled the buttons.
+  const reading = useRef(false);
+  const sectionRef = useRef<HTMLElement | null>(null);
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  /*
+   * The count whose Open button takes the cursor back once its panel closes.
+   * Held across renders because the list is read again after every write, and
+   * the row's button only exists again once that read has answered.
+   */
+  const returnTo = useRef<string | null>(null);
+
+  useEffect(() => {
+    const id = returnTo.current;
+    if (id === null || list.phase === 'loading') return;
+    returnTo.current = null;
+    const now = document.activeElement;
+    if (now !== null && now !== document.body) return;
+    const button = sectionRef.current?.querySelector<HTMLElement>(`[data-count-open="${id}"]`);
+    (button ?? headingRef.current)?.focus();
+  });
 
   const open = async (row: StockCountSummary) => {
+    if (reading.current) return;
+    reading.current = true;
     setOpening(row.id);
     setOpenFailure(null);
     const state = await readStockCount(row.id);
+    reading.current = false;
     setOpening(null);
     if (state.status !== 'ok') {
       setOpenFailure(detailFailureKey(state.status));
@@ -179,8 +225,18 @@ function BranchCounts({
 
   return (
     <>
-      <section aria-labelledby="counts-list-heading" className={PANEL}>
-        <h2 id="counts-list-heading" className="text-body font-medium text-text-primary">
+      <section
+        ref={sectionRef}
+        aria-labelledby="counts-list-heading"
+        className={PANEL}
+        lang={locale}
+      >
+        <h2
+          ref={headingRef}
+          id="counts-list-heading"
+          tabIndex={-1}
+          className="text-body font-medium text-text-primary"
+        >
           {translate(messages, 'inventory.counts.list.heading')}
         </h2>
         {openFailure !== null ? (
@@ -197,69 +253,81 @@ function BranchCounts({
           truncatedKey="inventory.counts.list.truncated"
         >
           {(items) => (
-            <table className="w-full text-body">
-              <caption className="sr-only">
-                {translate(messages, 'inventory.counts.list.caption')}
-              </caption>
-              <thead>
-                <tr className="text-caption text-text-muted">
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.counts.column.location')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.counts.column.snapshotAt')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.counts.column.status')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.counts.column.counted')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.counts.column.varianceLines')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.counts.column.absoluteVariance')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.counts.column.action')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((row) => (
-                  <tr key={row.id} className="border-t border-border">
-                    <td dir="ltr" className="text-start">
-                      {row.locationCode}
-                    </td>
-                    <td dir="ltr" className="text-start">
-                      {formatDateTime(row.snapshotAt, locale)}
-                    </td>
-                    <td>{translateDynamic(messages, `inventory.countStatus.${row.status}`)}</td>
-                    <td className="text-end" dir="ltr">
-                      {row.countedLineCount} / {row.lineCount}
-                    </td>
-                    <td className="text-end">{row.varianceLineCount}</td>
-                    <td className="text-end">
-                      <Qty value={row.absoluteVarianceQty} />
-                    </td>
-                    <td className="text-end">
-                      <button
-                        type="button"
-                        className={SECONDARY_BUTTON}
-                        disabled={opening !== null}
-                        onClick={() => {
-                          void open(row);
-                        }}
-                      >
-                        {translate(messages, 'inventory.counts.open')}
-                        <span className="sr-only"> {row.locationCode}</span>
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <TableContainer>
+              <Table size="small">
+                <caption className="sr-only">
+                  {translate(messages, 'inventory.counts.list.caption')}
+                </caption>
+                <TableHead>
+                  <TableRow>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.counts.column.location')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.counts.column.snapshotAt')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.counts.column.status')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.counts.column.counted')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.counts.column.varianceLines')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.counts.column.absoluteVariance')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.counts.column.action')}
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {items.map((row) => (
+                    <TableRow key={row.id}>
+                      <TableCell>
+                        <code className="font-mono text-caption" dir="ltr">
+                          {row.locationCode}
+                        </code>
+                      </TableCell>
+                      <TableCell>
+                        <StockMoment value={row.snapshotAt} locale={locale} zone={zone} />
+                      </TableCell>
+                      <TableCell>
+                        {translateDynamic(messages, `inventory.countStatus.${row.status}`)}
+                      </TableCell>
+                      <TableCell align="right">
+                        <span dir="ltr">
+                          {row.countedLineCount} / {row.lineCount}
+                        </span>
+                      </TableCell>
+                      <TableCell align="right">
+                        <span dir="ltr">{row.varianceLineCount}</span>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Qty value={row.absoluteVarianceQty} />
+                      </TableCell>
+                      <TableCell align="right">
+                        <Button
+                          type="button"
+                          variant="outlined"
+                          size="small"
+                          data-count-open={row.id}
+                          disabled={opening !== null}
+                          onClick={() => {
+                            void open(row);
+                          }}
+                        >
+                          {translate(messages, 'inventory.counts.open')}
+                          <span className="sr-only"> {row.locationCode}</span>
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
         </BranchListView>
       </section>
@@ -270,12 +338,16 @@ function BranchCounts({
           locale={locale}
           messages={messages}
           shown={shown}
+          zone={zone}
           canOperate={canOperate}
           onChanged={(count) => {
             setShown({ count, locationCode: shown.locationCode });
             reload();
           }}
-          onClose={() => setShown(null)}
+          onClose={() => {
+            returnTo.current = shown.count.id;
+            setShown(null);
+          }}
         />
       ) : null}
 
@@ -297,6 +369,7 @@ function CountDetail({
   locale,
   messages,
   shown,
+  zone,
   canOperate,
   onChanged,
   onClose,
@@ -304,6 +377,8 @@ function CountDetail({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly shown: ShownCount;
+  /** The branch's clock (`useStockDisplayZone`), UTC where it is not known. */
+  readonly zone: string;
   readonly canOperate: boolean;
   readonly onChanged: (count: StockCountDetail) => void;
   readonly onClose: () => void;
@@ -314,10 +389,28 @@ function CountDetail({
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [raised, setRaised] = useState<number | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  // One reconciliation in flight at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
+  const headingRef = useFocusOnOpen<HTMLHeadingElement>();
+  const cancelRef = useReturnFocus<HTMLButtonElement>(cancelling);
+
+  /*
+   * A count that stops being editable — reconciled or cancelled from here —
+   * takes away the button the cursor was on. The cursor then goes back to the
+   * count's heading rather than to the top of the page.
+   */
+  useEffect(() => {
+    if (editable) return;
+    const now = document.activeElement;
+    if (now === null || now === document.body) headingRef.current?.focus();
+  }, [editable, headingRef]);
 
   const reconcile = async () => {
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     const result = await reconcileStockCount(count.id);
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -328,8 +421,13 @@ function CountDetail({
   };
 
   return (
-    <section aria-labelledby="count-detail-heading" className={PANEL}>
-      <h2 id="count-detail-heading" className="text-body font-medium text-text-primary">
+    <section aria-labelledby="count-detail-heading" className={PANEL} lang={locale}>
+      <h2
+        ref={headingRef}
+        id="count-detail-heading"
+        tabIndex={-1}
+        className="text-body font-medium text-text-primary"
+      >
         {translate(messages, 'inventory.counts.detail.heading')}{' '}
         <span dir="ltr">{shown.locationCode}</span>
       </h2>
@@ -338,7 +436,7 @@ function CountDetail({
           {translateDynamic(messages, `inventory.countStatus.${count.status}`)}
         </Fact>
         <Fact label={translate(messages, 'inventory.counts.column.snapshotAt')}>
-          <span dir="ltr">{formatDateTime(count.snapshotAt, locale)}</span>
+          <StockMoment value={count.snapshotAt} locale={locale} zone={zone} />
         </Fact>
         <Fact label={translate(messages, 'inventory.counts.column.counted')}>
           <span dir="ltr">
@@ -350,7 +448,9 @@ function CountDetail({
         </Fact>
       </dl>
       {count.cancelReason ? (
-        <p className="text-caption text-text-muted">{count.cancelReason}</p>
+        <p className="text-caption text-text-muted">
+          <bdi>{count.cancelReason}</bdi>
+        </p>
       ) : null}
       {/*
        * DEF-T-04. `movement_delta_during_count` DEFAULTS to zero and is written
@@ -384,34 +484,32 @@ function CountDetail({
           </p>
         </>
       )}
-      <div className="overflow-x-auto">
-        <table className="w-full text-body">
+      <TableContainer>
+        <Table size="small">
           <caption className="sr-only">
             {translate(messages, 'inventory.counts.detail.caption')}
           </caption>
-          <thead>
-            <tr className="text-caption text-text-muted">
-              <th scope="col" className="text-start font-medium">
-                {translate(messages, 'inventory.counts.line.item')}
-              </th>
-              <th scope="col" className="text-end font-medium">
+          <TableHead>
+            <TableRow>
+              <TableCell scope="col">{translate(messages, 'inventory.counts.line.item')}</TableCell>
+              <TableCell scope="col" align="right">
                 {translate(messages, 'inventory.counts.line.snapshot')}
-              </th>
-              <th scope="col" className="text-end font-medium">
+              </TableCell>
+              <TableCell scope="col" align="right">
                 {translate(messages, 'inventory.counts.line.movements')}
-              </th>
-              <th scope="col" className="text-end font-medium">
+              </TableCell>
+              <TableCell scope="col" align="right">
                 {translate(messages, 'inventory.counts.line.counted')}
-              </th>
-              <th scope="col" className="text-end font-medium">
+              </TableCell>
+              <TableCell scope="col" align="right">
                 {translate(messages, 'inventory.counts.line.variance')}
-              </th>
-              <th scope="col" className="text-start font-medium">
+              </TableCell>
+              <TableCell scope="col">
                 {translate(messages, 'inventory.counts.line.adjustment')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
+              </TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {count.lines.map((line) => (
               <CountLineRow
                 key={line.id}
@@ -422,9 +520,9 @@ function CountDetail({
                 onRecorded={onChanged}
               />
             ))}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableContainer>
       {count.lines.length === 0 ? (
         <p className="text-caption text-text-muted">
           {translate(messages, 'inventory.counts.detail.noLines')}
@@ -448,19 +546,26 @@ function CountDetail({
           </p>
           <OutcomeNote messages={messages} outcome={outcome} />
           <div className="flex flex-wrap gap-2">
-            <button
+            <Button
               type="button"
-              className={PRIMARY_BUTTON}
+              variant="contained"
               disabled={busy}
               onClick={() => {
                 void reconcile();
               }}
             >
               {translate(messages, 'inventory.counts.reconcile.action')}
-            </button>
-            <button type="button" className={DANGER_BUTTON} onClick={() => setCancelling(true)}>
+            </Button>
+            <Button
+              ref={cancelRef}
+              type="button"
+              variant="outlined"
+              color="error"
+              aria-expanded={cancelling}
+              onClick={() => setCancelling((was) => !was)}
+            >
               {translate(messages, 'inventory.counts.cancel.action')}
-            </button>
+            </Button>
           </div>
         </>
       ) : null}
@@ -476,9 +581,9 @@ function CountDetail({
         />
       ) : null}
       <div>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+        <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'inventory.stockOps.close')}
-        </button>
+        </Button>
       </div>
     </section>
   );
@@ -505,10 +610,13 @@ function CountLineRow({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One record of this line in flight at a time, before `busy` has disabled Save.
+  const sending = useRef(false);
   // A count typed and not yet recorded is lost if the branch changes.
   useUnsavedGuard(value.trim() !== saved.trim());
 
   const record = async () => {
+    if (sending.current) return;
     const counted = value.trim();
     // Zero is a legitimate count — an empty shelf — so only the shape is checked.
     if (!QUANTITY.test(counted)) {
@@ -516,6 +624,7 @@ function CountLineRow({
       return;
     }
     setError(null);
+    sending.current = true;
     setBusy(true);
     // The COUNT's version as this screen last received it from the server.
     const result = await recordStockCountLine(
@@ -524,6 +633,7 @@ function CountLineRow({
       { countedQty: counted },
       count.recordVersion
     );
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -538,16 +648,16 @@ function CountLineRow({
     : outcomeField(messages, outcome, 'countedQty');
 
   return (
-    <tr className="border-t border-border align-top">
-      <td>
+    <TableRow className="align-top">
+      <TableCell>
         <code className="font-mono text-caption" dir="ltr">
           {line.sku}
         </code>
-      </td>
-      <td className="text-end">
+      </TableCell>
+      <TableCell align="right">
         <Qty value={line.snapshotQty} />
-      </td>
-      <td className="text-end">
+      </TableCell>
+      <TableCell align="right">
         {count.status === 'reconciled' ? (
           <Qty value={line.movementDeltaDuringCount} />
         ) : (
@@ -555,23 +665,22 @@ function CountLineRow({
             {translate(messages, 'inventory.counts.line.movementsAtReconcile')}
           </span>
         )}
-      </td>
-      <td className="text-end">
+      </TableCell>
+      <TableCell align="right">
         {canRecord ? (
           <div className="flex flex-col items-end gap-1">
-            <TextField
+            <FormNumberField
               label={translate(messages, 'inventory.counts.line.countedField')}
               description={line.sku}
-              inputMode="decimal"
-              dir="ltr"
               value={value}
-              onChange={(event) => setValue(event.target.value)}
+              onChange={setValue}
               error={fieldError}
             />
             <OutcomeNote messages={messages} outcome={outcome} />
-            <button
+            <Button
               type="button"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
+              size="small"
               disabled={busy}
               onClick={() => {
                 void record();
@@ -579,7 +688,7 @@ function CountLineRow({
             >
               {translate(messages, 'inventory.counts.line.save')}
               <span className="sr-only"> {line.sku}</span>
-            </button>
+            </Button>
           </div>
         ) : line.countedQty === null ? (
           <span className="text-caption text-text-muted">
@@ -588,8 +697,8 @@ function CountLineRow({
         ) : (
           <Qty value={line.countedQty} />
         )}
-      </td>
-      <td className="text-end">
+      </TableCell>
+      <TableCell align="right">
         {line.varianceQty === null ? (
           <span className="text-caption text-text-muted">
             {translate(messages, 'inventory.counts.line.notCounted')}
@@ -599,8 +708,8 @@ function CountLineRow({
             <Qty value={line.varianceQty} />
           </strong>
         )}
-      </td>
-      <td>
+      </TableCell>
+      <TableCell>
         {line.adjustmentStatus === null ? (
           <span className="text-caption text-text-muted">
             {translate(messages, 'inventory.counts.line.noAdjustment')}
@@ -608,8 +717,8 @@ function CountLineRow({
         ) : (
           translateDynamic(messages, `inventory.adjustmentStatus.${line.adjustmentStatus}`)
         )}
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -626,19 +735,29 @@ function CancelCountForm({
 }) {
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [refusals, setRefusals] = useState(0);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One cancellation in flight at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
   useUnsavedGuard(reason.trim().length > 0);
+  const formRef = useFocusFirstInvalid(
+    refusalState(error ? { reason: error } : {}, refusals, outcome)
+  );
 
   const submit = async () => {
+    if (sending.current) return;
     const why = reason.trim();
     if (why.length === 0 || why.length > MAX_REASON) {
       setError(why.length === 0 ? 'field.required' : 'inventory.stockOps.reasonTooLong');
+      setRefusals((n) => n + 1);
       return;
     }
     setError(null);
+    sending.current = true;
     setBusy(true);
     const result = await cancelStockCount(count.id, { reason: why });
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -647,6 +766,7 @@ function CancelCountForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -661,24 +781,26 @@ function CancelCountForm({
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.counts.cancel.explain')}
       </p>
-      <TextAreaField
+      <FormTextField
         label={translate(messages, 'inventory.stockOps.reason')}
         required
+        multiline
         rows={2}
+        autoFocus
         value={reason}
-        onChange={(event) => setReason(event.target.value)}
+        onChange={setReason}
         error={
           error ? translateDynamic(messages, error) : outcomeField(messages, outcome, 'reason')
         }
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div className="flex flex-wrap gap-2">
-        <button type="submit" className={DANGER_BUTTON} disabled={busy}>
+        <Button type="submit" variant="outlined" color="error" disabled={busy}>
           {translate(messages, 'inventory.counts.cancel.submit')}
-        </button>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onClose}>
+        </Button>
+        <Button type="button" variant="outlined" onClick={onClose}>
           {translate(messages, 'inventory.stockOps.close')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -696,28 +818,38 @@ function OpenCountForm({
   const [locationId, setLocationId] = useState('');
   const [notes, setNotes] = useState('');
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [refusals, setRefusals] = useState(0);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
+  // One count opened at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
   // The location is one of THIS branch's, so a switch asks before dropping it.
   useUnsavedGuard(locationId !== '' || notes.trim().length > 0);
+  const formRef = useFocusFirstInvalid(refusalState(errors, refusals, outcome));
 
   const errorFor = (name: string) =>
     errors[name] ? translateDynamic(messages, errors[name]) : outcomeField(messages, outcome, name);
 
   const submit = async () => {
+    if (sending.current) return;
     const found: Record<string, string> = {};
     if (!locationId) found['locationId'] = 'field.required';
     const text = notes.trim();
     if (text.length > MAX_DESCRIPTION) found['notes'] = 'inventory.setup.descriptionTooLong';
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0) {
+      setRefusals((n) => n + 1);
+      return;
+    }
+    sending.current = true;
     setBusy(true);
     const result = await openStockCount({
       locationId,
       idempotencyKey: attemptKey,
       ...(text.length > 0 ? { notes: text } : {}),
     });
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -734,6 +866,7 @@ function OpenCountForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -758,18 +891,19 @@ function OpenCountForm({
         onChange={setLocationId}
         error={errorFor('locationId')}
       />
-      <TextAreaField
+      <FormTextField
         label={translate(messages, 'inventory.counts.openForm.notes')}
+        multiline
         rows={2}
         value={notes}
-        onChange={(event) => setNotes(event.target.value)}
+        onChange={setNotes}
         error={errorFor('notes')}
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.counts.openForm.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );

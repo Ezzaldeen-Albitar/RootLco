@@ -60,7 +60,6 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
 import { formatMoney } from '@/lib/money';
 import type { GoodsReceiptCreateLine } from '@/lib/contracts/inventory-contract';
 
@@ -91,10 +90,12 @@ import {
   Fact,
   ItemFinder,
   PANEL,
+  StockMoment,
   StockOperationLinks,
   isQuantity,
   outcomeField,
   useBranchList,
+  useStockDisplayZone,
 } from './stock-operations';
 
 /** A line being written, before it is sent. */
@@ -187,6 +188,8 @@ function BranchReceipts({
     'inventory.receipts.list.unavailable'
   );
   const locations = useLocations(target);
+  // A receipt's posting is written on the branch's clock, named (`P1-32-PRE-OD-INV5`).
+  const zone = useStockDisplayZone(target);
   const [receipt, setReceipt] = useState<GoodsReceiptDetail | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [openFailure, setOpenFailure] = useState<string | null>(null);
@@ -296,6 +299,7 @@ function BranchReceipts({
           locale={locale}
           messages={messages}
           receipt={receipt}
+          zone={zone}
           canOperate={canOperate}
           canViewCost={canViewCost}
           onPosted={(posted) => {
@@ -339,6 +343,7 @@ function ReceiptDetail({
   locale,
   messages,
   receipt,
+  zone,
   canOperate,
   canViewCost,
   onPosted,
@@ -348,6 +353,8 @@ function ReceiptDetail({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly receipt: GoodsReceiptDetail;
+  /** The branch's clock (`useStockDisplayZone`), UTC where it is not known. */
+  readonly zone: string;
   readonly canOperate: boolean;
   readonly canViewCost: boolean;
   readonly onPosted: (posted: GoodsReceiptDetail) => void;
@@ -389,7 +396,7 @@ function ReceiptDetail({
           {receipt.postedAt === null ? (
             translate(messages, 'inventory.receipts.detail.notPosted')
           ) : (
-            <span dir="ltr">{formatDateTime(receipt.postedAt, locale)}</span>
+            <StockMoment value={receipt.postedAt} locale={locale} zone={zone} />
           )}
         </Fact>
       </dl>
@@ -860,6 +867,8 @@ function CostHistoryPanel({
   const [history, setHistory] = useState<ItemCostHistory | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const { companyId, branchId } = target;
+  // Each layer's moment is written on the branch's clock, named (`P1-32-PRE-OD-INV5`).
+  const zone = useStockDisplayZone(target);
 
   // Read once per item (the caller keys this panel on the item). The pair is
   // keyed on its VALUES, so a caller rebuilding the target does not re-read.
@@ -952,7 +961,7 @@ function CostHistoryPanel({
                   {history.layers.items.map((layer) => (
                     <TableRow key={layer.id}>
                       <TableCell>
-                        <span dir="ltr">{formatDateTime(layer.effectiveAt, locale)}</span>
+                        <StockMoment value={layer.effectiveAt} locale={locale} zone={zone} />
                       </TableCell>
                       <TableCell align="right">
                         <Qty value={layer.quantity} />
