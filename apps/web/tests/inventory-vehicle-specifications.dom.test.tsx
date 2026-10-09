@@ -7,11 +7,14 @@ import ar from '../src/i18n/messages/ar.json';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
+  TEST_BRANCH,
+  branchSnapshot,
   inBranch,
   messagesFor,
   renderLtr as renderInLtr,
   renderRtl as renderInRtl,
 } from './render';
+import { FAR_ZONE, expectOnClock } from './support/stock-operations';
 
 /*
  * Every render goes under `UiFoundationProvider` and a working context, as the
@@ -370,6 +373,36 @@ describe('Arabic, right to left', () => {
     const table = await screen.findByRole('table');
     expect(within(table).getByText('4.250')).toBeVisible();
   });
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — a capacity belongs to no branch, so its moment is
+ * written on the WORKING branch's clock, named, never on the browser's.
+ */
+describe('a capacity\u2019s moment is shown on the working branch\u2019s clock (P1-32-PRE-OD-INV5)', () => {
+  const RECORDED = '2026-09-17T12:00:00Z';
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes the moment on the working branch's clock with its name (${locale})`, async () => {
+      listVehicleSpecifications.mockImplementation(async () =>
+        listing([specification({ createdAt: RECORDED })])
+      );
+      const render = locale === 'en' ? renderLtr : renderRtl;
+      render(
+        inBranch(
+          <VehicleSpecificationsScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            canManage={false}
+            canReadCatalogue={false}
+          />,
+          { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+        )
+      );
+      const table = await screen.findByRole('table');
+      await waitFor(() => expect(within(table).getAllByRole('row').length).toBeGreaterThan(1));
+      expectOnClock(within(table).getAllByRole('row')[1] as HTMLElement, RECORDED, locale);
+    });
+  }
 });
 
 /* -------------------------------------------------------------------- *

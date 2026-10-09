@@ -66,11 +66,21 @@ export interface CategoryList {
 /**
  * Every page of `inv.item-category-list`, walked with its cursor, shaped once.
  * A later walk supersedes an earlier one; an unmounted screen keeps nothing.
+ *
+ * `enabled` (on unless stated) lets a screen that needs the categories only
+ * sometimes — the material requirements, which name a category on some rows
+ * and offer one in a form that may never open — read nothing until it does
+ * (`P1-32-PRE-OD-INV5`). Once read, the answer is kept while it is switched
+ * off again; nothing is read twice for it.
  */
-export function useAllItemCategories(): CategoryList {
+export function useAllItemCategories(enabled = true): CategoryList {
   const [read, setRead] = useState<CategoryRead>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  const [wanted, setWanted] = useState(enabled);
+  // Latched: asked for once, the read is not withdrawn when the need passes.
+  if (enabled && !wanted) setWanted(true);
   useEffect(() => {
+    if (!wanted) return undefined;
     let live = true;
     void readAllCategories(listItemCategoryPage, () => live).then((result) => {
       if (!live || result === null) return;
@@ -88,7 +98,7 @@ export function useAllItemCategories(): CategoryList {
     return () => {
       live = false;
     };
-  }, [attempt]);
+  }, [attempt, wanted]);
   const retry = useCallback(() => {
     setRead({ status: 'loading' });
     setAttempt((current) => current + 1);

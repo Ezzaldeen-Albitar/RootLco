@@ -61,11 +61,13 @@ import {
   BRANCH_ID,
   COMPANY_ID,
   EN,
+  FAR_ZONE,
   ITEM_ID,
   LOCATION_ID,
   branch,
   chooseBranch,
   chooseItem,
+  expectOnClock,
   item,
   itemPage,
   labelled,
@@ -736,4 +738,80 @@ describe('accessibility and Arabic', () => {
     expect(document.documentElement.dir).toBe('rtl');
     await waitFor(() => expect(listGoodsReceipts).toHaveBeenCalled());
   });
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — a receipt's posting and each cost layer are written on
+ * the branch's clock, named, never on the browser's (the branch keeps a clock no
+ * test environment keeps, so the two cannot read alike).
+ */
+describe('a receipt\u2019s moments are shown on the branch\u2019s clock (P1-32-PRE-OD-INV5)', () => {
+  const POSTED = '2026-09-17T12:00:00Z';
+  const LAYERED = '2026-09-18T12:30:00Z';
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes the posting and each cost layer on the branch's clock with its name (${locale})`, async () => {
+      const T = locale === 'en' ? EN : (ar as Record<string, string>);
+      readGoodsReceipt.mockResolvedValue(okRead(detail({ status: 'posted', postedAt: POSTED })));
+      readItemCostHistory.mockResolvedValue(
+        okRead({
+          itemId: ITEM_ID,
+          companyId: COMPANY_ID,
+          branchId: BRANCH_ID,
+          latestUnitCost: '13.0000',
+          weightedAverageCost: '13.0000',
+          currencyCode: 'USD',
+          mixedCurrencies: false,
+          layerCount: 1,
+          totalQuantity: '4.000',
+          layers: {
+            items: [
+              {
+                id: 'layer-1',
+                sourceKind: 'goods_receipt',
+                sourceId: RECEIPT_ID,
+                quantity: '4.000',
+                unitCost: '13.0000',
+                currencyCode: 'USD',
+                effectiveAt: LAYERED,
+              },
+            ],
+            nextCursor: null,
+            hasMore: false,
+          },
+        })
+      );
+      const user = userEvent.setup();
+      const render = locale === 'en' ? renderInLtr : renderInRtl;
+      render(
+        inBranch(
+          <GoodsReceiptsScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            canOperate={false}
+            canViewCost={true}
+            canReadBranches={true}
+          />,
+          { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+        )
+      );
+      const list = await screen.findByRole('region', {
+        name: T['inventory.receipts.list.heading'] as string,
+      });
+      await user.click(
+        await within(list).findByRole('button', {
+          name: `${T['inventory.receipts.open'] as string} GR-100`,
+        })
+      );
+      const panel = await screen.findByRole('region', { name: /GR-100/ });
+      expectOnClock(panel, POSTED, locale);
+      await user.click(
+        within(panel).getByRole('button', {
+          name: `${T['inventory.receipts.costHistory.show'] as string} BRK-001`,
+        })
+      );
+      const history = await screen.findByRole('region', { name: /BRK-001/ });
+      const table = await within(history).findByRole('table');
+      expectOnClock(within(table).getAllByRole('row')[1] as HTMLElement, LAYERED, locale);
+    });
+  }
 });

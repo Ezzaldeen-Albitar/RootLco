@@ -28,6 +28,7 @@ import {
   switchWithoutQuestion,
 } from './support/branch-switch';
 import { PICKER_OPTION_WAIT_MS } from './support/picker-option';
+import { FAR_ZONE, expectOnClock } from './support/stock-operations';
 
 /*
  * Every screen in this file is addressed by the WORKING CONTEXT: the branch it
@@ -1270,4 +1271,32 @@ describe('the first window is worked out in the browser, after the server\u2019s
       run.done();
     }
   });
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — each movement's moment is DRAWN on the branch's clock,
+ * named, never on the browser's (INV1B put the window a person TYPES there).
+ */
+describe('each movement is shown on the branch\u2019s clock (P1-32-PRE-OD-INV5)', () => {
+  const OCCURRED = '2026-09-17T12:00:00Z';
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes the movement's moment on the branch's clock with its name (${locale})`, async () => {
+      listMovements.mockResolvedValue(page([movement({ occurredAt: OCCURRED })]));
+      const render = locale === 'en' ? renderInLtr : renderInRtl;
+      render(
+        inBranch(
+          <MovementsScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            initialWorkOrderId={null}
+            canReadBranches={true}
+          />,
+          { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+        )
+      );
+      const grid = await screen.findByTestId('inventory-movements-grid');
+      await within(grid).findByText('BRK-001');
+      expectOnClock(within(grid).getAllByRole('row')[1] as HTMLElement, OCCURRED, locale);
+    });
+  }
 });

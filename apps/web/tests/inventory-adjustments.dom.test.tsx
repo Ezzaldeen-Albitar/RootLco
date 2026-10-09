@@ -61,6 +61,7 @@ import {
   BRANCH_ID,
   COMPANY_ID,
   EN,
+  FAR_ZONE,
   ITEM_ID,
   LOCATION_ID,
   OTHER_USER_ID,
@@ -68,6 +69,7 @@ import {
   branch,
   chooseBranch,
   chooseItem,
+  expectOnClock,
   item,
   itemPage,
   labelled,
@@ -656,4 +658,38 @@ describe('accessibility and Arabic', () => {
     // header's own named selection, not a pair typed on this screen.
     await waitFor(() => expect(listAdjustments).toHaveBeenCalled());
   });
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — each request's moment is written on the branch's clock,
+ * named, never on the browser's (the branch keeps a clock no test environment
+ * keeps, so the two cannot read alike).
+ */
+describe('each request is shown on the branch\u2019s clock (P1-32-PRE-OD-INV5)', () => {
+  const ASKED = '2026-09-17T12:00:00Z';
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes the request's moment on the branch's clock with its name (${locale})`, async () => {
+      const T = locale === 'en' ? EN : (ar as Record<string, string>);
+      listAdjustments.mockResolvedValue(okPage([adjustment({ createdAt: ASKED })]));
+      const render = locale === 'en' ? renderInLtr : renderInRtl;
+      render(
+        inBranch(
+          <AdjustmentsScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            currentUserId={USER_ID}
+            canOperate={false}
+            canApprove={false}
+            canReadBranches={true}
+          />,
+          { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+        )
+      );
+      const list = await screen.findByRole('region', {
+        name: T['inventory.adjustments.list.heading'] as string,
+      });
+      const table = await within(list).findByRole('table');
+      expectOnClock(within(table).getAllByRole('row')[1] as HTMLElement, ASKED, locale);
+    });
+  }
 });

@@ -56,6 +56,7 @@ import {
   BRANCH_ID,
   COMPANY_ID,
   EN,
+  FAR_ZONE,
   ITEM_ID,
   LOCATION_ID,
   OTHER_LOCATION_ID,
@@ -64,6 +65,7 @@ import {
   branch,
   chooseBranch,
   chooseItem,
+  expectOnClock,
   item,
   itemPage,
   labelled,
@@ -1413,4 +1415,48 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-INV4)', () => {
     );
     expect(await seriousViolations(container)).toEqual([]);
   });
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — a transfer's dispatch and a write-off's request are
+ * written on the branch's clock, named, never on the browser's (the branch
+ * keeps a clock no test environment keeps, so the two cannot read alike).
+ */
+describe('the transfers\u2019 moments are shown on the branch\u2019s clock (P1-32-PRE-OD-INV5)', () => {
+  const SENT = '2026-09-17T12:00:00Z';
+  const ASKED = '2026-09-18T12:30:00Z';
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes the dispatch and the write-off on the branch's clock with its name (${locale})`, async () => {
+      const T = locale === 'en' ? EN : AR;
+      listTransfers.mockResolvedValue(okPage([transfer({ dispatchedAt: SENT })]));
+      listTransferWriteOffs.mockResolvedValue(okPage([writeOff({ createdAt: ASKED })]));
+      const render = locale === 'en' ? renderInLtr : renderInRtl;
+      render(
+        withMui(
+          inBranch(
+            <TransfersScreen
+              locale={locale}
+              messages={locale === 'en' ? en : ar}
+              currentUserId={USER_ID}
+              canOperate={false}
+              canApprove={false}
+              canReadBranches={true}
+            />,
+            { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+          ),
+          locale
+        )
+      );
+      const list = await screen.findByRole('region', {
+        name: T['inventory.transfers.list.heading'] as string,
+      });
+      const table = await within(list).findByRole('table');
+      expectOnClock(within(table).getAllByRole('row')[1] as HTMLElement, SENT, locale);
+      const writeOffs = await screen.findByRole('region', {
+        name: T['inventory.transfers.writeOffs.heading'] as string,
+      });
+      const pending = await within(writeOffs).findByRole('table');
+      expectOnClock(within(pending).getAllByRole('row')[1] as HTMLElement, ASKED, locale);
+    });
+  }
 });
