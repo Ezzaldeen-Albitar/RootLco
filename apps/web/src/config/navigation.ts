@@ -533,6 +533,21 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
            * those here would hide the reference data from everyone who may read
            * it and only needs to look a figure up.
            */
+          /*
+           * P1-32-PRE-OD-INV2B: the item category tree, read only. Its two reads
+           * — the category list and the item search by category — both declare
+           * `inv.item.read`, and the page gates on it before either. Categories
+           * are the organisation's, never one branch's, hence `tenant`.
+           */
+          {
+            key: 'inventory.categories',
+            labelKey: 'nav.inventoryCategories',
+            icon: 'inventory',
+            href: '/inventory/categories',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'tenant',
+          },
           {
             key: 'inventory.unitConversions',
             labelKey: 'nav.inventoryUnitConversions',
