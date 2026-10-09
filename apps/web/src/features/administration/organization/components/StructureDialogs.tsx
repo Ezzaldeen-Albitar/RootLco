@@ -412,23 +412,33 @@ export function AddBranchDialog({
 
 /**
  * The version guard's part every edit dialog shares: a conflict holds Save until
- * the latest version is loaded, and a version that moved puts the latest saved
- * values back in front of the operator (state adjusted while rendering, the
- * pattern React documents for "a prop changed").
+ * the latest version is loaded, and the latest saved values are put back in
+ * front of the operator ONLY once they asked for them with "Load the latest
+ * version" (state adjusted while rendering, the pattern React documents for "a
+ * prop changed").
+ *
+ * A version that moves for any other reason — the page rendered again by a
+ * list's Try again, say — leaves the typed draft alone: the dialog keeps the
+ * version the draft was based on (`version` below) and sends that, so saving
+ * over someone else's change is refused as the ordinary conflict instead of
+ * the typed edits being silently replaced.
  */
 function useVersionGuard(version: number | undefined) {
   const router = useRouter();
   const [seen, setSeen] = useState(version);
+  const [requested, setRequested] = useState(false);
   const [conflicted, setConflicted] = useState(false);
   const [latestLoaded, setLatestLoaded] = useState(false);
   const [refreshing, startRefresh] = useTransition();
-  const moved = version !== seen;
+  const moved = requested && version !== seen;
   if (moved) {
     setSeen(version);
+    setRequested(false);
     setConflicted(false);
     setLatestLoaded(true);
   }
   const loadLatest = () => {
+    setRequested(true);
     startRefresh(() => {
       setConflicted(false);
       router.refresh();
@@ -436,10 +446,12 @@ function useVersionGuard(version: number | undefined) {
   };
   return {
     moved,
+    /** The version the draft in front of the operator was based on. */
+    version: seen,
     conflicted,
     latestLoaded,
     refreshing,
-    unknown: version === undefined,
+    unknown: seen === undefined,
     noteResult: (result: ActionState) => {
       // Only the true concurrency refusal holds Save; a conflict that names a
       // rule is about the values, and correcting them is the way forward.
@@ -510,7 +522,7 @@ export function EditCompanyDialog({
   }
   const dirty = (draft['legalName'] ?? '') !== company.legalName;
   useUnsavedGuard(dirty, onClose);
-  useFocusAfterReload(guard.latestLoaded, company.recordVersion, formRef, 'legalName');
+  useFocusAfterReload(guard.latestLoaded, guard.version, formRef, 'legalName');
   const fieldError = (name: string) => {
     const key = errorKey(name);
     return key ? t(key) : undefined;
@@ -518,7 +530,7 @@ export function EditCompanyDialog({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const version = company.recordVersion;
+    const version = guard.version;
     if (version === undefined || guard.conflicted || guard.refreshing) return;
     const attempt = (state.attempt ?? 0) + 1;
     if (!dirty) {
@@ -626,7 +638,7 @@ export function EditBranchDialog({
   const changes = branchChanges(saved, draft);
   const dirty = Object.keys(changes).length > 0;
   useUnsavedGuard(dirty, onClose);
-  useFocusAfterReload(guard.latestLoaded, branch.recordVersion, formRef, 'name');
+  useFocusAfterReload(guard.latestLoaded, guard.version, formRef, 'name');
   const fieldError = (name: string) => {
     const key = errorKey(name);
     return key ? t(key) : undefined;
@@ -634,7 +646,7 @@ export function EditBranchDialog({
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const version = branch.recordVersion;
+    const version = guard.version;
     if (version === undefined || guard.conflicted || guard.refreshing) return;
     const attempt = (state.attempt ?? 0) + 1;
     if (!dirty) {

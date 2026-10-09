@@ -134,6 +134,10 @@ export function SettingsEditor({
     isSensitive: false,
   };
   const [form, setForm] = useState<SettingForm>(initialForm);
+  // Where the form "started": the first suggestion until a save, then what that
+  // save stored (with the value box emptied). Unsaved work is measured against
+  // this, so a saved key, kind or sensitive mark is not mistaken for unsaved work.
+  const [baseline, setBaseline] = useState<SettingForm>(initialForm);
   // Question f: the cursor goes to the refused value, and its complaint goes once
   // the value changes (route sweep B3).
   const { errors: refusalErrors, formRef: refusalFormRef } = useHeldRefusal(
@@ -145,11 +149,11 @@ export function SettingsEditor({
   const dirty =
     canWrite &&
     (form.settingValue !== '' ||
-      form.settingKey !== initialForm.settingKey ||
-      form.valueType !== initialForm.valueType ||
-      form.isSensitive !== initialForm.isSensitive);
+      form.settingKey !== baseline.settingKey ||
+      form.valueType !== baseline.valueType ||
+      form.isSensitive !== baseline.isSensitive);
   useUnsavedGuard(dirty, () => {
-    setForm(initialForm);
+    setForm(baseline);
     setState(IDLE);
   });
 
@@ -302,16 +306,20 @@ export function SettingsEditor({
             const id = scopeId.trim();
             if (id.length === 0) return;
             const input = form;
+            const previous = state;
             saving.run(async () => {
               let result: ActionState;
               try {
                 result = await writeSettingAction(scope, id, input);
               } catch {
-                result = unreachable(1);
+                // Numbered from the attempt before it, so a second failure in a
+                // row is a fresh announcement rather than the same one kept.
+                result = unreachable((previous.attempt ?? 0) + 1);
               }
               setState(result);
               if (result.status === 'success') {
                 setForm((current) => ({ ...current, settingValue: '' }));
+                setBaseline({ ...input, settingValue: '' });
                 setGeneration((value) => value + 1);
               }
             });

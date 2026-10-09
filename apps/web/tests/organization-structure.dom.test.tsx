@@ -1803,6 +1803,65 @@ describe.each(READERS)(
       );
     });
 
+    it('keeps typed branch edits when Try again renders a newer version, and lets the save conflict', async () => {
+      send.mockResolvedValueOnce(conflictFailure);
+      const user = userEvent.setup();
+      const partial = { referenceValues: null, referenceUnavailable: true };
+      const view = paint(structure(partial));
+      await user.click(editButton(BRANCH.name));
+      const dialog = screen.getByRole('dialog', { name: M('organization.branch.edit') });
+      const city = field(dialog, 'organization.branch.city');
+      await user.type(city, ' North');
+
+      // The time-zone list's Try again renders the page again, and someone else
+      // has meanwhile saved the branch: a newer version with another city.
+      await user.click(within(dialog).getByRole('button', { name: M('form.retry') }));
+      expect(refresh).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        view.rerender(
+          structure({
+            ...partial,
+            branches: ok([{ ...BRANCH_V, city: 'Irbid', recordVersion: 8 }]),
+          })
+        );
+      });
+
+      // The typed draft is still what the operator typed; nothing was replaced.
+      expect(field(screen.getByRole('dialog'), 'organization.branch.city')).toHaveValue(
+        'Amman North'
+      );
+      expect(screen.queryByText(M('organization.edit.latestLoaded'))).toBeNull();
+
+      // Saving sends the version the draft was based on, so it is refused as
+      // the ordinary conflict rather than written over the newer record.
+      await user.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: M('admin.save') })
+      );
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      expect(send).toHaveBeenCalledWith(
+        'PATCH',
+        `/api/v1/org/branches/${BRANCH.id}`,
+        { city: 'Amman North' },
+        { ifMatch: 7 }
+      );
+      expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent(
+        M('state.conflict.title')
+      );
+      expect(field(screen.getByRole('dialog'), 'organization.branch.city')).toHaveValue(
+        'Amman North'
+      );
+
+      // Only "Load the latest version" puts the saved values in front of them.
+      await user.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: M('form.loadLatest') })
+      );
+      expect(refresh).toHaveBeenCalledTimes(2);
+      await waitFor(() =>
+        expect(field(screen.getByRole('dialog'), 'organization.branch.city')).toHaveValue('Irbid')
+      );
+      expect(screen.getByText(M('organization.edit.latestLoaded'))).toBeVisible();
+    });
+
     it('asks for the latest version when the list published none, and sends nothing', async () => {
       const user = userEvent.setup();
       paint(structure({ companies: ok([COMPANY]) }));
@@ -2098,6 +2157,81 @@ describe.each(READERS)(
       settle({ ok: true, status: 200, data: {}, correlationId: 'corr-setting' });
       expect(await screen.findByText(M('admin.saved'))).toBeVisible();
       expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it('takes a saved key other than the first suggestion as the new start, not as unsaved work', async () => {
+      get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'c-1' });
+      send.mockResolvedValue({ ok: true, status: 200, data: {}, correlationId: 'corr-padding' });
+      const user = userEvent.setup();
+      paint(
+        inBranch(
+          <>
+            <SettingsEditor
+              messages={messages}
+              scope="company"
+              canWrite
+              keyPrefix="numbering."
+              suggestions={[
+                {
+                  key: 'numbering.invoice.prefix',
+                  labelKey: 'numbering.field.prefix',
+                  valueType: 'string',
+                },
+                {
+                  key: 'numbering.invoice.padding',
+                  labelKey: 'numbering.field.padding',
+                  valueType: 'number',
+                },
+              ]}
+            />
+            <UnsavedProbe />
+          </>,
+          { locale }
+        )
+      );
+      const key = screen.getByLabelText(
+        new RegExp(`^${escapeRegExp(M('organization.setting.key'))}`)
+      );
+      await user.selectOptions(key, 'numbering.invoice.padding');
+      const value = await screen.findByLabelText(
+        new RegExp(`^${escapeRegExp(M('organization.setting.value'))}`)
+      );
+      await user.type(value, '4');
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+      expect(await screen.findByText(M('admin.saved'))).toBeVisible();
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(value).toHaveValue('');
+      expect(key).toHaveValue('numbering.invoice.padding');
+
+      // A page change or a branch change has nothing to ask about.
+      await user.click(screen.getByRole('button', { name: 'probe unsaved' }));
+      expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('false');
+    });
+
+    it('announces a second unreachable save afresh, numbered after the first', async () => {
+      send.mockRejectedValue(new Error('the network went away'));
+      const user = userEvent.setup();
+      renderSettings();
+      await user.type(
+        screen.getByLabelText(new RegExp(`^${escapeRegExp(M('organization.setting.key'))}`)),
+        'org.working_hours.start'
+      );
+      await user.type(
+        await screen.findByLabelText(
+          new RegExp(`^${escapeRegExp(M('organization.setting.value'))}`)
+        ),
+        '08:00'
+      );
+      const save = screen.getByRole('button', { name: M('admin.save') });
+      await user.click(save);
+      const first = await screen.findByRole('alert');
+      expect(first).toHaveTextContent(M('state.unavailable.message'));
+
+      await user.click(save);
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+      // A new attempt is a new announcement node, not the first one kept.
+      await waitFor(() => expect(first).not.toBeInTheDocument());
+      expect(screen.getByRole('alert')).toHaveTextContent(M('state.unavailable.message'));
     });
 
     it('draws a settings read that did not answer as the shared state, and retries it', async () => {
