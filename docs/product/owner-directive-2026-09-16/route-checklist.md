@@ -3651,6 +3651,12 @@ Known limitations, one line each:
 - A disabled "Show movements" cannot take focus; the reason is the status notice beside it.
 - `DateField` (calendar days) with an unrecognised working zone now draws on the browser's
   calendar rather than on the unknown name; a day names no instant, so nothing is sent differently.
+- Outside inventory, the same `workingZone` refusal reaches two screens, and both are now pinned by
+  DOM cases in en and ar (`P1-32-PRE-OD-INVR`): `/appointments/new` refuses the requested window
+  on an unrecognised zone name exactly as on a missing one — the "time zone not known" sentence, no
+  picker, "Book" unavailable (`appointments-booking.dom`); the check-in start screen labels a
+  confirmed appointment's time as the browser writes it, never on the unknown name, and still offers
+  the row to choose (`reception-checkin.dom`).
 - Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in
   hosted CI. No web test file was added or removed.
 
@@ -3777,6 +3783,8 @@ Known limitations of this slice, one line each:
   `EntityPicker` (the same `listItems` read of 25 active items as before).
 - The adjustment decision is an inline panel, not a dialog, as before; opening it does not move the
   cursor into it.
+- (Closed by `P1-32-PRE-OD-INVR`: a count date or a day received typed whole but impossible is
+  refused as an impossible date, and a receipt with no reference says so in the page's direction.)
 - A refused form does not move the cursor to its first refused field (as before;
   `useFocusFirstInvalid` is not wired on these forms).
 - No browser spec covers these three routes, so none was changed; the Playwright tiers run only in
@@ -3851,8 +3859,9 @@ Known limitations of this slice, one line each:
 - `ItemFinder`, `BranchListView` and `LocationPicker` are drawn as the shared pieces draw them at
   this head (the older drawing until INV1b lands); this screen moves with them without an edit,
   except the `locale` INV1b hands `BranchListView`, which whichever change lands second carries.
-- A row action opens its form inline below the lists, as before; it is not a dialog, so focus is
-  not moved into the form or returned to the row when it closes.
+- A row action opens its form inline below the lists, as before; it is not a dialog. (Focus closed
+  by `P1-32-PRE-OD-INVR`: opening moves the cursor onto the form's heading, and closing gives it
+  back to the row action, or to its list's heading where that action is gone.)
 - The aged-in-transit alert is not drawn on this screen (it was not before); it is read by the
   attention board (`/attention`).
 - Names instead of identifiers, no backend read added: a transfer names its item by stock code and
@@ -4446,6 +4455,87 @@ Known limitations and recorded gaps:
    six screens was made here.
 6. The recovery-token lifecycle itself (how long a link lives, AUTH01) is an open Owner decision and
    is unchanged.
+
+### Review follow-ups on the inventory slices (`P1-32-PRE-OD-INVR`)
+
+Closes the review minors left on the merged inventory slices (INV1C, INV2A, INV3, INV4, INV6). One
+backend read changed (`inv.item-detail`'s category walk); no route, operation, permission code,
+contract, branch scope or migration changed.
+
+- **Setup: what a save keeps is not unsaved work (INV2A).** The item form keeps the chosen category
+  and unit after a successful create, and the reorder-level form keeps the chosen item after a
+  successful set, as defaults for the next entry. Their unsaved guards counted those kept choices,
+  so every branch switch after a save asked a question. Each guard now compares the choice with
+  what was last saved: only a different category, unit or item, or what success clears (stock code,
+  name and description; the two quantities) is work. A confirmed discard forgets the kept values.
+- **The item's category path walks through a soft-deleted ancestor (INV2A).** The recursive walk
+  in `readItemDetail` stopped at an ancestor whose `deleted_at` is set, which answered a shorter path
+  that read as complete. The parent link still stands (the cycle guard follows it the same way), so
+  ancestors are now followed whether or not they are soft-deleted; the item's own category is still
+  read only while live.
+- **An impossible date is refused as one (INV3).** On `/inventory/opening-stock` and
+  `/inventory/goods-receipts`, a count date or a day received typed whole but impossible (31/02,
+  the picker's `invalidDate`) holds no day, and was refused as missing. It is now refused with its
+  own sentence (`inventory.opening.batch.dateInvalid`, en and ar), never as required or as
+  unfinished, and it counts as unsaved work.
+- **No reference is said in the page's direction (INV3).** The receipts list wrote "No reference"
+  inside the left-to-right span meant for a reference code; the sentence is now outside it.
+- **Transfers: focus follows the inline form (INV4).** Receive, settle, cancel and decide open
+  their forms inline. Opening now moves the cursor onto the form's heading; closing gives it back to
+  the row action that opened it or, where that action is gone after the write, to its list's
+  heading.
+- **Second-press cases test the ref guard (INV3, INV6).** New cases for opening a batch, adding an
+  opening line, posting a receipt and requesting an adjustment, and the existing counter-sale
+  (draft, issue, void) and customer-return cases, now press twice inside ONE `act()`, so the second
+  press arrives before the button re-renders disabled and the screen's own `sending` hold is what is
+  tested.
+- **An unrecognised working zone outside inventory (INV1C).** The behaviour INV1C introduced on
+  `/appointments/new` and the check-in start screen is pinned by DOM cases and recorded in the INV1C
+  notes above.
+
+Messages added (en and ar): `inventory.opening.batch.dateInvalid`, plain language.
+
+Added cases: `inventory-setup.dom` — after a successful item create the category and unit stay and
+a branch switch asks nothing; after a successful reorder level the item stays and a switch asks
+nothing; another item chosen after it asks again. `inventory-opening-stock.dom` — an impossible
+count date refused as one, en and ar; one batch and one line per double press.
+`inventory-goods-receipts.dom` — an impossible day received refused as one, en and ar; "No
+reference" in the page's direction, en and ar; one posting per double press.
+`inventory-adjustments.dom` — one request per double press. `inventory-transfers.dom` — receive,
+settle and cancel: the cursor moves into the form and back to the row action, en and ar; a
+write-off decision the same, en and ar; after a cancellation the cursor lands on the list heading,
+en and ar. `appointments-booking.dom` — the window refused on `Mars/Base`, en and ar.
+`reception-checkin.dom` — the appointment time labelled without the unknown zone, en and ar.
+`tests/backend/od-inventory-item-detail.test.ts` — a three-step path through a soft-deleted middle
+category.
+
+Changed cases: the counter-sale draft, issue and void cases and the customer-return case replace two
+separate `fireEvent.click` calls with two clicks inside one `act()`; every assertion is kept.
+
+Counterfactual runs (local, not committed): with each screen's `sending` hold disabled, the
+batch, line, posting, adjustment-request, counter-sale (four) and customer-return (two) double-press
+cases fail; with the previous `OpeningStockScreen`, `GoodsReceiptsScreen`, `TransfersScreen` and
+`SetupScreen`, the impossible-date, direction, focus and kept-choice cases fail; with the previous
+`readItemDetail`, the soft-deleted-ancestor backend case fails.
+
+Run locally (targeted): the ten web test files above; `typecheck:web`, `lint:web`,
+`format:check:web`, `style:check:web`, `typecheck:api`, `lint:api`, `format:check:api`; the
+module-boundary, API backend-only, web-boundary, web-topology, plain-language, encoding,
+generated-artifact and operation-coverage validators; the backend file on a disposable PostgreSQL
+with every migration and seed applied; `verify:repository`, whose unit tier timed out in three
+unrelated gate files under machine load, which then passed when re-run alone, with
+`security:all` run after them. Not run locally: the full web and backend tiers, the browser tiers
+and the builds; they run in hosted CI. No test file was added or removed.
+
+Preserved: the choices kept after a save, the guard on anything typed or chosen anew, the
+unfinished-date refusal, every request body, every refusal sentence, en and ar, right to left.
+
+Known limitations, one line each:
+
+- The item's OWN category, when soft-deleted, still answers an empty path (unchanged; only
+  ancestors were in scope).
+- A transfer's dispatch form and the inventory forms outside INV4 were not touched for focus.
+- No browser spec covers these routes; the Playwright tiers run only in hosted CI.
 
 ### Finance controls that need no business decision (P1-32-PRE-OD-FIN)
 

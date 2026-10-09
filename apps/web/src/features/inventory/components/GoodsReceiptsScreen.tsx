@@ -258,9 +258,13 @@ function BranchReceipts({
                   {items.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell>
-                        <span dir="ltr">
-                          {row.reference ?? translate(messages, 'inventory.receipts.noReference')}
-                        </span>
+                        {/* The reference is a code, held left to right; the sentence
+                            said in its absence is the page's language, so it is not. */}
+                        {row.reference === null ? (
+                          translate(messages, 'inventory.receipts.noReference')
+                        ) : (
+                          <span dir="ltr">{row.reference}</span>
+                        )}
                       </TableCell>
                       <TableCell>{row.supplierReference ?? ''}</TableCell>
                       <TableCell>
@@ -535,11 +539,13 @@ function ReceiptForm({
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
   /*
-   * A day received only partly typed holds no day — its value stays `''`, as for
-   * a field nobody touched — so the picker's own report is kept: it is refused
-   * as a date, not as a missing one, and it is unsaved work.
+   * A day received only partly typed, or typed whole but impossible (31/02),
+   * holds no day — its value stays `''`, as for a field nobody touched — so
+   * the picker's own report is kept: it is refused as an unfinished or an
+   * impossible date, never as a missing one, and it is unsaved work
+   * (P1-32-PRE-OD-INVR).
    */
-  const [dayUnfinished, setDayUnfinished] = useState(false);
+  const [dayProblem, setDayProblem] = useState<DayProblem>(null);
   // One receipt sent at a time, before `busy` has disabled the button.
   const sending = useRef(false);
 
@@ -552,7 +558,7 @@ function ReceiptForm({
    * dirty after every save asks about every switch.
    */
   useUnsavedGuard(
-    dayUnfinished ||
+    dayProblem !== null ||
       lines.length > 0 ||
       item !== null ||
       line.quantity.trim().length > 0 ||
@@ -601,9 +607,10 @@ function ReceiptForm({
   const submit = async () => {
     const found: Record<string, string> = {};
     const receivedOn = header.receivedOn.trim();
-    if (dayUnfinished || (receivedOn.length > 0 && !ISO_DATE.test(receivedOn))) {
+    if (dayProblem === 'incomplete' || (receivedOn.length > 0 && !ISO_DATE.test(receivedOn))) {
       found['receivedOn'] = 'inventory.opening.batch.dateFormat';
-    } else if (receivedOn.length === 0) found['receivedOn'] = 'field.required';
+    } else if (dayProblem !== null) found['receivedOn'] = 'inventory.opening.batch.dateInvalid';
+    else if (receivedOn.length === 0) found['receivedOn'] = 'field.required';
     const reference = header.reference.trim();
     if (reference.length > 0 && !LOCATION_CODE.test(reference)) {
       found['reference'] = 'inventory.receipts.referenceFormat';
@@ -676,7 +683,7 @@ function ReceiptForm({
           required
           value={header.receivedOn}
           onChange={(next) => setHeader((h) => ({ ...h, receivedOn: next }))}
-          onProblem={(problem: DayProblem) => setDayUnfinished(problem === 'incomplete')}
+          onProblem={setDayProblem}
           error={errorFor('receivedOn')}
         />
         <FormTextField

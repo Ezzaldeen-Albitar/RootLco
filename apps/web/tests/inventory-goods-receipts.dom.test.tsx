@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
@@ -418,6 +418,70 @@ describe('recording a receipt', () => {
       expect(createGoodsReceipt).not.toHaveBeenCalled();
     });
 
+    /*
+     * P1-32-PRE-OD-INVR — a day typed whole but impossible (31/02) holds no day
+     * either; it is refused as the impossible date it is, not as a missing one
+     * and not as unfinished.
+     */
+    it(`refuses an impossible day received as one, not as missing, and sends nothing (${locale})`, async () => {
+      const catalogue = locale === 'ar' ? AR : EN;
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      const user = userEvent.setup();
+      if (locale === 'ar') {
+        renderRtl(
+          <GoodsReceiptsScreen locale="ar" messages={ar} canOperate={true} canViewCost={false} />
+        );
+      } else {
+        renderScreen();
+      }
+      await screen.findByRole('region', { name: catalogue[TARGET_FORM] as string });
+      const form = screen.getByRole('form', {
+        name: catalogue['inventory.receipts.create.heading'] as string,
+      });
+      const supplier = within(form).getByLabelText(named('inventory.receipts.create.supplier'));
+      await user.type(supplier, 'Supplier note 7');
+      // Every part typed: the thirty-first of February.
+      const day = await typeDay(
+        user,
+        form,
+        named('inventory.receipts.create.receivedOn'),
+        '31022026'
+      );
+      await user.click(
+        within(form).getByRole('button', {
+          name: catalogue['inventory.receipts.create.submit'] as string,
+        })
+      );
+      await waitFor(() => expect(day).toHaveAttribute('aria-invalid', 'true'));
+      expect(day).toHaveAccessibleDescription(
+        new RegExp(escape(catalogue['inventory.opening.batch.dateInvalid'] as string))
+      );
+      expect(day).not.toHaveAccessibleDescription(
+        new RegExp(escape(catalogue['field.required'] as string))
+      );
+      expect(supplier).toHaveValue('Supplier note 7');
+      expect(createGoodsReceipt).not.toHaveBeenCalled();
+    });
+
+    it(`says a receipt with no reference in the page's own direction, not forced left to right (${locale})`, async () => {
+      const catalogue = locale === 'ar' ? AR : EN;
+      listGoodsReceipts.mockResolvedValue(okPage([receipt({ reference: null })]));
+      if (locale === 'ar') {
+        renderRtl(
+          <GoodsReceiptsScreen locale="ar" messages={ar} canOperate={true} canViewCost={false} />
+        );
+      } else {
+        renderScreen();
+      }
+      const sentence = await screen.findByText(
+        catalogue['inventory.receipts.noReference'] as string
+      );
+      // The nearest direction it is written in is the page's own, not a code's.
+      const table = sentence.closest('table') as HTMLElement;
+      expect(sentence.closest('[dir]')).toBe(table.closest('[dir]'));
+      expect(sentence.closest('[dir]')?.getAttribute('dir')).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+    });
+
     it(`a refused quantity is marked on its own field and kept (${locale})`, async () => {
       const catalogue = locale === 'ar' ? AR : EN;
       const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
@@ -566,6 +630,42 @@ describe('a half-written receipt and a branch switch', () => {
 });
 
 describe('posting a receipt', () => {
+  /*
+   * P1-32-PRE-OD-INVR — both presses inside ONE act(), so the second arrives
+   * before React has re-rendered the disabled button: what is tested is the
+   * panel's own hold on the posting (`sending`), not the disabled button.
+   */
+  it('two presses inside one act post the receipt once', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    postGoodsReceipt.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    const panel = await openReceipt(user);
+    const post = within(panel).getByRole('button', {
+      name: EN['inventory.receipts.post.action'] as string,
+    });
+    act(() => {
+      post.click();
+      post.click();
+    });
+    expect(postGoodsReceipt).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      answer(
+        succeeded(
+          'inventory.receipts.post.success',
+          detail({ status: 'posted', postedAt: '2026-09-17T10:00:00Z', recordVersion: 5 })
+        )
+      )
+    );
+    expect(await screen.findByText(EN['inventory.receipts.post.posted'] as string)).toBeVisible();
+    expect(postGoodsReceipt).toHaveBeenCalledTimes(1);
+  });
+
   it('sends the version the read answered and shows the posted receipt', async () => {
     const user = userEvent.setup();
     postGoodsReceipt.mockResolvedValue(
