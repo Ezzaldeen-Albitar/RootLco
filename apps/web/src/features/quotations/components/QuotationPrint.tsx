@@ -353,6 +353,71 @@ export function QuotationDocument({
     <Money key="l" amount={line.lineTotal} currency={line.currency} locale={locale} />,
   ]);
 
+  /*
+   * The totals close the lines table, so they print on the page of the last line
+   * and never on a page of their own (P1-32-PRE-OD-FRXR; `PrintTable`'s `tail`).
+   */
+  const totals = (
+    <section className="mt-6 break-inside-avoid" data-testid="quotation-print-totals">
+      <h2 className="text-body font-semibold">
+        {translate(messages, 'quotations.print.totalsHeading')}
+      </h2>
+      {revision.status === 'draft' ? (
+        <p className="text-supporting text-text-muted">
+          {translate(messages, 'quotations.totals.draftNote')}
+        </p>
+      ) : (
+        <dl className="mt-2 grid max-w-sm grid-cols-2 gap-1">
+          <dt>{translate(messages, 'quotations.totals.subtotal')}</dt>
+          <dd className="text-end">
+            <Money amount={revision.subtotal} currency={revision.currency} locale={locale} />
+          </dd>
+          <dt>{translate(messages, 'quotations.totals.discount')}</dt>
+          <dd className="text-end">
+            <Money amount={revision.discountTotal} currency={revision.currency} locale={locale} />
+          </dd>
+          <dt>{translate(messages, 'quotations.totals.tax')}</dt>
+          <dd className="text-end">
+            <Money amount={revision.taxTotal} currency={revision.currency} locale={locale} />
+          </dd>
+          <dt className="font-semibold">{translate(messages, 'quotations.totals.grand')}</dt>
+          <dd className="text-end font-semibold">
+            <Money amount={revision.grandTotal} currency={revision.currency} locale={locale} />
+          </dd>
+        </dl>
+      )}
+    </section>
+  );
+
+  /*
+   * The decision is the last block, and the closing note prints with it
+   * (P1-32-PRE-OD-FRXR; `PrintDocument`'s `closing`): the note used to print alone
+   * on the copy's last page, beside nothing but the identity row.
+   */
+  const decision = (
+    <section className="mt-6 break-inside-avoid" data-testid="quotation-print-decision">
+      <h2 className="text-body font-semibold">
+        {translate(messages, 'quotations.print.decisionHeading')}
+      </h2>
+      <p className="mt-1">
+        {decisions.outcome
+          ? translateDynamic(messages, `quotations.outcome.${decisions.outcome}`)
+          : translate(messages, 'quotations.outcome.pending')}
+      </p>
+      <AcceptanceOnPaper
+        locale={locale}
+        messages={messages}
+        decisions={decisions}
+        payerRef={quotation.payerPartnerRef}
+        payerName={
+          quotation.payerPartnerRef !== null && !payerElsewhere
+            ? (jobCustomer?.displayName ?? null)
+            : null
+        }
+      />
+    </section>
+  );
+
   return (
     <PrintDocument
       title={translate(messages, 'quotations.print.title')}
@@ -398,6 +463,7 @@ export function QuotationDocument({
         </dl>
       }
       footer={<p>{translate(messages, 'quotations.print.footer')}</p>}
+      closing={decision}
     >
       <dl className="grid gap-1 sm:grid-cols-2" data-testid="quotation-print-parties">
         <Pair label={translate(messages, 'quotations.print.workOrder')}>
@@ -432,47 +498,21 @@ export function QuotationDocument({
 
       <div className="mt-6">
         {revision.lines.length === 0 ? (
-          <p className="text-supporting text-text-muted">
-            {translate(messages, 'quotations.lines.none')}
-          </p>
+          <>
+            <p className="text-supporting text-text-muted">
+              {translate(messages, 'quotations.lines.none')}
+            </p>
+            {totals}
+          </>
         ) : (
           <PrintTable
             headers={headers}
             rows={rows}
             caption={translate(messages, 'quotations.print.linesCaption')}
+            tail={totals}
           />
         )}
       </div>
-
-      <section className="mt-6 break-inside-avoid" data-testid="quotation-print-totals">
-        <h2 className="text-body font-semibold">
-          {translate(messages, 'quotations.print.totalsHeading')}
-        </h2>
-        {revision.status === 'draft' ? (
-          <p className="text-supporting text-text-muted">
-            {translate(messages, 'quotations.totals.draftNote')}
-          </p>
-        ) : (
-          <dl className="mt-2 grid max-w-sm grid-cols-2 gap-1">
-            <dt>{translate(messages, 'quotations.totals.subtotal')}</dt>
-            <dd className="text-end">
-              <Money amount={revision.subtotal} currency={revision.currency} locale={locale} />
-            </dd>
-            <dt>{translate(messages, 'quotations.totals.discount')}</dt>
-            <dd className="text-end">
-              <Money amount={revision.discountTotal} currency={revision.currency} locale={locale} />
-            </dd>
-            <dt>{translate(messages, 'quotations.totals.tax')}</dt>
-            <dd className="text-end">
-              <Money amount={revision.taxTotal} currency={revision.currency} locale={locale} />
-            </dd>
-            <dt className="font-semibold">{translate(messages, 'quotations.totals.grand')}</dt>
-            <dd className="text-end font-semibold">
-              <Money amount={revision.grandTotal} currency={revision.currency} locale={locale} />
-            </dd>
-          </dl>
-        )}
-      </section>
 
       {revision.discountApproval !== null ? (
         <section className="mt-6 break-inside-avoid" data-testid="quotation-print-discount">
@@ -503,28 +543,6 @@ export function QuotationDocument({
           </dl>
         </section>
       ) : null}
-
-      <section className="mt-6 break-inside-avoid" data-testid="quotation-print-decision">
-        <h2 className="text-body font-semibold">
-          {translate(messages, 'quotations.print.decisionHeading')}
-        </h2>
-        <p className="mt-1">
-          {decisions.outcome
-            ? translateDynamic(messages, `quotations.outcome.${decisions.outcome}`)
-            : translate(messages, 'quotations.outcome.pending')}
-        </p>
-        <AcceptanceOnPaper
-          locale={locale}
-          messages={messages}
-          decisions={decisions}
-          payerRef={quotation.payerPartnerRef}
-          payerName={
-            quotation.payerPartnerRef !== null && !payerElsewhere
-              ? (jobCustomer?.displayName ?? null)
-              : null
-          }
-        />
-      </section>
     </PrintDocument>
   );
 }

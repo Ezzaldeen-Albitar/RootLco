@@ -27,13 +27,29 @@
  * anybody else. A principal holding no role at all is answered with its own
  * facts and an empty permission list. Other people's names stay behind
  * `iam.user-detail`, which keeps `iam.user.read`.
+ *
+ * ## No query parameter is accepted (P1-32-PRE-OD-FRXR)
+ *
+ * The read names no target, so it takes no parameter at all. It used to ignore
+ * whatever query string arrived, which let `?userId=`, `?companyId=` or
+ * `?branchId=` look as though another user, company or branch could be
+ * substituted even though the answer stayed the caller's own. An empty
+ * `.strict()` schema now refuses any parameter with the standard validation
+ * error before anything is read, so no request can appear to ask about somebody
+ * else and no answer is given to one that tries.
  */
+import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
+import { AppFailure } from '@/server/errors/app-failure';
 import { handleOperation } from '@/server/http/route-handler';
+import { parseOrFail, searchParamsToObject } from '@/server/http/validation';
 import { iamModule } from '@/modules/iam';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/** Deliberately empty and `.strict()`: any parameter is refused, never ignored. */
+const Query = z.object({}).strict();
 
 export const SESSION_OPERATION = defineOperation({
   id: 'iam.auth-session',
@@ -52,7 +68,18 @@ export const SESSION_OPERATION = defineOperation({
 });
 
 export async function GET(request: Request): Promise<Response> {
-  return handleOperation(SESSION_OPERATION, request, async ({ db }) => ({
-    body: await iamModule().authentication.describeSession(db),
-  }));
+  return handleOperation(SESSION_OPERATION, request, async ({ db, request: raw }) => {
+    const params = new URL(raw.url).searchParams;
+    parseOrFail(Query, searchParamsToObject(params), 'query');
+    // `searchParamsToObject` omits a `__proto__` key by design, so the schema
+    // never sees one and `?__proto__=x` would otherwise answer 200. The raw
+    // query is the authority: any key at all is refused the same way.
+    if ([...params.keys()].length > 0) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'Validation failed for query',
+        safeDetails: { violations: [{ path: 'query', rule: 'unrecognized_keys' }] },
+      });
+    }
+    return { body: await iamModule().authentication.describeSession(db) };
+  });
 }
