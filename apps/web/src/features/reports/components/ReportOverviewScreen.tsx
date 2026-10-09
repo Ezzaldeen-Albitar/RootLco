@@ -2,7 +2,13 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { EmptyState } from '@/components/states/States';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import { MuiEmptyState } from '@/components/states/MuiStates';
 import {
   useWorkingContext,
   useWorkingContextChange,
@@ -11,6 +17,8 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
+import { zoneDisplayName } from '@/lib/branch-time';
+import { intlLocale } from '@/lib/format';
 import { runReport } from '../reports-api';
 import { fieldHeading, formatReportTime, groupDisplayLabel, runTitle } from '../report-labels';
 import {
@@ -29,14 +37,7 @@ import {
   type ReportScopeOptions,
   type ReportScopeSelection,
 } from '../reports-contract';
-import {
-  ContextFact,
-  MachineName,
-  REPORT_TABLE_CELL,
-  REPORT_TABLE_HEADER,
-  ReportFailure,
-  ReportLoading,
-} from './ReportShell';
+import { ContextFact, MachineName, ReportFailure, ReportLoading } from './ReportShell';
 import { ReportScopeForm } from './ReportScopeForm';
 import { useWorkingReportScope } from './use-working-report-scope';
 
@@ -95,6 +96,16 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * is resolved against the caller's own authorized directory; one that is not there
  * renders the no-branch body rather than a guess, and there is no default branch
  * anywhere in this feature.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-REPA`)
+ *
+ * The scope form is the shared one (`ReportScopeForm`: `FormSelectField` and the
+ * `DateField` pickers on the branch's clock), the states are the Material ones,
+ * and each section's summary is the Material table: one bounded answer per
+ * report with no cursor, so nothing is paged and nothing more exists than what
+ * is drawn (the planner ruling of 2026-10-09). The banner names the period's zone
+ * in words with its offset, as the report screen does, and writes the two days
+ * for reading on that clock.
  */
 export function ReportOverviewScreen({
   locale,
@@ -175,6 +186,7 @@ export function ReportOverviewScreen({
     return (
       <ReportFailure
         messages={messages}
+        locale={locale}
         status={scopeOptions.status}
         correlationId={scopeOptions.correlationId}
       />
@@ -187,6 +199,7 @@ export function ReportOverviewScreen({
     return (
       <ReportFailure
         messages={messages}
+        locale={locale}
         status={catalogue.status}
         correlationId={catalogue.correlationId}
       />
@@ -202,7 +215,7 @@ export function ReportOverviewScreen({
 
   if (companies.length === 0 || reachable.length === 0) {
     return (
-      <EmptyState
+      <MuiEmptyState
         messages={messages}
         titleKey="reports.run.noScopesTitle"
         descriptionKey="reports.run.noScopesBody"
@@ -216,7 +229,7 @@ export function ReportOverviewScreen({
     // exists elsewhere is not something this screen may disclose, and choosing a
     // different branch would answer a question nobody asked.
     return (
-      <EmptyState
+      <MuiEmptyState
         messages={messages}
         titleKey="reports.run.noScopesTitle"
         descriptionKey="reports.run.noScopesBody"
@@ -258,7 +271,7 @@ export function ReportOverviewScreen({
       />
 
       {submitted === null ? (
-        <EmptyState
+        <MuiEmptyState
           messages={messages}
           titleKey="reports.overview.idleTitle"
           descriptionKey="reports.overview.idleBody"
@@ -551,13 +564,19 @@ function OverviewResults({
         <>
           <dl className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3">
             <ContextFact label={translate(messages, 'reports.context.from')}>
-              <span dir="ltr">{context.period.from}</span>
+              <time dateTime={context.period.from} data-testid="overview-period-from">
+                {formatReportTime(context.period.from, locale, context.period.timezone)}
+              </time>
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.to')}>
-              <span dir="ltr">{context.period.to}</span>
+              <time dateTime={context.period.to} data-testid="overview-period-to">
+                {formatReportTime(context.period.to, locale, context.period.timezone)}
+              </time>
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.timezone')}>
-              <MachineName value={context.period.timezone} />
+              <bdi data-testid="overview-zone">
+                {zoneDisplayName(context.period.timezone, intlLocale(locale), context.generatedAt)}
+              </bdi>
             </ContextFact>
             <ContextFact label={translate(messages, 'reports.context.company')}>
               {companyName === null ? (
@@ -602,7 +621,7 @@ function OverviewResults({
       {OVERVIEW_SECTIONS.every(
         (section) => definitionFor(definitions, section.reportCode) === null
       ) ? (
-        <EmptyState
+        <MuiEmptyState
           messages={messages}
           titleKey="reports.overview.noReportsTitle"
           descriptionKey="reports.overview.noReportsBody"
@@ -742,6 +761,7 @@ function SectionBody({
     const failure = (
       <ReportFailure
         messages={messages}
+        locale={locale}
         status={outcome.status}
         correlationId={outcome.correlationId}
       />
@@ -846,34 +866,34 @@ function SummaryTable({
   const labelled = present.length === 1;
 
   return (
-    <div className="overflow-x-auto rounded-md border border-border-subtle">
-      <table className="w-full border-collapse">
+    <TableContainer className="rounded-md border border-border-subtle">
+      <Table size="small">
         <caption className="sr-only">{caption}</caption>
-        <thead className="bg-table-header">
-          <tr>
+        <TableHead>
+          <TableRow>
             {present.map((name) => {
               const heading = fieldHeading(messages, name);
               return (
-                <th key={name} scope="col" className={REPORT_TABLE_HEADER}>
+                <TableCell key={name} scope="col">
                   {heading === null ? <MachineName value={name} /> : heading}
-                </th>
+                </TableCell>
               );
             })}
             {measureNames.map((name) => {
               const heading = fieldHeading(messages, name);
               return (
-                <th key={name} scope="col" className={REPORT_TABLE_HEADER}>
+                <TableCell key={name} scope="col" align="right">
                   {heading === null ? <MachineName value={name} /> : heading}
-                </th>
+                </TableCell>
               );
             })}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHead>
+        <TableBody>
           {groups.map((group) => (
-            <tr key={JSON.stringify(group.key)} className="border-t border-border-subtle">
+            <TableRow key={JSON.stringify(group.key)} className="align-top">
               {present.map((name) => (
-                <td key={name} className={REPORT_TABLE_CELL}>
+                <TableCell key={name}>
                   <GroupKeyValue
                     locale={locale}
                     messages={messages}
@@ -881,12 +901,12 @@ function SummaryTable({
                     name={name}
                     labelled={labelled}
                   />
-                </td>
+                </TableCell>
               ))}
               {measureNames.map((name) => {
                 const measure = group.measures[name];
                 return (
-                  <td key={name} className={REPORT_TABLE_CELL}>
+                  <TableCell key={name} align="right">
                     {measure === undefined ? (
                       <span className="text-text-muted" lang={locale}>
                         {translate(messages, 'reports.groups.noMeasure')}
@@ -896,14 +916,14 @@ function SummaryTable({
                       // divides or turns seconds into hours.
                       <span dir="ltr">{measure}</span>
                     )}
-                  </td>
+                  </TableCell>
                 );
               })}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 

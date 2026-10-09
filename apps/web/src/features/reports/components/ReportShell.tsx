@@ -1,14 +1,8 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import {
-  BackendUnavailableState,
-  ErrorState,
-  LoadingState,
-  NotFoundState,
-  PermissionDeniedState,
-  SessionExpiredState,
-} from '@/components/states/States';
+import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
+import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import type { ReadFailureStatus } from '@/lib/api/read-operation';
 
@@ -25,6 +19,10 @@ import type { ReadFailureStatus } from '@/lib/api/read-operation';
  * This file lives in `features/reports` rather than being imported from another
  * feature, because a feature does not import another feature. The delivery
  * screens hold their own copy of the same idea for the same reason.
+ *
+ * Since `P1-32-PRE-OD-REPA` (ADR-022) the states are the Material UI ones
+ * (`MuiStates`), with the same catalogue entries: the same sentence for each
+ * outcome, now with a retry where retrying can change the answer.
  */
 
 /**
@@ -46,28 +44,35 @@ export function ReportFailure({
   messages,
   status,
   correlationId,
+  locale,
+  onRetry,
 }: {
   readonly messages: Messages;
   readonly status: ReadFailureStatus;
   readonly correlationId: string | null;
+  /** Only so an ended session can offer the way back to signing in. */
+  readonly locale?: Locale | undefined;
+  /**
+   * Read again. Offered by the outage and the fault only — a refusal, an ended
+   * session and an absent report are answered identically however often they
+   * are asked (`MuiReadFailureState`).
+   */
+  readonly onRetry?: (() => void) | undefined;
 }) {
-  // `null` becomes `undefined` because the shared states take an optional prop,
-  // and an explicit null would render a reference that is not there.
-  const reference = correlationId ?? undefined;
-  if (status === 'denied') {
-    return <PermissionDeniedState messages={messages} correlationId={reference} />;
-  }
-  if (status === 'expired') return <SessionExpiredState messages={messages} />;
-  if (status === 'unavailable') {
-    return <BackendUnavailableState messages={messages} correlationId={reference} />;
-  }
-  if (status === 'not-found') return <NotFoundState messages={messages} />;
-  return <ErrorState messages={messages} correlationId={reference} />;
+  return (
+    <MuiReadFailureState
+      messages={messages}
+      locale={locale}
+      status={status}
+      correlationId={correlationId}
+      onRetry={onRetry}
+    />
+  );
 }
 
 /** The shared loading placeholder, so one screen cannot invent a second. */
 export function ReportLoading({ messages }: { readonly messages: Messages }) {
-  return <LoadingState messages={messages} />;
+  return <MuiLoadingState messages={messages} />;
 }
 
 /**

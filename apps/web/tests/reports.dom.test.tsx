@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -49,6 +49,36 @@ const AR = ar as Record<string, string>;
  */
 const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
+
+/*
+ * The two days are the MIT date pickers since P1-32-PRE-OD-REPA (ADR-022): a
+ * group of spin buttons named by the label, typed part by part in the order both
+ * catalogues write a day (day, month, year), and holding a `YYYY-MM-DD` day.
+ */
+const dayGroup = (key: string, locale = 'en') =>
+  screen.getByRole('group', {
+    name: new RegExp(`^${escape((locale === 'ar' ? AR : EN)[key] as string)}`),
+  });
+async function typeDay(
+  user: ReturnType<typeof userEvent.setup>,
+  key: string,
+  day: string,
+  locale = 'en'
+): Promise<HTMLElement> {
+  const [year, month, date] = day.split('-');
+  const group = dayGroup(key, locale);
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(`${date ?? ''}${month ?? ''}${year ?? ''}`);
+  return group;
+}
+/** The day a picker holds, as it writes it into its own value input: `DD/MM/YYYY`. */
+function dayShown(key: string): string {
+  const input = dayGroup(key).parentElement?.querySelector('input');
+  if (!input) throw new Error('the picker has no value input');
+  return input.value;
+}
+/** `YYYY-MM-DD` as the English picker writes it. */
+const written = (day: string) => day.split('-').reverse().join('/');
 
 const listReportCatalogue = vi.fn();
 const readReport = vi.fn();
@@ -209,7 +239,7 @@ const runOk = (data: unknown) => ({ status: 'ok' as const, data, correlationId: 
  * one. Naming the region is what makes each case say which half it means.
  */
 const rowsTable = (locale = 'en') =>
-  screen.getByRole('table', {
+  screen.getByRole('grid', {
     name: (locale === 'ar' ? AR : EN)['reports.run.rowsCaption'] as string,
   });
 const totalsTable = (locale = 'en') =>
@@ -261,19 +291,24 @@ async function renderReportPage(
     params: Promise.resolve({ locale, reportCode: CODE }),
     searchParams: Promise.resolve(search),
   })) as React.ReactElement;
-  // The locale layout's Material provider, which the moment picker of the D16
-  // as-of choice needs; the other cases render without it, as they always have.
-  const ui = pickers ? (
+  // The locale layout's Material provider. The day pickers of the scope form
+  // need it since P1-32-PRE-OD-REPA, so every case renders inside it; `pickers`
+  // is kept so the D16 cases still say that the moment picker needs it too.
+  void pickers;
+  const ui = withPickers(page, locale);
+  return locale === 'ar' ? renderRtl(ui) : renderLtr(ui);
+}
+
+/** A screen inside the locale layout's Material provider, as the application renders it. */
+function withPickers(ui: React.ReactElement, locale = 'en') {
+  return (
     <UiFoundationProvider
       locale={locale === 'ar' ? 'ar' : 'en'}
       text={muiTextOf(getMessages(locale === 'ar' ? 'ar' : 'en'))}
     >
-      {page}
+      {ui}
     </UiFoundationProvider>
-  ) : (
-    page
   );
-  return locale === 'ar' ? renderRtl(ui) : renderLtr(ui);
 }
 
 /** Fills the form and runs the report, returning the rendered container. */
@@ -290,10 +325,8 @@ async function showReport(locale = 'en', pickers = false) {
     screen.getByRole('combobox', { name: label('reports.run.branch') }),
     BRANCH_ID
   );
-  const from = screen.getByLabelText(label('reports.run.from'));
-  const to = screen.getByLabelText(label('reports.run.to'));
-  await user.type(from, '2026-09-01');
-  await user.type(to, '2026-09-08');
+  await typeDay(user, 'reports.run.from', '2026-09-01', locale);
+  await typeDay(user, 'reports.run.to', '2026-09-08', locale);
   await user.click(screen.getByRole('button', { name: messages['reports.run.show'] as string }));
   await waitFor(() => expect(runReport).toHaveBeenCalled());
   return rendered;
@@ -337,11 +370,44 @@ describe('both report pages decide the permission before they read', () => {
 });
 
 describe('the catalogue renders what the operation returned, and decides nothing', () => {
-  it('names a platform baseline by its message and shows its code as a code', async () => {
+  it('names a platform baseline by its message alone, and never prints its code beside it', async () => {
+    // The code is a machine name: a report with a name is shown by that name only
+    // (route checklist, the catalogue row; P1-32-PRE-OD-REPA).
     await renderCataloguePage();
     const title = await screen.findByText(EN['reports.work_orders_by_status.title'] as string);
     expect(title).toBeVisible();
-    expect(screen.getAllByText(CODE).length).toBeGreaterThan(0);
+    expect(screen.queryByText(CODE)).toBeNull();
+    expect(screen.queryByText('branch_cash_position')).toBeNull();
+  });
+
+  it('shows the code, as a code, only for a report with no name to show', async () => {
+    listReportCatalogue.mockResolvedValue(
+      cataloguePage([{ ...BASELINE, titleKey: 'reports.unknown_dataset.title' }])
+    );
+    await renderCataloguePage();
+    const code = await screen.findByText(CODE);
+    expect(code.tagName).toBe('CODE');
+    expect(code.closest('a')).toHaveAttribute('href', `/en/reports/${CODE}`);
+  });
+
+  it('says a report\u2019s level in words, never as the code the server stores', async () => {
+    listReportCatalogue.mockResolvedValue(
+      cataloguePage([
+        BASELINE,
+        { ...UNRUNNABLE, scopeLevel: 'company' },
+        { ...UNRUNNABLE, reportCode: 'tenant_wide', name: 'Everything', scopeLevel: 'tenant' },
+      ])
+    );
+    await renderCataloguePage();
+    const grid = await screen.findByRole('grid', {
+      name: EN['reports.catalogue.caption'] as string,
+    });
+    expect(within(grid).getByText(EN['reports.catalogue.scope.branch'] as string)).toBeVisible();
+    expect(within(grid).getByText(EN['reports.catalogue.scope.company'] as string)).toBeVisible();
+    expect(within(grid).getByText(EN['reports.catalogue.scope.tenant'] as string)).toBeVisible();
+    for (const code of ['branch', 'company', 'tenant']) {
+      expect(within(grid).queryByText(code, { exact: true })).toBeNull();
+    }
   });
 
   it('shows a workshop’s own definition under the name that workshop gave it', async () => {
@@ -357,12 +423,12 @@ describe('the catalogue renders what the operation returned, and decides nothing
     // the presence of a code would offer a run whose only outcome is a refusal.
     const { container } = await renderCataloguePage();
     const row = (await within(container).findByText('Counter takings')).closest(
-      'tr'
+      '[role="row"]'
     ) as HTMLElement;
     expect(within(row).getByText(EN['reports.catalogue.runnable.no'] as string)).toBeVisible();
     const baselineRow = (
       await within(container).findByText(EN['reports.work_orders_by_status.title'] as string)
-    ).closest('tr') as HTMLElement;
+    ).closest('[role="row"]') as HTMLElement;
     expect(
       within(baselineRow).getByText(EN['reports.catalogue.runnable.yes'] as string)
     ).toBeVisible();
@@ -391,6 +457,7 @@ describe('the catalogue renders what the operation returned, and decides nothing
     renderLtr(<ReportCatalogueScreen locale="en" messages={en} />);
     expect(await screen.findByText(EN['reports.catalogue.noneTitle'] as string)).toBeVisible();
     expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByRole('grid')).toBeNull();
   });
 
   it.each([
@@ -404,19 +471,62 @@ describe('the catalogue renders what the operation returned, and decides nothing
     expect(screen.queryByText(EN['reports.catalogue.noneTitle'] as string)).toBeNull();
   });
 
+  it('offers a retry on an outage, and reads the same page again', async () => {
+    listReportCatalogue.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr-cat' });
+    renderLtr(<ReportCatalogueScreen locale="en" messages={en} />);
+    await userEvent
+      .setup()
+      .click(await screen.findByRole('button', { name: EN['state.retry'] as string }));
+    expect(
+      await screen.findByText(EN['reports.work_orders_by_status.title'] as string)
+    ).toBeVisible();
+    expect(listReportCatalogue).toHaveBeenCalledTimes(2);
+    expect(listReportCatalogue).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: null }));
+  });
+
+  it('offers no retry on a refusal, which would be refused the same way', async () => {
+    listReportCatalogue.mockResolvedValue({ status: 'denied', correlationId: 'corr-cat' });
+    renderLtr(<ReportCatalogueScreen locale="en" messages={en} />);
+    expect(await screen.findByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
   it('offers the next page only when the server said there is one', async () => {
     listReportCatalogue.mockResolvedValue(cataloguePage([BASELINE], true, 'next-cursor'));
     renderLtr(<ReportCatalogueScreen locale="en" messages={en} />);
-    const next = await screen.findByRole('button', { name: EN['reports.page.next'] as string });
-    expect(next).toBeEnabled();
-    expect(
-      screen.getByRole('button', { name: EN['reports.page.previous'] as string })
-    ).toBeDisabled();
+    const next = await screen.findByRole('button', { name: EN['table.nextPage'] as string });
+    await waitFor(() => expect(next).toBeEnabled());
+    expect(screen.getByRole('button', { name: EN['table.previousPage'] as string })).toBeDisabled();
+    // No total and no position in one: a page label, and nothing that counts.
+    expect(screen.getByTestId('report-catalogue-page')).toHaveTextContent(
+      (EN['mui.pagination.page'] as string).replace('{page}', '1')
+    );
     await userEvent.setup().click(next);
     await waitFor(() =>
       expect(listReportCatalogue).toHaveBeenLastCalledWith(
         expect.objectContaining({ cursor: 'next-cursor' })
       )
+    );
+  });
+
+  it('offers no next page when the server said the set ends here', async () => {
+    renderLtr(<ReportCatalogueScreen locale="en" messages={en} />);
+    await screen.findByText(EN['reports.work_orders_by_status.title'] as string);
+    expect(screen.getByRole('button', { name: EN['table.nextPage'] as string })).toBeDisabled();
+  });
+
+  it('asks for the page size the operator chooses, and starts from the first page', async () => {
+    renderLtr(<ReportCatalogueScreen locale="en" messages={en} />);
+    await screen.findByText(EN['reports.work_orders_by_status.title'] as string);
+    expect(listReportCatalogue).toHaveBeenLastCalledWith({ cursor: null, limit: 50 });
+    await userEvent
+      .setup()
+      .selectOptions(
+        screen.getByRole('combobox', { name: EN['table.rowsPerPage'] as string }),
+        '25'
+      );
+    await waitFor(() =>
+      expect(listReportCatalogue).toHaveBeenLastCalledWith({ cursor: null, limit: 25 })
     );
   });
 });
@@ -440,11 +550,73 @@ describe('the report screen requests nothing until it has a branch and a period'
       screen.getByRole('combobox', { name: labelled('reports.run.branch') }),
       BRANCH_ID
     );
-    await user.type(screen.getByLabelText(labelled('reports.run.from')), '2026-09-08');
-    await user.type(screen.getByLabelText(labelled('reports.run.to')), '2026-09-08');
+    await typeDay(user, 'reports.run.from', '2026-09-08');
+    await typeDay(user, 'reports.run.to', '2026-09-08');
     await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
     expect(await screen.findByText(EN['reports.run.toAfterFrom'] as string)).toBeVisible();
     expect(runReport).not.toHaveBeenCalled();
+  });
+
+  it('refuses a day only partly typed as unfinished, never as missing, and sends nothing', async () => {
+    await renderReportPage();
+    const user = userEvent.setup();
+    // The day and the month, and not the year.
+    const from = dayGroup('reports.run.from');
+    await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('0109');
+    await typeDay(user, 'reports.run.to', '2026-09-08');
+    await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
+    await waitFor(() => expect(from).toHaveAttribute('aria-invalid', 'true'));
+    expect(from).toHaveAccessibleDescription(
+      new RegExp(escape(EN['reports.run.dayIncomplete'] as string))
+    );
+    expect(screen.queryByText(EN['reports.run.needDay'] as string)).toBeNull();
+    await waitFor(() => expect(from.contains(document.activeElement)).toBe(true));
+    expect(runReport).not.toHaveBeenCalled();
+  });
+
+  it('submits on Enter in a day, as the native box did', async () => {
+    await renderReportPage();
+    const user = userEvent.setup();
+    await typeDay(user, 'reports.run.from', '2026-09-01');
+    await typeDay(user, 'reports.run.to', '2026-09-08');
+    await user.keyboard('{Enter}');
+    await waitFor(() =>
+      expect(runReport).toHaveBeenCalledWith(
+        expect.objectContaining({ from: '2026-09-01', to: '2026-09-08', cursor: null })
+      )
+    );
+  });
+
+  it('runs once for two presses of the button, the second while the first read is open', async () => {
+    // The first read is held open, so the second press lands on a screen that
+    // has already rendered it as being read, not inside the same batch.
+    let answer: (outcome: unknown) => void = () => undefined;
+    runReport.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
+    await renderReportPage();
+    const user = userEvent.setup();
+    await typeDay(user, 'reports.run.from', '2026-09-01');
+    await typeDay(user, 'reports.run.to', '2026-09-08');
+    const show = screen.getByRole('button', { name: EN['reports.run.show'] as string });
+    await user.click(show);
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('state-loading')).toBeInTheDocument();
+    await user.click(show);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(runReport).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      answer(runOk(OLD_ENVELOPE));
+      await Promise.resolve();
+    });
+    await screen.findByRole('grid', { name: EN['reports.run.rowsCaption'] as string });
+    expect(runReport).toHaveBeenCalledTimes(1);
   });
 
   it('moves the cursor to the first control to correct, and withdraws its complaint once it changes (route sweep B3)', async () => {
@@ -452,15 +624,12 @@ describe('the report screen requests nothing until it has a branch and a period'
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: EN['reports.run.show'] as string }));
     // One company and one branch are filled in for this caller; the first gap is the start day.
-    const from = screen.getByLabelText(labelled('reports.run.from'));
-    await waitFor(() => expect(from).toHaveFocus());
+    const from = dayGroup('reports.run.from');
+    await waitFor(() => expect(from.contains(document.activeElement)).toBe(true));
     expect(from).toHaveAttribute('aria-invalid', 'true');
-    await user.type(from, '2026-09-01');
-    expect(from).not.toHaveAttribute('aria-invalid', 'true');
-    expect(screen.getByLabelText(labelled('reports.run.to'))).toHaveAttribute(
-      'aria-invalid',
-      'true'
-    );
+    await typeDay(user, 'reports.run.from', '2026-09-01');
+    await waitFor(() => expect(from).not.toHaveAttribute('aria-invalid', 'true'));
+    expect(dayGroup('reports.run.to')).toHaveAttribute('aria-invalid', 'true');
     expect(runReport).not.toHaveBeenCalled();
   });
 
@@ -550,20 +719,22 @@ describe('the working branch and today answer on arrival (route sweep B3)', () =
     scopes: typeof SCOPES = SCOPES
   ) {
     return renderLtr(
-      inBranch(
-        <>
-          <BranchSwitch to={TEST_BRANCH.id} label="first" />
-          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
-          <BranchSwitch to="all" label="everywhere" />
-          <ReportScreen
-            locale="en"
-            messages={en}
-            definition={BASELINE as never}
-            scopeOptions={scopes as never}
-            named={named}
-          />
-        </>,
-        { snapshot }
+      withPickers(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <BranchSwitch to="all" label="everywhere" />
+            <ReportScreen
+              locale="en"
+              messages={en}
+              definition={BASELINE as never}
+              scopeOptions={scopes as never}
+              named={named}
+            />
+          </>,
+          { snapshot }
+        )
       )
     );
   }
@@ -585,8 +756,8 @@ describe('the working branch and today answer on arrival (route sweep B3)', () =
       (screen.getByRole('combobox', { name: labelled('reports.run.branch') }) as HTMLSelectElement)
         .value
     ).toBe(BRANCH_ID);
-    expect(screen.getByLabelText(labelled('reports.run.from'))).toHaveValue(today);
-    expect(screen.getByLabelText(labelled('reports.run.to'))).toHaveValue(tomorrow);
+    expect(dayShown('reports.run.from')).toBe(written(today));
+    expect(dayShown('reports.run.to')).toBe(written(tomorrow));
     expect(screen.queryByText(EN['reports.run.idleTitle'] as string)).toBeNull();
   });
 
@@ -626,7 +797,7 @@ describe('the working branch and today answer on arrival (route sweep B3)', () =
       to: '2026-09-08',
     });
     expect(await screen.findByText(EN['reports.run.idleTitle'] as string)).toBeVisible();
-    expect(screen.getByLabelText(labelled('reports.run.from'))).toHaveValue('2026-09-01');
+    expect(dayShown('reports.run.from')).toBe('01/09/2026');
     expect(runReport).not.toHaveBeenCalled();
   });
 });
@@ -649,8 +820,8 @@ describe('the address may fill the form in, and may not run it', () => {
       (screen.getByRole('combobox', { name: labelled('reports.run.branch') }) as HTMLSelectElement)
         .value
     ).toBe(BRANCH_ID);
-    expect(screen.getByLabelText(labelled('reports.run.from'))).toHaveValue('2026-09-01');
-    expect(screen.getByLabelText(labelled('reports.run.to'))).toHaveValue('2026-09-08');
+    expect(dayShown('reports.run.from')).toBe('01/09/2026');
+    expect(dayShown('reports.run.to')).toBe('08/09/2026');
     // Filled in is not submitted. Nothing is read until the operator asks.
     expect(runReport).not.toHaveBeenCalled();
     expect(screen.getByText(EN['reports.run.idleTitle'] as string)).toBeVisible();
@@ -670,8 +841,8 @@ describe('the address may fill the form in, and may not run it', () => {
 
   it('refuses a period in the address that is not a calendar day', async () => {
     await renderReportPage('en', { from: 'yesterday', to: '2026-9-1' });
-    expect(screen.getByLabelText(labelled('reports.run.from'))).toHaveValue('');
-    expect(screen.getByLabelText(labelled('reports.run.to'))).toHaveValue('');
+    expect(dayShown('reports.run.from')).toBe('');
+    expect(dayShown('reports.run.to')).toBe('');
   });
 });
 
@@ -1061,8 +1232,15 @@ describe('the result is rendered from the envelope, column kind by column kind',
 describe('the period, the zone and the filter context travel with the result', () => {
   it('shows the period and the zone the server resolved it in', async () => {
     const { container } = await showReport();
-    expect(await within(container).findByText('2026-09-01')).toBeVisible();
-    expect(within(container).getByText('2026-09-08')).toBeVisible();
+    // Written for reading on the branch's clock, with the day itself kept as the
+    // machine value (completion standard: branch-local dates for display).
+    const from = await within(container).findByTestId('report-period-from');
+    expect(from).toHaveTextContent(formatReportTime('2026-09-01', 'en', 'Asia/Amman'));
+    expect(from).toHaveAttribute('dateTime', '2026-09-01');
+    const to = within(container).getByTestId('report-period-to');
+    expect(to).toHaveTextContent(formatReportTime('2026-09-08', 'en', 'Asia/Amman'));
+    expect(to).toHaveAttribute('dateTime', '2026-09-08');
+    expect(within(container).queryByText('2026-09-01')).toBeNull();
     // Named for a reader, with its offset — never the stored identifier (DF-B5).
     expect(within(container).getByTestId('report-zone')).toHaveTextContent('Jordan Time (GMT+3)');
     expect(within(container).queryByText('Asia/Amman')).toBeNull();
@@ -1197,7 +1375,10 @@ describe('the screens read in Arabic as Arabic', () => {
 
   it('keeps the same screen for both languages rather than a second Arabic one', () => {
     renderRtl(
-      <ReportScreen locale="ar" messages={ar} definition={BASELINE} scopeOptions={SCOPES} />
+      withPickers(
+        <ReportScreen locale="ar" messages={ar} definition={BASELINE} scopeOptions={SCOPES} />,
+        'ar'
+      )
     );
     expect(screen.getByText(AR['reports.run.show'] as string)).toBeVisible();
   });
@@ -1213,9 +1394,7 @@ describe('export uses the displayed report selection', () => {
     });
     await showReport();
     const user = userEvent.setup();
-    const from = screen.getByLabelText(labelled('reports.run.from'));
-    await user.clear(from);
-    await user.type(from, '2026-09-02');
+    await typeDay(user, 'reports.run.from', '2026-09-02');
     await user.type(
       screen.getByRole('textbox', { name: labelled('reports.export.reason') }),
       'Export displayed period'
@@ -1232,6 +1411,97 @@ describe('export uses the displayed report selection', () => {
     );
     expect(runReport).toHaveBeenCalledTimes(1);
   });
+
+  it('keeps a typed export reason, and the page label, across a page move', async () => {
+    PERMISSIONS = [READ, 'rpt.export'];
+    readReport.mockResolvedValue({
+      status: 'ok',
+      data: { ...BASELINE, exportPermissionCode: 'rpt.export', source: 'tenant', versionNumber: 1 },
+      correlationId: null,
+    });
+    runReport.mockResolvedValue(
+      runOk({ ...OLD_ENVELOPE, rows: { items: [ROW], nextCursor: 'page-2', hasMore: true } })
+    );
+    await showReport();
+    const user = userEvent.setup();
+    const reason = screen.getByRole('textbox', { name: labelled('reports.export.reason') });
+    await user.type(reason, 'Keep this reason');
+    const next = await screen.findByRole('button', { name: EN['table.nextPage'] as string });
+    await waitFor(() => expect(next).toBeEnabled());
+    await user.click(next);
+    await waitFor(() =>
+      expect(runReport).toHaveBeenLastCalledWith(expect.objectContaining({ cursor: 'page-2' }))
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('report-rows-page')).toHaveTextContent(
+        (EN['mui.pagination.page'] as string).replace('{page}', '2')
+      )
+    );
+    expect(screen.getByRole('textbox', { name: labelled('reports.export.reason') })).toHaveValue(
+      'Keep this reason'
+    );
+    expect(exportReport).not.toHaveBeenCalled();
+  });
+
+  it.each(['en', 'ar'] as const)(
+    'asks before Show with another period drops a typed export reason (%s)',
+    async (locale) => {
+      const messages = locale === 'ar' ? AR : EN;
+      const label = (key: string) => new RegExp(`^${escape(messages[key] as string)}`);
+      PERMISSIONS = [READ, 'rpt.export'];
+      readReport.mockResolvedValue({
+        status: 'ok',
+        data: {
+          ...BASELINE,
+          exportPermissionCode: 'rpt.export',
+          source: 'tenant',
+          versionNumber: 1,
+        },
+        correlationId: null,
+      });
+      await showReport(locale);
+      const user = userEvent.setup();
+      const reason = () => screen.getByRole('textbox', { name: label('reports.export.reason') });
+      await user.type(reason(), 'Month-end figures');
+      await typeDay(user, 'reports.run.from', '2026-09-02', locale);
+      const show = screen.getByRole('button', { name: messages['reports.run.show'] as string });
+      await user.click(show);
+
+      const dialog = screen.getByRole('alertdialog', {
+        name: messages['reports.run.discard.title'] as string,
+      });
+      expect(dialog).toHaveAccessibleDescription(
+        messages['reports.run.discard.description'] as string
+      );
+      // Nothing was read behind the question.
+      expect(runReport).toHaveBeenCalledTimes(1);
+      await user.click(
+        within(dialog).getByRole('button', { name: messages['reports.run.discard.stay'] as string })
+      );
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      expect(reason()).toHaveValue('Month-end figures');
+      expect(runReport).toHaveBeenCalledTimes(1);
+
+      await user.click(show);
+      const again = screen.getByRole('alertdialog', {
+        name: messages['reports.run.discard.title'] as string,
+      });
+      await user.click(
+        within(again).getByRole('button', {
+          name: messages['reports.run.discard.confirm'] as string,
+        })
+      );
+      await waitFor(() =>
+        expect(runReport).toHaveBeenLastCalledWith(
+          expect.objectContaining({ from: '2026-09-02', to: '2026-09-08', cursor: null })
+        )
+      );
+      expect(runReport).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(reason()).toHaveValue(''));
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(exportReport).not.toHaveBeenCalled();
+    }
+  );
 
   it('keeps a configured report withheld when the session lacks export permission', async () => {
     readReport.mockResolvedValue({
@@ -1331,9 +1601,9 @@ describe('D16 — the amounts are as of a stated moment', () => {
         expect.objectContaining({ asOf: 'now', cursor: null })
       )
     );
-    await user.click(
-      await screen.findByRole('button', { name: EN['reports.page.next'] as string })
-    );
+    const next = await screen.findByRole('button', { name: EN['table.nextPage'] as string });
+    await waitFor(() => expect(next).toBeEnabled());
+    await user.click(next);
     // The next page is computed as of the moment the first one answered with,
     // not "now" again.
     await waitFor(() =>
@@ -1417,6 +1687,106 @@ describe('D16 — the amounts are as of a stated moment', () => {
         reason: 'Month-end figures',
       })
     );
+  });
+
+  it('reads nothing again when Apply is pressed twice with the same choice', async () => {
+    runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+    await showReport();
+    await screen.findByTestId('report-as-of');
+    const calls = runReport.mock.calls.length;
+    const apply = screen.getByRole('button', { name: EN['reports.asOf.apply'] as string });
+    await act(async () => {
+      apply.click();
+      apply.click();
+    });
+    await screen.findByTestId('report-as-of');
+    expect(runReport).toHaveBeenCalledTimes(calls);
+    await userEvent
+      .setup()
+      .click(screen.getByRole('radio', { name: EN['reports.asOf.now'] as string }));
+    const applyNow = screen.getByRole('button', { name: EN['reports.asOf.apply'] as string });
+    await act(async () => {
+      applyNow.click();
+      applyNow.click();
+    });
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(calls + 1));
+    await screen.findByTestId('report-as-of');
+    expect(runReport).toHaveBeenCalledTimes(calls + 1);
+    expect(runReport).toHaveBeenLastCalledWith(expect.objectContaining({ asOf: 'now' }));
+  });
+
+  it.each(['en', 'ar'] as const)(
+    'asks before a different as-of choice drops a typed export reason (%s)',
+    async (locale) => {
+      const messages = locale === 'ar' ? AR : EN;
+      const label = (key: string) => new RegExp(`^${escape(messages[key] as string)}`);
+      PERMISSIONS = [READ, 'rpt.export'];
+      readReport.mockResolvedValue({
+        status: 'ok',
+        data: {
+          ...BASELINE,
+          exportPermissionCode: 'rpt.export',
+          source: 'tenant',
+          versionNumber: 1,
+        },
+        correlationId: null,
+      });
+      runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+      await showReport(locale);
+      await screen.findByTestId('report-as-of');
+      const user = userEvent.setup();
+      const reason = () => screen.getByRole('textbox', { name: label('reports.export.reason') });
+      await user.type(reason(), 'Month-end figures');
+      const calls = runReport.mock.calls.length;
+      await user.click(screen.getByRole('radio', { name: messages['reports.asOf.now'] as string }));
+      const apply = screen.getByRole('button', { name: messages['reports.asOf.apply'] as string });
+      await user.click(apply);
+
+      const dialog = screen.getByRole('alertdialog', {
+        name: messages['reports.run.discard.title'] as string,
+      });
+      // Nothing was read behind the question.
+      expect(runReport).toHaveBeenCalledTimes(calls);
+      await user.click(
+        within(dialog).getByRole('button', { name: messages['reports.run.discard.stay'] as string })
+      );
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      expect(reason()).toHaveValue('Month-end figures');
+      expect(runReport).toHaveBeenCalledTimes(calls);
+
+      await user.click(apply);
+      const again = screen.getByRole('alertdialog', {
+        name: messages['reports.run.discard.title'] as string,
+      });
+      await user.click(
+        within(again).getByRole('button', {
+          name: messages['reports.run.discard.confirm'] as string,
+        })
+      );
+      await waitFor(() =>
+        expect(runReport).toHaveBeenLastCalledWith(
+          expect.objectContaining({ asOf: 'now', cursor: null })
+        )
+      );
+      expect(runReport).toHaveBeenCalledTimes(calls + 1);
+      await screen.findByTestId('report-as-of');
+      await waitFor(() => expect(reason()).toHaveValue(''));
+      expect(exportReport).not.toHaveBeenCalled();
+    }
+  );
+
+  it('puts the cursor on a refused moment', async () => {
+    runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+    await showReport('en', true);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('radio', { name: EN['reports.asOf.specific'] as string })
+    );
+    await typeMoment(user, '0309');
+    await user.click(screen.getByRole('button', { name: EN['reports.asOf.apply'] as string }));
+    const moment = screen.getByRole('group', { name: labelled('reports.asOf.moment') });
+    await waitFor(() => expect(moment).toHaveAttribute('aria-invalid', 'true'));
+    await waitFor(() => expect(moment.contains(document.activeElement)).toBe(true));
   });
 
   it('reads in Arabic as Arabic, right to left', async () => {
