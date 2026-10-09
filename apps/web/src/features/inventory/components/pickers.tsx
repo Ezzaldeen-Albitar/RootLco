@@ -12,7 +12,6 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateWithValues } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
-import { formatDateTime } from '@/lib/format';
 
 import { listIssuedParts, listItems } from '../api';
 import {
@@ -24,6 +23,7 @@ import {
   type IssuedPart,
   type StockTarget,
 } from '../inventory-contract';
+import { momentText, useStockDisplayZone } from './stock-operations';
 
 /**
  * The inventory pickers (Owner directive, `P1-32-PRE-OD-UX`, route sweep B2).
@@ -296,6 +296,8 @@ export function IssuedPartPicker({
   readonly testId?: string;
 }) {
   const { companyId, branchId } = target;
+  // The issue's moment is written on the branch's clock, never the browser's.
+  const zone = useStockDisplayZone(target);
   const load = useCallback(
     async (term: string, cursor: string | null): Promise<ReadState<CursorPage<IssuedPart>>> => {
       const state = await listIssuedParts({ companyId, branchId }, { q: term }, cursor);
@@ -309,7 +311,7 @@ export function IssuedPartPicker({
       code: part.item.code,
       name: part.item.name,
       job: part.workOrderDisplayNumber ?? translate(messages, 'workOrders.picker.unnumbered'),
-      when: formatDateTime(part.issuedAt, locale),
+      when: momentText(part.issuedAt, locale, zone),
       issued: part.quantity,
       returnable: part.returnableQuantity,
       unit: part.unitCode,

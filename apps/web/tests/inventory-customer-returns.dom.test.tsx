@@ -62,12 +62,14 @@ import {
   BRANCH_ID,
   COMPANY_ID,
   EN,
+  FAR_ZONE,
   ITEM_ID,
   LOCATION_ID,
   OTHER_LOCATION_ID,
   USER_ID,
   branch,
   chooseBranch,
+  expectOnClock,
   labelled,
   okPage,
   okRead,
@@ -1304,6 +1306,72 @@ describe('the returns desk on Material UI (INV6)', () => {
         await screen.findByText(catalogue['inventory.returns.create.done'] as string)
       ).toBeVisible();
       expect(createSalesReturn).toHaveBeenCalledTimes(1);
+    });
+  }
+});
+
+/*
+ * P1-32-PRE-OD-INV5: every moment the returns desk writes — a return's arrival
+ * in the branch's list, a sale's issue in the sale choice, and a part's issue in
+ * the issued-part picker's option — is written on the BRANCH's clock with that
+ * clock named, never on the browser's. The branch here keeps a clock no test
+ * environment keeps, so the two can never read alike, in both languages.
+ */
+describe('the returns desk writes its moments on the branch clock (INV5)', () => {
+  const FAR_BRANCH = { ...TEST_BRANCH, timezone: FAR_ZONE };
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  function renderOnFarBranch(locale: 'en' | 'ar'): void {
+    const snapshot = branchSnapshot([FAR_BRANCH]);
+    if (locale === 'ar') {
+      renderInRtl(
+        inBranch(<CustomerReturnsScreen locale="ar" messages={ar} canOperate canReadBranches />, {
+          snapshot,
+          locale: 'ar',
+        })
+      );
+    } else {
+      renderInLtr(inBranch(operable(), { snapshot }));
+    }
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes a return's arrival and a sale's issue on the branch's clock, named (${locale})`, async () => {
+      const catalogue = locale === 'ar' ? AR : EN;
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      renderOnFarBranch(locale);
+      const list = await screen.findByRole('table', {
+        name: catalogue['inventory.returns.list.caption'] as string,
+      });
+      expectOnClock(
+        within(list).getAllByRole('row')[1] as HTMLElement,
+        received().createdAt,
+        locale
+      );
+      const saleChoice = await screen.findByLabelText(named('inventory.returns.sale.label'));
+      const offered = within(saleChoice).getByRole('option', { name: /CS-0001/ });
+      expectOnClock(offered, sale.issuedAt, locale);
+    });
+
+    it(`writes a part's issue in the picker's option on the branch's clock, named (${locale})`, async () => {
+      const catalogue = locale === 'ar' ? AR : EN;
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      const user = userEvent.setup();
+      renderOnFarBranch(locale);
+      await user.selectOptions(
+        await screen.findByLabelText(named('inventory.returns.source.kind')),
+        'part_issue'
+      );
+      await user.type(
+        screen.getByLabelText(catalogue['inventory.returns.issue.label'] as string),
+        'Brake{Enter}'
+      );
+      const match = await screen.findByRole(
+        'option',
+        { name: /BRK-001/ },
+        { timeout: PICKER_OPTION_WAIT_MS }
+      );
+      expectOnClock(match, issuedPart.issuedAt, locale);
     });
   }
 });

@@ -1,4 +1,5 @@
 import { screen, within } from '@testing-library/react';
+import { expect } from 'vitest';
 import type userEvent from '@testing-library/user-event';
 import { axe } from 'vitest-axe';
 import en from '../../src/i18n/messages/en.json';
@@ -121,4 +122,54 @@ export async function seriousViolations(container: HTMLElement): Promise<readonl
   return results.violations
     .filter((v) => v.impact === 'critical' || v.impact === 'serious')
     .map((v) => v.id);
+}
+
+/*
+ * A branch clock no test environment keeps, for the moments a stock screen
+ * writes (`P1-32-PRE-OD-INV5`): fourteen hours ahead of UTC, or, on the one
+ * machine that keeps that zone itself, eleven behind. A moment written on it
+ * can only have been written on the branch's clock, never the browser's.
+ */
+const BROWSER_ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone;
+export const FAR_ZONE =
+  BROWSER_ZONE === 'Pacific/Kiritimati' ? 'Pacific/Pago_Pago' : 'Pacific/Kiritimati';
+
+const INTL_LOCALE = { en: 'en-GB', ar: 'ar-JO-u-nu-latn' } as const;
+
+/** `value` as the product writes a moment, on `zone`'s clock (the browser's when unnamed). */
+export function onClock(value: string, locale: 'en' | 'ar', zone?: string): string {
+  return new Intl.DateTimeFormat(INTL_LOCALE[locale], {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    ...(zone === undefined ? {} : { timeZone: zone }),
+  }).format(new Date(value));
+}
+
+/** The name the product writes beside a moment for `zone`'s clock: `GMT+14`, or `UTC`. */
+export function clockName(value: string, locale: 'en' | 'ar', zone: string): string {
+  if (zone === 'UTC') return 'UTC';
+  return (
+    new Intl.DateTimeFormat(INTL_LOCALE[locale], { timeZone: zone, timeZoneName: 'shortOffset' })
+      .formatToParts(new Date(value))
+      .find((part) => part.type === 'timeZoneName')?.value ?? zone
+  );
+}
+
+/**
+ * Asserts `scope` writes `value` on `zone`'s clock with that clock named, and
+ * not on the browser's: the two can never read alike for `FAR_ZONE`.
+ */
+export function expectOnClock(
+  scope: HTMLElement,
+  value: string,
+  locale: 'en' | 'ar',
+  zone: string = FAR_ZONE
+): void {
+  const text = scope.textContent ?? '';
+  const branch = onClock(value, locale, zone);
+  const browser = onClock(value, locale);
+  expect(branch).not.toBe(browser);
+  expect(text).toContain(branch);
+  expect(text).toContain(clockName(value, locale, zone));
+  expect(text).not.toContain(browser);
 }

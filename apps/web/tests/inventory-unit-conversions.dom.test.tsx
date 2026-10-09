@@ -25,6 +25,7 @@ import {
   stayOnBranch,
   switchExpectingQuestion,
 } from './support/branch-switch';
+import { FAR_ZONE, expectOnClock } from './support/stock-operations';
 
 /*
  * Every render goes under `UiFoundationProvider` and a working context, as the
@@ -324,6 +325,35 @@ describe('Arabic, right to left', () => {
     const table = await screen.findByRole('table');
     expect(within(table).getByText('4.500')).toBeVisible();
   });
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — a conversion belongs to no branch, so its moment is
+ * written on the WORKING branch's clock, named, never on the browser's.
+ */
+describe('a conversion\u2019s moment is shown on the working branch\u2019s clock (P1-32-PRE-OD-INV5)', () => {
+  const RECORDED = '2026-09-17T12:00:00Z';
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes the moment on the working branch's clock with its name (${locale})`, async () => {
+      listUnitConversions.mockImplementation(async () =>
+        listing([conversion({ createdAt: RECORDED })])
+      );
+      const render = locale === 'en' ? renderLtr : renderRtl;
+      render(
+        inBranch(
+          <UnitConversionsScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            canManage={false}
+          />,
+          { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+        )
+      );
+      const table = await screen.findByRole('table');
+      await waitFor(() => expect(within(table).getAllByRole('row').length).toBeGreaterThan(1));
+      expectOnClock(within(table).getAllByRole('row')[1] as HTMLElement, RECORDED, locale);
+    });
+  }
 });
 
 /* -------------------------------------------------------------------- *
