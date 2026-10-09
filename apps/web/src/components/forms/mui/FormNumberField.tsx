@@ -39,12 +39,16 @@ export function FormNumberField({
   unit,
   unitId,
   describedBy,
+  value,
+  onChange,
   ...rest
 }: FormNumberFieldProps) {
   const unitReference = unit && unitId ? unitId : undefined;
   return (
     <FormTextField
       {...rest}
+      value={value}
+      onChange={onChange}
       describedBy={[describedBy, unitReference].filter(Boolean).join(' ') || undefined}
       inputMode={integer ? 'numeric' : 'decimal'}
       dir="ltr"

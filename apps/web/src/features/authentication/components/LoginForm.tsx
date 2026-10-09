@@ -2,25 +2,36 @@
 
 import Link from 'next/link';
 import { useActionState, useState } from 'react';
-import { PasswordField, TextField } from '@/components/forms/Field';
+import { FormPasswordField } from '@/components/forms/mui/FormPasswordField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { translate, translateDynamic } from '@/i18n/get-messages';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 import { loginAction } from '../actions/login';
-import { FormFeedback } from './FormFeedback';
-import { SubmitButton } from './SubmitButton';
+import { MuiFormFeedback } from './MuiFormFeedback';
+import { MuiSubmitButton, useSubmitOnce } from './MuiSubmitButton';
 
 /**
- * The sign-in form.
+ * The sign-in form, on Material UI (ADR-022).
  *
  * ## Nothing about a failure varies
  *
  * The backend answers every credential failure identically, and this preserves
  * that: one banner, one sentence, no per-field "no account with that address".
- * The only per-field errors shown are the ones this form produced itself before
- * the request left — a blank password, an address that is not one — which
- * describe the operator's own typing and disclose nothing about what exists.
+ * The only per-field errors shown are the ones the action produced before the
+ * request left — a blank password, an address that is not one — which describe
+ * the operator's own typing and disclose nothing about what exists. The cursor
+ * goes to the first of them (`useActionRefusal`), and editing a field withdraws
+ * the complaint about it.
+ *
+ * ## Still a Server Action form
+ *
+ * `<form action={…}>`, so the sign-in works before the page has hydrated, the
+ * action decides the redirect (workspace or console) and replaces the sign-in
+ * entry in history, and Enter in either box submits. `useSubmitOnce` holds a
+ * second press until the first is answered.
  *
  * ## Autocomplete, and why it is set
  *
@@ -37,66 +48,67 @@ export function LoginForm({
   readonly messages: Messages;
 }) {
   /*
-   * Retained across a refused submit. React resets the form DOM once the
-   * Server Action settles, and an uncontrolled text box is emptied by it.
+   * Both boxes are controlled, so React's reset of the form after the action
+   * settles cannot empty them by itself. The address is RETAINED across a
+   * refusal; the password is cleared on purpose, on the attempt the refusal
+   * answers — the decision is recorded in `CLEARS_ON_REFUSAL` in
+   * `form-reset-class.test.ts`.
    */
   const [email, setEmail] = useState('');
-  const [state, formAction] = useActionState<ActionState, FormData>(loginAction, IDLE);
+  const [password, setPassword] = useState('');
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(loginAction, IDLE);
+  const [answered, setAnswered] = useState(state.attempt ?? 0);
+  if ((state.attempt ?? 0) !== answered) {
+    setAnswered(state.attempt ?? 0);
+    setPassword('');
+  }
+
+  const { edited, errorKey, formRef } = useActionRefusal(state);
+  useSubmitOnce(formRef, state, pending);
   const fieldError = (name: string) => {
-    const key = state.fieldErrors?.[name];
-    return key ? translate(messages, key as keyof Messages) : undefined;
+    const key = errorKey(name);
+    return key ? translateDynamic(messages, key) : undefined;
   };
 
   return (
-    <form action={formAction} className="flex flex-col gap-5" noValidate>
+    <form ref={formRef} action={formAction} className="flex flex-col gap-5" noValidate>
       <input type="hidden" name="locale" value={locale} />
 
-      <FormFeedback state={state} messages={messages} />
+      <MuiFormFeedback state={state} messages={messages} />
 
-      {/*
-        The address is retained; the PASSWORD beside it is deliberately not,
-        and the reason is recorded in `CLEARS_ON_REFUSAL` in
-        `form-reset-class.test.ts`. A refused sign-in made the operator
-        re-type both, when only one of them is plausibly what was wrong.
-      */}
-      <TextField
-        key={`email-${state.attempt ?? 0}`}
+      <FormTextField
         name="email"
         type="email"
         label={translate(messages, 'auth.login.email')}
         required
         autoComplete="username"
         spellCheck={false}
-        defaultValue={email}
-        onChange={(event) => setEmail(event.target.value)}
+        value={email}
+        onChange={setEmail}
+        onEdit={() => edited('email')}
         error={fieldError('email')}
       />
 
       {/*
-        The reveal control lives INSIDE the field, in `PasswordField`. It used to
-        be a text button underneath, which the Product Owner rejected at Owner
-        acceptance: a control below the input reads as an action on the form
-        rather than as part of the field, and on a narrow viewport the error
-        message pushes it away from the input it belongs to.
-
-        A toggle, not a permanent reveal, and it defaults to hidden. It exists
-        because the alternative to seeing what you typed is retyping a long
-        password until it works — which is the behaviour that produces short,
-        memorable ones. The field keeps `autoComplete="current-password"` in both
-        modes: changing it on reveal is what stops a password manager filling the
-        form.
+        The reveal control lives INSIDE the field (`FormPasswordField`), as the
+        Product Owner asked at acceptance: a control below the input reads as an
+        action on the form rather than part of the field. It defaults to hidden,
+        and `autoComplete` stays `current-password` in both modes.
       */}
-      <PasswordField
+      <FormPasswordField
         name="password"
         label={translate(messages, 'auth.login.password')}
         required
         autoComplete="current-password"
+        value={password}
+        onChange={setPassword}
+        onEdit={() => edited('password')}
         error={fieldError('password')}
         showLabel={translate(messages, 'field.password.show')}
         hideLabel={translate(messages, 'field.password.hide')}
       />
 
-      <SubmitButton
+      <MuiSubmitButton
         label={translate(messages, 'auth.login.submit')}
         pendingLabel={translate(messages, 'auth.login.submitting')}
       />
