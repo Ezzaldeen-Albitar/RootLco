@@ -2,7 +2,7 @@ import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ActionState } from '@/lib/forms/action-result';
-import { BOTH_DIRECTIONS } from './render';
+import { BOTH_DIRECTIONS, messagesFor } from './render';
 
 /**
  * The sign-in page's reason notices and the intended page, in English and
@@ -73,13 +73,24 @@ describe.each(BOTH_DIRECTIONS)('sign-in notices (%s)', (locale, render) => {
     expect(screen.getAllByRole('status')).toHaveLength(1);
   });
 
-  it('names the locked or suspended account as a cause of an ended session, for everyone', async () => {
+  it('names the locked or archived account as a cause of an ended session, for everyone', async () => {
     const { messages } = render(await page(locale, { reason: 'expired' }));
     const sentence = messages['auth.login.reason.expired'];
     // The same sentence for every ended session, whatever ended it: the page
     // never learns which account was locked, so it cannot say.
     expect(screen.getByRole('status')).toHaveTextContent(sentence);
-    expect(sentence).toMatch(locale === 'en' ? /locks or suspends/ : /يقفل الحساب أو يوقفه/);
+    expect(sentence).toMatch(locale === 'en' ? /locks or archives/ : /يقفل الحساب أو يؤرشفه/);
+    // The account model has no suspended status, and a suspended ORGANISATION
+    // keeps its sessions (the AUTH01 evidence), so the sentence never says so.
+    expect(sentence).not.toMatch(locale === 'en' ? /suspend/i : /يوقف|موقوف/);
+  });
+
+  it('names only the account states that refuse a sign-in when one is refused', () => {
+    const sentence = messagesFor(locale)['auth.login.error.failed'];
+    // A locked or archived account is refused at sign-in exactly like a wrong
+    // password; there is no suspended account to name.
+    expect(sentence).toMatch(locale === 'en' ? /locked or archived/ : /مقفلًا أو مؤرشفًا/);
+    expect(sentence).not.toMatch(locale === 'en' ? /suspend/i : /يوقف|موقوف/);
   });
 
   it('says an account with no access has been given none, and names no permission', async () => {

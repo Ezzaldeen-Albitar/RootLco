@@ -76,8 +76,9 @@ const { WORKING_CONTEXT_PATH, isWorkingContextShape, permitsInBranch, preference
   await import('@/features/working-context/working-context-contract');
 const { GET } = await import('@/app/[locale]/(auth)/session-ended/route');
 const { logoutAction } = await import('@/features/authentication/actions/logout');
-const { INTENDED_PATH_PARAM, REQUESTED_PATH_HEADER } =
-  await import('@/features/authentication/api/intended-path');
+const { INTENDED_PATH_PARAM } = await import('@/features/authentication/api/intended-path');
+const { REQUESTED_PATH_HEADER } =
+  await import('@/features/authentication/api/requested-path-header');
 
 const SESSION = {
   userId: '2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e',

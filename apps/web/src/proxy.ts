@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { REQUESTED_PATH_HEADER } from '@/features/authentication/api/intended-path';
+import { REQUESTED_PATH_HEADER } from '@/features/authentication/api/requested-path-header';
 import { NONCE_HEADER, contentSecurityPolicy } from '@/lib/security/csp';
 
 /**

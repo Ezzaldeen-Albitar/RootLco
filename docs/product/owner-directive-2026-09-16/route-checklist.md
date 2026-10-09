@@ -5734,7 +5734,7 @@ stays an open Owner decision, and the lifecycle evidence is recorded in its sect
 | -------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | every dashboard and console page | When the page sends the operator to sign in (no session, a session that ended, or the backend could not confirm it), the page's own path goes with the redirect as `intended`. A refused session (`forbidden`) carries none, because signing in again as the same account would open nothing. `src/proxy.ts` records the path, never the query string.                                             |
 | `/session-ended`                 | Clears the rejected cookie as before. It never goes to the intended page; it re-checks the value and hands it to the sign-in address. A value that fails the check is dropped and the operator lands on `?reason=expired` as before.                                                                                                                                                               |
-| `/login`                         | A second notice says the operator will return to the page they were opening when this account may open it. The page's address is never echoed. The reason sentences now name what ends a session (inactivity, expiry, an administrator ending it, locking or suspending the account) and say plainly that an account with no access has been given none. Pressing Sign in twice sends one sign-in. |
+| `/login`                         | A second notice says the operator will return to the page they were opening when this account may open it. The page's address is never echoed. The reason sentences now name what ends a session (inactivity, expiry, an administrator ending it, locking or archiving the account) and say plainly that an account with no access has been given none. Pressing Sign in twice sends one sign-in. |
 | sign-in action                   | After the credentials are accepted, the operator goes to the intended page only when it is a safe application path and the new session's navigation offers it, judged by the most specific entry (a console page only for a platform session, a workspace page only for a tenant one). Otherwise they land where they always did.                                                                  |
 
 The allow-list (`features/authentication/api/intended-path.ts`) accepts only `/{en|ar}/{area}/…`
@@ -5744,6 +5744,17 @@ segments, empty segments, a query, a fragment, white space and control character
 session-ended pages, and anything over 512 characters. The address is checked by `requireSession`,
 the session-ended handler, the sign-in page, the sign-in action and `destinationAfterSignIn`. Only
 the last of these follows it.
+
+The allow-listed intended path narrows the P1-26 ruling that the authentication flow carries no
+redirect destination. The planner accepted that narrowing under package WP05 of the completion plan
+of 2026-10-08 (outside the repository), "preserve locale and safe intended navigation". The
+password-reset and activation pages still carry no destination, and the session-ended handler still
+never follows the intended path: it only re-checks it and hands it to the sign-in address.
+
+The reason sentences name only what the AUTH01 evidence in the decision pack shows ending a session
+or refusing a sign-in: inactivity, expiry, an administrator ending the sessions, and an account that
+is locked or archived. The account model has no suspended status, and a suspended organisation keeps
+its sessions, so neither sentence mentions suspension.
 
 Tests: `apps/web/tests/intended-path.test.ts` (each rejection, the accepted shapes, the permission
 rule); `apps/web/tests/session.test.ts` (the redirect from a protected render, the session-ended
@@ -5765,7 +5776,7 @@ Known limitations, one line each:
   the reveal control exists yet, so the form-field migration is recorded as not done.
 - The "sign in again" link in a read's ended-session state (`MuiStates`, `SearchStates`) still opens
   plain `/login`. A session that ends during a client-side read does not carry the page yet.
-- The page cannot say which account was locked or suspended: the backend answers every ended session
+- The page cannot say which account was locked or archived: the backend answers every ended session
   and every refused sign-in identically on purpose. The sentences name the causes for everyone.
 - Forgotten-password and set-password forms were not given the one-press hold in this slice.
 - The anonymous end-to-end cases run on hosted CI. They were not run on the development machine.

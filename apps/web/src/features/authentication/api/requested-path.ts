@@ -1,5 +1,6 @@
 import { headers } from 'next/headers';
-import { REQUESTED_PATH_HEADER, safeIntendedPath } from './intended-path';
+import { safeIntendedPath } from './intended-path';
+import { REQUESTED_PATH_HEADER } from './requested-path-header';
 
 /**
  * The path of the request being served, as `src/proxy.ts` recorded it, when it
@@ -11,7 +12,7 @@ import { REQUESTED_PATH_HEADER, safeIntendedPath } from './intended-path';
  * asks.
  *
  * Kept apart from `intended-path.ts` because this one reads the request and
- * that one must stay importable by the proxy and by plain unit tests.
+ * that one must stay importable by plain unit tests.
  */
 export async function requestedPath(): Promise<string | null> {
   const store = await headers();

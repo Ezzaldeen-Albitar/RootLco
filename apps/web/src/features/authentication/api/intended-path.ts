@@ -43,14 +43,6 @@ import { SESSION_ENDED_SEGMENT } from './session-ended';
 /** The query parameter the sign-in page and the session-ended handler carry. */
 export const INTENDED_PATH_PARAM = 'intended';
 
-/**
- * The request header `src/proxy.ts` writes with the path of the request being
- * served, so a protected layout — which Next does not hand a pathname — can name
- * the page it is refusing. The proxy overwrites any copy a client sent, and the
- * value is re-checked by `safeIntendedPath` wherever it is read.
- */
-export const REQUESTED_PATH_HEADER = 'x-rootlco-requested-path';
-
 /** Longer than any route this application serves, short enough to bound the work. */
 export const INTENDED_PATH_MAX_LENGTH = 512;
 
