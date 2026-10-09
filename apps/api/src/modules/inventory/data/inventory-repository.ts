@@ -2193,6 +2193,10 @@ export class InventoryRepository extends Repository {
    * The chain is walked in SQL, inside the tenant, and bounded: the database
    * already refuses a parent cycle (`inv.guard_item_category_no_cycle`), and the
    * depth bound and the `seen` array keep this walk finite even if one existed.
+   * An ANCESTOR is followed whether or not it is soft-deleted: the parent link
+   * still stands (the cycle guard follows it the same way), and stopping there
+   * would answer a shorter path that reads as complete
+   * (P1-32-PRE-OD-INVR). The item's own category is still read only while live.
    * No cost and no price: `inv.item_cost_details` and the sale prices are not
    * read here.
    */
@@ -2217,7 +2221,7 @@ export class InventoryRepository extends Repository {
          SELECT p.id, p.code, p.name, p.parent_category_id, chain.depth + 1, chain.seen || p.id
            FROM chain
            JOIN inv.item_categories p
-             ON p.tenant_id = $1 AND p.id = chain.parent_category_id AND p.deleted_at IS NULL
+             ON p.tenant_id = $1 AND p.id = chain.parent_category_id
           WHERE chain.depth < 64 AND NOT p.id = ANY(chain.seen)
        )
        SELECT id, code, name, depth FROM chain ORDER BY depth DESC`,

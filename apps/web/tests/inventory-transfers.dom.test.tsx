@@ -1404,6 +1404,104 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-INV4)', () => {
     }
   );
 
+  /*
+   * P1-32-PRE-OD-INVR — a row action opens its form inline, so the cursor moves
+   * into that form (onto its heading) when it opens, and back to the row action
+   * that opened it when it closes. Where the row action is gone after the write
+   * (the transfer was cancelled), the cursor lands on the list's heading
+   * rather than on the page's body.
+   */
+  for (const [actionKey, headingKey] of [
+    ['inventory.transfers.receive.action', 'inventory.transfers.receive.heading'],
+    ['inventory.transfers.resolve.action', 'inventory.transfers.resolve.heading'],
+    ['inventory.transfers.cancel.action', 'inventory.transfers.cancel.heading'],
+  ] as const) {
+    it.each(['en', 'ar'] as const)(
+      `${actionKey}: the cursor moves into the form and back to the row action (%s)`,
+      async (locale) => {
+        const T = CATALOGUES[locale];
+        const user = userEvent.setup();
+        renderIn(locale);
+        const form = await openIn(user, T, actionKey, headingKey);
+        await waitFor(() => expect(form.contains(document.activeElement)).toBe(true));
+        expect(document.activeElement?.tagName).toBe('H2');
+        await user.click(
+          within(form).getByRole('button', { name: T['inventory.stockOps.close'] as string })
+        );
+        await waitFor(() =>
+          expect(screen.queryByRole('form', { name: anchored(T, headingKey) })).toBeNull()
+        );
+        const table = within(regionIn(T, 'inventory.transfers.list.heading')).getByRole('table');
+        await waitFor(() =>
+          expect(document.activeElement).toBe(
+            within(table).getByRole('button', { name: `${T[actionKey]} BRK-001` })
+          )
+        );
+      }
+    );
+  }
+
+  it.each(['en', 'ar'] as const)(
+    'a write-off decision takes the cursor and gives it back to its row action (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      listTransferWriteOffs.mockResolvedValue(okPage([writeOff()]));
+      renderIn(locale);
+      const offs = regionIn(T, 'inventory.transfers.writeOffs.heading');
+      const table = await within(offs).findByRole('table');
+      const decide = within(table).getByRole('button', {
+        name: `${T['inventory.transfers.writeOffs.decide.action']} BRK-001`,
+      });
+      await user.click(decide);
+      const form = screen.getByRole('form', {
+        name: anchored(T, 'inventory.transfers.writeOffs.decide.heading'),
+      });
+      await waitFor(() => expect(form.contains(document.activeElement)).toBe(true));
+      await user.click(
+        within(form).getByRole('button', { name: T['inventory.stockOps.close'] as string })
+      );
+      await waitFor(() => expect(document.activeElement).toBe(decide));
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'after a cancellation the row action is gone, and the cursor lands on the list heading (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      cancelTransfer.mockResolvedValue(
+        succeeded('inventory.transfers.cancel.success', {
+          ...transfer({ status: 'cancelled', inTransit: false, outstandingQuantity: '0.000' }),
+          replayed: false,
+        })
+      );
+      renderIn(locale);
+      const form = await openIn(
+        user,
+        T,
+        'inventory.transfers.cancel.action',
+        'inventory.transfers.cancel.heading'
+      );
+      listTransfers.mockResolvedValue(
+        okPage([transfer({ status: 'cancelled', inTransit: false, outstandingQuantity: '0.000' })])
+      );
+      await user.type(
+        within(form).getByLabelText(anchored(T, 'inventory.stockOps.reason')),
+        'Wrong item'
+      );
+      await user.click(
+        within(form).getByRole('button', { name: T['inventory.transfers.cancel.submit'] as string })
+      );
+      await waitFor(() => expect(cancelTransfer).toHaveBeenCalledTimes(1));
+      await waitFor(() =>
+        expect(document.activeElement).toBe(
+          screen.getByRole('heading', { name: T['inventory.transfers.list.heading'] as string })
+        )
+      );
+    }
+  );
+
   it('the Arabic screen with a form open has no serious or critical accessibility finding', async () => {
     const user = userEvent.setup();
     const { container } = renderIn('ar');

@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
@@ -460,6 +460,53 @@ describe('the adjustments of a branch', () => {
       expect(createAdjustment).not.toHaveBeenCalled();
     });
   }
+
+  /*
+   * P1-32-PRE-OD-INVR — both presses inside ONE act(), so the second arrives
+   * before React has re-rendered the disabled button: what is tested is the
+   * form's own hold on the request (`sending`), not the disabled button.
+   */
+  it('requesting an adjustment: two presses inside one act send one request', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    createAdjustment.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    const form = screen.getByRole('form', {
+      name: EN['inventory.adjustments.create.heading'] as string,
+    });
+    await chooseItem(user, form);
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.adjustments.create.location')),
+      LOCATION_ID
+    );
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.adjustments.create.quantity')),
+      '3'
+    );
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.stockOps.reason')),
+      'Found in the back'
+    );
+    const send = within(form).getByRole('button', {
+      name: EN['inventory.adjustments.create.submit'] as string,
+    });
+    act(() => {
+      send.click();
+      send.click();
+    });
+    expect(createAdjustment).toHaveBeenCalledTimes(1);
+    await act(async () => answer(succeeded('inventory.adjustments.create.success', adjustment())));
+    expect(
+      await screen.findByText(EN['inventory.adjustments.create.done'] as string)
+    ).toBeVisible();
+    expect(createAdjustment).toHaveBeenCalledTimes(1);
+  });
 
   it('a second press while a decision is out sends nothing more', async () => {
     let answer: (value: unknown) => void = () => undefined;

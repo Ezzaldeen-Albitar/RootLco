@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
@@ -1297,8 +1297,13 @@ describe('the returns desk on Material UI (INV6)', () => {
       const submit = screen.getByRole('button', {
         name: catalogue['inventory.returns.create.submit'] as string,
       });
-      fireEvent.click(submit);
-      fireEvent.click(submit);
+      // Both presses inside ONE act(), so the second arrives before React has
+      // re-rendered the disabled button: the screen's own hold is what is tested
+      // (P1-32-PRE-OD-INVR).
+      act(() => {
+        submit.click();
+        submit.click();
+      });
       expect(createSalesReturn).toHaveBeenCalledTimes(1);
       expect(submit).toBeDisabled();
       answer(succeeded('inventory.returns.create.success', received()));

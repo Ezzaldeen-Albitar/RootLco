@@ -1595,4 +1595,93 @@ describe('half-typed catalogue work and a branch switch', () => {
     await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
     expect(heldBranch()).toBe(TEST_BRANCH.id);
   });
+
+  /*
+   * P1-32-PRE-OD-INVR — what a successful save KEEPS for the next entry (the
+   * item form's category and unit, the level form's item) was just saved, so it
+   * is not work an operator would lose.
+   */
+  it('after a successful item create, keeps the category and unit and asks nothing', async () => {
+    const user = userEvent.setup();
+    createItem.mockResolvedValue(
+      success({ ...catalogueItem, id: CREATED_ID, sku: 'BRK-009' }, 'inventory.setup.item.success')
+    );
+    await openTwo(user);
+    const panel = form('inventory.setup.item.new');
+    await user.click(within(itemCategoryTree(panel)).getByText('Brakes (brakes)'));
+    await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.sku')), 'BRK-009');
+    await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.name')), 'Pad');
+    const unitBox = within(panel).getByLabelText(
+      labelled('inventory.setup.item.unit')
+    ) as HTMLSelectElement;
+    await user.selectOptions(unitBox, UNIT_ID);
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.setup.item.submit'] as string })
+    );
+    await waitFor(() => expect(createItem).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        (within(panel).getByLabelText(labelled('inventory.setup.item.sku')) as HTMLInputElement)
+          .value
+      ).toBe('')
+    );
+    // The category and unit stay chosen for the next item…
+    expect(unitBox.value).toBe(UNIT_ID);
+    // …and the branch switches without a question.
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  async function setOneLevel(user: ReturnType<typeof userEvent.setup>) {
+    setReorderLevel.mockResolvedValue(
+      success({ ...reorderLevel, replayed: false }, 'inventory.reorderLevels.set.success')
+    );
+    listItems.mockResolvedValue({
+      status: 'ok' as const,
+      rows: [catalogueItem, { ...catalogueItem, id: CREATED_ID, sku: 'BRK-002', name: 'Rotor' }],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr',
+    });
+    await openTwo(user);
+    const panel = form('inventory.reorderLevels.set.heading');
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.items.find'] as string,
+      })
+    );
+    await within(panel).findByRole('option', { name: 'BRK-001 — Front brake pads' });
+    const itemBox = within(panel).getByLabelText(
+      labelled('inventory.reorderLevels.set.item')
+    ) as HTMLSelectElement;
+    await user.selectOptions(itemBox, ITEM_ID);
+    const levelBox = within(panel).getByLabelText(
+      labelled('inventory.reorderLevels.set.level')
+    ) as HTMLInputElement;
+    await user.type(levelBox, '2');
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.set.submit'] as string,
+      })
+    );
+    await waitFor(() => expect(setReorderLevel).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(levelBox.value).toBe(''));
+    expect(itemBox.value).toBe(ITEM_ID);
+    return itemBox;
+  }
+
+  it('after a successful reorder level, keeps the item and asks nothing', async () => {
+    const user = userEvent.setup();
+    await setOneLevel(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('after a successful reorder level, another item chosen is unsaved work again', async () => {
+    const user = userEvent.setup();
+    const itemBox = await setOneLevel(user);
+    await user.selectOptions(itemBox, CREATED_ID);
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+  });
 });
