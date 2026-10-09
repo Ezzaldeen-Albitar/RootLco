@@ -321,7 +321,9 @@ test.describe('authenticated accessibility', () => {
     }
     await opener.click();
 
-    const dialog = page.getByRole('dialog');
+    // The invitation is the shared Material decision dialog since
+    // P1-32-PRE-OD-ADM3 (ADR-022), which is an `alertdialog` named by its title.
+    const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible();
     const violations = await scan(page);
     const blocking = violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
