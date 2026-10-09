@@ -29,21 +29,37 @@
  * of each label through print CSS. The paper itself is chosen in the browser's
  * print dialog, which no page can do on the operator's behalf; the screen says
  * so rather than implying the sheet size is decided here.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV6`)
+ *
+ * The size is `FormSelectField` (native, F6), the copies `FormNumberField`
+ * (whole numbers, left to right, the digits typed are the value), and the two
+ * buttons are Material's. The scan box and the item finder are the shared
+ * inventory pieces. The wait for a label is `MuiLoadingState` saying this
+ * screen's own sentence, and a label that could not be read is the shared
+ * failure state carrying the screen's own sentence (a retry only for an outage
+ * or a fault), except an item the server no longer knows, which keeps its own
+ * sentence. The printed sheet is unchanged: `PrintDocument` with no
+ * `reference`, so a sheet of labels carries no repeated identity row.
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import Alert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
 
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { PrintDocument } from '@/components/print/PrintDocument';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import type { ReadFailureStatus } from '@/lib/api/read-operation';
 
 import { readItemLabel, resolveBarcode } from '../api';
 import { type InventoryItem, type ItemLabel } from '../inventory-contract';
 import { BarcodeImage } from './BarcodeImage';
 import { ScanBox } from './ScanBox';
-import { PRIMARY_BUTTON, SECONDARY_BUTTON } from './shared';
 import { ItemFinder, PANEL, StockOperationLinks } from './stock-operations';
 
 /** The label sizes on offer. The value is what the print stylesheet keys on. */
@@ -133,31 +149,30 @@ export function LabelsScreen({
             {translate(messages, 'inventory.labels.format.paperNote')}
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
-            <SelectField
+            <FormSelectField
               label={translate(messages, 'inventory.labels.format.size')}
               value={preset}
-              onChange={(event) => setPreset(event.target.value as LabelPreset)}
+              onChange={(next) => setPreset(next as LabelPreset)}
               options={LABEL_PRESETS.map((value) => ({
                 value,
                 label: translateDynamic(messages, `inventory.labels.size.${value}`),
               }))}
             />
-            <TextField
+            <FormNumberField
               label={translate(messages, 'inventory.labels.format.copies')}
-              inputMode="numeric"
-              dir="ltr"
+              integer
               value={copies}
-              onChange={(event) => {
-                setCopies(event.target.value);
+              onChange={(next) => {
+                setCopies(next);
                 setCopiesError(null);
               }}
               error={copiesError ? translateDynamic(messages, copiesError) : undefined}
             />
           </div>
           <div className="flex flex-wrap gap-2">
-            <button
+            <Button
               type="button"
-              className={PRIMARY_BUTTON}
+              variant="contained"
               disabled={itemId === null}
               onClick={() => {
                 if (readable === null) {
@@ -169,11 +184,11 @@ export function LabelsScreen({
               }}
             >
               {translate(messages, 'inventory.labels.print')}
-            </button>
+            </Button>
             {itemId !== null ? (
-              <button
+              <Button
                 type="button"
-                className={SECONDARY_BUTTON}
+                variant="outlined"
                 onClick={() => {
                   setChosenId(null);
                   setItem(null);
@@ -181,7 +196,7 @@ export function LabelsScreen({
                 }}
               >
                 {translate(messages, 'inventory.labels.clear')}
-              </button>
+              </Button>
             ) : null}
           </div>
         </section>
@@ -233,8 +248,14 @@ function LabelSheet({
   const [state, setState] = useState<
     | { readonly phase: 'loading' }
     | { readonly phase: 'read'; readonly label: ItemLabel }
-    | { readonly phase: 'failed'; readonly messageKey: string }
+    | {
+        readonly phase: 'failed';
+        readonly status: ReadFailureStatus;
+        readonly correlationId: string | null;
+      }
   >({ phase: 'loading' });
+  /* Moves on with every "Try again", which reads the label again. */
+  const [round, setRound] = useState(0);
 
   /*
    * No loading state is set here: the sheet is keyed on the item at its call
@@ -249,30 +270,42 @@ function LabelSheet({
         setState({ phase: 'read', label: answer.data });
         return;
       }
-      setState({
-        phase: 'failed',
-        messageKey:
-          answer.status === 'denied'
-            ? 'inventory.labels.refused'
-            : answer.status === 'not-found'
-              ? 'inventory.labels.missing'
-              : 'inventory.labels.unavailable',
-      });
+      setState({ phase: 'failed', status: answer.status, correlationId: answer.correlationId });
     });
     return () => {
       live = false;
     };
-  }, [itemId]);
+  }, [itemId, round]);
 
   if (state.phase === 'loading') {
     return (
-      <p role="status" aria-live="polite" className="text-caption text-text-muted">
-        {translate(messages, 'inventory.labels.loading')}
-      </p>
+      <MuiLoadingState messages={messages} variant="inline" labelKey="inventory.labels.loading" />
     );
   }
   if (state.phase === 'failed') {
-    return <p className="text-body text-error">{translateDynamic(messages, state.messageKey)}</p>;
+    if (state.status === 'not-found') {
+      // An item the server no longer knows: this screen's own sentence, as before.
+      return (
+        <Alert severity="warning" variant="outlined" role="status">
+          {translate(messages, 'inventory.labels.missing')}
+        </Alert>
+      );
+    }
+    return (
+      <MuiReadFailureState
+        messages={messages}
+        locale={locale}
+        status={state.status}
+        correlationId={state.correlationId}
+        descriptionKey={
+          state.status === 'denied' ? 'inventory.labels.refused' : 'inventory.labels.unavailable'
+        }
+        onRetry={() => {
+          setState({ phase: 'loading' });
+          setRound((n) => n + 1);
+        }}
+      />
+    );
   }
 
   const { label } = state;

@@ -65,10 +65,33 @@
  * read declare; `sal.invoice.issue` offers the issue; `inv.item.read` the
  * catalogue; `crm.customer.read` the buyer search and the buyer's name on the
  * issued list; `org.branch.read` the branch picker.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV6`)
+ *
+ * The issued sales were already `FilterToolbar`, `OperationalGrid` (the
+ * server's cursor pages, `rowCount` -1) and `MuiSearchStates`. Every other
+ * control the screen draws itself is now a shared wrapper too: the buyer's
+ * search field and the buyer are `FormSelectField` (native, F6), the search term
+ * and the void reason `FormTextField`, a line's quantity `FormNumberField` (the
+ * exact string typed is the string sent), and every button is Material's. The
+ * drafted sales and the lines being composed are Material's table: the draft
+ * read answers one page with a "more exist" flag and no cursor is walked, and
+ * the lines are held on this screen, so neither has a pager to drive. The scan
+ * box, the item finder, the location select and the drafts' wait, empty and
+ * failed states are the shared inventory pieces. The printed copy is billing's
+ * `CounterSalePrintPanel`, unchanged. What is read, sent, authorized and refused
+ * is unchanged, and so is who sees an amount.
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
 import {
   OperationalGrid,
@@ -77,7 +100,9 @@ import {
 } from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { MuiSearchStates } from '@/components/states/MuiStates';
 import {
@@ -124,19 +149,11 @@ import {
   type InventoryItem,
   type StockTarget,
 } from '../inventory-contract';
-import {
-  LocationPicker,
-  OutcomeNote,
-  PRIMARY_BUTTON,
-  Qty,
-  SECONDARY_BUTTON,
-  useLocations,
-} from './shared';
+import { LocationPicker, OutcomeNote, Qty, useLocations } from './shared';
 import { ScanBox } from './ScanBox';
 import {
   BranchListView,
   BranchTargetForm,
-  DANGER_BUTTON,
   ItemFinder,
   LINK,
   PANEL,
@@ -609,9 +626,13 @@ function IssuedSales({
         flex: 1.2,
         cell: (row) => (
           <span className="flex flex-col">
-            <bdi className="font-mono" dir="ltr">
-              {row.invoiceNumber ?? translate(messages, 'inventory.counterSales.sale.noNumber')}
-            </bdi>
+            {row.invoiceNumber === null ? (
+              <span>{translate(messages, 'inventory.counterSales.sale.noNumber')}</span>
+            ) : (
+              <bdi className="font-mono" dir="ltr">
+                {row.invoiceNumber}
+              </bdi>
+            )}
             {row.issuedAt === null ? null : (
               <span className="text-caption text-text-muted">
                 <When value={row.issuedAt} locale={locale} />
@@ -637,25 +658,27 @@ function IssuedSales({
         id: 'total',
         headerKey: 'inventory.counterSales.column.total',
         numeric: true,
-        cell: (row) => (
-          <span className="font-mono" dir="ltr">
-            {row.totals === null
-              ? translate(messages, 'inventory.counterSales.sale.noAmounts')
-              : formatMoney(row.totals.gross, locale)}
-          </span>
-        ),
+        cell: (row) =>
+          row.totals === null ? (
+            <span>{translate(messages, 'inventory.counterSales.sale.noAmounts')}</span>
+          ) : (
+            <span className="font-mono" dir="ltr">
+              {formatMoney(row.totals.gross, locale)}
+            </span>
+          ),
       },
       {
         id: 'open',
         headerKey: 'inventory.counterSales.issued.column.due',
         numeric: true,
-        cell: (row) => (
-          <span className="font-mono" dir="ltr">
-            {row.outstanding === null
-              ? translate(messages, 'inventory.counterSales.sale.noAmounts')
-              : formatMoney(row.outstanding, locale)}
-          </span>
-        ),
+        cell: (row) =>
+          row.outstanding === null ? (
+            <span>{translate(messages, 'inventory.counterSales.sale.noAmounts')}</span>
+          ) : (
+            <span className="font-mono" dir="ltr">
+              {formatMoney(row.outstanding, locale)}
+            </span>
+          ),
       },
     ],
     [locale, messages]
@@ -792,48 +815,55 @@ function OpenDrafts({
         truncatedKey="inventory.counterSales.drafts.truncated"
       >
         {(items) => (
-          <table className="w-full text-body">
-            <caption className="sr-only">
-              {translate(messages, 'inventory.counterSales.drafts.caption')}
-            </caption>
-            <thead>
-              <tr className="text-caption text-text-muted">
-                <th scope="col" className="text-start font-medium">
-                  {translate(messages, 'inventory.counterSales.column.sale')}
-                </th>
-                <th scope="col" className="text-end font-medium">
-                  {translate(messages, 'inventory.counterSales.column.total')}
-                </th>
-                <th scope="col" className="text-end font-medium">
-                  {translate(messages, 'inventory.counterSales.column.action')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((draft) => (
-                <tr key={draft.id} className="border-t border-border align-top">
-                  <td>{translate(messages, 'inventory.counterSales.drafts.notIssued')}</td>
-                  <td className="text-end" dir="ltr">
-                    {draft.totals === null
-                      ? translate(messages, 'inventory.counterSales.sale.noAmounts')
-                      : formatMoney(draft.totals.gross, locale)}
-                  </td>
-                  <td className="text-end">
-                    <button
-                      type="button"
-                      className={SECONDARY_BUTTON}
-                      disabled={busy !== null}
-                      onClick={() => {
-                        void reopen(draft.id);
-                      }}
-                    >
-                      {translate(messages, 'inventory.counterSales.drafts.reopen')}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <TableContainer>
+            <Table size="small">
+              <caption className="sr-only">
+                {translate(messages, 'inventory.counterSales.drafts.caption')}
+              </caption>
+              <TableHead>
+                <TableRow>
+                  <TableCell scope="col">
+                    {translate(messages, 'inventory.counterSales.column.sale')}
+                  </TableCell>
+                  <TableCell scope="col" align="right">
+                    {translate(messages, 'inventory.counterSales.column.total')}
+                  </TableCell>
+                  <TableCell scope="col" align="right">
+                    {translate(messages, 'inventory.counterSales.column.action')}
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {items.map((draft) => (
+                  <TableRow key={draft.id} className="align-top">
+                    <TableCell>
+                      {translate(messages, 'inventory.counterSales.drafts.notIssued')}
+                    </TableCell>
+                    <TableCell align="right">
+                      {draft.totals === null ? (
+                        translate(messages, 'inventory.counterSales.sale.noAmounts')
+                      ) : (
+                        <span dir="ltr">{formatMoney(draft.totals.gross, locale)}</span>
+                      )}
+                    </TableCell>
+                    <TableCell align="right">
+                      <Button
+                        type="button"
+                        variant="outlined"
+                        size="small"
+                        disabled={busy !== null}
+                        onClick={() => {
+                          void reopen(draft.id);
+                        }}
+                      >
+                        {translate(messages, 'inventory.counterSales.drafts.reopen')}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         )}
       </BranchListView>
     </section>
@@ -921,10 +951,10 @@ function BuyerPicker({
       ) : (
         <>
           <div className="grid gap-3 sm:grid-cols-3">
-            <SelectField
+            <FormSelectField
               label={translate(messages, 'inventory.counterSales.buyer.searchBy')}
               value={field}
-              onChange={(event) => setField(event.target.value as BuyerSearchField)}
+              onChange={(next) => setField(next as BuyerSearchField)}
               options={[
                 {
                   value: 'name',
@@ -940,38 +970,37 @@ function BuyerPicker({
                 },
               ]}
             />
-            <TextField
+            <FormTextField
               label={translate(messages, 'inventory.counterSales.buyer.term')}
               value={term}
-              onChange={(event) => setTerm(event.target.value)}
+              onChange={setTerm}
               onKeyDown={(event) => {
+                // Enter searches now and never submits anything around the box.
                 if (event.key !== 'Enter') return;
                 event.preventDefault();
                 void find();
               }}
             />
             <div className="flex items-end">
-              <button
+              <Button
                 type="button"
-                className={SECONDARY_BUTTON}
+                variant="outlined"
                 onClick={() => {
                   void find();
                 }}
               >
                 {translate(messages, 'inventory.counterSales.buyer.search')}
-              </button>
+              </Button>
             </div>
           </div>
           {note !== null ? (
             <p className="text-caption text-text-muted">{translateDynamic(messages, note)}</p>
           ) : null}
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'inventory.counterSales.buyer.label')}
             required
             value={value?.id ?? ''}
-            onChange={(event) =>
-              onChange(options.find((hit) => hit.id === event.target.value) ?? null)
-            }
+            onChange={(next) => onChange(options.find((hit) => hit.id === next) ?? null)}
             options={options.map((hit) => ({
               value: hit.id,
               label:
@@ -1097,8 +1126,10 @@ function LineBuilder({
         </p>
       ) : null}
       {onShelf !== null ? (
-        <p className="text-caption text-text-muted" dir="ltr">
-          {translate(messages, 'inventory.counterSales.line.onShelf')} {onShelf}
+        // The sentence in the page's direction; only the server's figures read left to right.
+        <p className="text-caption text-text-muted">
+          {translate(messages, 'inventory.counterSales.line.onShelf')}{' '}
+          <bdi dir="ltr">{onShelf}</bdi>
         </p>
       ) : null}
       <ItemFinder
@@ -1124,21 +1155,19 @@ function LineBuilder({
             errors['locationId'] ? translateDynamic(messages, errors['locationId']) : undefined
           }
         />
-        <TextField
+        <FormNumberField
           label={translate(messages, 'inventory.counterSales.line.quantity')}
           description={translate(messages, 'inventory.stockOps.quantityHelp')}
           required
-          inputMode="decimal"
-          dir="ltr"
           value={quantity}
-          onChange={(event) => setQuantity(event.target.value)}
+          onChange={setQuantity}
           error={errors['quantity'] ? translateDynamic(messages, errors['quantity']) : undefined}
         />
       </div>
       <div>
-        <button type="button" className={SECONDARY_BUTTON} onClick={add}>
+        <Button type="button" variant="outlined" onClick={add}>
           {translate(messages, 'inventory.counterSales.line.add')}
-        </button>
+        </Button>
       </div>
     </section>
   );
@@ -1163,51 +1192,53 @@ function DraftLines({
           {translate(messages, 'inventory.counterSales.draft.none')}
         </p>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-body">
+        <TableContainer>
+          <Table size="small">
             <caption className="sr-only">
               {translate(messages, 'inventory.counterSales.draft.caption')}
             </caption>
-            <thead>
-              <tr className="text-caption text-text-muted">
-                <th scope="col" className="text-start font-medium">
+            <TableHead>
+              <TableRow>
+                <TableCell scope="col">
                   {translate(messages, 'inventory.counterSales.column.item')}
-                </th>
-                <th scope="col" className="text-end font-medium">
+                </TableCell>
+                <TableCell scope="col" align="right">
                   {translate(messages, 'inventory.counterSales.column.quantity')}
-                </th>
-                <th scope="col" className="text-end font-medium">
+                </TableCell>
+                <TableCell scope="col" align="right">
                   {translate(messages, 'inventory.counterSales.column.action')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
               {lines.map((line) => (
-                <tr key={line.key} className="border-t border-border align-top">
-                  <td>
+                <TableRow key={line.key} className="align-top">
+                  <TableCell>
                     <code className="font-mono text-caption" dir="ltr">
                       {line.item.sku}
                     </code>
                     <span className="block text-caption text-text-muted">{line.item.name}</span>
-                  </td>
-                  <td className="text-end">
+                  </TableCell>
+                  <TableCell align="right">
                     <Qty value={line.quantity} />
-                  </td>
-                  <td className="text-end">
-                    <button
+                  </TableCell>
+                  <TableCell align="right">
+                    <Button
                       type="button"
-                      className={DANGER_BUTTON}
+                      variant="outlined"
+                      color="error"
+                      size="small"
                       onClick={() => onRemove(line.key)}
                     >
                       {translate(messages, 'inventory.counterSales.draft.remove')}
                       <span className="sr-only"> {line.item.sku}</span>
-                    </button>
-                  </td>
-                </tr>
+                    </Button>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
-        </div>
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.counterSales.draft.priceNote')}
@@ -1243,8 +1274,11 @@ function DraftSubmit({
 }) {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  // One draft sent at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
 
   const submit = async () => {
+    if (sending.current) return;
     if (buyer === null) {
       setProblem('inventory.counterSales.create.needsBuyer');
       return;
@@ -1254,6 +1288,7 @@ function DraftSubmit({
       return;
     }
     setProblem(null);
+    sending.current = true;
     setBusy(true);
     const result = await createCounterSale(
       {
@@ -1268,6 +1303,7 @@ function DraftSubmit({
       },
       attemptKey
     );
+    sending.current = false;
     setBusy(false);
     onAttempted(result.state);
     notifyActionResult(result.state, messages);
@@ -1283,16 +1319,16 @@ function DraftSubmit({
       ) : null}
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button
+        <Button
           type="button"
-          className={PRIMARY_BUTTON}
+          variant="contained"
           disabled={busy}
           onClick={() => {
             void submit();
           }}
         >
           {translate(messages, 'inventory.counterSales.create.submit')}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -1327,6 +1363,8 @@ function SalePanel({
   const [reasonError, setReasonError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One issue or void sent at a time, before `busy` has disabled the buttons.
+  const sending = useRef(false);
   const invoice = sale.invoice;
   // A void reason typed against a draft is unsaved until the void is recorded.
   useUnsavedGuard(invoice.status === 'draft' && reason.trim().length > 0);
@@ -1340,10 +1378,13 @@ function SalePanel({
    */
 
   const issue = async () => {
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     // `If-Match` is the INVOICE's own `recordVersion`, as this answer published
     // it — never a line's, never defaulted, never carried across a write.
     const result = await issueInvoice(invoice.id, sale.recordVersion);
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -1362,14 +1403,17 @@ function SalePanel({
   };
 
   const voidDraft = async () => {
+    if (sending.current) return;
     const why = reason.trim();
     if (why.length === 0 || why.length > MAX_INVOICE_REASON) {
       setReasonError(why.length === 0 ? 'field.required' : 'inventory.stockOps.reasonTooLong');
       return;
     }
     setReasonError(null);
+    sending.current = true;
     setBusy(true);
     const result = await cancelInvoice(invoice.id, { reason: why }, sale.recordVersion);
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -1403,18 +1447,24 @@ function SalePanel({
           <dt className="text-caption text-text-muted">
             {translate(messages, 'inventory.counterSales.sale.number')}
           </dt>
-          <dd className="text-body text-text-primary" dir="ltr">
-            {invoice.invoiceNumber ?? translate(messages, 'inventory.counterSales.sale.noNumber')}
+          <dd className="text-body text-text-primary">
+            {invoice.invoiceNumber === null ? (
+              translate(messages, 'inventory.counterSales.sale.noNumber')
+            ) : (
+              <bdi dir="ltr">{invoice.invoiceNumber}</bdi>
+            )}
           </dd>
         </div>
         <div>
           <dt className="text-caption text-text-muted">
             {translate(messages, 'inventory.counterSales.sale.gross')}
           </dt>
-          <dd className="text-body text-text-primary" dir="ltr">
-            {invoice.totals === null
-              ? translate(messages, 'inventory.counterSales.sale.noAmounts')
-              : formatMoney(invoice.totals.gross, locale)}
+          <dd className="text-body text-text-primary">
+            {invoice.totals === null ? (
+              translate(messages, 'inventory.counterSales.sale.noAmounts')
+            ) : (
+              <bdi dir="ltr">{formatMoney(invoice.totals.gross, locale)}</bdi>
+            )}
           </dd>
         </div>
       </dl>
@@ -1439,39 +1489,40 @@ function SalePanel({
           </p>
           {canIssue ? (
             <div>
-              <button
+              <Button
                 type="button"
-                className={PRIMARY_BUTTON}
+                variant="contained"
                 disabled={busy}
                 onClick={() => {
                   void issue();
                 }}
               >
                 {translate(messages, 'inventory.counterSales.issue.action')}
-              </button>
+              </Button>
             </div>
           ) : (
             <p className="text-caption text-text-muted">
               {translate(messages, 'inventory.counterSales.issue.needsIssue')}
             </p>
           )}
-          <TextField
+          <FormTextField
             label={translate(messages, 'inventory.counterSales.void.reason')}
             value={reason}
-            onChange={(event) => setReason(event.target.value)}
+            onChange={setReason}
             error={reasonError ? translateDynamic(messages, reasonError) : undefined}
           />
           <div>
-            <button
+            <Button
               type="button"
-              className={DANGER_BUTTON}
+              variant="outlined"
+              color="error"
               disabled={busy}
               onClick={() => {
                 void voidDraft();
               }}
             >
               {translate(messages, 'inventory.counterSales.void.action')}
-            </button>
+            </Button>
           </div>
         </>
       ) : (
@@ -1506,9 +1557,9 @@ function SalePanel({
         </>
       ) : null}
       <div>
-        <button type="button" className={SECONDARY_BUTTON} onClick={onNewSale}>
+        <Button type="button" variant="outlined" onClick={onNewSale}>
           {translate(messages, 'inventory.counterSales.sale.next')}
-        </button>
+        </Button>
       </div>
     </section>
   );
