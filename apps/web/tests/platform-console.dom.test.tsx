@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -2511,6 +2511,68 @@ describe('a ceiling the identity provider never sees', () => {
     await waitFor(() => expect(screen.getAllByText(arabic).length).toBeGreaterThan(0));
     expect(arabic).toMatch(/[؀-ۿ]/);
     expect(arabic).not.toBe(L('form.violation.too_long'));
+  });
+});
+
+describe('the account form on Material UI (P1-32-PRE-OD-AUTHA)', () => {
+  it('submits on Enter from the last box', async () => {
+    renderAccount();
+    const user = await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    await user.type(accountFields()[2] as HTMLInputElement, '{Enter}');
+    await waitFor(() => expect(changeOwnPasswordAction).toHaveBeenCalledTimes(1));
+  });
+
+  it('sends one change for two presses inside one act, and says it is working', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    changeOwnPasswordAction.mockReturnValue(new Promise((resolve) => (answer = resolve)));
+    renderAccount();
+    await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    const button = screen.getByRole('button', { name: L('platform.account.submit') });
+    await act(() => {
+      button.click();
+      button.click();
+    });
+    expect(changeOwnPasswordAction).toHaveBeenCalledTimes(1);
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: L('platform.account.submitting') })).toBeDisabled()
+    );
+
+    await act(async () => {
+      answer({ status: 'success', messageKey: 'platform.account.done', attempt: 1 });
+    });
+    expect(await screen.findByTestId('account-password-done')).toBeInTheDocument();
+    expect(changeOwnPasswordAction).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts the cursor on the first refused field, before and after the server answers', async () => {
+    const user = userEvent.setup();
+    renderAccount();
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+    await waitFor(() => expect(accountFields()[0]).toHaveFocus());
+
+    changeOwnPasswordAction.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'platform.account.error.refused',
+      fieldErrors: { newPassword: 'platform.account.error.refused' },
+      attempt: 1,
+    });
+    await fillAccount([ACCOUNT_CURRENT, ACCOUNT_NEXT, ACCOUNT_NEXT]);
+    await user.click(screen.getByRole('button', { name: L('platform.account.submit') }));
+    await waitFor(() => expect(accountFields()[1]).toHaveFocus());
+  });
+
+  it('keeps every reveal control inside its own box, at the logical end, in both directions', () => {
+    for (const locale of ['en', 'ar'] as const) {
+      const { unmount } = renderAccount(locale);
+      const fields = accountFields();
+      const toggles = screen.getAllByTestId('password-reveal-toggle');
+      fields.forEach((field, index) => {
+        expect(field.parentElement?.contains(toggles[index] as HTMLElement)).toBe(true);
+        expect(toggles[index]).toHaveAttribute('type', 'button');
+        expect(toggles[index]).toHaveAttribute('aria-controls', field.id);
+      });
+      unmount();
+    }
   });
 });
 

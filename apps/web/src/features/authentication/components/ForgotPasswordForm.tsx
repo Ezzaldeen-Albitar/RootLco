@@ -1,16 +1,19 @@
 'use client';
 
 import { useActionState, useState } from 'react';
-import { TextField } from '@/components/forms/Field';
+import Alert from '@mui/material/Alert';
+import AlertTitle from '@mui/material/AlertTitle';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { translate, translateDynamic } from '@/i18n/get-messages';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 import { requestPasswordResetAction } from '../actions/password-reset';
-import { FormFeedback } from './FormFeedback';
-import { SubmitButton } from './SubmitButton';
+import { MuiFormFeedback } from './MuiFormFeedback';
+import { MuiSubmitButton, useSubmitOnce } from './MuiSubmitButton';
 
 /**
- * Request a password-reset link.
+ * Request a password-reset link, on Material UI (ADR-022).
  *
  * On success the form is REPLACED by the confirmation rather than left on screen
  * beneath it. Leaving a submit button under a "check your email" message invites
@@ -19,50 +22,53 @@ import { SubmitButton } from './SubmitButton';
  *
  * The confirmation never says whether an account exists. That is not a UX
  * compromise — it is the whole point of the operation, which answers identically
- * for every address by design.
+ * for every address by design: the action turns every refusal other than a
+ * throttle or an outage into this same confirmation.
  */
 export function ForgotPasswordForm({ messages }: { readonly messages: Messages }) {
   /*
-   * Retained across a refused submit. React resets the form DOM once the
-   * Server Action settles, and an uncontrolled text box is emptied by it.
+   * Controlled, so the address survives React's reset of the form after a
+   * refused submit.
    */
   const [email, setEmail] = useState('');
-  const [state, formAction] = useActionState<ActionState, FormData>(
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(
     requestPasswordResetAction,
     IDLE
   );
+  const { edited, errorKey, formRef } = useActionRefusal(state);
+  useSubmitOnce(formRef, state, pending);
 
   if (state.status === 'success') {
     return (
-      <div role="status" className="rounded-lg border border-success-border bg-success-subtle p-4">
-        <p className="text-body font-medium text-text-primary">
+      <Alert severity="success" variant="outlined" role="status" data-testid="forgot-submitted">
+        <AlertTitle component="p" className="text-body font-medium text-text-primary">
           {translate(messages, 'auth.forgot.submitted')}
-        </p>
-        <p className="mt-1 text-supporting text-text-secondary">
+        </AlertTitle>
+        <p className="text-supporting text-text-secondary">
           {translate(messages, 'auth.forgot.submittedDetail')}
         </p>
-      </div>
+      </Alert>
     );
   }
 
-  const fieldError = state.fieldErrors?.email;
+  const fieldError = errorKey('email');
 
   return (
-    <form action={formAction} className="flex flex-col gap-5" noValidate>
-      <FormFeedback state={state} messages={messages} />
-      <TextField
-        key={`email-${state.attempt ?? 0}`}
+    <form ref={formRef} action={formAction} className="flex flex-col gap-5" noValidate>
+      <MuiFormFeedback state={state} messages={messages} />
+      <FormTextField
         name="email"
         type="email"
         label={translate(messages, 'auth.forgot.email')}
         required
         autoComplete="username"
         spellCheck={false}
-        defaultValue={email}
-        onChange={(event) => setEmail(event.target.value)}
-        error={fieldError ? translate(messages, fieldError as keyof Messages) : undefined}
+        value={email}
+        onChange={setEmail}
+        onEdit={() => edited('email')}
+        error={fieldError ? translateDynamic(messages, fieldError) : undefined}
       />
-      <SubmitButton
+      <MuiSubmitButton
         label={translate(messages, 'auth.forgot.submit')}
         pendingLabel={translate(messages, 'auth.forgot.submitting')}
       />

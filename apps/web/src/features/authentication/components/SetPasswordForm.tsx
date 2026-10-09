@@ -1,18 +1,21 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState } from 'react';
-import { PasswordField } from '@/components/forms/Field';
+import { useActionState, useState } from 'react';
+import Alert from '@mui/material/Alert';
+import AlertTitle from '@mui/material/AlertTitle';
+import { FormPasswordField } from '@/components/forms/mui/FormPasswordField';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { translate, translateDynamic } from '@/i18n/get-messages';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 import { completePasswordResetAction } from '../actions/password-reset';
-import { FormFeedback } from './FormFeedback';
-import { SubmitButton } from './SubmitButton';
+import { MuiFormFeedback } from './MuiFormFeedback';
+import { MuiSubmitButton, useSubmitOnce } from './MuiSubmitButton';
 
 /**
- * Set a password with a recovery token.
+ * Set a password with a recovery token, on Material UI (ADR-022).
  *
  * Shared by password reset and account activation because it is one backend
  * operation reached from two links; only the surrounding words differ.
@@ -31,6 +34,13 @@ import { SubmitButton } from './SubmitButton';
  * The page it lands on is not linked from anywhere and is not indexed. What this
  * component must not do is make the token *travel* any further than the request
  * that spends it.
+ *
+ * ## One answer for a link that cannot be spent
+ *
+ * Expired, invalid and already used are one sentence ("This link has expired or
+ * has already been used"), because the backend does not tell them apart and a
+ * page that guessed would be telling a stranger something about the link. The
+ * way forward under it is the same for all three: request a new link.
  */
 export function SetPasswordForm({
   locale,
@@ -47,29 +57,44 @@ export function SetPasswordForm({
   readonly doneTitleKey: string;
   readonly doneBodyKey: string;
 }) {
-  const [state, formAction] = useActionState<ActionState, FormData>(
+  const [state, formAction, pending] = useActionState<ActionState, FormData>(
     completePasswordResetAction,
     IDLE
   );
+  /*
+   * Both boxes are controlled and CLEARED on the attempt a refusal answers:
+   * every refusal here is a statement about the value itself (too short, not
+   * accepted, the two do not match), so putting the refused value back would
+   * invite the operator to send it again unchanged. Recorded in
+   * `CLEARS_ON_REFUSAL` in `form-reset-class.test.ts`.
+   */
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [answered, setAnswered] = useState(state.attempt ?? 0);
+  if ((state.attempt ?? 0) !== answered) {
+    setAnswered(state.attempt ?? 0);
+    setPassword('');
+    setConfirmPassword('');
+  }
+
+  const { edited, errorKey, formRef } = useActionRefusal(state);
+  useSubmitOnce(formRef, state, pending);
 
   if (state.status === 'success') {
     return (
       <div className="flex flex-col gap-4">
-        <div
-          role="status"
-          className="rounded-lg border border-success-border bg-success-subtle p-4"
-        >
-          <p className="text-body font-medium text-text-primary">
-            {translate(messages, doneTitleKey as keyof Messages)}
+        <Alert severity="success" variant="outlined" role="status" data-testid="set-password-done">
+          <AlertTitle component="p" className="text-body font-medium text-text-primary">
+            {translateDynamic(messages, doneTitleKey)}
+          </AlertTitle>
+          <p className="text-supporting text-text-secondary">
+            {translateDynamic(messages, doneBodyKey)}
           </p>
-          <p className="mt-1 text-supporting text-text-secondary">
-            {translate(messages, doneBodyKey as keyof Messages)}
-          </p>
-        </div>
+        </Alert>
         {/*
-          A link, not an automatic redirect. The confirmation says other sessions
-          were ended; bouncing the reader off it before they have read that turns
-          a security-relevant statement into a flicker.
+          A link, not an automatic redirect. The confirmation says what happens
+          to other sign-ins; bouncing the reader off it before they have read
+          that turns a security-relevant statement into a flicker.
         */}
         <Link
           href={`/${locale}/login`}
@@ -82,15 +107,15 @@ export function SetPasswordForm({
   }
 
   const fieldError = (name: string) => {
-    const key = state.fieldErrors?.[name];
-    return key ? translate(messages, key as keyof Messages) : undefined;
+    const key = errorKey(name);
+    return key ? translateDynamic(messages, key) : undefined;
   };
 
   return (
-    <form action={formAction} className="flex flex-col gap-5" noValidate>
+    <form ref={formRef} action={formAction} className="flex flex-col gap-5" noValidate>
       <input type="hidden" name="token" value={token} />
 
-      <FormFeedback state={state} messages={messages} />
+      <MuiFormFeedback state={state} messages={messages} />
 
       {/*
         Both fields carry their own reveal control, inside the field. Choosing a
@@ -99,30 +124,36 @@ export function SetPasswordForm({
         reached from an invitation or a reset link, where the operator has no
         working password to fall back on.
       */}
-      <PasswordField
+      <FormPasswordField
         name="password"
         label={translate(messages, 'auth.reset.password')}
         description={translate(messages, 'auth.reset.passwordHint')}
         required
         autoComplete="new-password"
         minLength={8}
+        value={password}
+        onChange={setPassword}
+        onEdit={() => edited('password')}
         error={fieldError('password')}
         showLabel={translate(messages, 'field.password.show')}
         hideLabel={translate(messages, 'field.password.hide')}
       />
 
-      <PasswordField
+      <FormPasswordField
         name="confirmPassword"
         label={translate(messages, 'auth.reset.confirmPassword')}
         required
         autoComplete="new-password"
+        value={confirmPassword}
+        onChange={setConfirmPassword}
+        onEdit={() => edited('confirmPassword')}
         error={fieldError('confirmPassword')}
         showLabel={translate(messages, 'field.password.show')}
         hideLabel={translate(messages, 'field.password.hide')}
       />
 
-      <SubmitButton
-        label={translate(messages, submitLabelKey as keyof Messages)}
+      <MuiSubmitButton
+        label={translateDynamic(messages, submitLabelKey)}
         pendingLabel={translate(messages, 'auth.reset.submitting')}
       />
 

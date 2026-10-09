@@ -1,13 +1,16 @@
 'use client';
 
-import { useState } from 'react';
-import { PasswordField } from '@/components/forms/Field';
-import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import { useEffect, useRef, useState } from 'react';
+import Alert from '@mui/material/Alert';
+import AlertTitle from '@mui/material/AlertTitle';
+import Button from '@mui/material/Button';
+import { FormPasswordField } from '@/components/forms/mui/FormPasswordField';
+import { MuiFormFeedback } from '@/features/authentication/components/MuiFormFeedback';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { changeOwnPasswordAction } from '../actions';
 import type { PlatformSession } from '../api/session';
-import { PRIMARY_BUTTON, SECTION_HINT, Section } from './ui';
+import { SECTION_HINT, Section } from './ui';
 import { useConsoleAction } from './use-console-action';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 
@@ -44,6 +47,14 @@ import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
  * wire: a current password the provider would not verify marks the FIRST field,
  * a new password the provider refused marks the SECOND. RootLco holds no
  * strength rule of its own, so the interface states none.
+ *
+ * ## On Material UI (ADR-022)
+ *
+ * The fields are `FormPasswordField`, the banner `MuiFormFeedback`, and the
+ * confirmation a Material `Alert`. Enter in any box submits, and a second press
+ * while the change is out sends nothing (`sending`): the button's `disabled`
+ * arrives only with the next render, and two presses before it would otherwise
+ * ask the identity provider twice.
  */
 export function AccountSecurityScreen({
   messages,
@@ -59,6 +70,11 @@ export function AccountSecurityScreen({
   const [confirmPassword, setConfirmPassword] = useState('');
 
   const [local, setLocal] = useState<Readonly<Record<string, string>>>({});
+  // One change per press: held from the press until the action has answered.
+  const sending = useRef(false);
+  useEffect(() => {
+    if (!action.pending) sending.current = false;
+  }, [action.state, action.pending]);
   // Refused attempts made here, before anything is sent. Added to the write's
   // own attempts so the cursor moves to the first thing to fix after either
   // kind of refusal (route sweep B3, question f).
@@ -112,12 +128,14 @@ export function AccountSecurityScreen({
   };
 
   const submit = () => {
+    if (sending.current || action.pending) return;
     const found = checkLocally();
     setLocal(found);
     if (Object.keys(found).length > 0) {
       setLocalAttempts((count) => count + 1);
       return;
     }
+    sending.current = true;
     action.run(
       () => changeOwnPasswordAction({ currentPassword, newPassword, confirmPassword }),
       () => {
@@ -168,18 +186,20 @@ export function AccountSecurityScreen({
         <p className={SECTION_HINT}>{t('platform.account.passwordHint')}</p>
 
         {succeeded ? (
-          <div
+          <Alert
+            severity="success"
+            variant="outlined"
             role="status"
             data-testid="account-password-done"
-            className="mt-3 rounded-lg border border-success-border bg-success-subtle p-4"
+            className="mt-3"
           >
-            <p className="text-body font-medium text-text-primary">
+            <AlertTitle component="p" className="text-body font-medium text-text-primary">
               {t('platform.account.doneTitle')}
-            </p>
-            <p className="mt-1 text-supporting text-text-secondary">
+            </AlertTitle>
+            <p className="text-supporting text-text-secondary">
               {translateDynamic(messages, action.state.messageKey ?? 'platform.account.done')}
             </p>
-          </div>
+          </Alert>
         ) : null}
 
         <form
@@ -192,50 +212,55 @@ export function AccountSecurityScreen({
           }}
         >
           {action.state.status !== 'idle' && !succeeded ? (
-            <FormFeedback state={action.state} messages={messages} />
+            <MuiFormFeedback state={action.state} messages={messages} />
           ) : null}
 
-          <PasswordField
+          <FormPasswordField
             name="currentPassword"
             label={t('platform.account.currentPassword')}
             required
             autoComplete="current-password"
             value={currentPassword}
-            onChange={(event) => edit('currentPassword', setCurrentPassword)(event.target.value)}
+            onChange={edit('currentPassword', setCurrentPassword)}
             error={error('currentPassword')}
             showLabel={translate(messages, 'field.password.show')}
             hideLabel={translate(messages, 'field.password.hide')}
           />
 
-          <PasswordField
+          <FormPasswordField
             name="newPassword"
             label={t('platform.account.newPassword')}
             description={t('platform.account.newPasswordHint')}
             required
             autoComplete="new-password"
             value={newPassword}
-            onChange={(event) => edit('newPassword', setNewPassword)(event.target.value)}
+            onChange={edit('newPassword', setNewPassword)}
             error={error('newPassword')}
             showLabel={translate(messages, 'field.password.show')}
             hideLabel={translate(messages, 'field.password.hide')}
           />
 
-          <PasswordField
+          <FormPasswordField
             name="confirmPassword"
             label={t('platform.account.confirmPassword')}
             required
             autoComplete="new-password"
             value={confirmPassword}
-            onChange={(event) => edit('confirmPassword', setConfirmPassword)(event.target.value)}
+            onChange={edit('confirmPassword', setConfirmPassword)}
             error={error('confirmPassword')}
             showLabel={translate(messages, 'field.password.show')}
             hideLabel={translate(messages, 'field.password.hide')}
           />
 
           <div>
-            <button type="submit" className={PRIMARY_BUTTON} disabled={action.pending}>
+            <Button
+              type="submit"
+              variant="contained"
+              disabled={action.pending}
+              aria-busy={action.pending || undefined}
+            >
               {t(action.pending ? 'platform.account.submitting' : 'platform.account.submit')}
-            </button>
+            </Button>
           </div>
         </form>
       </Section>
