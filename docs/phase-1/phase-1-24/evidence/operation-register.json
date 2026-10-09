@@ -4465,7 +4465,8 @@
       "missingEvidence": [],
       "tests": [
         "tests/backend/iam-admin-writes.test.ts",
-        "tests/backend/p1-24-iam-route-depth.test.ts"
+        "tests/backend/p1-24-iam-route-depth.test.ts",
+        "tests/ci/p1-31-version-sourcing.test.ts"
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/iam/users/[userId]/route.ts"
