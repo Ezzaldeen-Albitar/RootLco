@@ -229,8 +229,10 @@ describe('every route body serialises a named type', () => {
     // commands serialising the NAMED `RefundRequestResult`, the list the NAMED
     // `Page<RefundRequestView>` and the read the NAMED `RefundRequestDetailView`, so
     // `named` moves by seven and `composed` does not.
-    expect(summary.bodies).toBe(524);
-    expect(summary.named).toBe(472);
+    // 525 with the item read (P1-32-PRE-OD-INV2A): one read serialising the NAMED
+    // `ItemDetailView`, so `named` moves by one and `composed` does not.
+    expect(summary.bodies).toBe(525);
+    expect(summary.named).toBe(473);
     expect(summary.composed).toBe(52);
     expect(summary.anonymous).toBe(0);
     expect(summary.unresolved).toBe(0);

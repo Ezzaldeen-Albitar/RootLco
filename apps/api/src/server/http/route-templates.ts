@@ -182,6 +182,7 @@ export const ROUTE_TEMPLATES = Object.freeze([
   '/invoices/{invoiceId}/outstanding',
   '/item-categories',
   '/items',
+  '/items/{itemId}',
   '/items/{itemId}/cost-history',
   '/items/{itemId}/identifiers',
   '/items/{itemId}/identifiers/{identifierId}/retirement',

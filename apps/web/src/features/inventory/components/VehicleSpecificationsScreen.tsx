@@ -24,18 +24,44 @@
  * cannot), offers recording, confirming and retiring. `veh.vehicle.read` decides
  * whether the make and model catalogue is offered as a picker; without it the
  * make is named by its identifier and the screen says why.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV2A`)
+ *
+ * The list is Material's table: the read answers one bounded page with a "more
+ * exist" flag and no cursor to walk (planner ruling of 2026-10-09). The state
+ * filter, make, model and unit are `FormSelectField`, the years and the capacity
+ * `FormNumberField` (the string typed is the string checked and sent), the
+ * texts `FormTextField`, and the part category is chosen from the whole
+ * category tree (`CategoryTreePicker`, by name and path), never typed. Opening
+ * the form moves the cursor into it, and a saved form gives it back to the
+ * button that opened it. Each write is sent once (`useSingleFlight`). A recorded
+ * moment is written on a named clock (`RecordedMoment`). What is read, sent and
+ * authorized is unchanged.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { SelectField, TextField } from '@/components/forms/Field';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiEmptyState, MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import { listMakes, listModels, type CatalogueOption } from '@/features/vehicles/catalogue-api';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import type { ReadFailureStatus } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 
 import {
   confirmVehicleSpecification,
@@ -55,15 +81,11 @@ import {
   type VehicleSpecification,
   type VehicleSpecificationState,
 } from '../inventory-contract';
-import {
-  CategoryPicker,
-  OutcomeNote,
-  PRIMARY_BUTTON,
-  Qty,
-  SECONDARY_BUTTON,
-  useItemCategories,
-} from './shared';
-import { DANGER_BUTTON, PANEL } from './stock-operations';
+import { RecordedMoment, useSingleFlight } from './catalogue-pieces';
+import { useAllItemCategories } from './CategoryTree';
+import { CategoryTreePicker } from './CategoryTreePicker';
+import { OutcomeNote, Qty } from './shared';
+import { LINK, PANEL } from './stock-operations';
 
 type Listing =
   | { readonly phase: 'loading' }
@@ -72,7 +94,11 @@ type Listing =
       readonly rows: readonly VehicleSpecification[];
       readonly truncated: boolean;
     }
-  | { readonly phase: 'failed'; readonly messageKey: string };
+  | {
+      readonly phase: 'failed';
+      readonly status: ReadFailureStatus;
+      readonly correlationId: string | null;
+    };
 
 export function VehicleSpecificationsScreen({
   locale,
@@ -91,6 +117,7 @@ export function VehicleSpecificationsScreen({
   const [epoch, setEpoch] = useState(0);
   const [listing, setListing] = useState<Listing>({ phase: 'loading' });
   const [adding, setAdding] = useState(false);
+  const opener = useRef<HTMLButtonElement | null>(null);
 
   const reload = useCallback(() => setEpoch((n) => n + 1), []);
 
@@ -101,13 +128,7 @@ export function VehicleSpecificationsScreen({
       setListing(
         state.status === 'ok'
           ? { phase: 'listed', rows: state.data.items, truncated: state.data.hasMore }
-          : {
-              phase: 'failed',
-              messageKey:
-                state.status === 'denied'
-                  ? 'inventory.specifications.refused'
-                  : 'inventory.specifications.unavailable',
-            }
+          : { phase: 'failed', status: state.status, correlationId: state.correlationId }
       );
     });
     return () => {
@@ -124,13 +145,13 @@ export function VehicleSpecificationsScreen({
         <p className="text-caption text-text-muted">
           {translate(messages, 'inventory.specifications.explain')}
         </p>
-        <SelectField
+        <FormSelectField
           label={translate(messages, 'inventory.specifications.filter.status')}
           value={status}
-          onChange={(event) =>
+          onChange={(next) =>
             setStatus(
-              VEHICLE_SPECIFICATION_STATES.includes(event.target.value as VehicleSpecificationState)
-                ? (event.target.value as VehicleSpecificationState)
+              VEHICLE_SPECIFICATION_STATES.includes(next as VehicleSpecificationState)
+                ? (next as VehicleSpecificationState)
                 : ''
             )
           }
@@ -143,14 +164,15 @@ export function VehicleSpecificationsScreen({
 
         {canManage ? (
           <div>
-            <button
+            <Button
+              ref={opener}
               type="button"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
               aria-expanded={adding}
               onClick={() => setAdding((was) => !was)}
             >
               {translate(messages, 'inventory.specifications.create.open')}
-            </button>
+            </Button>
           </div>
         ) : (
           <p className="text-caption text-text-muted">
@@ -160,11 +182,14 @@ export function VehicleSpecificationsScreen({
 
         {canManage && adding ? (
           <SpecificationForm
+            locale={locale}
             messages={messages}
             canReadCatalogue={canReadCatalogue}
             onDone={() => {
               setAdding(false);
               reload();
+              // The form is gone; the cursor goes back to what opened it.
+              opener.current?.focus();
             }}
           />
         ) : null}
@@ -175,59 +200,75 @@ export function VehicleSpecificationsScreen({
           {translate(messages, 'inventory.specifications.list.heading')}
         </h2>
         {listing.phase === 'loading' ? (
-          <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+          <MuiLoadingState messages={messages} rows={3} testId="specifications-loading" />
         ) : listing.phase === 'failed' ? (
-          <p role="alert" className="text-body text-error">
-            {translateDynamic(messages, listing.messageKey)}
-          </p>
+          <MuiReadFailureState
+            messages={messages}
+            locale={locale}
+            status={listing.status}
+            correlationId={listing.correlationId}
+            onRetry={
+              listing.status === 'unavailable' || listing.status === 'error' ? reload : undefined
+            }
+            descriptionKey={
+              listing.status === 'denied'
+                ? 'inventory.specifications.refused'
+                : 'inventory.specifications.unavailable'
+            }
+            testId="specifications-failure"
+          />
         ) : listing.rows.length === 0 ? (
-          <p className="py-4 text-center text-body text-text-secondary">
-            {translate(messages, 'inventory.specifications.list.none')}
-          </p>
+          <MuiEmptyState
+            messages={messages}
+            descriptionKey="inventory.specifications.list.none"
+            testId="specifications-empty"
+          />
         ) : (
           <>
-            <table className="w-full text-body">
-              <caption className="sr-only">
-                {translate(messages, 'inventory.specifications.list.caption')}
-              </caption>
-              <thead>
-                <tr className="text-start text-caption text-text-muted">
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {translate(messages, 'inventory.specifications.column.vehicle')}
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {translate(messages, 'inventory.specifications.column.condition')}
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-end">
-                    {translate(messages, 'inventory.specifications.column.capacity')}
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {translate(messages, 'inventory.specifications.column.source')}
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {translate(messages, 'inventory.specifications.column.status')}
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {translate(messages, 'inventory.specifications.column.recorded')}
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {translate(messages, 'inventory.specifications.column.actions')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {listing.rows.map((row) => (
-                  <SpecificationRow
-                    key={row.id}
-                    locale={locale}
-                    messages={messages}
-                    row={row}
-                    canManage={canManage}
-                    onChanged={reload}
-                  />
-                ))}
-              </tbody>
-            </table>
+            <TableContainer>
+              <Table size="small">
+                <caption className="sr-only">
+                  {translate(messages, 'inventory.specifications.list.caption')}
+                </caption>
+                <TableHead>
+                  <TableRow>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.specifications.column.vehicle')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.specifications.column.condition')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.specifications.column.capacity')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.specifications.column.source')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.specifications.column.status')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.specifications.column.recorded')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.specifications.column.actions')}
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {listing.rows.map((row) => (
+                    <SpecificationRow
+                      key={row.id}
+                      locale={locale}
+                      messages={messages}
+                      row={row}
+                      canManage={canManage}
+                      onChanged={reload}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
             {listing.truncated ? (
               <p className="text-caption text-text-muted">
                 {translate(messages, 'inventory.specifications.list.truncated')}
@@ -255,22 +296,24 @@ function SpecificationRow({
 }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  const flight = useSingleFlight();
 
-  const run = async (act: () => Promise<{ readonly state: ActionState }>) => {
-    setBusy(true);
-    const result = await act();
-    setBusy(false);
-    setOutcome(result.state);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success') {
-      setOutcome(null);
-      onChanged();
-    }
-  };
+  const run = (act: () => Promise<{ readonly state: ActionState }>) =>
+    flight(async () => {
+      setBusy(true);
+      const result = await act();
+      setBusy(false);
+      setOutcome(result.state);
+      notifyActionResult(result.state, messages);
+      if (result.state.status === 'success') {
+        setOutcome(null);
+        onChanged();
+      }
+    });
 
   return (
-    <tr className="border-t border-border">
-      <td className="px-3 py-2">
+    <TableRow>
+      <TableCell>
         <code className="font-mono text-caption" dir="ltr">
           {row.makeId}
         </code>
@@ -298,56 +341,74 @@ function SpecificationRow({
             <bdi>{row.engineVariant}</bdi>
           </>
         ) : null}
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
         <bdi>{row.serviceCondition}</bdi>
-      </td>
-      <td className="px-3 py-2 text-end tabular-nums">
+      </TableCell>
+      <TableCell align="right" className="tabular-nums">
         <Qty value={row.capacity} /> <bdi>{row.uomCode}</bdi>
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
         <bdi>{row.sourceReference}</bdi>
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
         {translateDynamic(messages, `inventory.specifications.status.${row.status}`)}
-      </td>
-      <td className="px-3 py-2">
-        <span dir="ltr">{formatDateTime(row.createdAt, locale)}</span>
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
+        <RecordedMoment value={row.createdAt} locale={locale} />
+      </TableCell>
+      <TableCell>
         <div className="flex flex-wrap gap-2">
           {canManage && row.status === 'recorded' ? (
-            <button
+            <Button
               type="button"
-              className={PRIMARY_BUTTON}
+              variant="contained"
+              size="small"
               disabled={busy}
               onClick={() => void run(() => confirmVehicleSpecification(row.id))}
             >
               {translate(messages, 'inventory.specifications.confirm.action')}
-            </button>
+            </Button>
           ) : null}
           {canManage && row.status !== 'retired' ? (
-            <button
+            <Button
               type="button"
-              className={DANGER_BUTTON}
+              variant="outlined"
+              color="error"
+              size="small"
               disabled={busy}
               onClick={() => void run(() => retireVehicleSpecification(row.id))}
             >
               {translate(messages, 'inventory.specifications.retire.action')}
-            </button>
+            </Button>
           ) : null}
         </div>
         <OutcomeNote messages={messages} outcome={outcome} />
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
 
+const EMPTY_SPECIFICATION = {
+  makeId: '',
+  modelId: '',
+  yearFrom: '',
+  yearTo: '',
+  engineVariant: '',
+  serviceCondition: '',
+  itemCategoryId: '',
+  capacity: '',
+  uomId: '',
+  sourceReference: '',
+};
+
 function SpecificationForm({
+  locale,
   messages,
   canReadCatalogue,
   onDone,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly canReadCatalogue: boolean;
   readonly onDone: () => void;
@@ -364,22 +425,37 @@ function SpecificationForm({
     readonly makeId: string;
     readonly options: readonly CatalogueOption[];
   } | null>(null);
-  const categories = useItemCategories();
-  const [form, setForm] = useState({
-    makeId: '',
-    modelId: '',
-    yearFrom: '',
-    yearTo: '',
-    engineVariant: '',
-    serviceCondition: '',
-    itemCategoryId: '',
-    capacity: '',
-    uomId: '',
-    sourceReference: '',
-  });
+  // Every page of the category list, so no category past the first hundred is
+  // missing from the tree the part category is chosen from.
+  const categories = useAllItemCategories();
+  const [form, setForm] = useState(EMPTY_SPECIFICATION);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const flight = useSingleFlight();
+  const heading = useRef<HTMLHeadingElement | null>(null);
+
+  // Opening the form moves the cursor into it, onto its name.
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
+
+  // A specification is the organisation's, so nothing here follows a branch
+  // switch on its own: a confirmed discard empties the form, as promised.
+  useUnsavedGuard(
+    Object.values(form).some((value) => value.trim().length > 0),
+    () => {
+      setForm(EMPTY_SPECIFICATION);
+      setErrors({});
+      setOutcome(null);
+    }
+  );
+  const formRef = useFocusFirstInvalid({
+    status: 'invalid',
+    fieldErrors: { ...(outcome?.fieldErrors ?? {}), ...errors },
+    attempt,
+  });
 
   useEffect(() => {
     let live = true;
@@ -423,70 +499,80 @@ function SpecificationForm({
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
+  const edit = (patch: Partial<typeof EMPTY_SPECIFICATION>) => setForm((f) => ({ ...f, ...patch }));
 
-  const submit = async () => {
-    const found: Record<string, string> = {};
-    /*
-     * All three are chosen from lists the platform published, so the only rule
-     * left is the one the operation states: a specification names a make.
-     */
-    const makeId = form.makeId.trim();
-    if (makeId.length === 0) found['makeId'] = 'field.required';
-    const modelId = form.modelId.trim();
-    const itemCategoryId = form.itemCategoryId.trim();
-    const rawFrom = form.yearFrom.trim();
-    const rawTo = form.yearTo.trim();
-    if (rawFrom.length > 0 && !MODEL_YEAR.test(rawFrom)) {
-      found['yearFrom'] = 'inventory.specifications.create.yearFormat';
-    }
-    if (rawTo.length > 0 && !MODEL_YEAR.test(rawTo)) {
-      found['yearTo'] = 'inventory.specifications.create.yearFormat';
-    }
-    const serviceCondition = form.serviceCondition.trim();
-    if (!SERVICE_CONDITION.test(serviceCondition)) {
-      found['serviceCondition'] = 'inventory.material.create.conditionFormat';
-    }
-    const capacity = form.capacity.trim();
-    if (!QUANTITY.test(capacity) || /^0+(?:\.0+)?$/.test(capacity)) {
-      found['capacity'] = 'inventory.specifications.create.capacityFormat';
-    }
-    if (!form.uomId) found['uomId'] = 'field.required';
-    const engineVariant = form.engineVariant.trim();
-    if (engineVariant.length > MAX_ENGINE_VARIANT) {
-      found['engineVariant'] = 'inventory.specifications.create.engineTooLong';
-    }
-    const sourceReference = form.sourceReference.trim();
-    if (sourceReference.length === 0) found['sourceReference'] = 'field.required';
-    else if (sourceReference.length > MAX_SOURCE_REFERENCE) {
-      found['sourceReference'] = 'inventory.material.create.sourceTooLong';
-    }
-    setErrors(found);
-    if (Object.keys(found).length > 0) return;
+  const submit = () =>
+    flight(async () => {
+      const found: Record<string, string> = {};
+      /*
+       * All three are chosen from lists the platform published, so the only rule
+       * left is the one the operation states: a specification names a make.
+       */
+      const makeId = form.makeId.trim();
+      if (makeId.length === 0) found['makeId'] = 'field.required';
+      const modelId = form.modelId.trim();
+      const itemCategoryId = form.itemCategoryId.trim();
+      const rawFrom = form.yearFrom.trim();
+      const rawTo = form.yearTo.trim();
+      if (rawFrom.length > 0 && !MODEL_YEAR.test(rawFrom)) {
+        found['yearFrom'] = 'inventory.specifications.create.yearFormat';
+      }
+      if (rawTo.length > 0 && !MODEL_YEAR.test(rawTo)) {
+        found['yearTo'] = 'inventory.specifications.create.yearFormat';
+      }
+      const serviceCondition = form.serviceCondition.trim();
+      if (!SERVICE_CONDITION.test(serviceCondition)) {
+        found['serviceCondition'] = 'inventory.material.create.conditionFormat';
+      }
+      const capacity = form.capacity.trim();
+      if (!QUANTITY.test(capacity) || /^0+(?:\.0+)?$/.test(capacity)) {
+        found['capacity'] = 'inventory.specifications.create.capacityFormat';
+      }
+      if (!form.uomId) found['uomId'] = 'field.required';
+      const engineVariant = form.engineVariant.trim();
+      if (engineVariant.length > MAX_ENGINE_VARIANT) {
+        found['engineVariant'] = 'inventory.specifications.create.engineTooLong';
+      }
+      const sourceReference = form.sourceReference.trim();
+      if (sourceReference.length === 0) found['sourceReference'] = 'field.required';
+      else if (sourceReference.length > MAX_SOURCE_REFERENCE) {
+        found['sourceReference'] = 'inventory.material.create.sourceTooLong';
+      }
+      setErrors(found);
+      if (Object.keys(found).length > 0) {
+        setAttempt((n) => n + 1);
+        return;
+      }
 
-    setBusy(true);
-    const result = await createVehicleSpecification({
-      makeId,
-      ...(modelId ? { modelId } : {}),
-      ...(rawFrom ? { modelYearFrom: Number.parseInt(rawFrom, 10) } : {}),
-      ...(rawTo ? { modelYearTo: Number.parseInt(rawTo, 10) } : {}),
-      ...(engineVariant ? { engineVariant } : {}),
-      serviceCondition,
-      ...(itemCategoryId ? { itemCategoryId } : {}),
-      capacity,
-      uomId: form.uomId,
-      sourceReference,
+      setBusy(true);
+      const result = await createVehicleSpecification({
+        makeId,
+        ...(modelId ? { modelId } : {}),
+        ...(rawFrom ? { modelYearFrom: Number.parseInt(rawFrom, 10) } : {}),
+        ...(rawTo ? { modelYearTo: Number.parseInt(rawTo, 10) } : {}),
+        ...(engineVariant ? { engineVariant } : {}),
+        serviceCondition,
+        ...(itemCategoryId ? { itemCategoryId } : {}),
+        capacity,
+        uomId: form.uomId,
+        sourceReference,
+      });
+      setBusy(false);
+      setOutcome(result.state);
+      notifyActionResult(result.state, messages);
+      if (result.state.status === 'success') {
+        setOutcome(null);
+        // Saved: nothing here is unsaved any more, so leaving asks nothing.
+        setForm(EMPTY_SPECIFICATION);
+        onDone();
+      } else {
+        setAttempt((n) => n + 1);
+      }
     });
-    setBusy(false);
-    setOutcome(result.state);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success') {
-      setOutcome(null);
-      onDone();
-    }
-  };
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -497,6 +583,8 @@ function SpecificationForm({
     >
       <h3
         id="specification-form-heading"
+        ref={heading}
+        tabIndex={-1}
         className="text-body font-medium text-text-primary sm:col-span-2"
       >
         {translate(messages, 'inventory.specifications.create.heading')}
@@ -507,22 +595,20 @@ function SpecificationForm({
 
       {canReadCatalogue && makes.length > 0 ? (
         <>
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'inventory.specifications.create.make')}
             required
             value={form.makeId}
-            onChange={(event) =>
-              setForm((f) => ({ ...f, makeId: event.target.value, modelId: '' }))
-            }
+            onChange={(makeId) => edit({ makeId, modelId: '' })}
             options={makes.map((make) => ({ value: make.id, label: make.name }))}
             placeholder={translate(messages, 'inventory.specifications.create.chooseMake')}
             error={errorFor('makeId')}
           />
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'inventory.specifications.create.model')}
             description={translate(messages, 'inventory.specifications.create.modelHelp')}
             value={form.modelId}
-            onChange={(event) => setForm((f) => ({ ...f, modelId: event.target.value }))}
+            onChange={(modelId) => edit({ modelId })}
             options={models.map((model) => ({ value: model.id, label: model.name }))}
             placeholder={translate(messages, 'inventory.specifications.create.anyModel')}
             error={errorFor('modelId')}
@@ -547,89 +633,89 @@ function SpecificationForm({
         </p>
       )}
 
-      <TextField
+      <FormNumberField
         label={translate(messages, 'inventory.specifications.create.yearFrom')}
-        inputMode="numeric"
-        dir="ltr"
+        integer
         value={form.yearFrom}
-        onChange={(event) => setForm((f) => ({ ...f, yearFrom: event.target.value }))}
+        onChange={(yearFrom) => edit({ yearFrom })}
         error={errorFor('yearFrom')}
       />
-      <TextField
+      <FormNumberField
         label={translate(messages, 'inventory.specifications.create.yearTo')}
-        inputMode="numeric"
-        dir="ltr"
+        integer
         value={form.yearTo}
-        onChange={(event) => setForm((f) => ({ ...f, yearTo: event.target.value }))}
+        onChange={(yearTo) => edit({ yearTo })}
         error={errorFor('yearTo')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'inventory.specifications.create.engineVariant')}
         description={translate(messages, 'inventory.specifications.create.engineHelp')}
         value={form.engineVariant}
-        onChange={(event) => setForm((f) => ({ ...f, engineVariant: event.target.value }))}
+        onChange={(engineVariant) => edit({ engineVariant })}
         error={errorFor('engineVariant')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'inventory.specifications.create.serviceCondition')}
         description={translate(messages, 'inventory.material.create.serviceConditionHelp')}
         required
         spellCheck={false}
         dir="ltr"
         value={form.serviceCondition}
-        onChange={(event) => setForm((f) => ({ ...f, serviceCondition: event.target.value }))}
+        onChange={(serviceCondition) => edit({ serviceCondition })}
         error={errorFor('serviceCondition')}
       />
       {/*
-        The category by NAME, from the catalogue the platform publishes, and
-        optional: a specification may name a category or none at all.
+        The category by NAME and path, chosen from the whole tree the platform
+        publishes, and optional: a specification may name a category or none.
       */}
-      <CategoryPicker
-        messages={messages}
-        categories={categories}
-        label={translate(messages, 'inventory.specifications.create.itemCategory')}
-        placeholder={translate(messages, 'inventory.specifications.create.anyCategory')}
-        help={translate(messages, 'inventory.specifications.create.itemCategoryHelp')}
-        value={form.itemCategoryId}
-        onChange={(next) => setForm((f) => ({ ...f, itemCategoryId: next }))}
-        {...(errorFor('itemCategoryId') === undefined
-          ? {}
-          : { error: errorFor('itemCategoryId') as string })}
-      />
-      <TextField
+      <div className="flex flex-col gap-1 sm:col-span-2">
+        <CategoryTreePicker
+          messages={messages}
+          categories={categories}
+          label={translate(messages, 'inventory.specifications.create.itemCategory')}
+          description={translate(messages, 'inventory.specifications.create.itemCategoryHelp')}
+          clearLabel={translate(messages, 'inventory.specifications.create.anyCategory')}
+          value={form.itemCategoryId}
+          onChange={(itemCategoryId) => edit({ itemCategoryId })}
+          error={errorFor('itemCategoryId')}
+          testId="specification-category-picker"
+        />
+        <Link href={`/${locale}/inventory/categories`} className={`${LINK} text-caption`}>
+          {translate(messages, 'inventory.setup.categories.browse')}
+        </Link>
+      </div>
+      <FormNumberField
         label={translate(messages, 'inventory.specifications.create.capacity')}
         description={translate(messages, 'inventory.specifications.create.capacityHelp')}
         required
-        inputMode="decimal"
-        dir="ltr"
         value={form.capacity}
-        onChange={(event) => setForm((f) => ({ ...f, capacity: event.target.value }))}
+        onChange={(capacity) => edit({ capacity })}
         error={errorFor('capacity')}
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'inventory.specifications.create.uom')}
         required
         value={form.uomId}
-        onChange={(event) => setForm((f) => ({ ...f, uomId: event.target.value }))}
+        onChange={(uomId) => edit({ uomId })}
         options={units.map((unit) => ({ value: unit.id, label: `${unit.code} — ${unit.name}` }))}
         placeholder={translate(messages, 'inventory.material.create.chooseUom')}
         error={errorFor('uomId')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'inventory.specifications.create.sourceReference')}
         description={translate(messages, 'inventory.specifications.create.sourceHelp')}
         required
         value={form.sourceReference}
-        onChange={(event) => setForm((f) => ({ ...f, sourceReference: event.target.value }))}
+        onChange={(sourceReference) => edit({ sourceReference })}
         error={errorFor('sourceReference')}
       />
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.specifications.create.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );

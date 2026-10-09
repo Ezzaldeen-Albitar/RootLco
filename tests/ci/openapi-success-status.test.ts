@@ -116,7 +116,9 @@ describe('every operation publishes the success status it returns', () => {
     // new route module.
     // 524 with the refund requests (P1-32-PRE-OD-FD2B): seven operations over seven
     // new route modules — the request answers 201, the other six 200.
-    expect(actual.size).toBe(524);
+    // 525 with the item read (P1-32-PRE-OD-INV2A): one operation, one new route
+    // module, answering 200.
+    expect(actual.size).toBe(525);
   });
 
   it('agrees with the committed contract for every operation', () => {
@@ -277,7 +279,8 @@ describe('every operation publishes the success status it returns', () => {
     // 374 with the refund obligation list (P1-32-PRE-OD-FD2A), a 200 read.
     // 374 -> 380 with the refund requests (P1-32-PRE-OD-FD2B): the approval, the
     // rejection, the withdrawal, the payout, the list and the read, each 200.
-    expect(counts[200]).toBe(380);
+    // 380 -> 381 with the item read (P1-32-PRE-OD-INV2A), a 200 read.
+    expect(counts[200]).toBe(381);
   });
 
   it('reads the handler, not the declaration', () => {

@@ -12,14 +12,17 @@
  * `tests/backend/p1-30-inventory-master-data.test.ts`.
  */
 
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   inBranch,
+  messagesFor,
   renderLtr as renderInLtr,
   renderRtl as renderInRtl,
   RETIRED_BOX,
@@ -48,10 +51,21 @@ import {
  * — true for every case below. A case that needs a different snapshot builds
  * one and renders it explicitly.
  */
+/*
+ * Every render goes under `UiFoundationProvider`, as the locale layout mounts it
+ * (the screen is on Material UI since P1-32-PRE-OD-INV2A).
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
 const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
-  renderInLtr(inBranch(ui), options);
+  renderInLtr(withMui(inBranch(ui), 'en'), options);
 const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
-  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
+  renderInRtl(withMui(inBranch(ui, { locale: 'ar' }), 'ar'), options);
 
 const EN = en as Record<string, string>;
 const AR = ar as Record<string, string>;
@@ -59,6 +73,7 @@ const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const labelled = (key: string) => new RegExp(`^${escape(EN[key] as string)}`);
 
 const listItemCategories = vi.fn();
+const listItemCategoryPage = vi.fn();
 const listUnitsOfMeasure = vi.fn();
 const createItemCategory = vi.fn();
 const createItem = vi.fn();
@@ -72,6 +87,7 @@ const retireReorderLevel = vi.fn();
 
 vi.mock('@/features/inventory/api', () => ({
   listItemCategories: (...args: unknown[]) => listItemCategories(...args),
+  listItemCategoryPage: (...args: unknown[]) => listItemCategoryPage(...args),
   listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
   createItemCategory: (...args: unknown[]) => createItemCategory(...args),
   createItem: (...args: unknown[]) => createItem(...args),
@@ -202,6 +218,9 @@ async function renderPage(params: Record<string, string>) {
 const form = (key: string) => screen.getByRole('form', { name: EN[key] as string });
 const targetForm = () =>
   screen.getByRole('region', { name: EN['inventory.setup.locations.targetLabel'] as string });
+/** The item form's category tree, named by its own label. */
+const itemCategoryTree = (panel: HTMLElement) =>
+  within(panel).getByRole('tree', { name: EN['inventory.setup.item.category'] as string });
 
 /**
  * Wait for the branch this screen is addressed to.
@@ -219,6 +238,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   PERMISSIONS = [];
   listItemCategories.mockResolvedValue(cursor([category]));
+  // The categories are read WHOLE now (every cursor page), as the tree reads them.
+  listItemCategoryPage.mockResolvedValue(cursor([category]));
   listUnitsOfMeasure.mockResolvedValue(okRead({ items: [unit] }));
   listLocations.mockResolvedValue(cursor([warehouse]));
   listBranches.mockResolvedValue(okRead({ items: [branch] }));
@@ -244,7 +265,8 @@ describe('categories and units', () => {
     expect(screen.getByText('Brakes')).toBeVisible();
     expect(await screen.findByText('EA')).toBeVisible();
     expect(screen.getByText(EN['inventory.setup.units.scope.platform'] as string)).toBeVisible();
-    expect(listItemCategories).toHaveBeenCalledTimes(1);
+    expect(listItemCategoryPage).toHaveBeenCalledTimes(1);
+    expect(listItemCategoryPage).toHaveBeenCalledWith(null);
     expect(listUnitsOfMeasure).toHaveBeenCalledTimes(1);
     // No tenant unit writer exists; the section says so instead of offering a form.
     expect(screen.getByText(EN['inventory.setup.units.noWriter'] as string)).toBeVisible();
@@ -359,10 +381,8 @@ describe('items', () => {
     renderScreen({ canManage: true });
     await screen.findByText('brakes');
     const panel = form('inventory.setup.item.new');
-    await user.selectOptions(
-      within(panel).getByLabelText(labelled('inventory.setup.item.category')),
-      CATEGORY_ID
-    );
+    // Chosen from the category tree by name and code, never typed or picked by id.
+    await user.click(await within(itemCategoryTree(panel)).findByText('Brakes (brakes)'));
     await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.sku')), 'BRK-001');
     await user.type(
       within(panel).getByLabelText(labelled('inventory.setup.item.name')),
@@ -408,7 +428,7 @@ describe('items', () => {
   });
 
   it('says a category is needed first when the organisation has none', async () => {
-    listItemCategories.mockResolvedValue(cursor([]));
+    listItemCategoryPage.mockResolvedValue(cursor([]));
     renderScreen({ canManage: true });
     expect(await screen.findByText(EN['inventory.setup.categories.none'] as string)).toBeVisible();
     expect(screen.getByText(EN['inventory.setup.item.needsCategory'] as string)).toBeVisible();
@@ -551,20 +571,23 @@ describe('a location being added and a branch switch', () => {
 
   async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
     renderInLtr(
-      inBranch(
-        <>
-          <BranchSwitch to={TEST_BRANCH.id} label="first" />
-          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
-          <WorkingBranchProbe />
-          <SetupScreen
-            locale="en"
-            messages={en}
-            canManage={true}
-            canReadStock={true}
-            canReadBranches={true}
-          />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            <SetupScreen
+              locale="en"
+              messages={en}
+              canManage={true}
+              canReadStock={true}
+              canReadBranches={true}
+            />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        ),
+        'en'
       )
     );
     await user.click(screen.getByRole('button', { name: 'first' }));
@@ -627,14 +650,17 @@ describe('CC-15 — the branch picker says which state it is in, and never offer
   const permitted = { canManage: true, canReadStock: true, canReadBranches: true };
   const withoutContext = (over: Record<string, unknown> = {}) =>
     renderInLtr(
-      <SetupScreen
-        locale="en"
-        messages={en}
-        canManage={false}
-        canReadStock={false}
-        canReadBranches={false}
-        {...over}
-      />
+      withMui(
+        <SetupScreen
+          locale="en"
+          messages={en}
+          canManage={false}
+          canReadStock={false}
+          canReadBranches={false}
+          {...over}
+        />,
+        'en'
+      )
     );
   /*
    * The reorder-level form's own branch control — the one picker left.
@@ -723,7 +749,10 @@ describe('CC-15 — the branch picker says which state it is in, and never offer
 
   it('explains the same absence in Arabic, right to left', async () => {
     renderInRtl(
-      <SetupScreen locale="ar" messages={ar} canManage canReadStock canReadBranches={false} />
+      withMui(
+        <SetupScreen locale="ar" messages={ar} canManage canReadStock canReadBranches={false} />,
+        'ar'
+      )
     );
     expect(
       await screen.findByText(AR['inventory.common.branchesNotOffered'] as string)
@@ -738,6 +767,7 @@ describe('the route page', () => {
     await renderPage({ locale: 'en' });
     expect(await screen.findByText(EN['state.denied.title'] as string)).toBeVisible();
     expect(listItemCategories).not.toHaveBeenCalled();
+    expect(listItemCategoryPage).not.toHaveBeenCalled();
     expect(listUnitsOfMeasure).not.toHaveBeenCalled();
   });
 
@@ -1108,5 +1138,550 @@ describe('reorder levels', () => {
     expect(retireReorderLevel.mock.calls[0]?.[0]).toBe(LEVEL_ID);
     expect(retireReorderLevel.mock.calls[0]?.[1]).toBe(3);
     await waitFor(() => expect(listReorderLevels).toHaveBeenCalledTimes(2));
+  });
+});
+
+/* -------------------------------------------------------------------- *
+ * P1-32-PRE-OD-INV2A — Material UI, names, and the category tree
+ *
+ * A category's parent is said by its name and path; a new category's
+ * parent and an item's category are chosen from the tree, read whole; each
+ * form sends one write per press, moves the cursor to its first refused
+ * field, and declares its unsaved work.
+ * -------------------------------------------------------------------- */
+
+const PADS_ID = '99999999-9999-4999-8999-999999999991';
+const CERAMIC_ID = '99999999-9999-4999-8999-999999999992';
+const pads = {
+  ...category,
+  id: PADS_ID,
+  code: 'pads',
+  name: 'Pads',
+  parentCategoryId: CATEGORY_ID,
+};
+const ceramic = {
+  ...category,
+  id: CERAMIC_ID,
+  code: 'ceramic',
+  name: 'Ceramic',
+  parentCategoryId: PADS_ID,
+};
+
+describe.each(['en', 'ar'] as const)('the categories on Material UI (%s)', (locale) => {
+  const T = locale === 'en' ? EN : AR;
+  const said = (key: string) => T[key] as string;
+  const named = (key: string) => new RegExp(`^${escape(said(key))}`);
+  const draw = (over: Record<string, unknown> = {}) =>
+    (locale === 'en' ? renderLtr : renderRtl)(
+      <SetupScreen
+        locale={locale}
+        messages={locale === 'en' ? en : ar}
+        canManage={false}
+        canReadStock={false}
+        canReadBranches={false}
+        {...over}
+      />
+    );
+  const panelOf = (key: string) => screen.getByRole('form', { name: said(key) });
+
+  it('says each parent by its name and path, and a top-level category as one', async () => {
+    listItemCategoryPage.mockResolvedValue(cursor([category, pads, ceramic]));
+    draw();
+    await screen.findByText('ceramic');
+    expect(screen.getAllByTestId('setup-category-parent').map((cell) => cell.textContent)).toEqual([
+      said('inventory.setup.categories.topLevel'),
+      'Brakes',
+      'Brakes / Pads',
+    ]);
+    // No parent is said by its code alone.
+    expect(screen.queryAllByTestId('setup-category-parent')[1]?.textContent).not.toContain(
+      'brakes'
+    );
+  });
+
+  it('links to the category tree', async () => {
+    draw();
+    await screen.findByText('brakes');
+    expect(screen.getByTestId('setup-categories-tree-link').getAttribute('href')).toBe(
+      `/${locale}/inventory/categories`
+    );
+  });
+
+  it('reads every page of the categories, and offers a second-page row for an item', async () => {
+    const user = userEvent.setup();
+    listItemCategoryPage.mockImplementation(async (from: string | null) =>
+      from === null
+        ? okRead({ items: [category], nextCursor: 'p2', hasMore: true })
+        : cursor([pads])
+    );
+    createItem.mockResolvedValue(
+      success(
+        { ...catalogueItem, id: CREATED_ID, itemCategoryId: PADS_ID },
+        'inventory.setup.item.success'
+      )
+    );
+    draw({ canManage: true });
+    await screen.findByText('pads');
+    expect(listItemCategoryPage.mock.calls.map((call) => call[0])).toEqual([null, 'p2']);
+
+    const panel = panelOf('inventory.setup.item.new');
+    const tree = within(panel).getByRole('tree', { name: said('inventory.setup.item.category') });
+    await user.click(within(tree).getByText('Brakes (brakes)'));
+    await user.click(await within(tree).findByText('Pads (pads)'));
+    // The chosen category is said by its whole path under the tree.
+    await waitFor(() => expect(within(panel).getByText(/Brakes \/ Pads/)).toBeTruthy());
+    await user.type(within(panel).getByLabelText(named('inventory.setup.item.sku')), 'PAD-9');
+    await user.type(within(panel).getByLabelText(named('inventory.setup.item.name')), 'Pad');
+    await user.selectOptions(
+      within(panel).getByLabelText(named('inventory.setup.item.unit')),
+      UNIT_ID
+    );
+    await user.click(
+      within(panel).getByRole('button', { name: said('inventory.setup.item.submit') })
+    );
+    await waitFor(() => expect(createItem).toHaveBeenCalledTimes(1));
+    expect(createItem.mock.calls[0]?.[0]).toMatchObject({ itemCategoryId: PADS_ID });
+  });
+
+  it('offers an item no category-less row, and marks its tree required', async () => {
+    draw({ canManage: true });
+    const panel = panelOf('inventory.setup.item.new');
+    const tree = await within(panel).findByRole('tree', {
+      name: said('inventory.setup.item.category'),
+    });
+    expect(tree.getAttribute('aria-required')).toBe('true');
+    expect(within(tree).queryByText(said('inventory.categories.picker.none'))).toBeNull();
+    expect(within(tree).queryByText(said('inventory.setup.category.noParent'))).toBeNull();
+    // No box anywhere on the form takes a category reference.
+    expect(
+      within(panel).queryByRole('textbox', { name: said('inventory.setup.item.category') })
+    ).toBeNull();
+  });
+
+  it('chooses a new category parent from the tree, sends it, and lists the echo under it', async () => {
+    const user = userEvent.setup();
+    createItemCategory.mockResolvedValue(
+      success(
+        {
+          ...category,
+          id: CREATED_ID,
+          code: 'discs',
+          name: 'Discs',
+          parentCategoryId: CATEGORY_ID,
+        },
+        'inventory.setup.category.success'
+      )
+    );
+    draw({ canManage: true });
+    await screen.findByText('brakes');
+    const panel = panelOf('inventory.setup.category.new');
+    const tree = within(panel).getByRole('tree', { name: said('inventory.setup.category.parent') });
+    // The "no parent" row is offered first, in the screen's words.
+    expect(within(tree).getByText(said('inventory.setup.category.noParent'))).toBeTruthy();
+    await user.click(within(tree).getByText('Brakes (brakes)'));
+    await user.type(within(panel).getByLabelText(named('inventory.setup.category.code')), 'discs');
+    await user.type(within(panel).getByLabelText(named('inventory.setup.category.name')), 'Discs');
+    await user.click(
+      within(panel).getByRole('button', { name: said('inventory.setup.category.submit') })
+    );
+    await waitFor(() =>
+      expect(createItemCategory).toHaveBeenCalledWith({
+        code: 'discs',
+        name: 'Discs',
+        parentCategoryId: CATEGORY_ID,
+      })
+    );
+    expect(await screen.findByText('discs')).toBeTruthy();
+    expect(screen.getAllByTestId('setup-category-parent').map((cell) => cell.textContent)).toEqual([
+      said('inventory.setup.categories.topLevel'),
+      'Brakes',
+    ]);
+    // The new category is offered at once in the item tree, under its parent.
+    const itemTree = within(panelOf('inventory.setup.item.new')).getByRole('tree', {
+      name: said('inventory.setup.item.category'),
+    });
+    await user.click(within(itemTree).getByText('Brakes (brakes)'));
+    expect(await within(itemTree).findByText('Discs (discs)')).toBeTruthy();
+    // Only one walk of the pages: the echo was added, not read again.
+    expect(listItemCategoryPage).toHaveBeenCalledTimes(1);
+  });
+
+  it('moves the cursor to the category tree when an empty item form is refused', async () => {
+    const user = userEvent.setup();
+    draw({ canManage: true });
+    const panel = panelOf('inventory.setup.item.new');
+    const tree = await within(panel).findByRole('tree', {
+      name: said('inventory.setup.item.category'),
+    });
+    await user.click(
+      within(panel).getByRole('button', { name: said('inventory.setup.item.submit') })
+    );
+    await waitFor(() => expect(tree.getAttribute('aria-invalid')).toBe('true'));
+    await waitFor(() => expect(tree.contains(document.activeElement)).toBe(true));
+    expect(createItem).not.toHaveBeenCalled();
+  });
+
+  it('says the categories could not be read, names the field it is about, and reads every page again', async () => {
+    const user = userEvent.setup();
+    listItemCategoryPage.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr-7' });
+    draw({ canManage: true });
+    const failure = await screen.findByTestId('setup-categories-failure');
+    expect(failure.textContent).toContain(said('inventory.setup.categories.unavailable'));
+    expect(failure.textContent).toContain('corr-7');
+    // The pickers have no tree to carry their names, so each sentence sits in a
+    // group named by its field.
+    const group = screen.getByRole('group', { name: said('inventory.setup.item.category') });
+    expect(within(group).getByText(said('inventory.categories.picker.unavailable'))).toBeTruthy();
+    await user.click(within(failure).getByRole('button', { name: said('state.retry') }));
+    expect(await screen.findByText('brakes')).toBeTruthy();
+    expect(listItemCategoryPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('says a refused category list is a refusal, with no retry', async () => {
+    listItemCategoryPage.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+    draw();
+    const failure = await screen.findByTestId('setup-categories-failure');
+    expect(failure.textContent).toContain(said('inventory.setup.categories.refused'));
+    expect(within(failure).queryByRole('button', { name: said('state.retry') })).toBeNull();
+  });
+
+  it('lays the screen out right to left in Arabic only', async () => {
+    draw();
+    await screen.findByText('brakes');
+    expect(document.documentElement.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+    expect(screen.getByText('brakes').closest('[dir="ltr"]')).not.toBeNull();
+  });
+});
+
+describe('one write per press, held by the screen while it is answered', () => {
+  /*
+   * Both presses go inside ONE act(), so the second arrives before React has
+   * re-rendered the disabled button: what is tested is the screen's own hold
+   * on the write, not the button's disabled state.
+   */
+  function gate<T>() {
+    let open: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((resolve) => {
+      open = resolve;
+    });
+    return { promise, open: (value: T) => open(value) };
+  }
+  const twice = (button: HTMLElement) =>
+    act(() => {
+      button.click();
+      button.click();
+    });
+
+  it('a category', async () => {
+    const user = userEvent.setup();
+    const answer = gate<unknown>();
+    createItemCategory.mockReturnValue(answer.promise);
+    renderScreen({ canManage: true });
+    await screen.findByText('brakes');
+    const panel = form('inventory.setup.category.new');
+    await user.type(within(panel).getByLabelText(labelled('inventory.setup.category.code')), 'oil');
+    await user.type(within(panel).getByLabelText(labelled('inventory.setup.category.name')), 'Oil');
+    twice(
+      within(panel).getByRole('button', { name: EN['inventory.setup.category.submit'] as string })
+    );
+    expect(createItemCategory).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      answer.open(
+        success(
+          { ...category, id: CREATED_ID, code: 'oil', name: 'Oil' },
+          'inventory.setup.category.success'
+        )
+      )
+    );
+    expect(await screen.findByText('oil')).toBeTruthy();
+    expect(createItemCategory).toHaveBeenCalledTimes(1);
+  });
+
+  it('an item', async () => {
+    const user = userEvent.setup();
+    const answer = gate<unknown>();
+    createItem.mockReturnValue(answer.promise);
+    renderScreen({ canManage: true });
+    await screen.findByText('brakes');
+    const panel = form('inventory.setup.item.new');
+    await user.click(within(itemCategoryTree(panel)).getByText('Brakes (brakes)'));
+    await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.sku')), 'BRK-002');
+    await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.name')), 'Pad');
+    await user.selectOptions(
+      within(panel).getByLabelText(labelled('inventory.setup.item.unit')),
+      UNIT_ID
+    );
+    twice(within(panel).getByRole('button', { name: EN['inventory.setup.item.submit'] as string }));
+    expect(createItem).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      answer.open(
+        success(
+          { ...catalogueItem, id: CREATED_ID, sku: 'BRK-002' },
+          'inventory.setup.item.success'
+        )
+      )
+    );
+    expect(await screen.findByRole('link', { name: 'BRK-002' })).toBeTruthy();
+    expect(createItem).toHaveBeenCalledTimes(1);
+  });
+
+  it('a location', async () => {
+    const user = userEvent.setup();
+    const answer = gate<unknown>();
+    createStockLocation.mockReturnValue(answer.promise);
+    renderScreen({ canManage: true, canReadStock: true, canReadBranches: true });
+    await chooseBranch();
+    await screen.findByText('WH-1');
+    const panel = form('inventory.setup.location.new');
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.setup.location.code')),
+      'WH-3'
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.setup.location.name')),
+      'Yard'
+    );
+    twice(
+      within(panel).getByRole('button', { name: EN['inventory.setup.location.submit'] as string })
+    );
+    expect(createStockLocation).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      answer.open(
+        success(
+          { ...warehouse, id: CREATED_ID, locationCode: 'WH-3', name: 'Yard', recordVersion: 1 },
+          'inventory.setup.location.success'
+        )
+      )
+    );
+    expect(await screen.findByText('WH-3')).toBeTruthy();
+    expect(createStockLocation).toHaveBeenCalledTimes(1);
+  });
+
+  it('a reorder level, and its retirement', async () => {
+    const user = userEvent.setup();
+    const answer = gate<unknown>();
+    setReorderLevel.mockReturnValue(answer.promise);
+    listReorderLevels.mockResolvedValue(
+      okRead({
+        asOf: '2026-09-20T08:00:00Z',
+        levels: { items: [reorderLevel], nextCursor: null, hasMore: false },
+      })
+    );
+    const retired = gate<unknown>();
+    retireReorderLevel.mockReturnValue(retired.promise);
+    renderScreen({ canManage: true, canReadStock: true });
+    await screen.findByText('Front brake pads');
+    const panel = form('inventory.reorderLevels.set.heading');
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.items.find'] as string,
+      })
+    );
+    await within(panel).findByRole('option', { name: 'BRK-001 — Front brake pads' });
+    await user.selectOptions(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.item')),
+      ITEM_ID
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.set.level')),
+      '2'
+    );
+    twice(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.set.submit'] as string,
+      })
+    );
+    expect(setReorderLevel).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      answer.open(
+        success({ ...reorderLevel, replayed: false }, 'inventory.reorderLevels.set.success')
+      )
+    );
+
+    twice(
+      screen.getByRole('button', { name: `${EN['inventory.reorderLevels.retire.action']} BRK-001` })
+    );
+    expect(retireReorderLevel).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      retired.open(
+        success(
+          { ...reorderLevel, status: 'retired', replayed: false },
+          'inventory.reorderLevels.retire.success'
+        )
+      )
+    );
+    expect(retireReorderLevel).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the reorder level form on Material UI', () => {
+  it('Enter in the item search asks the catalogue and sends no level', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true, canReadStock: true });
+    await waitFor(() => expect(listReorderLevels).toHaveBeenCalled());
+    const panel = form('inventory.reorderLevels.set.heading');
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.reorderLevels.items.search')),
+      'BRK{Enter}'
+    );
+    await waitFor(() => expect(listItems).toHaveBeenCalledTimes(1));
+    expect(listItems.mock.calls[0]?.[0]).toEqual({ search: 'BRK', stockTrackedOnly: 'true' });
+    expect(setReorderLevel).not.toHaveBeenCalled();
+  });
+
+  it('keeps the quantity a text box with a numeric keypad, left to right, the string typed', async () => {
+    const user = userEvent.setup();
+    renderScreen({ canManage: true, canReadStock: true });
+    const panel = form('inventory.reorderLevels.set.heading');
+    const level = within(panel).getByLabelText(labelled('inventory.reorderLevels.set.level'));
+    expect(level.getAttribute('inputmode')).toBe('decimal');
+    expect(level.getAttribute('type')).not.toBe('number');
+    expect(level.getAttribute('dir')).toBe('ltr');
+    await user.type(level, '0.500');
+    expect(level).toHaveValue('0.500');
+  });
+});
+
+describe('half-typed catalogue work and a branch switch', () => {
+  afterEach(forgetRememberedBranch);
+
+  async function openTwo(user: ReturnType<typeof userEvent.setup>) {
+    renderInLtr(
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            <SetupScreen locale="en" messages={en} canManage canReadStock canReadBranches />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        ),
+        'en'
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await screen.findByText('brakes');
+  }
+  const categoryCode = () =>
+    within(form('inventory.setup.category.new')).getByLabelText(
+      labelled('inventory.setup.category.code')
+    ) as HTMLInputElement;
+
+  it('a half-typed category asks first; staying keeps it', async () => {
+    const user = userEvent.setup();
+    await openTwo(user);
+    await user.type(categoryCode(), 'oil');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(categoryCode().value).toBe('oil');
+  });
+
+  it('discarding empties the category form, as the question said', async () => {
+    const user = userEvent.setup();
+    await openTwo(user);
+    await user.type(categoryCode(), 'oil');
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() => expect(categoryCode().value).toBe(''));
+  });
+
+  it('a category chosen for a new item is unsaved work', async () => {
+    const user = userEvent.setup();
+    await openTwo(user);
+    await user.click(
+      within(itemCategoryTree(form('inventory.setup.item.new'))).getByText('Brakes (brakes)')
+    );
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+  });
+
+  /*
+   * P1-32-PRE-OD-INVR — what a successful save KEEPS for the next entry (the
+   * item form's category and unit, the level form's item) was just saved, so it
+   * is not work an operator would lose.
+   */
+  it('after a successful item create, keeps the category and unit and asks nothing', async () => {
+    const user = userEvent.setup();
+    createItem.mockResolvedValue(
+      success({ ...catalogueItem, id: CREATED_ID, sku: 'BRK-009' }, 'inventory.setup.item.success')
+    );
+    await openTwo(user);
+    const panel = form('inventory.setup.item.new');
+    await user.click(within(itemCategoryTree(panel)).getByText('Brakes (brakes)'));
+    await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.sku')), 'BRK-009');
+    await user.type(within(panel).getByLabelText(labelled('inventory.setup.item.name')), 'Pad');
+    const unitBox = within(panel).getByLabelText(
+      labelled('inventory.setup.item.unit')
+    ) as HTMLSelectElement;
+    await user.selectOptions(unitBox, UNIT_ID);
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.setup.item.submit'] as string })
+    );
+    await waitFor(() => expect(createItem).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        (within(panel).getByLabelText(labelled('inventory.setup.item.sku')) as HTMLInputElement)
+          .value
+      ).toBe('')
+    );
+    // The category and unit stay chosen for the next item…
+    expect(unitBox.value).toBe(UNIT_ID);
+    // …and the branch switches without a question.
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  async function setOneLevel(user: ReturnType<typeof userEvent.setup>) {
+    setReorderLevel.mockResolvedValue(
+      success({ ...reorderLevel, replayed: false }, 'inventory.reorderLevels.set.success')
+    );
+    listItems.mockResolvedValue({
+      status: 'ok' as const,
+      rows: [catalogueItem, { ...catalogueItem, id: CREATED_ID, sku: 'BRK-002', name: 'Rotor' }],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr',
+    });
+    await openTwo(user);
+    const panel = form('inventory.reorderLevels.set.heading');
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.items.find'] as string,
+      })
+    );
+    await within(panel).findByRole('option', { name: 'BRK-001 — Front brake pads' });
+    const itemBox = within(panel).getByLabelText(
+      labelled('inventory.reorderLevels.set.item')
+    ) as HTMLSelectElement;
+    await user.selectOptions(itemBox, ITEM_ID);
+    const levelBox = within(panel).getByLabelText(
+      labelled('inventory.reorderLevels.set.level')
+    ) as HTMLInputElement;
+    await user.type(levelBox, '2');
+    await user.click(
+      within(panel).getByRole('button', {
+        name: EN['inventory.reorderLevels.set.submit'] as string,
+      })
+    );
+    await waitFor(() => expect(setReorderLevel).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(levelBox.value).toBe(''));
+    expect(itemBox.value).toBe(ITEM_ID);
+    return itemBox;
+  }
+
+  it('after a successful reorder level, keeps the item and asks nothing', async () => {
+    const user = userEvent.setup();
+    await setOneLevel(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('after a successful reorder level, another item chosen is unsaved work again', async () => {
+    const user = userEvent.setup();
+    const itemBox = await setOneLevel(user);
+    await user.selectOptions(itemBox, CREATED_ID);
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
   });
 });

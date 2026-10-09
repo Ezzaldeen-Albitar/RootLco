@@ -38,6 +38,7 @@
  * authorized is unchanged.
  */
 
+import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
 import Button from '@mui/material/Button';
 import Table from '@mui/material/Table';
@@ -58,7 +59,6 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
 import { formatMoney } from '@/lib/money';
 
 import {
@@ -67,6 +67,7 @@ import {
   listIdentifiers,
   listSalePrices,
   listUnitsOfMeasure,
+  readItemDetail,
   retireIdentifier,
   setSalePrice,
 } from '../api';
@@ -77,6 +78,7 @@ import {
   QUANTITY,
   UNIT_COST,
   type EnterableIdentifierKind,
+  type ItemDetail,
   type ItemIdentifier,
   type ItemIdentifierList,
   type ItemSalePriceList,
@@ -84,7 +86,14 @@ import {
 } from '../inventory-contract';
 
 import { OutcomeNote, Qty, UUID } from './shared';
-import { PANEL, outcomeField } from './stock-operations';
+import {
+  Fact,
+  LINK,
+  PANEL,
+  StockMoment,
+  outcomeField,
+  useWorkingDisplayZone,
+} from './stock-operations';
 
 /**
  * One read, as one of four outcomes, re-issued after every write that changes it.
@@ -187,9 +196,128 @@ export function ItemCodesScreen({
   }
   return (
     <div className="flex min-h-0 flex-col gap-4">
+      <ItemHeader locale={locale} messages={messages} itemId={itemId} />
       <IdentifiersPanel locale={locale} messages={messages} itemId={itemId} canManage={canManage} />
       <PricesPanel locale={locale} messages={messages} itemId={itemId} canManage={canManage} />
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ * The item itself (P1-32-PRE-OD-INV2A)
+ * ------------------------------------------------------------------ */
+
+/** One item, read once for the page: what the codes and prices below belong to. */
+function useItemDetail(itemId: string): {
+  readonly read: ReadState<ItemDetail> | null;
+  readonly retry: () => void;
+} {
+  const [answer, setAnswer] = useState<{
+    readonly stamp: string;
+    readonly read: ReadState<ItemDetail>;
+  } | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const stamp = `${itemId}#${attempt}`;
+  useEffect(() => {
+    let live = true;
+    void readItemDetail(itemId).then((got) => {
+      if (live) setAnswer({ stamp, read: got });
+    });
+    return () => {
+      live = false;
+    };
+  }, [itemId, stamp]);
+  const retry = useCallback(() => setAttempt((n) => n + 1), []);
+  return { read: answer !== null && answer.stamp === stamp ? answer.read : null, retry };
+}
+
+/**
+ * The item's own header: its name and stock code, the category it is filed
+ * under by name and path, its unit, type and status. The page named its item
+ * only by the address before; this says which item the codes and prices below
+ * belong to. Nothing here edits the item — no item update operation exists.
+ */
+function ItemHeader({
+  locale,
+  messages,
+  itemId,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly itemId: string;
+}) {
+  const { read, retry } = useItemDetail(itemId);
+  if (read === null) {
+    return (
+      <MuiLoadingState
+        messages={messages}
+        rows={2}
+        labelKey="inventory.identifiers.item.loading"
+        testId="item-header-loading"
+      />
+    );
+  }
+  if (read.status !== 'ok') {
+    return (
+      <MuiReadFailureState
+        messages={messages}
+        locale={locale}
+        status={read.status}
+        correlationId={read.correlationId}
+        onRetry={read.status === 'unavailable' || read.status === 'error' ? retry : undefined}
+        descriptionKey={
+          read.status === 'denied'
+            ? 'inventory.identifiers.item.refused'
+            : 'inventory.identifiers.item.unavailable'
+        }
+        testId="item-header-failure"
+      />
+    );
+  }
+  const item = read.data;
+  return (
+    <section
+      aria-labelledby="item-header-heading"
+      className={PANEL}
+      lang={locale}
+      data-testid="item-header"
+    >
+      <h2 id="item-header-heading" className="text-body font-medium text-text-primary">
+        <bdi>{item.name}</bdi>
+      </h2>
+      <dl className="grid gap-3 sm:grid-cols-3">
+        <Fact label={translate(messages, 'inventory.identifiers.item.code')}>
+          <code className="font-mono text-caption" dir="ltr">
+            {item.sku}
+          </code>
+        </Fact>
+        <Fact label={translate(messages, 'inventory.identifiers.item.category')}>
+          <span data-testid="item-header-category">
+            <bdi>{item.categoryPath.map((step) => step.name).join(' / ')}</bdi>
+          </span>{' '}
+          <Link href={`/${locale}/inventory/categories`} className={LINK}>
+            {translate(messages, 'inventory.setup.categories.browse')}
+          </Link>
+        </Fact>
+        <Fact label={translate(messages, 'inventory.identifiers.item.unit')}>
+          <bdi>{item.unitOfMeasure.name}</bdi>{' '}
+          <code className="font-mono text-caption" dir="ltr">
+            {item.unitOfMeasure.code}
+          </code>
+        </Fact>
+        <Fact label={translate(messages, 'inventory.identifiers.item.type')}>
+          {translateDynamic(messages, `inventory.itemType.${item.itemType}`)}
+        </Fact>
+        <Fact label={translate(messages, 'inventory.identifiers.item.status')}>
+          <span data-testid="item-header-status">
+            {translate(
+              messages,
+              item.archived ? 'inventory.lifecycle.archived' : 'inventory.lifecycle.active'
+            )}
+          </span>
+        </Fact>
+      </dl>
+    </section>
   );
 }
 
@@ -359,6 +487,8 @@ function IdentifierRow({
 }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // An item's codes belong to no branch: the working branch's clock, else UTC, named.
+  const zone = useWorkingDisplayZone();
   return (
     <TableRow className="align-top">
       <TableCell>
@@ -384,8 +514,8 @@ function IdentifierRow({
         {row.retired
           ? translate(messages, 'inventory.identifiers.retired')
           : translate(messages, 'inventory.identifiers.live')}
-        <span className="block text-caption text-text-muted" dir="ltr">
-          {formatDateTime(row.retiredAt ?? row.createdAt, locale)}
+        <span className="block text-caption text-text-muted">
+          <StockMoment value={row.retiredAt ?? row.createdAt} locale={locale} zone={zone} />
         </span>
         {outcome !== null ? <OutcomeNote messages={messages} outcome={outcome} /> : null}
       </TableCell>
