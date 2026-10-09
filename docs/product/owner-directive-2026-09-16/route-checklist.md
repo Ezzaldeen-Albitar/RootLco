@@ -1722,12 +1722,12 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/crm/customers/new/[kind]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
 | `/crm/customers`                                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/inventory/adjustments`                              | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
-| `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/counts`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
-| `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/goods-receipts`                           | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
 | `/inventory/items/[itemId]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/labels`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/labels`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states                       | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/opening-stock`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
 | `/inventory`                                          | `FilterToolbar`, form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states      | F1–F6; G1–G9; P1–P10; T1, T5; E1–E4; S1–S4       | migrated — see below the table                                      | focused suites, en and ar — see below     |
@@ -3429,9 +3429,121 @@ Known limitations, one line each:
 
 - `WorkingBranchField` (inside `BranchTargetForm`) still draws its refusal's branch select with the
   older field; it is a working-context component shared by 23 screens and moves on its own.
-- `ScanBox` is not on Material yet; it moves with INV6.
+- `ScanBox` is not on Material yet; it moves with INV6. **Moved by INV6** — see below.
 - Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in hosted
   CI. No web test file was added or removed.
+
+### Counter sales, customer returns and labels on Material UI (`P1-32-PRE-OD-INV6`)
+
+`/inventory/counter-sales`, `/inventory/customer-returns` and `/inventory/labels` moved onto the
+shared wrappers, with the scan box the counter and the label printer share (`ScanBox.tsx`). Nothing
+about how any of them reads, authorizes or scopes changed: the same reads and writes with the same
+arguments and the same idempotency keys — the counter's drafts (`sal.counter-sale-list`), issued
+sales (`sal.invoice-list`), invoice detail, balance (`GET /reads/invoice-outstanding`), buyer search
+(`crm.customer-search`), scan (`GET /barcodes/{value}`), draft, issue and void; the returns desk's
+`GET /returnable-quantities`, `/part-issues`, `/sales-returns` and `POST /sales-returns` (the credit
+is still a separate request, D9); the label read (`GET /items/{id}/label`) and the scan — the same
+page refusals before any read (`sal.invoice.manage`, `inv.stock.read`, `inv.item.read`), the same
+per-control codes (`sal.finance.view`, `sal.invoice.issue`, `crm.customer.read`, `inv.stock.operate`
+with `sal.finance.view`), the same navigation gates, and the same route branch scope, unchanged in
+`route-branch-scope.ts` (`/inventory/counter-sales` and `/inventory/customer-returns` `concrete`,
+`/inventory/labels` `none`). No backend file, catalogue entry or other shared inventory piece
+changed.
+
+What moved to which wrapper:
+
+- `/inventory/counter-sales` (`CounterSalesScreen.tsx`) — the issued sales were already
+  `FilterToolbar`, `OperationalGrid` over the server's cursor pages (`rowCount` -1) and
+  `MuiSearchStates`, and are unchanged. The buyer's search field and the buyer are `FormSelectField`
+  (native, F6), the search term `FormTextField` (Enter searches and submits nothing), a line's
+  quantity `FormNumberField` (F5), the void reason `FormTextField`, and every button is Material's
+  (the removal of a line and the void in the error colour). The drafted sales and the lines being
+  composed are Material's table: the draft read answers one bounded page with a "more exist" notice
+  and no cursor (the planner ruling of 2026-10-09), and the lines are held on the screen, so neither
+  has a pager to drive. The printed copy is billing's `CounterSalePrintPanel`, unchanged, totals and
+  settlement block included.
+- `/inventory/customer-returns` (`CustomerReturnsScreen.tsx`) — the source kind, the sale, its line
+  and the condition are `FormSelectField` (native, F6); the typed reference and the reason
+  `FormTextField`; the quantity `FormNumberField`; every button Material's. The branch's returns are
+  Material's table (one bounded page with a "more exist" notice, no cursor). The waits for the sales
+  and for a sale's lines are `MuiLoadingState` with the screen's own sentence, and a sale's lines
+  that could not be read are an outlined alert with the same sentence as before.
+- `/inventory/labels` (`LabelsScreen.tsx`) — the size is `FormSelectField`, the copies
+  `FormNumberField` (whole numbers), the two buttons Material's; the wait for a label is
+  `MuiLoadingState` with the screen's sentence, and a label that could not be read is
+  `MuiReadFailureState` with the screen's sentence. The sheet is unchanged: `PrintDocument` with no
+  `reference`, so a sheet of labels carries no repeated identity row (#528, #533).
+- `ScanBox.tsx` — the box is `FormTextField` and its buttons Material's. A wedge's Enter (or a
+  person's) accepts the code and submits nothing around the box; a doubled frame is ignored and said;
+  the camera is offered only where the browser can use one.
+- `StockAlertIndicator.tsx` — unchanged. It draws no field, state component, table or button: two
+  sentences, a freshness stamp and a link, compact by design, with a refusal said quietly rather than
+  announced. The shared states would put a heading and an announced status on somebody else's screen,
+  which its contract refuses, so there is nothing for a wrapper to replace; the `/attention` cards are
+  untouched and the indicator's cases in `attention.dom` pass unchanged.
+
+Preserved, each held by a case in `inventory-counter-sales.dom`, `counter-sale-settlement-read.dom`,
+`inventory-customer-returns.dom`, `inventory-labels.dom` or `attention.dom` (en and ar where
+marked):
+
+- Permissions: each page refuses before any read; no issue without `sal.invoice.issue`; no buyer
+  search without `crm.customer.read`; no return form without `inv.stock.operate` and
+  `sal.finance.view`; amounts withheld, and said to be, without `sal.finance.view`.
+- Scanner input: a wedge scan is typed characters ended with Enter, read left to right (en and ar);
+  a typed code and the "Look it up" button behave the same; a doubled frame resolves once and is said; no
+  camera is not an error; a scan writes nothing.
+- Refund and credit: a return against an issued sale raises a credit note that is said to be waiting,
+  credited only once approved, refused when refused; the credit is reached by a link.
+- Field errors: a refused quantity on the counter (en and ar), on the returns desk (DF-B7, DX-1, en
+  and ar) and a refused copies box (en and ar) are marked on their own box (`aria-invalid` only while
+  refused, the sentence as its description) with what was typed kept; a void with no reason is
+  marked on the reason box and sends nothing.
+- Duplicate submits: a second press of "Make the sale" (en and ar), Issue, Void or "Take it back" (en and ar)
+  while the first is out sends nothing more; one idempotency key per composed sale and per opened
+  return form, as before.
+- Unsaved work: a half-built sale, a chosen buyer and a half-filled return ask before a branch
+  switch, as before.
+- Print: only the document reaches the paper (DF-B2); the copy waits for its settlement and payer;
+  the label sheet carries the size the print sheet keys on and one label per copy.
+- Precision: quantities and amounts are the server's strings and the exact strings typed.
+- Arabic and English, right to left; the screen's own sentences are never inside a left-to-right
+  figure (ar); no serious or critical accessibility finding on the returns desk (en) and the label
+  printer (ar).
+
+Test changes forced by the new structure, the asserted behaviour unchanged: every render of the four
+suites goes under `UiFoundationProvider`, as the locale layout mounts it. No selector of an existing
+case moved.
+
+Deliberate behaviour changes:
+
+- On the counter, "Not numbered yet" and "You do not have permission to see amounts." (and their
+  Arabic) are drawn in the page's direction, and "On the shelf here:" precedes the figures in it;
+  only the number, the amount and the figures stay left to right. Before, the whole cell or line was
+  forced left to right, which reordered an Arabic sentence.
+- A label that could not be read is the shared state under its heading with the screen's own
+  sentence: an outage or a fault offers "Try again" (which reads the label again) and the
+  reference; an ended session links to signing in; a refusal offers nothing. An item the server no
+  longer knows keeps its own sentence, as an outlined notice. Before, each was one red line with no
+  retry.
+- The waits for a label, the returns desk's sales and a sale's lines are announced politely with
+  the screen's own sentence; a sale's lines that could not be read are an outlined alert.
+- "Make the sale", Issue, Void and "Take it back" each hold a second press made before the button is disabled.
+
+Known limitations of this slice, one line each:
+
+- The counter's line builder and void reason are not forms, so a refused box is marked but the cursor
+  is not moved to it, as before; the returns desk's form does move it (DF-B7).
+- The drafted sales and the returns list are Material's table over one bounded page with a "more
+  exist" notice, not `OperationalGrid` (no cursor to walk; planner ruling 2026-10-09).
+- The returns desk's source kind and condition stay native selects rather than radio groups, so
+  nothing about how they are chosen changed.
+- No print-layout case was added for a label sheet: `print-layout.spec.ts` holds every document to a
+  repeated identity row naming a reference, and a label sheet deliberately prints none, so the spec
+  does not support one without changing its contract. The Playwright tiers run only in hosted CI.
+- `StockAlertIndicator` is not moved (above).
+- Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
+  they run in hosted CI. The web tier gains cases in existing files (no web test file added or
+  removed).
 
 ### Finance controls that need no business decision (P1-32-PRE-OD-FIN)
 
