@@ -17,7 +17,9 @@ import { pageMetadata } from '@/lib/page-metadata';
  * with `org.branch.read` for the branch picker, and decided BEFORE any read.
  * Adding, retiring and reinstating appear only with `org.employee.manage`. The
  * login-account picker is read only when the session holds `iam.user.read` and
- * may add employees; otherwise the link is simply not offered.
+ * may add employees; otherwise the link is simply not offered. With
+ * `iam.user.read`, a linked account outside the picker's list is named by its
+ * own read; without it the register says only that the person has a login.
  */
 export default async function EmployeesPage({
   params,
@@ -54,12 +56,12 @@ export default async function EmployeesPage({
   }
 
   const canManage = holds(session.permissions, PERMISSIONS.employeeManage);
+  const canReadUsers = holds(session.permissions, PERMISSIONS.userRead);
   const branches = await listBranches();
   const companies = holds(session.permissions, PERMISSIONS.companyRead)
     ? await listCompanies()
     : null;
-  const loginAccounts =
-    canManage && holds(session.permissions, PERMISSIONS.userRead) ? await listLoginAccounts() : [];
+  const loginAccounts = canManage && canReadUsers ? await listLoginAccounts() : [];
 
   return (
     <>
@@ -73,10 +75,12 @@ export default async function EmployeesPage({
       <PageBody>
         <EmployeesScreen
           messages={messages}
+          locale={locale}
           branches={branches}
           companies={companies?.status === 'ok' ? companies.data : []}
           loginAccounts={loginAccounts}
           canManage={canManage}
+          canReadUsers={canReadUsers}
         />
       </PageBody>
     </>
