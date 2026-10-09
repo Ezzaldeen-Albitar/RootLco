@@ -18,7 +18,6 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { addDays, dayIn, startOfDay } from '@/lib/branch-time';
-import { formatDateTime } from '@/lib/format';
 
 import { listMovements } from '../api';
 import {
@@ -35,7 +34,9 @@ import { ItemPicker, REFERENCE, ReferenceBox, type ItemChoice } from './pickers'
 import { LocationPicker, Qty, useLocations } from './shared';
 import {
   BranchTargetForm,
+  StockMoment,
   StockMomentField,
+  useStockDisplayZone,
   useStockTargetClock,
   type StockTargetClock,
 } from './stock-operations';
@@ -619,6 +620,8 @@ function LedgerResults({
     [target, criteria]
   );
   const table = useServerTable<StockMovement>(load, { initial: INITIAL_REQUEST });
+  // Each movement's moment is written on the branch's clock, named (`P1-32-PRE-OD-INV5`).
+  const zone = useStockDisplayZone(target);
 
   const columns = useMemo<readonly OperationalColumn<StockMovement>[]>(
     () => [
@@ -635,7 +638,7 @@ function LedgerResults({
       {
         id: 'occurredAt',
         headerKey: 'inventory.movements.column.occurredAt',
-        cell: (row) => <span dir="ltr">{formatDateTime(row.occurredAt, locale)}</span>,
+        cell: (row) => <StockMoment value={row.occurredAt} locale={locale} zone={zone} />,
       },
       {
         id: 'type',
@@ -705,7 +708,7 @@ function LedgerResults({
         ),
       },
     ],
-    [locale, messages, locations]
+    [locale, messages, locations, zone]
   );
 
   return (

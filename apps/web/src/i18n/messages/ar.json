@@ -2349,6 +2349,7 @@
   "inventory.material.create.enteredNote": "تُسجَّل الكمية ومصدرها معًا وتبقى قابلة للقراءة بعد ذلك.",
   "inventory.material.create.explain": "حدِّد سطر الخدمة الذي تُطلب له المواد، ثم إمّا أن تترك السعة المؤكَّدة لهذه المركبة تحدِّد الكمية، أو تُدخل الكمية بنفسك وتذكر أين قرأتها.",
   "inventory.material.create.heading": "اطلب مواد لسطر خدمة واحد",
+  "inventory.material.create.itemCategory": "مجموعة الأصناف",
   "inventory.material.create.itemCategoryHelp": "استخدم المجموعة حين يجوز صرف أي صنف من ذلك النوع.",
   "inventory.material.create.itemCategoryId": "مرجع مجموعة الأصناف",
   "inventory.material.create.matchExplain": "هذه السعات مؤكَّدة ويمكن أن تنطبق على هذه المركبة. ومركبة هذا الطلب هي التي تحدد أيها يُستخدم، ويذكر الطلب المحفوظ السعة التي طابقها والمصدر الذي قُرئت منه.",

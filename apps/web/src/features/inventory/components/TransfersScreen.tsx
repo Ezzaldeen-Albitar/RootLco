@@ -57,7 +57,6 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 
 import {
@@ -87,10 +86,12 @@ import {
   BranchTargetForm,
   ItemFinder,
   PANEL,
+  StockMoment,
   StockOperationLinks,
   isQuantity,
   outcomeField,
   useBranchList,
+  useStockDisplayZone,
 } from './stock-operations';
 
 const readOutbound = (target: StockTarget) => listTransfers(target, 'outbound');
@@ -193,6 +194,8 @@ function BranchTransfers({
     'inventory.transfers.writeOffs.unavailable'
   );
   const locations = useLocations(target);
+  // Each moment is written on the branch's clock, named (`P1-32-PRE-OD-INV5`).
+  const zone = useStockDisplayZone(target);
   const [action, setAction] = useState<RowAction | null>(null);
   const [deciding, setDeciding] = useState<TransferSettlement | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
@@ -299,8 +302,8 @@ function BranchTransfers({
                           <code className="font-mono text-caption" dir="ltr">
                             {row.sku}
                           </code>
-                          <span className="block text-caption text-text-muted" dir="ltr">
-                            {formatDateTime(row.dispatchedAt, locale)}
+                          <span className="block text-caption text-text-muted">
+                            <StockMoment value={row.dispatchedAt} locale={locale} zone={zone} />
                           </span>
                         </TableCell>
                         <TableCell>
@@ -446,8 +449,8 @@ function BranchTransfers({
                         </TableCell>
                         <TableCell>
                           {row.reason}
-                          <span className="block text-caption text-text-muted" dir="ltr">
-                            {formatDateTime(row.createdAt, locale)}
+                          <span className="block text-caption text-text-muted">
+                            <StockMoment value={row.createdAt} locale={locale} zone={zone} />
                           </span>
                           {own ? (
                             <span className="block text-caption text-text-muted">
