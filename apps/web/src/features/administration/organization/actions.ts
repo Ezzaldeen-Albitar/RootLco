@@ -309,3 +309,124 @@ export async function createBranchAction(
   if (!result.ok) return duplicateOr(result, attempt, 'organization.branch.duplicateCode');
   return success('organization.branch.created', attempt);
 }
+
+// --- editing a company or a branch (P1-32-PRE-OD-ADM1) ---------------------------
+
+const companyEditSchema = z.object({
+  legalName: z.string().trim().min(1, 'field.required').max(200, 'field.tooLong'),
+});
+
+/**
+ * `PATCH /api/v1/org/companies/{companyId}` — `org.company-update`,
+ * `org.company.manage`, scope `company`.
+ *
+ * Only the legal name travels. The code is frozen by the database, the status
+ * has its own transition with a reason, and the base currency and the
+ * registration numbers are not offered on this screen (see the route checklist's
+ * ADM-1 section for why). `If-Match` is the version the company list published
+ * for the row the operator opened — never one read again at the moment of
+ * saving, which would turn the lost-update guard into a lost update. A version
+ * that moved is `ERR-CON-001`, said as a conflict and never retried.
+ */
+export async function updateCompanyAction(input: {
+  readonly companyId: string;
+  readonly recordVersion: number;
+  readonly legalName: string;
+  readonly attempt: number;
+}): Promise<ActionState> {
+  const attempt = input.attempt;
+  const parsed = companyEditSchema.safeParse({ legalName: input.legalName });
+  if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
+  if (!UUID.test(input.companyId)) return invalid({}, attempt, 'state.notFound.message');
+  if (!Number.isInteger(input.recordVersion) || input.recordVersion < 1) {
+    return invalid({}, attempt, 'organization.edit.versionUnknown');
+  }
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
+
+  const result = await client.send(
+    'PATCH',
+    `/api/v1/org/companies/${encodeURIComponent(input.companyId)}`,
+    { legalName: parsed.data.legalName },
+    { ifMatch: input.recordVersion }
+  );
+  if (!result.ok) return fromFailure(result, attempt);
+  return success('organization.company.updated', attempt);
+}
+
+const branchEditSchema = z.object({
+  name: z.string().trim().min(1, 'field.required').max(200, 'field.tooLong').optional(),
+  timezoneName: z
+    .string()
+    .trim()
+    .min(3, 'organization.branch.timezoneHint')
+    .max(64, 'field.tooLong')
+    .optional(),
+  city: z.string().trim().max(120, 'field.tooLong').optional(),
+  countryCode: z
+    .string()
+    .regex(/^([A-Z]{2})?$/, 'organization.branch.countryHint')
+    .optional(),
+});
+
+/**
+ * `PATCH /api/v1/org/branches/{branchId}` — `org.branch-update`,
+ * `org.branch.manage`, scope `branch` (the server authorizes the branch's own
+ * company and branch, read from the row).
+ *
+ * The dialog sends only the fields the operator changed. A city or a country
+ * emptied by the operator is sent as `null`, which the contract reads as "remove
+ * it"; a field left alone is not sent at all. The code and the company are
+ * frozen by the database, the status has its own transition with a reason, and
+ * the address lines are not offered on this screen.
+ */
+export async function updateBranchAction(input: {
+  readonly branchId: string;
+  readonly recordVersion: number;
+  readonly attempt: number;
+  readonly changes: {
+    readonly name?: string | undefined;
+    readonly timezoneName?: string | undefined;
+    readonly city?: string | undefined;
+    readonly countryCode?: string | undefined;
+  };
+}): Promise<ActionState> {
+  const attempt = input.attempt;
+  const parsed = branchEditSchema.safeParse({
+    ...input.changes,
+    ...(input.changes.countryCode === undefined
+      ? {}
+      : { countryCode: input.changes.countryCode.trim().toUpperCase() }),
+  });
+  if (!parsed.success) return invalid(issueKeysByField(parsed.error), attempt);
+  if (!UUID.test(input.branchId)) return invalid({}, attempt, 'state.notFound.message');
+  if (!Number.isInteger(input.recordVersion) || input.recordVersion < 1) {
+    return invalid({}, attempt, 'organization.edit.versionUnknown');
+  }
+
+  const { name, timezoneName, city, countryCode } = parsed.data;
+  const body = {
+    ...(name === undefined ? {} : { name }),
+    ...(timezoneName === undefined ? {} : { timezoneName }),
+    ...(city === undefined ? {} : { city: city.length > 0 ? city : null }),
+    ...(countryCode === undefined
+      ? {}
+      : { countryCode: countryCode.length > 0 ? countryCode : null }),
+  };
+  if (Object.keys(body).length === 0) {
+    return invalid({}, attempt, 'organization.edit.unchanged');
+  }
+
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
+
+  const result = await client.send(
+    'PATCH',
+    `/api/v1/org/branches/${encodeURIComponent(input.branchId)}`,
+    body,
+    { ifMatch: input.recordVersion }
+  );
+  if (!result.ok) return fromFailure(result, attempt);
+  return success('organization.branch.updated', attempt);
+}

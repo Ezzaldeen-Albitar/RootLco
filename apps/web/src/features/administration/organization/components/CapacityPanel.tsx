@@ -1,3 +1,4 @@
+import LinearProgress from '@mui/material/LinearProgress';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
@@ -19,6 +20,11 @@ import {
  *
  * The remedy for a full allowance is a plan change made by the platform owner,
  * so the panel says that rather than offering a control that could not help.
+ *
+ * Each bar is Material's determinate `LinearProgress` (ADR-022,
+ * P1-32-PRE-OD-ADM1), named by the kind and the numbers so it is read as a
+ * sentence rather than a bare percentage; the warning colour is never the only
+ * signal, because the words "Nearly full" or "The limit is reached" say it too.
  */
 
 const KINDS: readonly CapacityKind[] = ['companies', 'branches', 'users'];
@@ -118,11 +124,11 @@ function AllowanceRow({
       {percent === null ? (
         <span className="text-caption text-text-muted">{t('organization.capacity.unlimited')}</span>
       ) : (
-        <progress
-          max={100}
+        <LinearProgress
+          variant="determinate"
           value={percent}
+          color={near ? 'warning' : 'primary'}
           aria-label={`${label}: ${summary}`}
-          className={`h-2 w-full ${near ? 'accent-warning' : 'accent-primary'}`}
         />
       )}
       {near && percent !== null ? (
