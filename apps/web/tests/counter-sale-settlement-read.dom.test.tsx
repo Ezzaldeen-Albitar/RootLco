@@ -3,7 +3,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import type { ReactElement } from 'react';
-import { inBranch, renderLtr as renderInLtr, renderRtl as renderInRtl } from './render';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import {
+  inBranch,
+  messagesFor,
+  renderLtr as renderBareLtr,
+  renderRtl as renderBareRtl,
+} from './render';
 import {
   BRANCH_ID,
   COMPANY_ID,
@@ -41,6 +48,24 @@ import {
  * or runs out of time is said on the copy, with a way to read it again.
  */
 
+/*
+ * Since `P1-32-PRE-OD-INV6` every render also goes under the product's Material
+ * provider, as the locale layout mounts it: the screen's own fields, buttons and
+ * tables are Material's. No selector of an existing case moved: the fields are
+ * still labelled boxes and native selects, the lists still tables, the actions
+ * still buttons with the same names.
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderInLtr = (ui: ReactElement, options?: Parameters<typeof renderBareLtr>[1]) =>
+  renderBareLtr(withMui(ui, 'en'), options);
+const renderInRtl = (ui: ReactElement, options?: Parameters<typeof renderBareRtl>[1]) =>
+  renderBareRtl(withMui(ui, 'ar'), options);
 const renderLtr = (ui: ReactElement) => renderInLtr(inBranch(ui));
 const renderRtl = (ui: ReactElement) => renderInRtl(inBranch(ui, { locale: 'ar' }));
 const AR = ar as Record<string, string>;
