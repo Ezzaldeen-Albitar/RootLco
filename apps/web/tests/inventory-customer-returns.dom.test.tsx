@@ -1,13 +1,16 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   inBranch,
-  renderLtr as renderInLtr,
-  renderRtl as renderInRtl,
+  messagesFor,
+  renderLtr as renderBareLtr,
+  renderRtl as renderBareRtl,
   BranchSwitch,
   OTHER_BRANCH,
   TEST_BRANCH,
@@ -33,6 +36,24 @@ import {
  * — true for every case below. A case that needs a different snapshot builds
  * one and renders it explicitly.
  */
+/*
+ * Since `P1-32-PRE-OD-INV6` every render also goes under the product's Material
+ * provider, as the locale layout mounts it: the screen's own fields, buttons and
+ * tables are Material's. No selector of an existing case moved: the fields are
+ * still labelled boxes and native selects, the lists still tables, the actions
+ * still buttons with the same names.
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderInLtr = (ui: ReactElement, options?: Parameters<typeof renderBareLtr>[1]) =>
+  renderBareLtr(withMui(ui, 'en'), options);
+const renderInRtl = (ui: ReactElement, options?: Parameters<typeof renderBareRtl>[1]) =>
+  renderBareRtl(withMui(ui, 'ar'), options);
 const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
   renderInLtr(inBranch(ui), options);
 const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
@@ -1216,4 +1237,73 @@ describe('accessibility and Arabic', () => {
     expect(document.documentElement.dir).toBe('rtl');
     expect(screen.getByText(AR['inventory.returns.explain'] as string)).toBeTruthy();
   });
+});
+
+/*
+ * P1-32-PRE-OD-INV6: the returns desk on Material UI. What the move must keep,
+ * in both languages: the quantity is a decimal box read left to right, one press
+ * sends one return, and the branch's returns are a table named by its caption.
+ */
+describe('the returns desk on Material UI (INV6)', () => {
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`a second press while a return is out sends nothing more (${locale})`, async () => {
+      const catalogue = locale === 'ar' ? AR : EN;
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      listSalesReturns.mockResolvedValue(
+        okRead({ items: [received()], nextCursor: null, hasMore: false })
+      );
+      let answer: (value: unknown) => void = () => undefined;
+      createSalesReturn.mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+      );
+      const user = userEvent.setup();
+      if (locale === 'ar') {
+        renderRtl(<CustomerReturnsScreen locale="ar" messages={ar} canOperate canReadBranches />);
+      } else {
+        renderLtr(operable());
+      }
+      await screen.findByRole('region', {
+        name: catalogue['inventory.returns.targetLabel'] as string,
+      });
+      // The branch's returns: a table named by its caption, the quantity as sent.
+      const list = await screen.findByRole('table', {
+        name: catalogue['inventory.returns.list.caption'] as string,
+      });
+      expect(within(list).getByText('1.000')).toBeVisible();
+      await user.selectOptions(
+        await screen.findByLabelText(named('inventory.returns.sale.label')),
+        SALE_ID
+      );
+      await user.selectOptions(
+        await screen.findByLabelText(named('inventory.returns.sale.lineLabel')),
+        SOURCE_ID
+      );
+      await waitFor(() => expect(readReturnable).toHaveBeenCalledTimes(1));
+      const quantity = screen.getByLabelText(named('inventory.returns.create.quantity'));
+      expect(quantity).toHaveAttribute('dir', 'ltr');
+      expect(quantity).toHaveAttribute('inputmode', 'decimal');
+      expect(quantity).not.toHaveAttribute('type', 'number');
+      await user.type(quantity, '1');
+      await user.selectOptions(
+        screen.getByLabelText(named('inventory.returns.create.receivedLocation')),
+        LOCATION_ID
+      );
+      const submit = screen.getByRole('button', {
+        name: catalogue['inventory.returns.create.submit'] as string,
+      });
+      fireEvent.click(submit);
+      fireEvent.click(submit);
+      expect(createSalesReturn).toHaveBeenCalledTimes(1);
+      expect(submit).toBeDisabled();
+      answer(succeeded('inventory.returns.create.success', received()));
+      expect(
+        await screen.findByText(catalogue['inventory.returns.create.done'] as string)
+      ).toBeVisible();
+      expect(createSalesReturn).toHaveBeenCalledTimes(1);
+    });
+  }
 });
