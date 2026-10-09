@@ -120,6 +120,14 @@ export function DepartmentsScreen({
   );
 }
 
+/*
+ * `org.department-list` answers at most this many departments, with no cursor
+ * and no "more exist" flag. A list of exactly this length may have been cut
+ * short, so the register says only the first ones are shown — an inference
+ * from the length, never a statement that more exist.
+ */
+const DEPARTMENT_LIST_CAP = 500;
+
 interface HeldRead {
   readonly generation: number;
   readonly state: ReadState<readonly DepartmentView[]>;
@@ -262,76 +270,85 @@ function BranchDepartments({
           testId="departments-empty"
         />
       ) : (
-        <TableContainer aria-busy={refreshing || undefined}>
-          <Table size="small">
-            <caption className="sr-only">{`${t('departments.title')} — ${branch.name}`}</caption>
-            <TableHead>
-              <TableRow>
-                <TableCell scope="col">{t('departments.name')}</TableCell>
-                <TableCell scope="col">{t('organization.structure.code')}</TableCell>
-                <TableCell scope="col">{t('organization.status')}</TableCell>
-                {canManage ? <TableCell scope="col">{t('admin.actions')}</TableCell> : null}
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {rows.map((department) => (
-                <TableRow key={department.id}>
-                  <TableCell>
-                    <bdi className="font-medium text-text-primary">{department.name}</bdi>
-                  </TableCell>
-                  <TableCell>
-                    <code className="font-mono text-caption text-text-secondary" dir="ltr">
-                      {department.departmentCode}
-                    </code>
-                  </TableCell>
-                  <TableCell>
-                    <StatusPill status={department.status} messages={messages} />
-                  </TableCell>
-                  {canManage ? (
-                    <TableCell>
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          variant="outlined"
-                          size="small"
-                          aria-label={`${t('departments.rename')}: ${department.name}`}
-                          onClick={() => {
-                            setConflict(null);
-                            setPending({ kind: 'rename', department });
-                          }}
-                        >
-                          {t('departments.rename')}
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outlined"
-                          size="small"
-                          color={department.status === 'active' ? 'error' : 'primary'}
-                          aria-label={`${t(
-                            department.status === 'active'
-                              ? 'departments.retire'
-                              : 'departments.reinstate'
-                          )}: ${department.name}`}
-                          onClick={() => {
-                            setConflict(null);
-                            setStatusOutcome(IDLE);
-                            setPending({ kind: 'status', department });
-                          }}
-                        >
-                          {t(
-                            department.status === 'active'
-                              ? 'departments.retire'
-                              : 'departments.reinstate'
-                          )}
-                        </Button>
-                      </div>
-                    </TableCell>
-                  ) : null}
+        <>
+          {rows.length >= DEPARTMENT_LIST_CAP ? (
+            <p className="text-caption text-text-muted" data-testid="departments-capped">
+              {translateWithValues(messages, 'departments.listCapped', {
+                count: String(DEPARTMENT_LIST_CAP),
+              })}
+            </p>
+          ) : null}
+          <TableContainer aria-busy={refreshing || undefined}>
+            <Table size="small">
+              <caption className="sr-only">{`${t('departments.title')} — ${branch.name}`}</caption>
+              <TableHead>
+                <TableRow>
+                  <TableCell scope="col">{t('departments.name')}</TableCell>
+                  <TableCell scope="col">{t('organization.structure.code')}</TableCell>
+                  <TableCell scope="col">{t('organization.status')}</TableCell>
+                  {canManage ? <TableCell scope="col">{t('admin.actions')}</TableCell> : null}
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TableContainer>
+              </TableHead>
+              <TableBody>
+                {rows.map((department) => (
+                  <TableRow key={department.id}>
+                    <TableCell>
+                      <bdi className="font-medium text-text-primary">{department.name}</bdi>
+                    </TableCell>
+                    <TableCell>
+                      <code className="font-mono text-caption text-text-secondary" dir="ltr">
+                        {department.departmentCode}
+                      </code>
+                    </TableCell>
+                    <TableCell>
+                      <StatusPill status={department.status} messages={messages} />
+                    </TableCell>
+                    {canManage ? (
+                      <TableCell>
+                        <div className="flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="outlined"
+                            size="small"
+                            aria-label={`${t('departments.rename')}: ${department.name}`}
+                            onClick={() => {
+                              setConflict(null);
+                              setPending({ kind: 'rename', department });
+                            }}
+                          >
+                            {t('departments.rename')}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outlined"
+                            size="small"
+                            color={department.status === 'active' ? 'error' : 'primary'}
+                            aria-label={`${t(
+                              department.status === 'active'
+                                ? 'departments.retire'
+                                : 'departments.reinstate'
+                            )}: ${department.name}`}
+                            onClick={() => {
+                              setConflict(null);
+                              setStatusOutcome(IDLE);
+                              setPending({ kind: 'status', department });
+                            }}
+                          >
+                            {t(
+                              department.status === 'active'
+                                ? 'departments.retire'
+                                : 'departments.reinstate'
+                            )}
+                          </Button>
+                        </div>
+                      </TableCell>
+                    ) : null}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </>
       )}
 
       {creating ? (

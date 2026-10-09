@@ -3946,7 +3946,9 @@ What moved to which wrapper:
 
 - `/administration/departments` (`DepartmentsScreen.tsx`) — the list is Material's table:
   `org.department-list` answers one bounded list with no cursor (planner ruling 2026-10-09), named
-  first, its code left to right beside it. Loading, empty, refused, outage (with a retry that reads
+  first, its code left to right beside it. When exactly 500 rows come back — the operation's limit —
+  a notice above the table says only the first 500 are shown and more may exist (planner ruling
+  2026-10-09; see the recorded gaps below). Loading, empty, refused, outage (with a retry that reads
   again) and ended session are the shared states (`MuiStates`). Create and rename are `FormDialog`
   forms of `FormTextField`s (F1–F4); retire and reinstate ask first through `ConfirmDialog`
   (D1–D4), which names the department. Every button is Material's.
@@ -3997,12 +3999,13 @@ Arabic:
   stored name and version, and the next save sends that version; a stale retirement or
   deactivation is said beside the list with the same way out; a refused create keeps every field.
 - Versions: rename, retire and deactivate send the row's version as `If-Match`.
-- Duplicate submits: create (both registers), retire and deactivate send once for two presses made
-  inside one render frame (`sending` guards, pressed twice inside one `act()`).
+- Duplicate submits: create (both registers), rename, retire, reinstate, deactivate and reactivate
+  send once for two presses made inside one render frame (`sending` guards, pressed twice inside one
+  `act()`); each of these cases fails with its guard removed.
 - Names: a linked login account is named from the picker's list or, for one outside it, from its
   own read (`iam.user.read`); the detail view names the branch, the company and the account.
-- Focus: the first field takes the cursor when a form opens and Add takes it back on Cancel; the
-  detail drawer takes it and returns it to "Details" on Escape.
+- Focus: the first field takes the cursor when a form opens and Add (Add department, Add employee)
+  takes it back on Cancel; the detail drawer takes it and returns it to "Details" on Escape.
 - Arabic and English, right to left.
 
 Test changes forced by the new structure, the asserted behaviour unchanged:
@@ -4018,8 +4021,10 @@ Test changes forced by the new structure, the asserted behaviour unchanged:
 Assertions changed, with the reason:
 
 - "creates a department" and "adds an employee" asserted the success sentence inside the dialog;
-  they now assert the dialog closes and the list is read again, because a stored entry now closes
-  its form (below). The request bodies asserted are unchanged (the employee case adds the reference).
+  they now assert the dialog closes, the same sentence (`departments.created`, `employees.created`)
+  appears in the notification, mounted as the locale layout mounts it, and the list is read again,
+  because a stored entry now closes its form (below). The request bodies asserted are unchanged (the
+  employee case adds the reference).
 - "lists the branch register and pages on request" pressed "Show more" and asserted both pages on
   screen; it now presses "Next page" and asserts the next page and the cursor sent, because the
   grid pages instead of appending (G3).
@@ -4031,6 +4036,11 @@ Assertions changed, with the reason:
   the branch statement, because the grid's page-size select is a combobox of its own.
 - The "all my branches" cases now also assert the register closes (no list, no Add), and a new case
   holds that an untouched form closes towards "All my branches" without a question.
+- Two cases of develop that the first head of this slice dropped are restored, asserting the same
+  behaviour with only the selectors adapted to the Material dialog: "departments: an untouched
+  dialog is closed by the switch without a question" (towards another branch) and "employees: a
+  typed new employee makes the switch ask, and "stay" keeps it" (then a discard towards another
+  branch closes it).
 
 Deliberate behaviour changes:
 
@@ -4053,8 +4063,11 @@ Recorded gaps (no control is drawn for any of them):
   withdrawal, skill set and withdrawal, certification record, update and detail record, and the
   list, detail, availability and queue reads — have no administration screen. They are left for the
   separate technician-administration slice and are not built here.
-- `org.department-list` answers at most 500 departments with no cursor and no "more exist" flag, so
-  the register cannot say a list was cut short.
+- `org.department-list` answers at most 500 departments with no cursor and no "more exist" flag. The
+  register infers from the length alone: exactly 500 rows draw the notice that only the first 500
+  are shown and more may exist (`DEPARTMENT_LIST_CAP` in `DepartmentsScreen.tsx`, the
+  `departments.listCapped` sentence). A branch with exactly 500 departments draws it too; no control
+  reaches a 501st.
 
 Known limitations of this slice, one line each:
 

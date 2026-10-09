@@ -2,6 +2,8 @@ import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NotificationHost } from '@/components/notifications/NotificationHost';
+import { __resetNotificationsForTests } from '@/components/notifications/notification-store';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { getMessages } from '@/i18n/get-messages';
@@ -189,6 +191,7 @@ beforeEach(() => {
   send.mockReset();
   // The working branch is remembered in browser storage; every case starts afresh.
   window.localStorage.clear();
+  __resetNotificationsForTests();
 });
 afterEach(forgetRememberedBranch);
 
@@ -196,9 +199,15 @@ afterEach(forgetRememberedBranch);
  * The screen under the Material foundation and a working context, with bare
  * switches standing in for the header: one per branch and "All my branches".
  */
-function mount(ui: ReactElement, locale: 'en' | 'ar' = 'en') {
+function mount(
+  ui: ReactElement,
+  locale: 'en' | 'ar' = 'en',
+  { notifications = false }: { readonly notifications?: boolean } = {}
+) {
   const tree = (
     <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {/* The notification host, as the locale layout mounts it, where a case reads a toast. */}
+      {notifications ? <NotificationHost messages={getMessages(locale)} /> : null}
       {inBranch(
         <>
           <BranchSwitch to={BRANCH.id} label="first" />
@@ -317,7 +326,7 @@ describe.each(['en', 'ar'] as const)('Departments (%s)', (locale) => {
     get.mockResolvedValue(departments([]));
     send.mockResolvedValue({ ok: true, status: 201, data: {}, correlationId: 'c2' });
     const u = user();
-    mount(departmentsScreen(locale), locale);
+    mount(departmentsScreen(locale), locale, { notifications: true });
     await u.click(screen.getByRole('button', { name: 'first' }));
 
     const add = await screen.findByRole('button', { name: T('departments.add') });
@@ -337,6 +346,8 @@ describe.each(['en', 'ar'] as const)('Departments (%s)', (locale) => {
       name: 'Parts desk',
     });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // The success sentence is said, now in the notification rather than the form.
+    expect(await screen.findByText(T('departments.created'))).toBeVisible();
     await waitFor(() => expect(get).toHaveBeenCalledTimes(2));
   });
 
@@ -513,6 +524,81 @@ describe.each(['en', 'ar'] as const)('Departments (%s)', (locale) => {
     );
   });
 
+  it('renames once when Save is pressed twice before it is disabled', async () => {
+    get.mockResolvedValue(departments([DEPARTMENT]));
+    send.mockReturnValue(new Promise(() => undefined));
+    const u = user();
+    mount(departmentsScreen(locale), locale);
+    await u.click(screen.getByRole('button', { name: 'first' }));
+    await u.click(
+      await screen.findByRole('button', { name: `${T('departments.rename')}: Service` })
+    );
+    const dialog = screen.getByRole('dialog');
+    await u.type(field(dialog, T('departments.name')), ' desk');
+    const save = within(dialog).getByRole('button', { name: T('admin.save') });
+    await act(async () => {
+      save.click();
+      save.click();
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      'PATCH',
+      `/api/v1/org/departments/${DEPARTMENT.id}`,
+      { name: 'Service desk' },
+      { ifMatch: 4 }
+    );
+  });
+
+  it('reinstates with the row version as If-Match, sent once for two presses', async () => {
+    get.mockResolvedValue(departments([{ ...DEPARTMENT, status: 'inactive' }]));
+    send.mockReturnValue(new Promise(() => undefined));
+    const u = user();
+    mount(departmentsScreen(locale), locale);
+    await u.click(screen.getByRole('button', { name: 'first' }));
+    await u.click(
+      await screen.findByRole('button', { name: `${T('departments.reinstate')}: Service` })
+    );
+    const question = screen.getByRole('alertdialog');
+    const confirm = within(question).getByRole('button', { name: T('departments.reinstate') });
+    await act(async () => {
+      confirm.click();
+      confirm.click();
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      'PATCH',
+      `/api/v1/org/departments/${DEPARTMENT.id}`,
+      { status: 'active' },
+      { ifMatch: 4 }
+    );
+  });
+
+  /*
+   * `org.department-list` stops at 500 rows and says nothing of more. A list of
+   * exactly that length may have been cut short, so the register says only the
+   * first ones are shown; a shorter list says nothing of the kind.
+   */
+  it('says only the first 500 are shown when the list comes back at its 500-row limit', async () => {
+    const full = Array.from({ length: 500 }, (_, index) => ({
+      ...DEPARTMENT,
+      id: `30000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+      departmentCode: `dept_${index}`,
+      name: `Department ${index}`,
+    }));
+    get.mockResolvedValueOnce(departments(full.slice(0, 499))).mockResolvedValue(departments(full));
+    const u = user();
+    mount(departmentsScreen(locale), locale);
+    await u.click(screen.getByRole('button', { name: 'first' }));
+    await department('Department 498');
+    expect(screen.queryByTestId('departments-capped')).toBeNull();
+
+    await u.click(screen.getByRole('button', { name: 'second' }));
+    await department('Department 499');
+    expect(screen.getByTestId('departments-capped')).toHaveTextContent(
+      T('departments.listCapped').replace('{count}', '500')
+    );
+  });
+
   it('offers no write control without the manage permission', async () => {
     get.mockResolvedValue(departments([DEPARTMENT]));
     const u = user();
@@ -613,7 +699,7 @@ describe.each(['en', 'ar'] as const)('Employees (%s)', (locale) => {
     serve({ list: employeePage([]) });
     send.mockResolvedValue({ ok: true, status: 201, data: {}, correlationId: 'c2' });
     const u = user();
-    mount(employeesScreen(locale), locale);
+    mount(employeesScreen(locale), locale, { notifications: true });
     await u.click(screen.getByRole('button', { name: 'first' }));
     await u.click(await screen.findByRole('button', { name: T('employees.add') }));
     const dialog = screen.getByRole('dialog', { name: T('employees.add') });
@@ -632,6 +718,8 @@ describe.each(['en', 'ar'] as const)('Employees (%s)', (locale) => {
       employmentRef: 'HR-77',
     });
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    // The success sentence is said, now in the notification rather than the form.
+    expect(await screen.findByText(T('employees.created'))).toBeVisible();
     await waitFor(() =>
       expect(
         get.mock.calls.filter(([path]) => String(path).startsWith('/api/v1/org/employees?'))
@@ -682,6 +770,44 @@ describe.each(['en', 'ar'] as const)('Employees (%s)', (locale) => {
       create.click();
     });
     expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('returns the cursor to Add employee when the form is cancelled', async () => {
+    serve({ list: employeePage([]) });
+    const u = user();
+    mount(employeesScreen(locale), locale);
+    await u.click(screen.getByRole('button', { name: 'first' }));
+    const add = await screen.findByRole('button', { name: T('employees.add') });
+    await u.click(add);
+    await u.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: T('admin.cancel') })
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(add).toHaveFocus());
+  });
+
+  it('reactivates with the row version as If-Match, sent once for two presses', async () => {
+    serve({ list: employeePage([{ ...EMPLOYEE, status: 'inactive' }]) });
+    send.mockReturnValue(new Promise(() => undefined));
+    const u = user();
+    mount(employeesScreen(locale), locale);
+    await u.click(screen.getByRole('button', { name: 'first' }));
+    await u.click(
+      await screen.findByRole('button', { name: `${T('employees.reactivate')} Handover Clerk` })
+    );
+    const question = screen.getByRole('alertdialog');
+    const confirm = within(question).getByRole('button', { name: T('employees.reactivate') });
+    await act(async () => {
+      confirm.click();
+      confirm.click();
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      'POST',
+      `/api/v1/org/employees/${EMPLOYEE.id}/status`,
+      { status: 'active' },
+      { ifMatch: 2 }
+    );
   });
 
   it('deactivates with the row version as If-Match, sent once for two presses', async () => {
@@ -864,6 +990,19 @@ describe.each(['en', 'ar'] as const)(
       expect(screen.queryByRole('button', { name: T('departments.add') })).toBeNull();
     });
 
+    // Restored from develop, where the first ADM2 head had dropped it: a switch to another branch.
+    it('departments: an untouched dialog is closed by the switch without a question', async () => {
+      get.mockResolvedValue(departments([]));
+      const u = userEvent.setup();
+      mount(departmentsScreen(locale), locale);
+      await u.click(screen.getByRole('button', { name: 'first' }));
+      await u.click(await screen.findByRole('button', { name: T('departments.add') }));
+      expect(screen.getByRole('dialog')).toBeVisible();
+
+      await switchWithoutQuestion(u, 'second');
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    });
+
     it('departments: an edited name in the rename form makes the switch ask, and a confirmed discard closes it', async () => {
       get.mockResolvedValue(departments([DEPARTMENT]));
       const u = userEvent.setup();
@@ -877,6 +1016,25 @@ describe.each(['en', 'ar'] as const)(
       await stayOnBranch(u, await switchExpectingQuestion(u, 'everywhere', text), text);
       expect(field(screen.getByRole('dialog'), T('departments.name'))).toHaveValue('Service desk');
       await discardAndSwitch(u, await switchExpectingQuestion(u, 'everywhere', text), text);
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    });
+
+    // Restored from develop, where the first ADM2 head had dropped it: a typed name, "stay", a discard.
+    it('employees: a typed new employee makes the switch ask, and "stay" keeps it', async () => {
+      get.mockResolvedValue(employeePage([]));
+      const u = userEvent.setup();
+      mount(employeesScreen(locale), locale);
+      await u.click(screen.getByRole('button', { name: 'first' }));
+      await u.click(await screen.findByRole('button', { name: T('employees.add') }));
+      await u.type(field(screen.getByRole('dialog'), T('employees.displayName')), 'New Clerk');
+
+      const question = await switchExpectingQuestion(u, 'second', text);
+      await stayOnBranch(u, question, text);
+      expect(field(screen.getByRole('dialog'), T('employees.displayName'))).toHaveValue(
+        'New Clerk'
+      );
+
+      await discardAndSwitch(u, await switchExpectingQuestion(u, 'second', text), text);
       await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     });
 

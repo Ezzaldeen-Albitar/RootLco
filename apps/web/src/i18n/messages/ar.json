@@ -1121,6 +1121,7 @@
   "departments.description": "الأقسام داخل كل فرع.",
   "departments.emptyBody": "أضف قسمًا لتنظيم العاملين في هذا الفرع.",
   "departments.emptyTitle": "لا توجد أقسام في هذا الفرع بعد.",
+  "departments.listCapped": "تظهر أول {count} قسم فقط، وقد توجد أقسام أخرى.",
   "departments.name": "اسم القسم",
   "departments.reinstate": "إعادة تفعيل",
   "departments.rename": "إعادة تسمية",
