@@ -14,15 +14,40 @@
  *    sending the approved method, the reference, the day and the version;
  *  - a refusal by rule is said in its own words, in English and Arabic;
  *  - the list: narrowed by state through the server, every figure the server's.
+ *
+ * On the Material UI wrappers (P1-32-PRE-OD-REPB), each also failing when removed:
+ * one write per press (two presses inside ONE act() send once), typed entries are
+ * unsaved work a branch switch asks about, the payout day is checked on the
+ * branch's calendar before it is sent, a request's moment is written on the
+ * branch's clock with the clock named, and an empty list says which empty it is.
  */
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ReactElement } from 'react';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { formatMoney } from '../src/lib/money';
-import { inBranch, renderLtr, renderRtl, TEST_BRANCH, TEST_COMPANY } from './render';
+import { addDays, dayIn, formatInZone, zoneLabelAt } from '../src/lib/branch-time';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  TEST_COMPANY,
+  WorkingBranchProbe,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { formatMessage, getMessages } from '@/i18n/get-messages';
@@ -420,10 +445,13 @@ describe('the invoice refunds panel — deciding and paying out', () => {
     panel();
     const history = await screen.findByTestId('refund-history');
     expect(history).toHaveTextContent(EN['refunds.state.executed'] as string);
+    // The day is written for reading, as a calendar day (not the stored text).
     expect(history).toHaveTextContent(
       formatMessage(EN['refunds.history.paidOut'] as string, {
         reference: 'TRF-1',
-        day: '2026-10-02',
+        day: new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', dateStyle: 'medium' }).format(
+          new Date('2026-10-02T00:00:00Z')
+        ),
       })
     );
     expect(history).toHaveTextContent('Duplicate');
@@ -483,9 +511,279 @@ describe('the refunds list', () => {
     );
   });
 
-  it('says in Arabic when nothing matches', async () => {
+  it('says in Arabic that nothing has been asked for yet, apart from a list the choices narrowed', async () => {
     listRefundRequests.mockResolvedValue(page([]));
     list('ar');
-    expect(await screen.findByText(AR['refunds.list.none'] as string)).toBeVisible();
+    const empty = await screen.findByTestId('refunds-empty');
+    expect(empty).toHaveTextContent(AR['refunds.list.empty'] as string);
+    expect(screen.queryByText(AR['refunds.list.none'] as string)).toBeNull();
   });
+
+  it('says in Arabic when nothing matches the choices, offering to clear them', async () => {
+    const user = userEvent.setup();
+    listRefundRequests.mockResolvedValue(page([]));
+    list('ar');
+    await screen.findByTestId('refunds-empty');
+    await user.click(
+      within(screen.getByTestId('refunds-toolbar')).getByRole('button', {
+        name: AR['refunds.state.approved'] as string,
+      })
+    );
+    const none = await screen.findByTestId('refunds-no-matches');
+    expect(await screen.findByText(AR['refunds.list.none'] as string)).toBeVisible();
+    expect(none).toHaveTextContent(AR['refunds.list.none'] as string);
+    expect(
+      within(none).getByRole('button', { name: AR['refunds.list.clearChoices'] as string })
+    ).toBeVisible();
+    expect(screen.queryByTestId('refunds-empty')).toBeNull();
+  });
+
+  it('says when the choices match nothing, and clearing them reads the whole list again', async () => {
+    const user = userEvent.setup();
+    listRefundRequests.mockResolvedValue(page([]));
+    list();
+    expect(await screen.findByTestId('refunds-empty')).toHaveTextContent(
+      EN['refunds.list.empty'] as string
+    );
+    await user.click(
+      within(screen.getByTestId('refunds-toolbar')).getByRole('button', {
+        name: EN['refunds.state.approved'] as string,
+      })
+    );
+    const none = await screen.findByTestId('refunds-no-matches');
+    expect(none).toHaveTextContent(EN['refunds.list.none'] as string);
+    expect(screen.queryByTestId('refunds-empty')).toBeNull();
+    await user.click(
+      within(none).getByRole('button', { name: EN['refunds.list.clearChoices'] as string })
+    );
+    await waitFor(() => expect(listRefundRequests.mock.calls.at(-1)?.[1]).toEqual({}));
+    expect(await screen.findByTestId('refunds-empty')).toBeVisible();
+  });
+
+  it('writes when a refund was asked for on the branch clock, naming the clock', async () => {
+    listRefundRequests.mockResolvedValue(page([refundRequest()]));
+    list();
+    const grid = await screen.findByTestId('refunds-grid');
+    await within(grid).findByText('Paid twice');
+    const when = formatInZone('2026-10-08T09:00:00Z', 'en-GB', TEST_BRANCH.timezone);
+    const clock = zoneLabelAt('2026-10-08T09:00:00Z', 'en-GB', TEST_BRANCH.timezone);
+    expect(grid).toHaveTextContent(`${when} ${clock}`);
+  });
+
+  it('names the working branch it lists, and reads nothing until one branch is chosen', async () => {
+    listRefundRequests.mockResolvedValue(page([refundRequest()]));
+    forgetRememberedBranch();
+    const ui = withMui(
+      inBranch(
+        <RefundsScreen
+          locale="en"
+          messages={getMessages('en')}
+          currentUserId={SIGNED_IN}
+          canReadCustomers={false}
+          canSearchInvoices
+        />,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      ),
+      'en'
+    );
+    renderLtr(ui);
+    expect(await screen.findByTestId('refunds-branch-target')).toBeVisible();
+    expect(screen.queryByTestId('refunds-grid')).toBeNull();
+    expect(listRefundRequests).not.toHaveBeenCalled();
+    forgetRememberedBranch();
+  });
+});
+
+describe('the refunds panel — one write per press, unsaved entries and the payout day', () => {
+  /*
+   * Both presses go inside ONE act(), so the second arrives before React has
+   * re-rendered the disabled button: what is tested is the panel's own hold on
+   * the write, not the button's disabled state.
+   */
+  function gate<T>() {
+    let open: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((resolve) => {
+      open = resolve;
+    });
+    return { promise, open: (value: T) => open(value) };
+  }
+  const twice = (button: HTMLElement) =>
+    act(() => {
+      button.click();
+      button.click();
+    });
+
+  it('asks for a refund once however often it is pressed', async () => {
+    const user = userEvent.setup();
+    const answer = gate<unknown>();
+    requestRefund.mockReturnValue(answer.promise);
+    panel();
+    const form = await screen.findByRole('form', { name: EN['refunds.request.heading'] as string });
+    await user.type(within(form).getByLabelText(labelled('refunds.request.amount')), '5');
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('refunds.request.method')),
+      METHOD_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('refunds.request.reason')), 'Twice');
+    twice(within(form).getByRole('button', { name: EN['refunds.request.submit'] as string }));
+    expect(requestRefund).toHaveBeenCalledTimes(1);
+    await act(async () => answer.open(echo()));
+    expect(await screen.findByText(EN['refunds.request.recorded'] as string)).toBeVisible();
+    expect(requestRefund).toHaveBeenCalledTimes(1);
+  });
+
+  it('approves once however often the confirmation is pressed', async () => {
+    const user = userEvent.setup();
+    const answer = gate<unknown>();
+    approveRefund.mockReturnValue(answer.promise);
+    listRefundRequests.mockResolvedValue(page([refundRequest()]));
+    panel();
+    const section = await region();
+    await user.click(
+      await within(section).findByRole('button', { name: EN['refunds.approve.action'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog', {
+      name: EN['refunds.approve.confirmTitle'] as string,
+    });
+    twice(within(dialog).getByRole('button', { name: EN['refunds.approve.action'] as string }));
+    expect(approveRefund).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      answer.open(echo(refundRequest({ state: 'approved', recordVersion: 4 })))
+    );
+    expect(await screen.findByText(EN['refunds.approve.done'] as string)).toBeVisible();
+    expect(approveRefund).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts the cursor on the first field to fix when the request is refused', async () => {
+    const user = userEvent.setup();
+    panel();
+    const form = await screen.findByRole('form', { name: EN['refunds.request.heading'] as string });
+    await user.click(
+      within(form).getByRole('button', { name: EN['refunds.request.submit'] as string })
+    );
+    const amount = within(form).getByLabelText(labelled('refunds.request.amount'));
+    await waitFor(() => expect(amount).toHaveAttribute('aria-invalid', 'true'));
+    await waitFor(() => expect(document.activeElement).toBe(amount));
+    expect(requestRefund).not.toHaveBeenCalled();
+  });
+
+  it('offers to read a decided request again when a decision finds it moved on', async () => {
+    const user = userEvent.setup();
+    approveRefund.mockResolvedValueOnce({
+      state: {
+        status: 'conflict',
+        messageKey: 'refunds.decision.conflict',
+        correlationId: 'ref-409',
+        attempt: 1,
+      },
+      created: null,
+    });
+    listRefundRequests.mockResolvedValue(page([refundRequest()]));
+    panel();
+    const section = await region();
+    await user.click(
+      await within(section).findByRole('button', { name: EN['refunds.approve.action'] as string })
+    );
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['refunds.approve.action'] as string })
+    );
+    expect(
+      await within(section).findByText(EN['refunds.decision.conflict'] as string)
+    ).toBeVisible();
+    const reads = listRefundRequests.mock.calls.length;
+    await user.click(
+      within(section).getByRole('button', { name: EN['form.loadLatest'] as string })
+    );
+    await waitFor(() => expect(listRefundRequests.mock.calls.length).toBeGreaterThan(reads));
+  });
+
+  it('refuses a payout day after the branch today on the field, and sends nothing', async () => {
+    const user = userEvent.setup();
+    listRefundRequests.mockResolvedValue(
+      page([refundRequest({ state: 'approved', recordVersion: 4 })])
+    );
+    panel();
+    const form = await screen.findByRole('form', { name: EN['refunds.execute.heading'] as string });
+    await user.type(within(form).getByLabelText(labelled('refunds.execute.reference')), 'TRF-9');
+    const tomorrow = addDays(dayIn(TEST_BRANCH.timezone), 1);
+    const [year, month, date] = tomorrow.split('-') as [string, string, string];
+    const day = within(form).getByRole('group', { name: labelled('refunds.execute.date') });
+    await user.click(within(day).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard(`${date}${month}${year}`);
+    await user.click(
+      within(form).getByRole('button', { name: EN['refunds.execute.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['form.violation.refund_payout_date_invalid'] as string)
+    ).toBeVisible();
+    expect(executeRefund).not.toHaveBeenCalled();
+  });
+
+  it('refuses a payout day typed only in part, on the field, and sends nothing', async () => {
+    const user = userEvent.setup();
+    listRefundRequests.mockResolvedValue(
+      page([refundRequest({ state: 'approved', recordVersion: 4 })])
+    );
+    panel();
+    const form = await screen.findByRole('form', { name: EN['refunds.execute.heading'] as string });
+    await user.type(within(form).getByLabelText(labelled('refunds.execute.reference')), 'TRF-9');
+    const day = within(form).getByRole('group', { name: labelled('refunds.execute.date') });
+    await user.click(within(day).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('0110');
+    await user.click(
+      within(form).getByRole('button', { name: EN['refunds.execute.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['refunds.execute.dateIncomplete'] as string)
+    ).toBeVisible();
+    expect(executeRefund).not.toHaveBeenCalled();
+  });
+
+  it.each(['en', 'ar'] as const)(
+    'asks before a branch switch loses a typed request; staying keeps it, discarding empties it (%s)',
+    async (locale) => {
+      const user = userEvent.setup();
+      const text = locale === 'ar' ? AR : EN;
+      forgetRememberedBranch();
+      const ui = withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            <RefundsPanel
+              locale={locale}
+              messages={getMessages(locale)}
+              invoice={{ id: INVOICE_ID, companyId: TEST_COMPANY.id, branchId: TEST_BRANCH.id }}
+              currentUserId={SIGNED_IN}
+              canRequest
+              canDecide
+              onChanged={() => undefined}
+            />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]), locale }
+        ),
+        locale
+      );
+      if (locale === 'ar') renderRtl(ui);
+      else renderLtr(ui);
+      await switchWithoutQuestion(user, 'first');
+      const form = await screen.findByRole('form', {
+        name: text['refunds.request.heading'] as string,
+      });
+      const reason = within(form).getByLabelText(labelled('refunds.request.reason', text));
+      await user.type(reason, 'Paid twice');
+
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'second', text), text);
+      expect(heldBranch()).toBe(TEST_BRANCH.id);
+      expect(reason).toHaveValue('Paid twice');
+
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'second', text), text);
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await waitFor(() => expect(reason).toHaveValue(''));
+      expect(requestRefund).not.toHaveBeenCalled();
+      forgetRememberedBranch();
+    }
+  );
 });

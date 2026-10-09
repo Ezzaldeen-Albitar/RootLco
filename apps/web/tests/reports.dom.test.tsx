@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -1442,7 +1442,15 @@ describe('D16 — the amounts are as of a stated moment', () => {
  * shown, the snapshots of the period listed with their restatement chain, a frozen
  * snapshot read with its banner and difference, and a restatement of the latest one
  * that cannot be saved without a reason. Saving and restating are offered only to an
- * operator holding the export permission.
+ * operator holding `rpt.report.configure` (P1-32-PRE-OD-FD16C).
+ *
+ * On the Material UI wrappers (P1-32-PRE-OD-REPB): the list is `OperationalGrid`
+ * over the list operation's cursor pages, its rows are grid rows and "View" is a
+ * pressed choice named with the moment it opens; saving and restating are form
+ * dialogs (`role="dialog"`, never an alert dialog), each sending once however
+ * often it is pressed; a refusal because another snapshot already stands names
+ * that snapshot and offers it. Rendered under the locale layout's Material
+ * provider, as every screen on these wrappers is.
  */
 describe('D16 — snapshots keep a report as it was, and restatements are distinguished', () => {
   const AS_OF = '2026-09-07T21:00:00.000Z';
@@ -1515,6 +1523,40 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
       (text, [key, value]) => text.replace(`{${key}}`, value),
       template
     );
+  /** The report, run, under the Material provider the wrappers render in. */
+  const show = (locale = 'en') => showReport(locale, true);
+  /**
+   * The snapshot rows of the grid, once its page is read: the grid's own rows
+   * after its header row, each a `row` with its cells.
+   */
+  async function snapshotItems(count: number): Promise<HTMLElement[]> {
+    const list = await screen.findByTestId('report-snapshot-list');
+    let items: HTMLElement[] = [];
+    await waitFor(() => {
+      items = within(list).getAllByRole('row').slice(1);
+      expect(items).toHaveLength(count);
+      expect(within(items[0] as HTMLElement).getAllByRole('gridcell').length).toBeGreaterThan(0);
+    });
+    return items;
+  }
+  /** A row's "View" — named with the moment it opens, so its name starts with the word. */
+  const viewOf = (item: HTMLElement, messages: Record<string, string> = EN) =>
+    within(item).getByRole('button', {
+      name: new RegExp(`^${escape(messages['reports.snapshots.view'] as string)}`),
+    });
+  /** Two presses inside ONE act(), before React re-renders a disabled button. */
+  const twice = (button: HTMLElement) =>
+    act(() => {
+      button.click();
+      button.click();
+    });
+  function gate<T>() {
+    let open: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((resolve) => {
+      open = resolve;
+    });
+    return { promise, open: (value: T) => open(value) };
+  }
 
   beforeEach(() => {
     runReport.mockResolvedValue(runOk(SNAP_ENVELOPE));
@@ -1528,7 +1570,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
 
   it('lists the period’s snapshots by name, never by identifier, with the chain visible', async () => {
     PERMISSIONS = [READ, CONFIGURE];
-    await showReport();
+    await show();
     const list = await screen.findByTestId('report-snapshot-list');
     expect(listReportSnapshots).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -1539,14 +1581,69 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
         to: '2026-09-08',
       })
     );
-    const items = within(list).getAllByTestId('report-snapshot-item');
-    expect(items).toHaveLength(2);
+    const items = await snapshotItems(2);
     expect(items[0]).toHaveTextContent(EN['reports.snapshots.kind.restatement'] as string);
     expect(items[0]).toHaveTextContent(EN['reports.snapshots.nameHidden'] as string);
     expect(items[1]).toHaveTextContent(EN['reports.snapshots.kind.original'] as string);
     expect(items[1]).toHaveTextContent(EN['reports.snapshots.kind.restated'] as string);
     expect(items[1]).toHaveTextContent('Rana Haddad');
     expect(list.textContent).not.toContain(SAVER_ID);
+    // The grid, named; "View" names the moment it opens and is a choice (G12).
+    expect(
+      screen.getByRole('grid', { name: EN['reports.snapshots.listCaption'] as string })
+    ).toBeInTheDocument();
+    expect(viewOf(items[1] as HTMLElement)).toHaveAccessibleName(
+      `${EN['reports.snapshots.view'] as string} ${at(ORIGINAL.generatedAt)}`
+    );
+    expect(viewOf(items[1] as HTMLElement)).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('walks the snapshot list with the server cursor, a page at a time', async () => {
+    PERMISSIONS = [READ];
+    listReportSnapshots
+      .mockResolvedValueOnce(cataloguePage([RESTATEMENT], true, 'cursor-2'))
+      .mockResolvedValueOnce(cataloguePage([ORIGINAL]));
+    await show();
+    await snapshotItems(1);
+    const user = userEvent.setup();
+    await user.click(
+      within(await screen.findByTestId('report-snapshot-list')).getByRole('button', {
+        name: EN['table.nextPage'] as string,
+      })
+    );
+    await waitFor(() =>
+      expect(listReportSnapshots).toHaveBeenLastCalledWith(
+        expect.objectContaining({ cursor: 'cursor-2' })
+      )
+    );
+    const items = await snapshotItems(1);
+    expect(items[0]).toHaveTextContent('Rana Haddad');
+  });
+
+  it('says plainly when no snapshot has been saved for the period', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    listReportSnapshots.mockResolvedValue(cataloguePage([]));
+    await show();
+    const none = await screen.findByTestId('report-snapshots-none');
+    expect(none).toHaveTextContent(EN['reports.snapshots.noneTitle'] as string);
+    expect(none).toHaveTextContent(EN['reports.snapshots.none'] as string);
+  });
+
+  it('says an unreadable list as an outage with a retry, never as no snapshots', async () => {
+    PERMISSIONS = [READ];
+    listReportSnapshots.mockResolvedValue({ status: 'unavailable', correlationId: 'snap-503' });
+    await show();
+    const panel = await screen.findByTestId('report-snapshots');
+    expect(
+      await within(panel).findByText(EN['reports.snapshots.unavailable'] as string)
+    ).toBeVisible();
+    expect(within(panel).getByText('snap-503')).toBeVisible();
+    expect(within(panel).queryByTestId('report-snapshots-none')).toBeNull();
+    listReportSnapshots.mockResolvedValue(cataloguePage([RESTATEMENT, ORIGINAL]));
+    await userEvent
+      .setup()
+      .click(within(panel).getByRole('button', { name: EN['state.retry'] as string }));
+    await snapshotItems(2);
   });
 
   it('saves a snapshot after a confirmation stating the scope, the period and the moment', async () => {
@@ -1556,18 +1653,25 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
       messageKey: 'reports.snapshots.saved',
       saved: { ...ORIGINAL, restatedBySnapshotId: null, filters: FILTERS, difference: null },
     });
-    await showReport();
+    await show();
     const user = userEvent.setup();
-    await user.click(
-      await screen.findByRole('button', { name: EN['reports.snapshots.save'] as string })
-    );
-    const dialog = await screen.findByRole('alertdialog');
+    const opener = await screen.findByRole('button', {
+      name: EN['reports.snapshots.save'] as string,
+    });
+    await user.click(opener);
+    // A form dialog, named by its title — never an alert dialog.
+    const dialog = await screen.findByRole('dialog', {
+      name: EN['reports.snapshots.saveTitle'] as string,
+    });
+    expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(dialog).toHaveTextContent('Workshop company');
     expect(dialog).toHaveTextContent('Named by the run');
     expect(dialog).toHaveTextContent('2026-09-01');
     expect(dialog).toHaveTextContent('2026-09-08');
     expect(dialog).toHaveTextContent(at(AS_OF));
     expect(saveReportSnapshot).not.toHaveBeenCalled();
+    // The focus is inside the dialog, on its action.
+    expect(dialog.contains(document.activeElement)).toBe(true);
     await user.click(
       within(dialog).getByRole('button', { name: EN['reports.snapshots.saveConfirm'] as string })
     );
@@ -1580,6 +1684,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
         asOf: AS_OF,
       })
     );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     // The list is read again and the saved snapshot opened.
     await waitFor(() => expect(listReportSnapshots).toHaveBeenCalledTimes(2));
     await waitFor(() =>
@@ -1589,18 +1694,67 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
     );
   });
 
+  it('sends one save however often it is pressed, and holds the dialog while it is answered', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    const answer = gate<unknown>();
+    saveReportSnapshot.mockReturnValue(answer.promise);
+    await show();
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.save'] as string })
+    );
+    const dialog = await screen.findByRole('dialog');
+    twice(
+      within(dialog).getByRole('button', { name: EN['reports.snapshots.saveConfirm'] as string })
+    );
+    expect(saveReportSnapshot).toHaveBeenCalledTimes(1);
+    // While it is answered, both buttons are held and Escape does nothing.
+    expect(
+      within(dialog).getByRole('button', { name: EN['reports.snapshots.saving'] as string })
+    ).toBeDisabled();
+    expect(
+      within(dialog).getByRole('button', { name: EN['reports.snapshots.restateCancel'] as string })
+    ).toBeDisabled();
+    await user.keyboard('{Escape}');
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await act(async () =>
+      answer.open({
+        status: 'success',
+        messageKey: 'reports.snapshots.saved',
+        saved: { ...ORIGINAL, restatedBySnapshotId: null, filters: FILTERS, difference: null },
+      })
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(saveReportSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('cancels the save by Escape and puts the focus back on Save snapshot', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    await show();
+    const user = userEvent.setup();
+    const opener = await screen.findByRole('button', {
+      name: EN['reports.snapshots.save'] as string,
+    });
+    await user.click(opener);
+    await screen.findByRole('dialog');
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    expect(saveReportSnapshot).not.toHaveBeenCalled();
+  });
+
   it('says a refused save in its own words, inside the confirmation', async () => {
     PERMISSIONS = [READ, CONFIGURE];
     saveReportSnapshot.mockResolvedValue({
       status: 'conflict',
       messageKey: 'form.violation.report_snapshot_exists',
     });
-    await showReport();
+    await show();
     const user = userEvent.setup();
     await user.click(
       await screen.findByRole('button', { name: EN['reports.snapshots.save'] as string })
     );
-    const dialog = await screen.findByRole('alertdialog');
+    const dialog = await screen.findByRole('dialog');
     await user.click(
       within(dialog).getByRole('button', { name: EN['reports.snapshots.saveConfirm'] as string })
     );
@@ -1609,15 +1763,53 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
     ).toBeVisible();
   });
 
+  it('names the newest snapshot of the period when a duplicate is refused, and opens it', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    saveReportSnapshot.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.report_snapshot_exists',
+    });
+    await show();
+    await snapshotItems(2);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.save'] as string })
+    );
+    const dialog = await screen.findByRole('dialog');
+    await user.click(
+      within(dialog).getByRole('button', { name: EN['reports.snapshots.saveConfirm'] as string })
+    );
+    const latest = await within(dialog).findByTestId('report-snapshot-latest');
+    // The newest snapshot of the period, read afresh, by name and moment — never by id.
+    expect(listReportSnapshots).toHaveBeenCalledWith(
+      expect.objectContaining({ from: '2026-09-01', to: '2026-09-08', cursor: null, limit: 1 })
+    );
+    expect(latest).toHaveTextContent(
+      fill(EN['reports.snapshots.latestIs'] as string, {
+        savedAt: at(RESTATEMENT.generatedAt),
+        person: EN['reports.snapshots.nameHidden'] as string,
+        moment: at(RESTATEMENT.asOf),
+      })
+    );
+    expect(latest.textContent).not.toContain(RESTATEMENT_ID);
+    await user.click(
+      within(latest).getByRole('button', { name: EN['reports.snapshots.openLatest'] as string })
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() =>
+      expect(readReportSnapshot).toHaveBeenLastCalledWith(
+        expect.objectContaining({ snapshotId: RESTATEMENT_ID })
+      )
+    );
+    expect(await screen.findByTestId('report-snapshot-banner')).toBeVisible();
+  });
+
   it('shows a frozen snapshot with its banner, and the newer one that restated it', async () => {
     PERMISSIONS = [READ];
-    await showReport();
+    await show();
     const user = userEvent.setup();
-    const list = await screen.findByTestId('report-snapshot-list');
-    const original = within(list).getAllByTestId('report-snapshot-item')[1] as HTMLElement;
-    await user.click(
-      within(original).getByRole('button', { name: EN['reports.snapshots.view'] as string })
-    );
+    const original = (await snapshotItems(2))[1] as HTMLElement;
+    await user.click(viewOf(original));
     const banner = await screen.findByTestId('report-snapshot-banner');
     expect(banner).toHaveTextContent(
       fill(EN['reports.snapshots.banner'] as string, {
@@ -1651,9 +1843,27 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
     );
     expect(difference).toHaveTextContent('200.000');
     expect(difference).toHaveTextContent('150.000');
+    expect(
+      within(difference).getByRole('table', {
+        name: EN['reports.snapshots.difference.caption'] as string,
+      })
+    ).toBeInTheDocument();
     expect(screen.getByTestId('report-snapshot-restates')).toHaveTextContent(
       'A late receipt was applied'
     );
+  });
+
+  it('says a snapshot that cannot be read as itself, with a retry that reads it again', async () => {
+    PERMISSIONS = [READ];
+    readReportSnapshot.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'rows-503' });
+    await show();
+    const user = userEvent.setup();
+    await user.click(viewOf((await snapshotItems(2))[1] as HTMLElement));
+    const failed = await screen.findByTestId('report-snapshot-failed');
+    expect(failed).toHaveTextContent('rows-503');
+    await user.click(within(failed).getByRole('button', { name: EN['state.retry'] as string }));
+    expect(await screen.findByTestId('report-snapshot-banner')).toBeVisible();
+    expect(readReportSnapshot).toHaveBeenCalledTimes(2);
   });
 
   it('restates only the latest snapshot, and only with a reason', async () => {
@@ -1663,42 +1873,35 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
       messageKey: 'reports.snapshots.restatedSaved',
       saved: { ...RESTATEMENT, id: ORIGINAL_ID, filters: FILTERS, difference: null },
     });
-    await showReport();
+    await show();
     const user = userEvent.setup();
-    const list = await screen.findByTestId('report-snapshot-list');
     // The restated original offers no restatement of its own.
-    await user.click(
-      within(within(list).getAllByTestId('report-snapshot-item')[1] as HTMLElement).getByRole(
-        'button',
-        { name: EN['reports.snapshots.view'] as string }
-      )
-    );
+    await user.click(viewOf((await snapshotItems(2))[1] as HTMLElement));
     await screen.findByTestId('report-snapshot-banner');
     expect(
       screen.queryByRole('button', { name: EN['reports.snapshots.restate'] as string })
     ).toBeNull();
     // The latest does.
-    await user.click(
-      within(within(list).getAllByTestId('report-snapshot-item')[0] as HTMLElement).getByRole(
-        'button',
-        { name: EN['reports.snapshots.view'] as string }
-      )
-    );
+    await user.click(viewOf((await snapshotItems(2))[0] as HTMLElement));
     await user.click(
       await screen.findByRole('button', { name: EN['reports.snapshots.restate'] as string })
     );
     const form = await screen.findByTestId('report-snapshot-restate');
+    // A form dialog, named by its title, with the cursor in the reason.
+    expect(form).toHaveAttribute('role', 'dialog');
+    expect(form).toHaveAccessibleName(EN['reports.snapshots.restateTitle'] as string);
+    const box = within(form).getByRole('textbox', { name: labelled('reports.snapshots.reason') });
+    await waitFor(() => expect(document.activeElement).toBe(box));
     await user.click(
       within(form).getByRole('button', { name: EN['reports.snapshots.restateConfirm'] as string })
     );
     expect(
       await within(form).findByText(EN['reports.snapshots.reasonRequired'] as string)
     ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
     expect(saveReportSnapshot).not.toHaveBeenCalled();
-    await user.type(
-      within(form).getByRole('textbox', { name: labelled('reports.snapshots.reason') }),
-      'Corrected allocation'
-    );
+    await user.type(box, 'Corrected allocation');
+    expect(box).not.toHaveAttribute('aria-invalid');
     await user.click(
       within(form).getByRole('button', { name: EN['reports.snapshots.restateConfirm'] as string })
     );
@@ -1715,23 +1918,103 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
     );
   });
 
+  it('sends one restatement however often it is pressed', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    const answer = gate<unknown>();
+    saveReportSnapshot.mockReturnValue(answer.promise);
+    await show();
+    const user = userEvent.setup();
+    await user.click(viewOf((await snapshotItems(2))[0] as HTMLElement));
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.restate'] as string })
+    );
+    const form = await screen.findByTestId('report-snapshot-restate');
+    await user.type(
+      within(form).getByRole('textbox', { name: labelled('reports.snapshots.reason') }),
+      'Corrected allocation'
+    );
+    twice(
+      within(form).getByRole('button', { name: EN['reports.snapshots.restateConfirm'] as string })
+    );
+    expect(saveReportSnapshot).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      answer.open({
+        status: 'success',
+        messageKey: 'reports.snapshots.restatedSaved',
+        saved: { ...RESTATEMENT, id: ORIGINAL_ID, filters: FILTERS, difference: null },
+      })
+    );
+    await waitFor(() => expect(screen.queryByTestId('report-snapshot-restate')).toBeNull());
+    expect(saveReportSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts a refusal of the reason on the reason, and keeps what was typed', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    saveReportSnapshot.mockResolvedValue({
+      status: 'invalid',
+      messageKey: 'form.violation.report_snapshot_reason_required',
+      fieldErrors: { reason: 'form.violation.report_snapshot_reason_required' },
+    });
+    await show();
+    const user = userEvent.setup();
+    await user.click(viewOf((await snapshotItems(2))[0] as HTMLElement));
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.restate'] as string })
+    );
+    const form = await screen.findByTestId('report-snapshot-restate');
+    const box = within(form).getByRole('textbox', { name: labelled('reports.snapshots.reason') });
+    await user.type(box, 'Typed reason');
+    await user.click(
+      within(form).getByRole('button', { name: EN['reports.snapshots.restateConfirm'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['form.violation.report_snapshot_reason_required'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(box).toHaveValue('Typed reason');
+    await waitFor(() => expect(document.activeElement).toBe(box));
+  });
+
+  it('names the latest snapshot when the one restated was restated meanwhile', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    saveReportSnapshot.mockResolvedValue({
+      status: 'conflict',
+      messageKey: 'form.violation.report_snapshot_not_latest',
+    });
+    await show();
+    const user = userEvent.setup();
+    await user.click(viewOf((await snapshotItems(2))[0] as HTMLElement));
+    await user.click(
+      await screen.findByRole('button', { name: EN['reports.snapshots.restate'] as string })
+    );
+    const form = await screen.findByTestId('report-snapshot-restate');
+    await user.type(
+      within(form).getByRole('textbox', { name: labelled('reports.snapshots.reason') }),
+      'Late receipt'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['reports.snapshots.restateConfirm'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['form.violation.report_snapshot_not_latest'] as string)
+    ).toBeVisible();
+    expect(await within(form).findByTestId('report-snapshot-latest')).toHaveTextContent(
+      at(RESTATEMENT.generatedAt)
+    );
+  });
+
   it('offers save and restate with the configure permission, without the export switch', async () => {
     // P1-32-PRE-OD-FD16C: a snapshot is saved under rpt.report.configure. The
     // export switch is withheld from every tenant administrator, so gating the
     // actions on it left no tenant account able to save one.
     PERMISSIONS = [READ, CONFIGURE];
-    await showReport();
+    await show();
     const user = userEvent.setup();
-    const list = await screen.findByTestId('report-snapshot-list');
+    const items = await snapshotItems(2);
     expect(
       screen.getByRole('button', { name: EN['reports.snapshots.save'] as string })
     ).toBeVisible();
-    await user.click(
-      within(within(list).getAllByTestId('report-snapshot-item')[0] as HTMLElement).getByRole(
-        'button',
-        { name: EN['reports.snapshots.view'] as string }
-      )
-    );
+    await user.click(viewOf(items[0] as HTMLElement));
     await screen.findByTestId('report-snapshot-banner');
     expect(
       screen.getByRole('button', { name: EN['reports.snapshots.restate'] as string })
@@ -1740,18 +2023,13 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
 
   it('offers neither save nor restate without the configure permission, even with export', async () => {
     PERMISSIONS = [READ, 'rpt.export'];
-    await showReport();
+    await show();
     const user = userEvent.setup();
-    const list = await screen.findByTestId('report-snapshot-list');
+    const items = await snapshotItems(2);
     expect(
       screen.queryByRole('button', { name: EN['reports.snapshots.save'] as string })
     ).toBeNull();
-    await user.click(
-      within(within(list).getAllByTestId('report-snapshot-item')[0] as HTMLElement).getByRole(
-        'button',
-        { name: EN['reports.snapshots.view'] as string }
-      )
-    );
+    await user.click(viewOf(items[0] as HTMLElement));
     await screen.findByTestId('report-snapshot-banner');
     expect(
       screen.queryByRole('button', { name: EN['reports.snapshots.restate'] as string })
@@ -1761,7 +2039,7 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
   it('shows no snapshots for a report that keeps none', async () => {
     PERMISSIONS = [READ, CONFIGURE];
     runReport.mockResolvedValue(runOk({ ...SNAP_ENVELOPE, snapshots: false }));
-    await showReport();
+    await show();
     await screen.findByTestId('report-as-of');
     expect(screen.queryByTestId('report-snapshots')).toBeNull();
     expect(listReportSnapshots).not.toHaveBeenCalled();
@@ -1769,15 +2047,36 @@ describe('D16 — snapshots keep a report as it was, and restatements are distin
 
   it('reads in Arabic as Arabic, right to left', async () => {
     PERMISSIONS = [READ, CONFIGURE];
-    const { container } = await showReport('ar');
+    const { container } = await show('ar');
     const panel = await within(container).findByTestId('report-snapshots');
     expect(panel).toHaveTextContent(AR['reports.snapshots.heading'] as string);
     expect(
       within(panel).getByRole('button', { name: AR['reports.snapshots.save'] as string })
     ).toBeVisible();
-    const list = await within(container).findByTestId('report-snapshot-list');
-    expect(list).toHaveTextContent(AR['reports.snapshots.kind.restatement'] as string);
-    expect(list).toHaveTextContent(AR['reports.snapshots.nameHidden'] as string);
+    const items = await snapshotItems(2);
+    expect(items[0]).toHaveTextContent(AR['reports.snapshots.kind.restatement'] as string);
+    expect(items[0]).toHaveTextContent(AR['reports.snapshots.nameHidden'] as string);
     expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('asks for the restatement in Arabic, in a dialog that reads right to left', async () => {
+    PERMISSIONS = [READ, CONFIGURE];
+    await show('ar');
+    const user = userEvent.setup();
+    await user.click(viewOf((await snapshotItems(2))[0] as HTMLElement, AR));
+    await user.click(
+      await screen.findByRole('button', { name: AR['reports.snapshots.restate'] as string })
+    );
+    const form = await screen.findByRole('dialog', {
+      name: AR['reports.snapshots.restateTitle'] as string,
+    });
+    expect(form.closest('[dir="rtl"]')).not.toBeNull();
+    await user.click(
+      within(form).getByRole('button', { name: AR['reports.snapshots.restateConfirm'] as string })
+    );
+    expect(
+      await within(form).findByText(AR['reports.snapshots.reasonRequired'] as string)
+    ).toBeVisible();
+    expect(saveReportSnapshot).not.toHaveBeenCalled();
   });
 });
