@@ -1751,18 +1751,18 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/administration/appointment-setup`                   | form fields, `OperationalGrid`, `ConfirmDialog`, `DecisionDialog`, states                     | F1–F6; G1–G9; S1–S4                              | built on Material UI — see "Appointments for tenant administrators" | focused suites, en and ar                 |
 | `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
 | `/administration/audit-log`                           | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
-| `/administration/currencies`                          | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
+| `/administration/currencies`                          | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                    | shared editor: consumer suites, see ADM-1 |
 | `/administration/departments`                         | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
 | `/administration/discount-threshold`                  | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/administration/employees`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/languages`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/organization`                        | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
+| `/administration/languages`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (ADM-1)                              | focused suites, en and ar — see below     |
+| `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                    | shared editor: consumer suites, see ADM-1 |
+| `/administration/organization`                        | form fields, `ConfirmDialog`, `ReasonDialog`, states                                          | F1–F7; D1–D5; S1–S4                              | migrated — see below the table (ADM-1)                              | focused suites, en and ar — see below     |
 | `/administration`                                     | none found                                                                                    | —                                                | not migrated                                                        | not run — nothing migrated                |
 | `/administration/permissions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/administration/roles`                               | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/administration/system-settings`                     | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/taxes`                               | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
+| `/administration/system-settings`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                    | shared editor: consumer suites, see ADM-1 |
+| `/administration/taxes`                               | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                    | shared editor: consumer suites, see ADM-1 |
 | `/administration/users/[userId]`                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/administration/users`                               | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
 | `/appointments/[appointmentId]`                       | form fields, `ZonedDateTimeField`, `DecisionDialog`, states                                   | F1–F6; E1–E4; D1–D4; S1–S4                       | migrated — see below the table                                      | focused suites, en and ar — see below     |
@@ -5812,3 +5812,123 @@ Known limitations, one line each:
   named-QA backfill are operator steps (CC-OD-58, README question 22).
 - The DB and backend tiers were run on the development machine on a disposable database only for the
   files named in the pull request; the full tiers run on hosted CI.
+
+### Organisation and languages on Material UI, and editing a company or a branch (`P1-32-PRE-OD-ADM1`)
+
+`/administration/organization` and `/administration/languages` moved onto the shared wrappers, and
+the Organisation screen gained the journey it never had: a company or a branch could be added and
+switched on or off, but not renamed or corrected, because `org.company-update`
+(`PATCH /org/companies/{companyId}`) and `org.branch-update` (`PATCH /org/branches/{branchId}`) had no
+caller. Both are now called from an Edit dialog. Nothing about how the screens read, authorize or
+scope changed: the same reads (`iam.tenant-settings-read`, `org.capacity-read`,
+`org.reference-values-read`, `org.company-list`, `org.branch-list`, `iam.company-settings-read`,
+`iam.branch-settings-read`, `shared.branch-status-read`), each made only for a holder of the code it
+declares; the same writes with the same arguments; the same page gate and navigation entries; and
+the same route branch scope (`none` for both, unchanged in `route-branch-scope.ts`). No migration,
+route, operation, permission code or audit action was added.
+
+One response detail is added, in the API: `org.company-list` and `org.branch-list` publish each row's
+`recordVersion` (`CompanyReachRow` and `BranchReachRow` in
+`modules/iam/data/organization-administration-repository.ts`). Both updates refuse a request without
+`If-Match`, and no read published a company's version at all, so without it the screen had nothing
+honest to send. The version sent is the one the list published for the row the operator opened —
+never one read again at the moment of saving. `pre-p1-29-wave-c-company-rbac.test.ts` W37 holds the
+listed versions against the rows and an update sent with the listed version.
+
+What moved to which wrapper:
+
+- Companies and branches (`OrganizationStructure.tsx`) — both lists are Material's table:
+  `org.company-list` and `org.branch-list` each answer one bounded list with no cursor, so there is
+  no pager to drive (planner ruling of 2026-10-09). A status is a chip in words, the place is the
+  city and the country's name in the reader's language ("Amman, Jordan"), and the time zone its
+  name with its identifier. The allowance notice is an outlined warning; an empty list is
+  `MuiEmptyState` with the screen's sentences; a list that did not answer is `MuiReadFailureState`
+  (Try again re-renders the route, which repeats the read; a refusal is offered nothing). Add company
+  and Add branch are Material dialogs with `FormTextField` and `FormSelectField` (native, F6),
+  controlled from a draft; the status change is the shared `ReasonDialog`.
+- Edit company and Edit branch (`StructureDialogs.tsx`, new) — Edit company sends the legal name;
+  Edit branch sends only the fields the operator changed among the name, the city, the country and
+  the time zone, and a city or a country the operator emptied is sent as "remove it". A conflict
+  (`ERR-CON-001`, someone else changed the record first) is said in the dialog, the typed values
+  stay, and Save waits for **Load the latest version**, which re-reads the page; when the record's
+  version has moved, the dialog puts the latest saved values in front of the operator, says so, and
+  saves against the new version. Saving with nothing changed says so and sends nothing.
+- The dialog frame (`StructureDialog.tsx`, new) — named by its title, described by its sentence;
+  focus goes into it (on the first field) and returns to the button that opened it; Tab stays
+  inside. A click outside does nothing; Escape, Close and Cancel close at once when nothing is typed
+  and otherwise ask the shared question ("Discard your changes?"), keeping everything on Cancel.
+  While a write is in flight it cannot be dismissed. Under "reduce motion" there is no fade.
+- Workspace (`TenantForm.tsx`, on both routes) — already on `FormTextField` and `FormSelectField`;
+  Save and Try again are now Material's buttons.
+- Subscription and capacity (`CapacityPanel.tsx`) — each bar is Material's determinate
+  `LinearProgress`, named by the kind and the numbers.
+- Company and branch settings (`SettingsEditor.tsx`, shared with system settings, numbering rules,
+  taxes and currencies) — the scope, the setting, its kind and its value are the Material fields, the
+  sensitive mark `FormCheckboxField`, the stored settings Material's table, the read's failure the
+  shared state with Try again where it can help, and the wait for the read `MuiLoadingState`. The
+  kind is said in words ("Text", "Number", "Yes or no", "Structured value"); before, the select and
+  the table printed the stored type names. The props are unchanged, so the four other screens render
+  the migrated editor without a change of their own; their page frames move with ADM-5.
+- `/administration/languages` — a workspace read that did not answer is the shared state (a
+  refusal, an ended session, or an outage with Try again) instead of one line that said
+  "unavailable" for every failure.
+
+Preserved, each held by a case in `organization-structure.dom` (en and ar where marked) or
+`unsaved-navigation.dom` (en and ar):
+
+| Property                                                                                           | Case                                                                   |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Each control only with the code its operation declares (`org.company.manage`, `org.branch.manage`) | "offers Edit only with the code…", "offers no branch Edit…" (en, ar)   |
+| An edit sends the listed version as `If-Match`, and only what changed                              | "renames a company…", "sends only the branch fields that changed…"     |
+| A refusal on its field, the cursor there, nothing typed lost                                       | "refuses a blank legal name…", "puts a time zone the platform…"        |
+| A conflict holds Save until the latest version is loaded, then saves against the new version       | "says a conflict, keeps the typed name…" (en, ar)                      |
+| No published version: the dialog asks for the latest one and sends nothing                         | "asks for the latest version when the list published none…"            |
+| Typed work asks before Escape or Cancel discards it, and is declared to the shell                  | "asks before Escape or Cancel…", "declares typed work to the shell…"   |
+| Focus into the dialog and back to the opener                                                       | "renames a company…", "asks before Escape or Cancel…"                  |
+| Two presses inside one `act()` send once                                                           | edit, Add company, status change, workspace form, a setting (en, ar)   |
+| A list read that did not answer: the shared state, a retry only for the outage                     | "draws a list that could not be read…"                                 |
+| Country and time zone said as names                                                                | "names a branch's country and time zone…"                              |
+| A setting's kind in words; a typed setting is unsaved work; a failed settings read retries         | the settings-editor cases (en, ar); "leaving a typed setting" (en, ar) |
+
+Test changes forced by the new structure, the asserted behaviour unchanged: none. Every existing
+case of both suites passes as it stood; the new cases are added to the two existing files (no web
+test file added). In `unsaved-navigation.dom` the mocked client also answers `get`, which the
+settings editor reads; no existing assertion changed. In the authenticated browser tier,
+`administration.spec.ts` gains two read-only Arabic cases (Organisation and Languages, right to
+left, headings from the catalogue, no refusal in either language), because its loop reads the
+refusal sentence in English only.
+
+Deliberate behaviour changes:
+
+- Companies and branches can be edited (above).
+- Add company and Add branch gain a Cancel button, and Escape, Close and Cancel ask before
+  discarding typed values; a click outside no longer closes them.
+- The branch list names the country and the time zone instead of printing their codes.
+- A list or workspace read that did not answer offers Try again where it can help.
+- A setting's kind is said in words, and a typed setting asks before leaving the page.
+
+Known limitations and recorded gaps of this slice, one line each:
+
+- Recorded gap: a company's base currency is not offered for editing. The API accepts it, but
+  changing the currency a company's records are kept in is a money decision this slice does not
+  take.
+- Recorded gap: a company's registration numbers are not offered for editing. The list does not
+  publish them, and the `org.company.updated` audit detail names only the legal name and the base
+  currency, so an edit would be recorded without its change.
+- Recorded gap: a branch's address lines, region and postal code are not offered for editing, for
+  the same two reasons (not in the list; not in the `org.branch.updated` audit detail).
+- Recorded gap: `org.company-list` and `org.branch-list` stop at 500 rows (`ORG_REACH_LIMIT`) and
+  publish no "more exist" flag, so the screen cannot say a list was cut short.
+- "Load the latest version" replaces the typed values with the latest saved ones (said on screen);
+  the operator makes the change again if it is still needed.
+- The branch status change still reads the branch's version at confirmation, as before; it is not a
+  form the operator edits.
+- `Panel`, `Fact` and `ContractNotice` (layout only) still come from the administration
+  `ScreenStates` module, `DirectoryEmptyNotice` from the working-context module, and the result
+  banner is the shared `FormFeedback`.
+- The Languages screen still renders the whole workspace form (name, language and time zone), as
+  before.
+- Focus return and the reduced-motion fade are proven in jsdom only; the two Arabic browser cases
+  run only in the authenticated tier and were not run locally.
+- Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
+  W37 needs a database and was not run locally. They run in hosted CI.

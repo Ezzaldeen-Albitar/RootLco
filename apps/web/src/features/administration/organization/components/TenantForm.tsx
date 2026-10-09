@@ -1,9 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { startTransition, useActionState, useState, type FormEvent } from 'react';
+import { startTransition, useActionState, useRef, useState, type FormEvent } from 'react';
+import { useFormStatus } from 'react-dom';
 import Button from '@mui/material/Button';
-import { ReferenceListRetry } from '@/components/forms/ReferenceList';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { LOCALES, isLocale, type Locale } from '@/i18n/config';
@@ -12,11 +12,11 @@ import { translate } from '@/i18n/get-messages';
 import { languageLabel, timeZoneLabel } from '@/lib/format';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
-import { SubmitButton } from '@/features/authentication/components/SubmitButton';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import { updateTenantAction } from '../actions';
 import type { ReferenceValues, TenantView } from '../types';
 import { useActionRefusal } from '@/lib/forms/use-action-refusal';
+import { ListRetry } from './StructureDialog';
 
 /**
  * The three tenant fields the contract lets an administrator change.
@@ -68,8 +68,12 @@ import { useActionRefusal } from '@/lib/forms/use-action-refusal';
  * refusal that names no field (a lost-update 412, a server fault, an expired
  * session) the screen showed the saved values and a second Save sent them. A
  * prevented submit that starts a transition is not reset, and React still ties
- * that transition to the form, so `SubmitButton`'s `useFormStatus` stays the
- * double-submit guard. `action` stays for a page that has not hydrated.
+ * that transition to the form, so the Save button's `useFormStatus` disables it
+ * while the save is in flight. Two presses that arrive before React renders
+ * again (a double click) both reach `onSubmit` while the button still reads
+ * enabled, so a ref set by the first press makes the second do nothing
+ * (P1-32-PRE-OD-ADM1); it is cleared when the save has answered. `action`
+ * stays for a page that has not hydrated.
  */
 export function TenantForm({
   locale,
@@ -104,8 +108,14 @@ export function TenantForm({
    */
   const [baseline, setBaseline] = useState<TenantDraft>(saved);
   const [draft, setDraft] = useState<TenantDraft>(saved);
+  const inFlight = useRef(false);
   const [state, formAction] = useActionState<ActionState, FormData>(async (previous, form) => {
-    const result = await updateTenantAction(previous, form);
+    let result: ActionState;
+    try {
+      result = await updateTenantAction(previous, form);
+    } finally {
+      inFlight.current = false;
+    }
     if (result.status === 'success') {
       setBaseline({
         displayName: String(form.get('displayName') ?? ''),
@@ -139,6 +149,8 @@ export function TenantForm({
   };
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (inFlight.current) return;
+    inFlight.current = true;
     const form = new FormData(event.currentTarget);
     startTransition(() => formAction(form));
   };
@@ -231,7 +243,7 @@ export function TenantForm({
         error={fieldError('defaultLocale')}
         options={localeValues.map((code) => ({ value: code, label: localeName(code) }))}
       />
-      {referenceUnavailable ? <ReferenceListRetry label={t('form.retry')} /> : null}
+      {referenceUnavailable ? <ListRetry label={t('form.retry')} /> : null}
       <FormSelectField
         name="defaultTimezone"
         label={t('organization.defaultTimezone')}
@@ -246,7 +258,7 @@ export function TenantForm({
           label: timeZoneLabel(zone, locale),
         }))}
       />
-      {referenceUnavailable ? <ReferenceListRetry label={t('form.retry')} /> : null}
+      {referenceUnavailable ? <ListRetry label={t('form.retry')} /> : null}
 
       <div className="flex flex-wrap justify-end gap-3">
         {dirty ? (
@@ -254,9 +266,25 @@ export function TenantForm({
             {t('organization.discardChanges')}
           </Button>
         ) : null}
-        <SubmitButton label={t('admin.save')} pendingLabel={t('admin.saving')} full={false} />
+        <SaveButton label={t('admin.save')} pendingLabel={t('admin.saving')} />
       </div>
     </form>
+  );
+}
+
+/** Save, disabled and saying so while the form's save is in flight. */
+function SaveButton({
+  label,
+  pendingLabel,
+}: {
+  readonly label: string;
+  readonly pendingLabel: string;
+}) {
+  const { pending } = useFormStatus();
+  return (
+    <Button type="submit" variant="contained" disabled={pending} aria-busy={pending || undefined}>
+      {pending ? pendingLabel : label}
+    </Button>
   );
 }
 

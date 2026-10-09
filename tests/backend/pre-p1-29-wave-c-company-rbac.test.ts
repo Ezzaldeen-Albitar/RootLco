@@ -428,6 +428,44 @@ describe('P-1: the companies and branches an actor may reach, by name', () => {
     expect(branchIds).toContain(branchB1);
     expect(branchIds).not.toContain(BRANCH_A1);
   }, 30_000);
+
+  it('W37 publishes the version an edit sends as If-Match, and an edit sent with it lands', async () => {
+    // P1-32-PRE-OD-ADM1: the Organisation screen edits a company or a branch
+    // from these lists, and both updates are version-guarded. A list without the
+    // version would leave the screen nothing honest to send.
+    asReader();
+    const companies = await call<{ items: { id: string; recordVersion: number }[] }>(
+      companyListRoute,
+      { path: '/org/companies', method: 'GET' }
+    );
+    expect(companies.status).toBe(200);
+    const listedCompany = companies.body.items.find((row) => row.id === COMPANY_A2);
+    expect(listedCompany?.recordVersion).toBe(await companyVersion(COMPANY_A2));
+
+    const branches = await call<{ items: { id: string; recordVersion: number }[] }>(
+      branchListRoute,
+      { path: '/org/branches', method: 'GET' }
+    );
+    expect(branches.status).toBe(200);
+    const listedBranch = branches.body.items.find((row) => row.id === BRANCH_A1);
+    expect(listedBranch?.recordVersion).toBe(
+      Number(
+        await scalar<number>('SELECT record_version FROM org.branches WHERE id = $1', [BRANCH_A1])
+      )
+    );
+
+    // The listed version is the one the update accepts.
+    asAdmin();
+    const updated = await call<{ company: { legalName: string } }>(companyUpdateRoute, {
+      path: `/org/companies/${COMPANY_A2}`,
+      method: 'PATCH',
+      body: { legalName: 'Wave C Second Company' },
+      params: { companyId: COMPANY_A2 },
+      ifMatch: listedCompany?.recordVersion ?? 0,
+    });
+    expect(updated.status).toBe(200);
+    expect(updated.body.company.legalName).toBe('Wave C Second Company');
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------

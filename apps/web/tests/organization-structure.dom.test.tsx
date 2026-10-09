@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -1551,6 +1551,707 @@ describe.each(READERS)(
       await waitFor(() => expect(control('organization.defaultTimezone')).toHaveValue('UTC'));
       expect(control('organization.defaultTimezone')).not.toHaveAttribute('aria-invalid', 'true');
       expect(screen.queryByText(M('form.violation.unknown_reference'))).toBeNull();
+    });
+  }
+);
+
+/*
+ * P1-32-PRE-OD-ADM1 — the Organisation screen on Material UI, and the company
+ * and branch edit journey (`org.company-update`, `org.branch-update`), which no
+ * screen called before: a company or a branch could be added and switched on or
+ * off, but never renamed.
+ *
+ * The properties under test, in English and in Arabic:
+ *
+ *   - Edit is offered only with the code its operation declares;
+ *   - an edit sends the version the list published for the row as `If-Match`,
+ *     and only the fields the operator changed; a cleared city is removed;
+ *   - a refusal is said on its field with the cursor there, and nothing typed is
+ *     lost; a field the server refuses is marked the same way;
+ *   - someone else's change first is a conflict: the typed values stay, Save
+ *     waits for "Load the latest version", and the latest values then come back
+ *     with the new version;
+ *   - a row without a published version asks for the latest one and sends
+ *     nothing;
+ *   - typed work asks before Escape, Close or Cancel throws it away, and is
+ *     declared to the shell; focus goes into the dialog and back to the button
+ *     that opened it;
+ *   - two presses inside ONE act send once — for an edit, an addition, a status
+ *     change, the workspace form and a setting;
+ *   - a list read that did not answer is the shared state, with Try again only
+ *     where it can help; a branch's place and time zone are names, not codes;
+ *   - a setting's kind is said in words, and a typed setting is unsaved work.
+ */
+const COMPANY_V: CompanyView = { ...COMPANY, recordVersion: 4 };
+const BRANCH_V: BranchView = { ...BRANCH, recordVersion: 7 };
+
+const conflictFailure = {
+  ok: false,
+  kind: 'conflict',
+  status: 409,
+  problem: {
+    type: 'urn:rootlco:error:ERR-CON-001',
+    title: 'Record version conflict',
+    status: 409,
+    code: 'ERR-CON-001',
+    correlationId: 'corr-conflict',
+  },
+  correlationId: 'corr-conflict',
+};
+
+describe.each(READERS)(
+  '$locale: editing a company and a branch (ADM-1)',
+  ({ locale, messages, M, paint }) => {
+    function structure(over: Record<string, unknown> = {}) {
+      return (
+        <OrganizationStructure
+          locale={locale}
+          messages={messages}
+          capacity={capacity()}
+          companies={ok([COMPANY_V])}
+          branches={ok([BRANCH_V])}
+          currencyChoices={['JOD']}
+          timezoneChoices={['Asia/Amman']}
+          referenceValues={REFERENCES}
+          canManageCompanies
+          canManageBranches
+          canChangeBranchStatus
+          {...over}
+        />
+      );
+    }
+    const editButton = (name: string) =>
+      screen.getByRole('button', { name: `${M('admin.edit')}: ${name}` });
+    const field = (scope: HTMLElement, key: string) => labelled(scope, M(key));
+
+    it('offers Edit only with the code its operation declares', () => {
+      paint(structure({ canManageCompanies: false }));
+      expect(
+        screen.queryByRole('button', { name: `${M('admin.edit')}: ${COMPANY.legalName}` })
+      ).toBeNull();
+      expect(editButton(BRANCH.name)).toBeVisible();
+    });
+
+    it('offers no branch Edit without org.branch.manage, keeping the status control', () => {
+      paint(structure({ canManageBranches: false }));
+      expect(
+        screen.queryByRole('button', { name: `${M('admin.edit')}: ${BRANCH.name}` })
+      ).toBeNull();
+      expect(editButton(COMPANY.legalName)).toBeVisible();
+      expect(
+        screen.getByRole('button', {
+          name: `${M('organization.structure.deactivate')}: ${BRANCH.name}`,
+        })
+      ).toBeVisible();
+    });
+
+    it('renames a company with the version the list published, says so and re-reads', async () => {
+      send.mockResolvedValue({ ok: true, status: 200, data: {}, correlationId: 'corr-edit' });
+      const user = userEvent.setup();
+      paint(structure());
+      const opener = editButton(COMPANY.legalName);
+      await user.click(opener);
+      const dialog = screen.getByRole('dialog', { name: M('organization.company.edit') });
+      const name = field(dialog, 'organization.company.legalName');
+      // The cursor is inside the dialog, on the field to change.
+      expect(name).toHaveFocus();
+      expect(name).toHaveValue(COMPANY.legalName);
+
+      await user.clear(name);
+      await user.type(name, 'Main Company Group');
+      await user.click(within(dialog).getByRole('button', { name: M('admin.save') }));
+
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      expect(send).toHaveBeenCalledWith(
+        'PATCH',
+        `/api/v1/org/companies/${COMPANY.id}`,
+        { legalName: 'Main Company Group' },
+        { ifMatch: 4 }
+      );
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(refresh).toHaveBeenCalledTimes(1);
+      // Focus is back on the control that opened the dialog.
+      await waitFor(() => expect(opener).toHaveFocus());
+    });
+
+    it('sends only the branch fields that changed, and removes a cleared city', async () => {
+      send.mockResolvedValue({ ok: true, status: 200, data: {}, correlationId: 'corr-branch' });
+      const user = userEvent.setup();
+      paint(structure());
+      await user.click(editButton(BRANCH.name));
+      const dialog = screen.getByRole('dialog', { name: M('organization.branch.edit') });
+      expect(field(dialog, 'organization.branch.name')).toHaveValue(BRANCH.name);
+      expect(field(dialog, 'organization.branch.timezone')).toHaveValue('Asia/Amman');
+
+      await user.clear(field(dialog, 'organization.branch.name'));
+      await user.type(field(dialog, 'organization.branch.name'), 'First Branch East');
+      await user.clear(field(dialog, 'organization.branch.city'));
+      await user.selectOptions(field(dialog, 'organization.branch.timezone'), 'UTC');
+      await user.click(within(dialog).getByRole('button', { name: M('admin.save') }));
+
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      expect(send).toHaveBeenCalledWith(
+        'PATCH',
+        `/api/v1/org/branches/${BRANCH.id}`,
+        { name: 'First Branch East', timezoneName: 'UTC', city: null },
+        { ifMatch: 7 }
+      );
+    });
+
+    it('refuses a blank legal name on its field, with the cursor there, and sends nothing', async () => {
+      const user = userEvent.setup();
+      paint(structure());
+      await user.click(editButton(COMPANY.legalName));
+      const dialog = screen.getByRole('dialog');
+      const name = field(dialog, 'organization.company.legalName');
+      await user.clear(name);
+      await user.type(name, '   ');
+      await user.click(within(dialog).getByRole('button', { name: M('admin.save') }));
+
+      expect(await within(dialog).findByText(M('field.required'))).toBeVisible();
+      expect(name).toHaveAttribute('aria-invalid', 'true');
+      await waitFor(() => expect(name).toHaveFocus());
+      expect(name).toHaveValue('   ');
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('says when nothing has been changed, and sends nothing', async () => {
+      const user = userEvent.setup();
+      paint(structure());
+      await user.click(editButton(COMPANY.legalName));
+      const dialog = screen.getByRole('dialog');
+      await user.click(within(dialog).getByRole('button', { name: M('admin.save') }));
+      expect(await within(dialog).findByText(M('organization.edit.unchanged'))).toBeVisible();
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('puts a time zone the platform does not hold on the time zone field', async () => {
+      send.mockResolvedValue({
+        ok: false,
+        kind: 'validation',
+        status: 422,
+        problem: {
+          type: 'urn:rootlco:error:ERR-VAL-001',
+          title: 'Validation failed',
+          status: 422,
+          code: 'ERR-VAL-001',
+          correlationId: 'corr-zone',
+          violations: [{ path: 'body.timezoneName', rule: 'unknown_reference' }],
+        },
+        correlationId: 'corr-zone',
+      });
+      const user = userEvent.setup();
+      paint(structure());
+      await user.click(editButton(BRANCH.name));
+      const dialog = screen.getByRole('dialog');
+      const zone = field(dialog, 'organization.branch.timezone');
+      await user.selectOptions(zone, 'UTC');
+      await user.click(within(dialog).getByRole('button', { name: M('admin.save') }));
+
+      expect(await within(dialog).findByText(M('form.violation.unknown_reference'))).toBeVisible();
+      expect(zone).toHaveAttribute('aria-invalid', 'true');
+      await waitFor(() => expect(zone).toHaveFocus());
+      expect(zone).toHaveValue('UTC');
+      expect(field(dialog, 'organization.branch.name')).not.toHaveAttribute('aria-invalid', 'true');
+    });
+
+    it('says a conflict, keeps the typed name, and holds Save until the latest version is loaded', async () => {
+      send.mockResolvedValueOnce(conflictFailure);
+      const user = userEvent.setup();
+      const view = paint(structure());
+      await user.click(editButton(COMPANY.legalName));
+      const dialog = screen.getByRole('dialog');
+      const name = field(dialog, 'organization.company.legalName');
+      await user.clear(name);
+      await user.type(name, 'Main Company Group');
+      await user.click(within(dialog).getByRole('button', { name: M('admin.save') }));
+
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(M('state.conflict.title'));
+      expect(name).toHaveValue('Main Company Group');
+      expect(within(dialog).getByRole('button', { name: M('admin.save') })).toBeDisabled();
+      expect(refresh).not.toHaveBeenCalled();
+
+      await user.click(within(dialog).getByRole('button', { name: M('form.loadLatest') }));
+      expect(refresh).toHaveBeenCalledTimes(1);
+
+      // The re-read brings the record as someone else left it, at its new version.
+      await act(async () => {
+        view.rerender(
+          structure({
+            companies: ok([{ ...COMPANY_V, legalName: 'Main Holding', recordVersion: 5 }]),
+          })
+        );
+      });
+      const reread = field(screen.getByRole('dialog'), 'organization.company.legalName');
+      await waitFor(() => expect(reread).toHaveValue('Main Holding'));
+      expect(screen.getByText(M('organization.edit.latestLoaded'))).toBeVisible();
+      const save = within(screen.getByRole('dialog')).getByRole('button', {
+        name: M('admin.save'),
+      });
+      expect(save).toBeEnabled();
+
+      send.mockResolvedValue({ ok: true, status: 200, data: {}, correlationId: 'corr-again' });
+      await user.clear(reread);
+      await user.type(reread, 'Main Company Group');
+      await user.click(save);
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+      expect(send).toHaveBeenLastCalledWith(
+        'PATCH',
+        `/api/v1/org/companies/${COMPANY.id}`,
+        { legalName: 'Main Company Group' },
+        { ifMatch: 5 }
+      );
+    });
+
+    it('keeps typed branch edits when Try again renders a newer version, and lets the save conflict', async () => {
+      send.mockResolvedValueOnce(conflictFailure);
+      const user = userEvent.setup();
+      const partial = { referenceValues: null, referenceUnavailable: true };
+      const view = paint(structure(partial));
+      await user.click(editButton(BRANCH.name));
+      const dialog = screen.getByRole('dialog', { name: M('organization.branch.edit') });
+      const city = field(dialog, 'organization.branch.city');
+      await user.type(city, ' North');
+
+      // The time-zone list's Try again renders the page again, and someone else
+      // has meanwhile saved the branch: a newer version with another city.
+      await user.click(within(dialog).getByRole('button', { name: M('form.retry') }));
+      expect(refresh).toHaveBeenCalledTimes(1);
+      await act(async () => {
+        view.rerender(
+          structure({
+            ...partial,
+            branches: ok([{ ...BRANCH_V, city: 'Irbid', recordVersion: 8 }]),
+          })
+        );
+      });
+
+      // The typed draft is still what the operator typed; nothing was replaced.
+      expect(field(screen.getByRole('dialog'), 'organization.branch.city')).toHaveValue(
+        'Amman North'
+      );
+      expect(screen.queryByText(M('organization.edit.latestLoaded'))).toBeNull();
+
+      // Saving sends the version the draft was based on, so it is refused as
+      // the ordinary conflict rather than written over the newer record.
+      await user.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: M('admin.save') })
+      );
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      expect(send).toHaveBeenCalledWith(
+        'PATCH',
+        `/api/v1/org/branches/${BRANCH.id}`,
+        { city: 'Amman North' },
+        { ifMatch: 7 }
+      );
+      expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent(
+        M('state.conflict.title')
+      );
+      expect(field(screen.getByRole('dialog'), 'organization.branch.city')).toHaveValue(
+        'Amman North'
+      );
+
+      // Only "Load the latest version" puts the saved values in front of them.
+      await user.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: M('form.loadLatest') })
+      );
+      expect(refresh).toHaveBeenCalledTimes(2);
+      await waitFor(() =>
+        expect(field(screen.getByRole('dialog'), 'organization.branch.city')).toHaveValue('Irbid')
+      );
+      expect(screen.getByText(M('organization.edit.latestLoaded'))).toBeVisible();
+    });
+
+    it('asks for the latest version when the list published none, and sends nothing', async () => {
+      const user = userEvent.setup();
+      paint(structure({ companies: ok([COMPANY]) }));
+      await user.click(editButton(COMPANY.legalName));
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText(M('organization.edit.versionUnknown'))).toBeVisible();
+      expect(within(dialog).getByRole('button', { name: M('admin.save') })).toBeDisabled();
+      await user.click(within(dialog).getByRole('button', { name: M('form.loadLatest') }));
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('asks before Escape or Cancel throws typed work away, and keeps it on Cancel', async () => {
+      const user = userEvent.setup();
+      paint(structure());
+      const opener = editButton(BRANCH.name);
+      await user.click(opener);
+      const dialog = screen.getByRole('dialog');
+      await user.type(field(dialog, 'organization.branch.city'), ' North');
+
+      await user.keyboard('{Escape}');
+      const question = await screen.findByRole('alertdialog', { name: M('form.unsavedTitle') });
+      await user.click(within(question).getByRole('button', { name: M('overlay.cancel') }));
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(field(screen.getByRole('dialog'), 'organization.branch.city')).toHaveValue(
+        'Amman North'
+      );
+
+      await user.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: M('admin.cancel') })
+      );
+      const again = await screen.findByRole('alertdialog', { name: M('form.unsavedTitle') });
+      await user.click(within(again).getByRole('button', { name: M('form.discard') }));
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(send).not.toHaveBeenCalled();
+      await waitFor(() => expect(opener).toHaveFocus());
+    });
+
+    it('closes at once on Escape with nothing typed', async () => {
+      const user = userEvent.setup();
+      paint(structure());
+      await user.click(editButton(COMPANY.legalName));
+      await user.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    });
+
+    it('declares typed work to the shell, whose discard closes the dialog', async () => {
+      const user = userEvent.setup();
+      paint(
+        inBranch(
+          <>
+            {structure()}
+            <UnsavedProbe />
+          </>,
+          { locale }
+        )
+      );
+      await user.click(editButton(COMPANY.legalName));
+      await user.type(field(screen.getByRole('dialog'), 'organization.company.legalName'), ' Ltd');
+      fireEvent.click(screen.getByRole('button', { name: 'probe unsaved', hidden: true }));
+      expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('true');
+      act(() => {
+        fireEvent.click(screen.getByRole('button', { name: 'probe discard', hidden: true }));
+      });
+      await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('sends an edit once when Save is pressed twice in one act', async () => {
+      let settle: (value: unknown) => void = () => undefined;
+      send.mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+      );
+      const user = userEvent.setup();
+      paint(structure());
+      await user.click(editButton(COMPANY.legalName));
+      const dialog = screen.getByRole('dialog');
+      await user.type(field(dialog, 'organization.company.legalName'), ' Ltd');
+      const save = within(dialog).getByRole('button', { name: M('admin.save') });
+      await act(async () => {
+        fireEvent.click(save);
+        fireEvent.click(save);
+      });
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      settle({ ok: true, status: 200, data: {}, correlationId: 'corr-once' });
+      await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it('adds a company once when Create is pressed twice in one act', async () => {
+      let settle: (value: unknown) => void = () => undefined;
+      send.mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+      );
+      const user = userEvent.setup();
+      paint(structure());
+      await user.click(screen.getByRole('button', { name: M('organization.company.add') }));
+      const dialog = screen.getByRole('dialog');
+      await user.type(field(dialog, 'organization.structure.code'), 'second_company');
+      await user.type(field(dialog, 'organization.company.legalName'), 'Second Company');
+      await user.selectOptions(field(dialog, 'organization.company.baseCurrency'), 'JOD');
+      const create = within(dialog).getByRole('button', { name: M('admin.create') });
+      await act(async () => {
+        fireEvent.click(create);
+        fireEvent.click(create);
+      });
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      settle({ ok: true, status: 201, data: {}, correlationId: 'corr-add' });
+      expect(await within(dialog).findByText(M('organization.company.created'))).toBeVisible();
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it('changes a status once when the confirmation is pressed twice in one act', async () => {
+      let settle: (value: unknown) => void = () => undefined;
+      send.mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+      );
+      const user = userEvent.setup();
+      paint(structure());
+      await user.click(
+        screen.getByRole('button', {
+          name: `${M('organization.structure.deactivate')}: ${COMPANY.legalName}`,
+        })
+      );
+      const question = screen.getByRole('alertdialog');
+      await user.type(labelled(question, M('admin.reason')), 'Merged into the group');
+      const confirm = within(question).getByRole('button', {
+        name: M('organization.structure.deactivate'),
+      });
+      await act(async () => {
+        fireEvent.click(confirm);
+        fireEvent.click(confirm);
+      });
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      settle({ ok: true, status: 200, data: {}, correlationId: 'corr-status' });
+      await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it('draws a list that could not be read as the shared state, with Try again', async () => {
+      const user = userEvent.setup();
+      paint(
+        structure({
+          companies: { status: 'unavailable', correlationId: 'corr-down' },
+          branches: { status: 'denied', correlationId: 'corr-refused' },
+        })
+      );
+      expect(screen.getByText(M('state.unavailable.title'))).toBeVisible();
+      expect(screen.getByText('corr-down')).toBeVisible();
+      expect(screen.getByText(M('state.denied.title'))).toBeVisible();
+      // One retry: the outage's. A refusal is not offered one.
+      const retries = screen.getAllByRole('button', { name: M('state.retry') });
+      expect(retries).toHaveLength(1);
+      await user.click(retries[0] as HTMLElement);
+      expect(refresh).toHaveBeenCalledTimes(1);
+    });
+
+    it('names a branch’s country and time zone instead of printing their codes', () => {
+      paint(structure());
+      const row = screen.getByRole('row', { name: new RegExp(escapeRegExp(BRANCH.name)) });
+      expect(within(row).getByText(/\(Asia\/Amman\)$/)).toBeVisible();
+      const place = within(row).getByText(new RegExp(`^${BRANCH.city as string}, `));
+      expect(place.textContent).not.toMatch(/, JO$/);
+      if (locale === 'en') expect(place).toHaveTextContent('Amman, Jordan');
+    });
+
+    it('keeps every control in the reading direction, and names the dialog by its title', async () => {
+      const user = userEvent.setup();
+      paint(structure());
+      await user.click(editButton(BRANCH.name));
+      const dialog = screen.getByRole('dialog', { name: M('organization.branch.edit') });
+      expect(dialog).toHaveAccessibleDescription(M('organization.branch.editDescription'));
+      expect(document.documentElement.dir).toBe(locale === 'ar' ? 'rtl' : 'ltr');
+      expect(field(dialog, 'organization.branch.country')).toHaveAttribute('dir', 'ltr');
+    });
+  }
+);
+
+describe.each(READERS)(
+  '$locale: the workspace form and the settings editor send once (ADM-1)',
+  ({ locale, messages, M, paint }) => {
+    it('saves the workspace once when Save is pressed twice in one act', async () => {
+      let settle: (value: unknown) => void = () => undefined;
+      send.mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+      );
+      const user = userEvent.setup();
+      paint(
+        <TenantForm
+          locale={locale}
+          messages={messages}
+          canWrite
+          tenant={WORKSPACE}
+          referenceValues={REFERENCES}
+        />
+      );
+      await user.selectOptions(
+        screen.getByLabelText(new RegExp(`^${escapeRegExp(M('organization.defaultLocale'))}`)),
+        'ar'
+      );
+      const save = screen.getByRole('button', { name: M('admin.save') });
+      await act(async () => {
+        fireEvent.click(save);
+        fireEvent.click(save);
+      });
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      settle({ ok: true, status: 200, data: {}, correlationId: 'corr-tenant-once' });
+      expect(await screen.findByText(M('admin.saved'))).toBeVisible();
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    function renderSettings() {
+      get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'c-1' });
+      return paint(
+        inBranch(
+          <>
+            <SettingsEditor messages={messages} scope="company" canWrite keyPrefix="" />
+            <UnsavedProbe />
+          </>,
+          { locale }
+        )
+      );
+    }
+
+    it('says each kind of value in words, never as the stored type name', async () => {
+      renderSettings();
+      const kind = await screen.findByLabelText(
+        new RegExp(`^${escapeRegExp(M('organization.setting.type'))}`)
+      );
+      const labels = within(kind)
+        .getAllByRole('option')
+        .map((option) => option.textContent);
+      expect(labels).toEqual([
+        M('organization.setting.kind.string'),
+        M('organization.setting.kind.number'),
+        M('organization.setting.kind.boolean'),
+        M('organization.setting.kind.json'),
+      ]);
+      expect(labels).not.toContain('boolean');
+      expect(labels).not.toContain('json');
+    });
+
+    it('declares a typed value as unsaved work, and a shell discard empties it', async () => {
+      const user = userEvent.setup();
+      renderSettings();
+      const value = await screen.findByLabelText(
+        new RegExp(`^${escapeRegExp(M('organization.setting.value'))}`)
+      );
+      await user.click(screen.getByRole('button', { name: 'probe unsaved' }));
+      expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('false');
+      await user.type(value, '08:00');
+      await user.click(screen.getByRole('button', { name: 'probe unsaved' }));
+      expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('true');
+      await user.click(screen.getByRole('button', { name: 'probe discard' }));
+      await waitFor(() => expect(value).toHaveValue(''));
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('writes a setting once when Save is pressed twice in one act', async () => {
+      let settle: (value: unknown) => void = () => undefined;
+      send.mockReturnValue(
+        new Promise((resolve) => {
+          settle = resolve;
+        })
+      );
+      const user = userEvent.setup();
+      renderSettings();
+      await user.type(
+        screen.getByLabelText(new RegExp(`^${escapeRegExp(M('organization.setting.key'))}`)),
+        'org.working_hours.start'
+      );
+      await user.type(
+        await screen.findByLabelText(
+          new RegExp(`^${escapeRegExp(M('organization.setting.value'))}`)
+        ),
+        '08:00'
+      );
+      const save = screen.getByRole('button', { name: M('admin.save') });
+      await act(async () => {
+        fireEvent.click(save);
+        fireEvent.click(save);
+      });
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      settle({ ok: true, status: 200, data: {}, correlationId: 'corr-setting' });
+      expect(await screen.findByText(M('admin.saved'))).toBeVisible();
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+
+    it('takes a saved key other than the first suggestion as the new start, not as unsaved work', async () => {
+      get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'c-1' });
+      send.mockResolvedValue({ ok: true, status: 200, data: {}, correlationId: 'corr-padding' });
+      const user = userEvent.setup();
+      paint(
+        inBranch(
+          <>
+            <SettingsEditor
+              messages={messages}
+              scope="company"
+              canWrite
+              keyPrefix="numbering."
+              suggestions={[
+                {
+                  key: 'numbering.invoice.prefix',
+                  labelKey: 'numbering.field.prefix',
+                  valueType: 'string',
+                },
+                {
+                  key: 'numbering.invoice.padding',
+                  labelKey: 'numbering.field.padding',
+                  valueType: 'number',
+                },
+              ]}
+            />
+            <UnsavedProbe />
+          </>,
+          { locale }
+        )
+      );
+      const key = screen.getByLabelText(
+        new RegExp(`^${escapeRegExp(M('organization.setting.key'))}`)
+      );
+      await user.selectOptions(key, 'numbering.invoice.padding');
+      const value = await screen.findByLabelText(
+        new RegExp(`^${escapeRegExp(M('organization.setting.value'))}`)
+      );
+      await user.type(value, '4');
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+      expect(await screen.findByText(M('admin.saved'))).toBeVisible();
+      expect(send).toHaveBeenCalledTimes(1);
+      expect(value).toHaveValue('');
+      expect(key).toHaveValue('numbering.invoice.padding');
+
+      // A page change or a branch change has nothing to ask about.
+      await user.click(screen.getByRole('button', { name: 'probe unsaved' }));
+      expect(screen.getByTestId('unsaved-answer')).toHaveTextContent('false');
+    });
+
+    it('announces a second unreachable save afresh, numbered after the first', async () => {
+      send.mockRejectedValue(new Error('the network went away'));
+      const user = userEvent.setup();
+      renderSettings();
+      await user.type(
+        screen.getByLabelText(new RegExp(`^${escapeRegExp(M('organization.setting.key'))}`)),
+        'org.working_hours.start'
+      );
+      await user.type(
+        await screen.findByLabelText(
+          new RegExp(`^${escapeRegExp(M('organization.setting.value'))}`)
+        ),
+        '08:00'
+      );
+      const save = screen.getByRole('button', { name: M('admin.save') });
+      await user.click(save);
+      const first = await screen.findByRole('alert');
+      expect(first).toHaveTextContent(M('state.unavailable.message'));
+
+      await user.click(save);
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+      // A new attempt is a new announcement node, not the first one kept.
+      await waitFor(() => expect(first).not.toBeInTheDocument());
+      expect(screen.getByRole('alert')).toHaveTextContent(M('state.unavailable.message'));
+    });
+
+    it('draws a settings read that did not answer as the shared state, and retries it', async () => {
+      get.mockResolvedValueOnce({
+        ok: false,
+        kind: 'unavailable',
+        status: 503,
+        correlationId: 'corr-settings-down',
+      });
+      get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'c-2' });
+      const user = userEvent.setup();
+      paint(
+        inBranch(<SettingsEditor messages={messages} scope="company" canWrite keyPrefix="" />, {
+          locale,
+        })
+      );
+      expect(await screen.findByText(M('state.unavailable.title'))).toBeVisible();
+      await user.click(screen.getByRole('button', { name: M('state.retry') }));
+      expect(await screen.findByText(M('state.empty.title'))).toBeVisible();
+      expect(get).toHaveBeenCalledTimes(2);
     });
   }
 );

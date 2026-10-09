@@ -37,7 +37,8 @@ import { inBranch, renderLtr, renderRtl } from './render';
  */
 
 const send = vi.fn();
-vi.mock('@/lib/api/server-client', () => ({ authorizedClient: async () => ({ send }) }));
+const get = vi.fn();
+vi.mock('@/lib/api/server-client', () => ({ authorizedClient: async () => ({ send, get }) }));
 const refresh = vi.fn();
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh }),
@@ -47,6 +48,8 @@ vi.mock('next/navigation', () => ({
 }));
 
 const { TenantForm } = await import('@/features/administration/organization/components/TenantForm');
+const { SettingsEditor } =
+  await import('@/features/administration/organization/components/SettingsEditor');
 
 const HERE = '/en/administration/organization';
 const ELSEWHERE = '/en/crm/customers';
@@ -224,6 +227,68 @@ describe.each(READERS)('$locale: leaving the settings page', ({ locale, catalogu
     await user.click(screen.getByRole('link', { name: 'Customers' }));
     expect(screen.queryByRole('alertdialog')).toBeNull();
     expect(navigated).toHaveBeenCalledWith(ELSEWHERE);
+  });
+});
+
+/*
+ * P1-32-PRE-OD-ADM1: the settings editor on the same page, moved onto the
+ * Material form fields, declares a typed value as unsaved work too — so the
+ * same question stands between it and a link, and "Leave" empties the box.
+ */
+describe.each(READERS)('$locale: leaving a typed setting', ({ locale, catalogue, paint }) => {
+  const M = (key: string): string => {
+    const value = catalogue[key];
+    if (value === undefined) throw new Error(`${key} is not in the ${locale} catalogue`);
+    return value;
+  };
+
+  function page(): ReactElement {
+    return inBranch(
+      <>
+        <nav>
+          <RouterLink href={ELSEWHERE}>Customers</RouterLink>
+        </nav>
+        <SettingsEditor messages={getMessages(locale)} scope="company" canWrite keyPrefix="" />
+      </>,
+      { locale }
+    );
+  }
+
+  it('asks before a link leaves a typed value, and "Leave" empties it and goes', async () => {
+    get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'c-1' });
+    const user = userEvent.setup();
+    paint(page());
+    const value = await screen.findByLabelText(
+      new RegExp(`^${escapeRegExp(M('organization.setting.value'))}`)
+    );
+    await user.type(value, '08:00');
+    await user.click(screen.getByRole('link', { name: 'Customers' }));
+
+    const dialog = await screen.findByRole('alertdialog', {
+      name: M('workingContext.leave.title'),
+    });
+    expect(navigated).not.toHaveBeenCalled();
+    await user.click(
+      within(dialog).getByRole('button', { name: M('workingContext.leave.confirm') })
+    );
+    expect(navigated).toHaveBeenCalledWith(ELSEWHERE);
+    await waitFor(() => expect(value).toHaveValue(''));
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('keeps the typed value on "Stay"', async () => {
+    get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'c-1' });
+    const user = userEvent.setup();
+    paint(page());
+    const value = await screen.findByLabelText(
+      new RegExp(`^${escapeRegExp(M('organization.setting.value'))}`)
+    );
+    await user.type(value, '08:00');
+    await user.click(screen.getByRole('link', { name: 'Customers' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: M('workingContext.leave.stay') }));
+    expect(navigated).not.toHaveBeenCalled();
+    expect(value).toHaveValue('08:00');
   });
 });
 
