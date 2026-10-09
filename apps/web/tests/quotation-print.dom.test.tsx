@@ -311,7 +311,15 @@ describe('the printable quotation', () => {
     // A real table, so the header repeats on every printed page.
     const table = within(paper).getByRole('table');
     expect(table.querySelector('thead')).not.toBeNull();
-    expect(table.querySelectorAll(':scope > tbody > tr')).toHaveLength(2);
+    // The two lines are the table's body rows. The totals close the table in the
+    // row group of the last line, so they print beside it (P1-32-PRE-OD-FRXR), and
+    // that closing row is not a line.
+    expect(table.querySelectorAll(':scope > tbody > tr:not([data-print-table-tail])')).toHaveLength(
+      2
+    );
+    expect(table.querySelector('[data-print-table-tail]')).toContainElement(
+      within(paper).getByTestId('quotation-print-totals')
+    );
     expect(within(paper).getByTestId('quotation-print-totals')).toHaveTextContent(
       EN['quotations.print.totalsHeading'] as string
     );
