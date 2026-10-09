@@ -562,7 +562,7 @@ function CountDetail({
               variant="outlined"
               color="error"
               aria-expanded={cancelling}
-              onClick={() => setCancelling((was) => !was)}
+              onClick={() => setCancelling(true)}
             >
               {translate(messages, 'inventory.counts.cancel.action')}
             </Button>

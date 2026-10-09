@@ -3983,8 +3983,9 @@ branch's wall time with that clock's name beside it (`GMT+3`), each part isolate
 left to right, so an Arabic date keeps its month name in order. The clock is the one the screen is
 addressed to (`useStockDisplayZone`): the count's start (list and count), each part issue, a
 reservation's expiry on `/inventory`, each movement, each adjustment request, a receipt's posting
-and each cost layer, a transfer's dispatch and a write-off's request, and the stock signal's
-freshness stamp. The organisation's own records — an item's codes, its unit conversions, the
+and each cost layer, a transfer's dispatch and a write-off's request, the stock signal's freshness
+stamp, and on the returns desk each return's arrival, each offered sale's issue and each issued
+part's issue in the picker's option (`momentText`). The organisation's own records — an item's codes, its unit conversions, the
 vehicle capacities — belong to no branch and are written on the working branch's clock
 (`useWorkingDisplayZone`). Where the branch keeps no zone, or one the browser does not recognise,
 and under "All my branches" on those three, the moment is written on UTC and named `UTC` — never on
@@ -4031,7 +4032,10 @@ deleted or weakened):
   its name now carries the stock code (three cases, one of them an absence check); the job
   chooser's match is an `option` of the combobox's listbox under `PICKER_OPTION_WAIT_MS` (four
   cases, one of them an absence check), and the chosen job is read as the combobox's value instead of the
-  `work-order-picker-chosen` test id, empty again after a discard (one case).
+  `work-order-picker-chosen` test id, empty again after a discard (one case). In the case where a
+  reply still in flight at a branch switch is dropped, the absence check now opens the job chooser's
+  list first and also asserts no list is shown: the switch closes the box, and a closed list shows
+  no option whatever it holds, so the check had stopped proving anything (INV5 review).
 - `inventory-counts.dom`, `inventory-parts.dom`, `inventory-material-requirements.dom`: every render
   goes under `UiFoundationProvider` (and, for the panel, a working context), as the locale layout
   mounts them; the panel's renders pass `canReadItems`, and both api mocks answer
@@ -4044,14 +4048,19 @@ its reference after a refused read; one moment case per screen in `inventory.dom
 `inventory-movements.dom`, `inventory-adjustments.dom`, `inventory-goods-receipts.dom`,
 `inventory-transfers.dom`, `inventory-item-codes.dom` (and UTC with no branch),
 `inventory-unit-conversions.dom`, `inventory-vehicle-specifications.dom` and `attention.dom` (the
-stock signal), each in en and ar. `tests/support/stock-operations.ts` gains `FAR_ZONE`, `onClock`,
+stock signal), each in en and ar; in `inventory-customer-returns.dom`, a return's arrival and an
+offered sale's issue, and an issued part's issue in the picker's option, each in en and ar. From the
+review: a second press of "Cancel count" keeps the half-typed cancel form open (the button only
+opens it, as before) in `inventory-counts.dom`, and an ended session while reading a requirement's
+extras offers the sign-in link, as the panel's list already did, in
+`inventory-material-requirements.dom`. `tests/support/stock-operations.ts` gains `FAR_ZONE`, `onClock`,
 `clockName` and `expectOnClock`.
 
 Messages added (en and ar): `inventory.material.create.itemCategory` ("Part group"), plain language.
 
 Deliberate behaviour changes:
 
-- Recorded moments on every inventory screen but the returns desk are written on the branch's
+- Recorded moments on every inventory screen, the returns desk included, are written on the branch's
   clock (or the working branch's, or UTC, as above) with the clock named, no longer on the
   browser's; an Arabic date is no longer forced left to right.
 - The item family is chosen from the tree and shown by its path and code, no longer typed and shown
@@ -4070,9 +4079,6 @@ Deliberate behaviour changes:
 
 Known limitations of this slice, one line each:
 
-- The returns desk (`/inventory/customer-returns`) still writes its two moments and the
-  issued-part picker's moment on the browser's clock: its screen was being landed by #549 and was
-  outside this slice's files; it is owed to its own change.
 - After a write the parts screen re-reads by remounting its panels, so there the cursor is not
   returned to the button that opened the form; the write's notice is announced instead.
 - The issues grid owns its row buttons, so closing the return form returns the cursor to the

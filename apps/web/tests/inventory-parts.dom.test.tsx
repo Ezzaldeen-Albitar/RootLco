@@ -690,6 +690,12 @@ describe('the job picker and the working context', () => {
     await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
     answer(found([workOrder]));
     await new Promise((resolve) => setTimeout(resolve, 20));
+    // The switch blurred and closed the box, and a closed list shows no option
+    // whatever it holds — so the list is OPENED before looking for the stale
+    // match: had the late reply been drawn, opening would show it.
+    await user.click(box());
+    await user.keyboard('{ArrowDown}');
+    expect(screen.queryByRole('listbox')).toBeNull();
     expect(screen.queryByRole('option', { name: /WO-000042/ })).toBeNull();
     expect(box()).toHaveValue('');
     expect(listWorkOrders).toHaveBeenCalledTimes(1);

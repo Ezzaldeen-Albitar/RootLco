@@ -521,6 +521,19 @@ describe('two people', () => {
       expect(decideMaterialException).toHaveBeenCalledWith(EXCEPTION_ID, { decision: 'approved' })
     );
   });
+
+  it('an ended session while reading the extras offers the way back to sign in (INV5 review)', async () => {
+    const user = userEvent.setup();
+    readMaterialRequirement.mockResolvedValue({ status: 'expired' });
+    renderPanel({ canDecideException: true });
+    await user.click(
+      await screen.findByRole('button', {
+        name: EN['inventory.material.exception.heading'] as string,
+      })
+    );
+    const signIn = await screen.findByRole('link', { name: EN['auth.backToLogin'] as string });
+    expect(signIn).toHaveAttribute('href', '/en/login');
+  });
 });
 
 describe('asking for extra', () => {

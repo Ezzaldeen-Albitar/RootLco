@@ -541,6 +541,33 @@ describe('recording and reconciling', () => {
     expect(within(panel).getByText(EN['inventory.countStatus.counting'] as string)).toBeVisible();
   });
 
+  it('a second press of "Cancel count" keeps the cancel form open with what was typed (INV5 review)', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    const panel = await openCount(user);
+    const action = within(panel).getByRole('button', {
+      name: EN['inventory.counts.cancel.action'] as string,
+    });
+    await user.click(action);
+    const form = within(panel).getByRole('form', {
+      name: EN['inventory.counts.cancel.heading'] as string,
+    });
+    const reason = within(form).getByLabelText(labelled('inventory.stockOps.reason'));
+    await user.type(reason, 'Mistake');
+    // The button only ever opens the form: a half-typed reason is never closed
+    // away by pressing it again.
+    await user.click(action);
+    expect(
+      within(panel).getByRole('form', { name: EN['inventory.counts.cancel.heading'] as string })
+    ).toBeVisible();
+    expect(within(panel).getByLabelText(labelled('inventory.stockOps.reason'))).toHaveValue(
+      'Mistake'
+    );
+    expect(action).toHaveAttribute('aria-expanded', 'true');
+    expect(cancelStockCount).not.toHaveBeenCalled();
+  });
+
   it('opens a count of a chosen location with one key per form', async () => {
     const user = userEvent.setup();
     openStockCount.mockResolvedValue(

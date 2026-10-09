@@ -581,6 +581,7 @@ function RequirementCard({
       ) : null}
 
       <ExceptionDisclosure
+        locale={locale}
         messages={messages}
         requirementId={requirement.id}
         currentUserId={currentUserId}
@@ -602,12 +603,15 @@ function RequirementCard({
  * extra reads nobody asked for.
  */
 function ExceptionDisclosure({
+  locale,
   messages,
   requirementId,
   currentUserId,
   canDecide,
   onChanged,
 }: {
+  /** Forwarded to the failure state, which links an expired session to sign in. */
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly requirementId: string;
   readonly currentUserId: string;
@@ -669,6 +673,7 @@ function ExceptionDisclosure({
       ) : state.phase === 'failed' ? (
         <MuiReadFailureState
           messages={messages}
+          locale={locale}
           status={state.status}
           correlationId={state.correlationId}
           onRetry={state.status === 'unavailable' ? () => setAttempt((n) => n + 1) : undefined}
