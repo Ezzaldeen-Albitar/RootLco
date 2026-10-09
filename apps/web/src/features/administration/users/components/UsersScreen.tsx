@@ -527,6 +527,20 @@ function InviteDialog({
             event.preventDefault();
             void submit();
           }}
+          // Send sits in the dialog's action row, outside this form, so the
+          // browser finds no submit button here and Enter in either box would
+          // do nothing. Enter in a text box submits this form instead, and the
+          // submit above is the one path both Enter and Send reach, behind the
+          // same single-flight guard. Enter on a checkbox and Enter while an
+          // input method is still composing a word are left alone.
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+            const box = event.target;
+            if (!(box instanceof HTMLInputElement)) return;
+            if (box.type !== 'text' && box.type !== 'email') return;
+            event.preventDefault();
+            event.currentTarget.requestSubmit();
+          }}
         >
           <FormTextField
             name="email"

@@ -3999,12 +3999,14 @@ Preserved, each held by a case in `user-access.dom.test.tsx` (en and ar where ma
   typed.
 - Invitation: a missing address or name is said on its box before anything is sent (en and ar); a
   duplicate address is said on the address box and every entry — the address, the name, the
-  two-factor requirement and the roles — is kept (en and ar); every entry counts as unsaved work
-  until the invitation is sent.
+  two-factor requirement and the roles — is kept (en and ar); Enter in the address or the name box
+  sends it through the same path as Send, once (en and ar); every entry counts as unsaved work until
+  the invitation is sent.
 - Edit details: only what changed is sent, with the displayed version (en and ar); an empty name is
   refused on its box (en and ar); a conflict keeps what was typed, says so and offers "Load the
-  latest version" (en and ar); nothing changed is said and nothing is sent; both entries count as
-  unsaved work; closing returns the cursor to "Edit details".
+  latest version", after which the next save carries the newer version as `If-Match` (en and ar);
+  nothing changed is said and nothing is sent; both entries count as unsaved work; closing returns
+  the cursor to "Edit details".
 - Duplicate submits: a status change, an invitation, an edit and a grant confirmed across the whole
   organisation each send one request when pressed twice inside one `act()`, held by a ref while the
   answer is awaited.
@@ -4066,8 +4068,6 @@ Known limitations and recorded gaps, one line each:
   grants is one long list.
 - The forms are the shared decision dialog (`alertdialog`), as the appointment setup rename is,
   rather than a plain dialog.
-- Enter in the invitation's boxes does not send it (two boxes and no submit button inside the form);
-  the Send button does.
 - Every role the session can see that is not a system role is offered on the invitation and the
   grant, as before; the service bounds the choice by the inviter's delegable authority.
 - `/administration/approval-limits` and `/administration/audit-log` are otherwise not migrated;

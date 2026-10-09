@@ -1360,7 +1360,13 @@ function mountUsers(locale: 'en' | 'ar' = 'en', over: Record<string, unknown> = 
 }
 
 function mountAccess(locale: 'en' | 'ar' = 'en', over: Record<string, unknown> = {}) {
-  const ui = withMui(
+  const ui = accessTree(locale, over);
+  return locale === 'en' ? renderLtr(ui) : renderRtl(ui);
+}
+
+/** The access page as `mountAccess` renders it, for a re-render with newer props. */
+function accessTree(locale: 'en' | 'ar', over: Record<string, unknown> = {}): ReactElement {
+  return withMui(
     inBranch(
       <>
         <UserAccessScreen
@@ -1384,7 +1390,6 @@ function mountAccess(locale: 'en' | 'ar' = 'en', over: Record<string, unknown> =
     ),
     locale
   );
-  return locale === 'en' ? renderLtr(ui) : renderRtl(ui);
 }
 
 /** A write the API refused as a stale version — `ERR-CON-001`. */
@@ -1682,6 +1687,42 @@ describe('inviting a user (P1-32-PRE-OD-ADM3)', () => {
     });
   }
 
+  for (const locale of ['en', 'ar'] as const) {
+    it(`sends the invitation on Enter in the address or the name box, once (${locale})`, async () => {
+      const C = CATALOGUE[locale];
+      const release = heldSend();
+      const user = userEvent.setup();
+      const dialog = await openInvite(user, locale);
+      const email = within(dialog).getByLabelText(new RegExp(`^${C('users.invite.email')}`));
+      const name = within(dialog).getByLabelText(new RegExp(`^${C('users.invite.displayName')}`));
+
+      // Enter in the address box reaches the same send as the button: with the
+      // name still empty, the refusal is said on the name box and nothing goes.
+      await user.type(email, 'new.person@example.test{Enter}');
+      await waitFor(() => expect(name).toHaveAttribute('aria-invalid', 'true'));
+      expect(name).toHaveAccessibleErrorMessage(said(C('field.required')));
+      expect(send).not.toHaveBeenCalled();
+
+      // Enter in the name box sends it; a second Enter while the answer is
+      // awaited sends nothing more.
+      await user.type(name, 'New Person{Enter}');
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      expect(send).toHaveBeenCalledWith(
+        'POST',
+        '/api/v1/iam/invitations',
+        expect.objectContaining({
+          email: 'new.person@example.test',
+          displayName: 'New Person',
+          mfaRequired: false,
+        })
+      );
+      await user.keyboard('{Enter}');
+      release({ ok: true, status: 201, data: { id: 'x' }, correlationId: 'c' });
+      expect(await within(dialog).findByText(C('users.invite.done'))).toBeInTheDocument();
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+  }
+
   it('sends one invitation when Send is pressed twice inside one frame', async () => {
     const release = heldSend();
     const user = userEvent.setup();
@@ -1784,7 +1825,7 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
       const C = CATALOGUE[locale];
       send.mockResolvedValue(STALE);
       const user = userEvent.setup();
-      mountAccess(locale);
+      const view = mountAccess(locale);
       await user.click(editButton(C));
       const dialog = await screen.findByRole('alertdialog', { name: C('users.edit.title') });
       const name = within(dialog).getByLabelText(new RegExp(`^${C('users.edit.displayName')}`));
@@ -1795,10 +1836,46 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
       expect(await within(dialog).findByRole('alert')).toHaveTextContent(C('users.edit.conflict'));
       expect(name).toHaveValue('Senior Supervisor');
       expect(refresh).not.toHaveBeenCalled();
+      expect(send).toHaveBeenLastCalledWith(
+        'PATCH',
+        `/api/v1/iam/users/${USER.id}`,
+        { displayName: 'Senior Supervisor' },
+        { ifMatch: USER.recordVersion }
+      );
 
       await user.click(within(dialog).getByRole('button', { name: C('form.loadLatest') }));
       expect(refresh).toHaveBeenCalledTimes(1);
       expect(name).toHaveValue(USER.displayName);
+
+      // The page is read again: the newer details and version arrive, the clean
+      // form follows them, and the next save is held against the NEW version.
+      const NEWER: UserRow = {
+        ...USER,
+        displayName: 'Workshop Lead',
+        recordVersion: USER.recordVersion + 1,
+      };
+      view.rerender(accessTree(locale, { user: NEWER }));
+      const latest = within(
+        screen.getByRole('alertdialog', { name: C('users.edit.title') })
+      ).getByLabelText(new RegExp(`^${C('users.edit.displayName')}`));
+      await waitFor(() => expect(latest).toHaveValue(NEWER.displayName));
+      expect(within(dialog).queryByRole('alert')).toBeNull();
+
+      send.mockResolvedValue({ ok: true, status: 200, data: { ...NEWER }, correlationId: 'c' });
+      await user.clear(latest);
+      await user.type(latest, 'Senior Supervisor');
+      await user.click(within(dialog).getByRole('button', { name: C('users.edit.save') }));
+
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+      expect(send).toHaveBeenLastCalledWith(
+        'PATCH',
+        `/api/v1/iam/users/${USER.id}`,
+        { displayName: 'Senior Supervisor' },
+        { ifMatch: NEWER.recordVersion }
+      );
+      await waitFor(() =>
+        expect(screen.queryByRole('alertdialog', { name: C('users.edit.title') })).toBeNull()
+      );
     });
   }
 
