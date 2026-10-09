@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
@@ -6,10 +6,13 @@ import en from '../src/i18n/messages/en.json';
 import { formatInZone } from '../src/lib/branch-time';
 import { formatMessage } from '../src/i18n/get-messages';
 import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   inBranch,
-  renderLtr as renderInLtr,
-  renderRtl as renderInRtl,
+  messagesFor,
+  renderLtr as renderBareLtr,
+  renderRtl as renderBareRtl,
   BranchSwitch,
   OTHER_BRANCH,
   TEST_BRANCH,
@@ -35,6 +38,24 @@ import {
  * — true for every case below. A case that needs a different snapshot builds
  * one and renders it explicitly.
  */
+/*
+ * Since `P1-32-PRE-OD-INV6` every render also goes under the product's Material
+ * provider, as the locale layout mounts it: the screen's own fields, buttons and
+ * tables are Material's. No selector of an existing case moved: the fields are
+ * still labelled boxes and native selects, the lists still tables, the actions
+ * still buttons with the same names.
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderInLtr = (ui: ReactElement, options?: Parameters<typeof renderBareLtr>[1]) =>
+  renderBareLtr(withMui(ui, 'en'), options);
+const renderInRtl = (ui: ReactElement, options?: Parameters<typeof renderBareRtl>[1]) =>
+  renderBareRtl(withMui(ui, 'ar'), options);
 const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
   renderInLtr(inBranch(ui), options);
 const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
@@ -1579,3 +1600,235 @@ function leavingIsQuestioned(): boolean {
   window.dispatchEvent(event);
   return event.defaultPrevented;
 }
+
+/*
+ * P1-32-PRE-OD-INV6: the counter on Material UI. What the move must keep, in
+ * both languages: a line's quantity is a decimal box read left to right and a
+ * refused one is marked on its own box with what was typed kept; one press, one
+ * write, for the draft, the issue and the void; and the screen's own sentences
+ * are never drawn inside a left-to-right figure.
+ */
+describe('the counter on Material UI (INV6)', () => {
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const catalogueOf = (locale: 'en' | 'ar') => (locale === 'ar' ? AR : EN);
+  const namedIn = (catalogue: Record<string, string>) => (key: string) =>
+    new RegExp(`^${escape(catalogue[key] as string)}`);
+  function renderIn(locale: 'en' | 'ar') {
+    const ui = (
+      <CounterSalesScreen
+        locale={locale}
+        messages={locale === 'ar' ? ar : en}
+        canSell
+        canIssue
+        canReadCustomers
+        canReadBranches
+      />
+    );
+    return locale === 'ar' ? renderRtl(ui) : renderLtr(ui);
+  }
+
+  /** The buyer and one scanned line, in the screen's own words; answers the Draft button. */
+  async function composeIn(
+    user: ReturnType<typeof userEvent.setup>,
+    catalogue: Record<string, string>
+  ): Promise<HTMLElement> {
+    const named = namedIn(catalogue);
+    await screen.findByRole('region', {
+      name: catalogue['inventory.counterSales.targetLabel'] as string,
+    });
+    await user.type(
+      await screen.findByLabelText(named('inventory.counterSales.buyer.term')),
+      'garage'
+    );
+    await user.click(
+      screen.getByRole('button', {
+        name: catalogue['inventory.counterSales.buyer.search'] as string,
+      })
+    );
+    await user.selectOptions(
+      await screen.findByLabelText(named('inventory.counterSales.buyer.label')),
+      BUYER_ID
+    );
+    await user.click(screen.getByLabelText(named('inventory.scan.label')));
+    await user.keyboard(`${CODE}{Enter}`);
+    await waitFor(() => expect(resolveBarcode).toHaveBeenCalledTimes(1));
+    await user.selectOptions(
+      screen.getByLabelText(named('inventory.counterSales.line.location')),
+      LOCATION_ID
+    );
+    await user.type(screen.getByLabelText(named('inventory.counterSales.line.quantity')), '2');
+    await user.click(
+      screen.getByRole('button', { name: catalogue['inventory.counterSales.line.add'] as string })
+    );
+    return screen.getByRole('button', {
+      name: catalogue['inventory.counterSales.create.submit'] as string,
+    });
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`a line's quantity is a decimal box read left to right; a refused one is marked on it and kept (${locale})`, async () => {
+      const catalogue = catalogueOf(locale);
+      const named = namedIn(catalogue);
+      const user = userEvent.setup();
+      renderIn(locale);
+      await screen.findByRole('region', {
+        name: catalogue['inventory.counterSales.targetLabel'] as string,
+      });
+      const quantity = await screen.findByLabelText(named('inventory.counterSales.line.quantity'));
+      expect(quantity).toHaveAttribute('dir', 'ltr');
+      expect(quantity).toHaveAttribute('inputmode', 'decimal');
+      expect(quantity).not.toHaveAttribute('type', 'number');
+      await user.click(screen.getByLabelText(named('inventory.scan.label')));
+      await user.keyboard(`${CODE}{Enter}`);
+      await waitFor(() => expect(resolveBarcode).toHaveBeenCalledTimes(1));
+      await user.selectOptions(
+        screen.getByLabelText(named('inventory.counterSales.line.location')),
+        LOCATION_ID
+      );
+      await user.type(quantity, '1.2.3');
+      await user.click(
+        screen.getByRole('button', { name: catalogue['inventory.counterSales.line.add'] as string })
+      );
+      await waitFor(() => expect(quantity).toHaveAttribute('aria-invalid', 'true'));
+      expect(quantity).toHaveAccessibleDescription(
+        new RegExp(escape(catalogue['inventory.stockOps.quantityFormat'] as string))
+      );
+      expect(quantity).toHaveValue('1.2.3');
+      // Nothing was added to the sale, and nothing was written.
+      expect(
+        screen.queryByRole('table', {
+          name: catalogue['inventory.counterSales.draft.caption'] as string,
+        })
+      ).toBeNull();
+      expect(createCounterSale).not.toHaveBeenCalled();
+    });
+
+    it(`a second press of Draft while the draft is out sends nothing more (${locale})`, async () => {
+      const catalogue = catalogueOf(locale);
+      let answer: (value: unknown) => void = () => undefined;
+      createCounterSale.mockReturnValue(
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+      );
+      const user = userEvent.setup();
+      renderIn(locale);
+      const draft = await composeIn(user, catalogue);
+      // The line is in the sale's own table, its removal named with the stock code.
+      const lines = screen.getByRole('table', {
+        name: catalogue['inventory.counterSales.draft.caption'] as string,
+      });
+      expect(
+        within(lines).getByRole('button', {
+          name: `${catalogue['inventory.counterSales.draft.remove'] as string} BRK-001`,
+        })
+      ).toBeVisible();
+      fireEvent.click(draft);
+      fireEvent.click(draft);
+      expect(createCounterSale).toHaveBeenCalledTimes(1);
+      expect(draft).toBeDisabled();
+      answer(succeeded('invoices.counterSale.create.success', drafted()));
+      expect(
+        await screen.findByText(catalogue['inventory.counterSales.create.done'] as string)
+      ).toBeVisible();
+      expect(createCounterSale).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it('a second press of Issue while the issue is out sends nothing more, and Void waits too', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    issueInvoice.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    renderIn('en');
+    await user.click(await composeIn(user, EN));
+    await screen.findByText(EN['inventory.counterSales.sale.heading'] as string);
+    const issue = screen.getByRole('button', {
+      name: EN['inventory.counterSales.issue.action'] as string,
+    });
+    const voidIt = screen.getByRole('button', {
+      name: EN['inventory.counterSales.void.action'] as string,
+    });
+    fireEvent.click(issue);
+    fireEvent.click(issue);
+    expect(issueInvoice).toHaveBeenCalledTimes(1);
+    expect(issue).toBeDisabled();
+    expect(voidIt).toBeDisabled();
+    answer(
+      succeeded('invoices.issue.success', {
+        invoice: invoice({ status: 'issued', invoiceNumber: 'CS-0001', recordVersion: 2 }),
+        invoiceNumber: 'CS-0001',
+        replayed: false,
+        recordVersion: 2,
+      })
+    );
+    expect(
+      await screen.findByText(EN['inventory.counterSales.issue.done'] as string)
+    ).toBeVisible();
+    expect(issueInvoice).toHaveBeenCalledTimes(1);
+  });
+
+  it('a second press of Void while the void is out sends nothing more; a missing reason is said on its box', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    cancelInvoice.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    renderIn('en');
+    await user.click(await composeIn(user, EN));
+    await screen.findByText(EN['inventory.counterSales.sale.heading'] as string);
+    const reason = screen.getByLabelText(labelled('inventory.counterSales.void.reason'));
+    const voidIt = screen.getByRole('button', {
+      name: EN['inventory.counterSales.void.action'] as string,
+    });
+    await user.click(voidIt);
+    expect(reason).toHaveAttribute('aria-invalid', 'true');
+    expect(reason).toHaveAccessibleDescription(new RegExp(escape(EN['field.required'] as string)));
+    expect(cancelInvoice).not.toHaveBeenCalled();
+    await user.type(reason, 'Customer changed their mind');
+    fireEvent.click(voidIt);
+    fireEvent.click(voidIt);
+    expect(cancelInvoice).toHaveBeenCalledTimes(1);
+    expect(voidIt).toBeDisabled();
+    answer(
+      succeeded('invoices.cancel.success', {
+        invoice: invoice({ status: 'void_before_issue', recordVersion: 2 }),
+        replayed: false,
+        recordVersion: 2,
+      })
+    );
+    expect(await screen.findByText(EN['inventory.counterSales.void.done'] as string)).toBeVisible();
+    expect(cancelInvoice).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the screen own sentences out of the left-to-right figures, in Arabic', async () => {
+    listCounterSales.mockResolvedValue(
+      okRead({ items: [invoice({ totals: null })], nextCursor: null, hasMore: false })
+    );
+    const user = userEvent.setup();
+    renderIn('ar');
+    // A drafted sale whose amounts this reader may not see says so in Arabic,
+    // in the page's direction, inside the drafts' own table.
+    const drafts = await screen.findByRole('table', {
+      name: AR['inventory.counterSales.drafts.caption'] as string,
+    });
+    const notShown = within(drafts).getByText(
+      AR['inventory.counterSales.sale.noAmounts'] as string
+    );
+    expect(notShown.closest('[dir="ltr"]')).toBeNull();
+    // What is on the shelf: the sentence in the page's direction, the figures left to right.
+    await user.click(screen.getByLabelText(namedIn(AR)('inventory.scan.label')));
+    await user.keyboard(`${CODE}{Enter}`);
+    const figures = await screen.findByText('WH-1: 9.000');
+    expect(figures).toHaveAttribute('dir', 'ltr');
+    const sentence = figures.parentElement as HTMLElement;
+    expect(sentence).toHaveTextContent(AR['inventory.counterSales.line.onShelf'] as string);
+    expect(sentence.closest('[dir="ltr"]')).toBeNull();
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+});

@@ -47,13 +47,37 @@
  *
  * Permissions: `inv.stock.read` gates the page and every read;
  * `inv.stock.operate` with `sal.finance.view` offers the write.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV6`)
+ *
+ * Every control this screen draws itself is a shared wrapper: the source kind,
+ * the sale, its line and the condition are `FormSelectField` (native, F6), the
+ * typed reference and the reason `FormTextField`, the quantity
+ * `FormNumberField` (the exact string typed is the string sent and compared),
+ * and every button is Material's. The branch's returns are Material's table —
+ * the read answers one page with a "more exist" flag and no cursor is walked,
+ * so there is nothing for `OperationalGrid`'s pager to do. The issued-part
+ * picker, the location selects and the list's wait, empty and failed states are
+ * the shared inventory pieces. What is read, sent, authorized and refused is
+ * unchanged; the credit is still a separate request decided elsewhere.
  */
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import Alert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiLoadingState } from '@/components/states/MuiStates';
 import { listCounterSales, readInvoice } from '@/features/billing/api';
 import type { Invoice, InvoiceLine } from '@/features/billing/billing-contract';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
@@ -77,14 +101,7 @@ import {
   type SalesReturnSourceKind,
   type StockTarget,
 } from '../inventory-contract';
-import {
-  LocationPicker,
-  OutcomeNote,
-  PRIMARY_BUTTON,
-  Qty,
-  SECONDARY_BUTTON,
-  useLocations,
-} from './shared';
+import { LocationPicker, OutcomeNote, Qty, useLocations } from './shared';
 import {
   BranchListView,
   BranchTargetForm,
@@ -199,80 +216,82 @@ function BranchReturns({
           truncatedKey="inventory.returns.list.truncated"
         >
           {(items) => (
-            <table className="w-full text-body">
-              <caption className="sr-only">
-                {translate(messages, 'inventory.returns.list.caption')}
-              </caption>
-              <thead>
-                <tr className="text-caption text-text-muted">
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.returns.column.item')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.returns.column.quantity')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.returns.column.condition')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.returns.column.credit')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {items.map((row) => (
-                  <tr key={row.id} className="border-t border-border align-top">
-                    <td>
-                      <code className="font-mono text-caption" dir="ltr">
-                        {row.sku}
-                      </code>
-                      <span className="block text-caption text-text-muted" dir="ltr">
-                        {formatDateTime(row.createdAt, locale)}
-                      </span>
-                    </td>
-                    <td className="text-end">
-                      <Qty value={row.quantity} />
-                    </td>
-                    <td>
-                      {translateDynamic(messages, `inventory.returnCondition.${row.condition}`)}
-                      {row.condition === 'damaged' ? (
-                        <span className="block text-caption text-text-muted">
-                          {translate(messages, 'inventory.returns.quarantined')}
+            <TableContainer>
+              <Table size="small">
+                <caption className="sr-only">
+                  {translate(messages, 'inventory.returns.list.caption')}
+                </caption>
+                <TableHead>
+                  <TableRow>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.returns.column.item')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.returns.column.quantity')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.returns.column.condition')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.returns.column.credit')}
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {items.map((row) => (
+                    <TableRow key={row.id} className="align-top">
+                      <TableCell>
+                        <code className="font-mono text-caption" dir="ltr">
+                          {row.sku}
+                        </code>
+                        <span className="block text-caption text-text-muted" dir="ltr">
+                          {formatDateTime(row.createdAt, locale)}
                         </span>
-                      ) : null}
-                    </td>
-                    <td>
-                      {translateDynamic(messages, `inventory.returnStatus.${row.status}`)}
-                      {row.creditNoteId !== null ? (
-                        <>
-                          {/*
-                           * GAP-04. Only a note that is still waiting says so: the
-                           * status is the note's own decision, and an approved or
-                           * refused credit is no longer waiting for anybody.
-                           */}
-                          {row.status === 'credit_requested' ? (
-                            <span className="block text-caption text-text-muted">
-                              {translate(messages, 'inventory.returns.creditPending')}
-                            </span>
-                          ) : null}
-                          {/*
-                           * DEF-T-07. The credit a return raises used to be
-                           * named here and reachable nowhere. The credit-note
-                           * screen opens straight onto this note.
-                           */}
-                          <Link
-                            href={`/${locale}/credit-notes?creditNoteId=${row.creditNoteId}`}
-                            className={LINK}
-                          >
-                            {translate(messages, 'inventory.returns.openCredit')}
-                          </Link>
-                        </>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Qty value={row.quantity} />
+                      </TableCell>
+                      <TableCell>
+                        {translateDynamic(messages, `inventory.returnCondition.${row.condition}`)}
+                        {row.condition === 'damaged' ? (
+                          <span className="block text-caption text-text-muted">
+                            {translate(messages, 'inventory.returns.quarantined')}
+                          </span>
+                        ) : null}
+                      </TableCell>
+                      <TableCell>
+                        {translateDynamic(messages, `inventory.returnStatus.${row.status}`)}
+                        {row.creditNoteId !== null ? (
+                          <>
+                            {/*
+                             * GAP-04. Only a note that is still waiting says so: the
+                             * status is the note's own decision, and an approved or
+                             * refused credit is no longer waiting for anybody.
+                             */}
+                            {row.status === 'credit_requested' ? (
+                              <span className="block text-caption text-text-muted">
+                                {translate(messages, 'inventory.returns.creditPending')}
+                              </span>
+                            ) : null}
+                            {/*
+                             * DEF-T-07. The credit a return raises used to be
+                             * named here and reachable nowhere. The credit-note
+                             * screen opens straight onto this note.
+                             */}
+                            <Link
+                              href={`/${locale}/credit-notes?creditNoteId=${row.creditNoteId}`}
+                              className={LINK}
+                            >
+                              {translate(messages, 'inventory.returns.openCredit')}
+                            </Link>
+                          </>
+                        ) : null}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
         </BranchListView>
       </section>
@@ -335,6 +354,8 @@ function ReceiveForm({
   /* One key per opened form: a repeated scan of the part being handed back, or
    * a retry after a lost answer, replays the first receipt. */
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
+  // One return sent at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
   /*
    * Unsaved work, declared to the shell. The return lands in THIS branch's
    * locations, so a switch asks first; a confirmed switch remounts the form
@@ -427,7 +448,9 @@ function ReceiveForm({
       setAttempt((n) => n + 1);
       return;
     }
+    if (sending.current) return;
 
+    sending.current = true;
     setBusy(true);
     const result = await createSalesReturn(
       {
@@ -443,6 +466,7 @@ function ReceiveForm({
       },
       attemptKey
     );
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -490,13 +514,13 @@ function ReceiveForm({
         {translate(messages, 'inventory.returns.create.explain')}
       </p>
 
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'inventory.returns.source.kind')}
         required
         value={sourceKind}
-        onChange={(event) => {
+        onChange={(next) => {
           forgetAsked();
-          setSourceKind(event.target.value as SalesReturnSourceKind);
+          setSourceKind(next as SalesReturnSourceKind);
           setSourceId('');
           setIssuedPart(null);
           setSourceNote(null);
@@ -533,30 +557,30 @@ function ReceiveForm({
           fallback={
             <div className="grid gap-3 sm:grid-cols-3">
               <div className="sm:col-span-2">
-                <TextField
+                <FormTextField
                   label={translate(messages, 'inventory.returns.source.id')}
                   description={translate(messages, 'inventory.returns.source.idHelp')}
                   required
                   dir="ltr"
                   value={sourceId}
-                  onChange={(event) => {
+                  onChange={(next) => {
                     forgetAsked();
-                    setSourceId(event.target.value);
+                    setSourceId(next);
                     setReturnable(null);
                   }}
                   error={errorFor('sourceId')}
                 />
               </div>
               <div className="flex items-end">
-                <button
+                <Button
                   type="button"
-                  className={SECONDARY_BUTTON}
+                  variant="outlined"
                   onClick={() => {
                     void look();
                   }}
                 >
                   {translate(messages, 'inventory.returns.source.look')}
-                </button>
+                </Button>
               </div>
             </div>
           }
@@ -585,30 +609,30 @@ function ReceiveForm({
                 {translate(messages, 'inventory.returns.issue.fallback')}
               </p>
               <div className="sm:col-span-2">
-                <TextField
+                <FormTextField
                   label={translate(messages, 'inventory.returns.source.id')}
                   description={translate(messages, 'inventory.returns.source.issueHelp')}
                   required
                   dir="ltr"
                   value={sourceId}
-                  onChange={(event) => {
+                  onChange={(next) => {
                     forgetAsked();
-                    setSourceId(event.target.value);
+                    setSourceId(next);
                     setReturnable(null);
                   }}
                   error={errorFor('sourceId')}
                 />
               </div>
               <div className="flex items-end">
-                <button
+                <Button
                   type="button"
-                  className={SECONDARY_BUTTON}
+                  variant="outlined"
                   onClick={() => {
                     void look();
                   }}
                 >
                   {translate(messages, 'inventory.returns.source.look')}
-                </button>
+                </Button>
               </div>
             </div>
           ) : null}
@@ -651,14 +675,12 @@ function ReceiveForm({
       ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <TextField
+        <FormNumberField
           label={translate(messages, 'inventory.returns.create.quantity')}
           description={translate(messages, 'inventory.stockOps.quantityHelp')}
           required
-          inputMode="decimal"
-          dir="ltr"
           value={form.quantity}
-          onChange={(event) => {
+          onChange={(next) => {
             // A corrected quantity stops complaining — the form's own complaint
             // and the server's refusal of the quantity alike (DF-B7 residual:
             // a refusal such as more than remains stayed red until the next
@@ -673,7 +695,7 @@ function ReceiveForm({
               // also named another box keeps its sentence until that one is fixed.
               return Object.keys(rest).length === 0 ? null : { ...previous, fieldErrors: rest };
             });
-            setForm((f) => ({ ...f, quantity: event.target.value }));
+            setForm((f) => ({ ...f, quantity: next }));
           }}
           error={errorFor('quantity')}
         />
@@ -689,13 +711,11 @@ function ReceiveForm({
         />
       </div>
 
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'inventory.returns.create.condition')}
         required
         value={form.condition}
-        onChange={(event) =>
-          setForm((f) => ({ ...f, condition: event.target.value as ReturnCondition }))
-        }
+        onChange={(next) => setForm((f) => ({ ...f, condition: next as ReturnCondition }))}
         options={RETURN_CONDITIONS.map((condition) => ({
           value: condition,
           label: translateDynamic(messages, `inventory.returnCondition.${condition}`),
@@ -720,11 +740,12 @@ function ReceiveForm({
         </>
       ) : null}
 
-      <TextAreaField
+      <FormTextField
         label={translate(messages, 'inventory.stockOps.reason')}
+        multiline
         rows={2}
         value={form.reason}
-        onChange={(event) => setForm((f) => ({ ...f, reason: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, reason: next }))}
         error={errorFor('reason')}
       />
 
@@ -733,9 +754,9 @@ function ReceiveForm({
       </p>
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.returns.create.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -869,9 +890,11 @@ function SalePicker({
 
   if (sales.phase === 'loading') {
     return (
-      <p className="text-caption text-text-muted">
-        {translate(messages, 'inventory.returns.sale.loading')}
-      </p>
+      <MuiLoadingState
+        messages={messages}
+        variant="inline"
+        labelKey="inventory.returns.sale.loading"
+      />
     );
   }
 
@@ -907,12 +930,12 @@ function SalePicker({
         </p>
       ) : null}
       <div className="grid gap-3 sm:grid-cols-2">
-        <SelectField
+        <FormSelectField
           label={translate(messages, 'inventory.returns.sale.label')}
           description={translate(messages, 'inventory.returns.sale.help')}
           required
           value={saleId}
-          onChange={(event) => chooseSale(event.target.value)}
+          onChange={chooseSale}
           options={sales.sales.map((sale) => ({
             value: sale.id,
             label: [
@@ -927,26 +950,28 @@ function SalePicker({
         />
 
         {lines.phase === 'idle' ? null : lines.phase === 'loading' ? (
-          <p className="text-caption text-text-muted">
-            {translate(messages, 'inventory.returns.sale.linesLoading')}
-          </p>
+          <MuiLoadingState
+            messages={messages}
+            variant="inline"
+            labelKey="inventory.returns.sale.linesLoading"
+          />
         ) : lines.phase === 'failed' ? (
-          <p role="alert" className="text-body text-error">
+          <Alert severity="error" role="alert" variant="outlined">
             {translateDynamic(messages, lines.messageKey)}
-          </p>
+          </Alert>
         ) : lines.lines.length === 0 ? (
           <p className="text-caption text-text-muted">
             {translate(messages, 'inventory.returns.sale.linesNone')}
           </p>
         ) : (
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'inventory.returns.sale.lineLabel')}
             description={translate(messages, 'inventory.returns.sale.lineHelp')}
             required
             value={lineId}
-            onChange={(event) => {
-              setLineId(event.target.value);
-              if (event.target.value !== '') onChosen(event.target.value);
+            onChange={(next) => {
+              setLineId(next);
+              if (next !== '') onChosen(next);
             }}
             options={lines.lines.map((line) => ({
               value: line.id,
