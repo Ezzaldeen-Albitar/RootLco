@@ -4041,6 +4041,11 @@ Test changes forced by the new structure, the asserted behaviour unchanged:
   `authenticated-en`; Arabic and right to left in `authenticated-ar`) instead of English only; a new
   case opens a person's access page from the grid in either language.
   `tests/e2e/authenticated/accessibility.spec.ts` finds the invitation as an `alertdialog`.
+- `tests/e2e/authenticated/shared-ux.spec.ts`: the shared table's own region case measures
+  `/en/administration/roles`, still drawn by `DataTable`, with its assertions unchanged; a new case
+  scrolls the users grid's pager into view and finds the document unmoved.
+- `tests/ci/p1-31-version-sourcing.test.ts`: the versioned sends outside the P1-31 subject move
+  from 44 to 45 with "Edit details".
 
 Deliberate behaviour changes:
 
