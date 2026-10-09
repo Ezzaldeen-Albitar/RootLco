@@ -6,10 +6,11 @@ import { useCallback, useEffect, useState } from 'react';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
-import { formatDateTime, formatInteger } from '@/lib/format';
+import { formatInteger } from '@/lib/format';
 
 import { readCountDiscrepancyAlerts, readLowStockAlerts } from '../api';
 import type { StockTarget } from '../inventory-contract';
+import { momentText, useStockDisplayZone } from './stock-operations';
 
 /**
  * The low-stock and count-difference signals, where the work happens.
@@ -63,6 +64,9 @@ export function StockAlertIndicator({
   readonly target: StockTarget | null;
 }) {
   const t = (key: keyof Messages) => translate(messages, key);
+  // The freshness stamp is written on the branch's clock and names it, never
+  // on the browser's (`P1-32-PRE-OD-INV5`); UTC, named, where the clock is unknown.
+  const zone = useStockDisplayZone(target);
   const companyId = target?.companyId ?? null;
   const branchId = target?.branchId ?? null;
   /**
@@ -163,7 +167,7 @@ export function StockAlertIndicator({
       <p className="mt-1 text-caption text-text-muted">
         {answer.asOf === null
           ? t('inventory.signals.asOfMissing')
-          : formatMessage(t('attention.asOf'), { when: formatDateTime(answer.asOf, locale) })}
+          : formatMessage(t('attention.asOf'), { when: momentText(answer.asOf, locale, zone) })}
       </p>
       <p className="mt-1 text-caption">
         <Link

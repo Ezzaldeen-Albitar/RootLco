@@ -8,6 +8,7 @@ import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import {
   MomentZoneRefusal,
   ZonedDateTimeField,
+  workingZone,
   type DateTimeFieldProps,
 } from '@/components/forms/mui/DateField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
@@ -20,8 +21,9 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
-import { isKnownZone } from '@/lib/branch-time';
+import { formatInZone, isKnownZone, zoneLabelAt } from '@/lib/branch-time';
 import type { ActionState } from '@/lib/forms/action-result';
+import { intlLocale } from '@/lib/format';
 
 import { listItems } from '../api';
 import { MAX_NAME, QUANTITY, type InventoryItem, type StockTarget } from '../inventory-contract';
@@ -519,6 +521,107 @@ export function StockMomentField({
   return <ZonedDateTimeField {...props} timezone={zone} />;
 }
 
+/**
+ * The clock a stock screen DRAWS a recorded moment on (`P1-32-PRE-OD-INV5`).
+ *
+ * A moment the server recorded — a count's start, an issue, a reservation's
+ * expiry — is an instant, and the screen is addressed to one branch, so it is
+ * written on that branch's clock (Owner decision D-17), the same clock the
+ * moment fields take a typed time on (`useStockTargetClock`). `formatDateTime`
+ * in `lib/format.ts` writes on the BROWSER's clock, so a laptop on another zone
+ * showed the right instant at the wrong wall time.
+ *
+ * Where the branch's zone is missing or not recognised there is no branch
+ * clock to write on, and the browser's is never taken instead: the moment is
+ * written on UTC, which `StockMoment` names beside it — the rule the
+ * appointment page and the dashboard's freshness stamp already follow.
+ */
+export function useStockDisplayZone(target: StockTarget | null): string {
+  const context = useWorkingContext();
+  if (target === null) return 'UTC';
+  const zone = context.branches.find(
+    (branch) => branch.id === target.branchId && branch.companyId === target.companyId
+  )?.timezone;
+  return zone !== undefined && zone.trim() !== '' && isKnownZone(zone) ? zone : 'UTC';
+}
+
+/**
+ * The clock a screen addressed to NO branch writes a recorded moment on: the
+ * working branch's when one branch with a known zone is in force, else UTC —
+ * never the browser's. For the organisation's own records (an item's codes, its
+ * unit conversions, the vehicle capacities), which belong to no branch.
+ */
+export function useWorkingDisplayZone(): string {
+  return workingZone(useWorkingContext()) ?? 'UTC';
+}
+
+/** A recorded moment as text on a named clock — for a sentence or an option's label. */
+export function momentText(value: string, locale: Locale, zone: string): string {
+  const language = intlLocale(locale);
+  return `${formatInZone(value, language, zone)} ${zoneLabelAt(value, language, zone)}`;
+}
+
+/**
+ * A recorded moment, written on `zone` (`useStockDisplayZone`) with that
+ * clock's name beside it. Each part is isolated (`bdi`) rather than forced left
+ * to right: the Arabic date carries Arabic month names, which a forced
+ * direction would reorder.
+ */
+export function StockMoment({
+  value,
+  locale,
+  zone,
+}: {
+  readonly value: string;
+  readonly locale: Locale;
+  readonly zone: string;
+}) {
+  const language = intlLocale(locale);
+  return (
+    <span data-moment-zone={zone}>
+      <bdi>{formatInZone(value, language, zone)}</bdi>{' '}
+      <bdi className="text-caption text-text-muted">{zoneLabelAt(value, language, zone)}</bdi>
+    </span>
+  );
+}
+
+/**
+ * The cursor moves INTO an inline panel or form when it opens, so a keyboard or
+ * screen-reader user lands where the new content starts instead of being left
+ * on the button that opened it. The returned ref goes on the panel's heading
+ * (with `tabIndex={-1}`), which takes the cursor itself, or on a container,
+ * whose first field takes it.
+ */
+export function useFocusOnOpen<T extends HTMLElement>() {
+  const ref = useRef<T | null>(null);
+  useEffect(() => {
+    const element = ref.current;
+    if (element === null) return;
+    if (element.matches('input, textarea, select, button, [tabindex]')) element.focus();
+    else element.querySelector<HTMLElement>('input, textarea, select')?.focus();
+  }, []);
+  return ref;
+}
+
+/**
+ * The control that opened an inline form takes the cursor back when the form
+ * closes — unless the operator has already put it somewhere else. Closing
+ * removes the focused field from the page, which drops the cursor on the
+ * document's body; that, and only that, is the case this answers.
+ */
+export function useReturnFocus<T extends HTMLElement>(open: boolean) {
+  const ref = useRef<T | null>(null);
+  const was = useRef(open);
+  useEffect(() => {
+    if (was.current && !open) {
+      const now = document.activeElement;
+      if (now === null || now === document.body) ref.current?.focus();
+    }
+    was.current = open;
+  }, [open]);
+  return ref;
+}
+
 /** A labelled figure in a summary list, rendered as the server stated it. */
 export function Fact({
   label,
@@ -533,6 +636,25 @@ export function Fact({
       <dd className="text-body text-text-primary">{children}</dd>
     </div>
   );
+}
+
+/**
+ * A form's client refusals and the server's field refusals, as one state
+ * `useFocusFirstInvalid` follows, so the cursor goes to the first refused field
+ * after either. Each client refusal counts as an attempt of its own, added to
+ * the server's, so every refusal moves the cursor once and a re-render never
+ * does.
+ */
+export function refusalState(
+  errors: Readonly<Record<string, string>>,
+  clientAttempts: number,
+  outcome: ActionState | null
+): ActionState {
+  return {
+    status: 'invalid',
+    fieldErrors: { ...(outcome?.fieldErrors ?? {}), ...errors },
+    attempt: clientAttempts + (outcome?.attempt ?? 0),
+  };
 }
 
 /** A field error the server published for a control, as its catalogue sentence. */
