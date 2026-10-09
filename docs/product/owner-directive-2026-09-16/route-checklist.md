@@ -1744,7 +1744,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/inventory`                                          | `FilterToolbar`, form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states      | F1–F6; G1–G9; P1–P10; T1, T5; E1–E4; S1–S4       | migrated — see below the table (INV1B, INV1C)                       | focused suites, en and ar — see below     |
 | `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
 | `/inventory/setup`                                    | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
-| `/inventory/transfers`                                | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/transfers`                                | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/unit-conversions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
 | `/inventory/vehicle-specifications`                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
 | `/invoices`                                           | form fields, `EntityPicker`, `ConfirmDialog`, `ReasonDialog`, states                          | F1–F6; P1–P10; D1–D5; S1–S4                      | migrated — see below the table                                      | focused suites, en and ar — see below     |
@@ -3733,6 +3733,87 @@ Known limitations of this slice, one line each:
   hosted CI.
 - Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in hosted
   CI. The web tier gains cases in existing files (no web test file added or removed).
+
+### Stock transfers on Material UI (`P1-32-PRE-OD-INV4`)
+
+`/inventory/transfers` moved onto the shared wrappers: dispatch, receipt in full or in part, the
+settlement of what did not arrive, cancellation, and the decision on another person's pending
+write-off, all on the one screen as before. Nothing about how it reads, authorizes or scopes
+changed: the same reads (`GET /api/v1/stock-transfers?direction`, `GET /stock-transfer-settlements`)
+and writes (`POST /stock-transfers`, `/{id}/receipt`, `/{id}/cancellation`,
+`/{id}/discrepancy-resolution`, `/stock-transfer-settlements/{id}/decision`) with the same
+arguments and the same idempotency keys, the same page refusal before any read (`inv.stock.read`),
+the same per-control codes (`inv.stock.operate` for dispatch, receipt, settlement and cancellation,
+`inv.adjustment.approve` for the decision), and the same route branch scope, unchanged in
+`route-branch-scope.ts` (`concrete`). The navigation entry and its gate are unchanged. No backend
+file changed, and no shared inventory piece changed.
+
+What moved to which wrapper (`features/inventory/components/TransfersScreen.tsx`):
+
+- Both lists — the branch's transfers and its pending write-offs — are Material's table. Each read
+  answers one bounded page of the branch's list with no cursor (a longer list says it was cut
+  short, as before), so there is nothing for the operational grid's pager to walk; G1 needs a
+  `ServerTable`, which these reads are not. The figures are the server's strings in `Qty`, the
+  remainder still in transit is the server's `outstandingQuantity`, never derived.
+- The direction (sent / coming) and the settlement kind are `FormRadioGroupField` (F7): a
+  `radiogroup` named by its legend, return to origin still chosen first.
+- Every quantity is `FormNumberField` (F5): a text box with a numeric keypad, left to right in both
+  languages, the exact string typed being the string sent.
+- Every reason is `FormTextField` on a multi-line box.
+- Every button is Material's; each row action keeps a name that includes the stock code it acts on.
+- Drawn by the shared pieces and unchanged here: the branch statement (`BranchTargetForm`), the
+  list states (`BranchListView`), the item search (`ItemFinder`), the two location pickers
+  (`LocationPicker`, called without its `material` flag, which `P1-32-PRE-OD-INV1B` removes), the
+  refusal line (`OutcomeNote`) and the quantity (`Qty`). They move onto Material with INV1b, and
+  this screen draws them as they are drawn at the moment.
+
+Preserved, each held by a case in `inventory-transfers.dom.test.tsx` (en and ar where marked):
+
+- Scope: the list is read for the working branch on arrival and again for the other direction; a
+  half-filled dispatch asks before a branch switch, and a confirmed switch opens it empty under the
+  new branch.
+- Permissions: the page refuses without `inv.stock.read` and reads nothing; without
+  `inv.stock.operate` there is no action and no form, and the screen says why; without
+  `inv.adjustment.approve` no decision is offered and the row says why; the requester is told
+  another person must decide their own request.
+- Remaining quantity and partial receipts: a partial receipt sends only what arrived and the screen
+  then states the remainder from the answer; the list is read again and states it.
+- Refusals and conflicts: every transfer refusal rule (`TRANSFER_REFUSAL_RULES`, including a
+  receipt another person already took and a receipt beyond what is in transit) is said in its own
+  words with the reference, the typed quantity kept (en for every rule, en and ar for
+  `transfer_not_receivable`); a refused list is a refusal, never an empty branch.
+- Field errors: a refused quantity or a missing reason is marked on its own box (`aria-invalid`
+  only while refused, the sentence as its error message), what was typed stays (en and ar).
+- Duplicate submits: a receipt and a dispatch in flight disable their submit and a second press
+  sends nothing (en and ar); one dispatch key and one settlement key per opened form, as before.
+- Arabic and English, right to left, and an accessibility pass with a form open in Arabic.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- Every render goes under `UiFoundationProvider`, as the locale layout mounts it. No selector of an
+  existing case moved: the lists are still tables, the fields labelled boxes and radios, the
+  actions buttons named with the stock code.
+
+Deliberate behaviour changes: none.
+
+Known limitations of this slice, one line each:
+
+- `ItemFinder`, `BranchListView` and `LocationPicker` are drawn as the shared pieces draw them at
+  this head (the older drawing until INV1b lands); this screen moves with them without an edit,
+  except the `locale` INV1b hands `BranchListView`, which whichever change lands second carries.
+- A row action opens its form inline below the lists, as before; it is not a dialog, so focus is
+  not moved into the form or returned to the row when it closes.
+- The aged-in-transit alert is not drawn on this screen (it was not before); it is read by the
+  attention board (`/attention`).
+- Names instead of identifiers, no backend read added: a transfer names its item by stock code and
+  its locations by location code, and a location the caller may not see reads as hidden, as before.
+- A submit is held only by its own disabled state while the answer is awaited, as before; two
+  presses inside one render frame are not separately guarded.
+- No browser spec covers this route, so none was changed; the Playwright tiers run only in hosted
+  CI.
+- Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
+  they run in hosted CI. The web tier gains cases in an existing file (no web test file added or
+  removed).
 
 ### Finance controls that need no business decision (P1-32-PRE-OD-FIN)
 
