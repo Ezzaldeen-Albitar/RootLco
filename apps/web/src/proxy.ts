@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
+import { REQUESTED_PATH_HEADER } from '@/features/authentication/api/intended-path';
 import { NONCE_HEADER, contentSecurityPolicy } from '@/lib/security/csp';
 
 /**
@@ -53,6 +54,12 @@ export function proxy(request: NextRequest) {
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(NONCE_HEADER, nonce);
   requestHeaders.set('Content-Security-Policy', csp);
+  // The path being served, for the protected layouts that must name the page
+  // they refuse when they send an operator to sign in (P1-32-PRE-OD-AUTHB).
+  // `set` replaces any copy the client sent. The path only — never the query
+  // string — and only the request's own: the browser never sees this header,
+  // and `safeIntendedPath` re-checks it wherever it is read.
+  requestHeaders.set(REQUESTED_PATH_HEADER, request.nextUrl.pathname);
 
   const response = NextResponse.next({ request: { headers: requestHeaders } });
   response.headers.set('Content-Security-Policy', csp);

@@ -59,7 +59,11 @@ test.describe('authentication', () => {
   test('a protected route redirects to sign-in and never renders the shell', async ({ page }) => {
     const console = watchConsole(page);
     await page.goto('/en/administration/users');
-    await expect(page).toHaveURL(/\/en\/login\?reason=signed-out$/);
+    // The page being opened travels with the redirect (P1-32-PRE-OD-AUTHB), so
+    // sign-in can return the operator to it.
+    await expect(page).toHaveURL(
+      /\/en\/login\?reason=signed-out&intended=%2Fen%2Fadministration%2Fusers$/
+    );
 
     // The shell's navigation landmark belongs to the authenticated group. If it
     // is present here, protected markup reached the browser before the redirect.
@@ -67,6 +71,51 @@ test.describe('authentication', () => {
     await expect(page.getByRole('heading', { level: 1, name: 'Sign in' })).toBeVisible();
     expect(console.errors, 'the console must be clean').toEqual([]);
   });
+
+  test('an Arabic protected route redirects to Arabic sign-in, carrying the page', async ({
+    page,
+  }) => {
+    const console = watchConsole(page);
+    await page.goto('/ar/work-orders');
+    await expect(page).toHaveURL(/\/ar\/login\?reason=signed-out&intended=%2Far%2Fwork-orders$/);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByRole('navigation', { name: 'الوحدات' })).toHaveCount(0);
+    await expect(page.getByText('أنت غير مسجّل الدخول. سجّل الدخول للمتابعة.')).toBeVisible();
+    await expect(page.getByTestId('sign-in-intended')).toHaveText(
+      'بعد تسجيل الدخول ستعود إلى الصفحة التي كنت تفتحها، إن كان هذا الحساب مخوّلًا بفتحها.'
+    );
+    await expect(page.locator('input[type="hidden"][name="intended"]')).toHaveValue(
+      '/ar/work-orders'
+    );
+    expect(console.errors, 'the console must be clean').toEqual([]);
+  });
+
+  test('the session-ended route lands on sign-in with the reason and the page', async ({
+    page,
+  }) => {
+    await page.goto('/en/session-ended?intended=%2Fen%2Finvoices');
+    await expect(page).toHaveURL(/\/en\/login\?reason=expired&intended=%2Fen%2Finvoices$/);
+    await expect(page.getByText(/^Your session ended\./)).toBeVisible();
+    await expect(page.getByTestId('sign-in-intended')).toBeVisible();
+  });
+
+  for (const [label, hostile] of [
+    ['an absolute address', 'https%3A%2F%2Fevil.example%2Fen'],
+    ['a protocol-relative address', '%2F%2Fevil.example'],
+    ['a backslash address', '%2F%5Cevil.example'],
+  ] as const) {
+    test(`sign-in ignores ${label} as the intended page, in both languages`, async ({ page }) => {
+      for (const locale of ['en', 'ar'] as const) {
+        await page.goto(`/${locale}/login?reason=expired&intended=${hostile}`);
+        // The reason notice alone: nothing is added for the refused value.
+        await expect(page.locator('p[role="status"]')).toHaveCount(1);
+        await expect(page.getByTestId('sign-in-intended')).toHaveCount(0);
+        await expect(page.locator('input[type="hidden"][name="intended"]')).toHaveCount(0);
+      }
+      await page.goto(`/en/session-ended?intended=${hostile}`);
+      await expect(page).toHaveURL(/\/en\/login\?reason=expired$/);
+    });
+  }
 
   test('the sign-in form labels every control and needs no mouse', async ({ page }) => {
     await page.goto('/en/login');

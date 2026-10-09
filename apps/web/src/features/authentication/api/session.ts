@@ -2,7 +2,8 @@ import { redirect } from 'next/navigation';
 import { authorizedClient } from '@/lib/api/server-client';
 import type { Locale } from '@/i18n/config';
 import { readPlatformSession } from '@/features/platform/api/session';
-import { SESSION_ENDED_SEGMENT } from './session-ended';
+import { sessionEndedPath, signInPath } from './intended-path';
+import { requestedPath } from './requested-path';
 import type { SessionState, SessionSummary } from '../types/session';
 
 /**
@@ -109,6 +110,9 @@ export async function readSession(): Promise<SessionState> {
  * Route Handler, which clears the cookie and then lands on sign-in with the same
  * `reason=expired` this function would have sent directly.
  *
+ * The page being refused travels with every redirect except `forbidden`, as the
+ * intended path sign-in may return to (`intended-path.ts`).
+ *
  * The other three go straight to sign-in with their cookie untouched, and each
  * for its own reason: `signed-out` has no cookie to clear, `unavailable` means
  * the backend could not answer and destroying a good session over a hiccup would
@@ -118,7 +122,11 @@ export async function readSession(): Promise<SessionState> {
 export async function requireSession(locale: Locale): Promise<SessionSummary> {
   const state = await readSession();
   if (state.ok) return state.session;
-  if (state.problem === 'expired') redirect(`/${locale}/${SESSION_ENDED_SEGMENT}`);
+  // The page being refused, so sign-in can return the operator to it
+  // (P1-32-PRE-OD-AUTHB). Read only on the way out — a rendered page never
+  // needs it — and re-checked wherever it travels next.
+  const intended = await requestedPath();
+  if (state.problem === 'expired') redirect(sessionEndedPath(locale, intended));
   // A forbidden workspace session may belong to the platform operator, who holds
   // no tenant role by construction. When the platform session answers, the
   // operator is routed to the console rather than stranded on sign-in
@@ -127,10 +135,13 @@ export async function requireSession(locale: Locale): Promise<SessionSummary> {
   if (state.problem === 'forbidden') {
     const platform = await readPlatformSession();
     if (platform.ok) redirect(`/${locale}/platform`);
+    // No intended page: signing in again as the same account opens nothing,
+    // so there is nothing to return to.
+    redirect(signInPath(locale, state.problem));
   }
   // The reason is a fixed enum, not free text and not an identifier. It changes
   // which sentence the sign-in page shows; it names no user and no record.
-  redirect(`/${locale}/login?reason=${state.problem}`);
+  redirect(signInPath(locale, state.problem, intended));
 }
 
 /**

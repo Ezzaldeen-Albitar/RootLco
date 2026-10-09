@@ -1,4 +1,5 @@
 import { notFound, redirect } from 'next/navigation';
+import { INTENDED_PATH_PARAM, signInPath } from '@/features/authentication/api/intended-path';
 import { mayEndSession } from '@/features/authentication/api/session-ended';
 import { isLocale } from '@/i18n/config';
 import { clearSession } from '@/lib/api/session-cookie';
@@ -19,6 +20,13 @@ import { clearSession } from '@/lib/api/session-cookie';
  * validated locale and a literal. A handler that clears a credential and then
  * forwards wherever the query string says is an open redirect on the
  * authentication flow, which `check-p1-26-frontend.mjs` forbids by name.
+ *
+ * What it does carry is the page the operator was opening (P1-32-PRE-OD-AUTHB),
+ * and only as a parameter of the sign-in address — this handler never goes
+ * there. `signInPath` re-checks it against the application-path allow-list
+ * (`intended-path.ts`); anything else is dropped and the operator lands on the
+ * same `?reason=expired` as before. Sign-in follows it only after the new
+ * session proves it may open the page.
  */
 export async function GET(
   request: Request,
@@ -31,5 +39,6 @@ export async function GET(
     await clearSession();
   }
 
-  redirect(`/${locale}/login?reason=expired`);
+  const intended = new URL(request.url).searchParams.get(INTENDED_PATH_PARAM);
+  redirect(signInPath(locale, 'expired', intended));
 }

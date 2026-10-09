@@ -1,13 +1,14 @@
 'use client';
 
 import Link from 'next/link';
-import { useActionState, useState } from 'react';
+import { useActionState, useEffect, useRef, useState } from 'react';
 import { PasswordField, TextField } from '@/components/forms/Field';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { loginAction } from '../actions/login';
+import { INTENDED_PATH_PARAM } from '../api/intended-path';
 import { FormFeedback } from './FormFeedback';
 import { SubmitButton } from './SubmitButton';
 
@@ -32,9 +33,16 @@ import { SubmitButton } from './SubmitButton';
 export function LoginForm({
   locale,
   messages,
+  intendedPath = null,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
+  /**
+   * The page sign-in was asked for on the way to, already checked by the page
+   * against the application-path allow-list. The action checks it again and
+   * follows it only when the new session may open it (P1-32-PRE-OD-AUTHB).
+   */
+  readonly intendedPath?: string | null;
 }) {
   /*
    * Retained across a refused submit. React resets the form DOM once the
@@ -42,14 +50,41 @@ export function LoginForm({
    */
   const [email, setEmail] = useState('');
   const [state, formAction] = useActionState<ActionState, FormData>(loginAction, IDLE);
+  /*
+   * One sign-in per press (P1-32-PRE-OD-AUTHB). The button disables itself
+   * while the action runs, but a second press that lands before React has
+   * re-rendered it is QUEUED by `useActionState` and sent after the first
+   * answer — a second sign-in, a second session, a second cookie. The form
+   * refuses the submit itself while one is outstanding, and lets the next one
+   * through once the action has answered (every answer is a new state object;
+   * a successful sign-in navigates away instead).
+   */
+  const submitting = useRef(false);
+  useEffect(() => {
+    submitting.current = false;
+  }, [state]);
   const fieldError = (name: string) => {
     const key = state.fieldErrors?.[name];
     return key ? translate(messages, key as keyof Messages) : undefined;
   };
 
   return (
-    <form action={formAction} className="flex flex-col gap-5" noValidate>
+    <form
+      action={formAction}
+      onSubmit={(event) => {
+        if (submitting.current) {
+          event.preventDefault();
+          return;
+        }
+        submitting.current = true;
+      }}
+      className="flex flex-col gap-5"
+      noValidate
+    >
       <input type="hidden" name="locale" value={locale} />
+      {intendedPath ? (
+        <input type="hidden" name={INTENDED_PATH_PARAM} value={intendedPath} />
+      ) : null}
 
       <FormFeedback state={state} messages={messages} />
 

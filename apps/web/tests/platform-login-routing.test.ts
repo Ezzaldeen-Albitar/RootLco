@@ -24,9 +24,15 @@ import { SESSION_ENDED_SEGMENT } from '@/features/authentication/api/session-end
 const jar = vi.hoisted(() => ({
   token: 'issued.session.token' as string | null,
   set: [] as string[],
+  /** What `src/proxy.ts` recorded as the path being served; null = no header. */
+  requestedPath: null as string | null,
 }));
 
 vi.mock('next/headers', () => ({
+  headers: async () =>
+    new Headers(
+      jar.requestedPath === null ? {} : { 'x-rootlco-requested-path': jar.requestedPath }
+    ),
   cookies: async () => ({
     get: (name: string) => (jar.token === null ? undefined : { name, value: jar.token }),
     set: (name: string) => {
@@ -151,6 +157,7 @@ function credentials(locale = 'en'): FormData {
 beforeEach(() => {
   jar.token = 'issued.session.token';
   jar.set = [];
+  jar.requestedPath = null;
 });
 
 afterEach(() => {
@@ -464,5 +471,154 @@ describe('where a signed-in tenant session lands', () => {
       // Either nothing, or an entry that very code opens.
       expect(route === null || route.permission === code, code).toBe(true);
     }
+  });
+});
+
+/**
+ * P1-32-PRE-OD-AUTHB — sign-in returns the operator to the page they were
+ * opening, but only a safe application path the NEW session may open.
+ *
+ * The intended path arrives in the sign-in form. It is checked for its shape in
+ * the action and again, with the session's own permissions, in
+ * `destinationAfterSignIn`; anything that fails either is ignored and the
+ * operator lands exactly where the cases above say.
+ */
+describe('sign-in returns to the intended page', () => {
+  function withIntended(intended: string, locale = 'en'): FormData {
+    const form = credentials(locale);
+    form.set('intended', intended);
+    return form;
+  }
+
+  it('returns a tenant operator to a page their session opens', async () => {
+    backend({ tenant: 200, platform: 403 });
+    const target = await redirectTarget(() =>
+      loginAction({ status: 'idle' }, withIntended('/en/work-orders/abc'))
+    );
+    expect(target).toBe('/en/work-orders/abc');
+    expect(calls).not.toContain('/api/v1/platform/session');
+  });
+
+  it('returns an Arabic operator to the Arabic page', async () => {
+    backend({ tenant: 200, platform: 403 });
+    const target = await redirectTarget(() =>
+      loginAction({ status: 'idle' }, withIntended('/ar/work-orders', 'ar'))
+    );
+    expect(target).toBe('/ar/work-orders');
+  });
+
+  it('keeps the language the operator signed in with', async () => {
+    // The page was opened in Arabic; the operator then signed in on the English
+    // form. The page is kept and the language they chose last wins.
+    backend({ tenant: 200, platform: 403 });
+    const target = await redirectTarget(() =>
+      loginAction({ status: 'idle' }, withIntended('/ar/work-orders', 'en'))
+    );
+    expect(target).toBe('/en/work-orders');
+  });
+
+  it('lands as before when the session may not open the intended page', async () => {
+    // TENANT_SESSION holds `iam.user.read` and `wo.work_order.read`; invoices
+    // need a code it does not hold.
+    backend({ tenant: 200, platform: 403 });
+    const target = await redirectTarget(() =>
+      loginAction({ status: 'idle' }, withIntended('/en/invoices'))
+    );
+    expect(target).toBe('/en');
+  });
+
+  it.each([
+    ['an absolute address', 'https://evil.example/en/work-orders'],
+    ['a protocol-relative address', '//evil.example/en/work-orders'],
+    ['a backslash address', '/\\evil.example'],
+    ['an encoded slash', '/en/%2F%2Fevil.example'],
+    ['an encoded scheme', '/en/javascript%3Aalert(1)'],
+    ['a scheme', 'javascript:alert(1)'],
+    ['the session-ended handler, which would clear the new session', '/en/session-ended'],
+    ['the sign-in page', '/en/login'],
+  ])('ignores %s and lands as before', async (_label, intended) => {
+    backend({ tenant: 200, platform: 403 });
+    const target = await redirectTarget(() =>
+      loginAction({ status: 'idle' }, withIntended(intended))
+    );
+    expect(target).toBe('/en');
+    // Signed in all the same: one session cookie written.
+    expect(jar.set.length).toBe(1);
+  });
+
+  it('never sends a tenant operator to a console page', async () => {
+    backend({ tenant: 200, platform: 403 });
+    const target = await redirectTarget(() =>
+      loginAction({ status: 'idle' }, withIntended('/en/platform/organizations'))
+    );
+    expect(target).toBe('/en');
+  });
+
+  it('returns the platform operator to the console page they were opening', async () => {
+    backend({ tenant: 200, platform: 200, tenantBody: { ...TENANT_SESSION, permissions: [] } });
+    const target = await redirectTarget(() =>
+      loginAction({ status: 'idle' }, withIntended('/ar/platform/organizations', 'ar'))
+    );
+    expect(target).toBe('/ar/platform/organizations');
+  });
+
+  it('sends the platform operator to the console overview for a page it may not open', async () => {
+    // PLATFORM_SESSION holds no `platform.subscription.manage`.
+    backend({ tenant: 403, platform: 200 });
+    const target = await redirectTarget(() =>
+      loginAction({ status: 'idle' }, withIntended('/en/platform/plans'))
+    );
+    expect(target).toBe('/en/platform');
+  });
+
+  it('never sends the platform operator to a workspace page', async () => {
+    backend({ tenant: 403, platform: 200 });
+    const target = await redirectTarget(() =>
+      loginAction({ status: 'idle' }, withIntended('/en/work-orders'))
+    );
+    expect(target).toBe('/en/platform');
+  });
+
+  it('follows nothing when the credentials are refused', async () => {
+    backend({ login: 401, tenant: 200, platform: 200 });
+    const state = await loginAction({ status: 'idle' }, withIntended('/en/work-orders'));
+    expect(state.status).toBe('error');
+    expect(calls).toEqual(['/api/v1/auth/login']);
+  });
+
+  it('re-checks a value handed to destinationAfterSignIn directly', async () => {
+    backend({ tenant: 200, platform: 403 });
+    const client = new ApiClient({
+      baseUrl: 'http://127.0.0.1:3000',
+      defaultHeaders: { authorization: 'Bearer issued.session.token' },
+    });
+    expect(await destinationAfterSignIn(client, 'en', '//evil.example')).toBe('/en');
+    expect(await destinationAfterSignIn(client, 'en', '/en/work-orders')).toBe('/en/work-orders');
+  });
+});
+
+describe('the console sends its refused page to sign-in with it', () => {
+  it('carries the console page for a visitor with no cookie', async () => {
+    jar.token = null;
+    jar.requestedPath = '/en/platform/organizations';
+    expect(await redirectTarget(() => requirePlatformSession('en'))).toBe(
+      '/en/login?reason=signed-out&intended=%2Fen%2Fplatform%2Forganizations'
+    );
+  });
+
+  it('carries the console page through the session-ended route for an expired token', async () => {
+    backend({ tenant: 401, platform: 401 });
+    jar.requestedPath = '/ar/platform/audit';
+    expect(await redirectTarget(() => requirePlatformSession('ar'))).toBe(
+      `/ar/${SESSION_ENDED_SEGMENT}?intended=%2Far%2Fplatform%2Faudit`
+    );
+  });
+
+  it('carries nothing for a refused session', async () => {
+    backend({ tenant: 200, platform: 403 });
+    jar.requestedPath = '/en/platform/organizations';
+    expect(await redirectTarget(() => requirePlatformSession('en'))).toBe(
+      '/en/login?reason=forbidden'
+    );
   });
 });
