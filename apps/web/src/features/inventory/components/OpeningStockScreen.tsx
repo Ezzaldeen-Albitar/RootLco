@@ -659,15 +659,19 @@ function BatchForm({
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   /*
-   * A count date only partly typed holds no day — its value stays `''`, as for
-   * a field nobody touched — so the picker's own report is kept: it is refused
-   * as a date, not as a missing one, and it is unsaved work.
+   * A count date only partly typed, or typed whole but impossible (31/02),
+   * holds no day — its value stays `''`, as for a field nobody touched — so
+   * the picker's own report is kept: it is refused as an unfinished or an
+   * impossible date, never as a missing one, and it is unsaved work
+   * (P1-32-PRE-OD-INVR).
    */
-  const [dateUnfinished, setDateUnfinished] = useState(false);
+  const [dateProblem, setDateProblem] = useState<DayProblem>(null);
   // One batch opened at a time, before `busy` has disabled the button.
   const sending = useRef(false);
   // The batch is addressed to THIS branch, so a switch asks before dropping it.
-  useUnsavedGuard(dateUnfinished || Object.values(form).some((value) => value.trim().length > 0));
+  useUnsavedGuard(
+    dateProblem !== null || Object.values(form).some((value) => value.trim().length > 0)
+  );
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -681,9 +685,10 @@ function BatchForm({
     else if (!LOCATION_CODE.test(batchCode))
       found['batchCode'] = 'inventory.opening.batch.codeFormat';
     const asOfDate = form.asOfDate.trim();
-    if (dateUnfinished || (asOfDate.length > 0 && !ISO_DATE.test(asOfDate))) {
+    if (dateProblem === 'incomplete' || (asOfDate.length > 0 && !ISO_DATE.test(asOfDate))) {
       found['asOfDate'] = 'inventory.opening.batch.dateFormat';
-    } else if (asOfDate.length === 0) found['asOfDate'] = 'field.required';
+    } else if (dateProblem !== null) found['asOfDate'] = 'inventory.opening.batch.dateInvalid';
+    else if (asOfDate.length === 0) found['asOfDate'] = 'field.required';
     const notes = form.notes.trim();
     if (notes.length > MAX_DESCRIPTION) found['notes'] = 'inventory.setup.descriptionTooLong';
     setErrors(found);
@@ -741,7 +746,7 @@ function BatchForm({
         required
         value={form.asOfDate}
         onChange={(next) => setForm((f) => ({ ...f, asOfDate: next }))}
-        onProblem={(problem: DayProblem) => setDateUnfinished(problem === 'incomplete')}
+        onProblem={setDateProblem}
         error={errorFor('asOfDate')}
       />
       <FormTextField

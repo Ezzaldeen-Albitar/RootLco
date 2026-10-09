@@ -8,6 +8,8 @@
  *
  *  - the chain is the item's real ancestry, walked in the database, top level
  *    first and the item's own category last;
+ *  - a soft-deleted ancestor does not cut the chain short: the walk follows the
+ *    parent link through it (P1-32-PRE-OD-INVR);
  *  - an archived item is answered and says so;
  *  - no cost and no price field is on the wire;
  *  - an unknown id, and an item of another tenant, are both 404 and read alike;
@@ -47,6 +49,13 @@ let admin: Pool;
 const CATEGORY_CHILD = 'e1000000-0000-4000-8000-00000000d211';
 const ITEM_NESTED = 'e1000000-0000-4000-8000-00000000d2a1';
 const UNKNOWN_ITEM = 'e1000000-0000-4000-8000-00000000d2ff';
+/**
+ * A three-step chain whose MIDDLE step is soft-deleted: `CATEGORY_A` >
+ * `CATEGORY_RETIRED` (deleted) > `CATEGORY_LEAF`, and an item filed under the leaf.
+ */
+const CATEGORY_RETIRED = 'e1000000-0000-4000-8000-00000000d212';
+const CATEGORY_LEAF = 'e1000000-0000-4000-8000-00000000d213';
+const ITEM_UNDER_RETIRED = 'e1000000-0000-4000-8000-00000000d2a2';
 
 const read = (itemId: string) =>
   ITEM_DETAIL(new Request(`http://localhost/api/v1/items/${itemId}`, { method: 'GET' }), {
@@ -93,6 +102,25 @@ beforeAll(async () => {
        ON CONFLICT (id) DO NOTHING`,
       [ITEM_NESTED, TENANT_A, CATEGORY_CHILD, UOM_EACH, USER_A]
     );
+    await client.query(
+      `INSERT INTO inv.item_categories
+         (id, tenant_id, parent_category_id, code, name, created_by, deleted_at, deleted_by)
+       VALUES ($1,$2,$3,'fx_od_invr_retired','Retired shelf',$4,now(),$4)
+       ON CONFLICT (id) DO NOTHING`,
+      [CATEGORY_RETIRED, TENANT_A, CATEGORY_A, USER_A]
+    );
+    await client.query(
+      `INSERT INTO inv.item_categories (id, tenant_id, parent_category_id, code, name, created_by)
+       VALUES ($1,$2,$3,'fx_od_invr_leaf','Leaf shelf',$4) ON CONFLICT (id) DO NOTHING`,
+      [CATEGORY_LEAF, TENANT_A, CATEGORY_RETIRED, USER_A]
+    );
+    await client.query(
+      `INSERT INTO inv.item_master
+         (id, tenant_id, item_category_id, sku, name, uom_id, created_by)
+       VALUES ($1,$2,$3,'FX-ODINVR-LEAF','Fixture leaf part',$4,$5)
+       ON CONFLICT (id) DO NOTHING`,
+      [ITEM_UNDER_RETIRED, TENANT_A, CATEGORY_LEAF, UOM_EACH, USER_A]
+    );
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK');
@@ -104,8 +132,13 @@ beforeAll(async () => {
 
 afterAll(async () => {
   // Newest dependency first: the item cites the child category, which cites its parent.
-  await admin.query(`DELETE FROM inv.item_master WHERE id = $1`, [ITEM_NESTED]);
-  await admin.query(`DELETE FROM inv.item_categories WHERE id = $1`, [CATEGORY_CHILD]);
+  await admin.query(`DELETE FROM inv.item_master WHERE id = ANY($1::uuid[])`, [
+    [ITEM_NESTED, ITEM_UNDER_RETIRED],
+  ]);
+  await admin.query(`DELETE FROM inv.item_categories WHERE id = ANY($1::uuid[])`, [
+    [CATEGORY_CHILD, CATEGORY_LEAF],
+  ]);
+  await admin.query(`DELETE FROM inv.item_categories WHERE id = $1`, [CATEGORY_RETIRED]);
   await cleanP1_21Fixtures();
   await cleanBackendFixtures(admin);
   await admin.end();
@@ -134,6 +167,19 @@ describe('inv.item-detail', () => {
     authAs(INV_READER);
     const item = await bodyOf<DetailBody>(await read(ITEM_A));
     expect(item.categoryPath.map((step) => step.id)).toEqual([CATEGORY_A]);
+  });
+
+  it('walks through a soft-deleted ancestor rather than cutting the chain short', async () => {
+    authAs(INV_READER);
+    const response = await read(ITEM_UNDER_RETIRED);
+    expect(response.status).toBe(200);
+    const item = await bodyOf<DetailBody>(response);
+    expect(item.itemCategoryId).toBe(CATEGORY_LEAF);
+    expect(item.categoryPath).toEqual([
+      { id: CATEGORY_A, code: 'fx_p1_21_parts', name: 'P1-21 parts' },
+      { id: CATEGORY_RETIRED, code: 'fx_od_invr_retired', name: 'Retired shelf' },
+      { id: CATEGORY_LEAF, code: 'fx_od_invr_leaf', name: 'Leaf shelf' },
+    ]);
   });
 
   it('answers an archived item and says it is archived', async () => {
