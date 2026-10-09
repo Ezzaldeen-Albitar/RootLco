@@ -2484,6 +2484,7 @@
   "inventory.opening.batch.codeFormat": "Letters, digits, hyphens and underscores only, starting with a letter or digit.",
   "inventory.opening.batch.codeHelp": "Letters, digits, hyphens and underscores; up to 63 characters.",
   "inventory.opening.batch.dateFormat": "Enter a date as year, month and day.",
+  "inventory.opening.batch.dateInvalid": "This date is not on the calendar. Check the day and the month.",
   "inventory.opening.batch.explain": "One batch per count. The code is the organisation's own and is unique in the branch.",
   "inventory.opening.batch.heading": "Open batch",
   "inventory.opening.batch.id": "Batch id",

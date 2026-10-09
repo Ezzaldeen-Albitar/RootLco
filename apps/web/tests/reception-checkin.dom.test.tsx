@@ -12,6 +12,7 @@ import {
 } from './support/branch-switch';
 import type { CheckInStepProps } from '@/features/receptions/check-in/wizard';
 import type { ReceptionDetail } from '@/features/receptions/receptions-contract';
+import { formatDateTime } from '@/lib/format';
 
 /**
  * The check-in wizard, rendered (`P1-28-FE-007`/`FE-008`/`FE-009`).
@@ -2378,4 +2379,49 @@ describe('a visit cannot be recorded against "all my branches"', () => {
       EN['workingContext.needsOneBranch'] as string
     );
   });
+});
+
+/*
+ * P1-32-PRE-OD-INVR (records the INV1C change): a zone NAME this browser does
+ * not recognise is no clock. `workingZone` refuses it exactly as a missing
+ * zone, so the appointments on offer are labelled with the time as the browser
+ * writes it — never on the unknown name, which no formatter can read — and the
+ * row is still drawn and can be chosen, in both languages.
+ */
+describe('an appointment time on a branch zone the browser does not recognise', () => {
+  const UNKNOWN_ZONE = branchSnapshot([{ ...CHECKIN_BRANCH, timezone: 'Mars/Base' }]);
+
+  it.each([
+    ['en', EN],
+    ['ar', AR],
+  ] as const)(
+    'labels the time without the unknown zone, and offers the row (%s)',
+    async (locale, T) => {
+      const user = userEvent.setup();
+      const render = locale === 'ar' ? renderRtl : renderLtr;
+      render(
+        inBranch(
+          <CheckInStartScreen
+            {...startProps({ locale, messages: (locale === 'ar' ? ar : en) as typeof en })}
+          />,
+          { snapshot: UNKNOWN_ZONE, locale }
+        )
+      );
+      await user.click(
+        screen.getByRole('radio', { name: new RegExp(`^${T['receptions.origin.appointment']!}`) })
+      );
+      await user.click(
+        screen.getByRole('button', { name: T['receptions.checkIn.loadAppointments']! })
+      );
+      const grid = await screen.findByTestId('check-in-appointments');
+      const when = formatDateTime(APPOINTMENT_ROW.confirmedFrom, locale);
+      const label = `A-0001 · Layla Haddad · V-9 · ${when}`;
+      // The row's text and the Choose button's name both carry it.
+      expect((await within(grid).findAllByText(label)).length).toBeGreaterThan(0);
+      expect(grid.textContent).not.toContain('Mars');
+      expect(
+        within(grid).getByRole('button', { name: named(T['receptions.checkIn.choose']!) })
+      ).toBeEnabled();
+    }
+  );
 });
