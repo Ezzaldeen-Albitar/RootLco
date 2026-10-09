@@ -12,7 +12,7 @@ import {
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
-import { DateTimeField, type MomentProblem } from '@/components/forms/mui/DateField';
+import type { MomentProblem } from '@/components/forms/mui/DateField';
 import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
 import { FormNumberField } from '@/components/forms/mui/FormNumberField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
@@ -65,7 +65,7 @@ import {
 } from './shared';
 import { ItemPicker, REFERENCE, ReferenceBox, withoutKey, type ItemChoice } from './pickers';
 import { StockAlertIndicator } from './StockAlertIndicator';
-import { BranchTargetForm, LINK, useStockTargetZone } from './stock-operations';
+import { BranchTargetForm, LINK, StockMomentField, useStockTargetZone } from './stock-operations';
 
 /**
  * Inventory (P1-30, `W4`): item search (FE-008), stock balance (FE-009) and
@@ -1158,8 +1158,9 @@ function ReserveForm({
    * The expiry is a business moment, so it is typed and sent on the BRANCH's
    * clock — the zone of the branch the reservation is made in — never the
    * laptop's (`P1-32-PRE-OD-INV1B`, Owner decision D-17). With no known zone
-   * the field says so and draws no picker. A moment only partly typed is
-   * reported by the picker (`'incomplete'`) and refused below.
+   * — none set, or one this browser does not recognise — the field says so and
+   * draws no picker on any other clock (`P1-32-PRE-OD-INV1C`). A moment only
+   * partly typed is reported by the picker (`'incomplete'`) and refused below.
    */
   const zone = useStockTargetZone(target);
   const [expiryProblem, setExpiryProblem] = useState<MomentProblem>(null);
@@ -1299,11 +1300,11 @@ function ReserveForm({
           />
         )}
       </div>
-      <DateTimeField
+      <StockMomentField
         messages={messages}
         label={translate(messages, 'inventory.reserve.expiresAt')}
         description={translate(messages, 'inventory.reserve.expiresAtHelp')}
-        timezone={zone}
+        zone={zone}
         value={form.expiresAt}
         onChange={(next) => setForm((f) => ({ ...f, expiresAt: next }))}
         onProblem={setExpiryProblem}
