@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
@@ -1723,8 +1723,13 @@ describe('the counter on Material UI (INV6)', () => {
           name: `${catalogue['inventory.counterSales.draft.remove'] as string} BRK-001`,
         })
       ).toBeVisible();
-      fireEvent.click(draft);
-      fireEvent.click(draft);
+      // Both presses inside ONE act(), so the second arrives before React has
+      // re-rendered the disabled button: the screen's own hold is what is tested
+      // (P1-32-PRE-OD-INVR).
+      act(() => {
+        draft.click();
+        draft.click();
+      });
       expect(createCounterSale).toHaveBeenCalledTimes(1);
       expect(draft).toBeDisabled();
       answer(succeeded('invoices.counterSale.create.success', drafted()));
@@ -1752,8 +1757,13 @@ describe('the counter on Material UI (INV6)', () => {
     const voidIt = screen.getByRole('button', {
       name: EN['inventory.counterSales.void.action'] as string,
     });
-    fireEvent.click(issue);
-    fireEvent.click(issue);
+    // Both presses inside ONE act(), so the second arrives before React has
+    // re-rendered the disabled button: the screen's own hold is what is tested
+    // (P1-32-PRE-OD-INVR).
+    act(() => {
+      issue.click();
+      issue.click();
+    });
     expect(issueInvoice).toHaveBeenCalledTimes(1);
     expect(issue).toBeDisabled();
     expect(voidIt).toBeDisabled();
@@ -1791,8 +1801,13 @@ describe('the counter on Material UI (INV6)', () => {
     expect(reason).toHaveAccessibleDescription(new RegExp(escape(EN['field.required'] as string)));
     expect(cancelInvoice).not.toHaveBeenCalled();
     await user.type(reason, 'Customer changed their mind');
-    fireEvent.click(voidIt);
-    fireEvent.click(voidIt);
+    // Both presses inside ONE act(), so the second arrives before React has
+    // re-rendered the disabled button: the screen's own hold is what is tested
+    // (P1-32-PRE-OD-INVR).
+    act(() => {
+      voidIt.click();
+      voidIt.click();
+    });
     expect(cancelInvoice).toHaveBeenCalledTimes(1);
     expect(voidIt).toBeDisabled();
     answer(

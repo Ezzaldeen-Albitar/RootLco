@@ -40,7 +40,7 @@
  * sent, refused and authorized is unchanged.
  */
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Button from '@mui/material/Button';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
@@ -57,7 +57,6 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 
 import {
@@ -87,10 +86,13 @@ import {
   BranchTargetForm,
   ItemFinder,
   PANEL,
+  StockMoment,
   StockOperationLinks,
   isQuantity,
   outcomeField,
   useBranchList,
+  useFocusOnOpen,
+  useStockDisplayZone,
 } from './stock-operations';
 
 const readOutbound = (target: StockTarget) => listTransfers(target, 'outbound');
@@ -193,9 +195,43 @@ function BranchTransfers({
     'inventory.transfers.writeOffs.unavailable'
   );
   const locations = useLocations(target);
+  // Each moment is written on the branch's clock, named (`P1-32-PRE-OD-INV5`).
+  const zone = useStockDisplayZone(target);
   const [action, setAction] = useState<RowAction | null>(null);
   const [deciding, setDeciding] = useState<TransferSettlement | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  /*
+   * The row action that opened the inline form, and the heading of the list it
+   * sits in. A form takes the cursor when it opens (its heading,
+   * `useFocusOnOpen`); when it closes, the cursor goes back to the row action
+   * that opened it — or, where that row action is gone (the transfer was
+   * received in full, cancelled, or the write-off decided), to its list's
+   * heading — unless the operator has already put it somewhere else
+   * (P1-32-PRE-OD-INVR).
+   */
+  const listHeading = useRef<HTMLHeadingElement | null>(null);
+  const writeOffsHeading = useRef<HTMLHeadingElement | null>(null);
+  const opener = useRef<{
+    readonly button: HTMLElement;
+    readonly heading: HTMLHeadingElement | null;
+  } | null>(null);
+  const formOpen = action !== null || deciding !== null;
+  const wasOpen = useRef(formOpen);
+  useEffect(() => {
+    if (wasOpen.current && !formOpen) {
+      const now = document.activeElement;
+      const back = opener.current;
+      if (back !== null && (now === null || now === document.body)) {
+        if (back.button.isConnected) back.button.focus();
+        else back.heading?.focus();
+      }
+    }
+    wasOpen.current = formOpen;
+  }, [formOpen]);
+  const openRow = (button: HTMLElement, next: RowAction) => {
+    opener.current = { button, heading: listHeading.current };
+    setAction(next);
+  };
 
   const done = (next: Notice) => {
     setNotice(next);
@@ -227,7 +263,12 @@ function BranchTransfers({
       ) : null}
 
       <section aria-labelledby="transfers-list-heading" className={PANEL}>
-        <h2 id="transfers-list-heading" className="text-body font-medium text-text-primary">
+        <h2
+          ref={listHeading}
+          tabIndex={-1}
+          id="transfers-list-heading"
+          className="text-body font-medium text-text-primary"
+        >
           {translate(messages, 'inventory.transfers.list.heading')}
         </h2>
         <FormRadioGroupField
@@ -299,8 +340,8 @@ function BranchTransfers({
                           <code className="font-mono text-caption" dir="ltr">
                             {row.sku}
                           </code>
-                          <span className="block text-caption text-text-muted" dir="ltr">
-                            {formatDateTime(row.dispatchedAt, locale)}
+                          <span className="block text-caption text-text-muted">
+                            <StockMoment value={row.dispatchedAt} locale={locale} zone={zone} />
                           </span>
                         </TableCell>
                         <TableCell>
@@ -350,7 +391,9 @@ function BranchTransfers({
                                   type="button"
                                   variant="outlined"
                                   size="small"
-                                  onClick={() => setAction({ kind: 'receive', row })}
+                                  onClick={(event) =>
+                                    openRow(event.currentTarget, { kind: 'receive', row })
+                                  }
                                 >
                                   {translate(messages, 'inventory.transfers.receive.action')}
                                   <span className="sr-only"> {row.sku}</span>
@@ -359,7 +402,9 @@ function BranchTransfers({
                                   type="button"
                                   variant="outlined"
                                   size="small"
-                                  onClick={() => setAction({ kind: 'resolve', row })}
+                                  onClick={(event) =>
+                                    openRow(event.currentTarget, { kind: 'resolve', row })
+                                  }
                                 >
                                   {translate(messages, 'inventory.transfers.resolve.action')}
                                   <span className="sr-only"> {row.sku}</span>
@@ -370,7 +415,9 @@ function BranchTransfers({
                                     variant="outlined"
                                     color="error"
                                     size="small"
-                                    onClick={() => setAction({ kind: 'cancel', row })}
+                                    onClick={(event) =>
+                                      openRow(event.currentTarget, { kind: 'cancel', row })
+                                    }
                                   >
                                     {translate(messages, 'inventory.transfers.cancel.action')}
                                     <span className="sr-only"> {row.sku}</span>
@@ -395,7 +442,12 @@ function BranchTransfers({
       </section>
 
       <section aria-labelledby="transfer-write-offs-heading" className={PANEL}>
-        <h2 id="transfer-write-offs-heading" className="text-body font-medium text-text-primary">
+        <h2
+          ref={writeOffsHeading}
+          tabIndex={-1}
+          id="transfer-write-offs-heading"
+          className="text-body font-medium text-text-primary"
+        >
           {translate(messages, 'inventory.transfers.writeOffs.heading')}
         </h2>
         <p className="text-caption text-text-muted">
@@ -446,8 +498,8 @@ function BranchTransfers({
                         </TableCell>
                         <TableCell>
                           {row.reason}
-                          <span className="block text-caption text-text-muted" dir="ltr">
-                            {formatDateTime(row.createdAt, locale)}
+                          <span className="block text-caption text-text-muted">
+                            <StockMoment value={row.createdAt} locale={locale} zone={zone} />
                           </span>
                           {own ? (
                             <span className="block text-caption text-text-muted">
@@ -469,7 +521,11 @@ function BranchTransfers({
                               type="button"
                               variant="outlined"
                               size="small"
-                              onClick={() => {
+                              onClick={(event) => {
+                                opener.current = {
+                                  button: event.currentTarget,
+                                  heading: writeOffsHeading.current,
+                                };
                                 setAction(null);
                                 setDeciding(row);
                               }}
@@ -555,6 +611,8 @@ function WriteOffDecisionForm({
   const [reason, setReason] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Opening the form moves the cursor into it, onto its name.
+  const headingRef = useFocusOnOpen<HTMLHeadingElement>();
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   // Unsaved work, declared to the shell: a branch switch asks before it closes this.
   useUnsavedGuard(reason.trim().length > 0);
@@ -599,6 +657,8 @@ function WriteOffDecisionForm({
       className={PANEL}
     >
       <h2
+        ref={headingRef}
+        tabIndex={-1}
         id="transfer-write-off-decide-heading"
         className="text-body font-medium text-text-primary"
       >
@@ -661,9 +721,16 @@ function TransferHeading({
   readonly headingKey: string;
   readonly transfer: StockTransfer;
 }) {
+  // Opening the form moves the cursor into it, onto its name.
+  const headingRef = useFocusOnOpen<HTMLHeadingElement>();
   return (
     <>
-      <h2 id={id} className="text-body font-medium text-text-primary">
+      <h2
+        ref={headingRef}
+        tabIndex={-1}
+        id={id}
+        className="text-body font-medium text-text-primary"
+      >
         {translateDynamic(messages, headingKey)}{' '}
         <code className="font-mono" dir="ltr">
           {transfer.sku}

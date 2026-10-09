@@ -86,7 +86,6 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
-import { formatDateTime } from '@/lib/format';
 import { compareMoney, formatMoney } from '@/lib/money';
 
 import { createSalesReturn, listSalesReturns, readReturnable } from '../api';
@@ -107,10 +106,13 @@ import {
   BranchTargetForm,
   LINK,
   PANEL,
+  StockMoment,
   StockOperationLinks,
   isQuantity,
+  momentText,
   outcomeField,
   useBranchList,
+  useStockDisplayZone,
 } from './stock-operations';
 import { IssuedPartPicker, REFERENCE } from './pickers';
 
@@ -177,6 +179,8 @@ function BranchReturns({
   );
   const locations = useLocations(target);
   const [notice, setNotice] = useState<string | null>(null);
+  // Each return's moment is written on the branch's clock, never the browser's.
+  const zone = useStockDisplayZone(target);
 
   return (
     <>
@@ -244,8 +248,8 @@ function BranchReturns({
                         <code className="font-mono text-caption" dir="ltr">
                           {row.sku}
                         </code>
-                        <span className="block text-caption text-text-muted" dir="ltr">
-                          {formatDateTime(row.createdAt, locale)}
+                        <span className="block text-caption text-text-muted">
+                          <StockMoment value={row.createdAt} locale={locale} zone={zone} />
                         </span>
                       </TableCell>
                       <TableCell align="right">
@@ -840,6 +844,8 @@ function SalePicker({
 
   const companyId = target.companyId;
   const branchId = target.branchId;
+  // A sale's issue moment is written on the branch's clock, never the browser's.
+  const zone = useStockDisplayZone(target);
 
   useEffect(() => {
     let live = true;
@@ -940,7 +946,7 @@ function SalePicker({
             value: sale.id,
             label: [
               sale.invoiceNumber ?? translate(messages, 'inventory.returns.sale.noNumber'),
-              sale.issuedAt === null ? null : formatDateTime(sale.issuedAt, locale),
+              sale.issuedAt === null ? null : momentText(sale.issuedAt, locale, zone),
               sale.totals === null ? null : formatMoney(sale.totals.gross, locale),
             ]
               .filter((part) => part !== null)

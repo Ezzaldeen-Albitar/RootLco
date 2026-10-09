@@ -37,6 +37,8 @@ import {
   LOCATION_ID,
   OTHER_LOCATION_ID,
   branch,
+  FAR_ZONE,
+  expectOnClock,
   labelled,
   okRead,
   seriousViolations,
@@ -2195,4 +2197,32 @@ describe('the dashboard page lands a reader somewhere they can work', () => {
     expect(elsewhere).not.toBe('/en');
     expect(elsewhere).not.toBe('/en/gallery');
   });
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — the compact signal's freshness stamp is written on the
+ * clock of the branch the inventory screen is addressed to, named, never on the
+ * browser's (the branch keeps a clock no test environment keeps).
+ */
+describe('the compact signal states its instant on the branch\u2019s clock (P1-32-PRE-OD-INV5)', () => {
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes the instant the signals were read on the branch's clock with its name (${locale})`, async () => {
+      readLowStockAlerts.mockResolvedValue(lowStock([lowStockRow()]));
+      readCountDiscrepancyAlerts.mockResolvedValue(discrepancies([]));
+      const render = locale === 'en' ? renderLtr : renderRtl;
+      render(
+        inBranch(
+          <StockAlertIndicator
+            messages={messagesFor(locale)}
+            locale={locale}
+            target={{ companyId: COMPANY_ID, branchId: BRANCH_ID }}
+          />,
+          { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+        )
+      );
+      const indicator = await screen.findByTestId('stock-alert-indicator');
+      await waitFor(() => expect(indicator.textContent ?? '').toContain('2026'));
+      expectOnClock(indicator, AS_OF, locale);
+    });
+  }
 });
