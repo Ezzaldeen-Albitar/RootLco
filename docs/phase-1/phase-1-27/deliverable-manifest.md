@@ -999,7 +999,7 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
 <!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 42 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 32 -->
-<!-- derived: tracked docs/product = 18 -->
+<!-- derived: tracked docs/product = 19 -->
 <!-- derived: commands registered = 181 -->
 <!-- derived: commands required = 97 -->
 <!-- derived: commands reachable = 97 -->
