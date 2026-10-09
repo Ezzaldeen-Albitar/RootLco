@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { readSignedInAccount } from './account-manifest';
+import { say } from './p1-31-handoff';
 
 /**
  * This file assumes the ACCEPTANCE OWNER, so it runs only when that is who signed in.
@@ -52,6 +53,8 @@ test.beforeEach(() => {
  */
 
 const ADMIN = '/en/administration/users';
+/** A list still drawn by the shared table (`DataTable`), for the table's own region. */
+const TABLE_ROUTE = '/en/administration/roles';
 const TOLERANCE = 2;
 
 /** Every viewport the acceptance criteria name, including two short ones. */
@@ -186,7 +189,9 @@ test.describe('scroll ownership', () => {
 
   test('the table stays inside its region and the pager stays reachable', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 700 });
-    await page.goto(ADMIN);
+    // The roles list, which is still the shared table: the users list is the
+    // operational grid since P1-32-PRE-OD-ADM3 (ADR-022) and is measured below.
+    await page.goto(TABLE_ROUTE);
     await expect(page.getByRole('table')).toBeVisible();
 
     const measured = await page.evaluate(() => {
@@ -203,6 +208,24 @@ test.describe('scroll ownership', () => {
     expect(measured.boxOverflow).toBe('auto');
     expect(measured.boxWithinViewport, 'the table region must fit the viewport').toBe(true);
     expect(measured.documentScrolls).toBe(false);
+  });
+
+  test('the users grid scrolls inside the main region and its pager stays reachable', async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1280, height: 700 });
+    await page.goto(ADMIN);
+    // The grid grows with its rows (`autoHeight`), so the region that scrolls is
+    // the main landmark, never the document.
+    await expect(page.getByRole('grid', { name: say('en', 'users.title') })).toBeVisible();
+
+    const pager = page.getByRole('navigation', { name: say('en', 'table.pagination') });
+    await pager.scrollIntoViewIfNeeded();
+    await expect(pager, 'the pager must be reachable').toBeInViewport();
+    const documentMoved = await page.evaluate(() => document.documentElement.scrollTop);
+    expect(documentMoved, 'reaching it must not scroll the document').toBeLessThanOrEqual(
+      TOLERANCE
+    );
   });
 });
 
