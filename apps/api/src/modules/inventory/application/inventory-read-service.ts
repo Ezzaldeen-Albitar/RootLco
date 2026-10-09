@@ -37,6 +37,7 @@ import type {
   OpeningBatchHeaderRow,
   OpeningLineRow,
   IssuedPartListRow,
+  ItemDetailRow,
   PartIssueListRow,
   ReservationListRow,
   StockBalanceRow,
@@ -55,6 +56,34 @@ export interface ItemView {
   readonly isStockTracked: boolean;
   readonly isSerialized: boolean;
   readonly lifecycleStatus: string;
+  readonly recordVersion: number;
+}
+
+/**
+ * One item as its own page header names it (P1-32-PRE-OD-INV2A).
+ *
+ * The catalogue fields of `ItemView`, the unit's name beside its code, whether
+ * the item is archived, and the chain of categories it is filed under — top
+ * level first, its own category last — so two categories of the same name
+ * read apart. Carries no cost and no price.
+ */
+export interface ItemDetailView {
+  readonly id: string;
+  readonly sku: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly itemCategoryId: string;
+  readonly categoryPath: readonly {
+    readonly id: string;
+    readonly code: string;
+    readonly name: string;
+  }[];
+  readonly unitOfMeasure: { readonly id: string; readonly code: string; readonly name: string };
+  readonly itemType: string;
+  readonly isStockTracked: boolean;
+  readonly isSerialized: boolean;
+  readonly lifecycleStatus: string;
+  readonly archived: boolean;
   readonly recordVersion: number;
 }
 
@@ -138,6 +167,22 @@ const toItemView = (row: ItemRow): ItemView => ({
   isStockTracked: row.isStockTracked,
   isSerialized: row.isSerialized,
   lifecycleStatus: row.lifecycleStatus,
+  recordVersion: row.recordVersion,
+});
+
+const toItemDetailView = (row: ItemDetailRow): ItemDetailView => ({
+  id: row.id,
+  sku: row.sku,
+  name: row.name,
+  description: row.description,
+  itemCategoryId: row.itemCategoryId,
+  categoryPath: row.categoryPath.map((step) => ({ id: step.id, code: step.code, name: step.name })),
+  unitOfMeasure: { id: row.uomId, code: row.uomCode, name: row.uomName },
+  itemType: row.itemType,
+  isStockTracked: row.isStockTracked,
+  isSerialized: row.isSerialized,
+  lifecycleStatus: row.lifecycleStatus,
+  archived: row.archived,
   recordVersion: row.recordVersion,
 });
 
@@ -488,6 +533,22 @@ export class InventoryReadService {
       filter.lifecycleStatus === undefined ? { ...filter, lifecycleStatus: 'active' } : filter;
     const result = await this.repository.listItems(db, effective, request);
     return { ...result, items: result.items.map(toItemView) };
+  }
+
+  /**
+   * P1-32-PRE-OD-INV2A — one item, for its own page.
+   *
+   * Tenant-scoped like `searchItems`: `inv.item_master` has no company or branch
+   * column. An archived item is answered too (its page still opens), and says so.
+   * An id this tenant cannot see — another tenant's included — is not found,
+   * never told apart from one that does not exist.
+   */
+  public async readItemDetail(db: DbHandle, itemId: string): Promise<ItemDetailView> {
+    const row = await this.repository.readItemDetail(db, itemId);
+    if (row === null) {
+      throw new AppFailure('ERR-RES-001', { message: `Item ${itemId} was not found` });
+    }
+    return toItemDetailView(row);
   }
 
   /**

@@ -1125,6 +1125,10 @@ nothing below is invented on the client.
     reference. A name, resolved in the same statement, would let both be chosen by name.
 14. **The parties recorded on a visit.** The additional-work decision names its deciding party by
     party-role reference, and no read lists the parties of the visit a work order came from.
+15. **No item update operation.** No operation renames an item, moves it to another category or
+    changes its unit; the catalogue offers create, search and (since `P1-32-PRE-OD-INV2A`) a read of
+    one item, which the item page now uses for its header. Nothing on any screen edits an item, and
+    none is built until the operation exists.
 
 ## Shared-component gaps recorded rather than worked around
 
@@ -1429,6 +1433,45 @@ built for quotations and work orders only.
   (`20261008150000_sal_refund_branch_day_and_obligation_marker.sql`,
   DBCR-P1-32-PRE-OD-FRX-001); the same migration makes an obligation name the approval that wrote it
   (defence in depth).
+
+### Addendum: the CP-20261008-3 runtime retest (P1-32-PRE-OD-FRXR)
+
+- **`GET /api/v1/auth/session` and `GET /api/v1/auth/working-context` take no query parameter
+  (FRX1-c).** Both answered 200 and silently ignored `?userId=`, `?companyId=` and `?branchId=`, so
+  a request could look as though it substituted another user, company or branch, although the answer
+  stayed the caller's own. Each now parses its query string with an empty `.strict()` schema and
+  refuses ANY parameter — those three, `tenantId`, or a name nobody defined — with the standard
+  validation error (422 `ERR-VAL-001`), whose body carries none of the caller's facts and not the
+  value sent. Without a parameter they answer exactly as before. The web sends no query parameter to
+  either read (`features/authentication/api/session.ts`, `features/platform/api/session.ts`,
+  `features/authentication/actions/profile.ts`, `features/working-context/api.ts`), so no caller
+  changed. The query schema has no property, so the generated OpenAPI document publishes no
+  parameter for either operation and is unchanged. Tests: `tests/backend/p1-24-iam-route-depth.test.ts`
+  (each of the five parameters on each read, and the read without one).
+- **`/invoices`, nothing left to bill (FRX2-nothing).** A work order whose approved work is all
+  invoiced — including one with a second accepted quotation of the same work, which the preview
+  refuses as `invoice_nothing_to_bill` — showed its invoice and no reason, because the
+  remaining-work panel holding that sentence is drawn only while work remains. With no draft open
+  and no approved work left (`approvedWorkToInvoice: false`), the screen now says "Everything
+  approved on the quotation is already invoiced, so there is nothing more to bill.", en and ar, from
+  the read itself; no preview is read for it. A create refused with that rule (or any other) says its
+  sentence as before and keeps the payer typed into the form: the entry is held by the screen, above
+  the panels the re-read remounts. Tests: `apps/web/tests/invoices.dom.test.tsx` ("nothing left to
+  bill is said, and a refusal keeps what was typed").
+- **The printed invoice, counter sale and quotation (FRX3).** Real Chrome printed a 30-line invoice
+  and a 24-line counter sale whose last page held only the identity row and the totals and
+  settlement, and a quotation whose last page held only the identity row and its closing note. The
+  totals block is now the `tail` of the lines table (`PrintTable`): the last line and the block are
+  one row group kept together, which moves to the next page whole, with the column headings
+  repeated, when it does not fit, while every other line still breaks where it falls and the block
+  itself is never split. `break-before: avoid` alone was measured and does not hold here: inside the
+  document's identity table Chromium does not look back into the lines table for an earlier break,
+  and it split the totals block instead. The quotation's decision and its closing note print as one
+  group (`PrintDocument`'s `closing`). Tests: `apps/web/tests/e2e/print-layout.spec.ts` (a 30-line
+  invoice, a 24-line counter sale and a 37-line quotation, and quotations of 1 to 36 lines, en and
+  ar: every page holds more than the identity row, the page of the totals holds the last line, the
+  totals and settlement are not split, and the page of the closing note holds the decision before
+  it; the counter-sale sweep of 1 to 32 lines also asserts the last line beside the totals).
 
 ## Material UI adoption (ADR-022)
 
@@ -1737,16 +1780,16 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/inventory/counts`                                   | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (INV5)                               | focused suites, en and ar — see below     |
 | `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/goods-receipts`                           | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/items/[itemId]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
+| `/inventory/items/[itemId]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (MUI7A1; item header INV2A)          | focused suites, en and ar — see below     |
 | `/inventory/labels`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states                       | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table (INV1B, INV1C)                       | focused suites, en and ar — see below     |
 | `/inventory/opening-stock`                            | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/inventory`                                          | `FilterToolbar`, form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states      | F1–F6; G1–G9; P1–P10; T1, T5; E1–E4; S1–S4       | migrated — see below the table (INV1B, INV1C)                       | focused suites, en and ar — see below     |
 | `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, `TreePicker`, states                          | F1–F6; G1–G9, G12; P1–P10; H1–H5; S1–S4          | migrated — see below the table (INV5)                               | focused suites, en and ar — see below     |
-| `/inventory/setup`                                    | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/setup`                                    | form fields, `TreePicker`, states                                                             | F1–F7; H1–H5; S1–S4                              | migrated — see below the table (INV2A)                              | focused suites, en and ar — see below     |
 | `/inventory/transfers`                                | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                      | focused suites, en and ar — see below     |
-| `/inventory/unit-conversions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
-| `/inventory/vehicle-specifications`                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                    | shared pieces: consumer suites, see INV1b |
+| `/inventory/unit-conversions`                         | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (INV2A)                              | focused suites, en and ar — see below     |
+| `/inventory/vehicle-specifications`                   | form fields, `TreePicker`, states                                                             | F1–F6; H1–H5; S1–S4                              | migrated — see below the table (INV2A)                              | focused suites, en and ar — see below     |
 | `/invoices`                                           | form fields, `EntityPicker`, `ConfirmDialog`, `ReasonDialog`, states                          | F1–F6; P1–P10; D1–D5; S1–S4                      | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/`                                                   | `FilterToolbar`, `MetricCard`, `ChartPanel`, states                                           | S1–S4; T1–T6, T8; M1–M6                          | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/payments`                                           | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, form fields, `ConfirmDialog`, states      | F1–F6; G1–G9, G12; P1–P10; D1–D4; S1–S4          | migrated — see below the table                                      | focused suites, en and ar — see below     |
@@ -3927,6 +3970,166 @@ Known limitations of this slice, one line each:
   they run in hosted CI. The web tier gains cases in existing files (no web test file added or
   removed).
 
+### Inventory setup, unit conversions and vehicle specifications on Material UI, and the item page's own read (`P1-32-PRE-OD-INV2A`)
+
+The setup screen (categories, units, items, locations, reorder levels), the unit conversions and the
+vehicle specifications moved onto the shared wrappers; every category is now chosen from the
+category tree; and the item page reads its own item. The page refusals before any read are
+unchanged (`inv.item.read` on all four routes), and so are the per-control codes (`inv.item.manage`
+on setup, `inv.stock.read` for its locations and levels, `inv.unit_conversion.manage`,
+`inv.specification.manage`, `veh.vehicle.read`) and the route branch scope in
+`route-branch-scope.ts` (setup `concrete`; conversions, specifications and the item page `none`).
+Every write is sent with the same arguments as before.
+
+What moved to which wrapper:
+
+- `/inventory/setup` — every list (categories, units, the locations of the branch, the reorder
+  levels, the items created on the page) is Material's table; under the planner ruling of 2026-10-09
+  none is a cursor-paged read: the categories are read whole, the units are one list, and the
+  locations and levels are one bounded page each with their "more exist" sentence. Each list's wait,
+  empty answer and failure are the shared states in the list's own words (a retry after an outage;
+  none after a refusal or an ended session; the locations keep no retry, as their shared read has
+  none). Every field is a `forms/mui` wrapper: the codes, names and descriptions `FormTextField`,
+  the unit, item type, location type, warehouse and level item `FormSelectField`, the two item flags
+  `FormCheckboxField`, the two level quantities `FormNumberField`; every button is Material's.
+- `/inventory/unit-conversions` — the list is Material's table; the units `FormSelectField`, the
+  factor `FormNumberField`, the source `FormTextField`, the item the shared `ItemFinder`; the
+  retire action is Material's outlined error button with the same name.
+- `/inventory/vehicle-specifications` — the list is Material's table; the state filter, make, model
+  and unit `FormSelectField`, the two model years and the capacity `FormNumberField`, the texts
+  `FormTextField`; confirm and retire are Material's buttons with the same names.
+
+Categories by name, chosen from the tree:
+
+- The setup category list reads EVERY page of `inv.item-category-list` (`useAllItemCategories`,
+  the walk the category tree makes) instead of the one-page `listItemCategories`, and says each
+  row's parent by its NAME and path ("Brakes / Pads"), a top-level category as "Top level", and a
+  parent missing from the list with the tree's own note — never the parent's code alone.
+- A new category's parent and a new item's category are chosen with `CategoryTreePicker` (H1–H5):
+  the parent is optional, with a "No parent" row; the item's category is required
+  (`clearLabel={null}`, `required`), so no row clears it. A category created on the page is added
+  to the list and to both trees at once, from the server's echo, without a second walk.
+- The vehicle specification's part category is chosen with `CategoryTreePicker` over the whole
+  tree (optional, "No category") instead of the one-page `CategoryPicker` select.
+- The setup categories, the specification form and the item header link to `/inventory/categories`.
+- No field anywhere on these routes takes a typed identifier.
+
+The item page's own read — a new backend operation, `inv.item-detail`:
+
+- `GET /api/v1/items/{itemId}` (`apps/api/src/app/api/v1/items/[itemId]/route.ts`), `inv.item.read`,
+  `scope: 'tenant'` like the item search, audit class `none`, `expensive-read`, `answersNotFound`.
+  It answers the item's code, name, description, unit (id, code and name), type, tracking flags,
+  lifecycle, an `archived` flag, and its category chain walked in the database (top level first,
+  the item's own category last; bounded and cycle-safe). No cost and no price. Another tenant's item
+  and an unknown id are both 404, read alike. Every registry it owes moved with it: the route
+  template list, the OpenAPI document and its import list, the P1-14 and P1-21 operation matrices,
+  the P1-19 and P1-21 endpoint inventories, the P1-24 register, the idempotent-operations manifest
+  and the operation coverage manifest. Backend tests: `tests/backend/od-inventory-item-detail.test.ts`
+  (found with a two-step path, top level, archived, no cost or price key, not found, another tenant,
+  no permission, a malformed id).
+- `/inventory/items/[itemId]` draws the item's own header above its codes and prices: the name, the
+  stock code, the category path by name with the link to the tree, the unit, the type and whether it
+  is archived. Its wait says "Reading the item…"; a refusal, an ended session, a missing item and an
+  outage are the shared states (a retry after an outage only). The header edits nothing.
+
+The completion standard, as these screens now hold it:
+
+- Duplicate submits: every write (category, item, location, reorder level and its retirement,
+  conversion and its retirement, specification and its confirmation and retirement) is held by
+  `useSingleFlight`, a ref set before the first await, so a second press sends nothing even before
+  the button has re-rendered disabled. The tests press twice inside ONE `act()`; with the ref
+  guard removed, the four setup cases fail (counterfactual run, not committed).
+- Field errors: each form marks a refused field on itself (`aria-invalid` only while refused, the
+  sentence as its error message) and moves the cursor to its first refused field
+  (`useFocusFirstInvalid`, counted per refusal); what was typed stays.
+- Unsaved work: the category, item and reorder-level forms, the conversion form and the
+  specification form declare their work to the shell (a chosen category included) and empty
+  themselves on a confirmed discard; the location form keeps its rule (code and name only, keyed on
+  the branch).
+- Focus: opening the conversion or specification form moves the cursor onto its heading; a saved
+  form closes and gives the cursor back to the button that opened it.
+- Moments: "Stated on" and "Recorded on" are written on the clock of the one branch in force, or
+  on UTC under "All my branches" or a branch whose zone is unknown, with the clock named beside the
+  moment (`RecordedMoment`), never on the browser's clock and never inside a forced left-to-right
+  span.
+- Precision: factors, capacities, years and levels are the strings typed and the server's strings;
+  nothing is parsed for display.
+- Arabic and English, right to left, in every suite.
+
+The `CategoryTreePicker` review minors of `P1-32-PRE-OD-INV2B`: while the categories are read, and
+when the read fails, the picker's sentence sits in a `group` labelled by the field's own label
+(`aria-labelledby`), so a screen reader hears which field it is about; a refused required picker
+without a tree still shows its error.
+
+Tests (en and ar unless marked): `inventory-setup.dom` — parents by name and path, the tree link,
+every page read and a second-page category chosen for an item, no category-less row on the item
+tree, a parent chosen from the tree and the echo listed under it and offered at once, the cursor
+moved to the item tree when an empty item form is refused, an unavailable category list with its
+reference read again on retry, a refusal with no retry, right to left; two presses in one `act()` for
+a category, an item, a location, a level and its retirement (en); Enter in the level's item search
+searching and sending nothing (en); the level quantity a numeric-keypad text box read left to right
+(en); a half-typed category and a chosen item category asking before a branch switch, a discard
+emptying the form (en). `inventory-unit-conversions.dom` — the stated moment on the branch's clock
+with its name, an outage with a retry, a refusal with none, the empty sentence, focus into the form
+and back, a refused factor on its own box; two presses in one `act()` for stating and retiring (en);
+a half-stated conversion asking before a switch (en). `inventory-vehicle-specifications.dom` — the
+part category from the whole tree by path and sent, the tree link, focus into the form and back, a
+refused year on its own box, an outage with a retry, the empty sentence; two presses in one `act()`
+for recording and confirming (en). `inventory-item-codes.dom` — the header's name, code, path,
+unit, type and status, archived, not found, an outage with a retry, a refusal with none (en), the
+wait (en). `inventory-categories.dom` — the items grid's second page read with the category and the
+cursor; the picker as a field: unavailable inside a labelled group with a retry that walks again,
+the wait inside a labelled group, no "No category" row for a required field with `clearLabel={null}`,
+the empty catalogue in the field's description, ArrowDown with Enter and Space; `category-tree.ts`
+stopping at the 500-page budget with `truncated` and an A → B → A cycle with exactly one misplaced
+member, `pathOf(B)` = A, B, and a search that ends. `inventory-api` — the item read's address and a
+missing item as not found.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- Every render of the three screens goes under `UiFoundationProvider` (and, for conversions and
+  specifications, a working context), as the locale layout mounts them.
+- The setup suite mocks `listItemCategoryPage` (the whole-tree walk) where it mocked
+  `listItemCategories`, and asserts the walk's first page instead of the one-page read.
+- The item's category is chosen by clicking its row in the tree instead of `selectOptions` on a
+  select.
+- The vehicle specifications suite mocks `listItemCategoryPage` beside `listItemCategories`.
+- `inventory-item-codes.dom`'s accessibility case waits for the stock code twice (header and codes
+  panel) instead of once, because the header now says it too.
+
+Deliberate behaviour changes:
+
+- The setup category list and the specification category read every page, not the first hundred.
+- A parent is said by name and path; a top-level category says "Top level" instead of an empty
+  cell.
+- Loading is said (it drew nothing before); an empty list is said under "Nothing here yet" with the
+  same sentence; a failed list is the shared state, with its reference and a retry after an outage
+  (the conversions, specifications and units offered no retry before).
+- Enter in the reorder level's item search searches; it used to submit the level form.
+- The category, item, reorder-level, conversion and specification forms now ask before a branch
+  switch or leaving the page with unsaved work, and empty on a confirmed discard.
+- Recorded moments are written on the branch's clock (or UTC) with the clock named, no longer the
+  browser's.
+- A second press while a write is out sends nothing; before, only the re-rendered disabled button
+  held it.
+
+Known limitations, one line each:
+
+- No item update operation: an item's name, category and unit cannot be changed (Backend
+  prerequisites, item 15); the item page's header edits nothing.
+- A vehicle specification still names its make and model by identifier in the list (as before); the
+  catalogue is read only inside the form.
+- A conversion names its item by stock code, and a location's parent by code (as before).
+- The locations' failure offers no retry: the shared read keeps only which sentence it earned.
+- The material-requirements panel still draws the one-page `CategoryPicker`; it moves with its own
+  slice.
+- The setup lists other than the categories show the first bounded page with the "more exist"
+  sentence and no way to the rest (as before).
+- No browser spec covers these routes; the Playwright tiers run only in hosted CI.
+- Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in hosted
+  CI. No web test file was added or removed; the backend tier gains one file
+  (`deliverable-manifest.md` and `risk-register.md` count it).
+
 ### Stock counts, the parts of a work order and the material allowed on Material UI (`P1-32-PRE-OD-INV5`)
 
 `/inventory/counts` and `/inventory/parts`, with the material-requirements panel the parts screen
@@ -3987,7 +4190,8 @@ and each cost layer, a transfer's dispatch and a write-off's request, the stock 
 stamp, and on the returns desk each return's arrival, each offered sale's issue and each issued
 part's issue in the picker's option (`momentText`). The organisation's own records — an item's codes, its unit conversions, the
 vehicle capacities — belong to no branch and are written on the working branch's clock
-(`useWorkingDisplayZone`). Where the branch keeps no zone, or one the browser does not recognise,
+(`useWorkingDisplayZone` on the item's codes; the conversions and capacities take the same
+rule from `RecordedMoment`, `P1-32-PRE-OD-INV2A`). Where the branch keeps no zone, or one the browser does not recognise,
 and under "All my branches" on those three, the moment is written on UTC and named `UTC` — never on
 the browser's clock.
 

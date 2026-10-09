@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 524   |
+| Public operations        | 525   |
 | Domains (modules)        | 21    |
-| OpenAPI paths            | 413   |
-| OpenAPI operations       | 524   |
+| OpenAPI paths            | 414   |
+| OpenAPI operations       | 525   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 135   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 524        |
+| Covered           | 525        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -39,7 +39,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | delivery        | 22         | 22      | 11     | 11      | 8          | 4               |
 | diagnostics     | 23         | 23      | 15     | 15      | 14         | 4               |
 | iam             | 57         | 57      | 34     | 32      | 15         | 10              |
-| inventory       | 82         | 82      | 46     | 47      | 42         | 3               |
+| inventory       | 83         | 83      | 46     | 47      | 42         | 3               |
 | meta            | 1          | 1       | 0      | 0       | 0          | 0               |
 | overview        | 1          | 1       | 0      | 0       | 0          | 0               |
 | payments        | 10         | 10      | 7      | 7       | 7          | 3               |
@@ -189,6 +189,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `inv.item-category-list`                            | GET    | `/api/v1/item-categories`                                                               | tenant  | `inv.item.read`                                                      | —                                              | —    | —   | authorization cross-tenant route service success                                                                              | Covered |
 | `inv.item-cost-history-read`                        | GET    | `/api/v1/items/{itemId}/cost-history`                                                   | branch  | `inv.cost.view`                                                      | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `inv.item-create`                                   | POST   | `/api/v1/items`                                                                         | tenant  | `inv.item.manage`                                                    | inv.item.created                               | yes  | —   | audit authorization cross-tenant denial idempotency route service success                                                     | Covered |
+| `inv.item-detail`                                   | GET    | `/api/v1/items/{itemId}`                                                                | tenant  | `inv.item.read`                                                      | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `inv.item-identifier-add`                           | POST   | `/api/v1/items/{itemId}/identifiers`                                                    | tenant  | `inv.item.manage`                                                    | inv.item_identifier.added                      | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `inv.item-identifier-list`                          | GET    | `/api/v1/items/{itemId}/identifiers`                                                    | tenant  | `inv.item.read`                                                      | —                                              | —    | —   | authorization cross-tenant isolation route service success                                                                    | Covered |
 | `inv.item-identifier-retire`                        | POST   | `/api/v1/items/{itemId}/identifiers/{identifierId}/retirement`                          | tenant  | `inv.item.manage`                                                    | inv.item_identifier.retired                    | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
