@@ -1804,7 +1804,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/receptions/check-in`                                | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F7; G1–G9, G11, G12; P1–P10; S1–S4            | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/receptions`                                         | `FilterToolbar`, `OperationalGrid`, states                                                    | F6; G1–G11; S1–S5; T1–T6                         | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/refunds`                                            | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, states                                    | G1–G9; P1–P10; S1–S4                             | built on Material UI (P1-32-PRE-OD-FD2B, ADR-023 D2)                | `refunds.dom.test.tsx`, en and ar         |
-| `/reports/[reportCode]`                               | form fields, `DateField`, `ZonedDateTimeField`, `OperationalGrid`, states                     | F1–F7; E1–E4; G1–G9; S1–S4                       | migrated — see below the table (REPA; snapshots panel not migrated) | focused suites, en and ar — see below     |
+| `/reports/[reportCode]`                               | form fields, `DateField`, `ZonedDateTimeField`, `OperationalGrid`, states                     | F1–F7; E1–E4; G1–G9; S1–S4                       | migrated (REPA), not the snapshots panel: REP-B (#557) migrates it  | focused suites, en and ar — see below     |
 | `/reports/overview`                                   | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table (REPA)                               | focused suites, en and ar — see below     |
 | `/reports`                                            | `OperationalGrid`, states                                                                     | G1–G9; S1–S4                                     | migrated — see below the table (REPA)                               | focused suites, en and ar — see below     |
 | `/services/[serviceId]`                               | form fields, `TreePicker`, `DateField`, `ConfirmDialog`, states                               | F1–F6; H1–H5; E1–E4; D1–D4; S1–S4                | migrated — see below the table                                      | focused suites, en and ar — see below     |
@@ -3253,7 +3253,8 @@ What changed (`apps/web/src/features/reports/components/`):
 - **The catalogue** (`ReportCatalogueScreen.tsx`) is `OperationalGrid` over `useServerTable`
   (G1–G9): the read takes a cursor and a size, so the grid offers rows per page (starting at the
   platform's 50), "Page N" with no total, Previous and Next on the cursor stack, and no sortable
-  header — the order is the operation's own. A report with a name is shown by that name alone (the
+  header — the order is the operation's own. The rows-per-page choice and the "Page N" label are new
+  on this screen (planner-accepted). A report with a name is shown by that name alone (the
   route sweep row above); its code is shown, as a code, only for a report with no name to show,
   and the level is a word ("One branch", "One company", "The whole organisation") with the machine
   name kept only for a level this build has no word for. An empty first page is the "no reports"
@@ -3282,7 +3283,13 @@ What changed (`apps/web/src/features/reports/components/`):
   day). The as-of choice is `FormRadioGroupField` (end of period, now, a specific moment) with the
   `ZonedDateTimeField` on the reported branch's clock; "now" is still sent as the word and resolved
   by the database's clock; a partly typed, impossible, too early or too late moment is refused on
-  the field, which takes the cursor; and pressing Apply again with the same choice reads nothing.
+  the field, which takes the cursor; and pressing Apply again with the same choice reads nothing
+  (planner-accepted: an unchanged choice is not a new one, so the shown answer stays as it is).
+  Pressing Show with another period or branch, or applying a different as-of choice, mounts a new
+  answer, which would drop a typed export reason; both now go through the same unsaved-work
+  question a branch switch asks (`ConfirmDialog` over `useUnsavedWork`): "Keep my entries" changes
+  nothing and reads nothing, "Discard and show the report" clears the reason and reads the new
+  answer. With nothing typed, or with nothing that would change, nothing is asked.
 - **The export** (`ReportExportPanel.tsx`): still drawn only for `rpt.export` (withheld under
   CC-04) with a published export authority, and otherwise the one "not available" sentence. The
   reason is `FormTextField` (multiline) inside a form, refused on the field with the cursor on it;
@@ -3300,9 +3307,13 @@ Tests (en and ar): `apps/web/tests/reports.dom.test.tsx` — the catalogue names
 code, shows a code only for a report with no name, says each level in words, retries an outage and
 offers no retry on a refusal, labels the page with no count, offers Next only when the server said
 more exist, and asks for the chosen page size from the first page; the form refuses a partly typed
-day as unfinished with the cursor on it, submits on Enter, and runs once for two presses inside one
-`act()`; the period is written for reading with its day kept. `reports-overview.dom.test.tsx` — two
-presses inside one `act()` spend the four reads once, Enter shows the overview, a partly typed day is
+day as unfinished with the cursor on it, submits on Enter, and runs once for two presses of Show
+with the first read held open and the second press made after the screen rendered it as loading;
+Show with another period and a different as-of choice over a typed export reason each ask first, in
+English and in Arabic ("Keep my entries" keeps the reason and reads nothing, "Discard and show the
+report" clears it and reads once); the period is written for reading with its day kept.
+`reports-overview.dom.test.tsx` — two presses of Show, the second made while the first four reads
+are held open, spend the four reads once, Enter shows the overview, a partly typed day is
 refused in Arabic with the cursor on it, every summary table is named, and the banner names the zone
 in words in both languages. `report-export.dom.test.tsx` — two presses inside one `act()` send one
 export, a refused reason takes the cursor and is withdrawn once edited, a branch switch over a typed
@@ -3326,11 +3337,15 @@ Assertions changed, with the reason:
 - Day boxes are reached as picker groups and typed part by part, and the value they hold is read
   from the picker (`01/09/2026`) instead of a native input's `value`; the table locators for the
   catalogue and the rows are grid locators.
+- The two read double-press cases (`reports.dom` and `reports-overview.dom`) pressed twice inside
+  one `act()`, which React batches into one render, so they passed with or without the guard. They
+  now hold the first read open, press again after a render, and still require one read (four on
+  the overview); each was run against a screen without the guard and failed.
 
 Known limitations of this slice, one line each:
 
-- The saved-snapshots panel inside a report (`ReportSnapshotsPanel.tsx`) is not migrated: it keeps
-  its own form fields, buttons and pager. It draws the shared Material states now, because they come
+- The saved-snapshots panel inside a report (`ReportSnapshotsPanel.tsx`) is not migrated by this
+  slice: REP-B (#557) migrates it. Here it keeps its own form fields, buttons and pager. It draws the shared Material states now, because they come
   from `ReportShell.tsx`, and its frozen rows use the report's Material table.
 - A report column this build has no word for is headed by its key as plain text in the grid; the
   monospaced machine-name style is kept in the cells, the groups and the snapshot table only.

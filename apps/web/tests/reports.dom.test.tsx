@@ -588,17 +588,33 @@ describe('the report screen requests nothing until it has a branch and a period'
     );
   });
 
-  it('runs once for two presses of the button inside one moment', async () => {
+  it('runs once for two presses of the button, the second while the first read is open', async () => {
+    // The first read is held open, so the second press lands on a screen that
+    // has already rendered it as being read, not inside the same batch.
+    let answer: (outcome: unknown) => void = () => undefined;
+    runReport.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        })
+    );
     await renderReportPage();
     const user = userEvent.setup();
     await typeDay(user, 'reports.run.from', '2026-09-01');
     await typeDay(user, 'reports.run.to', '2026-09-08');
     const show = screen.getByRole('button', { name: EN['reports.run.show'] as string });
-    await act(async () => {
-      show.click();
-      show.click();
-    });
+    await user.click(show);
     await waitFor(() => expect(runReport).toHaveBeenCalledTimes(1));
+    expect(screen.getByTestId('state-loading')).toBeInTheDocument();
+    await user.click(show);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(runReport).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      answer(runOk(OLD_ENVELOPE));
+      await Promise.resolve();
+    });
     await screen.findByRole('grid', { name: EN['reports.run.rowsCaption'] as string });
     expect(runReport).toHaveBeenCalledTimes(1);
   });
@@ -1427,6 +1443,66 @@ describe('export uses the displayed report selection', () => {
     expect(exportReport).not.toHaveBeenCalled();
   });
 
+  it.each(['en', 'ar'] as const)(
+    'asks before Show with another period drops a typed export reason (%s)',
+    async (locale) => {
+      const messages = locale === 'ar' ? AR : EN;
+      const label = (key: string) => new RegExp(`^${escape(messages[key] as string)}`);
+      PERMISSIONS = [READ, 'rpt.export'];
+      readReport.mockResolvedValue({
+        status: 'ok',
+        data: {
+          ...BASELINE,
+          exportPermissionCode: 'rpt.export',
+          source: 'tenant',
+          versionNumber: 1,
+        },
+        correlationId: null,
+      });
+      await showReport(locale);
+      const user = userEvent.setup();
+      const reason = () => screen.getByRole('textbox', { name: label('reports.export.reason') });
+      await user.type(reason(), 'Month-end figures');
+      await typeDay(user, 'reports.run.from', '2026-09-02', locale);
+      const show = screen.getByRole('button', { name: messages['reports.run.show'] as string });
+      await user.click(show);
+
+      const dialog = screen.getByRole('alertdialog', {
+        name: messages['reports.run.discard.title'] as string,
+      });
+      expect(dialog).toHaveAccessibleDescription(
+        messages['reports.run.discard.description'] as string
+      );
+      // Nothing was read behind the question.
+      expect(runReport).toHaveBeenCalledTimes(1);
+      await user.click(
+        within(dialog).getByRole('button', { name: messages['reports.run.discard.stay'] as string })
+      );
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      expect(reason()).toHaveValue('Month-end figures');
+      expect(runReport).toHaveBeenCalledTimes(1);
+
+      await user.click(show);
+      const again = screen.getByRole('alertdialog', {
+        name: messages['reports.run.discard.title'] as string,
+      });
+      await user.click(
+        within(again).getByRole('button', {
+          name: messages['reports.run.discard.confirm'] as string,
+        })
+      );
+      await waitFor(() =>
+        expect(runReport).toHaveBeenLastCalledWith(
+          expect.objectContaining({ from: '2026-09-02', to: '2026-09-08', cursor: null })
+        )
+      );
+      expect(runReport).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(reason()).toHaveValue(''));
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(exportReport).not.toHaveBeenCalled();
+    }
+  );
+
   it('keeps a configured report withheld when the session lacks export permission', async () => {
     readReport.mockResolvedValue({
       status: 'ok',
@@ -1638,6 +1714,66 @@ describe('D16 — the amounts are as of a stated moment', () => {
     expect(runReport).toHaveBeenCalledTimes(calls + 1);
     expect(runReport).toHaveBeenLastCalledWith(expect.objectContaining({ asOf: 'now' }));
   });
+
+  it.each(['en', 'ar'] as const)(
+    'asks before a different as-of choice drops a typed export reason (%s)',
+    async (locale) => {
+      const messages = locale === 'ar' ? AR : EN;
+      const label = (key: string) => new RegExp(`^${escape(messages[key] as string)}`);
+      PERMISSIONS = [READ, 'rpt.export'];
+      readReport.mockResolvedValue({
+        status: 'ok',
+        data: {
+          ...BASELINE,
+          exportPermissionCode: 'rpt.export',
+          source: 'tenant',
+          versionNumber: 1,
+        },
+        correlationId: null,
+      });
+      runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));
+      await showReport(locale);
+      await screen.findByTestId('report-as-of');
+      const user = userEvent.setup();
+      const reason = () => screen.getByRole('textbox', { name: label('reports.export.reason') });
+      await user.type(reason(), 'Month-end figures');
+      const calls = runReport.mock.calls.length;
+      await user.click(screen.getByRole('radio', { name: messages['reports.asOf.now'] as string }));
+      const apply = screen.getByRole('button', { name: messages['reports.asOf.apply'] as string });
+      await user.click(apply);
+
+      const dialog = screen.getByRole('alertdialog', {
+        name: messages['reports.run.discard.title'] as string,
+      });
+      // Nothing was read behind the question.
+      expect(runReport).toHaveBeenCalledTimes(calls);
+      await user.click(
+        within(dialog).getByRole('button', { name: messages['reports.run.discard.stay'] as string })
+      );
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      expect(reason()).toHaveValue('Month-end figures');
+      expect(runReport).toHaveBeenCalledTimes(calls);
+
+      await user.click(apply);
+      const again = screen.getByRole('alertdialog', {
+        name: messages['reports.run.discard.title'] as string,
+      });
+      await user.click(
+        within(again).getByRole('button', {
+          name: messages['reports.run.discard.confirm'] as string,
+        })
+      );
+      await waitFor(() =>
+        expect(runReport).toHaveBeenLastCalledWith(
+          expect.objectContaining({ asOf: 'now', cursor: null })
+        )
+      );
+      expect(runReport).toHaveBeenCalledTimes(calls + 1);
+      await screen.findByTestId('report-as-of');
+      await waitFor(() => expect(reason()).toHaveValue(''));
+      expect(exportReport).not.toHaveBeenCalled();
+    }
+  );
 
   it('puts the cursor on a refused moment', async () => {
     runReport.mockResolvedValue(runOk(AS_OF_ENVELOPE));

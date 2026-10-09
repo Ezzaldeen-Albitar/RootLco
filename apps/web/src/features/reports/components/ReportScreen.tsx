@@ -16,8 +16,10 @@ import {
   type MomentProblem,
 } from '@/components/forms/mui/DateField';
 import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
 import { MuiEmptyState } from '@/components/states/MuiStates';
 import {
+  useUnsavedWork,
   useWorkingContext,
   useWorkingContextChange,
 } from '@/features/working-context/WorkingContextProvider';
@@ -170,6 +172,18 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * Material ones, the as-of choice is `FormRadioGroupField` with the moment picker,
  * and a refused moment takes the cursor (`useLocalRefusal`). Pressing Apply twice
  * with the same choice reads nothing again: an unchanged choice is not a new one.
+ *
+ * ## Showing another answer asks before it drops typed work
+ *
+ * The results are keyed on the submitted selection and the as-of choice, so
+ * pressing Show with another period or branch, or applying a different as-of
+ * choice, mounts a new set of results — and the export reason typed under the
+ * old one goes with it. A branch switch already asked first; these two did not.
+ * So both go through `requestResults`: with nothing unsaved, or with nothing
+ * that would change, it applies at once; with unsaved work it asks first, with
+ * the same `ConfirmDialog` and the same registry (`useUnsavedWork`) the branch
+ * switch uses. "Keep my entries" changes nothing; "Discard and show" runs each
+ * form's own `onDiscard` and then shows the new answer.
  */
 
 export function ReportScreen({
@@ -228,6 +242,26 @@ export function ReportScreen({
     }
   });
   const submitted = chosen ?? followed;
+  const unsaved = useUnsavedWork();
+  // The answer the operator asked for while the shown one held unsaved work.
+  const [pendingResults, setPendingResults] = useState<RequestedResults | null>(null);
+
+  const applyResults = (next: RequestedResults) => {
+    setChosen(next.chosen);
+    setAsOfChoice((current) =>
+      JSON.stringify(current) === JSON.stringify(next.asOfChoice) ? current : next.asOfChoice
+    );
+  };
+  /** The one way the shown answer changes — see "Showing another answer asks first". */
+  const requestResults = (next: RequestedResults) => {
+    const changes =
+      resultsKey(next.chosen ?? followed, next.asOfChoice) !== resultsKey(submitted, asOfChoice);
+    if (changes && unsaved.any()) {
+      setPendingResults(next);
+      return;
+    }
+    applyResults(next);
+  };
 
   const title = reportTitle(messages, definition);
 
@@ -290,10 +324,7 @@ export function ReportScreen({
         options={scopeOptions.data}
         initial={followed ?? initialReportScope(scopeOptions.data, named)}
         submitKey="reports.run.show"
-        onSubmit={(selection) => {
-          setChosen(selection);
-          setAsOfChoice({ mode: 'end' });
-        }}
+        onSubmit={(selection) => requestResults({ chosen: selection, asOfChoice: { mode: 'end' } })}
       />
 
       {submitted === null ? (
@@ -307,25 +338,58 @@ export function ReportScreen({
         // read on a new period or branch rather than paging the previous one with
         // cursors issued against a different selection.
         <ReportResults
-          key={`${JSON.stringify(submitted)}|${JSON.stringify(asOfChoice)}`}
+          key={resultsKey(submitted, asOfChoice)}
           locale={locale}
           messages={messages}
           reportCode={definition.reportCode}
           submitted={submitted}
           asOfChoice={asOfChoice}
-          onAsOfChange={(next) =>
-            setAsOfChoice((current) =>
-              JSON.stringify(current) === JSON.stringify(next) ? current : next
-            )
-          }
+          onAsOfChange={(next) => requestResults({ chosen, asOfChoice: next })}
           companyName={chosenCompany?.legalName ?? null}
           branchName={chosenBranch?.name ?? null}
           canExport={canExport}
           canSnapshot={canSnapshot}
         />
       )}
+
+      <ConfirmDialog
+        open={pendingResults !== null}
+        onCancel={() => setPendingResults(null)}
+        onConfirm={() => {
+          const target = pendingResults;
+          setPendingResults(null);
+          if (target === null) return;
+          // The forms put themselves back first, in the same update as the new
+          // answer, so no frame shows it over work declared lost.
+          unsaved.discard();
+          applyResults(target);
+        }}
+        title={translate(messages, 'reports.run.discard.title')}
+        description={translate(messages, 'reports.run.discard.description')}
+        confirmLabel={translate(messages, 'reports.run.discard.confirm')}
+        cancelLabel={translate(messages, 'reports.run.discard.stay')}
+        messages={messages}
+        destructive
+        testId="report-results-discard"
+      />
     </div>
   );
+}
+
+/** A selection and an as-of choice the operator asked to be shown. */
+interface RequestedResults {
+  /** The operator's own selection; null while the screen follows the working branch. */
+  readonly chosen: ReportScopeSelection | null;
+  readonly asOfChoice: ReportAsOfChoice;
+}
+
+/**
+ * The identity of one shown answer: its selection and its as-of choice, by
+ * value. The results are keyed on it, so a new key is a new read — and the loss
+ * of whatever was typed under the previous answer.
+ */
+function resultsKey(selection: ReportScopeSelection | null, choice: ReportAsOfChoice): string {
+  return `${JSON.stringify(selection)}|${JSON.stringify(choice)}`;
 }
 
 /**

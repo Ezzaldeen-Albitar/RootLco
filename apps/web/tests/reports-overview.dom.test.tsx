@@ -1132,17 +1132,32 @@ describe('the overview contract is the four approved domains and their own measu
 });
 
 describe('the scope form on Material UI (P1-32-PRE-OD-REPA)', () => {
-  it('spends the four reads once for two presses inside one moment', async () => {
+  it('spends the four reads once for two presses, the second while the first four are open', async () => {
+    // The first four reads are held open, so the second press lands on a screen
+    // that has already rendered them as being read, not inside the same batch.
+    const held: (() => void)[] = [];
+    runReport.mockImplementation(
+      (input: { readonly reportCode: string }) =>
+        new Promise((resolve) => {
+          held.push(() => resolve(runOk(input.reportCode)));
+        })
+    );
     await renderOverview();
     const user = userEvent.setup();
     await typeDay(user, labelled('reports.run.from'), FROM);
     await typeDay(user, labelled('reports.run.to'), TO);
     const show = screen.getByRole('button', { name: EN['reports.overview.show'] as string });
-    await act(async () => {
-      show.click();
-      show.click();
-    });
+    await user.click(show);
     await waitFor(() => expect(runReport).toHaveBeenCalledTimes(4));
+    await user.click(show);
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(runReport).toHaveBeenCalledTimes(4);
+    await act(async () => {
+      for (const release of held) release();
+      await Promise.resolve();
+    });
     await screen.findByTestId('overview-zone');
     expect(runReport).toHaveBeenCalledTimes(4);
   });
