@@ -21,7 +21,7 @@ import {
 } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
-import { isCalendarDay, type CalendarDay } from '@/lib/branch-time';
+import { isCalendarDay, isKnownZone, type CalendarDay } from '@/lib/branch-time';
 import { FOCUS_REQUEST_EVENT } from '@/lib/forms/use-focus-first-invalid';
 import {
   FieldHelper,
@@ -207,12 +207,18 @@ export interface DateTimeFieldProps extends PickerFieldProps {
   readonly max?: string | undefined;
 }
 
-/** The zone of the one branch in force, or `undefined` when there is none or it is not known. */
+/**
+ * The zone of the one branch in force, or `undefined` when there is none or it
+ * is not known — no zone named, or a name this browser does not recognise as an
+ * IANA zone (`isKnownZone`). A name the browser cannot resolve is no clock at
+ * all: handed to a picker it would draw a field on a clock nobody can read, so
+ * it is refused exactly as a missing zone is (`P1-32-PRE-OD-INV1C`).
+ */
 export function workingZone(context: WorkingContext): string | undefined {
   const selection = context.selection;
   if (selection === null || selection.allBranches) return undefined;
   const zone = context.branches.find((branch) => branch.id === selection.branchId)?.timezone;
-  return zone === undefined || zone.trim() === '' ? undefined : zone;
+  return zone === undefined || !isKnownZone(zone) ? undefined : zone;
 }
 
 /** The picker's zone name: an IANA zone, or `'default'` for the browser's. */
@@ -510,18 +516,41 @@ export function DateTimeField(props: DateTimeFieldProps) {
     // No clock the typed time could honestly mean. See "A moment needs a
     // concrete branch" above.
     return (
-      <div className="flex flex-col gap-1.5" data-testid={props.testId} data-zone-refused="true">
-        <span className="text-label font-medium text-text-primary">{props.label}</span>
-        <RequiresConcreteBranch
-          messages={props.messages}
-          fallbackKey="dateField.zoneUnknown"
-          testId="date-time-requires-branch"
-        />
-      </div>
+      <MomentZoneRefusal messages={props.messages} label={props.label} testId={props.testId} />
     );
   }
 
   return <ZonedDateTimeField {...props} timezone={zone} />;
+}
+
+/**
+ * What a moment field draws in place of a picker when there is no clock the
+ * typed time could mean: its label and the shared sentence — "choose one
+ * branch" under "All my branches", or "this branch's time zone is not known" —
+ * marked `data-zone-refused`. `DateTimeField` draws it for the working branch;
+ * a screen addressed to a branch of its own draws it where that branch's zone
+ * is missing or not recognised, rather than letting the field fall back to any
+ * other clock (`P1-32-PRE-OD-INV1C`).
+ */
+export function MomentZoneRefusal({
+  messages,
+  label,
+  testId,
+}: {
+  readonly messages: Messages;
+  readonly label: string;
+  readonly testId?: string | undefined;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5" data-testid={testId} data-zone-refused="true">
+      <span className="text-label font-medium text-text-primary">{label}</span>
+      <RequiresConcreteBranch
+        messages={messages}
+        fallbackKey="dateField.zoneUnknown"
+        testId="date-time-requires-branch"
+      />
+    </div>
+  );
 }
 
 export interface ZonedDateTimeFieldProps extends DateTimeFieldProps {

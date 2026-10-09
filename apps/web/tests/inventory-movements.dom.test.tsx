@@ -1,9 +1,11 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import type { ReactElement } from 'react';
+import { renderToString } from 'react-dom/server';
+import { hydrateRoot, type Root } from 'react-dom/client';
 import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
@@ -126,7 +128,8 @@ vi.mock('@/features/authentication/api/session', () => ({
   requireSession: async () => ({ permissions: PERMISSIONS, email: 'operator@test.local' }),
 }));
 
-const { MovementsScreen } = await import('@/features/inventory/components/MovementsScreen');
+const { MovementsScreen, useOpeningWindowStart } =
+  await import('@/features/inventory/components/MovementsScreen');
 type RoutePage = (args: {
   params: Promise<Record<string, string>>;
   searchParams: Promise<Record<string, string | undefined>>;
@@ -1070,32 +1073,90 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
     expect(sent).not.toBe(new Date(2026, 8, 1, 8, 0).toISOString());
   });
 
-  it('opens with no window and draws no picker where the branch\u2019s clock is not known (INV1B)', async () => {
-    const UNKNOWN = { ...TEST_BRANCH, timezone: '' };
-    renderInLtr(
-      inBranch(
-        <MovementsScreen
-          locale="en"
-          messages={en}
-          initialWorkOrderId={null}
-          canReadBranches={true}
-        />,
-        { snapshot: branchSnapshot([UNKNOWN]) }
-      )
-    );
-    await chooseBranch();
-    await firstRead();
-    // Never the browser's midnight in place of the branch's: no lower bound at all.
-    expect(listMovements.mock.calls[0]?.[1]).toEqual({});
-    expect(screen.getByTestId('movements-occurred-from')).toHaveAttribute(
-      'data-zone-refused',
-      'true'
-    );
-    expect(screen.getByTestId('movements-occurred-to')).toHaveAttribute(
-      'data-zone-refused',
-      'true'
-    );
-  });
+  /*
+   * No clock, no read (`P1-32-PRE-OD-INV1C`, planner ruling 2026-10-09). This
+   * case used to pin INV1B's answer — the ledger opened with no lower bound and
+   * read the branch's whole history. The ruling replaced that: where the
+   * branch's zone is not set, or is a name the browser does not recognise, the
+   * ledger says so and reads nothing, and every moment field shows the refusal
+   * and no picker — never one drawn on the unknown name, and never the
+   * browser's clock.
+   */
+  it.each([
+    ['en', '', 'inventory.movements.noClock.missing'],
+    ['ar', '', 'inventory.movements.noClock.missing'],
+    ['en', 'Mars/Base', 'inventory.movements.noClock.unrecognised'],
+    ['ar', 'Mars/Base', 'inventory.movements.noClock.unrecognised'],
+  ] as const)(
+    'reads nothing and draws no picker where the branch\u2019s zone is not a clock (%s, zone %j)',
+    async (locale, timezone, descriptionKey) => {
+      const T = CATALOGUES[locale];
+      const snapshot = branchSnapshot([{ ...TEST_BRANCH, timezone }]);
+      if (locale === 'en') {
+        renderInLtr(
+          inBranch(
+            <MovementsScreen
+              locale="en"
+              messages={en}
+              initialWorkOrderId={null}
+              canReadBranches={true}
+            />,
+            { snapshot }
+          )
+        );
+      } else {
+        renderInRtl(
+          inBranch(
+            <MovementsScreen
+              locale="ar"
+              messages={ar}
+              initialWorkOrderId={null}
+              canReadBranches={true}
+            />,
+            { snapshot, locale: 'ar' }
+          )
+        );
+      }
+      const panel = await screen.findByRole('region', {
+        name: T['inventory.movements.heading'] as string,
+      });
+      const notice = await within(panel).findByTestId('inventory-movements-no-clock');
+      expect(notice).toHaveAttribute('role', 'status');
+      expect(
+        within(notice).getByText(T['inventory.movements.noClock.title'] as string)
+      ).toBeVisible();
+      expect(within(notice).getByText(T[descriptionKey] as string)).toBeVisible();
+      // The branch's own locations are still read, so the panel has settled.
+      await waitFor(() => expect(listLocations).toHaveBeenCalled());
+      expect(listMovements).not.toHaveBeenCalled();
+      expect(within(panel).queryByRole('grid')).toBeNull();
+      for (const [testId, labelKey] of [
+        ['movements-occurred-from', 'inventory.movements.from'],
+        ['movements-occurred-to', 'inventory.movements.to'],
+      ] as const) {
+        const field = within(panel).getByTestId(testId);
+        expect(field).toHaveAttribute('data-zone-refused', 'true');
+        expect(within(field).getByText(T[labelKey] as string)).toBeVisible();
+        expect(within(field).getByTestId('date-time-requires-branch')).toHaveTextContent(
+          T['dateField.zoneUnknown'] as string
+        );
+        expect(within(field).queryByRole('spinbutton')).toBeNull();
+      }
+      expect(
+        within(panel).queryByRole('group', {
+          name: new RegExp(`^${escapeIn(T['inventory.movements.from'] as string)}`),
+        })
+      ).toBeNull();
+      // "Show movements" cannot read an unbounded ledger either.
+      const show = within(panel).getByRole('button', {
+        name: T['inventory.movements.show'] as string,
+      });
+      expect(show).toBeDisabled();
+      expect(show).toHaveAttribute('aria-describedby', 'inventory-movements-no-clock');
+      expect(listMovements).not.toHaveBeenCalled();
+      expect(document.documentElement.dir).toBe(locale === 'en' ? 'ltr' : 'rtl');
+    }
+  );
 
   it('refuses a moment only partly typed, on its field, and reads nothing', async () => {
     const user = userEvent.setup();
@@ -1132,4 +1193,81 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
       ).toBeNull();
     }
   );
+});
+
+describe('the first window is worked out in the browser, after the server\u2019s render (INV1C)', () => {
+  /*
+   * The ledger's first window starts at the branch's midnight six days back,
+   * which depends on the moment it is worked out. Worked out in the server's
+   * render and again in the browser's first render, two moments either side of
+   * the branch's midnight named two different days and the hydrated page
+   * disagreed with the server's. The start is now worked out once, in the
+   * browser, after it has taken the page over: the server and the hydrating
+   * render both hold none, and the window is the browser's moment.
+   */
+  function Opening({ zone }: { readonly zone: string | undefined }) {
+    const start = useOpeningWindowStart(zone);
+    return <output data-testid="opening-window">{start ?? 'pending'}</output>;
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  async function hydrateAcrossMidnight(zone: string | undefined) {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    // One second before midnight on Asia/Riyadh (UTC+3): 30 September there.
+    vi.setSystemTime(new Date('2026-09-30T20:59:59Z'));
+    const html = renderToString(<Opening zone={zone} />);
+    // Two seconds later, in the browser: already 1 October on the branch's clock.
+    vi.setSystemTime(new Date('2026-09-30T21:00:01Z'));
+    const container = document.createElement('div');
+    container.innerHTML = html;
+    document.body.appendChild(container);
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const recoverable = vi.fn();
+    let root: Root | null = null;
+    await act(async () => {
+      root = hydrateRoot(container, <Opening zone={zone} />, { onRecoverableError: recoverable });
+    });
+    const logged = errors.mock.calls.map((call) => String(call[0]));
+    errors.mockRestore();
+    return {
+      html,
+      container,
+      recoverable,
+      logged,
+      done: () => {
+        act(() => (root as Root | null)?.unmount());
+        container.remove();
+      },
+    };
+  }
+
+  it('the server renders no window, hydration agrees, and the browser opens on its own day', async () => {
+    const run = await hydrateAcrossMidnight('Asia/Riyadh');
+    try {
+      expect(run.html).toContain('pending');
+      expect(run.recoverable).not.toHaveBeenCalled();
+      expect(run.logged).toEqual([]);
+      // The browser's 1 October, six days back: 25 September 00:00 on the
+      // branch's clock — not the server's 24 September.
+      const shown = run.container.textContent ?? '';
+      expect(shown).toBe('2026-09-24T21:00:00.000Z');
+      expect(Date.parse(shown)).toBe(recentStart(3, new Date('2026-09-30T21:00:01Z')));
+      expect(Date.parse(shown)).not.toBe(recentStart(3, new Date('2026-09-30T20:59:59Z')));
+    } finally {
+      run.done();
+    }
+  });
+
+  it('holds no window at all where the branch has no known clock', async () => {
+    const run = await hydrateAcrossMidnight(undefined);
+    try {
+      expect(run.recoverable).not.toHaveBeenCalled();
+      expect(run.container.textContent).toBe('pending');
+    } finally {
+      run.done();
+    }
+  });
 });
