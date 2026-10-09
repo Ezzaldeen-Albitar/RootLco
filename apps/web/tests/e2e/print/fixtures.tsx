@@ -448,6 +448,12 @@ function quotationLine(index: number) {
 
 const QUOTATION_LINES = 14;
 
+/**
+ * The quotation's subtotal and grand total, a figure no line prints, so a printed
+ * page can be told to hold the totals by it in any language and with any font.
+ */
+export const QUOTATION_TOTAL = '987.654';
+
 function quotationRevision(lines: number) {
   return {
     id: 'revision-of-the-test',
@@ -456,10 +462,10 @@ function quotationRevision(lines: number) {
     currency: 'JOD',
     issuedAt: '2026-10-06T18:32:00.000Z',
     expiresAt: null,
-    subtotal: '280.0000',
+    subtotal: '987.6540',
     discountTotal: '0.0000',
     taxTotal: '0.0000',
-    grandTotal: '280.0000',
+    grandTotal: '987.6540',
     recordVersion: 1,
     lines: Array.from({ length: lines }, (_, index) => quotationLine(index)),
     discountApproval: null,
