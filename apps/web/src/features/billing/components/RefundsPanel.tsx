@@ -26,24 +26,30 @@
  * part of this; nothing here pays money, and no refund voucher is printed.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import Button from '@mui/material/Button';
 
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
 import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
-import { DateField } from '@/components/forms/mui/DateField';
+import { DateField, type DayProblem } from '@/components/forms/mui/DateField';
 import { FormMoneyField } from '@/components/forms/mui/FormMoneyField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
-import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import { listPaymentMethods } from '@/features/payments/api';
-import type { Locale } from '@/i18n/config';
+import { directionOf, type Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import { useReread } from '@/lib/api/use-reread';
+import { dayIn, formatDayInZone, formatInZone, isKnownZone, zoneLabelAt } from '@/lib/branch-time';
+import { intlLocale } from '@/lib/format';
 import { unreachable, type ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { compareMoney, fitsMinorUnit, formatMoney } from '@/lib/money';
 
 import {
@@ -65,7 +71,7 @@ import {
   type RefundRequest,
   type RefundRequestEcho,
 } from '../billing-contract';
-import { Money, OutcomeNote, When } from './shared';
+import { Money, OutcomeNote } from './shared';
 
 /** The invoice the panel belongs to, as the screen holds it. */
 export interface RefundInvoice {
@@ -75,6 +81,48 @@ export interface RefundInvoice {
 }
 
 const LIVE = new Set(['pending', 'approved']);
+
+/**
+ * The clock of a branch the operator works in, or `null` when the working
+ * context does not name a zone this browser knows (P1-32-PRE-OD-REPB).
+ *
+ * A refund's moments and its payout day belong to the branch it was asked for in
+ * (D-17): "not in the future" is judged there by the server, so the screen shows
+ * and checks the same calendar rather than the laptop's.
+ */
+export function useBranchClock(branchId: string): string | null {
+  const { branches } = useWorkingContext();
+  const zone = branches.find((branch) => branch.id === branchId)?.timezone;
+  return zone !== undefined && isKnownZone(zone) ? zone : null;
+}
+
+/**
+ * A moment on the branch's clock, with that clock named beside it; UTC, named
+ * as such, when the branch's clock is not known.
+ */
+export function RefundMoment({
+  value,
+  locale,
+  zone,
+}: {
+  readonly value: string;
+  readonly locale: Locale;
+  readonly zone: string | null;
+}) {
+  const clock = zone ?? 'UTC';
+  const intl = intlLocale(locale);
+  return (
+    <bdi dir={directionOf(locale)}>
+      {formatInZone(value, intl, clock)} {zoneLabelAt(value, intl, clock)}
+    </bdi>
+  );
+}
+
+/** A calendar day, written for reading in the reader's language. */
+export function refundDay(day: string, locale: Locale): string {
+  // A calendar day is the same day on every clock; it is only written here.
+  return formatDayInZone(day, intlLocale(locale), 'UTC');
+}
 
 export function RefundsPanel({
   locale,
@@ -122,11 +170,16 @@ export function RefundsPanel({
   const methods = useReread(mayRequest ? listPaymentMethods : null);
 
   const [notice, setNotice] = useState<string | null>(null);
+  const zone = useBranchClock(invoice.branchId);
 
   const changed = async (noticeKey: string) => {
     setNotice(noticeKey);
     await Promise.all([obligations.reload(), requests.reload()]);
     onChanged(noticeKey);
+  };
+  // A decision refused because the request moved on: read it again, as it is now.
+  const reload = async () => {
+    await Promise.all([obligations.reload(), requests.reload()]);
   };
 
   const obligationState = obligations.value;
@@ -200,7 +253,9 @@ export function RefundsPanel({
               currentUserId={currentUserId}
               mayRequest={mayRequest}
               mayDecide={mayDecide}
+              zone={zone}
               onChanged={changed}
+              onReload={reload}
             />
           ))}
           <RefundHistory
@@ -208,6 +263,7 @@ export function RefundsPanel({
             messages={messages}
             requests={requestState.data.items}
             currentUserId={currentUserId}
+            zone={zone}
           />
         </>
       )}
@@ -225,7 +281,9 @@ function ObligationCard({
   currentUserId,
   mayRequest,
   mayDecide,
+  zone,
   onChanged,
+  onReload,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -235,7 +293,10 @@ function ObligationCard({
   readonly currentUserId: string | null;
   readonly mayRequest: boolean;
   readonly mayDecide: boolean;
+  /** The invoice branch's clock, or `null` when it is not known. */
+  readonly zone: string | null;
   readonly onChanged: (noticeKey: string) => Promise<void>;
+  readonly onReload: () => Promise<void>;
 }) {
   const open = obligation.state === 'open';
   return (
@@ -282,7 +343,9 @@ function ObligationCard({
           currentUserId={currentUserId}
           mayRequest={mayRequest}
           mayDecide={mayDecide}
+          zone={zone}
           onChanged={onChanged}
+          onReload={onReload}
         />
       ) : open && mayRequest ? (
         <RequestForm
@@ -317,14 +380,36 @@ function RequestForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [busy, setBusy] = useState(false);
+  // Set synchronously on the first press, so a second press in the same tick
+  // finds the request already under way and sends nothing.
+  const sending = useRef(false);
+  // Each refusal moves the cursor to the first field to fix.
+  const [refusals, setRefusals] = useState(0);
   // One transport key per opened form: pressing again after a lost answer replays.
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
   const cap = obligation.stillOwed ?? obligation.amount;
+
+  // What is typed here is unsaved work: a branch switch or leaving the page asks
+  // first, and discarding it empties the form.
+  const reset = useCallback(() => {
+    setAmount('');
+    setMethod('');
+    setReason('');
+    setErrors({});
+    setOutcome(null);
+  }, []);
+  useUnsavedGuard(amount.trim() !== '' || method !== '' || reason.trim() !== '', reset);
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
+  const shown: Record<string, string> = { ...(outcome?.fieldErrors ?? {}), ...errors };
+  const formRef = useFocusFirstInvalid({
+    status: Object.keys(shown).length > 0 ? 'invalid' : 'idle',
+    attempt: refusals,
+    fieldErrors: shown,
+  });
   const corrected = (name: string) => {
     if (errors[name] === undefined) return;
     const next = { ...errors };
@@ -333,6 +418,7 @@ function RequestForm({
   };
 
   const submit = async () => {
+    if (sending.current) return;
     const found: Record<string, string> = {};
     const typed = amount.trim();
     if (typed.length === 0) found['amount'] = 'field.required';
@@ -350,8 +436,10 @@ function RequestForm({
     setErrors(found);
     if (Object.keys(found).length > 0) {
       setOutcome(null);
+      setRefusals((count) => count + 1);
       return;
     }
+    sending.current = true;
     setBusy(true);
     try {
       let result: CreateOutcome<RefundRequestEcho>;
@@ -369,19 +457,25 @@ function RequestForm({
       if (result.state.status === 'success' && result.created) {
         setOutcome(null);
         setAmount('');
+        setMethod('');
         setReason('');
         setAttemptKey(crypto.randomUUID());
         await onChanged('refunds.request.recorded');
         return;
       }
       setOutcome(result.state);
+      if (Object.keys(result.state.fieldErrors ?? {}).length > 0) {
+        setRefusals((count) => count + 1);
+      }
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   };
 
   return (
     <form
+      ref={formRef}
       noValidate
       aria-label={translate(messages, 'refunds.request.heading')}
       className="flex flex-col gap-2"
@@ -452,7 +546,9 @@ function LiveRequest({
   currentUserId,
   mayRequest,
   mayDecide,
+  zone,
   onChanged,
+  onReload,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -460,11 +556,15 @@ function LiveRequest({
   readonly currentUserId: string | null;
   readonly mayRequest: boolean;
   readonly mayDecide: boolean;
+  readonly zone: string | null;
   readonly onChanged: (noticeKey: string) => Promise<void>;
+  readonly onReload: () => Promise<void>;
 }) {
   const [asking, setAsking] = useState<Step | null>(null);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One decision at a time: a second press in the same tick sends nothing.
+  const deciding = useRef(false);
   const own = currentUserId !== null && request.requestedBy === currentUserId;
   const pending = request.state === 'pending';
 
@@ -486,16 +586,23 @@ function LiveRequest({
 
   // Each sender re-reads in its own body, right after its own guarded call: the
   // request's version moved, and the list is what publishes the new one.
+  // Each also takes the panel's one hold first, so a second press in the same
+  // tick finds a decision already under way and sends nothing.
   const approve = async () => {
+    if (deciding.current) return;
+    deciding.current = true;
     setBusy(true);
     try {
       const result = await approveRefund(request.id, request.recordVersion).catch(() => null);
       if (accepted(result)) await onChanged('refunds.approve.done');
     } finally {
+      deciding.current = false;
       setBusy(false);
     }
   };
   const reject = async (reason: string) => {
+    if (deciding.current) return;
+    deciding.current = true;
     setBusy(true);
     try {
       const result = await rejectRefund(request.id, { reason }, request.recordVersion).catch(
@@ -503,15 +610,19 @@ function LiveRequest({
       );
       if (accepted(result)) await onChanged('refunds.reject.done');
     } finally {
+      deciding.current = false;
       setBusy(false);
     }
   };
   const withdraw = async () => {
+    if (deciding.current) return;
+    deciding.current = true;
     setBusy(true);
     try {
       const result = await withdrawRefund(request.id, request.recordVersion).catch(() => null);
       if (accepted(result)) await onChanged('refunds.withdraw.done');
     } finally {
+      deciding.current = false;
       setBusy(false);
     }
   };
@@ -556,7 +667,13 @@ function LiveRequest({
       </div>
       {request.state === 'approved' ? (
         mayRequest ? (
-          <PayoutForm messages={messages} request={request} onChanged={onChanged} />
+          <PayoutForm
+            messages={messages}
+            request={request}
+            zone={zone}
+            onChanged={onChanged}
+            onReload={onReload}
+          />
         ) : (
           <p className="text-caption text-text-muted">
             {translate(messages, 'refunds.execute.waits')}
@@ -564,6 +681,13 @@ function LiveRequest({
         )
       ) : null}
       <OutcomeNote messages={messages} outcome={outcome} />
+      {outcome?.status === 'conflict' ? (
+        <div>
+          <Button variant="outlined" size="small" onClick={() => void onReload()}>
+            {translate(messages, 'form.loadLatest')}
+          </Button>
+        </div>
+      ) : null}
       <ConfirmDialog
         open={asking === 'approve'}
         title={translate(messages, 'refunds.approve.confirmTitle')}
@@ -603,41 +727,90 @@ function LiveRequest({
   );
 }
 
-/** Recording, once, that an approved refund was paid out. */
+/**
+ * Recording, once, that an approved refund was paid out.
+ *
+ * The day is a calendar day on the invoice branch's clock (D-17): the server
+ * refuses a day after that branch's today, so the picker offers no later day and
+ * the form refuses one before sending, on the field, as it refuses a day only
+ * partly typed.
+ */
 function PayoutForm({
   messages,
   request,
+  zone,
   onChanged,
+  onReload,
 }: {
   readonly messages: Messages;
   readonly request: RefundRequest;
+  /** The invoice branch's clock, or `null` when it is not known. */
+  readonly zone: string | null;
   readonly onChanged: (noticeKey: string) => Promise<void>;
+  readonly onReload: () => Promise<void>;
 }) {
   const [reference, setReference] = useState('');
   const [day, setDay] = useState('');
+  const [dayProblem, setDayProblem] = useState<DayProblem | null>(null);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [busy, setBusy] = useState(false);
+  // Set synchronously on the first press, so a second press in the same tick
+  // finds the payout already under way and sends nothing.
+  const sending = useRef(false);
+  const [refusals, setRefusals] = useState(0);
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
+  // The branch's today, when its clock is known; the server judges it again.
+  const today = zone === null ? undefined : dayIn(zone);
+
+  const reset = useCallback(() => {
+    setReference('');
+    setDay('');
+    setDayProblem(null);
+    setErrors({});
+    setOutcome(null);
+  }, []);
+  useUnsavedGuard(reference.trim() !== '' || day !== '' || dayProblem === 'incomplete', reset);
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
+  const shown: Record<string, string> = { ...(outcome?.fieldErrors ?? {}), ...errors };
+  const formRef = useFocusFirstInvalid({
+    status: Object.keys(shown).length > 0 ? 'invalid' : 'idle',
+    attempt: refusals,
+    fieldErrors: shown,
+  });
+  const corrected = (name: string) => {
+    if (errors[name] === undefined) return;
+    const next = { ...errors };
+    delete next[name];
+    setErrors(next);
+  };
 
   const submit = async () => {
+    if (sending.current) return;
     const found: Record<string, string> = {};
     const typed = reference.trim();
     if (typed.length === 0) found['payoutReference'] = 'field.required';
     else if (typed.length > MAX_PAYOUT_REFERENCE) {
       found['payoutReference'] = 'refunds.execute.referenceTooLong';
     }
-    if (day === '') found['payoutDate'] = 'field.required';
+    if (dayProblem === 'incomplete' || dayProblem === 'invalidDate') {
+      found['payoutDate'] = 'refunds.execute.dateIncomplete';
+    } else if (day === '') {
+      found['payoutDate'] = 'field.required';
+    } else if (dayProblem === 'maxDate' || (today !== undefined && day > today)) {
+      found['payoutDate'] = 'form.violation.refund_payout_date_invalid';
+    }
     setErrors(found);
     if (Object.keys(found).length > 0 || request.paymentMethod === null) {
       setOutcome(null);
+      if (Object.keys(found).length > 0) setRefusals((count) => count + 1);
       return;
     }
+    sending.current = true;
     setBusy(true);
     try {
       let result: CreateOutcome<RefundRequestEcho>;
@@ -666,13 +839,18 @@ function PayoutForm({
         return;
       }
       setOutcome(result.state);
+      if (Object.keys(result.state.fieldErrors ?? {}).length > 0) {
+        setRefusals((count) => count + 1);
+      }
     } finally {
+      sending.current = false;
       setBusy(false);
     }
   };
 
   return (
     <form
+      ref={formRef}
       noValidate
       aria-label={translate(messages, 'refunds.execute.heading')}
       className="flex flex-col gap-2"
@@ -696,22 +874,33 @@ function PayoutForm({
         required
         name="payoutReference"
         value={reference}
-        onEdit={() => setErrors({ ...errors, payoutReference: '' })}
+        onEdit={() => corrected('payoutReference')}
         onChange={setReference}
-        error={errorFor('payoutReference') || undefined}
+        error={errorFor('payoutReference')}
       />
       <div className="sm:max-w-xs">
         <DateField
           label={translate(messages, 'refunds.execute.date')}
+          description={translate(messages, 'refunds.execute.dateHelp')}
           required
           name="payoutDate"
           value={day}
+          {...(zone === null ? {} : { timezone: zone })}
+          {...(today === undefined ? {} : { max: today })}
           onChange={(next) => setDay(next)}
-          onEdit={() => setErrors({ ...errors, payoutDate: '' })}
-          error={errorFor('payoutDate') || undefined}
+          onProblem={setDayProblem}
+          onEdit={() => corrected('payoutDate')}
+          error={errorFor('payoutDate')}
         />
       </div>
       <OutcomeNote messages={messages} outcome={outcome} />
+      {outcome?.status === 'conflict' ? (
+        <div>
+          <Button variant="outlined" size="small" onClick={() => void onReload()}>
+            {translate(messages, 'form.loadLatest')}
+          </Button>
+        </div>
+      ) : null}
       <div>
         <Button type="submit" variant="contained" disabled={busy} aria-busy={busy || undefined}>
           {translate(messages, 'refunds.execute.submit')}
@@ -727,11 +916,14 @@ function RefundHistory({
   messages,
   requests,
   currentUserId,
+  zone,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly requests: readonly RefundRequest[];
   readonly currentUserId: string | null;
+  /** The invoice branch's clock, or `null` when it is not known. */
+  readonly zone: string | null;
 }) {
   if (requests.length === 0) return null;
   return (
@@ -749,7 +941,7 @@ function RefundHistory({
             </span>
             <span className="block text-caption text-text-muted">
               {translate(messages, 'refunds.history.requested')}{' '}
-              <When value={request.requestedAt} locale={locale} />
+              <RefundMoment value={request.requestedAt} locale={locale} zone={zone} />
               {currentUserId !== null && request.requestedBy === currentUserId
                 ? ` · ${translate(messages, 'refunds.history.byYou')}`
                 : ''}
@@ -764,7 +956,7 @@ function RefundHistory({
               <span className="block text-caption text-text-muted">
                 {formatMessage(translate(messages, 'refunds.history.paidOut'), {
                   reference: request.payoutReference,
-                  day: request.payoutDate ?? '',
+                  day: request.payoutDate === null ? '' : refundDay(request.payoutDate, locale),
                 })}
               </span>
             ) : null}
