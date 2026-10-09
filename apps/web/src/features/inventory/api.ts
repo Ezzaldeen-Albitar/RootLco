@@ -67,6 +67,7 @@ import {
   type IssuedPart,
   type ItemCategory,
   type ItemCostHistory,
+  type ItemDetail,
   type ItemIdentifierEcho,
   type ItemIdentifierList,
   type ItemLabel,
@@ -1165,6 +1166,16 @@ export async function cancelStockCount(
 
 const itemPath = (itemId: string, suffix: string) =>
   `/api/v1/items/${encodeURIComponent(itemId)}${suffix}`;
+
+/**
+ * One item for its own page: its code, name, unit, lifecycle, whether it is
+ * archived, and the chain of categories it is filed under, top level first
+ * (P1-32-PRE-OD-INV2A, `inv.item.read`). No cost and no price. An id this tenant
+ * cannot see answers as not found.
+ */
+export async function readItemDetail(itemId: string): Promise<ReadState<ItemDetail>> {
+  return readOperation<ItemDetail>(itemPath(itemId, ''));
+}
 
 /**
  * An item's codes (`inv.item-identifier-list`), live ones first.

@@ -3504,6 +3504,13 @@ export const MANIFEST = {
   },
   // P1-32 preparatory slice 2: item barcodes and packaging identifiers. Tenant-wide
   // catalogue reference data; the assertions rest on identifier rows and audit rows.
+  // P1-32-PRE-OD-INV2A: one item for its own page, with its category path. Tenant-wide
+  // catalogue reference data, like the item search; no cost and no price.
+  'inv.item-detail': {
+    files: ['tests/backend/od-inventory-item-detail.test.ts'],
+    required: ['success', 'denial', 'cross-tenant', 'isolation'],
+    note: 'answers code, name, unit, lifecycle, the archived flag and the category chain top level first; an unknown id and another tenant item both answer 404; a caller without inv.item.read is refused; no cost or price field is returned',
+  },
   'inv.item-identifier-list': {
     files: ['tests/backend/p1-32-item-identifiers.test.ts'],
     required: ['success', 'cross-tenant', 'isolation'],

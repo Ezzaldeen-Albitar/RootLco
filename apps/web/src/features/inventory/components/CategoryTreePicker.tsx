@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useId, useMemo } from 'react';
 import Button from '@mui/material/Button';
 
 import { TreePicker } from '@/components/pickers/TreePicker';
@@ -25,10 +25,15 @@ import { pathText, type CategoryList } from './CategoryTree';
  * and choosing it reports `''`; a caller that must have a category passes
  * `clearLabel={null}` and `required`.
  *
- * Built for the setup item form, the vehicle specifications and the material
- * requirements panel; none of them draws it yet. The `CategoryPicker` in
- * `shared.tsx` is the one-page select those screens draw today and is a
- * different control.
+ * Drawn by the setup screen (the item's category and a new category's parent)
+ * and the vehicle specifications (P1-32-PRE-OD-INV2A); the material
+ * requirements panel still draws the one-page `CategoryPicker` in `shared.tsx`,
+ * a different control.
+ *
+ * While the read is in flight, and when it fails, there is no tree to carry the
+ * field's name, so the wait or the failure is drawn inside a `group` labelled
+ * by the field's own label (`aria-labelledby`): a screen reader that lands on
+ * the sentence hears which field it is about.
  */
 export interface CategoryTreePickerProps {
   readonly messages: Messages;
@@ -63,6 +68,7 @@ export function CategoryTreePicker({
   testId = 'category-tree-picker',
 }: CategoryTreePickerProps) {
   const { read, retry } = categories;
+  const labelId = `${useId()}-label`;
   const inactive = translate(messages, 'inventory.setup.status.inactive');
   const items = useMemo(
     () =>
@@ -78,8 +84,20 @@ export function CategoryTreePicker({
 
   if (read.status !== 'ok') {
     return (
-      <div className="flex flex-col gap-1" data-testid={testId}>
-        <span className="text-label font-medium text-text-primary">{label}</span>
+      <div
+        className="flex flex-col gap-1"
+        data-testid={testId}
+        role="group"
+        aria-labelledby={labelId}
+      >
+        <span id={labelId} className="text-label font-medium text-text-primary">
+          {label}
+          {required ? (
+            <span aria-hidden="true" className="ms-1 text-error">
+              *
+            </span>
+          ) : null}
+        </span>
         {read.status === 'loading' ? (
           <MuiLoadingState messages={messages} variant="inline" />
         ) : (
@@ -99,6 +117,11 @@ export function CategoryTreePicker({
             ) : null}
           </div>
         )}
+        {error ? (
+          <p role="alert" className="text-supporting text-error">
+            {error}
+          </p>
+        ) : null}
       </div>
     );
   }

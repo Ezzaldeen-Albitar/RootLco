@@ -30,17 +30,41 @@
  * Permissions: `inv.item.read` gates the page and the list;
  * `inv.unit_conversion.manage`, held TENANT-WIDE (the server checks, this screen
  * cannot), offers stating and retiring.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV2A`)
+ *
+ * The list is Material's table: the read answers one bounded page with a "more
+ * exist" flag and no cursor to walk (planner ruling of 2026-10-09). The units
+ * are `FormSelectField`, the factor `FormNumberField` (the string typed is the
+ * string sent), the source `FormTextField`, the item the shared `ItemFinder`;
+ * every button is Material's. Opening the form moves the cursor into it, and a
+ * saved form gives it back to the button that opened it. Each write is sent
+ * once (`useSingleFlight`). A recorded moment is written on a named clock
+ * (`RecordedMoment`), never the browser's. What is read, sent and authorized
+ * is unchanged.
  */
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { SelectField, TextField } from '@/components/forms/Field';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiEmptyState, MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
+import type { ReadFailureStatus } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 
 import {
   listUnitConversions,
@@ -55,8 +79,9 @@ import {
   type UnitConversion,
   type UnitOfMeasureOption,
 } from '../inventory-contract';
-import { OutcomeNote, PRIMARY_BUTTON, SECONDARY_BUTTON } from './shared';
-import { DANGER_BUTTON, ItemFinder, PANEL } from './stock-operations';
+import { RecordedMoment, useSingleFlight } from './catalogue-pieces';
+import { OutcomeNote } from './shared';
+import { ItemFinder, PANEL } from './stock-operations';
 
 type Listing =
   | { readonly phase: 'loading' }
@@ -65,7 +90,11 @@ type Listing =
       readonly rows: readonly UnitConversion[];
       readonly truncated: boolean;
     }
-  | { readonly phase: 'failed'; readonly messageKey: string };
+  | {
+      readonly phase: 'failed';
+      readonly status: ReadFailureStatus;
+      readonly correlationId: string | null;
+    };
 
 export function UnitConversionsScreen({
   locale,
@@ -80,10 +109,10 @@ export function UnitConversionsScreen({
   const [itemFilter, setItemFilter] = useState<InventoryItem | null>(null);
   const [appliedItem, setAppliedItem] = useState<string | null>(null);
   const [includeRetired, setIncludeRetired] = useState(false);
-  const [filterError, setFilterError] = useState<string | undefined>(undefined);
   const [epoch, setEpoch] = useState(0);
   const [listing, setListing] = useState<Listing>({ phase: 'loading' });
   const [adding, setAdding] = useState(false);
+  const opener = useRef<HTMLButtonElement | null>(null);
 
   const reload = useCallback(() => setEpoch((n) => n + 1), []);
 
@@ -97,13 +126,7 @@ export function UnitConversionsScreen({
       setListing(
         state.status === 'ok'
           ? { phase: 'listed', rows: state.data.items, truncated: state.data.hasMore }
-          : {
-              phase: 'failed',
-              messageKey:
-                state.status === 'denied'
-                  ? 'inventory.conversions.refused'
-                  : 'inventory.conversions.unavailable',
-            }
+          : { phase: 'failed', status: state.status, correlationId: state.correlationId }
       );
     });
     return () => {
@@ -126,7 +149,6 @@ export function UnitConversionsScreen({
             event.preventDefault();
             // Nothing to validate: the item is chosen from the platform's own
             // list, so there is no malformed reference left to refuse.
-            setFilterError(undefined);
             setAppliedItem(itemFilter === null ? null : itemFilter.id);
           }}
           noValidate
@@ -139,33 +161,33 @@ export function UnitConversionsScreen({
             required={false}
             value={itemFilter}
             onChange={setItemFilter}
-            {...(filterError === undefined ? {} : { error: filterError })}
           />
           <div className="flex items-end gap-3">
-            <button type="submit" className={SECONDARY_BUTTON}>
+            <Button type="submit" variant="outlined">
               {translate(messages, 'inventory.conversions.filter.apply')}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
               aria-pressed={includeRetired}
               onClick={() => setIncludeRetired((was) => !was)}
             >
               {translate(messages, 'inventory.conversions.filter.includeRetired')}
-            </button>
+            </Button>
           </div>
         </form>
 
         {canManage ? (
           <div>
-            <button
+            <Button
+              ref={opener}
               type="button"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
               aria-expanded={adding}
               onClick={() => setAdding((was) => !was)}
             >
               {translate(messages, 'inventory.conversions.set.open')}
-            </button>
+            </Button>
           </div>
         ) : (
           <p className="text-caption text-text-muted">
@@ -179,6 +201,8 @@ export function UnitConversionsScreen({
             onDone={() => {
               setAdding(false);
               reload();
+              // The form is gone; the cursor goes back to what opened it.
+              opener.current?.focus();
             }}
           />
         ) : null}
@@ -189,56 +213,72 @@ export function UnitConversionsScreen({
           {translate(messages, 'inventory.conversions.list.heading')}
         </h2>
         {listing.phase === 'loading' ? (
-          <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
+          <MuiLoadingState messages={messages} rows={3} testId="conversions-loading" />
         ) : listing.phase === 'failed' ? (
-          <p role="alert" className="text-body text-error">
-            {translateDynamic(messages, listing.messageKey)}
-          </p>
+          <MuiReadFailureState
+            messages={messages}
+            locale={locale}
+            status={listing.status}
+            correlationId={listing.correlationId}
+            onRetry={
+              listing.status === 'unavailable' || listing.status === 'error' ? reload : undefined
+            }
+            descriptionKey={
+              listing.status === 'denied'
+                ? 'inventory.conversions.refused'
+                : 'inventory.conversions.unavailable'
+            }
+            testId="conversions-failure"
+          />
         ) : listing.rows.length === 0 ? (
-          <p className="py-4 text-center text-body text-text-secondary">
-            {translate(messages, 'inventory.conversions.list.none')}
-          </p>
+          <MuiEmptyState
+            messages={messages}
+            descriptionKey="inventory.conversions.list.none"
+            testId="conversions-empty"
+          />
         ) : (
           <>
-            <table className="w-full text-body">
-              <caption className="sr-only">
-                {translate(messages, 'inventory.conversions.list.caption')}
-              </caption>
-              <thead>
-                <tr className="text-start text-caption text-text-muted">
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {translate(messages, 'inventory.conversions.column.statement')}
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {translate(messages, 'inventory.conversions.column.appliesTo')}
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {translate(messages, 'inventory.conversions.column.source')}
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {translate(messages, 'inventory.conversions.column.status')}
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {translate(messages, 'inventory.conversions.column.stated')}
-                  </th>
-                  <th scope="col" className="px-3 py-2 text-start">
-                    {translate(messages, 'inventory.conversions.column.actions')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {listing.rows.map((row) => (
-                  <ConversionRow
-                    key={row.id}
-                    locale={locale}
-                    messages={messages}
-                    row={row}
-                    canManage={canManage}
-                    onChanged={reload}
-                  />
-                ))}
-              </tbody>
-            </table>
+            <TableContainer>
+              <Table size="small">
+                <caption className="sr-only">
+                  {translate(messages, 'inventory.conversions.list.caption')}
+                </caption>
+                <TableHead>
+                  <TableRow>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.conversions.column.statement')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.conversions.column.appliesTo')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.conversions.column.source')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.conversions.column.status')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.conversions.column.stated')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.conversions.column.actions')}
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {listing.rows.map((row) => (
+                    <ConversionRow
+                      key={row.id}
+                      locale={locale}
+                      messages={messages}
+                      row={row}
+                      canManage={canManage}
+                      onChanged={reload}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
             {listing.truncated ? (
               <p className="text-caption text-text-muted">
                 {translate(messages, 'inventory.conversions.list.truncated')}
@@ -266,29 +306,31 @@ function ConversionRow({
 }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  const flight = useSingleFlight();
 
-  const retire = async () => {
-    setBusy(true);
-    const result = await retireUnitConversion(row.id);
-    setBusy(false);
-    setOutcome(result.state);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success') {
-      setOutcome(null);
-      onChanged();
-    }
-  };
+  const retire = () =>
+    flight(async () => {
+      setBusy(true);
+      const result = await retireUnitConversion(row.id);
+      setBusy(false);
+      setOutcome(result.state);
+      notifyActionResult(result.state, messages);
+      if (result.state.status === 'success') {
+        setOutcome(null);
+        onChanged();
+      }
+    });
 
   return (
-    <tr className="border-t border-border">
-      <td className="px-3 py-2">
+    <TableRow>
+      <TableCell>
         <span dir="ltr">
           1 <bdi>{row.fromUomCode}</bdi>
           {' = '}
           <span className="tabular-nums">{row.factor}</span> <bdi>{row.toUomCode}</bdi>
         </span>
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
         {row.itemId ? (
           <bdi>{row.itemSku ?? row.itemId}</bdi>
         ) : (
@@ -296,32 +338,36 @@ function ConversionRow({
             {translate(messages, 'inventory.conversions.tenantWide')}
           </span>
         )}
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
         <bdi>{row.sourceReference}</bdi>
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
         {translateDynamic(messages, `inventory.conversions.status.${row.status}`)}
-      </td>
-      <td className="px-3 py-2">
-        <span dir="ltr">{formatDateTime(row.createdAt, locale)}</span>
-      </td>
-      <td className="px-3 py-2">
+      </TableCell>
+      <TableCell>
+        <RecordedMoment value={row.createdAt} locale={locale} />
+      </TableCell>
+      <TableCell>
         {canManage && row.status === 'active' ? (
-          <button
+          <Button
             type="button"
-            className={DANGER_BUTTON}
+            variant="outlined"
+            color="error"
+            size="small"
             disabled={busy}
             onClick={() => void retire()}
           >
             {translate(messages, 'inventory.conversions.retire.action')}
-          </button>
+          </Button>
         ) : null}
         <OutcomeNote messages={messages} outcome={outcome} />
-      </td>
-    </tr>
+      </TableCell>
+    </TableRow>
   );
 }
+
+const EMPTY_CONVERSION = { fromUomId: '', toUomId: '', factor: '', sourceReference: '' };
 
 function ConversionForm({
   messages,
@@ -342,64 +388,98 @@ function ConversionForm({
   }, []);
 
   const [item, setItem] = useState<InventoryItem | null>(null);
-  const [form, setForm] = useState({
-    fromUomId: '',
-    toUomId: '',
-    factor: '',
-    sourceReference: '',
-  });
+  const [form, setForm] = useState(EMPTY_CONVERSION);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const flight = useSingleFlight();
+  const heading = useRef<HTMLHeadingElement | null>(null);
+
+  // Opening the form moves the cursor into it, onto its name.
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
+
+  // A conversion is the organisation's, so nothing here follows a branch
+  // switch on its own: a confirmed discard empties the form, as promised.
+  useUnsavedGuard(
+    item !== null ||
+      form.fromUomId !== '' ||
+      form.toUomId !== '' ||
+      form.factor.trim().length > 0 ||
+      form.sourceReference.trim().length > 0,
+    () => {
+      setItem(null);
+      setForm(EMPTY_CONVERSION);
+      setErrors({});
+      setOutcome(null);
+    }
+  );
+  const formRef = useFocusFirstInvalid({
+    status: 'invalid',
+    fieldErrors: { ...(outcome?.fieldErrors ?? {}), ...errors },
+    attempt,
+  });
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
 
-  const submit = async () => {
-    const found: Record<string, string> = {};
-    // The item is chosen from the platform's own list, so an absent one is the
-    // documented "every item" case and a malformed one cannot arise.
-    const itemId = item?.id ?? '';
-    if (!form.fromUomId) found['fromUomId'] = 'field.required';
-    if (!form.toUomId) found['toUomId'] = 'field.required';
-    if (form.fromUomId && form.fromUomId === form.toUomId) {
-      found['toUomId'] = 'inventory.conversions.set.sameUnit';
-    }
-    const factor = form.factor.trim();
-    if (!CONVERSION_FACTOR.test(factor) || /^0+(?:\.0+)?$/.test(factor)) {
-      found['factor'] = 'inventory.conversions.set.factorFormat';
-    }
-    const sourceReference = form.sourceReference.trim();
-    if (sourceReference.length === 0) found['sourceReference'] = 'field.required';
-    else if (sourceReference.length > MAX_SOURCE_REFERENCE) {
-      found['sourceReference'] = 'inventory.material.create.sourceTooLong';
-    }
-    setErrors(found);
-    if (Object.keys(found).length > 0) return;
+  const submit = () =>
+    flight(async () => {
+      const found: Record<string, string> = {};
+      // The item is chosen from the platform's own list, so an absent one is the
+      // documented "every item" case and a malformed one cannot arise.
+      const itemId = item?.id ?? '';
+      if (!form.fromUomId) found['fromUomId'] = 'field.required';
+      if (!form.toUomId) found['toUomId'] = 'field.required';
+      if (form.fromUomId && form.fromUomId === form.toUomId) {
+        found['toUomId'] = 'inventory.conversions.set.sameUnit';
+      }
+      const factor = form.factor.trim();
+      if (!CONVERSION_FACTOR.test(factor) || /^0+(?:\.0+)?$/.test(factor)) {
+        found['factor'] = 'inventory.conversions.set.factorFormat';
+      }
+      const sourceReference = form.sourceReference.trim();
+      if (sourceReference.length === 0) found['sourceReference'] = 'field.required';
+      else if (sourceReference.length > MAX_SOURCE_REFERENCE) {
+        found['sourceReference'] = 'inventory.material.create.sourceTooLong';
+      }
+      setErrors(found);
+      if (Object.keys(found).length > 0) {
+        setAttempt((n) => n + 1);
+        return;
+      }
 
-    setBusy(true);
-    const result = await setUnitConversion({
-      ...(itemId ? { itemId } : {}),
-      fromUomId: form.fromUomId,
-      toUomId: form.toUomId,
-      factor,
-      sourceReference,
+      setBusy(true);
+      const result = await setUnitConversion({
+        ...(itemId ? { itemId } : {}),
+        fromUomId: form.fromUomId,
+        toUomId: form.toUomId,
+        factor,
+        sourceReference,
+      });
+      setBusy(false);
+      setOutcome(result.state);
+      notifyActionResult(result.state, messages);
+      if (result.state.status === 'success') {
+        setOutcome(null);
+        // Saved: nothing here is unsaved any more, so leaving asks nothing.
+        setItem(null);
+        setForm(EMPTY_CONVERSION);
+        onDone();
+      } else {
+        setAttempt((n) => n + 1);
+      }
     });
-    setBusy(false);
-    setOutcome(result.state);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success') {
-      setOutcome(null);
-      onDone();
-    }
-  };
 
   const options = units.map((unit) => ({ value: unit.id, label: `${unit.code} — ${unit.name}` }));
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -410,6 +490,8 @@ function ConversionForm({
     >
       <h3
         id="conversion-form-heading"
+        ref={heading}
+        tabIndex={-1}
         className="text-body font-medium text-text-primary sm:col-span-2"
       >
         {translate(messages, 'inventory.conversions.set.heading')}
@@ -417,32 +499,30 @@ function ConversionForm({
       <p className="text-caption text-text-muted sm:col-span-2">
         {translate(messages, 'inventory.conversions.set.explain')}
       </p>
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'inventory.conversions.set.fromUom')}
         required
         value={form.fromUomId}
-        onChange={(event) => setForm((f) => ({ ...f, fromUomId: event.target.value }))}
+        onChange={(fromUomId) => setForm((f) => ({ ...f, fromUomId }))}
         options={options}
         placeholder={translate(messages, 'inventory.material.create.chooseUom')}
         error={errorFor('fromUomId')}
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'inventory.conversions.set.toUom')}
         required
         value={form.toUomId}
-        onChange={(event) => setForm((f) => ({ ...f, toUomId: event.target.value }))}
+        onChange={(toUomId) => setForm((f) => ({ ...f, toUomId }))}
         options={options}
         placeholder={translate(messages, 'inventory.material.create.chooseUom')}
         error={errorFor('toUomId')}
       />
-      <TextField
+      <FormNumberField
         label={translate(messages, 'inventory.conversions.set.factor')}
         description={translate(messages, 'inventory.conversions.set.factorHelp')}
         required
-        inputMode="decimal"
-        dir="ltr"
         value={form.factor}
-        onChange={(event) => setForm((f) => ({ ...f, factor: event.target.value }))}
+        onChange={(factor) => setForm((f) => ({ ...f, factor }))}
         error={errorFor('factor')}
       />
       {/*
@@ -458,21 +538,21 @@ function ConversionForm({
         onChange={setItem}
         {...(errorFor('itemId') === undefined ? {} : { error: errorFor('itemId') as string })}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'inventory.conversions.set.sourceReference')}
         description={translate(messages, 'inventory.conversions.set.sourceHelp')}
         required
         value={form.sourceReference}
-        onChange={(event) => setForm((f) => ({ ...f, sourceReference: event.target.value }))}
+        onChange={(sourceReference) => setForm((f) => ({ ...f, sourceReference }))}
         error={errorFor('sourceReference')}
       />
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.conversions.set.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
