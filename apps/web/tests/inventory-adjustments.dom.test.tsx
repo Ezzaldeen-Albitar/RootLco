@@ -1,13 +1,16 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   inBranch,
-  renderLtr as renderInLtr,
-  renderRtl as renderInRtl,
+  messagesFor,
+  renderLtr as renderBareLtr,
+  renderRtl as renderBareRtl,
   BranchSwitch,
   OTHER_BRANCH,
   TEST_BRANCH,
@@ -32,7 +35,24 @@ import {
  * keeps the default snapshot — one authorized branch, selected for the operator
  * — true for every case below. A case that needs a different snapshot builds
  * one and renders it explicitly.
+ *
+ * Since `P1-32-PRE-OD-INV3` every render also goes under the product's Material
+ * provider, as the locale layout mounts it: the screen's own fields, buttons and
+ * tables are Material's, and a calendar day is an MIT picker (a group of parts,
+ * typed part by part, read back from the picker's own value input). The
+ * selectors below moved with that structure; what each case asserts did not.
  */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderInLtr = (ui: ReactElement, options?: Parameters<typeof renderBareLtr>[1]) =>
+  renderBareLtr(withMui(ui, 'en'), options);
+const renderInRtl = (ui: ReactElement, options?: Parameters<typeof renderBareRtl>[1]) =>
+  renderBareRtl(withMui(ui, 'ar'), options);
 const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
   renderInLtr(inBranch(ui), options);
 const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
@@ -71,6 +91,7 @@ import { STOCK_REFUSAL_RULES } from '@/features/inventory/inventory-contract';
  */
 
 const AR = ar as Record<string, string>;
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 const listAdjustments = vi.fn();
 const createAdjustment = vi.fn();
@@ -384,6 +405,126 @@ describe('the adjustments of a branch', () => {
     expect(
       await screen.findByText(EN['inventory.adjustments.create.done'] as string)
     ).toBeVisible();
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`a refused quantity is marked on its own field and what was typed stays (${locale})`, async () => {
+      const catalogue = locale === 'ar' ? AR : EN;
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      const user = userEvent.setup();
+      if (locale === 'ar') {
+        renderRtl(
+          <AdjustmentsScreen
+            locale="ar"
+            messages={ar}
+            currentUserId={USER_ID}
+            canOperate={true}
+            canApprove={true}
+          />
+        );
+      } else {
+        renderScreen();
+      }
+      await screen.findByRole('region', { name: catalogue[TARGET_FORM] as string });
+      const form = screen.getByRole('form', {
+        name: catalogue['inventory.adjustments.create.heading'] as string,
+      });
+      const quantity = within(form).getByLabelText(named('inventory.adjustments.create.quantity'));
+      // Left to right in both languages, with a decimal keypad, never a spin box.
+      expect(quantity).toHaveAttribute('dir', 'ltr');
+      expect(quantity).toHaveAttribute('inputmode', 'decimal');
+      expect(quantity).not.toHaveAttribute('type', 'number');
+      const reason = within(form).getByLabelText(named('inventory.stockOps.reason'));
+      await user.type(quantity, '1.2.3');
+      await user.type(reason, 'Found in the back');
+      await user.click(
+        within(form).getByRole('button', {
+          name: catalogue['inventory.adjustments.create.submit'] as string,
+        })
+      );
+      await waitFor(() => expect(quantity).toHaveAttribute('aria-invalid', 'true'));
+      expect(quantity).toHaveAccessibleDescription(
+        new RegExp(escape(catalogue['inventory.stockOps.quantityFormat'] as string))
+      );
+      expect(quantity).toHaveValue('1.2.3');
+      expect(reason).not.toHaveAttribute('aria-invalid');
+      expect(reason).toHaveValue('Found in the back');
+      // The change is a group of two choices named by its legend.
+      expect(
+        within(form).getByRole('radiogroup', {
+          name: named('inventory.adjustments.create.direction'),
+        })
+      ).toBeVisible();
+      expect(createAdjustment).not.toHaveBeenCalled();
+    });
+  }
+
+  it('a second press while a decision is out sends nothing more', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    decideAdjustment.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    const table = await within(listRegion()).findByRole('table');
+    await user.click(
+      within(table).getByRole('button', {
+        name: `${EN['inventory.adjustments.decide.action'] as string} BRK-001`,
+      })
+    );
+    const form = screen.getByRole('form', { name: /Decide the adjustment for/ });
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.adjustments.decide.reason')),
+      'Counted it myself'
+    );
+    const approve = within(form).getByRole('button', {
+      name: EN['inventory.adjustments.decide.approve'] as string,
+    });
+    const reject = within(form).getByRole('button', {
+      name: EN['inventory.adjustments.decide.reject'] as string,
+    });
+    fireEvent.click(approve);
+    fireEvent.click(reject);
+    expect(decideAdjustment).toHaveBeenCalledTimes(1);
+    expect(approve).toBeDisabled();
+    expect(reject).toBeDisabled();
+    answer(succeeded('inventory.adjustments.decide.approved', adjustment({ status: 'approved' })));
+    expect(
+      await screen.findByText(EN['inventory.adjustments.decide.approvedDone'] as string)
+    ).toBeVisible();
+    expect(decideAdjustment).toHaveBeenCalledTimes(1);
+  });
+
+  it('in Arabic, the list is a table named in Arabic and the decision names its record', async () => {
+    renderRtl(
+      <AdjustmentsScreen
+        locale="ar"
+        messages={ar}
+        currentUserId={USER_ID}
+        canOperate={true}
+        canApprove={true}
+      />
+    );
+    const region = await screen.findByRole('region', {
+      name: AR['inventory.adjustments.list.heading'] as string,
+    });
+    const table = await within(region).findByRole('table', {
+      name: AR['inventory.adjustments.list.caption'] as string,
+    });
+    expect(
+      within(table).getByRole('button', {
+        name: `${AR['inventory.adjustments.decide.action'] as string} BRK-001`,
+      })
+    ).toBeVisible();
+    expect(within(table).getByText(AR['inventory.adjustments.ownRequest'] as string)).toBeVisible();
+    expect(
+      within(region).getByLabelText(
+        new RegExp(`^${escape(AR['inventory.adjustments.list.status'] as string)}`)
+      )
+    ).toHaveValue('pending');
   });
 });
 
