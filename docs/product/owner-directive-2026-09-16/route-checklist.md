@@ -1167,9 +1167,9 @@ Line numbers are those of the call on the branch head that last changed this tab
 | features/inventory/components/pickers.tsx (ReferenceBox)                         | 238                     | a       | controlled by its host form: InventoryScreen ReserveForm (a, below); the parts draw forms (a, below); Movements passes `countsAsUnsaved={false}`                                                                                                      |
 | features/inventory/components/PartsScreen.tsx (IssueForm)                        | 909                     | a       | new in round three: a typed quantity (changed from the value it opened with) is unsaved work; the form is keyed on the working-context version, so a confirmed switch remounts it empty                                                               |
 | features/inventory/components/PartsScreen.tsx (ReserveForm)                      | 1339                    | a       | new in round three: a typed quantity is unsaved work; `key={reserve-${version}}` remounts it empty                                                                                                                                                    |
-| features/administration/departments/…/DepartmentsScreen.tsx (create)             | 302                     | b       | `onDiscard` → `setCreating(false)`. `useWorkingBranch` closes it only for a branch in the register, and "all my branches" is not one                                                                                                                  |
-| features/administration/departments/…/DepartmentsScreen.tsx (rename)             | 394                     | b       | `useUnsavedGuard(name !== department.name, onCancel)`                                                                                                                                                                                                 |
-| features/administration/employees/…/EmployeesScreen.tsx (create)                 | 303                     | b       | `onDiscard` → `setCreating(false)` (the same gap as departments)                                                                                                                                                                                      |
+| features/administration/departments/…/DepartmentsScreen.tsx (create)             | 449                     | a / b   | inside `<BranchDepartments key={companyId:branchId}>`, which "all my branches" unmounts (ADM2); the guard counts the code and the name, and `onDiscard` empties both and closes                                                                       |
+| features/administration/departments/…/DepartmentsScreen.tsx (rename)             | 580                     | a / b   | `useUnsavedGuard(edit.dirty, onClose)` (`useEditBaseline`), inside the same keyed `BranchDepartments` (ADM2)                                                                                                                                          |
+| features/administration/employees/…/EmployeesScreen.tsx (create)                 | 491                     | a / b   | inside `<BranchEmployees key={companyId:branchId}>`, which "all my branches" unmounts (ADM2); the guard counts the name, the chosen login account and the reference, and `onDiscard` empties all three and closes                                     |
 | features/appointments/components/AppointmentBookingScreen.tsx                    | 163                     | b       | follows the header for the branch but holds the customer, vehicle, type, channel and window itself; `onDiscard` remounts `<BookingForm key={opened}>`; lowered once the booking is stored                                                             |
 | features/appointments/components/AppointmentDetailScreen.tsx (RescheduleSection) | 449                     | c→b     | the appointment is addressed to its own branch; typed confirmed times are unsaved work, and `onDiscard` is `useEditBaseline`'s `discard`, which empties them (appointments slice)                                                                     |
 | features/billing/components/CreditNoteRequestForm.tsx                            | 106                     | a / c→b | keyed under `BranchCreditNotes` in CreditNotesScreen (a); on an invoice's own page nothing is keyed, so `onDiscard` empties amount and reason and renews the transport key                                                                            |
@@ -1709,9 +1709,9 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
 | `/administration/audit-log`                           | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
 | `/administration/currencies`                          | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/administration/departments`                         | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
+| `/administration/departments`                         | form fields, `FormDialog`, `ConfirmDialog`, states                                            | F1–F4; D1–D4; S1–S4                              | migrated — see below the table (ADM2)                               | focused suites, en and ar — see below     |
 | `/administration/discount-threshold`                  | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                        | not run — nothing migrated                |
-| `/administration/employees`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
+| `/administration/employees`                           | form fields, `OperationalGrid`, `FormDialog`, `ConfirmDialog`, drawer, states                 | F1–F6; G1–G9, G11; D1–D4; S1–S4                  | migrated — see below the table (ADM2)                               | focused suites, en and ar — see below     |
 | `/administration/languages`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
 | `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
 | `/administration/organization`                        | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
@@ -3926,6 +3926,148 @@ Known limitations of this slice, one line each:
 - Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
   they run in hosted CI. The web tier gains cases in existing files (no web test file added or
   removed).
+
+### Departments and employees on Material UI (`P1-32-PRE-OD-ADM2`)
+
+`/administration/departments` and `/administration/employees` moved onto the shared wrappers, and
+the employee register gained a detail view. Nothing about how either reads, authorizes or scopes
+changed: the same page refusals before any read (`org.department.read` with `org.branch.read`;
+`org.employee.read` with `org.branch.read`), the same per-control codes (`org.department.manage`
+for create, rename, retire and reinstate; `org.employee.manage` for add, deactivate and reactivate;
+`iam.user.read` for the login-account picker; `org.company.read` for company names), the same
+reads and writes with the same arguments (`org.department-list`, `org.department-create`,
+`org.department-update`; `org.employee-list`, `org.employee-create`, `org.employee-status-set`,
+`iam.user-list?status=active`), the same navigation gates, and the same route branch scope,
+unchanged in `route-branch-scope.ts` (`concrete`). One operation gained its first web caller:
+`org.employee-detail` (`GET /api/v1/org/employees/{employeeId}`, `org.employee.read`), which the
+detail view reads. No backend file, migration, permission or catalogue entry changed.
+
+What moved to which wrapper:
+
+- `/administration/departments` (`DepartmentsScreen.tsx`) — the list is Material's table:
+  `org.department-list` answers one bounded list with no cursor (planner ruling 2026-10-09), named
+  first, its code left to right beside it. Loading, empty, refused, outage (with a retry that reads
+  again) and ended session are the shared states (`MuiStates`). Create and rename are `FormDialog`
+  forms of `FormTextField`s (F1–F4); retire and reinstate ask first through `ConfirmDialog`
+  (D1–D4), which names the department. Every button is Material's.
+- `/administration/employees` (`EmployeesScreen.tsx`) — the register is `OperationalGrid` over
+  `useServerTable` (G1–G9, G11): the server's cursor pages, no count, Previous and Next, the
+  product's page sizes with the first page at 50 as before, and the grid's own refused,
+  unavailable, ended-session and failed states; "nothing yet" is the register's own sentence. The
+  add form is a `FormDialog` of `FormTextField`s and the native `FormSelectField` (F6) for the
+  login account; deactivate and reactivate ask through `ConfirmDialog`. Each row offers "Details",
+  named with the employee.
+- The detail view is Material's drawer at the logical end of the page. It reads
+  `org.employee-detail` when opened and says the employee's name, branch and company, login account,
+  employment reference and status in words — never a reference — with the shared states for a read
+  that failed (a retry) or a record no longer there. Focus moves into it and returns to "Details" on
+  Escape or Close; a closed drawer leaves the page at once.
+- `FormDialog` (`features/administration/shared/components/FormDialog.tsx`, new) is a form in an
+  ordinary Material dialog. `DecisionDialog` is an ALERT dialog, and the working context's "discard
+  your changes?" question asked over a form would then be a second alert dialog awaited at once. It
+  keeps D1–D4: named and described, Tab kept inside, the first field focused, Escape cancels and a
+  click outside does not, both buttons disabled while the write is out, focus returned on close.
+- `useWorkingBranch` now derives the register's branch on every render instead of remembering the
+  last one it was called back with.
+
+Scope and unsaved work (the rows for these two screens in the unsaved-work table above, and the gap
+this slice closes): everything addressed to the branch — the list, Add and every form — lives in a
+child keyed on the branch pair, so a switch to another branch remounts it and a switch to "All my
+branches" unmounts it. Before, "All my branches" left the previous branch's list, its Add button
+and any untouched form in place, still writing to a branch the header no longer named, and the
+create forms' guard only closed the dialog. Every field of each create form is now unsaved work —
+the department's code and name; the employee's name, chosen login account and reference — and a
+confirmed discard empties them all and closes the form, towards another branch or towards "All my
+branches".
+
+Preserved, each held by a case in `departments-employees.dom.test.tsx`, every case in English and in
+Arabic:
+
+- Scope: nothing is read until a branch is named; the read names both halves of it; the register
+  states the working branch and offers no chooser of its own, and follows a switch.
+- Permissions: without `org.department.manage` / `org.employee.manage` there is no Add, rename,
+  retire or status control (the employee details are still offered); the page refusals before any
+  read are unchanged (`route-permission-binding.test.ts`).
+- States: loading, empty, refused (never drawn as an empty branch), outage with a retry that reads
+  again; a detail read that failed offers a retry.
+- Field errors: a malformed code and an empty name are refused on their own field (`aria-invalid`
+  only while refused), the cursor moves to the first, what was typed stays, and the complaint goes
+  once the field is edited; the reference box holds no more than the column's 64 characters.
+- Conflicts: a stale rename is said in the form with "Load the latest version", which brings the
+  stored name and version, and the next save sends that version; a stale retirement or
+  deactivation is said beside the list with the same way out; a refused create keeps every field.
+- Versions: rename, retire and deactivate send the row's version as `If-Match`.
+- Duplicate submits: create (both registers), retire and deactivate send once for two presses made
+  inside one render frame (`sending` guards, pressed twice inside one `act()`).
+- Names: a linked login account is named from the picker's list or, for one outside it, from its
+  own read (`iam.user.read`); the detail view names the branch, the company and the account.
+- Focus: the first field takes the cursor when a form opens and Add takes it back on Cancel; the
+  detail drawer takes it and returns it to "Details" on Escape.
+- Arabic and English, right to left.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- Every render goes under `UiFoundationProvider`, as the locale layout mounts it, and the suite runs
+  each case in both languages.
+- The stand-in branch switches are found among hidden elements (`hidden: true`) while a form is open,
+  because a Material dialog hides the rest of the page from assistive technology; the suite carries
+  its own two switch helpers for that and uses the shared stay and discard helpers unchanged.
+- A row action of the grid is named by its label and the employee (`Deactivate Handover Clerk`), the
+  grid's `about`, instead of `Deactivate: Handover Clerk`; the department buttons keep their names.
+
+Assertions changed, with the reason:
+
+- "creates a department" and "adds an employee" asserted the success sentence inside the dialog;
+  they now assert the dialog closes and the list is read again, because a stored entry now closes
+  its form (below). The request bodies asserted are unchanged (the employee case adds the reference).
+- "lists the branch register and pages on request" pressed "Show more" and asserted both pages on
+  screen; it now presses "Next page" and asserts the next page and the cursor sent, because the
+  grid pages instead of appending (G3).
+- "refuses a malformed code beside the field" asserted the hint text appears; it now asserts the
+  field is marked invalid, takes the cursor and keeps the value (the B3 case it duplicated is merged
+  into it).
+- "refuses an empty name" adds the cursor and the kept reference.
+- "the registers open on the working branch": the employee case's "no combobox anywhere" is scoped to
+  the branch statement, because the grid's page-size select is a combobox of its own.
+- The "all my branches" cases now also assert the register closes (no list, no Add), and a new case
+  holds that an untouched form closes towards "All my branches" without a question.
+
+Deliberate behaviour changes:
+
+- A stored department or employee closes its form and is announced by a notification; the list is
+  read again. Before, the form stayed open with a sentence and a Close button.
+- The employee register pages with Previous and Next over the server's cursor, with the product's
+  page sizes, instead of "Show more" appending to one long list.
+- Under "All my branches" both registers close and ask for one branch, as their `concrete` route
+  already declared.
+- A stale retirement, reinstatement or status change closes the question and is said beside the
+  list with "Load the latest version"; before, the conflict was said inside the question.
+- The confirmation questions name the department or employee they are about.
+
+Recorded gaps (no control is drawn for any of them):
+
+- No operation changes an employee's name, login account or employment reference
+  (`org.employee-update` does not exist). The register offers no edit; the detail view says in words
+  that this screen cannot change them.
+- The API's fourteen `tech.technician-*` operations — create, update, availability record and
+  withdrawal, skill set and withdrawal, certification record, update and detail record, and the
+  list, detail, availability and queue reads — have no administration screen. They are left for the
+  separate technician-administration slice and are not built here.
+- `org.department-list` answers at most 500 departments with no cursor and no "more exist" flag, so
+  the register cannot say a list was cut short.
+
+Known limitations of this slice, one line each:
+
+- The detail view is a drawer, not a route: a deep link reaches the register, not one employee.
+- While a form is open the header's branch selector is behind the dialog; a switch can still
+  arrive from another tab or a held change, which the cases stand in for.
+- The login-account picker still offers the first hundred active accounts.
+- The page-level refusal before any read is still the shared `PermissionDeniedState`, as on every
+  administration page.
+- No browser spec changed: the authenticated accessibility sweep already visits both routes in the
+  English and the Arabic projects. The Playwright tiers run only in hosted CI.
+- Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
+  they run in hosted CI. No web test file was added or removed; the suite gains cases.
 
 ### Finance controls that need no business decision (P1-32-PRE-OD-FIN)
 
