@@ -49,6 +49,15 @@ export interface PrintDocumentProps {
    * with no number to give); left out, nothing repeats.
    */
   readonly reference?: ReactNode | null;
+  /**
+   * The document's last block, printed on ONE page with the `footer` so the
+   * closing note never prints alone (P1-32-PRE-OD-FRXR). The quotation copy's
+   * second page used to hold only the identity row and its one-sentence note;
+   * this block and the note are now one unbreakable group, moving to the next
+   * page together when they do not fit. Only these two are kept together; the
+   * rest of the document still breaks where it falls.
+   */
+  readonly closing?: ReactNode;
 }
 
 export function PrintDocument({
@@ -58,7 +67,13 @@ export function PrintDocument({
   children,
   title,
   reference,
+  closing,
 }: PrintDocumentProps) {
+  const footerBox = footer ? (
+    <footer className="mt-8 border-t border-border pt-4 text-supporting text-text-muted">
+      {footer}
+    </footer>
+  ) : null;
   const body = (
     <>
       <header className="mb-6 flex items-start justify-between gap-6 border-b border-border pb-4">
@@ -73,11 +88,14 @@ export function PrintDocument({
 
       <div className="text-body leading-relaxed">{children}</div>
 
-      {footer ? (
-        <footer className="mt-8 border-t border-border pt-4 text-supporting text-text-muted">
-          {footer}
-        </footer>
-      ) : null}
+      {closing === undefined ? (
+        footerBox
+      ) : (
+        <div className="break-inside-avoid" data-testid="print-document-closing">
+          <div className="text-body leading-relaxed">{closing}</div>
+          {footerBox}
+        </div>
+      )}
     </>
   );
 
@@ -139,16 +157,46 @@ export function PrintDocument({
  * the header on each printed page. `break-inside: avoid` on rows stops a single
  * row being split across the fold, which is the other half of a readable
  * multi-page table.
+ *
+ * ## What closes the table prints with its last line (P1-32-PRE-OD-FRXR)
+ *
+ * `tail` is the block that closes the table — a document's totals and
+ * settlement — and it is printed with the table's LAST ROW, never on a page of
+ * its own. The checkpoint retest printed invoices and counter sales whose final
+ * page held only the identity row and the totals: the lines ended one page, the
+ * money they add up to began the next. Keeping the two apart with
+ * `break-before: avoid` on the block does not work here: the document is the one
+ * row of the identity table (`PrintDocument`), and Chromium does not look back
+ * into a table inside a table cell for an earlier place to break, so it broke
+ * INSIDE the block instead. What it does honour is an unbreakable group, so the
+ * last row and the block are one row group with `break-inside: avoid` — the same
+ * rule every row already carries, over two rows instead of one. The group moves
+ * to the next page whole when it does not fit, with the header repeated above
+ * it; every other row still breaks where it falls, so the document is never one
+ * unbreakable piece (the #533 lesson), and the block itself is never split.
  */
 export function PrintTable({
   headers,
   rows,
   caption,
+  tail,
 }: {
   readonly headers: readonly string[];
   readonly rows: readonly (readonly ReactNode[])[];
   readonly caption?: string;
+  /** What closes the table, printed on the page of its last row. */
+  readonly tail?: ReactNode;
 }) {
+  const row = (cells: readonly ReactNode[], index: number) => (
+    <tr key={index} className="break-inside-avoid">
+      {cells.map((cell, cellIndex) => (
+        <td key={cellIndex} className="border-b border-border px-2 py-1.5 align-top">
+          {cell}
+        </td>
+      ))}
+    </tr>
+  );
+  const kept = tail === undefined ? rows.length : Math.max(0, rows.length - 1);
   return (
     <table className="w-full border-collapse text-supporting">
       {caption ? (
@@ -167,17 +215,17 @@ export function PrintTable({
           ))}
         </tr>
       </thead>
-      <tbody>
-        {rows.map((row, index) => (
-          <tr key={index} className="break-inside-avoid">
-            {row.map((cell, cellIndex) => (
-              <td key={cellIndex} className="border-b border-border px-2 py-1.5 align-top">
-                {cell}
-              </td>
-            ))}
+      {kept > 0 ? <tbody>{rows.slice(0, kept).map(row)}</tbody> : null}
+      {tail === undefined ? null : (
+        <tbody className="break-inside-avoid" data-testid="print-table-closing">
+          {rows.slice(kept).map((cells, offset) => row(cells, kept + offset))}
+          <tr data-print-table-tail="">
+            <td colSpan={headers.length} className="p-0 text-body">
+              {tail}
+            </td>
           </tr>
-        ))}
-      </tbody>
+        </tbody>
+      )}
     </table>
   );
 }
