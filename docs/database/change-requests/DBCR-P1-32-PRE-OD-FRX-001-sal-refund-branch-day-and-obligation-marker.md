@@ -89,3 +89,11 @@ the repository: `orchestration/evidence/frx-residual-fixes/` (`rehearse.sh`, `re
 `.github/ci-baselines/schema-baseline.json` (`migrationCount` 187 and `structuralTotalsNote187`), the
 P1-15 migration census, the P1-27 migration-count records and evidence manifest, the data dictionary
 (`sal.refund_requests.payout_date`), and the route checklist.
+
+## 6. Later note (P1-32-PRE-OD-FRXR)
+
+The follow-up to the CP-20261008-3 runtime retest changes no schema, seed, permission or migration,
+so it has no change request of its own. It changes one API behaviour of the same residual round:
+`iam.auth-session` and `iam.working-context-read` now refuse any query parameter with the standard
+validation error instead of ignoring it (route checklist, "Addendum: the CP-20261008-3 runtime
+retest").

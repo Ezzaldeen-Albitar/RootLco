@@ -430,7 +430,9 @@ function quotationLine(index: number) {
     lineNumber: index + 1,
     itemKind: service ? 'service' : 'part',
     serviceId: service ? 'service-of-the-test' : null,
-    item: service ? null : { id: 'item-of-the-test', code: 'TEST-PART', name: 'Test part' },
+    item: service
+      ? null
+      : { id: 'item-of-the-test', code: 'TEST-PART', name: `Test part line ${index + 1}` },
     unit: service ? null : { code: 'each', name: 'Each' },
     description: service ? `Test service line ${index + 1}` : null,
     currency: 'JOD',
@@ -446,7 +448,13 @@ function quotationLine(index: number) {
 
 const QUOTATION_LINES = 14;
 
-function quotationRevision() {
+/**
+ * The quotation's subtotal and grand total, a figure no line prints, so a printed
+ * page can be told to hold the totals by it in any language and with any font.
+ */
+export const QUOTATION_TOTAL = '987.654';
+
+function quotationRevision(lines: number) {
   return {
     id: 'revision-of-the-test',
     revisionNumber: 2,
@@ -454,18 +462,19 @@ function quotationRevision() {
     currency: 'JOD',
     issuedAt: '2026-10-06T18:32:00.000Z',
     expiresAt: null,
-    subtotal: '280.0000',
+    subtotal: '987.6540',
     discountTotal: '0.0000',
     taxTotal: '0.0000',
-    grandTotal: '280.0000',
+    grandTotal: '987.6540',
     recordVersion: 1,
-    lines: Array.from({ length: QUOTATION_LINES }, (_, index) => quotationLine(index)),
+    lines: Array.from({ length: lines }, (_, index) => quotationLine(index)),
     discountApproval: null,
   };
 }
 
-function quotationCase(locale: Locale): PrintCase {
-  const revision = quotationRevision();
+/** The quotation of `lines` lines (fourteen unless a test asks for a longer one). */
+export function quotationCase(locale: Locale, lines = QUOTATION_LINES): PrintCase {
+  const revision = quotationRevision(lines);
   return {
     document: 'quotation',
     locale,
@@ -513,8 +522,8 @@ function quotationCase(locale: Locale): PrintCase {
                   quotationId: 'quotation-of-the-test',
                   revisionId: revision.id,
                   revisionStatus: 'issued',
-                  itemCount: QUOTATION_LINES,
-                  decidedCount: QUOTATION_LINES,
+                  itemCount: lines,
+                  decidedCount: lines,
                   outcome: 'accepted',
                   decisions: [],
                   acceptance: {

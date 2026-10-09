@@ -2,7 +2,15 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from 'react';
 import Button from '@mui/material/Button';
 
 import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
@@ -172,6 +180,10 @@ export function InvoiceScreen({
   );
   const [epoch, setEpoch] = useState(0);
   const [notice, setNotice] = useState<WriteNotice | null>(null);
+  // What the create form holds, kept here above the panels: a refused create
+  // re-reads and remounts them, and what the operator typed must survive that
+  // (P1-32-PRE-OD-FRXR).
+  const [payerDraft, setPayerDraft] = useState<PayerDraft>(NO_PAYER_DRAFT);
 
   if (workOrderId === null) {
     return (
@@ -194,6 +206,10 @@ export function InvoiceScreen({
       answer = { status: 'unavailable', correlationId: null };
     }
     setInvoiceRead(answer);
+    // The draft is kept only for a form that is drawn again. When the re-read
+    // offers no create form at all, the entry is not unsaved work any more and
+    // must not resurface in a later form, so it goes (P1-32-PRE-OD-FRXR).
+    if (!offersCreateForm(answer)) setPayerDraft(NO_PAYER_DRAFT);
     setEpoch((n) => n + 1);
     router.refresh();
   };
@@ -296,6 +312,8 @@ export function InvoiceScreen({
           workOrderId={workOrderId}
           canViewFinance={canViewFinance}
           canReadCustomers={canReadCustomers}
+          payerDraft={payerDraft}
+          onPayerDraft={setPayerDraft}
           onCreated={(created) =>
             changed({
               messageKey: created.replayed
@@ -325,6 +343,8 @@ export function InvoiceScreen({
           canRaiseCredit={canRaiseCredit}
           canReadCustomers={canReadCustomers}
           refunds={refunds}
+          payerDraft={payerDraft}
+          onPayerDraft={setPayerDraft}
           onChanged={changed}
         />
       )}
@@ -341,6 +361,14 @@ export function InvoiceScreen({
  * other live one by its number, and, while approved work remains unbilled and no
  * draft is open, offers what remains to invoice beneath them: the same preview and
  * create form a work order with no invoice shows, read again from the server.
+ *
+ * When no draft is open and the read says no approved work remains, it says so in
+ * words (P1-32-PRE-OD-FRXR, FRX2). That is the fact the server's
+ * `invoice_nothing_to_bill` refusal states, and the screen used to draw nothing at
+ * all for it: the remaining-work panel is only drawn while work remains, so a work
+ * order whose approved work was all invoiced — even with a second accepted
+ * quotation of the same work — showed its invoice and no reason why nothing more
+ * was offered. It is said from the read itself; no preview is read for it.
  */
 function LiveInvoices({
   locale,
@@ -354,6 +382,8 @@ function LiveInvoices({
   canRaiseCredit,
   canReadCustomers,
   refunds,
+  payerDraft,
+  onPayerDraft,
   onChanged,
 }: {
   readonly locale: Locale;
@@ -368,6 +398,8 @@ function LiveInvoices({
   readonly canRaiseCredit: boolean;
   readonly canReadCustomers: boolean;
   readonly refunds: RefundSteps;
+  readonly payerDraft: PayerDraft;
+  readonly onPayerDraft: Dispatch<SetStateAction<PayerDraft>>;
   readonly onChanged: (notice: WriteNotice | null) => Promise<void>;
 }) {
   const [shownId, setShownId] = useState(current.id);
@@ -397,6 +429,17 @@ function LiveInvoices({
         refunds={refunds}
         onChanged={onChanged}
       />
+      {!draftOpen && !read.approvedWorkToInvoice ? (
+        <p
+          role="status"
+          className="text-body text-text-secondary"
+          lang={locale}
+          data-print="hide"
+          data-testid="invoice-nothing-to-bill"
+        >
+          {translate(messages, 'invoices.preview.nothingToBill')}
+        </p>
+      ) : null}
       {read.approvedWorkToInvoice && !draftOpen ? (
         <PreviewPanel
           remaining
@@ -405,6 +448,8 @@ function LiveInvoices({
           workOrderId={workOrderId}
           canViewFinance={canViewFinance}
           canReadCustomers={canReadCustomers}
+          payerDraft={payerDraft}
+          onPayerDraft={onPayerDraft}
           onCreated={(created) =>
             onChanged({
               messageKey: created.replayed
@@ -718,12 +763,41 @@ function ChooseWorkOrder({
  * FE-014 — no invoice yet: the preview, and creating one
  * ------------------------------------------------------------------ */
 
+/** The create form's entry: a payer found by name, or a typed payer reference. */
+interface PayerDraft {
+  readonly payer: ChosenCustomer | null;
+  readonly payerReference: string;
+}
+
+const NO_PAYER_DRAFT: PayerDraft = { payer: null, payerReference: '' };
+
+/** Empties the draft; keeps the same object when it is already empty, so nothing re-renders. */
+const clearPayerDraft = (held: PayerDraft): PayerDraft =>
+  held.payer === null && held.payerReference === '' ? held : NO_PAYER_DRAFT;
+
+/**
+ * Whether the work order's invoice read leaves a create form to draw: no invoice
+ * yet, or no open draft while approved work remains — the same two conditions
+ * that draw a `PreviewPanel` above. The preview may still say nothing is left;
+ * `PreviewPanel` clears the draft itself then.
+ */
+function offersCreateForm(read: ReadState<WorkOrderInvoice>): boolean {
+  if (read.status !== 'ok') return false;
+  if (read.data.invoice === null) return true;
+  return (
+    read.data.approvedWorkToInvoice &&
+    !read.data.invoices.some((invoice) => invoice.status === 'draft')
+  );
+}
+
 function PreviewPanel({
   locale,
   messages,
   workOrderId,
   canViewFinance,
   canReadCustomers,
+  payerDraft,
+  onPayerDraft,
   onCreated,
   onConflict,
   remaining = false,
@@ -738,6 +812,9 @@ function PreviewPanel({
   readonly remaining?: boolean;
   readonly canViewFinance: boolean;
   readonly canReadCustomers: boolean;
+  /** What the create form holds, kept above the remount (P1-32-PRE-OD-FRXR). */
+  readonly payerDraft: PayerDraft;
+  readonly onPayerDraft: Dispatch<SetStateAction<PayerDraft>>;
   /** Re-reads the order's invoice; resolves once the panels were remounted. */
   readonly onCreated: (created: {
     readonly replayed: boolean;
@@ -762,6 +839,15 @@ function PreviewPanel({
       live = false;
     };
   }, [workOrderId, canViewFinance, attempt]);
+
+  // Nothing left to bill is said by the figures; no form offers to bill it.
+  const formOffered = canViewFinance && preview?.status === 'ok' && preview.data.lines.length > 0;
+  // A settled preview that offers no form ends the draft: it is no longer drawn,
+  // so it is no longer unsaved work, and it must not reappear in a later form.
+  const settledWithoutForm = !canViewFinance || (preview !== null && !formOffered);
+  useEffect(() => {
+    if (settledWithoutForm) onPayerDraft(clearPayerDraft);
+  }, [settledWithoutForm, onPayerDraft]);
 
   const headingId = remaining ? 'invoice-remaining-heading' : 'invoice-preview-heading';
   return (
@@ -814,13 +900,14 @@ function PreviewPanel({
       ) : (
         <PreviewFigures locale={locale} messages={messages} preview={preview.data} />
       )}
-      {/* Nothing left to bill is said by the figures; no form offers to bill it. */}
-      {canViewFinance && preview?.status === 'ok' && preview.data.lines.length > 0 ? (
+      {formOffered ? (
         <CreateForm
           locale={locale}
           messages={messages}
           workOrderId={workOrderId}
           canReadCustomers={canReadCustomers}
+          draft={payerDraft}
+          onDraft={onPayerDraft}
           onCreated={onCreated}
           onConflict={onConflict}
         />
@@ -1160,6 +1247,8 @@ function CreateForm({
   messages,
   workOrderId,
   canReadCustomers,
+  draft,
+  onDraft,
   onCreated,
   onConflict,
 }: {
@@ -1167,6 +1256,13 @@ function CreateForm({
   readonly messages: Messages;
   readonly workOrderId: string;
   readonly canReadCustomers: boolean;
+  /**
+   * The payer chosen or typed, held by the screen rather than by this form: a
+   * refused create re-reads the work order and remounts the form, and the
+   * operator's entry is kept through that (P1-32-PRE-OD-FRXR).
+   */
+  readonly draft: PayerDraft;
+  readonly onDraft: Dispatch<SetStateAction<PayerDraft>>;
   readonly onCreated: (created: {
     readonly replayed: boolean;
     readonly invoice: Invoice;
@@ -1186,8 +1282,11 @@ function CreateForm({
    * for shape before it is sent, and counted as unsaved work. With the customer
    * read there is no box at all.
    */
-  const [payer, setPayer] = useState<ChosenCustomer | null>(null);
-  const [payerReference, setPayerReference] = useState('');
+  const payer = draft.payer;
+  const payerReference = draft.payerReference;
+  const setPayer = (next: ChosenCustomer | null) => onDraft((held) => ({ ...held, payer: next }));
+  const setPayerReference = (next: string) =>
+    onDraft((held) => ({ ...held, payerReference: next }));
   // ONE transport key per opened form, kept across a refusal or a lost answer:
   // pressing again replays the stored answer instead of asking for a second
   // invoice (which the server would refuse as a conflict).
@@ -1244,6 +1343,8 @@ function CreateForm({
       notifyActionResult(result.state, messages);
       if (result.state.status === 'success' && result.created) {
         setOutcome(null);
+        // Created: what was typed for it is spent.
+        onDraft(NO_PAYER_DRAFT);
         // The panel is remounted by the re-read; busy stays raised until then.
         settled = true;
         await onCreated({ replayed: result.created.replayed, invoice: result.created.invoice });
