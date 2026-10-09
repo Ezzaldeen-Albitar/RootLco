@@ -751,6 +751,9 @@ const EMPTY_ITEM = {
   isSerialized: false,
 };
 
+/** Nothing saved yet, so nothing kept: any category or unit chosen is work. */
+const KEPT_NONE = { itemCategoryId: '', uomId: '' };
+
 function ItemForm({
   messages,
   categories,
@@ -768,15 +771,22 @@ function ItemForm({
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [attempt, setAttempt] = useState(0);
   const flight = useSingleFlight();
+  /*
+   * The category and unit a successful create KEEPS for the next item. They
+   * were just saved, so leaving them chosen is not work an operator would
+   * lose; only a choice that differs from them is (P1-32-PRE-OD-INVR).
+   */
+  const [kept, setKept] = useState(KEPT_NONE);
   // The defaults (type, the two flags) are not work; what was typed or chosen is.
   useUnsavedGuard(
-    form.itemCategoryId !== '' ||
-      form.uomId !== '' ||
+    form.itemCategoryId !== kept.itemCategoryId ||
+      form.uomId !== kept.uomId ||
       form.sku.trim().length > 0 ||
       form.name.trim().length > 0 ||
       form.description.trim().length > 0,
     () => {
       setForm(EMPTY_ITEM);
+      setKept(KEPT_NONE);
       setErrors({});
       setOutcome(null);
     }
@@ -834,6 +844,7 @@ function ItemForm({
       notifyActionResult(result.state, messages);
       if (result.state.status === 'success' && result.created) {
         onCreated(result.created);
+        setKept({ itemCategoryId: form.itemCategoryId, uomId: form.uomId });
         setForm((f) => ({ ...f, sku: '', name: '', description: '' }));
       } else {
         setAttempt((n) => n + 1);
@@ -1534,15 +1545,22 @@ function ReorderLevelForm({
   const branchId = pair.branchId.trim();
   const target = UUID.test(companyId) && UUID.test(branchId) ? { companyId, branchId } : null;
   const locations = useLocations(target);
+  /*
+   * The item a successful set KEEPS chosen for the next level. It was just
+   * saved, so leaving it chosen is not work an operator would lose; only
+   * another item is (P1-32-PRE-OD-INVR).
+   */
+  const [keptItemId, setKeptItemId] = useState('');
 
   // The item and the two quantities are what an operator would lose; the
   // narrowing is a choice of scope, re-made in a moment.
   useUnsavedGuard(
-    form.itemId !== '' ||
+    form.itemId !== keptItemId ||
       form.reorderLevelQty.trim().length > 0 ||
       form.preferredOrderQty.trim().length > 0,
     () => {
       setForm(EMPTY_LEVEL);
+      setKeptItemId('');
       setErrors({});
       setOutcome(null);
     }
@@ -1645,6 +1663,7 @@ function ReorderLevelForm({
       setOutcome(result.state);
       notifyActionResult(result.state, messages);
       if (result.state.status === 'success') {
+        setKeptItemId(form.itemId);
         setForm((f) => ({ ...f, reorderLevelQty: '', preferredOrderQty: '' }));
         onSet();
       } else {
