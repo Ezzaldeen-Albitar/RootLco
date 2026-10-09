@@ -11,9 +11,10 @@ import {
 import { CapacityPanel } from '@/features/administration/organization/components/CapacityPanel';
 import { readReferenceValues } from '@/features/administration/organization/reference-values';
 import { OrganizationStructure } from '@/features/administration/organization/components/OrganizationStructure';
+import { OrgReadBoundary } from '@/features/administration/organization/components/OrgReadBoundary';
 import { SettingsEditor } from '@/features/administration/organization/components/SettingsEditor';
 import { TenantForm } from '@/features/administration/organization/components/TenantForm';
-import { Panel, ReadBoundary } from '@/features/administration/shared/components/ScreenStates';
+import { Panel } from '@/features/administration/shared/components/ScreenStates';
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate } from '@/i18n/get-messages';
@@ -36,6 +37,12 @@ import { pageMetadata } from '@/lib/page-metadata';
  * company and branch dialogs and the tenant form fall back to the values already
  * in use; nothing becomes free text. When it was made and failed, the fields say
  * so and offer Try again, and a select left empty refuses to send.
+ *
+ * On Material UI (ADR-022, P1-32-PRE-OD-ADM1): a read that did not answer is
+ * the shared Material state (`OrgReadBoundary`), with Try again where trying
+ * again can help; the companies and branches can be edited as well as added
+ * (`org.company-update`, `org.branch-update`), each by the code its operation
+ * declares.
  */
 export default async function OrganizationPage({
   params,
@@ -95,7 +102,7 @@ export default async function OrganizationPage({
       <PageBody>
         <div className="flex flex-col gap-6">
           <Panel title={t('organization.tenant')}>
-            <ReadBoundary state={toReadState(tenant)} messages={messages}>
+            <OrgReadBoundary state={toReadState(tenant)} messages={messages} locale={locale}>
               {(view) => (
                 <TenantForm
                   locale={locale}
@@ -107,7 +114,7 @@ export default async function OrganizationPage({
                   timezoneChoices={timezoneChoices}
                 />
               )}
-            </ReadBoundary>
+            </OrgReadBoundary>
           </Panel>
 
           {capacity ? (
@@ -115,9 +122,9 @@ export default async function OrganizationPage({
               title={t('organization.capacity.title')}
               description={t('organization.capacity.description')}
             >
-              <ReadBoundary state={capacity} messages={messages}>
+              <OrgReadBoundary state={capacity} messages={messages} locale={locale}>
                 {(view) => <CapacityPanel capacity={view} messages={messages} locale={locale} />}
-              </ReadBoundary>
+              </OrgReadBoundary>
             </Panel>
           ) : null}
 

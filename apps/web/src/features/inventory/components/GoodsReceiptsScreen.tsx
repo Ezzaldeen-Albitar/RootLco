@@ -60,7 +60,6 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
 import { formatMoney } from '@/lib/money';
 import type { GoodsReceiptCreateLine } from '@/lib/contracts/inventory-contract';
 
@@ -91,10 +90,12 @@ import {
   Fact,
   ItemFinder,
   PANEL,
+  StockMoment,
   StockOperationLinks,
   isQuantity,
   outcomeField,
   useBranchList,
+  useStockDisplayZone,
 } from './stock-operations';
 
 /** A line being written, before it is sent. */
@@ -187,6 +188,8 @@ function BranchReceipts({
     'inventory.receipts.list.unavailable'
   );
   const locations = useLocations(target);
+  // A receipt's posting is written on the branch's clock, named (`P1-32-PRE-OD-INV5`).
+  const zone = useStockDisplayZone(target);
   const [receipt, setReceipt] = useState<GoodsReceiptDetail | null>(null);
   const [opening, setOpening] = useState<string | null>(null);
   const [openFailure, setOpenFailure] = useState<string | null>(null);
@@ -255,9 +258,13 @@ function BranchReceipts({
                   {items.map((row) => (
                     <TableRow key={row.id}>
                       <TableCell>
-                        <span dir="ltr">
-                          {row.reference ?? translate(messages, 'inventory.receipts.noReference')}
-                        </span>
+                        {/* The reference is a code, held left to right; the sentence
+                            said in its absence is the page's language, so it is not. */}
+                        {row.reference === null ? (
+                          translate(messages, 'inventory.receipts.noReference')
+                        ) : (
+                          <span dir="ltr">{row.reference}</span>
+                        )}
                       </TableCell>
                       <TableCell>{row.supplierReference ?? ''}</TableCell>
                       <TableCell>
@@ -296,6 +303,7 @@ function BranchReceipts({
           locale={locale}
           messages={messages}
           receipt={receipt}
+          zone={zone}
           canOperate={canOperate}
           canViewCost={canViewCost}
           onPosted={(posted) => {
@@ -339,6 +347,7 @@ function ReceiptDetail({
   locale,
   messages,
   receipt,
+  zone,
   canOperate,
   canViewCost,
   onPosted,
@@ -348,6 +357,8 @@ function ReceiptDetail({
   readonly locale: Locale;
   readonly messages: Messages;
   readonly receipt: GoodsReceiptDetail;
+  /** The branch's clock (`useStockDisplayZone`), UTC where it is not known. */
+  readonly zone: string;
   readonly canOperate: boolean;
   readonly canViewCost: boolean;
   readonly onPosted: (posted: GoodsReceiptDetail) => void;
@@ -389,7 +400,7 @@ function ReceiptDetail({
           {receipt.postedAt === null ? (
             translate(messages, 'inventory.receipts.detail.notPosted')
           ) : (
-            <span dir="ltr">{formatDateTime(receipt.postedAt, locale)}</span>
+            <StockMoment value={receipt.postedAt} locale={locale} zone={zone} />
           )}
         </Fact>
       </dl>
@@ -528,11 +539,13 @@ function ReceiptForm({
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [attemptKey, setAttemptKey] = useState(() => crypto.randomUUID());
   /*
-   * A day received only partly typed holds no day — its value stays `''`, as for
-   * a field nobody touched — so the picker's own report is kept: it is refused
-   * as a date, not as a missing one, and it is unsaved work.
+   * A day received only partly typed, or typed whole but impossible (31/02),
+   * holds no day — its value stays `''`, as for a field nobody touched — so
+   * the picker's own report is kept: it is refused as an unfinished or an
+   * impossible date, never as a missing one, and it is unsaved work
+   * (P1-32-PRE-OD-INVR).
    */
-  const [dayUnfinished, setDayUnfinished] = useState(false);
+  const [dayProblem, setDayProblem] = useState<DayProblem>(null);
   // One receipt sent at a time, before `busy` has disabled the button.
   const sending = useRef(false);
 
@@ -545,7 +558,7 @@ function ReceiptForm({
    * dirty after every save asks about every switch.
    */
   useUnsavedGuard(
-    dayUnfinished ||
+    dayProblem !== null ||
       lines.length > 0 ||
       item !== null ||
       line.quantity.trim().length > 0 ||
@@ -594,9 +607,10 @@ function ReceiptForm({
   const submit = async () => {
     const found: Record<string, string> = {};
     const receivedOn = header.receivedOn.trim();
-    if (dayUnfinished || (receivedOn.length > 0 && !ISO_DATE.test(receivedOn))) {
+    if (dayProblem === 'incomplete' || (receivedOn.length > 0 && !ISO_DATE.test(receivedOn))) {
       found['receivedOn'] = 'inventory.opening.batch.dateFormat';
-    } else if (receivedOn.length === 0) found['receivedOn'] = 'field.required';
+    } else if (dayProblem !== null) found['receivedOn'] = 'inventory.opening.batch.dateInvalid';
+    else if (receivedOn.length === 0) found['receivedOn'] = 'field.required';
     const reference = header.reference.trim();
     if (reference.length > 0 && !LOCATION_CODE.test(reference)) {
       found['reference'] = 'inventory.receipts.referenceFormat';
@@ -669,7 +683,7 @@ function ReceiptForm({
           required
           value={header.receivedOn}
           onChange={(next) => setHeader((h) => ({ ...h, receivedOn: next }))}
-          onProblem={(problem: DayProblem) => setDayUnfinished(problem === 'incomplete')}
+          onProblem={setDayProblem}
           error={errorFor('receivedOn')}
         />
         <FormTextField
@@ -860,6 +874,8 @@ function CostHistoryPanel({
   const [history, setHistory] = useState<ItemCostHistory | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const { companyId, branchId } = target;
+  // Each layer's moment is written on the branch's clock, named (`P1-32-PRE-OD-INV5`).
+  const zone = useStockDisplayZone(target);
 
   // Read once per item (the caller keys this panel on the item). The pair is
   // keyed on its VALUES, so a caller rebuilding the target does not re-read.
@@ -952,7 +968,7 @@ function CostHistoryPanel({
                   {history.layers.items.map((layer) => (
                     <TableRow key={layer.id}>
                       <TableCell>
-                        <span dir="ltr">{formatDateTime(layer.effectiveAt, locale)}</span>
+                        <StockMoment value={layer.effectiveAt} locale={locale} zone={zone} />
                       </TableCell>
                       <TableCell align="right">
                         <Qty value={layer.quantity} />

@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Request } from '@playwright/test';
+import ar from '../../../src/i18n/messages/ar.json';
 import { readSignedInAccount } from './account-manifest';
 
 /**
@@ -111,6 +112,48 @@ test.describe('the eleven administration screens', () => {
       });
     });
   }
+
+  /*
+   * P1-32-PRE-OD-ADM1: the loop above runs in Arabic only on the `-ar` project,
+   * and its refusal check reads the English sentence. These two open the
+   * Organisation and Languages screens in Arabic on every project and read them
+   * in Arabic: the direction, the headings from the catalogue, and no refusal
+   * in either language. Read only — nothing here writes.
+   */
+  test('organisation reads in Arabic, right to left, with its companies and branches', async ({
+    page,
+  }) => {
+    const consoleErrors = collectConsole(page);
+    const response = await page.goto('/ar/administration/organization');
+    expect(response?.status()).toBeLessThan(400);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(
+      page.getByRole('heading', { name: ar['organization.title'], level: 1 })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: ar['organization.company.title'], exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: ar['organization.branch.title'], exact: true })
+    ).toBeVisible();
+    await expect(page.getByText(ar['state.denied.title'])).toHaveCount(0);
+    await expect(page.getByText(/You do not have access/i)).toHaveCount(0);
+    expect(consoleErrors, 'organisation console (ar)').toEqual([]);
+  });
+
+  test('languages reads in Arabic, right to left, with the default language form', async ({
+    page,
+  }) => {
+    const consoleErrors = collectConsole(page);
+    const response = await page.goto('/ar/administration/languages');
+    expect(response?.status()).toBeLessThan(400);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(
+      page.getByRole('heading', { name: ar['languages.title'], level: 1 })
+    ).toBeVisible();
+    await expect(page.getByText(ar['state.denied.title'])).toHaveCount(0);
+    expect(consoleErrors, 'languages console (ar)').toEqual([]);
+  });
 
   test('the users table actually finishes loading and shows the operators', async ({ page }) => {
     // The assertion this file was missing, and the reason it was missing is

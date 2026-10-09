@@ -9,6 +9,7 @@ import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   TEST_BRANCH,
   TEST_COMPANY,
+  branchSnapshot,
   inBranch,
   messagesFor,
   renderLtr as renderInLtr,
@@ -40,10 +41,14 @@ import {
   BRANCH_ID,
   COMPANY_ID,
   EN,
+  FAR_ZONE,
   ITEM_ID,
   USER_ID,
+  clockName,
+  expectOnClock,
   labelled,
   okRead,
+  onClock,
   refusedWith,
   seriousViolations,
   succeeded,
@@ -72,6 +77,7 @@ const assignInternalBarcode = vi.fn();
 const listSalePrices = vi.fn();
 const setSalePrice = vi.fn();
 const listUnitsOfMeasure = vi.fn();
+const readItemDetail = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
   listIdentifiers: (...args: unknown[]) => listIdentifiers(...args),
   addIdentifier: (...args: unknown[]) => addIdentifier(...args),
@@ -80,6 +86,8 @@ vi.mock('@/features/inventory/api', () => ({
   listSalePrices: (...args: unknown[]) => listSalePrices(...args),
   setSalePrice: (...args: unknown[]) => setSalePrice(...args),
   listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
+  // P1-32-PRE-OD-INV2A — the page's own header reads the item.
+  readItemDetail: (...args: unknown[]) => readItemDetail(...args),
 }));
 
 vi.mock('next/navigation', () => ({
@@ -149,6 +157,28 @@ function price(over: Record<string, unknown> = {}) {
   };
 }
 
+function detail(over: Record<string, unknown> = {}) {
+  return {
+    id: ITEM_ID,
+    sku: 'BRK-001',
+    name: 'Front brake pads',
+    description: null,
+    itemCategoryId: 'cat-pads',
+    categoryPath: [
+      { id: 'cat-brakes', code: 'brakes', name: 'Brakes' },
+      { id: 'cat-pads', code: 'pads', name: 'Pads' },
+    ],
+    unitOfMeasure: { id: 'u', code: 'EA', name: 'Each' },
+    itemType: 'part',
+    isStockTracked: true,
+    isSerialized: false,
+    lifecycleStatus: 'active',
+    archived: false,
+    recordVersion: 1,
+    ...over,
+  };
+}
+
 const priceList = (rows: readonly unknown[]) =>
   okRead({ itemId: ITEM_ID, sku: 'BRK-001', prices: rows });
 
@@ -169,6 +199,7 @@ beforeEach(() => {
     )
   );
   setSalePrice.mockResolvedValue(succeeded('inventory.prices.set.success', price()));
+  readItemDetail.mockResolvedValue(okRead(detail()));
 });
 
 const manage = () => <ItemCodesScreen locale="en" messages={en} itemId={ITEM_ID} canManage />;
@@ -525,7 +556,9 @@ describe('the route page', () => {
 describe('accessibility and Arabic', () => {
   it('has no serious or critical accessibility finding', async () => {
     const { container } = renderLtr(manage());
-    await waitFor(() => expect(screen.getByText('BRK-001')).toBeTruthy());
+    // The stock code is said twice now: in the item's own header and above its
+    // codes. Both have to be on the page before the scan.
+    await waitFor(() => expect(screen.getAllByText('BRK-001')).toHaveLength(2));
     expect(await seriousViolations(container)).toEqual([]);
   });
 
@@ -655,4 +688,149 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
       expect(addIdentifier).not.toHaveBeenCalled();
     }
   );
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — an item's codes belong to no branch, so a code's moment
+ * is written on the WORKING branch's clock, named, never on the browser's; under
+ * "All my branches" there is no one branch clock and it is written on UTC, named
+ * UTC.
+ */
+describe('a code\u2019s moment is shown on the working branch\u2019s clock (P1-32-PRE-OD-INV5)', () => {
+  const ADDED = '2026-09-17T12:00:00Z';
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes the code's moment on the working branch's clock with its name (${locale})`, async () => {
+      const T = locale === 'en' ? EN : (ar as Record<string, string>);
+      listIdentifiers.mockResolvedValue(identifierList([identifier({ createdAt: ADDED })]));
+      const render = locale === 'en' ? renderInLtr : renderInRtl;
+      render(
+        withMui(
+          inBranch(
+            <ItemCodesScreen
+              locale={locale}
+              messages={locale === 'en' ? en : ar}
+              itemId={ITEM_ID}
+              canManage
+            />,
+            { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+          ),
+          locale
+        )
+      );
+      const rows = await screen.findByRole('table', {
+        name: T['inventory.identifiers.caption'] as string,
+      });
+      expectOnClock(within(rows).getAllByRole('row')[1] as HTMLElement, ADDED, locale);
+    });
+  }
+
+  it('writes it on UTC, named UTC, where no one branch is in force', async () => {
+    listIdentifiers.mockResolvedValue(identifierList([identifier({ createdAt: ADDED })]));
+    renderInLtr(
+      withMui(<ItemCodesScreen locale="en" messages={en} itemId={ITEM_ID} canManage />, 'en')
+    );
+    const rows = await screen.findByRole('table', {
+      name: EN['inventory.identifiers.caption'] as string,
+    });
+    const row = within(rows).getAllByRole('row')[1] as HTMLElement;
+    expect(row).toHaveTextContent(onClock(ADDED, 'en', 'UTC'));
+    expect(within(row).getByText(clockName(ADDED, 'en', 'UTC'))).toBeVisible();
+  });
+});
+
+describe('the item header (P1-32-PRE-OD-INV2A)', () => {
+  /*
+   * The page named its item only by the address. It now reads the item and
+   * says which one the codes and prices belong to: its name, its stock code,
+   * the category it is filed under by name and path, its unit, its type and
+   * whether it is archived. Nothing here edits the item.
+   */
+  const CATALOGUES = { en: EN, ar: AR } as const;
+  const renderIn = (locale: 'en' | 'ar') =>
+    locale === 'en'
+      ? renderLtr(<ItemCodesScreen locale="en" messages={en} itemId={ITEM_ID} canManage />)
+      : renderRtl(<ItemCodesScreen locale="ar" messages={ar} itemId={ITEM_ID} canManage />);
+
+  it.each(['en', 'ar'] as const)(
+    'says the item by name, code, category path, unit, type and status (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      renderIn(locale);
+      const header = await screen.findByTestId('item-header');
+      expect(readItemDetail).toHaveBeenCalledWith(ITEM_ID);
+      expect(within(header).getByRole('heading', { name: 'Front brake pads' })).toBeTruthy();
+      expect(within(header).getByText('BRK-001').closest('[dir="ltr"]')).not.toBeNull();
+      expect(within(header).getByTestId('item-header-category').textContent).toBe('Brakes / Pads');
+      expect(within(header).getByText('Each')).toBeTruthy();
+      expect(within(header).getByText(T['inventory.itemType.part'] as string)).toBeTruthy();
+      expect(within(header).getByTestId('item-header-status').textContent).toBe(
+        T['inventory.lifecycle.active']
+      );
+      expect(
+        within(header)
+          .getByRole('link', { name: T['inventory.setup.categories.browse'] as string })
+          .getAttribute('href')
+      ).toBe(`/${locale}/inventory/categories`);
+      // Nothing in the header writes.
+      expect(within(header).queryByRole('button')).toBeNull();
+      expect(within(header).queryByRole('textbox')).toBeNull();
+    }
+  );
+
+  it.each(['en', 'ar'] as const)('says an archived item is archived (%s)', async (locale) => {
+    const T = CATALOGUES[locale];
+    readItemDetail.mockResolvedValue(
+      okRead(detail({ lifecycleStatus: 'archived', archived: true }))
+    );
+    renderIn(locale);
+    expect((await screen.findByTestId('item-header-status')).textContent).toBe(
+      T['inventory.lifecycle.archived']
+    );
+  });
+
+  it.each(['en', 'ar'] as const)(
+    'says an item that cannot be found is not found (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      readItemDetail.mockResolvedValue({ status: 'not-found', correlationId: 'corr' });
+      renderIn(locale);
+      const failure = await screen.findByTestId('item-header-failure');
+      expect(failure.textContent).toContain(T['state.notFound.title'] as string);
+      expect(
+        within(failure).queryByRole('button', { name: T['state.retry'] as string })
+      ).toBeNull();
+    }
+  );
+
+  it.each(['en', 'ar'] as const)(
+    'says an unavailable item with its reference, and reads it again on retry (%s)',
+    async (locale) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      readItemDetail.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'ref-item' });
+      renderIn(locale);
+      const failure = await screen.findByTestId('item-header-failure');
+      expect(failure.textContent).toContain(T['inventory.identifiers.item.unavailable'] as string);
+      expect(failure.textContent).toContain('ref-item');
+      await user.click(within(failure).getByRole('button', { name: T['state.retry'] as string }));
+      expect(await screen.findByTestId('item-header')).toBeTruthy();
+      expect(readItemDetail).toHaveBeenCalledTimes(2);
+    }
+  );
+
+  it('says a refused item is refused, with no retry', async () => {
+    readItemDetail.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+    renderIn('en');
+    const failure = await screen.findByTestId('item-header-failure');
+    expect(failure.textContent).toContain(EN['inventory.identifiers.item.refused'] as string);
+    expect(within(failure).queryByRole('button', { name: EN['state.retry'] as string })).toBeNull();
+  });
+
+  it('says it is reading the item while the read is out', async () => {
+    readItemDetail.mockReturnValue(new Promise(() => undefined));
+    renderIn('en');
+    expect(screen.getByTestId('item-header-loading').textContent).toContain(
+      EN['inventory.identifiers.item.loading'] as string
+    );
+  });
 });

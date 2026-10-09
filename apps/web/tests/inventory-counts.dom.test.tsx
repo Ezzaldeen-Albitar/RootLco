@@ -1,11 +1,14 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
 import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import {
   inBranch,
+  messagesFor,
   renderLtr as renderInLtr,
   renderRtl as renderInRtl,
   BranchSwitch,
@@ -32,20 +35,36 @@ import {
  * keeps the default snapshot — one authorized branch, selected for the operator
  * — true for every case below. A case that needs a different snapshot builds
  * one and renders it explicitly.
+ *
+ * On Material UI since `P1-32-PRE-OD-INV5`: every render also goes under the
+ * product's Material provider, as the locale layout mounts it. The lists are
+ * still tables, the fields labelled boxes, the actions buttons named with what
+ * they act on — so the selectors below did not move.
  */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
 const renderLtr = (ui: ReactElement, options?: Parameters<typeof renderInLtr>[1]) =>
-  renderInLtr(inBranch(ui), options);
+  renderInLtr(withMui(inBranch(ui), 'en'), options);
 const renderRtl = (ui: ReactElement, options?: Parameters<typeof renderInRtl>[1]) =>
-  renderInRtl(inBranch(ui, { locale: 'ar' }), options);
+  renderInRtl(withMui(inBranch(ui, { locale: 'ar' }), 'ar'), options);
 import {
   BRANCH_ID,
   COMPANY_ID,
   EN,
+  FAR_ZONE,
   ITEM_ID,
   LOCATION_ID,
   branch,
   chooseBranch,
+  clockName,
+  expectOnClock,
   labelled,
+  onClock,
   okPage,
   okRead,
   refusedWith,
@@ -522,6 +541,33 @@ describe('recording and reconciling', () => {
     expect(within(panel).getByText(EN['inventory.countStatus.counting'] as string)).toBeVisible();
   });
 
+  it('a second press of "Cancel count" keeps the cancel form open with what was typed (INV5 review)', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    const panel = await openCount(user);
+    const action = within(panel).getByRole('button', {
+      name: EN['inventory.counts.cancel.action'] as string,
+    });
+    await user.click(action);
+    const form = within(panel).getByRole('form', {
+      name: EN['inventory.counts.cancel.heading'] as string,
+    });
+    const reason = within(form).getByLabelText(labelled('inventory.stockOps.reason'));
+    await user.type(reason, 'Mistake');
+    // The button only ever opens the form: a half-typed reason is never closed
+    // away by pressing it again.
+    await user.click(action);
+    expect(
+      within(panel).getByRole('form', { name: EN['inventory.counts.cancel.heading'] as string })
+    ).toBeVisible();
+    expect(within(panel).getByLabelText(labelled('inventory.stockOps.reason'))).toHaveValue(
+      'Mistake'
+    );
+    expect(action).toHaveAttribute('aria-expanded', 'true');
+    expect(cancelStockCount).not.toHaveBeenCalled();
+  });
+
   it('opens a count of a chosen location with one key per form', async () => {
     const user = userEvent.setup();
     openStockCount.mockResolvedValue(
@@ -557,14 +603,17 @@ describe('a count being opened and a branch switch', () => {
 
   async function openTwoBranches(user: ReturnType<typeof userEvent.setup>) {
     renderInLtr(
-      inBranch(
-        <>
-          <BranchSwitch to={TEST_BRANCH.id} label="first" />
-          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
-          <WorkingBranchProbe />
-          <StockCountsScreen locale="en" messages={en} canOperate={true} canReadBranches={true} />
-        </>,
-        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            <StockCountsScreen locale="en" messages={en} canOperate={true} canReadBranches={true} />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        ),
+        'en'
       )
     );
     await user.click(screen.getByRole('button', { name: 'first' }));
@@ -666,5 +715,297 @@ describe('accessibility and Arabic', () => {
     expect(screen.getByText(AR['inventory.counts.explain'] as string)).toBeVisible();
     expect(document.documentElement.dir).toBe('rtl');
     await waitFor(() => expect(listStockCounts).toHaveBeenCalled());
+  });
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — the counts screen on Material UI, and its moments on the
+ * branch's clock.
+ *
+ * The properties under test: a count's start is written on the clock of the
+ * branch the screen is addressed to, with that clock named, and never on the
+ * browser's (the branch here keeps a clock no test environment keeps), in both
+ * languages; where the branch's zone is not known the moment is written on UTC,
+ * named UTC; a second press of any write inside the same moment sends nothing
+ * more — both presses go inside ONE `act`, so it is the ref guard that holds
+ * them and not a disabled button that a re-render produced; a refused quantity
+ * is marked on its own box with what was typed kept, in both languages; opening
+ * a count moves the cursor to it and closing it gives the cursor back to the
+ * row's Open button; the cancel form takes the cursor into its reason box and
+ * returns it to "Cancel count" when it closes.
+ */
+describe('the counts screen on Material UI (P1-32-PRE-OD-INV5)', () => {
+  const FAR_BRANCH = { ...TEST_BRANCH, timezone: FAR_ZONE };
+  const STARTED = '2026-09-17T12:00:00Z';
+  const CATALOGUE = { en: EN, ar: AR } as const;
+
+  function renderOn(
+    locale: 'en' | 'ar',
+    branches: readonly (typeof TEST_BRANCH)[] = [FAR_BRANCH]
+  ): void {
+    const render = locale === 'en' ? renderInLtr : renderInRtl;
+    render(
+      withMui(
+        inBranch(
+          <StockCountsScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            canOperate={true}
+            canReadBranches={true}
+          />,
+          { snapshot: branchSnapshot(branches), locale }
+        ),
+        locale
+      )
+    );
+  }
+
+  /** A deferred answer, so a write stays in flight until the case settles it. */
+  function deferred<T>() {
+    let settle: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((resolve) => {
+      settle = resolve;
+    });
+    return { promise, settle };
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes a count's start on the branch's clock, named, in the list and the count (${locale})`, async () => {
+      const T = CATALOGUE[locale];
+      listStockCounts.mockResolvedValue(okPage([{ ...summary, snapshotAt: STARTED }]));
+      readStockCount.mockResolvedValue(okRead(detail({ snapshotAt: STARTED })));
+      const user = userEvent.setup();
+      renderOn(locale);
+      const list = await screen.findByRole('region', {
+        name: T['inventory.counts.list.heading'] as string,
+      });
+      const table = await within(list).findByRole('table');
+      expectOnClock(within(table).getAllByRole('row')[1] as HTMLElement, STARTED, locale);
+      await user.click(
+        within(table).getByRole('button', {
+          name: `${T['inventory.counts.open'] as string} WH-1`,
+        })
+      );
+      const panel = await screen.findByRole('region', {
+        name: new RegExp(`WH-1`),
+      });
+      expectOnClock(panel, STARTED, locale);
+    });
+  }
+
+  it('writes the start on UTC, named UTC, where the branch keeps no known clock', async () => {
+    listStockCounts.mockResolvedValue(okPage([{ ...summary, snapshotAt: STARTED }]));
+    renderOn('en', [{ ...TEST_BRANCH, timezone: '' }]);
+    const table = await within(listRegion()).findByRole('table');
+    const row = within(table).getAllByRole('row')[1] as HTMLElement;
+    expect(row).toHaveTextContent(onClock(STARTED, 'en', 'UTC'));
+    expect(within(row).getByText(clockName(STARTED, 'en', 'UTC'))).toBeVisible();
+  });
+
+  it('a second press of Save inside the same moment records the line once', async () => {
+    const answer = deferred<unknown>();
+    recordStockCountLine.mockImplementation(() => answer.promise);
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    const panel = await openCount(user);
+    const row = lineRow(panel, 'BRK-001');
+    const save = within(row).getByRole('button', {
+      name: `${EN['inventory.counts.line.save'] as string} BRK-001`,
+    });
+    act(() => {
+      save.click();
+      save.click();
+    });
+    await waitFor(() => expect(recordStockCountLine).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      answer.settle(succeeded('inventory.counts.line.success', detail({ recordVersion: 7 })));
+    });
+    expect(recordStockCountLine).toHaveBeenCalledTimes(1);
+  });
+
+  it('a second press of Reconcile inside the same moment reconciles once', async () => {
+    const answer = deferred<unknown>();
+    reconcileStockCount.mockImplementation(() => answer.promise);
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    const panel = await openCount(user);
+    const reconcile = within(panel).getByRole('button', {
+      name: EN['inventory.counts.reconcile.action'] as string,
+    });
+    act(() => {
+      reconcile.click();
+      reconcile.click();
+    });
+    await waitFor(() => expect(reconcileStockCount).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      answer.settle(
+        succeeded(
+          'inventory.counts.reconcile.success',
+          detail({ status: 'reconciled', recordVersion: 7, adjustmentsRaised: 1 })
+        )
+      );
+    });
+    expect(reconcileStockCount).toHaveBeenCalledTimes(1);
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`a second press of "Cancel count" inside the same moment cancels once (${locale})`, async () => {
+      const T = CATALOGUE[locale];
+      const answer = deferred<unknown>();
+      cancelStockCount.mockImplementation(() => answer.promise);
+      listStockCounts.mockResolvedValue(okPage([summary]));
+      const user = userEvent.setup();
+      renderOn(locale, [TEST_BRANCH]);
+      const list = await screen.findByRole('region', {
+        name: T['inventory.counts.list.heading'] as string,
+      });
+      await user.click(
+        await within(list).findByRole('button', {
+          name: `${T['inventory.counts.open'] as string} WH-1`,
+        })
+      );
+      const panel = await screen.findByRole('region', { name: /WH-1/ });
+      await user.click(
+        within(panel).getByRole('button', { name: T['inventory.counts.cancel.action'] as string })
+      );
+      const form = within(panel).getByRole('form', {
+        name: T['inventory.counts.cancel.heading'] as string,
+      });
+      await user.type(
+        within(form).getByRole('textbox', {
+          name: new RegExp(
+            `^${(T['inventory.stockOps.reason'] as string).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`
+          ),
+        }),
+        'Shelf is being rebuilt'
+      );
+      const submit = within(form).getByRole('button', {
+        name: T['inventory.counts.cancel.submit'] as string,
+      });
+      act(() => {
+        submit.click();
+        submit.click();
+      });
+      await waitFor(() => expect(cancelStockCount).toHaveBeenCalledTimes(1));
+      await act(async () => {
+        answer.settle(
+          succeeded(
+            'inventory.counts.cancel.success',
+            detail({
+              status: 'cancelled',
+              recordVersion: 7,
+              cancelReason: 'Shelf is being rebuilt',
+            })
+          )
+        );
+      });
+      expect(cancelStockCount).toHaveBeenCalledTimes(1);
+    });
+  }
+
+  it('a second press of "Start count" inside the same moment opens one count', async () => {
+    const answer = deferred<unknown>();
+    openStockCount.mockImplementation(() => answer.promise);
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    const form = screen.getByRole('form', {
+      name: EN['inventory.counts.openForm.heading'] as string,
+    });
+    await within(form).findByRole('option', { name: 'WH-1 — Main warehouse' });
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.counts.openForm.location')),
+      LOCATION_ID
+    );
+    const submit = within(form).getByRole('button', {
+      name: EN['inventory.counts.openForm.submit'] as string,
+    });
+    act(() => {
+      submit.click();
+      submit.click();
+    });
+    await waitFor(() => expect(openStockCount).toHaveBeenCalledTimes(1));
+    await act(async () => {
+      answer.settle(succeeded('inventory.counts.open.success', detail({ status: 'open' })));
+    });
+    expect(openStockCount).toHaveBeenCalledTimes(1);
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`marks a malformed counted quantity on its own box and keeps what was typed (${locale})`, async () => {
+      const T = CATALOGUE[locale];
+      listStockCounts.mockResolvedValue(okPage([summary]));
+      const user = userEvent.setup();
+      renderOn(locale, [TEST_BRANCH]);
+      const list = await screen.findByRole('region', {
+        name: T['inventory.counts.list.heading'] as string,
+      });
+      await user.click(
+        await within(list).findByRole('button', {
+          name: `${T['inventory.counts.open'] as string} WH-1`,
+        })
+      );
+      const panel = await screen.findByRole('region', { name: /WH-1/ });
+      const row = lineRow(panel, 'OIL-5W30');
+      const box = within(row).getByRole('textbox');
+      expect(box).not.toHaveAttribute('aria-invalid');
+      expect(box).toHaveAttribute('dir', 'ltr');
+      expect(box).toHaveAttribute('inputmode', 'decimal');
+      await user.type(box, '1.2345');
+      await user.click(
+        within(row).getByRole('button', {
+          name: `${T['inventory.counts.line.save'] as string} OIL-5W30`,
+        })
+      );
+      expect(box).toHaveAttribute('aria-invalid', 'true');
+      expect(within(row).getByText(T['inventory.counts.line.format'] as string)).toBeVisible();
+      expect(box).toHaveValue('1.2345');
+      expect(recordStockCountLine).not.toHaveBeenCalled();
+    });
+  }
+
+  it('opening a count moves the cursor to it, and closing it returns the cursor to its Open button', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    const panel = await openCount(user);
+    const heading = within(panel).getByRole('heading', { name: /Count of WH-1/ });
+    await waitFor(() => expect(heading).toHaveFocus());
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.stockOps.close'] as string })
+    );
+    await waitFor(() =>
+      expect(
+        within(listRegion()).getByRole('button', {
+          name: `${EN['inventory.counts.open'] as string} WH-1`,
+        })
+      ).toHaveFocus()
+    );
+  });
+
+  it('the cancel form takes the cursor into its reason box and gives it back to "Cancel count"', async () => {
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch(TARGET_FORM);
+    const panel = await openCount(user);
+    const cancel = within(panel).getByRole('button', {
+      name: EN['inventory.counts.cancel.action'] as string,
+    });
+    await user.click(cancel);
+    const form = within(panel).getByRole('form', {
+      name: EN['inventory.counts.cancel.heading'] as string,
+    });
+    await waitFor(() =>
+      expect(within(form).getByLabelText(labelled('inventory.stockOps.reason'))).toHaveFocus()
+    );
+    await user.click(
+      within(form).getByRole('button', { name: EN['inventory.stockOps.close'] as string })
+    );
+    expect(
+      within(panel).queryByRole('form', { name: EN['inventory.counts.cancel.heading'] as string })
+    ).toBeNull();
+    await waitFor(() => expect(cancel).toHaveFocus());
   });
 });

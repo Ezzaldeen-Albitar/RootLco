@@ -368,6 +368,8 @@ import '@/app/api/v1/goods-receipts/route';
 import '@/app/api/v1/goods-receipts/[receiptId]/route';
 import '@/app/api/v1/goods-receipts/[receiptId]/posting/route';
 import '@/app/api/v1/items/[itemId]/cost-history/route';
+// P1-32-PRE-OD-INV2A — one item, for its own page.
+import '@/app/api/v1/items/[itemId]/route';
 import '@/app/api/v1/stock-adjustments/route';
 import '@/app/api/v1/stock-adjustments/[adjustmentId]/approval/route';
 import '@/app/api/v1/stock-counts/route';

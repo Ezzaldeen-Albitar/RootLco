@@ -22,7 +22,7 @@
  * shared browser tab. Both languages, including right to left.
  */
 
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -527,6 +527,134 @@ describe('the chain, in order', () => {
       ).toBeVisible();
     });
   }
+
+  /*
+   * P1-32-PRE-OD-INVR — a count date typed whole but impossible (31/02) holds no
+   * day either, and its value is `''` exactly as for no date. It is refused as
+   * the impossible date it is: not as a missing one, and not as unfinished.
+   */
+  for (const locale of ['en', 'ar'] as const) {
+    it(`refuses an impossible count date as one, not as missing, and sends nothing (${locale})`, async () => {
+      const catalogue = locale === 'ar' ? AR : EN;
+      const named = (key: string) => new RegExp(`^${escape(catalogue[key] as string)}`);
+      const user = userEvent.setup();
+      if (locale === 'ar') {
+        renderRtl(
+          <OpeningStockScreen
+            locale="ar"
+            messages={ar}
+            canOperate={true}
+            canApprove={false}
+            canReadBranches={true}
+          />
+        );
+      } else {
+        renderScreen();
+      }
+      await chooseBranch();
+      const panel = screen.getByRole('form', {
+        name: catalogue['inventory.opening.batch.new'] as string,
+      });
+      const code = within(panel).getByLabelText(named('inventory.opening.batch.code'));
+      await user.type(code, 'OPEN-2026');
+      // Every part typed: the thirty-first of February.
+      const day = await typeDay(user, panel, named('inventory.opening.batch.asOfDate'), '31022026');
+      await user.click(
+        within(panel).getByRole('button', {
+          name: catalogue['inventory.opening.batch.open'] as string,
+        })
+      );
+      await waitFor(() => expect(day).toHaveAttribute('aria-invalid', 'true'));
+      expect(day).toHaveAccessibleDescription(
+        new RegExp(escape(catalogue['inventory.opening.batch.dateInvalid'] as string))
+      );
+      expect(within(panel).queryByText(catalogue['field.required'] as string)).toBeNull();
+      expect(
+        within(panel).queryByText(catalogue['inventory.opening.batch.dateFormat'] as string)
+      ).toBeNull();
+      expect(code).toHaveValue('OPEN-2026');
+      expect(createOpeningBatch).not.toHaveBeenCalled();
+    });
+  }
+
+  /*
+   * P1-32-PRE-OD-INVR — one write per press. Both presses go inside ONE act(),
+   * so the second arrives before React has re-rendered the disabled button:
+   * what is tested is the form's own hold on the write (`sending`), not the
+   * button's disabled state.
+   */
+  it('opening a batch: two presses inside one act send one batch', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    createOpeningBatch.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch();
+    const panel = form('inventory.opening.batch.new');
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.opening.batch.code')),
+      'OPEN-2026'
+    );
+    await typeDay(user, panel, labelled('inventory.opening.batch.asOfDate'), '06092026');
+    const open = within(panel).getByRole('button', {
+      name: EN['inventory.opening.batch.open'] as string,
+    });
+    act(() => {
+      open.click();
+      open.click();
+    });
+    expect(createOpeningBatch).toHaveBeenCalledTimes(1);
+    await act(async () => answer(success(draft, 'inventory.opening.batch.success')));
+    await screen.findByText(EN['inventory.opening.batch.serverNote'] as string);
+    expect(createOpeningBatch).toHaveBeenCalledTimes(1);
+  });
+
+  it('adding an opening line: two presses inside one act send one line', async () => {
+    let answer: (value: unknown) => void = () => undefined;
+    createOpeningBatchLine.mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve;
+      })
+    );
+    const user = userEvent.setup();
+    renderScreen();
+    await chooseBranch();
+    await openBatch(user);
+    const panel = form('inventory.opening.line.heading');
+    await user.type(within(panel).getByLabelText(labelled('inventory.opening.line.find')), 'brk');
+    await user.click(
+      within(panel).getByRole('button', { name: EN['inventory.opening.line.search'] as string })
+    );
+    await user.selectOptions(
+      await within(panel).findByLabelText(labelled('inventory.opening.line.item')),
+      ITEM_ID
+    );
+    await user.selectOptions(
+      within(panel).getByLabelText(labelled('inventory.opening.line.location')),
+      LOCATION_ID
+    );
+    await user.type(
+      within(panel).getByLabelText(labelled('inventory.opening.line.quantity')),
+      '12.000'
+    );
+    const add = within(panel).getByRole('button', {
+      name: EN['inventory.opening.line.add'] as string,
+    });
+    act(() => {
+      add.click();
+      add.click();
+    });
+    expect(createOpeningBatchLine).toHaveBeenCalledTimes(1);
+    await act(async () => answer(success(line, 'inventory.opening.line.success')));
+    const lines = await screen.findByRole('table', {
+      name: EN['inventory.opening.lines.caption'] as string,
+    });
+    expect(within(lines).getByText('WH-1')).toBeVisible();
+    expect(createOpeningBatchLine).toHaveBeenCalledTimes(1);
+  });
 
   it('a second press while the approval is out sends nothing more', async () => {
     let answer: (value: unknown) => void = () => undefined;

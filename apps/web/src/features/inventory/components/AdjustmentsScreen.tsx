@@ -51,7 +51,6 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
-import { formatDateTime } from '@/lib/format';
 
 import { createAdjustment, decideAdjustment, listAdjustments } from '../api';
 import {
@@ -71,10 +70,12 @@ import {
   BranchTargetForm,
   ItemFinder,
   PANEL,
+  StockMoment,
   StockOperationLinks,
   isQuantity,
   outcomeField,
   useBranchList,
+  useStockDisplayZone,
 } from './stock-operations';
 
 const READERS: Record<
@@ -162,6 +163,8 @@ function BranchAdjustments({
     status
   );
   const locations = useLocations(target);
+  // Each request's moment is written on the branch's clock, named (`P1-32-PRE-OD-INV5`).
+  const zone = useStockDisplayZone(target);
   const [deciding, setDeciding] = useState<StockAdjustment | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
@@ -253,8 +256,8 @@ function BranchAdjustments({
                         </TableCell>
                         <TableCell>
                           {row.reason}
-                          <span className="block text-caption text-text-muted" dir="ltr">
-                            {formatDateTime(row.createdAt, locale)}
+                          <span className="block text-caption text-text-muted">
+                            <StockMoment value={row.createdAt} locale={locale} zone={zone} />
                           </span>
                         </TableCell>
                         <TableCell>
