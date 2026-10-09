@@ -42,15 +42,21 @@ import {
   ensureTestLogins,
   runtimeAppPool,
 } from './helpers';
-import { __resetBackendConfigForTests } from '@/server/config/backend-config';
+import { __resetBackendConfigForTests, backendConfig } from '@/server/config/backend-config';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { withTransaction } from '@/server/db/transaction';
 import { AppFailure } from '@/server/errors/app-failure';
-import { setIdentityProvider, FakeIdentityProvider } from '@/modules/iam';
+import {
+  BearerSessionAuthenticator,
+  setIdentityProvider,
+  FakeIdentityProvider,
+} from '@/modules/iam';
 import type { WorkingContextView } from '@/modules/iam';
 import { WorkingContextService } from '@/modules/iam/application/working-context-service';
 import { WorkingContextRepository } from '@/modules/iam/data/working-context-repository';
-import { resolveScopeFor } from '@/server/context/resolve-context';
+import { resolveRequestContext, resolveScopeFor } from '@/server/context/resolve-context';
+import type { PrincipalClaims } from '@/server/context/principal';
+import { verifyBearerToken } from '@/modules/iam/provider/token-verifier';
 import { AuthenticationService } from '@/modules/iam/application/authentication-service';
 import { InvitationService } from '@/modules/iam/application/invitation-service';
 import { AuthorizationRepository } from '@/modules/iam/data/authorization-repository';
@@ -1306,5 +1312,227 @@ describe('iam.working-context-read', () => {
       );
     }
     expect((await readAs(U_WCTX_NONE)).branchPermissions.branches).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// The session lifecycle as it stands (P1-32-PRE-OD-AUTHB; AUTH01 evidence)
+// ===========================================================================
+/**
+ * What each lifecycle event does to a session ALREADY in a caller's hands,
+ * measured on the request path every authenticated operation takes: the real
+ * `BearerSessionAuthenticator` over the provider double, then the real
+ * `resolveRequestContext` on the deployed `app_runtime` identity.
+ *
+ * These cases PIN today's behaviour. They change no lifetime and add no
+ * invalidation: whether other devices must lose access at once after a password
+ * change is the open Owner decision AUTH01, and the residuals below are its
+ * evidence, not defects this file fixes.
+ *
+ * Where a case writes a row directly (a status, a revocation stamp, a clock), it
+ * writes exactly what the real path writes, and that path's own write is pinned
+ * elsewhere: the status change and its revocation in
+ * `tests/backend/iam-admin-writes.test.ts` ("locks an active user: revokes
+ * sessions…", "revokes every live session…"). What is measured here is the
+ * READ side — whether the next request is refused — which no other case pins.
+ */
+describe('the session lifecycle as it stands today (AUTH01 evidence, nothing changed)', () => {
+  const authenticator = () => new BearerSessionAuthenticator(fake);
+
+  async function signIn() {
+    return authService.login({ tenantId: TENANT_A, email: EMAIL_ACTIVE, password: PASSWORD }, META);
+  }
+
+  async function claimsOf(token: string): Promise<PrincipalClaims | null> {
+    return authenticator().authenticate(
+      new Request('http://api.test.local/api/v1/auth/session', {
+        headers: { authorization: `Bearer ${token}` },
+      })
+    );
+  }
+
+  /** `resolved` when the next request would be served, else the refusal's code. */
+  async function nextRequest(
+    claims: PrincipalClaims,
+    operation = 'iam.auth-session'
+  ): Promise<string> {
+    try {
+      const context = await resolveRequestContext({
+        claims,
+        correlationId: randomUUID(),
+        operation,
+        module: 'iam',
+      });
+      return context.principal.userId === U_ACTIVE ? 'resolved' : 'resolved-as-another';
+    } catch (error) {
+      if (error instanceof AppFailure) return error.code;
+      throw error;
+    }
+  }
+
+  async function signedInClaims() {
+    const login = await signIn();
+    const claims = await claimsOf(login.accessToken);
+    if (claims === null) throw new Error('a fresh token did not authenticate');
+    return { login, claims };
+  }
+
+  it("a fresh session is served, and its hard expiry is the access token's own", async () => {
+    const { login, claims } = await signedInClaims();
+    expect(claims.sessionRef).toBeTruthy();
+    expect(await nextRequest(claims)).toBe('resolved');
+
+    const payload = JSON.parse(
+      Buffer.from(login.accessToken.split('.')[1] ?? '', 'base64url').toString('utf8')
+    ) as { exp: number };
+    expect(Date.parse(login.expiresAt)).toBe(payload.exp * 1000);
+    const row = await admin.query<{ expires_at: Date }>(
+      'SELECT expires_at FROM iam.user_sessions WHERE session_ref = $1',
+      [claims.sessionRef]
+    );
+    expect(row.rows[0]?.expires_at.getTime()).toBe(payload.exp * 1000);
+  });
+
+  it('the access token stops verifying at its own expiry, and not a second before', async () => {
+    const login = await signIn();
+    const exp = Date.parse(login.expiresAt);
+    const verify = (at: number) =>
+      verifyBearerToken(login.accessToken, {
+        secret: SECRET,
+        issuer: ISSUER,
+        audience: AUDIENCE,
+        algorithms: ['HS256'],
+        clockSkewSeconds: 0,
+        now: () => at,
+      });
+    expect(verify(exp - 1_000).sessionRef).toBeTruthy();
+    expect(() => verify(exp)).toThrow(/expired/);
+  });
+
+  it('signing out refuses the next request at once, from the server-side row alone', async () => {
+    const { login, claims } = await signedInClaims();
+    await authService.logout(login.accessToken, meta());
+    // The claims were read BEFORE the sign-out, so this does not lean on the
+    // provider forgetting the token: the row's `revoked_at` refuses it.
+    expect(await nextRequest(claims)).toBe('ERR-IAM-002');
+  });
+
+  it('locking the account refuses the next request, even before its sessions are revoked', async () => {
+    const { claims } = await signedInClaims();
+    await admin.query(`UPDATE iam.user_accounts SET status = 'locked' WHERE id = $1`, [U_ACTIVE]);
+    // The session row is untouched here, and the request is still refused: an
+    // account that is not `active` resolves to no principal at all.
+    expect(
+      await countRows(admin, 'iam.user_sessions', 'user_id = $1 AND revoked_at IS NULL', [U_ACTIVE])
+    ).toBe(1);
+    expect(await nextRequest(claims)).toBe('ERR-IAM-002');
+  });
+
+  it('archiving the account refuses the next request the same way', async () => {
+    const { claims } = await signedInClaims();
+    await admin.query(`UPDATE iam.user_accounts SET status = 'archived' WHERE id = $1`, [U_ACTIVE]);
+    expect(await nextRequest(claims)).toBe('ERR-IAM-002');
+  });
+
+  it('an administrator ending every session refuses the next request', async () => {
+    const { claims } = await signedInClaims();
+    await admin.query(
+      `UPDATE iam.user_sessions SET revoked_at = now(), revoke_reason = 'fixture: revoke all'
+        WHERE user_id = $1 AND revoked_at IS NULL`,
+      [U_ACTIVE]
+    );
+    expect(await nextRequest(claims)).toBe('ERR-IAM-002');
+  });
+
+  it('the same row refuses a control-plane operation: one resolver serves both', async () => {
+    const { claims } = await signedInClaims();
+    expect(await nextRequest(claims, 'platform.session')).toBe('resolved');
+    await admin.query(
+      `UPDATE iam.user_sessions SET revoked_at = now(), revoke_reason = 'fixture: revoke all'
+        WHERE user_id = $1 AND revoked_at IS NULL`,
+      [U_ACTIVE]
+    );
+    expect(await nextRequest(claims, 'platform.session')).toBe('ERR-IAM-002');
+  });
+
+  it('a session idle past the limit is refused; one just inside it is served', async () => {
+    const idle = backendConfig().SESSION_IDLE_TIMEOUT_MINUTES;
+    const { claims } = await signedInClaims();
+    await admin.query(
+      `UPDATE iam.user_sessions SET last_seen_at = now() - make_interval(mins => $2::int - 1)
+        WHERE session_ref = $1`,
+      [claims.sessionRef, idle]
+    );
+    expect(await nextRequest(claims)).toBe('resolved');
+    await admin.query(
+      `UPDATE iam.user_sessions SET last_seen_at = now() - make_interval(mins => $2::int + 1)
+        WHERE session_ref = $1`,
+      [claims.sessionRef, idle]
+    );
+    expect(await nextRequest(claims)).toBe('ERR-IAM-002');
+  });
+
+  it('a session past its hard expiry is refused even while its row is otherwise live', async () => {
+    const { claims } = await signedInClaims();
+    await admin.query(
+      `UPDATE iam.user_sessions SET expires_at = now() - interval '1 second' WHERE session_ref = $1`,
+      [claims.sessionRef]
+    );
+    expect(await nextRequest(claims)).toBe('ERR-IAM-002');
+  });
+
+  it('a password reset leaves another device served until its token expires (the AUTH01 residual)', async () => {
+    // "Another device": a session signed in before the reset, whose token the
+    // operator who reset the password no longer holds.
+    const { login, claims } = await signedInClaims();
+    await authService.requestPasswordReset({ email: EMAIL_ACTIVE }, meta());
+    const recovery = fake.deliveries[0]!.token;
+    await authService.completePasswordReset({ token: recovery, password: 'a-new-strong-password' });
+
+    // Its refresh token is gone, so it cannot outlive its access token...
+    await expect(fake.refreshSession(login.refreshToken as string)).rejects.toMatchObject({
+      reason: 'invalid-token',
+    });
+    // ...but nothing wrote `revoked_at`, so until that token expires the next
+    // request is served. This is today's behaviour, and AUTH01 is the decision
+    // on whether it may stay.
+    expect(
+      await countRows(admin, 'iam.user_sessions', 'user_id = $1 AND revoked_at IS NULL', [U_ACTIVE])
+    ).toBe(1);
+    expect(await claimsOf(login.accessToken)).not.toBeNull();
+    expect(await nextRequest(claims)).toBe('resolved');
+  });
+
+  it('suspending the ORGANISATION does not end its sessions: the next request is served', async () => {
+    const { claims } = await signedInClaims();
+    const changeStatus = async (status: string) => {
+      const client = await admin.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query("SELECT set_config('app.user_id', $1, true)", [USER_A]);
+        await client.query('SELECT org.change_tenant_status($1, $2, $3, $4)', [
+          TENANT_A,
+          status,
+          'fixture: AUTH01 lifecycle evidence',
+          USER_A,
+        ]);
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
+    };
+    await changeStatus('suspended');
+    try {
+      // The resolver reads the ACCOUNT's status and the session row, never the
+      // organisation's; a suspended organisation is refused growth
+      // (`tenant_not_active`), not access.
+      expect(await nextRequest(claims)).toBe('resolved');
+    } finally {
+      await changeStatus('active');
+    }
+    expect(await nextRequest(claims)).toBe('resolved');
   });
 });

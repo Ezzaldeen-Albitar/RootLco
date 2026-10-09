@@ -37,14 +37,23 @@ const jar = vi.hoisted(() => ({
   mutationAllowed: false,
   deleted: [] as string[],
   token: null as string | null,
+  /** What `src/proxy.ts` recorded as the path being served; null = no header. */
+  requestedPath: null as string | null,
+  /** Cookie deletions and backend calls, in the order they happened. */
+  events: [] as string[],
 }));
 
 vi.mock('next/headers', () => ({
+  headers: async () =>
+    new Headers(
+      jar.requestedPath === null ? {} : { 'x-rootlco-requested-path': jar.requestedPath }
+    ),
   cookies: async () => ({
     get: (name: string) => (jar.token === null ? undefined : { name, value: jar.token }),
     delete: (name: string) => {
       if (!jar.mutationAllowed) throw new Error(RENDER_MUTATION_ERROR);
       jar.deleted.push(name);
+      jar.events.push(`cookie-deleted:${name}`);
     },
     set: () => {
       if (!jar.mutationAllowed) throw new Error(RENDER_MUTATION_ERROR);
@@ -66,6 +75,10 @@ const { loadWorkingContext } = await import('@/features/working-context/api');
 const { WORKING_CONTEXT_PATH, isWorkingContextShape, permitsInBranch, preferenceKeyFor } =
   await import('@/features/working-context/working-context-contract');
 const { GET } = await import('@/app/[locale]/(auth)/session-ended/route');
+const { logoutAction } = await import('@/features/authentication/actions/logout');
+const { INTENDED_PATH_PARAM } = await import('@/features/authentication/api/intended-path');
+const { REQUESTED_PATH_HEADER } =
+  await import('@/features/authentication/api/requested-path-header');
 
 const SESSION = {
   userId: '2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e',
@@ -117,6 +130,8 @@ beforeEach(() => {
   jar.mutationAllowed = false;
   jar.deleted = [];
   jar.token = 'stale.expired.token';
+  jar.requestedPath = null;
+  jar.events = [];
 });
 
 afterEach(() => {
@@ -507,5 +522,249 @@ describe('the working-context read', () => {
     expect(preferenceKeyFor('t-1', 'u-1')).toBe('rootlco.working-context.t-1.u-1');
     expect(preferenceKeyFor('t-1', 'u-1')).not.toBe(preferenceKeyFor('t-1', 'u-2'));
     expect(preferenceKeyFor('t-1', 'u-1')).not.toBe(preferenceKeyFor('t-2', 'u-1'));
+  });
+});
+
+/**
+ * P1-32-PRE-OD-AUTHB — the page being refused travels to sign-in.
+ *
+ * `src/proxy.ts` records the path of the request being served; a protected
+ * render that must send the operator to sign in carries it, re-checked, as the
+ * intended path. Every case above runs with NO recorded path and keeps its exact
+ * address, which is the other half of this: nothing changes when there is no
+ * page to return to.
+ */
+describe('the intended page travels with the redirect to sign-in', () => {
+  it('names the header the proxy writes', () => {
+    // The mock above answers this name; if the two ever disagree every case
+    // below passes against a header nobody sends.
+    expect(REQUESTED_PATH_HEADER).toBe('x-rootlco-requested-path');
+  });
+
+  it('carries the page when there is no session at all', async () => {
+    jar.token = null;
+    jar.requestedPath = '/en/work-orders';
+    expect(await redirectTarget(() => requireSession('en'))).toBe(
+      `/en/login?reason=signed-out&${INTENDED_PATH_PARAM}=%2Fen%2Fwork-orders`
+    );
+  });
+
+  it('carries the page in Arabic as well', async () => {
+    jar.token = null;
+    jar.requestedPath = '/ar/invoices';
+    expect(await redirectTarget(() => requireSession('ar'))).toBe(
+      `/ar/login?reason=signed-out&${INTENDED_PATH_PARAM}=%2Far%2Finvoices`
+    );
+  });
+
+  it('carries the page through the session-ended handler when the token was rejected', async () => {
+    answerSessionWith(401);
+    jar.requestedPath = '/en/work-orders/2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e';
+    const first = await redirectTarget(() => requireSession('en'));
+    expect(first).toBe(
+      `/en/${SESSION_ENDED_SEGMENT}?${INTENDED_PATH_PARAM}=` +
+        '%2Fen%2Fwork-orders%2F2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e'
+    );
+    expect(jar.deleted).toEqual([]);
+
+    // The handler receives exactly the address the render produced.
+    jar.mutationAllowed = true;
+    const second = await redirectTarget(() =>
+      GET(
+        new Request(`http://localhost:3100${first}`, {
+          headers: { 'sec-fetch-site': 'same-origin' },
+        }),
+        { params: Promise.resolve({ locale: 'en' }) }
+      )
+    );
+    expect(jar.deleted).toEqual([SESSION_COOKIE]);
+    expect(second).toBe(
+      `/en/login?reason=expired&${INTENDED_PATH_PARAM}=` +
+        '%2Fen%2Fwork-orders%2F2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e'
+    );
+  });
+
+  it('carries the page when the backend could not confirm the session', async () => {
+    answerSessionWith(503);
+    jar.requestedPath = '/en/payments';
+    expect(await redirectTarget(() => requireSession('en'))).toBe(
+      `/en/login?reason=unavailable&${INTENDED_PATH_PARAM}=%2Fen%2Fpayments`
+    );
+  });
+
+  it('carries NO page for a refused session read — the same account opens nothing', async () => {
+    answerSessionWith(403);
+    jar.requestedPath = '/en/work-orders';
+    expect(await redirectTarget(() => requireSession('en'))).toBe('/en/login?reason=forbidden');
+  });
+
+  it('sends an account holding no permission code to sign-in as forbidden, with no page', async () => {
+    // P1-32-PRE-OD-FRX kept: answered 200 with no code, it is sent to sign-in
+    // as `forbidden` with its cookie kept, after the platform session is asked
+    // (and refused here), which is how the platform operator keeps reaching the
+    // console.
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const path = new URL(url).pathname;
+        calls.push(path);
+        return path === '/api/v1/auth/session'
+          ? respond(200, { ...SESSION, permissions: [] })
+          : respond(403);
+      })
+    );
+    jar.requestedPath = '/en/work-orders';
+    expect(await redirectTarget(() => requireSession('en'))).toBe('/en/login?reason=forbidden');
+    expect(jar.deleted).toEqual([]);
+    expect(calls).toContain('/api/v1/platform/session');
+  });
+
+  it('carries no page for the workspace root, which is the landing anyway', async () => {
+    jar.token = null;
+    jar.requestedPath = '/en';
+    expect(await redirectTarget(() => requireSession('en'))).toBe('/en/login?reason=signed-out');
+  });
+
+  it.each([
+    ['a protocol-relative address', '//evil.example/en/work-orders'],
+    ['a backslash address', '/\\evil.example'],
+    ['an absolute address', 'https://evil.example/en'],
+    ['an encoded slash', '/en/%2F%2Fevil.example'],
+    ['the sign-in page itself', '/en/login'],
+    ['the session-ended handler', `/en/${SESSION_ENDED_SEGMENT}`],
+  ])('drops %s recorded as the requested path', async (_label, recorded) => {
+    jar.token = null;
+    jar.requestedPath = recorded;
+    expect(await redirectTarget(() => requireSession('en'))).toBe('/en/login?reason=signed-out');
+  });
+});
+
+describe('the session-ended handler re-checks the intended page', () => {
+  const handle = (query: string) =>
+    redirectTarget(() =>
+      GET(
+        new Request(`http://localhost:3100/en/${SESSION_ENDED_SEGMENT}${query}`, {
+          headers: { 'sec-fetch-site': 'same-origin' },
+        }),
+        { params: Promise.resolve({ locale: 'en' }) }
+      )
+    );
+
+  beforeEach(() => {
+    jar.mutationAllowed = true;
+  });
+
+  it.each([
+    ['an absolute address', 'https%3A%2F%2Fevil.example%2Fen'],
+    ['a protocol-relative address', '%2F%2Fevil.example'],
+    ['a backslash address', '%2F%5Cevil.example'],
+    ['a scheme', 'javascript%3Aalert(1)'],
+    ['an encoded slash inside the path', '%2Fen%2F%252F%252Fevil.example'],
+    ['a dot-dot segment', '%2Fen%2F..%2Fevil'],
+    ['an unknown area', '%2Fen%2Fnot-a-screen'],
+  ])('drops %s and lands on the plain expired address', async (_label, encoded) => {
+    expect(await handle(`?${INTENDED_PATH_PARAM}=${encoded}`)).toBe('/en/login?reason=expired');
+    // It still clears the rejected cookie: a hostile parameter changes nothing
+    // about ending the session.
+    expect(jar.deleted).toEqual([SESSION_COOKIE]);
+  });
+
+  it('never redirects to the intended page itself — only to sign-in', async () => {
+    const target = await handle(`?${INTENDED_PATH_PARAM}=%2Fen%2Fwork-orders`);
+    expect(target.startsWith('/en/login?')).toBe(true);
+    expect(target).toBe(`/en/login?reason=expired&${INTENDED_PATH_PARAM}=%2Fen%2Fwork-orders`);
+  });
+
+  it('carries it even when it declines to clear a cross-site request', async () => {
+    const target = await redirectTarget(() =>
+      GET(
+        new Request(
+          `http://localhost:3100/en/${SESSION_ENDED_SEGMENT}?${INTENDED_PATH_PARAM}=%2Fen%2Fwork-orders`,
+          { headers: { 'sec-fetch-site': 'cross-site' } }
+        ),
+        { params: Promise.resolve({ locale: 'en' }) }
+      )
+    );
+    expect(jar.deleted).toEqual([]);
+    expect(target).toBe(`/en/login?reason=expired&${INTENDED_PATH_PARAM}=%2Fen%2Fwork-orders`);
+  });
+});
+
+/**
+ * Sign-out, as the lifecycle stands (P1-32-PRE-OD-AUTHB, item 3).
+ *
+ * The cookie is cleared first and unconditionally, the backend is then told
+ * with the token that was in it — `POST /api/v1/auth/logout` revokes exactly
+ * that session row, which is what refuses the token at once although it has not
+ * expired — and the operator lands on sign-in with `signed-out` and no intended
+ * page: they chose to leave.
+ */
+describe('signing out', () => {
+  function logoutForm(locale: string): FormData {
+    const form = new FormData();
+    form.set('locale', locale);
+    return form;
+  }
+
+  beforeEach(() => {
+    // A Server Action is the other context Next permits to write a cookie.
+    jar.mutationAllowed = true;
+    jar.token = 'live.session.token';
+  });
+
+  it('clears the cookie BEFORE it tells the backend, then lands on signed-out', async () => {
+    const seen: { path: string; authorization: string | null }[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string, init?: RequestInit) => {
+        jar.events.push('backend-called');
+        seen.push({
+          path: new URL(url).pathname,
+          authorization: new Headers(init?.headers).get('authorization'),
+        });
+        return respond(204);
+      })
+    );
+    jar.requestedPath = '/en/work-orders';
+    const target = await redirectTarget(() => logoutAction(logoutForm('en')));
+    expect(jar.events).toEqual([`cookie-deleted:${SESSION_COOKIE}`, 'backend-called']);
+    expect(seen).toEqual([
+      { path: '/api/v1/auth/logout', authorization: 'Bearer live.session.token' },
+    ]);
+    expect(target).toBe('/en/login?reason=signed-out');
+  });
+
+  it('signs out in Arabic to the Arabic sign-in page', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => respond(204))
+    );
+    expect(await redirectTarget(() => logoutAction(logoutForm('ar')))).toBe(
+      '/ar/login?reason=signed-out'
+    );
+  });
+
+  it('still clears and redirects when the backend cannot be reached', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('fetch failed');
+      })
+    );
+    expect(await redirectTarget(() => logoutAction(logoutForm('en')))).toBe(
+      '/en/login?reason=signed-out'
+    );
+    expect(jar.deleted).toEqual([SESSION_COOKIE]);
+  });
+
+  it('calls nothing when there was no session, and still lands on signed-out', async () => {
+    jar.token = null;
+    const fetchSpy = vi.fn(async () => respond(204));
+    vi.stubGlobal('fetch', fetchSpy);
+    expect(await redirectTarget(() => logoutAction(logoutForm('en')))).toBe(
+      '/en/login?reason=signed-out'
+    );
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

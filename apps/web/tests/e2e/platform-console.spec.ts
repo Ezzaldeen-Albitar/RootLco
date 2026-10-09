@@ -85,6 +85,18 @@ test.describe('Platform Owner Console', () => {
     // Needs no credentials: with no session cookie the console layout redirects
     // before it asks the backend anything.
     await page.goto('/en/platform');
-    await expect(page).toHaveURL(/\/en\/login\?reason=signed-out$/);
+    // The console page being opened travels with the redirect
+    // (P1-32-PRE-OD-AUTHB), so sign-in can return the operator to it.
+    await expect(page).toHaveURL(/\/en\/login\?reason=signed-out&intended=%2Fen%2Fplatform$/);
+  });
+
+  test('refuses the Arabic console to a visitor who is not signed in, carrying the page', async ({
+    page,
+  }) => {
+    await page.goto('/ar/platform/organizations');
+    await expect(page).toHaveURL(
+      /\/ar\/login\?reason=signed-out&intended=%2Far%2Fplatform%2Forganizations$/
+    );
+    await expect(page.getByRole('heading', { level: 1, name: 'تسجيل الدخول' })).toBeVisible();
   });
 });

@@ -1746,7 +1746,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------- | ----------------------------------------- |
 | `/activate-account`                                   | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
 | `/forgot-password`                                    | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/login`                                              | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
+| `/login`                                              | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated; notices and intended page changed (AUTH-B)            | sign-in DOM suite, en and ar              |
 | `/reset-password`                                     | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
 | `/administration/appointment-setup`                   | form fields, `OperationalGrid`, `ConfirmDialog`, `DecisionDialog`, states                     | F1–F6; G1–G9; S1–S4                              | built on Material UI — see "Appointments for tenant administrators" | focused suites, en and ar                 |
 | `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated                                                        | not run — nothing migrated                |
@@ -5812,3 +5812,61 @@ Known limitations, one line each:
   named-QA backfill are operator steps (CC-OD-58, README question 22).
 - The DB and backend tiers were run on the development machine on a disposable database only for the
   files named in the pull request; the full tiers run on hosted CI.
+
+### Session lifecycle and the intended page after sign-in (`P1-32-PRE-OD-AUTHB`)
+
+This slice covers what an operator meets when a sign-in is required on the way to a page, and pins
+the session lifecycle that decides when that happens. No backend behaviour, no token lifetime and no
+permission code changed. AUTH01 ([decision pack](decision-pack-2026-10-08.md#auth01-signing-other-devices-out-after-a-password-change))
+stays an open Owner decision, and the lifecycle evidence is recorded in its section.
+
+| Route                            | What changed                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| every dashboard and console page | When the page sends the operator to sign in (no session, a session that ended, or the backend could not confirm it), the page's own path goes with the redirect as `intended`. A refused session (`forbidden`) carries none, because signing in again as the same account would open nothing. `src/proxy.ts` records the path, never the query string.                                            |
+| `/session-ended`                 | Clears the rejected cookie as before. It never goes to the intended page; it re-checks the value and hands it to the sign-in address. A value that fails the check is dropped and the operator lands on `?reason=expired` as before.                                                                                                                                                              |
+| `/login`                         | A second notice says the operator will return to the page they were opening when this account may open it. The page's address is never echoed. The reason sentences now name what ends a session (inactivity, expiry, an administrator ending it, locking or archiving the account) and say plainly that an account with no access has been given none. Pressing Sign in twice sends one sign-in. |
+| sign-in action                   | After the credentials are accepted, the operator goes to the intended page only when it is a safe application path and the new session's navigation offers it, judged by the most specific entry (a console page only for a platform session, a workspace page only for a tenant one). Otherwise they land where they always did.                                                                 |
+
+The allow-list (`features/authentication/api/intended-path.ts`) accepts only `/{en|ar}/{area}/…`
+built from letters, digits, `-` and `_`, where `{area}` is a workspace screen, the console or the
+profile. It refuses an absolute address, `//host`, a backslash, a scheme, any percent-encoding, dot
+segments, empty segments, a query, a fragment, white space and control characters, the sign-in and
+session-ended pages, and anything over 512 characters. The address is checked by `requireSession`,
+the session-ended handler, the sign-in page, the sign-in action and `destinationAfterSignIn`. Only
+the last of these follows it.
+
+The allow-listed intended path narrows the P1-26 ruling that the authentication flow carries no
+redirect destination. The planner accepted that narrowing under package WP05 of the completion plan
+of 2026-10-08 (outside the repository), "preserve locale and safe intended navigation". The
+password-reset and activation pages still carry no destination, and the session-ended handler still
+never follows the intended path: it only re-checks it and hands it to the sign-in address.
+
+The reason sentences name only what the AUTH01 evidence in the decision pack shows ending a session
+or refusing a sign-in: inactivity, expiry, an administrator ending the sessions, and an account that
+is locked or archived. The account model has no suspended status, and a suspended organisation keeps
+its sessions, so neither sentence mentions suspension.
+
+Tests: `apps/web/tests/intended-path.test.ts` (each rejection, the accepted shapes, the permission
+rule); `apps/web/tests/session.test.ts` (the redirect from a protected render, the session-ended
+handler's re-check, sign-out); `apps/web/tests/platform-login-routing.test.ts` (sign-in follows
+only a page the new session may open, in both languages and both surfaces);
+`apps/web/tests/sign-in-notices.dom.test.tsx` (every notice in en and ar, no echo, the hidden field,
+one sign-in for two presses inside one `act()`); `apps/web/tests/e2e/foundation.spec.ts` and
+`apps/web/tests/e2e/platform-console.spec.ts` (the anonymous redirects in en and ar, hostile values
+ignored); `tests/unit/od-session-lifecycle.test.ts` and `tests/backend/iam-auth-provider.test.ts`
+("the session lifecycle as it stands today").
+
+Changed assertions: `foundation.spec.ts` and `platform-console.spec.ts` expected
+`/en/login?reason=signed-out` after opening a protected page without a session. They now expect the
+same address with `&intended=` naming the page that was opened.
+
+Known limitations, one line each:
+
+- `/login` keeps its own fields (`Field.tsx`, `PasswordField`). No Material UI password field with
+  the reveal control exists yet, so the form-field migration is recorded as not done.
+- The "sign in again" link in a read's ended-session state (`MuiStates`, `SearchStates`) still opens
+  plain `/login`. A session that ends during a client-side read does not carry the page yet.
+- The page cannot say which account was locked or archived: the backend answers every ended session
+  and every refused sign-in identically on purpose. The sentences name the causes for everyone.
+- Forgotten-password and set-password forms were not given the one-press hold in this slice.
+- The anonymous end-to-end cases run on hosted CI. They were not run on the development machine.
