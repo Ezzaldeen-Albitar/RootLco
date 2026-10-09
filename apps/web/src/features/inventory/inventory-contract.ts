@@ -1209,6 +1209,30 @@ export interface BarcodeResolution {
   readonly availability: readonly StockAvailability[] | null;
 }
 
+/**
+ * One item for its own page (P1-32-PRE-OD-INV2A) — `ItemDetailView`. The chain of
+ * categories is top level first, the item's own category last. No cost, no price.
+ */
+export interface ItemDetail {
+  readonly id: string;
+  readonly sku: string;
+  readonly name: string;
+  readonly description: string | null;
+  readonly itemCategoryId: string;
+  readonly categoryPath: readonly {
+    readonly id: string;
+    readonly code: string;
+    readonly name: string;
+  }[];
+  readonly unitOfMeasure: { readonly id: string; readonly code: string; readonly name: string };
+  readonly itemType: ItemType;
+  readonly isStockTracked: boolean;
+  readonly isSerialized: boolean;
+  readonly lifecycleStatus: 'active' | 'archived';
+  readonly archived: boolean;
+  readonly recordVersion: number;
+}
+
 /** `inv.item-label-data` — `ItemLabelView`. `primaryBarcode` is null when the item carries none. */
 export interface ItemLabel {
   readonly itemId: string;
