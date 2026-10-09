@@ -191,8 +191,10 @@ describe('the tree as it stands passes, and the run is not vacuous', () => {
         // operation; 40 with the quotation screen's discount request withdrawal, which
         // sends the request's version for a quo operation; 44 with the invoice's refunds
         // panel, whose approval, rejection, withdrawal and payout record each send the
-        // refund request's version for a sal operation.
-        '44 versioned send(s) outside the subject.'
+        // refund request's version for a sal operation; 46 with the Organisation
+        // screen's company and branch edits (P1-32-PRE-OD-ADM1), each sending the
+        // version the company or branch list published for the row, for an org operation.
+        '46 versioned send(s) outside the subject.'
     );
     expect(out).toContain(
       'OK: every version-guarded P1-31 command sources its If-Match from a read or a command ' +
