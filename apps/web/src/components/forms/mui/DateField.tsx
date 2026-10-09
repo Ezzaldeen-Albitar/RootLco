@@ -367,7 +367,15 @@ function textFieldSlot(wiring: FieldWiring, props: MuiFieldBaseProps): Record<st
         'aria-invalid': wiring.invalid || undefined,
         'aria-describedby': wiring.describedBy,
         'aria-errormessage': wiring.errorId,
-        'aria-required': props.required || undefined,
+        /*
+         * `aria-required` is not an attribute a `group` may carry (WAI-ARIA 1.2;
+         * axe `aria-allowed-attr`, serious), so a required picker is announced
+         * on each of its parts — every one a `spinbutton`, which may — and the
+         * group keeps only the attributes it is allowed.
+         */
+        slotProps: {
+          sectionContent: { 'aria-required': props.required || undefined },
+        },
       },
       htmlInput: { required: undefined },
       formHelperText: { component: 'div' },

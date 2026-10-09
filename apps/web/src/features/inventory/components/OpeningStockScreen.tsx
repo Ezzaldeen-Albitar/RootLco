@@ -36,13 +36,39 @@
  * batch and line forms;
  * `inv.adjustment.approve` offers the approval; `org.branch.read` the branch
  * picker.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV3`)
+ *
+ * Every control this screen draws itself is a shared wrapper: the batch code,
+ * the notes, the item search and the item are `forms/mui` fields, the quantity
+ * `FormNumberField` (the string typed is the string sent), the count's date a
+ * `DateField` (the same `YYYY-MM-DD` the native box produced), and every
+ * button is Material's. The batch list and the counted lines are Material's
+ * table — the list is one page of up to fifty with a "more exist" flag and no
+ * cursor is walked, so there is nothing for `OperationalGrid`'s pager to do —
+ * and the list's empty and failed answers are the shared states carrying this
+ * screen's own sentences. The location select is the shared `LocationPicker`,
+ * drawn as it draws. What is read, sent, authorized and refused is unchanged,
+ * and so is the one-opening-per-stock-cell rule the server enforces.
  */
 
 import Link from 'next/link';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Alert from '@mui/material/Alert';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { DateField, type DayProblem } from '@/components/forms/mui/DateField';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiEmptyState, MuiReadFailureState } from '@/components/states/MuiStates';
 import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
@@ -69,15 +95,7 @@ import {
   type OpeningBatchSummary,
   type StockTarget,
 } from '../inventory-contract';
-import {
-  LocationPicker,
-  OutcomeNote,
-  PRIMARY_BUTTON,
-  Qty,
-  SECONDARY_BUTTON,
-  UUID,
-  useLocations,
-} from './shared';
+import { LocationPicker, OutcomeNote, Qty, UUID, useLocations } from './shared';
 import { BranchTargetForm } from './stock-operations';
 
 const LINK = 'text-primary underline-offset-2 hover:underline';
@@ -112,7 +130,11 @@ type BatchList =
   | { readonly phase: 'none' }
   | {
       readonly phase: 'failed';
-      readonly messageKey: string;
+      /** Which failure, so it is drawn as that state (`MuiReadFailureState`). */
+      readonly status: 'denied' | 'expired' | 'unavailable';
+      readonly messageKey:
+        'inventory.opening.batches.refused' | 'inventory.opening.batches.unavailable';
+      readonly correlationId: string | null;
       readonly retry: (() => void) | null;
     };
 
@@ -134,7 +156,10 @@ function useOpeningBatches(target: StockTarget | null): {
     readonly request: string;
     readonly items: readonly OpeningBatchSummary[] | null;
     readonly truncated: boolean;
-    readonly failure: { readonly key: string; readonly retryable: boolean } | null;
+    readonly failure: {
+      readonly status: 'denied' | 'expired' | 'unavailable';
+      readonly correlationId: string | null;
+    } | null;
   } | null>(null);
   const [attempt, setAttempt] = useState(0);
   const companyId = target?.companyId ?? null;
@@ -167,15 +192,16 @@ function useOpeningBatches(target: StockTarget | null): {
         });
         return;
       }
-      // Three sentences, not one, on the rule `useBranches` settled: a refusal
+      // Three states, not one, on the rule `useBranches` settled: a refusal
       // and a dead session are final, everything else is a "not right now" and
       // is the only kind a second attempt can clear.
-      const failure =
-        state.status === 'denied'
-          ? { key: 'inventory.opening.batches.refused', retryable: false }
-          : state.status === 'expired'
-            ? { key: 'state.expired.message', retryable: false }
-            : { key: 'inventory.opening.batches.unavailable', retryable: true };
+      const failure = {
+        status:
+          state.status === 'denied' || state.status === 'expired'
+            ? state.status
+            : ('unavailable' as const),
+        correlationId: state.correlationId,
+      };
       setAnswer({ request: stamp, items: null, truncated: false, failure });
     });
     return () => {
@@ -190,11 +216,17 @@ function useOpeningBatches(target: StockTarget | null): {
       : null;
   if (current === null) return { list: LIST_LOADING, reload };
   if (current.failure !== null) {
+    const { status, correlationId } = current.failure;
     return {
       list: {
         phase: 'failed',
-        messageKey: current.failure.key,
-        retry: current.failure.retryable ? reload : null,
+        status,
+        messageKey:
+          status === 'unavailable'
+            ? 'inventory.opening.batches.unavailable'
+            : 'inventory.opening.batches.refused',
+        correlationId,
+        retry: status === 'unavailable' ? reload : null,
       },
       reload,
     };
@@ -309,6 +341,7 @@ export function OpeningStockScreen({
 
       {target !== null ? (
         <BatchListPanel
+          locale={locale}
           messages={messages}
           list={list}
           busyId={opening}
@@ -367,9 +400,9 @@ export function OpeningStockScreen({
             {translate(messages, 'inventory.opening.batch.serverNote')}
           </p>
           <div>
-            <button
+            <Button
               type="button"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
               onClick={() => {
                 setBatch(null);
                 setLines([]);
@@ -378,7 +411,7 @@ export function OpeningStockScreen({
               }}
             >
               {translate(messages, 'inventory.opening.batches.back')}
-            </button>
+            </Button>
           </div>
         </section>
       ) : null}
@@ -405,41 +438,43 @@ export function OpeningStockScreen({
               {translate(messages, 'inventory.opening.lines.none')}
             </p>
           ) : (
-            <table className="w-full text-body">
-              <caption className="sr-only">
-                {translate(messages, 'inventory.opening.lines.caption')}
-              </caption>
-              <thead>
-                <tr className="text-caption text-text-muted">
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.opening.lines.column.item')}
-                  </th>
-                  <th scope="col" className="text-start font-medium">
-                    {translate(messages, 'inventory.opening.lines.column.location')}
-                  </th>
-                  <th scope="col" className="text-end font-medium">
-                    {translate(messages, 'inventory.opening.lines.column.quantity')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {lines.map((shown) => (
-                  <tr key={shown.line.id}>
-                    <td>
-                      <span dir="ltr">{shown.sku}</span>
-                      {' — '}
-                      {shown.itemName}
-                    </td>
-                    <td dir="ltr" className="text-start">
-                      {shown.locationCode}
-                    </td>
-                    <td className="text-end">
-                      <Qty value={shown.line.quantity} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <TableContainer>
+              <Table size="small">
+                <caption className="sr-only">
+                  {translate(messages, 'inventory.opening.lines.caption')}
+                </caption>
+                <TableHead>
+                  <TableRow>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.opening.lines.column.item')}
+                    </TableCell>
+                    <TableCell scope="col">
+                      {translate(messages, 'inventory.opening.lines.column.location')}
+                    </TableCell>
+                    <TableCell scope="col" align="right">
+                      {translate(messages, 'inventory.opening.lines.column.quantity')}
+                    </TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {lines.map((shown) => (
+                    <TableRow key={shown.line.id}>
+                      <TableCell>
+                        <span dir="ltr">{shown.sku}</span>
+                        {' — '}
+                        {shown.itemName}
+                      </TableCell>
+                      <TableCell>
+                        <span dir="ltr">{shown.locationCode}</span>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Qty value={shown.line.quantity} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
         </section>
       ) : null}
@@ -478,12 +513,14 @@ export function OpeningStockScreen({
  * has its own wording and, where a second attempt could help, a retry.
  */
 function BatchListPanel({
+  locale,
   messages,
   list,
   busyId,
   failureKey,
   onOpen,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly list: BatchList;
   /** The batch whose detail read is in flight; every open button waits on it. */
@@ -501,9 +538,9 @@ function BatchListPanel({
         {translate(messages, 'inventory.opening.batches.explain')}
       </p>
       {failureKey !== null ? (
-        <p role="alert" className="text-body text-error">
+        <Alert severity="error" role="alert" variant="outlined">
           {translateDynamic(messages, failureKey)}
-        </p>
+        </Alert>
       ) : null}
       {list.phase === 'loading' ? (
         <p role="status" aria-live="polite" className="text-caption text-text-muted">
@@ -511,24 +548,28 @@ function BatchListPanel({
         </p>
       ) : null}
       {list.phase === 'none' ? (
-        <p className="text-caption text-text-muted">
-          {translate(messages, 'inventory.opening.batches.none')}
-        </p>
+        <MuiEmptyState
+          messages={messages}
+          descriptionKey="inventory.opening.batches.none"
+          testId="opening-batches-none"
+        />
       ) : null}
       {list.phase === 'failed' ? (
-        <>
-          <p className="text-caption text-text-muted">
-            {translateDynamic(messages, list.messageKey)}
-          </p>
-          {list.retry !== null ? (
-            <div>
-              {/* `type="button"`: this panel sits among forms on the same page. */}
-              <button type="button" className={SECONDARY_BUTTON} onClick={list.retry}>
-                {translate(messages, 'state.retry')}
-              </button>
-            </div>
-          ) : null}
-        </>
+        /*
+         * The shared state for each failure, with this list's own sentence: a
+         * refusal and an ended session offer no retry; an outage offers one, and
+         * its reference. The retry is `type="button"`, so it never sends one of
+         * the forms on the same page.
+         */
+        <MuiReadFailureState
+          messages={messages}
+          locale={locale}
+          status={list.status}
+          correlationId={list.correlationId}
+          onRetry={list.retry ?? undefined}
+          descriptionKey={list.messageKey}
+          testId="opening-batches-failed"
+        />
       ) : null}
       {list.phase === 'listed' ? (
         <>
@@ -537,58 +578,63 @@ function BatchListPanel({
               {translate(messages, 'inventory.opening.batches.truncated')}
             </p>
           ) : null}
-          <table className="w-full text-body">
-            <caption className="sr-only">
-              {translate(messages, 'inventory.opening.batches.caption')}
-            </caption>
-            <thead>
-              <tr className="text-caption text-text-muted">
-                <th scope="col" className="text-start font-medium">
-                  {translate(messages, 'inventory.opening.batch.code')}
-                </th>
-                <th scope="col" className="text-start font-medium">
-                  {translate(messages, 'inventory.opening.batch.asOfDate')}
-                </th>
-                <th scope="col" className="text-start font-medium">
-                  {translate(messages, 'inventory.opening.batch.status')}
-                </th>
-                <th scope="col" className="text-end font-medium">
-                  {translate(messages, 'inventory.opening.batches.column.lines')}
-                </th>
-                <th scope="col" className="text-end font-medium">
-                  {translate(messages, 'inventory.opening.batches.column.action')}
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {list.items.map((row) => (
-                <tr key={row.id}>
-                  <td dir="ltr" className="text-start">
-                    {row.batchCode}
-                  </td>
-                  <td dir="ltr" className="text-start">
-                    {row.asOfDate}
-                  </td>
-                  <td>{translateDynamic(messages, `inventory.opening.status.${row.status}`)}</td>
-                  <td className="text-end">{row.lineCount}</td>
-                  <td className="text-end">
-                    <button
-                      type="button"
-                      className={SECONDARY_BUTTON}
-                      disabled={busyId !== null}
-                      onClick={() => onOpen(row.id)}
-                    >
-                      {translate(messages, 'inventory.opening.batches.open')}
-                      {/* The code is part of the accessible name: five buttons
-                          reading only "Open" name nothing a listener can choose
-                          between. */}
-                      <span className="sr-only"> {row.batchCode}</span>
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <TableContainer>
+            <Table size="small">
+              <caption className="sr-only">
+                {translate(messages, 'inventory.opening.batches.caption')}
+              </caption>
+              <TableHead>
+                <TableRow>
+                  <TableCell scope="col">
+                    {translate(messages, 'inventory.opening.batch.code')}
+                  </TableCell>
+                  <TableCell scope="col">
+                    {translate(messages, 'inventory.opening.batch.asOfDate')}
+                  </TableCell>
+                  <TableCell scope="col">
+                    {translate(messages, 'inventory.opening.batch.status')}
+                  </TableCell>
+                  <TableCell scope="col" align="right">
+                    {translate(messages, 'inventory.opening.batches.column.lines')}
+                  </TableCell>
+                  <TableCell scope="col" align="right">
+                    {translate(messages, 'inventory.opening.batches.column.action')}
+                  </TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {list.items.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell>
+                      <span dir="ltr">{row.batchCode}</span>
+                    </TableCell>
+                    <TableCell>
+                      <span dir="ltr">{row.asOfDate}</span>
+                    </TableCell>
+                    <TableCell>
+                      {translateDynamic(messages, `inventory.opening.status.${row.status}`)}
+                    </TableCell>
+                    <TableCell align="right">{row.lineCount}</TableCell>
+                    <TableCell align="right">
+                      <Button
+                        type="button"
+                        variant="outlined"
+                        size="small"
+                        disabled={busyId !== null}
+                        onClick={() => onOpen(row.id)}
+                      >
+                        {translate(messages, 'inventory.opening.batches.open')}
+                        {/* The code is part of the accessible name: five buttons
+                            reading only "Open" name nothing a listener can choose
+                            between. */}
+                        <span className="sr-only"> {row.batchCode}</span>
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
         </>
       ) : null}
     </section>
@@ -612,8 +658,16 @@ function BatchForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * A count date only partly typed holds no day — its value stays `''`, as for
+   * a field nobody touched — so the picker's own report is kept: it is refused
+   * as a date, not as a missing one, and it is unsaved work.
+   */
+  const [dateUnfinished, setDateUnfinished] = useState(false);
+  // One batch opened at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
   // The batch is addressed to THIS branch, so a switch asks before dropping it.
-  useUnsavedGuard(Object.values(form).some((value) => value.trim().length > 0));
+  useUnsavedGuard(dateUnfinished || Object.values(form).some((value) => value.trim().length > 0));
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -627,13 +681,15 @@ function BatchForm({
     else if (!LOCATION_CODE.test(batchCode))
       found['batchCode'] = 'inventory.opening.batch.codeFormat';
     const asOfDate = form.asOfDate.trim();
-    if (asOfDate.length === 0) found['asOfDate'] = 'field.required';
-    else if (!ISO_DATE.test(asOfDate)) found['asOfDate'] = 'inventory.opening.batch.dateFormat';
+    if (dateUnfinished || (asOfDate.length > 0 && !ISO_DATE.test(asOfDate))) {
+      found['asOfDate'] = 'inventory.opening.batch.dateFormat';
+    } else if (asOfDate.length === 0) found['asOfDate'] = 'field.required';
     const notes = form.notes.trim();
     if (notes.length > MAX_DESCRIPTION) found['notes'] = 'inventory.setup.descriptionTooLong';
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0 || sending.current) return;
 
+    sending.current = true;
     setBusy(true);
     const result = await createOpeningBatch({
       companyId: target.companyId,
@@ -642,6 +698,7 @@ function BatchForm({
       asOfDate,
       ...(notes.length > 0 ? { notes } : {}),
     });
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -664,38 +721,42 @@ function BatchForm({
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.opening.batch.explain')}
       </p>
-      <TextField
+      <FormTextField
         label={translate(messages, 'inventory.opening.batch.code')}
         description={translate(messages, 'inventory.opening.batch.codeHelp')}
         required
         spellCheck={false}
         dir="ltr"
         value={form.batchCode}
-        onChange={(event) => setForm((f) => ({ ...f, batchCode: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, batchCode: next }))}
         error={errorFor('batchCode')}
       />
-      <TextField
+      {/*
+        A calendar day on the MIT date picker (ADR-022, E1-E4): the value is the
+        same `YYYY-MM-DD` the native box produced and the route accepts.
+      */}
+      <DateField
         label={translate(messages, 'inventory.opening.batch.asOfDate')}
         description={translate(messages, 'inventory.opening.batch.asOfDateHelp')}
         required
-        type="date"
-        dir="ltr"
         value={form.asOfDate}
-        onChange={(event) => setForm((f) => ({ ...f, asOfDate: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, asOfDate: next }))}
+        onProblem={(problem: DayProblem) => setDateUnfinished(problem === 'incomplete')}
         error={errorFor('asOfDate')}
       />
-      <TextAreaField
+      <FormTextField
         label={translate(messages, 'inventory.opening.batch.notes')}
+        multiline
         rows={2}
         value={form.notes}
-        onChange={(event) => setForm((f) => ({ ...f, notes: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, notes: next }))}
         error={errorFor('notes')}
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.opening.batch.open')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -723,6 +784,8 @@ function LineForm({
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One line sent at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
   /*
    * Unsaved work, declared to the shell. The item and location stay chosen
    * after a line is added, as defaults for the next one, so after the first
@@ -776,14 +839,16 @@ function LineForm({
       next['quantity'] = 'inventory.opening.line.quantityFormat';
     }
     setErrors(next);
-    if (Object.keys(next).length > 0) return;
+    if (Object.keys(next).length > 0 || sending.current) return;
 
+    sending.current = true;
     setBusy(true);
     const result = await createOpeningBatchLine(batch.id, {
       itemId: form.itemId,
       locationId: form.locationId,
       quantity,
     });
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -819,24 +884,24 @@ function LineForm({
       </p>
       <div className="grid gap-3 sm:grid-cols-3">
         <div className="sm:col-span-2">
-          <TextField
+          <FormTextField
             label={translate(messages, 'inventory.opening.line.find')}
             description={translate(messages, 'inventory.opening.line.findHelp')}
             value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            onChange={setSearch}
             error={errorFor('search')}
           />
         </div>
         <div className="flex items-end">
-          <button
+          <Button
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             onClick={() => {
               void find();
             }}
           >
             {translate(messages, 'inventory.opening.line.search')}
-          </button>
+          </Button>
         </div>
       </div>
       {searchNote ? (
@@ -847,11 +912,11 @@ function LineForm({
           {translate(messages, 'inventory.opening.line.noItems')}
         </p>
       ) : null}
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'inventory.opening.line.item')}
         required
         value={form.itemId}
-        onChange={(event) => setForm((f) => ({ ...f, itemId: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, itemId: next }))}
         options={(found ?? []).map((item) => ({
           value: item.id,
           label: `${item.sku} — ${item.name}`,
@@ -869,21 +934,19 @@ function LineForm({
         onChange={(next) => setForm((f) => ({ ...f, locationId: next }))}
         error={errorFor('locationId')}
       />
-      <TextField
+      <FormNumberField
         label={translate(messages, 'inventory.opening.line.quantity')}
         description={translate(messages, 'inventory.opening.line.quantityHelp')}
         required
-        inputMode="decimal"
-        dir="ltr"
         value={form.quantity}
-        onChange={(event) => setForm((f) => ({ ...f, quantity: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, quantity: next }))}
         error={errorFor('quantity')}
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div>
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.opening.line.add')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -926,11 +989,16 @@ function ApprovalPanel({
 }) {
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One approval in flight at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
   const approved = batch.status === 'approved';
 
   const approve = async () => {
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     const result = await approveOpeningBatch(batch.id);
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -969,16 +1037,16 @@ function ApprovalPanel({
             </p>
           ) : null}
           <div>
-            <button
+            <Button
               type="button"
-              className={PRIMARY_BUTTON}
+              variant="contained"
               disabled={busy}
               onClick={() => {
                 void approve();
               }}
             >
               {translate(messages, 'inventory.opening.approve.action')}
-            </button>
+            </Button>
           </div>
         </>
       ) : (

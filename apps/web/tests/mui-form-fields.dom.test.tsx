@@ -48,6 +48,7 @@ import {
   renderRtl,
 } from './render';
 import { holdPickerBlur } from './support/held-picker-blur';
+import { seriousViolations } from './support/stock-operations';
 
 /**
  * The Material UI form fields (ADR-022 PR1) keep `FieldFrame`'s contract:
@@ -819,10 +820,37 @@ describe('DateField and DateTimeField: the FieldFrame contract on a picker', () 
     mount(<DayHost required description="The day the vehicle arrives." />);
     const group = screen.getByRole('group', { name: /^Visit day/ });
     expect(group).not.toHaveAttribute('aria-invalid');
-    expect(group).toHaveAttribute('aria-required', 'true');
     expect(pickerInput(group)).not.toHaveAttribute('required');
     // A part per piece of the date, each its own spin button.
     expect(within(group).getAllByRole('spinbutton')).toHaveLength(3);
+    /*
+     * Required is announced on every part: a `group` may not carry
+     * `aria-required` (axe `aria-allowed-attr`), a `spinbutton` may
+     * (`P1-32-PRE-OD-INV3`; it was asserted on the group before).
+     */
+    for (const part of within(group).getAllByRole('spinbutton')) {
+      expect(part).toHaveAttribute('aria-required', 'true');
+    }
+    expect(group).not.toHaveAttribute('aria-required');
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`a required day has no serious or critical accessibility finding (${locale})`, async () => {
+      const { container } = mount(
+        <DayHost required description="The day the vehicle arrives." />,
+        locale
+      );
+      expect(screen.getAllByRole('spinbutton')).toHaveLength(3);
+      expect(await seriousViolations(container)).toEqual([]);
+    });
+  }
+
+  it('an optional day announces no part as required', () => {
+    mount(<DayHost />);
+    const group = screen.getByRole('group', { name: /^Visit day/ });
+    for (const part of within(group).getAllByRole('spinbutton')) {
+      expect(part).not.toHaveAttribute('aria-required');
+    }
   });
 
   it('marks the group invalid, lists the description then the error, and announces the error', () => {
