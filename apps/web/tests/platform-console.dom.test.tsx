@@ -2562,14 +2562,31 @@ describe('the account form on Material UI (P1-32-PRE-OD-AUTHA)', () => {
   });
 
   it('keeps every reveal control inside its own box, at the logical end, in both directions', () => {
+    /*
+     * jsdom has no layout, so the logical end is asserted as what produces it:
+     * the control is Material's END adornment and comes AFTER its box in the
+     * document, inside a flex row that inherits the page direction — so it is
+     * drawn at the right in English and at the left in Arabic with nothing
+     * overriding it. The drawn position is held by the browser smoke.
+     */
     for (const locale of ['en', 'ar'] as const) {
       const { unmount } = renderAccount(locale);
+      expect(document.documentElement.dir).toBe(locale === 'en' ? 'ltr' : 'rtl');
       const fields = accountFields();
       const toggles = screen.getAllByTestId('password-reveal-toggle');
+      expect(toggles).toHaveLength(fields.length);
       fields.forEach((field, index) => {
-        expect(field.parentElement?.contains(toggles[index] as HTMLElement)).toBe(true);
-        expect(toggles[index]).toHaveAttribute('type', 'button');
-        expect(toggles[index]).toHaveAttribute('aria-controls', field.id);
+        const toggle = toggles[index] as HTMLElement;
+        expect(field.parentElement?.contains(toggle)).toBe(true);
+        expect(toggle).toHaveAttribute('type', 'button');
+        expect(toggle).toHaveAttribute('aria-controls', field.id);
+        expect(field.compareDocumentPosition(toggle) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(
+          0
+        );
+        expect(toggle.closest('.MuiInputAdornment-positionEnd')).not.toBeNull();
+        expect(toggle.closest('.MuiInputAdornment-positionStart')).toBeNull();
+        expect(field.parentElement?.getAttribute('dir')).toBeNull();
+        expect(field.parentElement?.style.direction).toBe('');
       });
       unmount();
     }

@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState, type ReactElement } from 'react';
+import { useActionState, useRef, useState, type ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
@@ -90,6 +90,7 @@ const { RecoveryTokenBridge } =
   await import('@/features/authentication/components/RecoveryTokenBridge');
 const { ProfileForm } = await import('@/features/authentication/components/ProfileForm');
 const { AuthCard } = await import('@/features/authentication/components/AuthCard');
+const { useSubmitOnce } = await import('@/features/authentication/components/MuiSubmitButton');
 const realReset = await vi.importActual<
   typeof import('@/features/authentication/actions/password-reset')
 >('@/features/authentication/actions/password-reset');
@@ -269,21 +270,33 @@ describe.each(LOCALES)('sign-in (%s)', (locale) => {
     renderLogin();
     await twice(submit());
     expect(loginAction).toHaveBeenCalledTimes(1);
+    // Still one once everything queued behind the presses has run, while the
+    // first sign-in is still out.
+    await act(async () => undefined);
+    expect(loginAction).toHaveBeenCalledTimes(1);
 
     await act(async () => {
       answer.answer({ status: 'error', messageKey: 'auth.login.error.failed', attempt: 1 });
       await answer.promise;
     });
     await screen.findByRole('alert');
+    // Answering the first releases nothing that was held behind it.
+    expect(loginAction).toHaveBeenCalledTimes(1);
 
-    // Answered, so the next press is a new attempt — and only one again.
-    loginAction.mockResolvedValue({
-      status: 'error',
-      messageKey: 'auth.login.error.failed',
-      attempt: 2,
-    });
+    // Answered, so the next press is a new attempt — and only one again: held
+    // out, so a second call has every chance to arrive before it is counted.
+    const second = held();
+    loginAction.mockReturnValue(second.promise);
     await twice(submit());
     await waitFor(() => expect(loginAction).toHaveBeenCalledTimes(2));
+    await act(async () => undefined);
+    expect(loginAction).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      second.answer({ status: 'error', messageKey: 'auth.login.error.failed', attempt: 2 });
+      await second.promise;
+    });
+    expect(loginAction).toHaveBeenCalledTimes(2);
   });
 
   /*
@@ -810,5 +823,90 @@ describe('the authentication card', () => {
       ).toBeVisible();
       unmount();
     }
+  });
+});
+
+// --- the duplicate-submit hold, pinned on its own ----------------------------------
+
+/*
+ * `useSubmitOnce` holds a second submission with a native `submit` listener on
+ * the FORM, which stops the event before it bubbles to React's root. That works
+ * only because React reads a form action from its root listener in the BUBBLE
+ * phase: were React ever to read it in the capture phase, the second submit
+ * would reach the action before the form's listener could stop it. The control
+ * case shows the same two presses DO reach the action twice without the hook
+ * (React queues the second behind the first), so the held case fails the moment
+ * a second submission gets through, whatever the reason.
+ */
+describe('useSubmitOnce', () => {
+  type ProbeAction = (state: ActionState, form: FormData) => Promise<ActionState>;
+  const IDLE_PROBE: ActionState = { status: 'idle' };
+
+  function HeldProbe({ action }: { readonly action: ProbeAction }) {
+    const formRef = useRef<HTMLFormElement>(null);
+    const [state, formAction, pending] = useActionState<ActionState, FormData>(action, IDLE_PROBE);
+    useSubmitOnce(formRef, state, pending);
+    return (
+      <form ref={formRef} action={formAction}>
+        <button type="submit">send</button>
+      </form>
+    );
+  }
+
+  function UnheldProbe({ action }: { readonly action: ProbeAction }) {
+    const [, formAction] = useActionState<ActionState, FormData>(action, IDLE_PROBE);
+    return (
+      <form action={formAction}>
+        <button type="submit">send</button>
+      </form>
+    );
+  }
+
+  const press = () => screen.getByRole('button', { name: 'send' });
+
+  it('without it, React sends the second of two presses once the first is answered', async () => {
+    const first = held();
+    const action = vi.fn<ProbeAction>().mockReturnValueOnce(first.promise);
+    action.mockResolvedValue({ status: 'idle' });
+    renderInLtr(<UnheldProbe action={action} />);
+    await twice(press());
+    await act(async () => {
+      first.answer({ status: 'idle' });
+      await first.promise;
+    });
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(2));
+  });
+
+  it('with it, the second press never reaches the root or the action, and the next one does', async () => {
+    const first = held();
+    const action = vi.fn<ProbeAction>().mockReturnValueOnce(first.promise);
+    action.mockResolvedValue({ status: 'idle' });
+    const { container } = renderInLtr(<HeldProbe action={action} />);
+
+    // What bubbles to React's root container, and whether each submit was cancelled.
+    const atRoot = vi.fn();
+    container.addEventListener('submit', atRoot);
+    const submits: Event[] = [];
+    const capture = (event: Event) => submits.push(event);
+    document.addEventListener('submit', capture, true);
+
+    await twice(press());
+    expect(submits).toHaveLength(2);
+    expect(submits[1]?.defaultPrevented).toBe(true);
+    expect(atRoot).toHaveBeenCalledTimes(1);
+    expect(action).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      first.answer({ status: 'idle' });
+      await first.promise;
+    });
+    await act(async () => undefined);
+    expect(action).toHaveBeenCalledTimes(1);
+
+    // Answered, so the hold is released: one new press is one new submission.
+    await act(async () => press().click());
+    await waitFor(() => expect(action).toHaveBeenCalledTimes(2));
+    expect(atRoot).toHaveBeenCalledTimes(2);
+    document.removeEventListener('submit', capture, true);
   });
 });

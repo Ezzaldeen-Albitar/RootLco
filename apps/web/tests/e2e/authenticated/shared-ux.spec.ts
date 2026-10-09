@@ -1,5 +1,9 @@
-import { expect, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { expect, test, type Page } from '@playwright/test';
+import { REPO_ROOT } from '../origin';
 import { readSignedInAccount } from './account-manifest';
+import { say } from './p1-31-handoff';
 
 /**
  * This file assumes the ACCEPTANCE OWNER, so it runs only when that is who signed in.
@@ -340,5 +344,74 @@ test.describe('runtime language switching', () => {
     await expect(link).toBeFocused();
     // A human-readable endonym, not a locale code and not a flag.
     await expect(link).toHaveAttribute('hreflang', 'ar');
+  });
+});
+
+/*
+ * Signing in on the Arabic form (P1-32-PRE-OD-AUTHA).
+ *
+ * The anonymous smoke holds the Arabic sign-in screens as drawn; only here is
+ * there an API and a real account, so only here can the Arabic form be shown to
+ * sign in and land, and to refuse in Arabic. A fresh, signed-out context, and
+ * the owner-acceptance account the file's `beforeEach` already requires — whose
+ * credentials are the bootstrap's own file, never a literal.
+ *
+ * Each case spends ONE sign-in per project from the `auth-adjacent` ration (ten
+ * per sixty seconds per client address, shared by the whole tier), and the
+ * refusal uses an address no account holds, so it writes no failure row against
+ * a real account.
+ */
+test.describe('signing in, in Arabic', () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  const ownerLogin = (): { email: string; password: string } => {
+    const file = join(REPO_ROOT, '.local', 'owner-acceptance-account.json');
+    const parsed = JSON.parse(readFileSync(file, 'utf8')) as {
+      login?: { email?: unknown; password?: unknown };
+    };
+    const login = parsed.login;
+    if (typeof login?.email !== 'string' || typeof login.password !== 'string') {
+      throw new Error('The owner-acceptance account file carries no login; re-run the bootstrap.');
+    }
+    return { email: login.email, password: login.password };
+  };
+
+  const fill = async (page: Page, email: string, password: string) => {
+    await page.goto('/ar/login');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await page.getByLabel(say('ar', 'auth.login.email')).fill(email);
+    await page
+      .getByRole('textbox', { name: say('ar', 'auth.login.password'), exact: true })
+      .fill(password);
+    await page.getByRole('button', { name: say('ar', 'auth.login.submit') }).click();
+  };
+
+  test('signs in on the Arabic form and lands in the Arabic workspace', async ({ page }) => {
+    const { email, password } = ownerLogin();
+    await fill(page, email, password);
+    await page.waitForURL(/\/ar(\?.*)?$/, { timeout: 20_000 });
+    await expect(page.locator('html')).toHaveAttribute('lang', 'ar');
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByRole('navigation', { name: 'الوحدات' })).toBeVisible();
+    const cookies = await page.context().cookies();
+    expect(cookies.some((cookie) => cookie.name === 'rootlco.session')).toBe(true);
+  });
+
+  test('refuses a sign-in on the Arabic form with the one Arabic sentence', async ({ page }) => {
+    const { email, password } = ownerLogin();
+    const unknown = `no-account-${email}`;
+    await fill(page, unknown, password);
+    await expect(
+      page.getByRole('alert').filter({ hasText: say('ar', 'auth.login.error.failed') })
+    ).toBeVisible({ timeout: 20_000 });
+    await expect(page).toHaveURL(/\/ar\/login(\?.*)?$/);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(page.getByLabel(say('ar', 'auth.login.email'))).toHaveValue(unknown);
+    await expect(
+      page.getByRole('textbox', { name: say('ar', 'auth.login.password'), exact: true })
+    ).toHaveValue('');
+    await expect(page.getByRole('navigation', { name: 'الوحدات' })).toHaveCount(0);
+    const cookies = await page.context().cookies();
+    expect(cookies.some((cookie) => cookie.name === 'rootlco.session')).toBe(false);
   });
 });

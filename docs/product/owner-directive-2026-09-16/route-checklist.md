@@ -4370,7 +4370,11 @@ The completion standard, as these screens now hold it:
 - Duplicate submits: the four Server Action forms hold a second press with `useSubmitOnce`, a
   native `submit` listener on the form that stops any submission while one is out (at the form, so
   React's root listener never sees it); the console account form holds it with a ref set before
-  the change is sent. Cancelling the second submit in React's own `onSubmit` was measured NOT to
+  the change is sent. The hold depends on React reading a form action from its root listener in
+  the bubble phase, after the form's own listener has run; a capture-phase reading would let the
+  second submit through. `authentication-forms.dom.test.tsx` pins it on its own: two presses
+  reach the action twice without the hook and once with it, and the second never bubbles to the
+  root. Cancelling the second submit in React's own `onSubmit` was measured NOT to
   hold under two presses in one task: React reads a cancelled submit in the same task as one that
   started a transition as "the handler started its own", and resets the form's pending status, so
   the button came back enabled while the first request was still out. The tests press twice inside
@@ -4388,15 +4392,18 @@ The completion standard, as these screens now hold it:
   order after its box.
 - Arabic and English, right to left, in every DOM case; the anonymous browser smoke gains three
   Arabic cases (the sign-in form and its reveal control at the inline end, the reset and activation
-  pages without a token, the forgotten-password page).
+  pages without a token, the forgotten-password page), and the authenticated browser tier two (the
+  Arabic form signs in and lands in the Arabic workspace; it refuses with the one Arabic
+  sentence).
 
-Tests: `apps/web/tests/authentication-forms.dom.test.tsx` (new, 49 cases: sign-in, forgotten
+Tests: `apps/web/tests/authentication-forms.dom.test.tsx` (new, 51 cases: sign-in, forgotten
 password, reset and activation through `RecoveryTokenBridge` including a fragment token, the
 reset actions' own single answers run for real against a mocked API client, the profile name, the
-card), `apps/web/tests/platform-console.dom.test.tsx` (four console account cases added: Enter
+card, and the duplicate-submit hold on its own), `apps/web/tests/platform-console.dom.test.tsx` (four console account cases added: Enter
 submits, two presses in one act send one change, the cursor on the first refused box before and
 after the server answers, every reveal control inside its own box in both directions),
-`apps/web/tests/e2e/foundation.spec.ts` (three Arabic cases). The new file moved the P1-27 web
+`apps/web/tests/e2e/foundation.spec.ts` (three Arabic cases),
+`apps/web/tests/e2e/authenticated/shared-ux.spec.ts` (two Arabic sign-in cases). The new file moved the P1-27 web
 test-file count from 202 to 203 (`deliverable-manifest.md`, evidence manifest regenerated).
 
 Changed assertions, each with its reason:
@@ -4413,6 +4420,13 @@ Changed assertions, each with its reason:
   `value` through a spread, which the scan cannot see as controlled. `FormNumberField` now passes
   `value` and `onChange` by name; the box was controlled before and is controlled now, so nothing
   it does changed (`mui-form-fields.dom.test.tsx` and `inventory-transfers.dom.test.tsx` pass).
+- Review round (strengthened, nothing removed): the sign-in "two presses" case now also asserts the
+  count stays at 1 after everything queued has run while the first is out and after it is
+  answered, and that the second attempt is exactly 2 while it is out and after it is answered
+  (it used to pass on the first increment). The console "reveal control at the logical end, in
+  both directions" case now asserts what it named: the page direction per locale, one control per
+  box, the control after its box in document order, inside Material's end adornment and never a
+  start one, with no direction override on the box.
 - No other assertion changed. `p1-27-owner-acceptance.dom.test.tsx` still holds the legacy
   `PasswordField` and its "used by every password field" case still passes on the migrated files.
 
@@ -4427,8 +4441,9 @@ Known limitations and recorded gaps:
    (its suite refuses `useUnsavedGuard` by design), so leaving it with typed passwords asks nothing,
    as before.
 4. The account menu in the shell (`AccountMenu`) and the session-ended page were not in this slice.
-5. The Arabic browser cases were not run locally; the hosted browser smoke runs them. No real-browser
-   visual review of the six screens was made here.
+5. The Arabic browser cases were not run locally; the hosted browser smoke runs the anonymous three
+   and the authenticated browser tier the two sign-in cases. No real-browser visual review of the
+   six screens was made here.
 6. The recovery-token lifecycle itself (how long a link lives, AUTH01) is an open Owner decision and
    is unchanged.
 
