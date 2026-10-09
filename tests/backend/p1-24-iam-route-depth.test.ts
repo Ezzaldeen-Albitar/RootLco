@@ -1284,6 +1284,9 @@ describe('P1-32-PRE-OD-FRX — the session and working-context reads are authent
     { name: 'branchId', value: BRANCH24_B },
     { name: 'tenantId', value: TENANT_B },
     { name: 'unknownParameter', value: 'anything' },
+    // `searchParamsToObject` drops this key before the schema runs; the route
+    // must still refuse it from the raw query.
+    { name: '__proto__', value: 'fx-p24-proto-probe' },
   ] as const;
 
   for (const entry of selfReads) {

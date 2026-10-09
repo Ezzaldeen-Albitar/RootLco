@@ -40,6 +40,7 @@
  */
 import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
+import { AppFailure } from '@/server/errors/app-failure';
 import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, searchParamsToObject } from '@/server/http/validation';
 import { iamModule } from '@/modules/iam';
@@ -68,7 +69,17 @@ export const SESSION_OPERATION = defineOperation({
 
 export async function GET(request: Request): Promise<Response> {
   return handleOperation(SESSION_OPERATION, request, async ({ db, request: raw }) => {
-    parseOrFail(Query, searchParamsToObject(new URL(raw.url).searchParams), 'query');
+    const params = new URL(raw.url).searchParams;
+    parseOrFail(Query, searchParamsToObject(params), 'query');
+    // `searchParamsToObject` omits a `__proto__` key by design, so the schema
+    // never sees one and `?__proto__=x` would otherwise answer 200. The raw
+    // query is the authority: any key at all is refused the same way.
+    if ([...params.keys()].length > 0) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'Validation failed for query',
+        safeDetails: { violations: [{ path: 'query', rule: 'unrecognized_keys' }] },
+      });
+    }
     return { body: await iamModule().authentication.describeSession(db) };
   });
 }

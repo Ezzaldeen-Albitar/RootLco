@@ -4791,3 +4791,106 @@ describe('nothing left to bill is said, and a refusal keeps what was typed (FRX2
     await waitFor(() => expect(box()).toHaveValue(OTHER_PAYER));
   });
 });
+
+/**
+ * P1-32-PRE-OD-FRXR review — the payer draft held above the panels lives only as
+ * long as a create form is drawn. A refusal that re-reads and offers the form
+ * again keeps a payer found by name; a re-read that offers no form ends the
+ * draft, so a later form starts empty instead of silently billing that payer.
+ */
+describe('a payer found by name and a refused create (FRX2 review)', () => {
+  const fleetPartner = () =>
+    searchCustomerDirectory.mockResolvedValue({
+      status: 'ok',
+      rows: [
+        {
+          id: OTHER_PAYER,
+          displayNumber: 'C-000900',
+          displayName: 'Fleet Partner',
+          partyType: 'organization',
+          lifecycleStatus: 'active',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          primaryPhone: null,
+          phoneMasked: false,
+          vehicleCount: 3,
+        },
+      ],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-c',
+    });
+  const refusedCreate = () =>
+    createInvoice.mockResolvedValue({
+      state: {
+        status: 'conflict',
+        messageKey: 'state.conflict.title',
+        attempt: 1,
+        correlationId: 'ref-409',
+      },
+      created: null,
+      rule: 'invoice_nothing_to_bill',
+    });
+  const createForm = () =>
+    screen.findByRole('form', { name: EN['invoices.create.heading'] as string });
+  const submit = async (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(
+      within(await createForm()).getByRole('button', {
+        name: EN['invoices.create.submit'] as string,
+      })
+    );
+
+  it('with the customer read, a chosen payer survives a refused create and is sent again', async () => {
+    const user = userEvent.setup();
+    fleetPartner();
+    refusedCreate();
+    renderScreen({ canReadCustomers: true });
+    const form = await createForm();
+    await user.type(within(form).getByLabelText(labelled('invoices.create.payer')), 'Fleet');
+    await user.click(await findSearchedOption(searchCustomerDirectory, 'Fleet', /Fleet Partner/));
+    await submit(user);
+    await waitFor(() => expect(createInvoice).toHaveBeenCalledTimes(1));
+    expect(createInvoice.mock.calls[0]?.[0]).toEqual({
+      workOrderId: WORK_ORDER_ID,
+      payerPartnerId: OTHER_PAYER,
+    });
+    expect(await screen.findByText(EN['invoices.preview.nothingToBill'] as string)).toBeVisible();
+    await waitFor(() => expect(readWorkOrderInvoice).toHaveBeenCalled());
+    // The re-read offered the form again; the payer chosen before it is still the one sent.
+    await submit(user);
+    await waitFor(() => expect(createInvoice).toHaveBeenCalledTimes(2));
+    expect(createInvoice.mock.calls[1]?.[0]).toEqual({
+      workOrderId: WORK_ORDER_ID,
+      payerPartnerId: OTHER_PAYER,
+    });
+  });
+
+  it('a re-read that offers no form ends the draft, so the next form bills the work order’s customer', async () => {
+    const user = userEvent.setup();
+    let previewDown = false;
+    readInvoicePreview.mockImplementation(async () =>
+      previewDown
+        ? { status: 'unavailable', correlationId: 'ref-503' }
+        : okRead(structuredClone(preview))
+    );
+    fleetPartner();
+    refusedCreate();
+    renderScreen({ canReadCustomers: true });
+    const form = await createForm();
+    await user.type(within(form).getByLabelText(labelled('invoices.create.payer')), 'Fleet');
+    await user.click(await findSearchedOption(searchCustomerDirectory, 'Fleet', /Fleet Partner/));
+    previewDown = true;
+    await submit(user);
+    await waitFor(() => expect(createInvoice).toHaveBeenCalledTimes(1));
+    // The re-read draws no create form: the preview could not be read.
+    const panel = region('invoices.preview.heading');
+    const retry = await within(panel).findByRole('button', { name: EN['state.retry'] as string });
+    expect(
+      screen.queryByRole('form', { name: EN['invoices.create.heading'] as string })
+    ).toBeNull();
+    previewDown = false;
+    await user.click(retry);
+    await submit(user);
+    await waitFor(() => expect(createInvoice).toHaveBeenCalledTimes(2));
+    expect(createInvoice.mock.calls[1]?.[0]).toEqual({ workOrderId: WORK_ORDER_ID });
+  });
+});

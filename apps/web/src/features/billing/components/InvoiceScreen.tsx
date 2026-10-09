@@ -206,6 +206,10 @@ export function InvoiceScreen({
       answer = { status: 'unavailable', correlationId: null };
     }
     setInvoiceRead(answer);
+    // The draft is kept only for a form that is drawn again. When the re-read
+    // offers no create form at all, the entry is not unsaved work any more and
+    // must not resurface in a later form, so it goes (P1-32-PRE-OD-FRXR).
+    if (!offersCreateForm(answer)) setPayerDraft(NO_PAYER_DRAFT);
     setEpoch((n) => n + 1);
     router.refresh();
   };
@@ -767,6 +771,25 @@ interface PayerDraft {
 
 const NO_PAYER_DRAFT: PayerDraft = { payer: null, payerReference: '' };
 
+/** Empties the draft; keeps the same object when it is already empty, so nothing re-renders. */
+const clearPayerDraft = (held: PayerDraft): PayerDraft =>
+  held.payer === null && held.payerReference === '' ? held : NO_PAYER_DRAFT;
+
+/**
+ * Whether the work order's invoice read leaves a create form to draw: no invoice
+ * yet, or no open draft while approved work remains — the same two conditions
+ * that draw a `PreviewPanel` above. The preview may still say nothing is left;
+ * `PreviewPanel` clears the draft itself then.
+ */
+function offersCreateForm(read: ReadState<WorkOrderInvoice>): boolean {
+  if (read.status !== 'ok') return false;
+  if (read.data.invoice === null) return true;
+  return (
+    read.data.approvedWorkToInvoice &&
+    !read.data.invoices.some((invoice) => invoice.status === 'draft')
+  );
+}
+
 function PreviewPanel({
   locale,
   messages,
@@ -816,6 +839,15 @@ function PreviewPanel({
       live = false;
     };
   }, [workOrderId, canViewFinance, attempt]);
+
+  // Nothing left to bill is said by the figures; no form offers to bill it.
+  const formOffered = canViewFinance && preview?.status === 'ok' && preview.data.lines.length > 0;
+  // A settled preview that offers no form ends the draft: it is no longer drawn,
+  // so it is no longer unsaved work, and it must not reappear in a later form.
+  const settledWithoutForm = !canViewFinance || (preview !== null && !formOffered);
+  useEffect(() => {
+    if (settledWithoutForm) onPayerDraft(clearPayerDraft);
+  }, [settledWithoutForm, onPayerDraft]);
 
   const headingId = remaining ? 'invoice-remaining-heading' : 'invoice-preview-heading';
   return (
@@ -868,8 +900,7 @@ function PreviewPanel({
       ) : (
         <PreviewFigures locale={locale} messages={messages} preview={preview.data} />
       )}
-      {/* Nothing left to bill is said by the figures; no form offers to bill it. */}
-      {canViewFinance && preview?.status === 'ok' && preview.data.lines.length > 0 ? (
+      {formOffered ? (
         <CreateForm
           locale={locale}
           messages={messages}
