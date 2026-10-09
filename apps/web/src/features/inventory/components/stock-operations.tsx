@@ -5,6 +5,11 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import Button from '@mui/material/Button';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
+import {
+  MomentZoneRefusal,
+  ZonedDateTimeField,
+  type DateTimeFieldProps,
+} from '@/components/forms/mui/DateField';
 import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { MuiEmptyState, MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
@@ -454,10 +459,12 @@ export function ItemFinder({
 }
 
 /**
- * The clock of the branch a stock screen is addressed to — its IANA zone as the
- * working context publishes it (`branches[].timezone`, `org.branches.
- * timezone_name`) — or `undefined` when the context does not name a zone this
- * browser knows.
+ * The clock of the branch a stock screen is addressed to, as one of three
+ * findings: `known` with its IANA zone as the working context publishes it
+ * (`branches[].timezone`, `org.branches.timezone_name`); `missing` when the
+ * context names no zone for that branch; `unrecognised` when it names one this
+ * browser cannot resolve (`isKnownZone`). The last two differ only in what the
+ * operator is told — neither is a clock.
  *
  * The reservation expiry and the movement ledger's window are business moments,
  * and a business moment is taken on the branch's clock (Owner decision D-17;
@@ -466,16 +473,50 @@ export function ItemFinder({
  * laptop on another zone no longer moves the window by hours
  * (`P1-32-PRE-OD-INV1B`; `P1-32-PRE-OD-MUI7A1` had kept the browser's zone).
  * Read from the TARGET's branch rather than from the selection, so the zone and
- * the pair every read and write is addressed to cannot name two branches. With
- * no zone, `DateTimeField` says a moment needs a branch with a known clock and
- * draws no picker; it never falls back to the browser's.
+ * the pair every read and write is addressed to cannot name two branches.
  */
-export function useStockTargetZone(target: StockTarget): string | undefined {
+export type StockTargetClock =
+  | { readonly kind: 'known'; readonly zone: string }
+  | { readonly kind: 'missing' }
+  | { readonly kind: 'unrecognised' };
+
+export function useStockTargetClock(target: StockTarget): StockTargetClock {
   const context = useWorkingContext();
   const zone = context.branches.find(
     (branch) => branch.id === target.branchId && branch.companyId === target.companyId
   )?.timezone;
-  return zone !== undefined && isKnownZone(zone) ? zone : undefined;
+  if (zone === undefined || zone.trim() === '') return { kind: 'missing' };
+  return isKnownZone(zone) ? { kind: 'known', zone } : { kind: 'unrecognised' };
+}
+
+/** The target branch's zone when it is a clock this browser knows, else `undefined`. */
+export function useStockTargetZone(target: StockTarget): string | undefined {
+  const clock = useStockTargetClock(target);
+  return clock.kind === 'known' ? clock.zone : undefined;
+}
+
+/**
+ * A moment on a stock screen: the picker on the TARGET branch's clock, or —
+ * where that branch's zone is missing or not recognised — the shared refusal
+ * and no picker at all (`P1-32-PRE-OD-INV1C`).
+ *
+ * `DateTimeField` would fall back to the WORKING branch's zone when handed none;
+ * a stock screen is addressed to its target, so it never consults any other
+ * clock. `ZonedDateTimeField` reads no working context, which is exactly that.
+ */
+export function StockMomentField({
+  zone,
+  ...props
+}: Omit<DateTimeFieldProps, 'timezone'> & {
+  /** The target branch's zone (`useStockTargetZone`), `undefined` when it is not a clock. */
+  readonly zone: string | undefined;
+}) {
+  if (zone === undefined) {
+    return (
+      <MomentZoneRefusal messages={props.messages} label={props.label} testId={props.testId} />
+    );
+  }
+  return <ZonedDateTimeField {...props} timezone={zone} />;
 }
 
 /** A labelled figure in a summary list, rendered as the server stated it. */

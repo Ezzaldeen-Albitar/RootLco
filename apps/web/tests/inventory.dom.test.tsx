@@ -1955,4 +1955,42 @@ describe('on Material UI, in both languages (P1-32-PRE-OD-MUI7A1)', () => {
       within(form).queryByRole('group', { name: labelled('inventory.reserve.expiresAt') })
     ).toBeNull();
   });
+
+  /*
+   * A zone the browser does not recognise is no clock either
+   * (`P1-32-PRE-OD-INV1C`). The expiry used to fall back to the working
+   * branch's zone and draw the picker on that same unknown name; both a missing
+   * and an unrecognised zone now show the refusal and no picker, in both
+   * languages.
+   */
+  it.each([
+    ['en', ''],
+    ['ar', ''],
+    ['en', 'Mars/Base'],
+    ['ar', 'Mars/Base'],
+  ] as const)(
+    'draws no expiry picker where the branch\u2019s zone is not a clock (%s, zone %j)',
+    async (locale, timezone) => {
+      const T = CATALOGUES[locale];
+      const user = userEvent.setup();
+      const form = await openReserveForm(
+        user,
+        locale,
+        branchSnapshot([{ ...TEST_BRANCH, timezone }])
+      );
+      const field = within(form).getByTestId('reserve-expires-at');
+      expect(field).toHaveAttribute('data-zone-refused', 'true');
+      expect(within(field).getByText(T['inventory.reserve.expiresAt'] as string)).toBeVisible();
+      expect(within(field).getByTestId('date-time-requires-branch')).toHaveTextContent(
+        T['dateField.zoneUnknown'] as string
+      );
+      expect(within(field).queryByRole('spinbutton')).toBeNull();
+      expect(
+        within(form).queryByRole('group', {
+          name: new RegExp(`^${escape(T['inventory.reserve.expiresAt'] as string)}`),
+        })
+      ).toBeNull();
+      expect(document.documentElement.dir).toBe(locale === 'en' ? 'ltr' : 'rtl');
+    }
+  );
 });
