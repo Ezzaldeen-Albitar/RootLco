@@ -28,7 +28,11 @@
  * caller's own authority and nothing more.
  *
  * `scope: 'tenant'`, and there is no company or branch parameter: the request names
- * no target, because naming one is the very thing the caller cannot yet do.
+ * no target, because naming one is the very thing the caller cannot yet do. Any
+ * query parameter at all — `companyId`, `branchId`, `userId` or an unknown name —
+ * is refused with the standard validation error by an empty `.strict()` schema
+ * before anything is read (P1-32-PRE-OD-FRXR); it used to be ignored, which let a
+ * request look as though it could substitute another company or branch.
  *
  * `auditClass: 'none'` matches the session read beside it: a caller reading its own
  * scope writes no audit trail, and the two reads are the same act of a client
@@ -37,12 +41,18 @@
  * `cacheCategory: 'never'`, for the reason the session read gives — a cached reach
  * is a stale reach, and a revoked grant must stop working immediately.
  */
+import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
+import { AppFailure } from '@/server/errors/app-failure';
 import { handleOperation } from '@/server/http/route-handler';
+import { parseOrFail, searchParamsToObject } from '@/server/http/validation';
 import { iamModule } from '@/modules/iam';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/** Deliberately empty and `.strict()`: any parameter is refused, never ignored. */
+const Query = z.object({}).strict();
 
 export const WORKING_CONTEXT_OPERATION = defineOperation({
   id: 'iam.working-context-read',
@@ -61,7 +71,18 @@ export const WORKING_CONTEXT_OPERATION = defineOperation({
 });
 
 export async function GET(request: Request): Promise<Response> {
-  return handleOperation(WORKING_CONTEXT_OPERATION, request, async ({ db }) => ({
-    body: await iamModule().workingContext.describe(db),
-  }));
+  return handleOperation(WORKING_CONTEXT_OPERATION, request, async ({ db, request: raw }) => {
+    const params = new URL(raw.url).searchParams;
+    parseOrFail(Query, searchParamsToObject(params), 'query');
+    // `searchParamsToObject` omits a `__proto__` key by design, so the schema
+    // never sees one and `?__proto__=x` would otherwise answer 200. The raw
+    // query is the authority: any key at all is refused the same way.
+    if ([...params.keys()].length > 0) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'Validation failed for query',
+        safeDetails: { violations: [{ path: 'query', rule: 'unrecognized_keys' }] },
+      });
+    }
+    return { body: await iamModule().workingContext.describe(db) };
+  });
 }
