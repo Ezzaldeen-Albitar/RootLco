@@ -225,11 +225,11 @@ from the address whose read failed.
 
 ### Reports
 
-| Route                   | Screen file                                                          | a                                                                                                                                                                                                                           | b                                                                                                                                                                         | c                                                                           | d                                                       | e                                                                            | f                                                                                               | g                                                                | h    | i    |
-| ----------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---- | ---- |
-| `/reports`              | `apps/web/src/features/reports/components/ReportCatalogueScreen.tsx` | n/a — the catalogue is the tenant's                                                                                                                                                                                         | pass — the first page is read on arrival                                                                                                                                  | pass — a report is named by its message, its code shown beside it as a code | n/a — the catalogue read takes a cursor and a size only | n/a                                                                          | n/a — nothing is typed                                                                          | pass — `ReportFailure` renders the shared states                 | pass | pass |
-| `/reports/[reportCode]` | `apps/web/src/features/reports/components/ReportScreen.tsx`          | fixed (B3-02) — opens on the working branch; under "All my branches", or with none chosen, it reads nothing and says a report covers one branch, because `rpt.report-run` takes one branch and the server enforces no union | fixed (B3-02) — today on the branch's own clock, `[today, tomorrow)`, read on arrival and on a branch switch; an address that names a selection still only fills the form | pass — company and branch are named choices                                 | n/a — the run read publishes no free-text parameter     | pass — the period is the date filter, and a new selection restarts the pages | fixed (B3-04) — the cursor goes to the first control to correct, and a corrected complaint goes | pass                                                             | pass | pass |
-| `/reports/overview`     | `apps/web/src/features/reports/components/ReportOverviewScreen.tsx`  | fixed (B3-02) — as the report screen; a branch fixed by the address (FE-016) still wins                                                                                                                                     | fixed (B3-02) — the four reports read today for the working branch on arrival                                                                                             | pass                                                                        | n/a                                                     | pass — the period                                                            | fixed (B3-04) — the shared scope form                                                           | pass — each section answers for itself through the shared states | pass | pass |
+| Route                   | Screen file                                                          | a                                                                                                                                                                                                                           | b                                                                                                                                                                         | c                                                                                                                                     | d                                                       | e                                                                            | f                                                                                               | g                                                                | h    | i    |
+| ----------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- | ---- | ---- |
+| `/reports`              | `apps/web/src/features/reports/components/ReportCatalogueScreen.tsx` | n/a — the catalogue is the tenant's                                                                                                                                                                                         | pass — the first page is read on arrival                                                                                                                                  | fixed (REPA) — a report is named by its message alone, its level in words; a code is shown, as a code, only for a report with no name | n/a — the catalogue read takes a cursor and a size only | n/a                                                                          | n/a — nothing is typed                                                                          | pass — `ReportFailure` renders the shared states                 | pass | pass |
+| `/reports/[reportCode]` | `apps/web/src/features/reports/components/ReportScreen.tsx`          | fixed (B3-02) — opens on the working branch; under "All my branches", or with none chosen, it reads nothing and says a report covers one branch, because `rpt.report-run` takes one branch and the server enforces no union | fixed (B3-02) — today on the branch's own clock, `[today, tomorrow)`, read on arrival and on a branch switch; an address that names a selection still only fills the form | pass — company and branch are named choices                                                                                           | n/a — the run read publishes no free-text parameter     | pass — the period is the date filter, and a new selection restarts the pages | fixed (B3-04) — the cursor goes to the first control to correct, and a corrected complaint goes | pass                                                             | pass | pass |
+| `/reports/overview`     | `apps/web/src/features/reports/components/ReportOverviewScreen.tsx`  | fixed (B3-02) — as the report screen; a branch fixed by the address (FE-016) still wins                                                                                                                                     | fixed (B3-02) — the four reports read today for the working branch on arrival                                                                                             | pass                                                                                                                                  | n/a                                                     | pass — the period                                                            | fixed (B3-04) — the shared scope form                                                           | pass — each section answers for itself through the shared states | pass | pass |
 
 ### Administration
 
@@ -1804,9 +1804,9 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/receptions/check-in`                                | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F7; G1–G9, G11, G12; P1–P10; S1–S4            | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/receptions`                                         | `FilterToolbar`, `OperationalGrid`, states                                                    | F6; G1–G11; S1–S5; T1–T6                         | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/refunds`                                            | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, states                                    | G1–G9; P1–P10; S1–S4                             | built on Material UI (P1-32-PRE-OD-FD2B, ADR-023 D2)                | `refunds.dom.test.tsx`, en and ar         |
-| `/reports/[reportCode]`                               | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/reports/overview`                                   | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                        | not run — nothing migrated                |
-| `/reports`                                            | states                                                                                        | S1–S4                                            | not migrated                                                        | not run — nothing migrated                |
+| `/reports/[reportCode]`                               | form fields, `DateField`, `ZonedDateTimeField`, `OperationalGrid`, states                     | F1–F7; E1–E4; G1–G9; S1–S4                       | migrated — see below the table (REPA; snapshots panel not migrated) | focused suites, en and ar — see below     |
+| `/reports/overview`                                   | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table (REPA)                               | focused suites, en and ar — see below     |
+| `/reports`                                            | `OperationalGrid`, states                                                                     | G1–G9; S1–S4                                     | migrated — see below the table (REPA)                               | focused suites, en and ar — see below     |
 | `/services/[serviceId]`                               | form fields, `TreePicker`, `DateField`, `ConfirmDialog`, states                               | F1–F6; H1–H5; E1–E4; D1–D4; S1–S4                | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/services`                                           | `FilterToolbar`, `OperationalGrid`, `TreePicker`, `DateField`, form fields, states            | F1–F6; G1–G10; H1–H5; E1–E4; S1–S5; T1           | migrated — see below the table                                      | focused suites, en and ar — see below     |
 | `/technicians/me`                                     | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                      | focused suites, en and ar — see below     |
@@ -3236,6 +3236,114 @@ Known limitations of this slice, one line each:
   1.5 s keeps that from returning.
 - No authenticated browser spec targets these screens by test id; review round 2 observed hosted
   authenticated-browser job 109551243742 pass on `0a1f7925`.
+
+### Reports on Material UI (`P1-32-PRE-OD-REPA`)
+
+The report catalogue (`/reports`), the operational overview (`/reports/overview`) and one report
+(`/reports/[reportCode]`) on the ADR-022 wrappers. Web only: no backend file, read, write,
+permission code, route, branch scope or migration changed, and no new operation. What each screen
+reads, how it refuses and what it computes (nothing) are unchanged; the drawing moved.
+
+What changed (`apps/web/src/features/reports/components/`):
+
+- **States** (`ReportShell.tsx`): `ReportFailure` and `ReportLoading` are `MuiReadFailureState`
+  and `MuiLoadingState` (S1–S4), with the same catalogue sentences. An outage and a fault now offer
+  a retry where the read can be asked again (the catalogue, a report's first page); an ended session
+  offers the way back to signing in. Every empty and idle body is `MuiEmptyState` with the same keys.
+- **The catalogue** (`ReportCatalogueScreen.tsx`) is `OperationalGrid` over `useServerTable`
+  (G1–G9): the read takes a cursor and a size, so the grid offers rows per page (starting at the
+  platform's 50), "Page N" with no total, Previous and Next on the cursor stack, and no sortable
+  header — the order is the operation's own. A report with a name is shown by that name alone (the
+  route sweep row above); its code is shown, as a code, only for a report with no name to show,
+  and the level is a word ("One branch", "One company", "The whole organisation") with the machine
+  name kept only for a level this build has no word for. An empty first page is the "no reports"
+  sentence with no grid under it; an empty later page says there is nothing further.
+- **The scope form** (`ReportScopeForm.tsx`, shared by the report and the overview):
+  `FormSelectField` for the company and the branch (native lists, F6) and `DateField` for the two
+  days, drawn on the clock of the branch being chosen when the working context knows its zone and
+  the working branch's otherwise (E1–E4). The half-open rule and its messages are unchanged. A day
+  only partly typed is refused as "not finished" (`reports.run.dayIncomplete`) and a day the
+  calendar does not hold as one that cannot be used (`reports.run.dayInvalid`) — never "Choose a
+  day", which would say an unfinished box is empty. The cursor goes to the first control to
+  correct (`useLocalRefusal`), a complaint goes once its control changes, and Enter in a day submits,
+  as the native box did. The choices are a filter, so a branch switch never asks about them.
+- **One report** (`ReportScreen.tsx`): the rows are `OperationalGrid` driven by the run's own
+  cursor trail through `trailTable` (`use-cursor-trail.ts`) — an unknown count, "Page N", and
+  Previous and Next that spend the cursors already walked — so the period, the zone, the moment the
+  amounts are as of and the groups shown are always the shown page's (D-17). The grid keeps the
+  report's columns while the next page is read, and every later page still asks for the moment the
+  first page answered (D16, cursor-bound). A first page with no rows is the "nothing to show"
+  sentence, not an empty grid. While the next page is read the facts above the rows stay mounted
+  (the same selection and moment), so a page move keeps a typed export reason and the cursor, and
+  no rows are drawn until the page answers. The trail's reads now settle (`settleRead`), so a read that never
+  answers becomes the unavailable state with a retry instead of "Loading" for ever. The groups are
+  one bounded answer with no cursor and are the Material table (the planner ruling above). The two
+  days of the period are written for reading on the branch's clock (`<time dateTime>` keeps the
+  day). The as-of choice is `FormRadioGroupField` (end of period, now, a specific moment) with the
+  `ZonedDateTimeField` on the reported branch's clock; "now" is still sent as the word and resolved
+  by the database's clock; a partly typed, impossible, too early or too late moment is refused on
+  the field, which takes the cursor; and pressing Apply again with the same choice reads nothing.
+- **The export** (`ReportExportPanel.tsx`): still drawn only for `rpt.export` (withheld under
+  CC-04) with a published export authority, and otherwise the one "not available" sentence. The
+  reason is `FormTextField` (multiline) inside a form, refused on the field with the cursor on it;
+  one press or two inside the same moment sends ONE audited export; the CSV and its as-of note are
+  unchanged. A reason typed and not yet sent is unsaved work (`useUnsavedGuard`): a branch switch
+  or leaving the page asks first, and discarding clears it; a reason already sent with a file is not
+  asked about again.
+- **The overview** (`ReportOverviewScreen.tsx`): the shared scope form, the Material states, and
+  each section's summary as the Material table (one bounded answer per report). The banner names the
+  period's zone in words with its offset, as the report screen does, instead of the stored zone
+  identifier, and writes the two days for reading. A section is still drawn only for a report the
+  caller's catalogue holds (D17), and the four reads are still spent once per branch and period.
+
+Tests (en and ar): `apps/web/tests/reports.dom.test.tsx` — the catalogue names a report without its
+code, shows a code only for a report with no name, says each level in words, retries an outage and
+offers no retry on a refusal, labels the page with no count, offers Next only when the server said
+more exist, and asks for the chosen page size from the first page; the form refuses a partly typed
+day as unfinished with the cursor on it, submits on Enter, and runs once for two presses inside one
+`act()`; the period is written for reading with its day kept. `reports-overview.dom.test.tsx` — two
+presses inside one `act()` spend the four reads once, Enter shows the overview, a partly typed day is
+refused in Arabic with the cursor on it, every summary table is named, and the banner names the zone
+in words in both languages. `report-export.dom.test.tsx` — two presses inside one `act()` send one
+export, a refused reason takes the cursor and is withdrawn once edited, a branch switch over a typed
+reason asks (Cancel keeps it, Discard clears it), and a reason already sent asks nothing. The
+browser specs (`tests/e2e/authenticated/reports-p1-31.spec.ts`, `overview-p1-31.spec.ts`) type the
+days into the pickers part by part, address the catalogue and the rows as grids, and now require
+that no catalogue row prints a report's code and that the catalogue's headings are the reader's
+words; both specs run in the `authenticated-en` and `authenticated-ar` projects.
+
+Assertions changed, with the reason:
+
+- The catalogue used to be required to print each report's code beside its name (DOM and browser);
+  it is now required NOT to, which is the finding this slice closes. A new case keeps the code for
+  a report with no name.
+- The pager's buttons are the grid's ("Next page", "Previous page") rather than the report
+  screen's own "Next" and "Previous"; the cases press the same controls by their new names.
+- The period's two days were asserted as the raw `YYYY-MM-DD`; they are now asserted as the day
+  written for reading on the branch's clock, with the raw day on the `<time>` element.
+- The overview's banner was asserted to print the zone identifier (`Asia/Amman`); it now names the
+  zone ("Jordan Time (GMT+3)", "توقيت الأردن (غرينتش+3)") and the identifier is required to be absent.
+- Day boxes are reached as picker groups and typed part by part, and the value they hold is read
+  from the picker (`01/09/2026`) instead of a native input's `value`; the table locators for the
+  catalogue and the rows are grid locators.
+
+Known limitations of this slice, one line each:
+
+- The saved-snapshots panel inside a report (`ReportSnapshotsPanel.tsx`) is not migrated: it keeps
+  its own form fields, buttons and pager. It draws the shared Material states now, because they come
+  from `ReportShell.tsx`, and its frozen rows use the report's Material table.
+- A report column this build has no word for is headed by its key as plain text in the grid; the
+  monospaced machine-name style is kept in the cells, the groups and the snapshot table only.
+- The grid is driven by the run's cursor trail rather than `useServerTable` (G1), because a page's
+  envelope must travel with its rows; the trail settles its reads and retries, and a working-context
+  switch remounts the results, which drops the trail.
+- A page that is refused or fails replaces the whole result with its state and a retry (as
+  before); the facts above the rows, and an export reason typed there, go with it.
+- The day pickers take their zone from the working context's branch list; a branch the report
+  directory holds and the working context does not is drawn on the working branch's clock (the
+  day typed is the same either way).
+- Not run locally: the browser specs (the Playwright tiers run in hosted CI only), the builds and
+  the full web tier; the focused suites and their neighbours were run.
 
 ### Inventory stock, item codes and movements on Material UI (`P1-32-PRE-OD-MUI7A1`)
 

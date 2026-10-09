@@ -1,18 +1,21 @@
 'use client';
 
 import { useState } from 'react';
-import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
-import { SelectField, TextField } from '@/components/forms/Field';
+import Button from '@mui/material/Button';
+import { DateField, type DayProblem } from '@/components/forms/mui/DateField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
+import { isKnownZone } from '@/lib/branch-time';
+import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 import {
   isReportDay,
   isReportPeriod,
   type ReportScopeOptions,
   type ReportScopeSelection,
 } from '../reports-contract';
-import { REPORT_PRIMARY_BUTTON } from './ReportShell';
 
 /**
  * The one form that names a company, a branch and a period (P1-31, FE-010,
@@ -46,6 +49,20 @@ import { REPORT_PRIMARY_BUTTON } from './ReportShell';
  * The fixed branch is never a literal in this source and never a default: the
  * caller resolves it against the authorized directory first and renders the
  * no-branch body when it is not there.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-REPA`)
+ *
+ * The two selectors are `FormSelectField` (native, so the platform's own list)
+ * and the two days are `DateField`, the MIT date picker, drawn on the BRANCH's
+ * clock: the zone of the branch being chosen when the working context knows it,
+ * the working branch's otherwise. A day is still a `YYYY-MM-DD` string and the
+ * half-open rule is unchanged. What the picker adds is said where it happens: a
+ * day only partly typed is "not finished", never "choose a day" — the box is not
+ * empty — and a day the calendar does not hold is refused as one that cannot be
+ * used. Enter in a day submits the form, as the native box did.
+ *
+ * The choices here are a FILTER, not unsaved work: nothing is written, so a
+ * branch switch never asks about them (the `EntityPicker` P6 rule).
  */
 export function ReportScopeForm({
   locale,
@@ -66,6 +83,16 @@ export function ReportScopeForm({
 }) {
   const { companies, branches } = options;
   const [draft, setDraft] = useState<ReportScopeSelection>(initial);
+  /*
+   * What each day box finds wrong while it holds no whole day: some parts typed
+   * (`incomplete`), or a day the calendar does not hold. The picker publishes no
+   * value for either, so without this a half-typed day would read as an empty
+   * one.
+   */
+  const [dayProblems, setDayProblems] = useState<{
+    readonly from: DayProblem;
+    readonly to: DayProblem;
+  }>({ from: null, to: null });
   // Question f: the cursor goes to the first control to correct, and a
   // complaint goes once its control changes (route sweep B3).
   const {
@@ -75,10 +102,30 @@ export function ReportScopeForm({
   } = useLocalRefusal({
     companyId: draft.companyId,
     branchId: draft.branchId,
-    from: draft.from,
-    to: draft.to,
+    from: `${draft.from}|${dayProblems.from ?? ''}`,
+    to: `${draft.to}|${dayProblems.to ?? ''}`,
   });
   const fixed = fixedBranchId !== null;
+  /*
+   * The days are typed on the clock of the branch being reported on. The
+   * directory names no zone, so it is read from the working context's own
+   * branches; a branch it does not hold, or a zone this browser cannot read,
+   * leaves the picker on the working branch's clock, as every day field does.
+   */
+  const context = useWorkingContext();
+  const chosenZone = context.branches.find((branch) => branch.id === draft.branchId)?.timezone;
+  const zone = chosenZone !== undefined && isKnownZone(chosenZone) ? chosenZone : undefined;
+
+  const dayRefusal = (problem: DayProblem, value: string): string | null => {
+    if (problem === 'incomplete') return 'reports.run.dayIncomplete';
+    if (problem !== null) return 'reports.run.dayInvalid';
+    return isReportDay(value) ? null : 'reports.run.needDay';
+  };
+
+  const noteProblem = (field: 'from' | 'to') => (problem: DayProblem) =>
+    setDayProblems((current) =>
+      current[field] === problem ? current : { ...current, [field]: problem }
+    );
 
   const submit = () => {
     const found: Record<string, string> = {};
@@ -92,9 +139,11 @@ export function ReportScopeForm({
     ) {
       found['branchId'] = 'reports.run.chooseBranch';
     }
-    if (!isReportDay(draft.from)) found['from'] = 'reports.run.needDay';
-    if (!isReportDay(draft.to)) found['to'] = 'reports.run.needDay';
-    if (isReportDay(draft.from) && isReportDay(draft.to) && !isReportPeriod(draft.from, draft.to)) {
+    const fromRefusal = dayRefusal(dayProblems.from, draft.from);
+    const toRefusal = dayRefusal(dayProblems.to, draft.to);
+    if (fromRefusal !== null) found['from'] = fromRefusal;
+    if (toRefusal !== null) found['to'] = toRefusal;
+    if (fromRefusal === null && toRefusal === null && !isReportPeriod(draft.from, draft.to)) {
       // The half-open rule, said where it was broken. `to` is EXCLUDED, so an
       // equal pair covers no day at all — and an operator who meant one day has
       // to name the day after it.
@@ -122,19 +171,19 @@ export function ReportScopeForm({
       }}
     >
       <div className="grid gap-3 sm:grid-cols-2">
-        <SelectField
+        <FormSelectField
           label={translate(messages, 'reports.run.company')}
           options={companies.map((company) => ({ value: company.id, label: company.legalName }))}
           placeholder={translate(messages, 'form.select.placeholder')}
           required
           disabled={fixed}
           value={draft.companyId}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, companyId: event.target.value, branchId: '' }))
+          onChange={(value) =>
+            setDraft((current) => ({ ...current, companyId: value, branchId: '' }))
           }
           error={errorFor('companyId')}
         />
-        <SelectField
+        <FormSelectField
           label={translate(messages, 'reports.run.branch')}
           options={branches
             .filter((branch) => branch.companyId === draft.companyId)
@@ -143,28 +192,30 @@ export function ReportScopeForm({
           required
           disabled={fixed || !draft.companyId}
           value={draft.branchId}
-          onChange={(event) =>
-            setDraft((current) => ({ ...current, branchId: event.target.value }))
-          }
+          onChange={(value) => setDraft((current) => ({ ...current, branchId: value }))}
           error={errorFor('branchId')}
         />
-        <TextField
-          type="date"
+        <DateField
           label={translate(messages, 'reports.run.from')}
           description={translate(messages, 'reports.run.fromHint')}
           required
-          value={draft.from}
-          onChange={(event) => setDraft((current) => ({ ...current, from: event.target.value }))}
+          timezone={zone}
+          value={isReportDay(draft.from) ? draft.from : ''}
+          onChange={(value) => setDraft((current) => ({ ...current, from: value }))}
+          onProblem={noteProblem('from')}
           error={errorFor('from')}
+          testId="report-scope-from"
         />
-        <TextField
-          type="date"
+        <DateField
           label={translate(messages, 'reports.run.to')}
           description={translate(messages, 'reports.run.toHint')}
           required
-          value={draft.to}
-          onChange={(event) => setDraft((current) => ({ ...current, to: event.target.value }))}
+          timezone={zone}
+          value={isReportDay(draft.to) ? draft.to : ''}
+          onChange={(value) => setDraft((current) => ({ ...current, to: value }))}
+          onProblem={noteProblem('to')}
           error={errorFor('to')}
+          testId="report-scope-to"
         />
       </div>
       <p className="mt-3 text-caption text-text-muted" lang={locale}>
@@ -176,9 +227,9 @@ export function ReportScopeForm({
         </p>
       ) : null}
       <div className="mt-4">
-        <button type="submit" className={REPORT_PRIMARY_BUTTON}>
+        <Button type="submit" variant="contained">
           {translate(messages, submitKey)}
-        </button>
+        </Button>
       </div>
     </form>
   );

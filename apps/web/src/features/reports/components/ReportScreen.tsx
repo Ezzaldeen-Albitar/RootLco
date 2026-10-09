@@ -1,14 +1,22 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
-import { RadioGroupField } from '@/components/forms/Field';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import {
   dayToPicker,
   ZonedDateTimeField,
   type MomentProblem,
 } from '@/components/forms/mui/DateField';
-import { EmptyState } from '@/components/states/States';
+import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
+import { MuiEmptyState } from '@/components/states/MuiStates';
 import {
   useWorkingContext,
   useWorkingContextChange,
@@ -19,6 +27,7 @@ import { formatMessage, translate } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
 import { zoneDisplayName } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
+import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 import { runReport } from '../reports-api';
 import {
   fieldHeading,
@@ -51,19 +60,11 @@ import {
   type ReportScopeOptions,
   type ReportScopeSelection,
 } from '../reports-contract';
-import {
-  ContextFact,
-  MachineName,
-  REPORT_SECONDARY_BUTTON,
-  REPORT_TABLE_CELL,
-  REPORT_TABLE_HEADER,
-  ReportFailure,
-  ReportLoading,
-} from './ReportShell';
+import { ContextFact, MachineName, ReportFailure, ReportLoading } from './ReportShell';
 import { ReportScopeForm } from './ReportScopeForm';
 import { ReportExportPanel } from './ReportExportPanel';
 import { ReportSnapshotsPanel } from './ReportSnapshotsPanel';
-import { useCursorTrail } from './use-cursor-trail';
+import { trailTable, useCursorTrail } from './use-cursor-trail';
 import { useWorkingReportScope } from './use-working-report-scope';
 
 /**
@@ -157,6 +158,18 @@ import { useWorkingReportScope } from './use-working-report-scope';
  * anything the caller's own directory does not hold is dropped rather than shown:
  * see `initialReportScope`. An address that names anything at all takes the place
  * of the working context: the form is filled from it and the operator runs it.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-REPA`)
+ *
+ * The rows are cursor pages, so they are drawn by `OperationalGrid` (G1–G9): an
+ * unknown count, "Page N", and Previous and Next that walk the run's own cursor
+ * trail (`trailTable`) — the trail keeps the whole envelope of the page it
+ * holds, so the period, the zone, the moment and the groups shown are always the
+ * shown page's. The groups are one bounded answer with no cursor and are drawn as
+ * the Material table (the planner ruling of 2026-10-09). The states are the
+ * Material ones, the as-of choice is `FormRadioGroupField` with the moment picker,
+ * and a refused moment takes the cursor (`useLocalRefusal`). Pressing Apply twice
+ * with the same choice reads nothing again: an unchanged choice is not a new one.
  */
 
 export function ReportScreen({
@@ -222,7 +235,7 @@ export function ReportScreen({
     return (
       <div className="flex flex-col gap-3">
         <ReportHeading title={title} code={definition.reportCode} />
-        <EmptyState
+        <MuiEmptyState
           messages={messages}
           titleKey="reports.run.notRunnableTitle"
           descriptionKey="reports.run.notRunnableBody"
@@ -235,6 +248,7 @@ export function ReportScreen({
     return (
       <ReportFailure
         messages={messages}
+        locale={locale}
         status={scopeOptions.status}
         correlationId={scopeOptions.correlationId}
       />
@@ -246,7 +260,7 @@ export function ReportScreen({
     !branches.some((branch) => companies.some((company) => company.id === branch.companyId))
   ) {
     return (
-      <EmptyState
+      <MuiEmptyState
         messages={messages}
         titleKey="reports.run.noScopesTitle"
         descriptionKey="reports.run.noScopesBody"
@@ -283,7 +297,7 @@ export function ReportScreen({
       />
 
       {submitted === null ? (
-        <EmptyState
+        <MuiEmptyState
           messages={messages}
           titleKey="reports.run.idleTitle"
           descriptionKey="reports.run.idleBody"
@@ -299,7 +313,11 @@ export function ReportScreen({
           reportCode={definition.reportCode}
           submitted={submitted}
           asOfChoice={asOfChoice}
-          onAsOfChange={setAsOfChoice}
+          onAsOfChange={(next) =>
+            setAsOfChoice((current) =>
+              JSON.stringify(current) === JSON.stringify(next) ? current : next
+            )
+          }
           companyName={chosenCompany?.legalName ?? null}
           branchName={chosenBranch?.name ?? null}
           canExport={canExport}
@@ -382,22 +400,169 @@ function ReportResults({
     [reportCode, companyId, branchId, from, to, asOfChoice]
   );
   const trail = useCursorTrail<ReportRun>(read, runSignals);
+  const answered =
+    trail.outcome !== null && trail.outcome.status === 'ok' ? trail.outcome.data : null;
+  /*
+   * The last page that answered, kept while the next one is read.
+   *
+   * The grid keeps the report's columns by it, so a page move draws skeleton
+   * rows under the same header instead of a blank region; and the facts above
+   * the rows — the period, the zone, the moment, the export, the groups — stay
+   * mounted, so a page move neither drops a typed export reason nor takes the
+   * cursor away. Every page of one report carries the same selection and the
+   * same pinned moment (D16), and no rows are drawn while the next page is
+   * read, so nothing of one page is ever shown beside another page's rows. A
+   * page that is refused or fails is drawn as itself, with nothing kept above it.
+   */
+  const [held, setHeld] = useState<ReportRun | null>(null);
+  if (answered !== null && held !== answered) setHeld(answered);
+  const run = answered ?? (trail.loading ? held : null);
+  const table = trailTable(
+    trail,
+    (page: ReportRun) =>
+      page.rows.items.map((row, index) => ({ id: `${String(trail.page)}:${String(index)}`, row })),
+    REPORT_PAGE_SIZE
+  );
+  const shapeColumns = run === null ? null : run.columns;
+  const shapeZone = run === null ? null : run.period.timezone;
+  const gridColumns = useMemo<readonly OperationalColumn<ReportGridRow>[]>(
+    () =>
+      shapeColumns === null || shapeZone === null
+        ? []
+        : shapeColumns.map((column) => ({
+            id: column.key,
+            // A column this build has no word for is headed by its own key, as
+            // the machine name it is; the grid takes a catalogue key or text.
+            headerKey:
+              fieldHeading(messages, column.key) === null
+                ? column.key
+                : `reports.field.${column.key}`,
+            numeric: NUMERIC_KINDS.has(column.kind),
+            cell: (entry: ReportGridRow) => (
+              <CellValue
+                locale={locale}
+                messages={messages}
+                zone={shapeZone}
+                column={column}
+                row={entry.row}
+                cell={entry.row.cells.find((candidate) => candidate.key === column.key) ?? null}
+              />
+            ),
+          })),
+    [shapeColumns, shapeZone, locale, messages]
+  );
 
-  if (trail.loading || trail.outcome === null) return <ReportLoading messages={messages} />;
-  if (trail.outcome.status !== 'ok') {
-    return (
-      <ReportFailure
-        messages={messages}
-        status={trail.outcome.status}
-        correlationId={trail.outcome.correlationId}
-      />
-    );
+  if (run === null) {
+    // No page is held: the first one is still being read, or this page could
+    // not be. Either is drawn as itself, and an outage can be retried.
+    const failed = trail.loading ? null : trail.outcome;
+    if (failed !== null && failed.status !== 'ok') {
+      return (
+        <ReportFailure
+          messages={messages}
+          locale={locale}
+          status={failed.status}
+          correlationId={failed.correlationId}
+          onRetry={trail.refresh}
+        />
+      );
+    }
+    return <ReportLoading messages={messages} />;
   }
 
-  const run = trail.outcome.data;
-  const groups = reportGroups(run);
-  const rows = run.rows.items;
   const title = runTitle(messages, run.titleKey);
+
+  return (
+    <section aria-labelledby="report-result-heading" className="flex flex-col gap-4">
+      <h3 id="report-result-heading" className="sr-only">
+        {title === null ? reportCode : title}
+      </h3>
+
+      <RunEnvelope
+        locale={locale}
+        messages={messages}
+        reportCode={reportCode}
+        run={run}
+        submitted={submitted}
+        asOfChoice={asOfChoice}
+        onAsOfChange={onAsOfChange}
+        companyName={companyName}
+        branchName={branchName}
+        canExport={canExport}
+        canSnapshot={canSnapshot}
+      />
+
+      {run.rows.items.length === 0 && trail.page === 1 ? (
+        // The honest zero: a sentence, not an empty grid, which would read as
+        // a report that failed to load.
+        <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
+          {translate(messages, 'reports.run.noRows')}
+        </p>
+      ) : (
+        <OperationalGrid<ReportGridRow>
+          messages={messages}
+          locale={locale}
+          label={translate(messages, 'reports.run.rowsCaption')}
+          columns={gridColumns}
+          rowId={(entry) => entry.id}
+          table={table}
+          suppressEmptyState
+          testId="report-rows"
+        />
+      )}
+      {run.rows.items.length === 0 && trail.page > 1 ? (
+        <p className="py-4 text-center text-body text-text-secondary" lang={locale}>
+          {translate(messages, 'reports.catalogue.noFurther')}
+        </p>
+      ) : null}
+      <p className="text-caption text-text-muted" lang={locale}>
+        {translate(messages, 'reports.run.pagingNote')}
+      </p>
+    </section>
+  );
+}
+
+/** One row of the report's grid: the row as the server sent it, and its place. */
+interface ReportGridRow {
+  /** The page and the position in it — a report row is a projection, not a record. */
+  readonly id: string;
+  readonly row: ReportRow;
+}
+
+/** The column kinds whose values are figures, aligned as figures. */
+const NUMERIC_KINDS: ReadonlySet<string> = new Set(['count', 'duration', 'quantity', 'money']);
+
+/**
+ * Everything one answered page says about itself, above its rows: the period,
+ * the zone and the filter context (D-17), the moment its amounts are as of and
+ * the choice of another (D16), the export, the snapshots, and the groups.
+ */
+function RunEnvelope({
+  locale,
+  messages,
+  reportCode,
+  run,
+  submitted,
+  asOfChoice,
+  onAsOfChange,
+  companyName,
+  branchName,
+  canExport,
+  canSnapshot,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly reportCode: string;
+  readonly run: ReportRun;
+  readonly submitted: ReportScopeSelection;
+  readonly asOfChoice: ReportAsOfChoice;
+  readonly onAsOfChange: (choice: ReportAsOfChoice) => void;
+  readonly companyName: string | null;
+  readonly branchName: string | null;
+  readonly canExport: boolean;
+  readonly canSnapshot: boolean;
+}) {
+  const groups = reportGroups(run);
   /*
    * D16: the moment the amounts are as of, on the BRANCH's clock with the zone
    * named, exactly as the server stated it. Only a report that answered with one
@@ -414,24 +579,25 @@ function ReportResults({
         )})`;
 
   return (
-    <section aria-labelledby="report-result-heading" className="flex flex-col gap-4">
-      <h3 id="report-result-heading" className="sr-only">
-        {title === null ? reportCode : title}
-      </h3>
-
+    <>
       {/*
         D-17: the timezone and the filter context travel with the result
         wherever it is shown, so a number can never be read without the period
         that produced it. Every fact below is the envelope's own; the branch name
         prefers the one the run resolved and falls back to the name the operator
-        picked it by.
+        picked it by. The two days are written for reading on the branch's
+        clock, with the day itself kept as the machine value.
       */}
       <dl className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-3">
         <ContextFact label={translate(messages, 'reports.context.from')}>
-          <span dir="ltr">{run.period.from}</span>
+          <time dateTime={run.period.from} data-testid="report-period-from">
+            {formatReportTime(run.period.from, locale, run.period.timezone)}
+          </time>
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.to')}>
-          <span dir="ltr">{run.period.to}</span>
+          <time dateTime={run.period.to} data-testid="report-period-to">
+            {formatReportTime(run.period.to, locale, run.period.timezone)}
+          </time>
         </ContextFact>
         <ContextFact label={translate(messages, 'reports.context.timezone')}>
           <bdi data-testid="report-zone">
@@ -550,50 +716,16 @@ function ReportResults({
       {groups.length === 0 ? null : (
         <GroupTable messages={messages} groups={groups} locale={locale} />
       )}
-
-      {rows.length === 0 ? (
-        <p className="py-6 text-center text-body text-text-secondary" lang={locale}>
-          {translate(messages, 'reports.run.noRows')}
-        </p>
-      ) : (
-        <RowsTable
-          locale={locale}
-          messages={messages}
-          zone={run.period.timezone}
-          columns={run.columns}
-          rows={rows}
-          captionKey="reports.run.rowsCaption"
-        />
-      )}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          className={REPORT_SECONDARY_BUTTON}
-          disabled={!trail.canGoBack}
-          onClick={trail.goBack}
-        >
-          {translate(messages, 'reports.page.previous')}
-        </button>
-        <button
-          type="button"
-          className={REPORT_SECONDARY_BUTTON}
-          disabled={!trail.canGoForward}
-          onClick={trail.goForward}
-        >
-          {translate(messages, 'reports.page.next')}
-        </button>
-      </div>
-      <p className="text-caption text-text-muted" lang={locale}>
-        {translate(messages, 'reports.run.pagingNote')}
-      </p>
-    </section>
+    </>
   );
 }
 
 /**
- * A page of report rows, live or frozen in a snapshot (P1-32-PRE-OD-FD16B): one
- * table, so a saved row reads exactly as the live one did.
+ * A page of report rows frozen in a snapshot (P1-32-PRE-OD-FD16B), drawn as the
+ * Material table: the snapshot panel hands over one page it has read and walks
+ * its own pages, so this draws the rows it is given and nothing else. The cells
+ * are the live grid's own (`CellValue`), so a saved row reads exactly as the live
+ * one did.
  */
 function RowsTable({
   locale,
@@ -611,30 +743,30 @@ function RowsTable({
   readonly captionKey: keyof Messages;
 }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-      <table className="w-full border-collapse">
+    <TableContainer className="rounded-lg border border-border bg-surface">
+      <Table size="small">
         <caption className="sr-only">{translate(messages, captionKey)}</caption>
-        <thead className="bg-table-header">
-          <tr>
+        <TableHead>
+          <TableRow>
             {columns.map((column) => {
               const heading = fieldHeading(messages, column.key);
               return (
-                <th key={column.key} scope="col" className={REPORT_TABLE_HEADER}>
+                <TableCell key={column.key} scope="col">
                   {heading === null ? <MachineName value={column.key} /> : heading}
-                </th>
+                </TableCell>
               );
             })}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHead>
+        <TableBody>
           {rows.map((row, index) => (
             // The operation publishes no row identifier — a report row is a
             // projection, not a record — so the position in the page is the
             // key. It is stable for the page being rendered, which is what a
             // key is for.
-            <tr key={`${String(index)}`} className="border-t border-border-subtle">
+            <TableRow key={`${String(index)}`} className="align-top">
               {columns.map((column) => (
-                <td key={column.key} className={REPORT_TABLE_CELL}>
+                <TableCell key={column.key}>
                   <CellValue
                     locale={locale}
                     messages={messages}
@@ -643,13 +775,13 @@ function RowsTable({
                     row={row}
                     cell={row.cells.find((candidate) => candidate.key === column.key) ?? null}
                   />
-                </td>
+                </TableCell>
               ))}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
-    </div>
+        </TableBody>
+      </Table>
+    </TableContainer>
   );
 }
 
@@ -658,11 +790,13 @@ function RowsTable({
  * period (the report's own default), now, or a moment the operator types on the
  * reported branch's clock.
  *
- * Applying a choice re-reads the report; nothing is computed here. A moment only
- * partly typed is refused with the incomplete-entry message — never "required",
- * which would tell the operator the box is empty when it is not — and a moment
- * before the period starts or later than now is refused before a request is spent,
- * with the bound it broke. The server refuses both too.
+ * Applying a choice re-reads the report; nothing is computed here. "Now" is sent
+ * as the word and resolved by the database's clock, never this browser's. A
+ * moment only partly typed is refused with the incomplete-entry message — never
+ * "required", which would tell the operator the box is empty when it is not — and
+ * a moment before the period starts or later than now is refused before a request
+ * is spent, with the bound it broke. The server refuses both too. A refusal puts
+ * the cursor on the moment and is withdrawn once the moment changes.
  */
 function AsOfChoiceForm({
   messages,
@@ -680,41 +814,28 @@ function AsOfChoiceForm({
   const [mode, setMode] = useState<ReportAsOfChoice['mode']>(choice.mode);
   const [moment, setMoment] = useState(choice.mode === 'at' ? choice.instant : '');
   const [problem, setProblem] = useState<MomentProblem>(null);
-  const [errorKey, setErrorKey] = useState<keyof Messages | null>(null);
+  // A complaint about the moment is withdrawn once the moment, or the choice
+  // it belongs to, changes.
+  const { errorKey, formRef, refuse } = useLocalRefusal({
+    moment: `${mode}|${moment}|${problem ?? ''}`,
+  });
 
   const apply = () => {
     if (mode !== 'at') {
-      setErrorKey(null);
+      refuse({});
       onApply({ mode });
       return;
     }
-    if (problem === 'incomplete') {
-      setErrorKey('reports.asOf.incomplete');
-      return;
-    }
-    if (problem !== null) {
-      setErrorKey('reports.asOf.invalid');
-      return;
-    }
-    if (moment === '' || !isReportInstant(moment)) {
-      setErrorKey('reports.asOf.chooseMoment');
-      return;
-    }
-    const opens = dayToPicker(periodFrom, zone);
-    if (opens !== null && Date.parse(moment) < opens.valueOf()) {
-      setErrorKey('reports.asOf.beforePeriod');
-      return;
-    }
-    if (Date.parse(moment) > Date.now()) {
-      setErrorKey('reports.asOf.afterNow');
-      return;
-    }
-    setErrorKey(null);
+    const refusal = momentRefusal(moment, problem, periodFrom, zone);
+    refuse(refusal === null ? {} : { moment: refusal });
+    if (refusal !== null) return;
     onApply({ mode: 'at', instant: moment });
   };
+  const refused = errorKey('moment');
 
   return (
     <form
+      ref={formRef}
       noValidate
       aria-label={translate(messages, 'reports.asOf.legend')}
       className="flex flex-col gap-3"
@@ -723,14 +844,11 @@ function AsOfChoiceForm({
         apply();
       }}
     >
-      <RadioGroupField
+      <FormRadioGroupField
         label={translate(messages, 'reports.asOf.legend')}
         name="report-as-of"
         value={mode}
-        onChange={(next) => {
-          setErrorKey(null);
-          setMode(next === 'now' || next === 'at' ? next : 'end');
-        }}
+        onChange={(next) => setMode(next === 'now' || next === 'at' ? next : 'end')}
         options={[
           { value: 'end', label: translate(messages, 'reports.asOf.endOfPeriod') },
           { value: 'now', label: translate(messages, 'reports.asOf.now') },
@@ -744,26 +862,35 @@ function AsOfChoiceForm({
           description={translate(messages, 'reports.asOf.momentHint')}
           timezone={zone}
           value={moment}
-          onChange={(next) => {
-            setErrorKey(null);
-            setMoment(next);
-          }}
+          onChange={setMoment}
           onProblem={setProblem}
-          error={errorKey === null ? undefined : translate(messages, errorKey)}
+          error={refused === undefined ? undefined : translate(messages, refused as keyof Messages)}
           testId="report-as-of-moment"
         />
-      ) : errorKey === null ? null : (
-        <p role="alert" className="text-supporting text-error">
-          {translate(messages, errorKey)}
-        </p>
-      )}
+      ) : null}
       <div>
-        <button type="submit" className={REPORT_SECONDARY_BUTTON}>
+        <Button type="submit" variant="outlined">
           {translate(messages, 'reports.asOf.apply')}
-        </button>
+        </Button>
       </div>
     </form>
   );
+}
+
+/** Why a typed moment cannot be applied, as a catalogue key, or `null` when it can. */
+function momentRefusal(
+  moment: string,
+  problem: MomentProblem,
+  periodFrom: string,
+  zone: string
+): keyof Messages | null {
+  if (problem === 'incomplete') return 'reports.asOf.incomplete';
+  if (problem !== null) return 'reports.asOf.invalid';
+  if (moment === '' || !isReportInstant(moment)) return 'reports.asOf.chooseMoment';
+  const opens = dayToPicker(periodFrom, zone);
+  if (opens !== null && Date.parse(moment) < opens.valueOf()) return 'reports.asOf.beforePeriod';
+  if (Date.parse(moment) > Date.now()) return 'reports.asOf.afterNow';
+  return null;
 }
 
 /**
@@ -778,6 +905,10 @@ function AsOfChoiceForm({
  * first-seen order. There is no declaration of them on the envelope, and
  * inventing an order would put a workshop's own grouping into an arrangement this
  * side chose.
+ *
+ * One bounded answer with no cursor, so it is the Material table rather than the
+ * grid (the planner ruling of 2026-10-09); nothing is paged, and nothing more
+ * exists than what is drawn.
  */
 function GroupTable({
   messages,
@@ -804,30 +935,30 @@ function GroupTable({
       <h4 id="report-groups-heading" className="text-label font-medium text-text-primary">
         {translate(messages, 'reports.groups.heading')}
       </h4>
-      <div className="overflow-x-auto rounded-lg border border-border bg-surface">
-        <table className="w-full border-collapse">
+      <TableContainer className="rounded-lg border border-border bg-surface">
+        <Table size="small">
           <caption className="sr-only">{translate(messages, 'reports.groups.caption')}</caption>
-          <thead className="bg-table-header">
-            <tr>
-              <th scope="col" className={REPORT_TABLE_HEADER}>
+          <TableHead>
+            <TableRow>
+              <TableCell scope="col">
                 {translate(messages, 'reports.groups.column.group')}
-              </th>
+              </TableCell>
               {measureNames.map((name) => {
                 const heading = fieldHeading(messages, name);
                 return (
-                  <th key={name} scope="col" className={REPORT_TABLE_HEADER}>
+                  <TableCell key={name} scope="col" align="right">
                     {heading === null ? <MachineName value={name} /> : heading}
-                  </th>
+                  </TableCell>
                 );
               })}
-            </tr>
-          </thead>
-          <tbody>
+            </TableRow>
+          </TableHead>
+          <TableBody>
             {groups.map((group) => {
               const label = groupDisplayLabel(messages, group);
               return (
-                <tr key={JSON.stringify(group.key)} className="border-t border-border-subtle">
-                  <td className={REPORT_TABLE_CELL}>
+                <TableRow key={JSON.stringify(group.key)} className="align-top">
+                  <TableCell>
                     {label === null ? (
                       <span className="flex flex-col gap-1">
                         {keyNames.map((name) => {
@@ -858,12 +989,12 @@ function GroupTable({
                     ) : (
                       <bdi>{label}</bdi>
                     )}
-                  </td>
+                  </TableCell>
                   {measureNames.map((name) => {
                     const measure = group.measures[name];
                     const currency = groupCurrency(group);
                     return (
-                      <td key={name} className={REPORT_TABLE_CELL}>
+                      <TableCell key={name} align="right">
                         {measure === undefined ? (
                           <span className="text-text-muted" lang={locale}>
                             {translate(messages, 'reports.groups.noMeasure')}
@@ -871,15 +1002,15 @@ function GroupTable({
                         ) : (
                           <span dir="ltr">{formatReportMoney(measure, currency, locale)}</span>
                         )}
-                      </td>
+                      </TableCell>
                     );
                   })}
-                </tr>
+                </TableRow>
               );
             })}
-          </tbody>
-        </table>
-      </div>
+          </TableBody>
+        </Table>
+      </TableContainer>
     </section>
   );
 }

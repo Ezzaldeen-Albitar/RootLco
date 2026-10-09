@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
@@ -12,7 +12,27 @@ import {
   renderRtl,
 } from './render';
 import { forgetRememberedBranch } from './support/branch-switch';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 import { addDays, dayIn } from '../src/lib/branch-time';
+import { formatReportTime } from '../src/features/reports/report-labels';
+
+/**
+ * A screen inside the locale layout's Material provider, as the application
+ * renders it. The scope form's two days are the MIT date pickers since
+ * P1-32-PRE-OD-REPA (ADR-022), and a picker needs the provider.
+ */
+function withPickers(ui: React.ReactElement, locale = 'en') {
+  return (
+    <UiFoundationProvider
+      locale={locale === 'ar' ? 'ar' : 'en'}
+      text={muiTextOf(getMessages(locale === 'ar' ? 'ar' : 'en'))}
+    >
+      {ui}
+    </UiFoundationProvider>
+  );
+}
 
 /**
  * The operational overview, rendered (P1-31, FE-010 and FE-016; Owner decision
@@ -214,9 +234,25 @@ async function renderOverview(
     params: Promise.resolve({ locale }),
     searchParams: Promise.resolve(search),
   });
-  return locale === 'ar'
-    ? renderRtl(ui as React.ReactElement)
-    : renderLtr(ui as React.ReactElement);
+  const wrapped = withPickers(ui as React.ReactElement, locale);
+  return locale === 'ar' ? renderRtl(wrapped) : renderLtr(wrapped);
+}
+
+/**
+ * Types a day into a picker, part by part, in the order both catalogues write
+ * one (day, month, year). The picker is a group of spin buttons named by its
+ * label.
+ */
+async function typeDay(
+  user: ReturnType<typeof userEvent.setup>,
+  label: RegExp,
+  day: string
+): Promise<HTMLElement> {
+  const [year, month, date] = day.split('-');
+  const group = screen.getByRole('group', { name: label });
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(`${date ?? ''}${month ?? ''}${year ?? ''}`);
+  return group;
 }
 
 /** Names the period and submits. The pair is already the caller's only one. */
@@ -228,8 +264,8 @@ async function showOverview(
   const user = userEvent.setup();
   const messages = locale === 'ar' ? AR : EN;
   const label = (key: string) => new RegExp(`^${escape(messages[key] as string)}`);
-  await user.type(screen.getByLabelText(label('reports.run.from')), FROM);
-  await user.type(screen.getByLabelText(label('reports.run.to')), TO);
+  await typeDay(user, label('reports.run.from'), FROM);
+  await typeDay(user, label('reports.run.to'), TO);
   await user.click(
     screen.getByRole('button', { name: messages['reports.overview.show'] as string })
   );
@@ -406,9 +442,17 @@ describe('the period, the zone and the branch travel with the summaries', () => 
   it('states the period, the zone it was resolved in, the branch and how current it is', async () => {
     await showOverview();
     await waitFor(() => expect(runReport).toHaveBeenCalledTimes(4));
-    expect(within(fact('reports.context.from')).getByText(FROM)).toBeVisible();
-    expect(within(fact('reports.context.to')).getByText(TO)).toBeVisible();
-    expect(within(fact('reports.context.timezone')).getByText('Asia/Amman')).toBeVisible();
+    // The two days written for reading on the branch's clock, each keeping the
+    // day itself as its machine value, and the zone named for a reader with its
+    // offset — never the stored identifier, as on the report screen (DF-B5).
+    const from = screen.getByTestId('overview-period-from');
+    expect(from).toHaveTextContent(formatReportTime(FROM, 'en', 'Asia/Amman'));
+    expect(from).toHaveAttribute('dateTime', FROM);
+    const to = screen.getByTestId('overview-period-to');
+    expect(to).toHaveTextContent(formatReportTime(TO, 'en', 'Asia/Amman'));
+    expect(to).toHaveAttribute('dateTime', TO);
+    expect(screen.getByTestId('overview-zone')).toHaveTextContent('Jordan Time (GMT+3)');
+    expect(screen.queryByText('Asia/Amman')).toBeNull();
     expect(within(fact('reports.context.branch')).getByText('Named by the run')).toBeVisible();
     expect(
       within(fact('reports.context.freshness')).getByText(
@@ -616,18 +660,20 @@ describe('the working branch and today answer on arrival (route sweep B3)', () =
 
   function renderInContext(snapshot = branchSnapshot(), fixedBranchId: string | null = null) {
     return renderLtr(
-      inBranch(
-        <>
-          <BranchSwitch to="all" label="everywhere" />
-          <ReportOverviewScreen
-            locale="en"
-            messages={en}
-            scopeOptions={SCOPES as never}
-            catalogue={CATALOGUE(ALL_FOUR) as never}
-            fixedBranchId={fixedBranchId}
-          />
-        </>,
-        { snapshot }
+      withPickers(
+        inBranch(
+          <>
+            <BranchSwitch to="all" label="everywhere" />
+            <ReportOverviewScreen
+              locale="en"
+              messages={en}
+              scopeOptions={SCOPES as never}
+              catalogue={CATALOGUE(ALL_FOUR) as never}
+              fixedBranchId={fixedBranchId}
+            />
+          </>,
+          { snapshot }
+        )
       )
     );
   }
@@ -692,18 +738,20 @@ describe('the four reads are spent once per branch and period (route sweep B3 re
   const catalogue = CATALOGUE(ALL_FOUR);
 
   function tree(published: ReturnType<typeof CATALOGUE> = catalogue) {
-    return inBranch(
-      <>
-        <BranchSwitch to={BRANCH_ID} label="first" />
-        <BranchSwitch to={OTHER_BRANCH_ID} label="second" />
-        <ReportOverviewScreen
-          locale="en"
-          messages={en}
-          scopeOptions={TWO_SCOPES as never}
-          catalogue={published as never}
-        />
-      </>,
-      { snapshot: TWO_BRANCHES }
+    return withPickers(
+      inBranch(
+        <>
+          <BranchSwitch to={BRANCH_ID} label="first" />
+          <BranchSwitch to={OTHER_BRANCH_ID} label="second" />
+          <ReportOverviewScreen
+            locale="en"
+            messages={en}
+            scopeOptions={TWO_SCOPES as never}
+            catalogue={published as never}
+          />
+        </>,
+        { snapshot: TWO_BRANCHES }
+      )
     );
   }
 
@@ -1033,9 +1081,12 @@ describe('the overview reads in Arabic as Arabic', () => {
     for (const code of contract.OVERVIEW_REPORT_CODES) {
       expect(panel(code, AR)).toBeVisible();
     }
-    // The zone and the exact figures are identifiers and stay left to right in
-    // both directions; only the words around them change.
-    expect(within(container).getByText('Asia/Amman')).toBeVisible();
+    // The zone is named in Arabic with its offset, never as the identifier; the
+    // exact figures stay as the server sent them in both directions.
+    expect(within(container).getByTestId('overview-zone')).toHaveTextContent(
+      'توقيت الأردن (غرينتش+3)'
+    );
+    expect(within(container).queryByText('Asia/Amman')).toBeNull();
     expect(within(panel('technician_labor_time', AR)).getByText('5400')).toBeVisible();
   });
 });
@@ -1077,5 +1128,60 @@ describe('the overview contract is the four approved domains and their own measu
     expect(href).toBe(
       `/ar/reports/invoice_payment_summary?companyId=${COMPANY_ID}&branchId=${BRANCH_ID}&from=${FROM}&to=${TO}`
     );
+  });
+});
+
+describe('the scope form on Material UI (P1-32-PRE-OD-REPA)', () => {
+  it('spends the four reads once for two presses inside one moment', async () => {
+    await renderOverview();
+    const user = userEvent.setup();
+    await typeDay(user, labelled('reports.run.from'), FROM);
+    await typeDay(user, labelled('reports.run.to'), TO);
+    const show = screen.getByRole('button', { name: EN['reports.overview.show'] as string });
+    await act(async () => {
+      show.click();
+      show.click();
+    });
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(4));
+    await screen.findByTestId('overview-zone');
+    expect(runReport).toHaveBeenCalledTimes(4);
+  });
+
+  it('shows the overview on Enter in a day, as the native box did', async () => {
+    await renderOverview();
+    const user = userEvent.setup();
+    await typeDay(user, labelled('reports.run.from'), FROM);
+    await typeDay(user, labelled('reports.run.to'), TO);
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(4));
+    expect(runReport).toHaveBeenCalledWith(expect.objectContaining({ from: FROM, to: TO }));
+  });
+
+  it('refuses a day only partly typed as unfinished, puts the cursor there, and reads nothing', async () => {
+    await renderOverview('ar');
+    const user = userEvent.setup();
+    const named = (key: string) => new RegExp(`^${escape(AR[key] as string)}`);
+    const from = screen.getByRole('group', { name: named('reports.run.from') });
+    await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('0109');
+    await typeDay(user, named('reports.run.to'), TO);
+    await user.click(screen.getByRole('button', { name: AR['reports.overview.show'] as string }));
+    await waitFor(() => expect(from).toHaveAttribute('aria-invalid', 'true'));
+    expect(from).toHaveAccessibleDescription(
+      new RegExp(escape(AR['reports.run.dayIncomplete'] as string))
+    );
+    await waitFor(() => expect(from.contains(document.activeElement)).toBe(true));
+    expect(runReport).not.toHaveBeenCalled();
+  });
+
+  it('draws each summary as a table named by its report, in Arabic too', async () => {
+    const { container } = await showOverview('ar');
+    await waitFor(() => expect(runReport).toHaveBeenCalledTimes(4));
+    const tables = within(container).getAllByRole('table');
+    expect(tables.length).toBeGreaterThan(0);
+    for (const table of tables) {
+      expect(table).toHaveAccessibleName();
+    }
+    expect(document.documentElement.dir).toBe('rtl');
   });
 });

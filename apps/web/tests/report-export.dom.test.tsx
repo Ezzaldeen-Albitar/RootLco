@@ -1,7 +1,16 @@
-import { act, screen, waitFor } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BOTH_DIRECTIONS, messagesFor } from './render';
+import {
+  BOTH_DIRECTIONS,
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  messagesFor,
+} from './render';
+import { forgetRememberedBranch } from './support/branch-switch';
 import { ReportExportPanel } from '@/features/reports/components/ReportExportPanel';
 
 const calls = vi.hoisted(() => ({ export: vi.fn(), notify: vi.fn() }));
@@ -160,5 +169,110 @@ describe.each(BOTH_DIRECTIONS)('report export in %s', (locale, render) => {
     });
     expect(createObjectURL).not.toHaveBeenCalled();
     expect(calls.notify).not.toHaveBeenCalled();
+  });
+});
+
+/*
+ * On Material UI since P1-32-PRE-OD-REPA (ADR-022): the reason is a field that
+ * takes the cursor when it is refused, two presses inside one moment send one
+ * audited export, and a reason typed and not yet sent is unsaved work.
+ */
+describe.each(BOTH_DIRECTIONS)('report export on Material UI in %s', (locale, render) => {
+  const messages = messagesFor(locale);
+  const button = () => screen.getByRole('button', { name: messages['reports.export.download'] });
+  const reason = () =>
+    screen.getByRole('textbox', { name: new RegExp(messages['reports.export.reason']) });
+  // The question about unsaved work is the working-context provider's, and the
+  // test provider asks it in English whichever language the panel is in.
+  const provider = messagesFor('en');
+  afterEach(forgetRememberedBranch);
+
+  function panelInBranch() {
+    return render(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <ReportExportPanel
+            messages={messages}
+            reportCode={code}
+            selection={selection}
+            permitted={true}
+          />
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+  }
+
+  it('sends one export for two presses inside one moment', async () => {
+    let finish!: (value: unknown) => void;
+    calls.export.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        })
+    );
+    render(
+      <ReportExportPanel messages={messages} reportCode={code} selection={selection} permitted />
+    );
+    await userEvent.setup().type(reason(), 'Review');
+    const press = button();
+    await act(async () => {
+      press.click();
+      press.click();
+    });
+    expect(calls.export).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finish(completed);
+    });
+    await waitFor(() => expect(clicked).toHaveLength(1));
+    expect(calls.export).toHaveBeenCalledTimes(1);
+  });
+
+  it('puts the cursor on a refused reason and withdraws the complaint once it is edited', async () => {
+    render(
+      <ReportExportPanel messages={messages} reportCode={code} selection={selection} permitted />
+    );
+    const user = userEvent.setup();
+    await user.click(button());
+    const box = reason();
+    await waitFor(() => expect(box).toHaveFocus());
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(screen.getByText(messages['reports.export.reasonRequired'])).toBeVisible();
+    await user.type(box, 'R');
+    expect(box).not.toHaveAttribute('aria-invalid');
+    expect(calls.export).not.toHaveBeenCalled();
+  });
+
+  it('asks before a branch switch throws a typed reason away, and keeps it on Cancel', async () => {
+    panelInBranch();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(reason(), 'Month-end check');
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    const dialog = await screen.findByRole('alertdialog');
+    await user.click(within(dialog).getByRole('button', { name: provider['overlay.cancel'] }));
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    expect(reason()).toHaveValue('Month-end check');
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', {
+        name: provider['workingContext.discard.confirm'],
+      })
+    );
+    await waitFor(() => expect(reason()).toHaveValue(''));
+    expect(calls.export).not.toHaveBeenCalled();
+  });
+
+  it('asks nothing once the typed reason has gone out with a file', async () => {
+    panelInBranch();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.type(reason(), 'Month-end check');
+    await user.click(button());
+    await waitFor(() => expect(clicked).toHaveLength(1));
+    await user.click(screen.getByRole('button', { name: 'second' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
   });
 });
