@@ -1,9 +1,46 @@
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ReactElement } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { formatInZone, zoneLabelAt } from '@/lib/branch-time';
+import { intlLocale } from '@/lib/format';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+  inBranch,
+  messagesFor,
+  renderLtr as renderInLtr,
+  renderRtl as renderInRtl,
+} from './render';
+import {
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+} from './support/branch-switch';
+import { FAR_ZONE, expectOnClock } from './support/stock-operations';
+
+/*
+ * Every render goes under `UiFoundationProvider` and a working context, as the
+ * locale layout mounts them (the screen is on Material UI since
+ * P1-32-PRE-OD-INV2A, and a recorded moment is written on the branch's clock).
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(messagesFor(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderLtr = (ui: ReactElement) => renderInLtr(withMui(inBranch(ui), 'en'));
+const renderRtl = (ui: ReactElement) => renderInRtl(withMui(inBranch(ui, { locale: 'ar' }), 'ar'));
 
 /**
  * Unit conversions, rendered (P1-32).
@@ -287,5 +324,257 @@ describe('Arabic, right to left', () => {
     ).toBeGreaterThan(0);
     const table = await screen.findByRole('table');
     expect(within(table).getByText('4.500')).toBeVisible();
+  });
+});
+
+/**
+ * `P1-32-PRE-OD-INV5` — a conversion belongs to no branch, so its moment is
+ * written on the WORKING branch's clock, named, never on the browser's.
+ */
+describe('a conversion\u2019s moment is shown on the working branch\u2019s clock (P1-32-PRE-OD-INV5)', () => {
+  const RECORDED = '2026-09-17T12:00:00Z';
+  for (const locale of ['en', 'ar'] as const) {
+    it(`writes the moment on the working branch's clock with its name (${locale})`, async () => {
+      listUnitConversions.mockImplementation(async () =>
+        listing([conversion({ createdAt: RECORDED })])
+      );
+      const render = locale === 'en' ? renderLtr : renderRtl;
+      render(
+        inBranch(
+          <UnitConversionsScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            canManage={false}
+          />,
+          { snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: FAR_ZONE }]), locale }
+        )
+      );
+      const table = await screen.findByRole('table');
+      await waitFor(() => expect(within(table).getAllByRole('row').length).toBeGreaterThan(1));
+      expectOnClock(within(table).getAllByRole('row')[1] as HTMLElement, RECORDED, locale);
+    });
+  }
+});
+
+/* -------------------------------------------------------------------- *
+ * P1-32-PRE-OD-INV2A — on Material UI
+ * -------------------------------------------------------------------- */
+
+describe.each(['en', 'ar'] as const)('on Material UI (%s)', (locale) => {
+  const T = locale === 'en' ? EN : AR;
+  const said = (key: string) => T[key] as string;
+  const draw = (canManage = false) =>
+    (locale === 'en' ? renderLtr : renderRtl)(
+      <UnitConversionsScreen
+        locale={locale}
+        messages={locale === 'en' ? en : ar}
+        canManage={canManage}
+      />
+    );
+
+  it('writes when a line was stated on the branch clock, with the clock named beside it', async () => {
+    draw();
+    const table = await screen.findByRole('table');
+    const language = intlLocale(locale);
+    const when = formatInZone('2026-09-01T08:00:00Z', language, TEST_BRANCH.timezone as string);
+    const clock = zoneLabelAt('2026-09-01T08:00:00Z', language, TEST_BRANCH.timezone as string);
+    expect(within(table).getByText(when)).toBeTruthy();
+    expect(within(table).getByText(clock)).toBeTruthy();
+    // The moment is never inside a forced left-to-right span.
+    const forced = within(table).getByText(when).closest('[dir="ltr"]');
+    expect(forced === null || !table.contains(forced)).toBe(true);
+  });
+
+  it('says an unavailable list is unavailable, with its reference, and reads again on retry', async () => {
+    const user = userEvent.setup();
+    listUnitConversions.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'ref-9' });
+    draw();
+    const failure = await screen.findByTestId('conversions-failure');
+    expect(failure.textContent).toContain(said('inventory.conversions.unavailable'));
+    expect(failure.textContent).toContain('ref-9');
+    await user.click(within(failure).getByRole('button', { name: said('state.retry') }));
+    expect(await screen.findByRole('table')).toBeTruthy();
+    expect(listUnitConversions).toHaveBeenCalledTimes(2);
+  });
+
+  it('offers no retry after a refusal', async () => {
+    listUnitConversions.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+    draw();
+    const failure = await screen.findByTestId('conversions-failure');
+    expect(failure.textContent).toContain(said('inventory.conversions.refused'));
+    expect(within(failure).queryByRole('button', { name: said('state.retry') })).toBeNull();
+  });
+
+  it('says an empty list is empty, in its own words', async () => {
+    listUnitConversions.mockImplementation(async () => listing([]));
+    draw();
+    const empty = await screen.findByTestId('conversions-empty');
+    expect(empty.textContent).toContain(said('inventory.conversions.list.none'));
+  });
+
+  it('moves the cursor into the form when it opens, and back to the opener when saved', async () => {
+    const user = userEvent.setup();
+    setUnitConversion.mockResolvedValue({
+      state: { status: 'success', messageKey: 'inventory.conversions.set.success' },
+      created: null,
+    });
+    draw(true);
+    const opener = screen.getByRole('button', { name: said('inventory.conversions.set.open') });
+    await user.click(opener);
+    const form = await screen.findByRole('form', {
+      name: said('inventory.conversions.set.heading'),
+    });
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        within(form).getByRole('heading', { name: said('inventory.conversions.set.heading') })
+      )
+    );
+    const named = (key: string) => new RegExp(`^${escape(said(key))}`);
+    await user.selectOptions(
+      await within(form).findByLabelText(named('inventory.conversions.set.fromUom')),
+      PACK_ID
+    );
+    await user.selectOptions(
+      within(form).getByLabelText(named('inventory.conversions.set.toUom')),
+      LITRE_ID
+    );
+    const factor = within(form).getByLabelText(named('inventory.conversions.set.factor'));
+    // A text box with a numeric keypad, left to right in both languages.
+    expect(factor.getAttribute('inputmode')).toBe('decimal');
+    expect(factor.getAttribute('dir')).toBe('ltr');
+    await user.type(factor, '4.500');
+    await user.type(
+      within(form).getByLabelText(named('inventory.conversions.set.sourceReference')),
+      'Label'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: said('inventory.conversions.set.submit') })
+    );
+    await waitFor(() => expect(setUnitConversion).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        screen.queryByRole('form', { name: said('inventory.conversions.set.heading') })
+      ).toBeNull()
+    );
+    expect(document.activeElement).toBe(opener);
+  });
+
+  it('marks a refused factor on its own box and keeps what was typed', async () => {
+    const user = userEvent.setup();
+    draw(true);
+    await user.click(screen.getByRole('button', { name: said('inventory.conversions.set.open') }));
+    const form = await screen.findByRole('form', {
+      name: said('inventory.conversions.set.heading'),
+    });
+    const named = (key: string) => new RegExp(`^${escape(said(key))}`);
+    const factor = within(form).getByLabelText(named('inventory.conversions.set.factor'));
+    await user.type(factor, '0');
+    await user.click(
+      within(form).getByRole('button', { name: said('inventory.conversions.set.submit') })
+    );
+    await waitFor(() => expect(factor.getAttribute('aria-invalid')).toBe('true'));
+    expect(factor).toHaveAccessibleDescription(
+      new RegExp(escape(said('inventory.conversions.set.factorFormat')))
+    );
+    expect(factor).toHaveValue('0');
+    expect(setUnitConversion).not.toHaveBeenCalled();
+  });
+});
+
+describe('one write per press, held by the screen while it is answered', () => {
+  /*
+   * Both presses go inside ONE act(), so the second arrives before React has
+   * re-rendered the disabled button: what is tested is the screen's own hold.
+   */
+  const twice = (button: HTMLElement) =>
+    act(() => {
+      button.click();
+      button.click();
+    });
+
+  it('stating a conversion', async () => {
+    const user = userEvent.setup();
+    let open: (value: unknown) => void = () => undefined;
+    setUnitConversion.mockReturnValue(new Promise((resolve) => (open = resolve)));
+    renderScreen({ canManage: true });
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.conversions.set.open'] as string })
+    );
+    const form = await setForm();
+    await user.selectOptions(
+      await within(form).findByLabelText(labelled('inventory.conversions.set.fromUom')),
+      PACK_ID
+    );
+    await user.selectOptions(
+      within(form).getByLabelText(labelled('inventory.conversions.set.toUom')),
+      LITRE_ID
+    );
+    await user.type(within(form).getByLabelText(labelled('inventory.conversions.set.factor')), '2');
+    await user.type(
+      within(form).getByLabelText(labelled('inventory.conversions.set.sourceReference')),
+      'Label'
+    );
+    twice(
+      within(form).getByRole('button', { name: EN['inventory.conversions.set.submit'] as string })
+    );
+    expect(setUnitConversion).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      open({
+        state: { status: 'success', messageKey: 'inventory.conversions.set.success' },
+        created: null,
+      })
+    );
+    expect(setUnitConversion).toHaveBeenCalledTimes(1);
+  });
+
+  it('retiring a line', async () => {
+    let open: (value: unknown) => void = () => undefined;
+    retireUnitConversion.mockReturnValue(new Promise((resolve) => (open = resolve)));
+    renderScreen({ canManage: true });
+    twice(
+      await screen.findByRole('button', {
+        name: EN['inventory.conversions.retire.action'] as string,
+      })
+    );
+    expect(retireUnitConversion).toHaveBeenCalledTimes(1);
+    await act(async () =>
+      open({
+        state: { status: 'success', messageKey: 'inventory.conversions.retire.success' },
+        created: null,
+      })
+    );
+    expect(retireUnitConversion).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('a half-stated conversion and a branch switch', () => {
+  afterEach(forgetRememberedBranch);
+
+  it('asks before switching; staying keeps what was typed', async () => {
+    const user = userEvent.setup();
+    renderInLtr(
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            <UnitConversionsScreen locale="en" messages={en} canManage />
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        ),
+        'en'
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.conversions.set.open'] as string })
+    );
+    const form = await setForm();
+    const factor = within(form).getByLabelText(labelled('inventory.conversions.set.factor'));
+    await user.type(factor, '3');
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(factor).toHaveValue('3');
   });
 });

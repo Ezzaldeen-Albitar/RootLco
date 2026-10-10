@@ -241,6 +241,21 @@ export interface ItemRow {
   readonly recordVersion: number;
 }
 
+/** One step of an item's category chain, as its page header names it. */
+export interface CategoryStepRow {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
+/** `readItemDetail` — the item, its unit's name, whether it is archived, its category chain. */
+export interface ItemDetailRow extends ItemRow {
+  readonly uomName: string;
+  readonly archived: boolean;
+  /** Top level first; the item's own category last. */
+  readonly categoryPath: readonly CategoryStepRow[];
+}
+
 /** One item category — tenant-wide, like the item it files. */
 export interface ItemCategoryRow {
   readonly id: string;
@@ -2168,6 +2183,60 @@ export class InventoryRepository extends Repository {
       [context.principal.tenantId, itemId]
     );
     return row ? toItem(row) : null;
+  }
+
+  /**
+   * One item with what its own page header says (P1-32-PRE-OD-INV2A): the unit's
+   * name beside its code, whether it is archived, and its category's chain of
+   * ancestors, top level first.
+   *
+   * The chain is walked in SQL, inside the tenant, and bounded: the database
+   * already refuses a parent cycle (`inv.guard_item_category_no_cycle`), and the
+   * depth bound and the `seen` array keep this walk finite even if one existed.
+   * An ANCESTOR is followed whether or not it is soft-deleted: the parent link
+   * still stands (the cycle guard follows it the same way), and stopping there
+   * would answer a shorter path that reads as complete
+   * (P1-32-PRE-OD-INVR). The item's own category is still read only while live.
+   * No cost and no price: `inv.item_cost_details` and the sale prices are not
+   * read here.
+   */
+  public async readItemDetail(db: DbHandle, itemId: string): Promise<ItemDetailRow | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<ItemSql & { uom_name: string; archived: boolean }>(
+      db,
+      `SELECT ${ITEM_COLUMNS}, u.name AS uom_name, (i.archived_at IS NOT NULL) AS archived
+         FROM inv.item_master i
+         JOIN inv.units_of_measure u ON u.id = i.uom_id
+        WHERE i.tenant_id = $1 AND i.id = $2 AND i.deleted_at IS NULL`,
+      [context.principal.tenantId, itemId]
+    );
+    if (!row) return null;
+    const chain = await this.run<{ id: string; code: string; name: string; depth: number }>(
+      db,
+      `WITH RECURSIVE chain (id, code, name, parent_category_id, depth, seen) AS (
+         SELECT c.id, c.code, c.name, c.parent_category_id, 0, ARRAY[c.id]
+           FROM inv.item_categories c
+          WHERE c.tenant_id = $1 AND c.id = $2 AND c.deleted_at IS NULL
+         UNION ALL
+         SELECT p.id, p.code, p.name, p.parent_category_id, chain.depth + 1, chain.seen || p.id
+           FROM chain
+           JOIN inv.item_categories p
+             ON p.tenant_id = $1 AND p.id = chain.parent_category_id
+          WHERE chain.depth < 64 AND NOT p.id = ANY(chain.seen)
+       )
+       SELECT id, code, name, depth FROM chain ORDER BY depth DESC`,
+      [context.principal.tenantId, row.item_category_id]
+    );
+    return {
+      ...toItem(row),
+      uomName: row.uom_name,
+      archived: row.archived,
+      categoryPath: chain.rows.map((category) => ({
+        id: category.id,
+        code: category.code,
+        name: category.name,
+      })),
+    };
   }
 
   // -------------------------------------------------------------------------

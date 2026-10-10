@@ -69,6 +69,7 @@ export default async function DepartmentsPage({
       <PageBody>
         <DepartmentsScreen
           messages={messages}
+          locale={locale}
           branches={branches}
           companies={companies?.status === 'ok' ? companies.data : []}
           canManage={holds(session.permissions, PERMISSIONS.departmentManage)}

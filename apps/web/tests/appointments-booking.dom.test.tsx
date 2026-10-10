@@ -802,6 +802,43 @@ describe('a branch whose clock is not published takes no moment', () => {
     ).toBeNull();
     expect(submit()).toBeDisabled();
   });
+
+  /*
+   * P1-32-PRE-OD-INVR (records the INV1C change): a zone NAME this browser does
+   * not recognise is no clock either. `workingZone` refuses it exactly as a
+   * missing zone, so the window is refused, no picker is drawn on the unknown
+   * name, and the booking cannot be sent — in both languages.
+   */
+  it.each([
+    ['en', en],
+    ['ar', ar],
+  ] as const)(
+    'refuses the window on a zone name the browser does not recognise (%s)',
+    (locale, text) => {
+      const render = locale === 'ar' ? renderRtl : renderLtr;
+      render(
+        withMui(
+          inBranch(
+            <AppointmentBookingScreen
+              locale={locale}
+              messages={text}
+              types={TYPES}
+              channels={CHANNELS}
+            />,
+            { locale, snapshot: branchSnapshot([{ ...TEST_BRANCH, timezone: 'Mars/Base' }]) }
+          ),
+          locale
+        )
+      );
+      expect(screen.getByTestId('appointment-window-refused')).toHaveTextContent(
+        text['dateField.zoneUnknown']
+      );
+      expect(
+        screen.queryByRole('group', { name: new RegExp(`^${text['appointments.window.from']}`) })
+      ).toBeNull();
+      expect(screen.getByRole('button', { name: text['appointments.book.submit'] })).toBeDisabled();
+    }
+  );
 });
 
 describe('the booking is unsaved work until it is stored', () => {

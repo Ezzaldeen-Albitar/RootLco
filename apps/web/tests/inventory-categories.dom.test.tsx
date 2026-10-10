@@ -63,6 +63,8 @@ vi.mock('@/features/authentication/api/session', () => ({
 }));
 
 const { useAllItemCategories } = await import('@/features/inventory/components/CategoryTree');
+const { CATEGORY_PAGE_BUDGET, buildCategoryForest, pathOf, readAllCategories, searchCategories } =
+  await import('@/features/inventory/category-tree');
 const { CategoryTreePicker } = await import('@/features/inventory/components/CategoryTreePicker');
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const CategoriesPage = (await import('@/app/[locale]/(dashboard)/inventory/categories/page'))
@@ -371,6 +373,28 @@ describe.each(['en', 'ar'] as const)('the category tree (%s)', (locale) => {
     );
   });
 
+  it('pages the items of the chosen category with the server cursor, keeping the category', async () => {
+    const second = { ...item, id: 'c0000000-0000-4000-8000-0000000000f2', sku: 'BRK-002' };
+    listItems.mockImplementation(
+      async (_criteria: unknown, _request: unknown, cursor: string | null) =>
+        cursor === null
+          ? { ...itemPage([item]), nextCursor: 'cur-2', hasMore: true }
+          : itemPage([second])
+    );
+    await openPage(locale);
+    await treeReady();
+    await user().click(labelOf('tools', 'Tools'));
+    const grid = await screen.findByTestId('categories-items-grid');
+    await within(grid).findByRole('link', { name: item.sku });
+    const first = listItems.mock.calls.length;
+    await user().click(screen.getByRole('button', { name: t('table.nextPage') }));
+    await waitFor(() => expect(listItems.mock.calls.length).toBeGreaterThan(first));
+    const call = listItems.mock.calls.at(-1);
+    expect(call?.[0]).toEqual({ categoryId: idOf(6) });
+    expect(call?.[2]).toBe('cur-2');
+    expect(await within(grid).findByRole('link', { name: 'BRK-002' })).toBeTruthy();
+  });
+
   it('says a category with no items has none', async () => {
     await openPage(locale);
     await treeReady();
@@ -454,6 +478,35 @@ function PickerHarness({
   );
 }
 
+function FieldHarness({
+  locale,
+  onChange,
+  clearLabel,
+  required,
+}: {
+  readonly locale: 'en' | 'ar';
+  readonly onChange: (id: string) => void;
+  readonly clearLabel?: string | null;
+  readonly required?: boolean;
+}) {
+  const categories = useAllItemCategories();
+  const [value, setValue] = useState('');
+  return (
+    <CategoryTreePicker
+      messages={messagesFor(locale)}
+      categories={categories}
+      label="Category"
+      value={value}
+      clearLabel={clearLabel}
+      required={required}
+      onChange={(next) => {
+        setValue(next);
+        onChange(next);
+      }}
+    />
+  );
+}
+
 describe.each(['en', 'ar'] as const)('the category picker (%s)', (locale) => {
   const t = (key: string): string => {
     const said = CATALOGUES[locale][key];
@@ -497,5 +550,107 @@ describe.each(['en', 'ar'] as const)('the category picker (%s)', (locale) => {
     expect(await screen.findByText(t('inventory.categories.picker.refused'))).toBeTruthy();
     expect(screen.queryByRole('tree')).toBeNull();
     expect(screen.queryByRole('button', { name: t('state.retry') })).toBeNull();
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * The picker, as a form field (P1-32-PRE-OD-INV2A, the INV2B review)
+ * ------------------------------------------------------------------ */
+
+describe.each(['en', 'ar'] as const)('the category picker as a form field (%s)', (locale) => {
+  const t = (key: string): string => {
+    const said = CATALOGUES[locale][key];
+    if (said === undefined) throw new Error(`no message ${key}`);
+    return said;
+  };
+
+  it('says the categories are unavailable inside a group named by its field, and a retry walks every page again', async () => {
+    listItemCategoryPage.mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr-u' });
+    RENDER[locale](<FieldHarness locale={locale} onChange={vi.fn()} />);
+    const group = await screen.findByRole('group', { name: 'Category' });
+    expect(within(group).getByText(t('inventory.categories.picker.unavailable'))).toBeTruthy();
+    await userEvent.setup().click(within(group).getByRole('button', { name: t('state.retry') }));
+    expect(await screen.findByRole('tree', { name: 'Category' })).toBeTruthy();
+    expect(listItemCategoryPage).toHaveBeenCalledTimes(2);
+    expect(listItemCategoryPage.mock.calls.map((call) => call[0])).toEqual([null, null]);
+  });
+
+  it('while reading, says so inside a group named by its field', async () => {
+    listItemCategoryPage.mockReturnValue(new Promise(() => undefined));
+    RENDER[locale](<FieldHarness locale={locale} onChange={vi.fn()} required />);
+    const group = screen.getByRole('group', { name: 'Category' });
+    expect(within(group).getByRole('status').textContent).toContain(t('state.loading'));
+    expect(screen.queryByRole('tree')).toBeNull();
+  });
+
+  it('draws no "No category" row for a required field that passes clearLabel null', async () => {
+    RENDER[locale](<FieldHarness locale={locale} onChange={vi.fn()} clearLabel={null} required />);
+    const tree = await screen.findByRole('tree', { name: 'Category' });
+    expect(within(tree).queryByText(t('inventory.categories.picker.none'))).toBeNull();
+    expect(tree.getAttribute('aria-required')).toBe('true');
+    // The four top-level categories, and no row before them.
+    expect(within(tree).getAllByRole('treeitem')).toHaveLength(4);
+  });
+
+  it('says an empty catalogue is empty, in the description of the field', async () => {
+    serve([]);
+    RENDER[locale](<FieldHarness locale={locale} onChange={vi.fn()} />);
+    const tree = await screen.findByRole('tree', { name: 'Category' });
+    const described = (tree.getAttribute('aria-describedby') ?? '')
+      .split(' ')
+      .map((id) => document.getElementById(id)?.textContent ?? '')
+      .join(' ');
+    expect(described).toContain(t('inventory.categories.none'));
+  });
+
+  it('chooses with the keyboard: Down and Enter open a parent and choose a leaf, Space chooses', async () => {
+    const onChange = vi.fn();
+    RENDER[locale](<FieldHarness locale={locale} onChange={onChange} />);
+    const tree = await screen.findByRole('tree', { name: 'Category' });
+    const keys = userEvent.setup();
+    const none = within(tree).getAllByRole('treeitem')[0] as HTMLElement;
+    act(() => none.focus());
+    await keys.keyboard('{ArrowDown}');
+    // Enter on a row with children opens it rather than choosing it.
+    await keys.keyboard('{Enter}');
+    await within(tree).findByText('Pads (front_pads)');
+    await keys.keyboard('{ArrowDown}');
+    await keys.keyboard('{Enter}');
+    expect(onChange).toHaveBeenLastCalledWith(idOf(2));
+    await keys.keyboard('{ArrowDown}');
+    await keys.keyboard(' ');
+    expect(onChange).toHaveBeenLastCalledWith(idOf(3));
+  });
+});
+
+/* ------------------------------------------------------------------ *
+ * category-tree.ts, pure
+ * ------------------------------------------------------------------ */
+
+describe('category-tree.ts', () => {
+  it('stops after the page budget and says the list was cut short', async () => {
+    let served = 0;
+    const reader = vi.fn(async () => {
+      served += 1;
+      return page([category(served, `c_${served}`, `C ${served}`, null)], `p${served + 1}`);
+    });
+    const result = await readAllCategories(reader);
+    expect(reader).toHaveBeenCalledTimes(CATEGORY_PAGE_BUDGET);
+    expect(result).toMatchObject({ status: 'ok', truncated: true, pages: CATEGORY_PAGE_BUDGET });
+    expect(result !== null && result.status === 'ok' ? result.items.length : -1).toBe(
+      CATEGORY_PAGE_BUDGET
+    );
+  });
+
+  it('draws an A -> B -> A cycle with exactly one misplaced member, and a search ends', () => {
+    const forest = buildCategoryForest([category(1, 'a', 'A', 2), category(2, 'b', 'B', 1)]);
+    expect([...forest.misplaced]).toEqual([idOf(1)]);
+    expect(pathOf(forest, idOf(2)).map((row) => row.name)).toEqual(['A', 'B']);
+    expect(pathOf(forest, idOf(1)).map((row) => row.name)).toEqual(['A']);
+    const found = searchCategories(forest, 'b', 'en');
+    expect([...found.matches]).toEqual([idOf(2)]);
+    expect([...found.visible].sort()).toEqual([idOf(1), idOf(2)].sort());
+    const wide = searchCategories(forest, '', 'en');
+    expect(wide.visible.size).toBe(2);
   });
 });

@@ -2,6 +2,7 @@ import { notFound } from 'next/navigation';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { requireSession } from '@/features/authentication/api/session';
 import { readTenant } from '@/features/administration/organization/api';
+import { OrgReadFailure } from '@/features/administration/organization/components/OrgReadFailure';
 import { TenantForm } from '@/features/administration/organization/components/TenantForm';
 import { readReferenceValues } from '@/features/administration/organization/reference-values';
 import {
@@ -34,6 +35,11 @@ import { pageMetadata } from '@/lib/page-metadata';
  * holds and the interface can be shown in. This screen still does not manage the
  * platform's language registry — it has no write to it — and the backend's "not
  * a registered platform value" verdict stays the authority.
+ *
+ * On Material UI (ADR-022, P1-32-PRE-OD-ADM1): the default is the workspace
+ * form's Material fields, and a workspace read that did not answer is the shared
+ * Material state — a refusal, an ended session, or an outage with Try again —
+ * rather than one line that said "unavailable" for all of them.
  */
 export default async function LanguagesPage({
   params,
@@ -99,13 +105,12 @@ export default async function LanguagesPage({
                 referenceUnavailable={referenceUnavailable}
               />
             ) : (
-              <p role="status" className="text-body text-text-secondary">
-                {t(
-                  tenant.status === 'denied'
-                    ? 'state.denied.description'
-                    : 'state.unavailable.description'
-                )}
-              </p>
+              <OrgReadFailure
+                messages={messages}
+                locale={locale}
+                status={tenant.status === 'ok' ? 'error' : tenant.status}
+                correlationId={tenant.correlationId}
+              />
             )}
           </Panel>
         </div>

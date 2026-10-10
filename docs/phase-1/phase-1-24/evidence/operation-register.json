@@ -1,9 +1,9 @@
 {
   "generatedBy": "scripts/p1-24-operation-register.mjs",
   "totals": {
-    "operations": 524,
-    "openapiPaths": 413,
-    "openapiOperations": 524,
+    "operations": 525,
+    "openapiPaths": 414,
+    "openapiOperations": 525,
     "openapiSchemas": 3,
     "events": 50,
     "eventsProduced": 47,
@@ -14,7 +14,7 @@
     "auditActions": 306
   },
   "counts": {
-    "Covered": 524
+    "Covered": 525
   },
   "operations": [
     {
@@ -5114,6 +5114,44 @@
       ],
       "classification": "Covered",
       "file": "apps/api/src/app/api/v1/items/route.ts"
+    },
+    {
+      "id": "inv.item-detail",
+      "domain": "inventory",
+      "method": "GET",
+      "route": "/api/v1/items/{itemId}",
+      "permissions": ["inv.item.read"],
+      "public": false,
+      "scope": "tenant",
+      "transaction": "read (no business mutation)",
+      "auditClass": "none",
+      "auditAction": null,
+      "idempotent": false,
+      "versionGuarded": false,
+      "openapi": "GET /api/v1/items/{itemId}",
+      "documentedResponses": ["200", "401", "403", "404", "422", "429", "500"],
+      "requiredEvidence": [
+        "route",
+        "service",
+        "success",
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation"
+      ],
+      "providedEvidence": [
+        "authorization",
+        "cross-tenant",
+        "denial",
+        "isolation",
+        "route",
+        "service",
+        "success"
+      ],
+      "missingEvidence": [],
+      "tests": ["tests/backend/od-inventory-item-detail.test.ts"],
+      "classification": "Covered",
+      "file": "apps/api/src/app/api/v1/items/[itemId]/route.ts"
     },
     {
       "id": "inv.item-identifier-add",

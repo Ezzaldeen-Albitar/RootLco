@@ -2,13 +2,27 @@
 
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useId, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { DataTable, type Column } from '@/components/data-table/DataTable';
+import {
+  OperationalGrid,
+  type OperationalColumn,
+  type RowAction,
+} from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
 import { useServerTable } from '@/components/data-table/use-server-table';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiEmptyState, MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import {
   workOrderStateMessageKey,
   type WorkOrderListEntry,
@@ -27,7 +41,6 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
-import { formatDateTime } from '@/lib/format';
 
 import {
   cancelMaterialRequest,
@@ -57,9 +70,7 @@ import {
   EMPTY_PAIR,
   LocationPicker,
   OutcomeNote,
-  PRIMARY_BUTTON,
   Qty,
-  SECONDARY_BUTTON,
   UUID,
   canNameBranch,
   useBranches,
@@ -67,6 +78,13 @@ import {
   type BranchPair,
 } from './shared';
 import { ItemPicker, REFERENCE, ReferenceBox, withoutKey, type ItemChoice } from './pickers';
+import {
+  StockMoment,
+  refusalState,
+  useFocusOnOpen,
+  useReturnFocus,
+  useStockDisplayZone,
+} from './stock-operations';
 
 /**
  * The parts of one work order (P1-30, `W5`, FE-011 issues and FE-012 returns).
@@ -124,6 +142,20 @@ import { ItemPicker, REFERENCE, ReferenceBox, withoutKey, type ItemChoice } from
  * the vehicle capacity, or request an exception for the excess. The refusal is
  * translated in `api.ts` from `materialDraw.reason`, which is what the server
  * publishes; nothing here guesses why a draw failed.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-INV5`)
+ *
+ * Every control this screen draws itself is a shared wrapper: the job is
+ * `WorkOrderPicker` on `EntityPicker`; the quantities are `FormNumberField`
+ * (the string typed is the string sent), the selects `FormSelectField`, the
+ * reasons `FormTextField`; every button is Material's. The issues of the order
+ * are `OperationalGrid` over the same cursor-paged read (server paging, no
+ * count, "Page N"), Return its row action; the required parts are Material's
+ * table, since that read answers the job's whole list. Each issue's moment is
+ * written on the branch's clock and names it (`StockMoment`), never on the
+ * browser's. Each write is held to one at a time by a ref set before anything
+ * is awaited, and a form that opens takes the cursor and gives it back when it
+ * closes. What is read, sent, authorized and refused is unchanged.
  */
 
 /** What a write left to say, with the figures the server stated. */
@@ -216,6 +248,9 @@ export function PartsScreen({
         : null,
     [workOrderCompanyId, workOrderBranchId]
   );
+  // The two toggles take the cursor back when the form they opened closes.
+  const reserveToggle = useReturnFocus<HTMLButtonElement>(drawing === 'reserve');
+  const issueToggle = useReturnFocus<HTMLButtonElement>(drawing === 'issue');
 
   if (workOrderId === null) {
     return (
@@ -311,6 +346,7 @@ export function PartsScreen({
         canApprove={canApproveMaterial}
         canDecideException={canDecideMaterialException}
         canReadWorkOrder={canReadWorkOrder}
+        canReadItems={canReadItems}
         chosenId={requirement?.id ?? null}
         onChoose={(chosen) => {
           setRequirement(chosen);
@@ -326,9 +362,10 @@ export function PartsScreen({
 
       {canOperate ? (
         <div className="flex flex-wrap items-center gap-3">
-          <button
+          <Button
+            ref={reserveToggle}
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             aria-expanded={drawing === 'reserve'}
             onClick={() => {
               setDrawing((open) => (open === 'reserve' ? null : 'reserve'));
@@ -336,10 +373,11 @@ export function PartsScreen({
             }}
           >
             {translate(messages, 'inventory.parts.reserve.open')}
-          </button>
-          <button
+          </Button>
+          <Button
+            ref={issueToggle}
             type="button"
-            className={SECONDARY_BUTTON}
+            variant="outlined"
             aria-expanded={drawing === 'issue'}
             onClick={() => {
               setDrawing((open) => (open === 'issue' ? null : 'issue'));
@@ -347,7 +385,7 @@ export function PartsScreen({
             }}
           >
             {translate(messages, 'inventory.issue.open')}
-          </button>
+          </Button>
         </div>
       ) : null}
 
@@ -428,6 +466,7 @@ export function PartsScreen({
         locale={locale}
         messages={messages}
         workOrderId={workOrderId}
+        target={target}
         canOperate={canOperate}
         onReturned={(echo) =>
           changed({
@@ -588,6 +627,7 @@ function ChooseWorkOrder({
           canSearch
           needsBranchId={needsBranchId}
           offersBranchChooser
+          material
         />
       ) : (
         <ReferenceBox
@@ -605,14 +645,14 @@ function ChooseWorkOrder({
         />
       )}
       <div>
-        <button
+        <Button
           type="submit"
-          className={PRIMARY_BUTTON}
+          variant="contained"
           disabled={blocked}
           aria-describedby={blocked ? needsBranchId : undefined}
         >
           {translate(messages, 'inventory.parts.choose.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -673,24 +713,50 @@ function RequiredPartsPanel({
   readonly canOperate: boolean;
   readonly onIssue: (prefill: IssuePrefill) => void;
 }) {
-  const [items, setItems] = useState<readonly RequiredPart[] | null>(null);
-  const [refused, setRefused] = useState<string | null>(null);
+  /*
+   * The answer, stamped with the attempt it answers, so "Try again" shows the
+   * wait again rather than the old failure, and the wait is derived rather
+   * than set inside the effect.
+   */
+  const [attempt, setAttempt] = useState(0);
+  const [answer, setAnswer] = useState<{
+    readonly attempt: number;
+    readonly items: readonly RequiredPart[] | null;
+    readonly failure: {
+      readonly status: 'denied' | 'expired' | 'unavailable';
+      readonly messageKey: keyof Messages;
+      readonly correlationId: string | null;
+    } | null;
+  } | null>(null);
   useEffect(() => {
     let live = true;
     void listRequiredParts(workOrderId).then((state) => {
       if (!live) return;
-      if (state.status === 'ok') setItems(state.data.items);
-      else
-        setRefused(
+      if (state.status === 'ok') {
+        setAnswer({ attempt, items: state.data.items, failure: null });
+        return;
+      }
+      const correlationId = state.correlationId ?? null;
+      setAnswer({
+        attempt,
+        items: null,
+        failure:
           state.status === 'denied'
-            ? 'inventory.parts.required.refused'
-            : 'inventory.parts.required.unavailable'
-        );
+            ? { status: 'denied', messageKey: 'inventory.parts.required.refused', correlationId }
+            : state.status === 'expired'
+              ? { status: 'expired', messageKey: 'state.expired.message', correlationId }
+              : {
+                  status: 'unavailable',
+                  messageKey: 'inventory.parts.required.unavailable',
+                  correlationId,
+                },
+      });
     });
     return () => {
       live = false;
     };
-  }, [workOrderId]);
+  }, [workOrderId, attempt]);
+  const current = answer !== null && answer.attempt === attempt ? answer : null;
 
   return (
     <section
@@ -704,85 +770,94 @@ function RequiredPartsPanel({
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.parts.required.explain')}
       </p>
-      {refused ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, refused)}
-        </p>
-      ) : items === null ? (
-        <p className="text-caption text-text-muted">{translate(messages, 'state.loading')}</p>
-      ) : items.length === 0 ? (
-        <p className="py-4 text-center text-body text-text-secondary">
-          {translate(messages, 'inventory.parts.required.none')}
-        </p>
+      {current === null ? (
+        <MuiLoadingState messages={messages} variant="inline" />
+      ) : current.failure !== null ? (
+        <MuiReadFailureState
+          messages={messages}
+          locale={locale}
+          status={current.failure.status}
+          correlationId={current.failure.correlationId}
+          // A retry only where trying again can change the answer (S2).
+          onRetry={
+            current.failure.status === 'unavailable' ? () => setAttempt((n) => n + 1) : undefined
+          }
+          descriptionKey={current.failure.messageKey}
+        />
+      ) : current.items === null || current.items.length === 0 ? (
+        <MuiEmptyState messages={messages} descriptionKey="inventory.parts.required.none" />
       ) : (
-        <table className="w-full text-body">
-          <caption className="sr-only">
-            {translate(messages, 'inventory.parts.required.caption')}
-          </caption>
-          <thead>
-            <tr className="text-start text-caption text-text-muted">
-              <th scope="col" className="px-3 py-2 text-start">
-                {translate(messages, 'inventory.parts.required.column.description')}
-              </th>
-              <th scope="col" className="px-3 py-2 text-end">
-                {translate(messages, 'inventory.parts.required.column.quantity')}
-              </th>
-              <th scope="col" className="px-3 py-2 text-start">
-                {translate(messages, 'inventory.parts.required.column.unit')}
-              </th>
-              <th scope="col" className="px-3 py-2 text-start">
-                {translate(messages, 'inventory.parts.required.column.item')}
-              </th>
-              <th scope="col" className="px-3 py-2 text-start">
-                {translate(messages, 'inventory.parts.required.column.actions')}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((part) => (
-              <tr key={part.id} className="border-t border-border">
-                <td className="px-3 py-2">
-                  <bdi>{part.description}</bdi>
-                </td>
-                <td className="px-3 py-2 text-end tabular-nums">
-                  <Qty value={part.quantity} />
-                </td>
-                <td className="px-3 py-2">
-                  <bdi>{part.unit}</bdi>
-                </td>
-                <td className="px-3 py-2">
-                  {part.reference ? (
-                    <code className="font-mono text-caption" dir="ltr">
-                      {part.reference}
-                    </code>
-                  ) : (
-                    <span className="text-text-muted">
-                      {translate(messages, 'inventory.parts.required.noItem')}
-                    </span>
-                  )}
-                </td>
-                <td className="px-3 py-2">
-                  {canOperate && part.reference ? (
-                    <button
-                      type="button"
-                      className={SECONDARY_BUTTON}
-                      onClick={() =>
-                        onIssue({
-                          itemId: part.reference as string,
-                          itemLabel: part.description,
-                          requiredPartRef: part.id,
-                          quantity: part.quantity,
-                        })
-                      }
-                    >
-                      {translate(messages, 'inventory.parts.required.issueThis')}
-                    </button>
-                  ) : null}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <TableContainer>
+          <Table size="small">
+            <caption className="sr-only">
+              {translate(messages, 'inventory.parts.required.caption')}
+            </caption>
+            <TableHead>
+              <TableRow>
+                <TableCell scope="col">
+                  {translate(messages, 'inventory.parts.required.column.description')}
+                </TableCell>
+                <TableCell scope="col" align="right">
+                  {translate(messages, 'inventory.parts.required.column.quantity')}
+                </TableCell>
+                <TableCell scope="col">
+                  {translate(messages, 'inventory.parts.required.column.unit')}
+                </TableCell>
+                <TableCell scope="col">
+                  {translate(messages, 'inventory.parts.required.column.item')}
+                </TableCell>
+                <TableCell scope="col">
+                  {translate(messages, 'inventory.parts.required.column.actions')}
+                </TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {current.items.map((part) => (
+                <TableRow key={part.id}>
+                  <TableCell>
+                    <bdi>{part.description}</bdi>
+                  </TableCell>
+                  <TableCell align="right">
+                    <Qty value={part.quantity} />
+                  </TableCell>
+                  <TableCell>
+                    <bdi>{part.unit}</bdi>
+                  </TableCell>
+                  <TableCell>
+                    {part.reference ? (
+                      <code className="font-mono text-caption" dir="ltr">
+                        {part.reference}
+                      </code>
+                    ) : (
+                      <span className="text-text-muted">
+                        {translate(messages, 'inventory.parts.required.noItem')}
+                      </span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {canOperate && part.reference ? (
+                      <Button
+                        type="button"
+                        variant="outlined"
+                        size="small"
+                        onClick={() =>
+                          onIssue({
+                            itemId: part.reference as string,
+                            itemLabel: part.description,
+                            requiredPartRef: part.id,
+                            quantity: part.quantity,
+                          })
+                        }
+                      >
+                        {translate(messages, 'inventory.parts.required.issueThis')}
+                      </Button>
+                    ) : null}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       )}
     </section>
   );
@@ -962,8 +1037,13 @@ function IssueForm({
       ? ''
       : form.requiredPartRef;
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [refusals, setRefusals] = useState(0);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One issue in flight at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
+  const formRef = useFocusFirstInvalid(refusalState(errors, refusals, outcome));
+  const headingRef = useFocusOnOpen<HTMLHeadingElement>();
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -971,6 +1051,7 @@ function IssueForm({
   };
 
   const submit = async () => {
+    if (sending.current) return;
     const found: Record<string, string> = {};
     // Not reachable through the submit button, which stays disabled without a
     // requirement. Stated anyway: a form that can be submitted by pressing Enter
@@ -998,8 +1079,12 @@ function IssueForm({
       found['requiredPartRef'] = 'inventory.parts.requiredPartReference.format';
     }
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0) {
+      setRefusals((n) => n + 1);
+      return;
+    }
 
+    sending.current = true;
     setBusy(true);
     const result = await createIssue({
       workOrderId,
@@ -1010,6 +1095,7 @@ function IssueForm({
       ...(form.reservationId ? { reservationId: form.reservationId } : {}),
       ...(requiredPartRef ? { requiredPartRef } : {}),
     });
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -1021,6 +1107,7 @@ function IssueForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -1030,7 +1117,9 @@ function IssueForm({
       className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-2"
     >
       <h2
+        ref={headingRef}
         id="parts-issue-heading"
+        tabIndex={-1}
         className="text-body font-medium text-text-primary sm:col-span-2"
       >
         {translate(messages, 'inventory.issue.heading')}
@@ -1061,7 +1150,7 @@ function IssueForm({
           />
         </>
       ) : null}
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'inventory.issue.reservation')}
         description={
           reservationsRefused
@@ -1073,8 +1162,7 @@ function IssueForm({
             : translate(messages, 'inventory.issue.reservationHelp')
         }
         value={form.reservationId}
-        onChange={(event) => {
-          const id = event.target.value;
+        onChange={(id) => {
           const reservation = reservations?.find((row) => row.id === id);
           if (reservation) {
             // The reservation names the item by its stock code, which is what the
@@ -1142,14 +1230,12 @@ function IssueForm({
         onChange={(next) => setForm((f) => ({ ...f, locationId: next }))}
         error={errorFor('locationId')}
       />
-      <TextField
+      <FormNumberField
         label={translate(messages, 'inventory.issue.quantity')}
         description={translate(messages, 'inventory.reserve.quantityHelp')}
         required
-        inputMode="decimal"
-        dir="ltr"
         value={form.quantity}
-        onChange={(event) => setForm((f) => ({ ...f, quantity: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, quantity: next }))}
         error={errorFor('quantity')}
       />
       {carriedPending ? (
@@ -1173,18 +1259,19 @@ function IssueForm({
             ) : null}
           </p>
           <div>
-            <button
+            <Button
               type="button"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
+              size="small"
               onClick={() => setForm((f) => ({ ...f, requiredPartRef: '' }))}
             >
               {translate(messages, 'inventory.issue.requiredPartUnlink')}
-            </button>
+            </Button>
           </div>
         </div>
       ) : canReadWorkOrder ? (
         <div className="flex flex-col gap-1.5">
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'inventory.issue.requiredPart')}
             description={
               requiredParts.refused
@@ -1192,7 +1279,7 @@ function IssueForm({
                 : translate(messages, 'inventory.issue.requiredPartHelp')
             }
             value={chosenRequiredPart}
-            onChange={(event) => setForm((f) => ({ ...f, requiredPartRef: event.target.value }))}
+            onChange={(next) => setForm((f) => ({ ...f, requiredPartRef: next }))}
             options={(requiredParts.items ?? []).map((part) => ({
               value: part.id,
               label: `${part.description} — ${part.quantity} ${part.unit}`,
@@ -1225,9 +1312,9 @@ function IssueForm({
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button
+        <Button
           type="submit"
-          className={PRIMARY_BUTTON}
+          variant="contained"
           /*
            * `target === null` is not redundant defence. This is the part-ISSUE
            * submit, not a branch submit, and the picker is mounted only while
@@ -1240,7 +1327,7 @@ function IssueForm({
           disabled={busy || requirement === null || (target === null && !canNameBranch(branches))}
         >
           {translate(messages, 'inventory.issue.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -1367,9 +1454,14 @@ function ReserveForm({
       drawDiffers(pair, EMPTY_PAIR)
   );
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [refusals, setRefusals] = useState(0);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [attemptKey] = useState(() => crypto.randomUUID());
+  // One reservation in flight at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
+  const formRef = useFocusFirstInvalid(refusalState(errors, refusals, outcome));
+  const headingRef = useFocusOnOpen<HTMLHeadingElement>();
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -1377,6 +1469,7 @@ function ReserveForm({
   };
 
   const submit = async () => {
+    if (sending.current) return;
     if (requirement === null) {
       setErrors({ materialRequirementId: 'inventory.parts.draw.needRequirement' });
       return;
@@ -1397,8 +1490,12 @@ function ReserveForm({
       found['quantity'] = 'inventory.reserve.quantityFormat';
     }
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0) {
+      setRefusals((n) => n + 1);
+      return;
+    }
 
+    sending.current = true;
     setBusy(true);
     const result = await createReservation({
       itemId,
@@ -1408,6 +1505,7 @@ function ReserveForm({
       materialRequirementId: requirement.id,
       idempotencyKey: attemptKey,
     });
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -1419,6 +1517,7 @@ function ReserveForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -1428,7 +1527,9 @@ function ReserveForm({
       className="grid gap-3 rounded-lg border border-border bg-surface p-4 sm:grid-cols-2"
     >
       <h2
+        ref={headingRef}
         id="parts-reserve-heading"
+        tabIndex={-1}
         className="text-body font-medium text-text-primary sm:col-span-2"
       >
         {translate(messages, 'inventory.parts.reserve.heading')}
@@ -1502,27 +1603,25 @@ function ReserveForm({
         onChange={(next) => setForm((f) => ({ ...f, locationId: next }))}
         error={errorFor('locationId')}
       />
-      <TextField
+      <FormNumberField
         label={translate(messages, 'inventory.reserve.quantity')}
         description={translate(messages, 'inventory.reserve.quantityHelp')}
         required
-        inputMode="decimal"
-        dir="ltr"
         value={form.quantity}
-        onChange={(event) => setForm((f) => ({ ...f, quantity: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, quantity: next }))}
         error={errorFor('quantity')}
       />
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button
+        <Button
           type="submit"
-          className={PRIMARY_BUTTON}
+          variant="contained"
           disabled={busy || requirement === null || (target === null && !canNameBranch(branches))}
         >
           {translate(messages, 'inventory.parts.reserve.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -1546,10 +1645,20 @@ function MaterialRequestActions({
   const [error, setError] = useState<string | undefined>(undefined);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One settlement or withdrawal in flight at a time, before `busy` has disabled both.
+  const sending = useRef(false);
+  // A typed reason is work the operator would lose; a confirmed discard clears it.
+  useUnsavedGuard(reason.trim().length > 0, () => {
+    setReason('');
+    setError(undefined);
+  });
 
   const run = async (act: () => Promise<{ readonly state: ActionState }>) => {
+    if (sending.current) return;
+    sending.current = true;
     setBusy(true);
     const result = await act();
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -1573,18 +1682,18 @@ function MaterialRequestActions({
           {requestId}
         </code>
       </p>
-      <TextField
+      <FormTextField
         label={translate(messages, 'inventory.parts.request.reason')}
         description={translate(messages, 'inventory.parts.request.reasonHelp')}
         value={reason}
-        onChange={(event) => setReason(event.target.value)}
+        onChange={setReason}
         error={error}
       />
       <OutcomeNote messages={messages} outcome={outcome} />
       <div className="flex flex-wrap gap-3">
-        <button
+        <Button
           type="button"
-          className={SECONDARY_BUTTON}
+          variant="outlined"
           disabled={busy}
           onClick={() => {
             const value = reason.trim();
@@ -1597,10 +1706,11 @@ function MaterialRequestActions({
           }}
         >
           {translate(messages, 'inventory.parts.request.close')}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
-          className={SECONDARY_BUTTON}
+          variant="outlined"
+          color="error"
           disabled={busy}
           onClick={() => {
             const value = reason.trim();
@@ -1617,7 +1727,7 @@ function MaterialRequestActions({
           }}
         >
           {translate(messages, 'inventory.parts.request.cancel')}
-        </button>
+        </Button>
       </div>
     </section>
   );
@@ -1631,12 +1741,15 @@ function PartIssuesPanel({
   locale,
   messages,
   workOrderId,
+  target,
   canOperate,
   onReturned,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly workOrderId: string;
+  /** The work order's branch, whose clock each issue's moment is written on; UTC when unknown. */
+  readonly target: StockTarget | null;
   readonly canOperate: boolean;
   readonly onReturned: (echo: ReturnEcho) => void;
 }) {
@@ -1646,8 +1759,24 @@ function PartIssuesPanel({
   );
   const table = useServerTable<PartIssue>(load, { initial: INITIAL_REQUEST });
   const [returning, setReturning] = useState<PartIssue | null>(null);
+  const zone = useStockDisplayZone(target);
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  /*
+   * The return form opens from a row of the grid, whose buttons the grid owns;
+   * when the form closes, the cursor goes back to this panel's heading — the
+   * nearest place it can be returned to — unless the operator has moved it.
+   */
+  const wasReturning = useRef(false);
+  useEffect(() => {
+    const open = returning !== null;
+    if (wasReturning.current && !open) {
+      const now = document.activeElement;
+      if (now === null || now === document.body) headingRef.current?.focus();
+    }
+    wasReturning.current = open;
+  }, [returning]);
 
-  const columns = useMemo<readonly Column<PartIssue>[]>(
+  const columns = useMemo<readonly OperationalColumn<PartIssue>[]>(
     () => [
       {
         id: 'sku',
@@ -1696,26 +1825,29 @@ function PartIssuesPanel({
       {
         id: 'issuedAt',
         headerKey: 'inventory.parts.issues.column.issuedAt',
-        cell: (row) => <span dir="ltr">{formatDateTime(row.issuedAt, locale)}</span>,
-      },
-      {
-        id: 'actions',
-        headerKey: 'inventory.parts.issues.column.actions',
-        cell: (row) =>
-          canOperate ? (
-            <button
-              type="button"
-              className={SECONDARY_BUTTON}
-              aria-expanded={returning?.id === row.id}
-              onClick={() => setReturning((current) => (current?.id === row.id ? null : row))}
-            >
-              {translate(messages, 'inventory.return.action')}
-            </button>
-          ) : null,
+        cell: (row) => <StockMoment value={row.issuedAt} locale={locale} zone={zone} />,
       },
     ],
-    [canOperate, locale, messages, returning?.id]
+    [locale, messages, zone]
   );
+
+  /*
+   * Return is the row's action, offered only to an operator who may. Its name
+   * carries the stock code, so ten rows of "Return" are ten different controls
+   * to a screen reader, and it is pressed on the row whose form is open.
+   */
+  const rowActions = (row: PartIssue): readonly RowAction[] =>
+    canOperate
+      ? [
+          {
+            kind: 'button',
+            label: translate(messages, 'inventory.return.action'),
+            about: row.sku,
+            pressed: returning?.id === row.id,
+            onClick: () => setReturning((current) => (current?.id === row.id ? null : row)),
+          },
+        ]
+      : [];
 
   return (
     <section
@@ -1723,29 +1855,30 @@ function PartIssuesPanel({
       className="flex min-h-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
       lang={locale}
     >
-      <h2 id="parts-issues-heading" className="text-body font-medium text-text-primary">
+      <h2
+        ref={headingRef}
+        id="parts-issues-heading"
+        tabIndex={-1}
+        className="text-body font-medium text-text-primary"
+      >
         {translate(messages, 'inventory.parts.issues.heading')}
       </h2>
       <p className="text-caption text-text-muted">
         {translate(messages, 'inventory.parts.issues.explain')}
       </p>
-      <DataTable<PartIssue>
+      <OperationalGrid<PartIssue>
         messages={messages}
+        locale={locale}
+        label={translate(messages, 'inventory.parts.issues.caption')}
         columns={columns}
         rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
-        onRequestChange={table.setRequest}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={translate(messages, 'inventory.parts.issues.caption')}
+        table={table}
+        rowActions={rowActions}
         suppressEmptyState
+        testId="parts-issues-grid"
       />
-      {table.response && table.response.rows.length === 0 ? (
-        <p className="py-6 text-center text-body text-text-secondary">
-          {translate(messages, 'inventory.parts.issues.none')}
-        </p>
+      {table.status === 'idle' && table.response && table.response.rows.length === 0 ? (
+        <MuiEmptyState messages={messages} descriptionKey="inventory.parts.issues.none" />
       ) : null}
       {canOperate && returning ? (
         <ReturnForm
@@ -1756,6 +1889,7 @@ function PartIssuesPanel({
             setReturning(null);
             onReturned(echo);
           }}
+          onDiscard={() => setReturning(null)}
         />
       ) : null}
     </section>
@@ -1766,15 +1900,25 @@ function ReturnForm({
   messages,
   issue,
   onReturned,
+  onDiscard,
 }: {
   readonly messages: Messages;
   readonly issue: PartIssue;
   readonly onReturned: (echo: ReturnEcho) => void;
+  /** A confirmed "discard" (a branch switch, leaving the page) closes the form. */
+  readonly onDiscard: () => void;
 }) {
   const [form, setForm] = useState({ quantity: '', reason: '' });
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [refusals, setRefusals] = useState(0);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  // One return in flight at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
+  // A half-typed return is work the operator would lose; a confirmed discard closes it.
+  useUnsavedGuard(form.quantity.trim().length > 0 || form.reason.trim().length > 0, onDiscard);
+  const formRef = useFocusFirstInvalid(refusalState(errors, refusals, outcome));
+  const headingRef = useFocusOnOpen<HTMLHeadingElement>();
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -1782,6 +1926,7 @@ function ReturnForm({
   };
 
   const submit = async () => {
+    if (sending.current) return;
     const found: Record<string, string> = {};
     const quantity = form.quantity.trim();
     if (!QUANTITY.test(quantity) || /^0+(?:\.0+)?$/.test(quantity)) {
@@ -1790,14 +1935,19 @@ function ReturnForm({
     const reason = form.reason.trim();
     if (reason.length > MAX_REASON) found['reason'] = 'inventory.return.reasonTooLong';
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
+    if (Object.keys(found).length > 0) {
+      setRefusals((n) => n + 1);
+      return;
+    }
 
+    sending.current = true;
     setBusy(true);
     const result = await createReturn({
       partIssueId: issue.id,
       quantity,
       ...(reason ? { reason } : {}),
     });
+    sending.current = false;
     setBusy(false);
     setOutcome(result.state);
     notifyActionResult(result.state, messages);
@@ -1809,6 +1959,7 @@ function ReturnForm({
 
   return (
     <form
+      ref={formRef}
       onSubmit={(event) => {
         event.preventDefault();
         void submit();
@@ -1818,7 +1969,9 @@ function ReturnForm({
       className="grid gap-3 border-t border-border pt-3 sm:grid-cols-2"
     >
       <h3
+        ref={headingRef}
         id="parts-return-heading"
+        tabIndex={-1}
         className="text-body font-medium text-text-primary sm:col-span-2"
       >
         {translate(messages, 'inventory.return.heading')}{' '}
@@ -1832,30 +1985,28 @@ function ReturnForm({
         {' · '}
         {translate(messages, 'inventory.return.returnedLabel')} <Qty value={issue.returnedQty} />
       </p>
-      <TextField
+      <FormNumberField
         label={translate(messages, 'inventory.return.quantity')}
         description={translate(messages, 'inventory.reserve.quantityHelp')}
         required
-        inputMode="decimal"
-        dir="ltr"
         value={form.quantity}
-        onChange={(event) => setForm((f) => ({ ...f, quantity: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, quantity: next }))}
         error={errorFor('quantity')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'inventory.return.reason')}
         description={translate(messages, 'inventory.return.reasonHelp')}
         value={form.reason}
-        onChange={(event) => setForm((f) => ({ ...f, reason: event.target.value }))}
+        onChange={(next) => setForm((f) => ({ ...f, reason: next }))}
         error={errorFor('reason')}
       />
       <div className="sm:col-span-2">
         <OutcomeNote messages={messages} outcome={outcome} />
       </div>
       <div className="sm:col-span-2">
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy}>
           {translate(messages, 'inventory.return.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );

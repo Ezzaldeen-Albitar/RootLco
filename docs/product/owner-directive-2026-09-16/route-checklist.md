@@ -1125,6 +1125,10 @@ nothing below is invented on the client.
     reference. A name, resolved in the same statement, would let both be chosen by name.
 14. **The parties recorded on a visit.** The additional-work decision names its deciding party by
     party-role reference, and no read lists the parties of the visit a work order came from.
+15. **No item update operation.** No operation renames an item, moves it to another category or
+    changes its unit; the catalogue offers create, search and (since `P1-32-PRE-OD-INV2A`) a read of
+    one item, which the item page now uses for its header. Nothing on any screen edits an item, and
+    none is built until the operation exists.
 
 ## Shared-component gaps recorded rather than worked around
 
@@ -1167,9 +1171,9 @@ Line numbers are those of the call on the branch head that last changed this tab
 | features/inventory/components/pickers.tsx (ReferenceBox)                         | 238                     | a       | controlled by its host form: InventoryScreen ReserveForm (a, below); the parts draw forms (a, below); Movements passes `countsAsUnsaved={false}`                                                                                                      |
 | features/inventory/components/PartsScreen.tsx (IssueForm)                        | 909                     | a       | new in round three: a typed quantity (changed from the value it opened with) is unsaved work; the form is keyed on the working-context version, so a confirmed switch remounts it empty                                                               |
 | features/inventory/components/PartsScreen.tsx (ReserveForm)                      | 1339                    | a       | new in round three: a typed quantity is unsaved work; `key={reserve-${version}}` remounts it empty                                                                                                                                                    |
-| features/administration/departments/…/DepartmentsScreen.tsx (create)             | 302                     | b       | `onDiscard` → `setCreating(false)`. `useWorkingBranch` closes it only for a branch in the register, and "all my branches" is not one                                                                                                                  |
-| features/administration/departments/…/DepartmentsScreen.tsx (rename)             | 394                     | b       | `useUnsavedGuard(name !== department.name, onCancel)`                                                                                                                                                                                                 |
-| features/administration/employees/…/EmployeesScreen.tsx (create)                 | 303                     | b       | `onDiscard` → `setCreating(false)` (the same gap as departments)                                                                                                                                                                                      |
+| features/administration/departments/…/DepartmentsScreen.tsx (create)             | 449                     | a / b   | inside `<BranchDepartments key={companyId:branchId}>`, which "all my branches" unmounts (ADM2); the guard counts the code and the name, and `onDiscard` empties both and closes                                                                       |
+| features/administration/departments/…/DepartmentsScreen.tsx (rename)             | 580                     | a / b   | `useUnsavedGuard(edit.dirty, onClose)` (`useEditBaseline`), inside the same keyed `BranchDepartments` (ADM2)                                                                                                                                          |
+| features/administration/employees/…/EmployeesScreen.tsx (create)                 | 491                     | a / b   | inside `<BranchEmployees key={companyId:branchId}>`, which "all my branches" unmounts (ADM2); the guard counts the name, the chosen login account and the reference, and `onDiscard` empties all three and closes                                     |
 | features/appointments/components/AppointmentBookingScreen.tsx                    | 163                     | b       | follows the header for the branch but holds the customer, vehicle, type, channel and window itself; `onDiscard` remounts `<BookingForm key={opened}>`; lowered once the booking is stored                                                             |
 | features/appointments/components/AppointmentDetailScreen.tsx (RescheduleSection) | 449                     | c→b     | the appointment is addressed to its own branch; typed confirmed times are unsaved work, and `onDiscard` is `useEditBaseline`'s `discard`, which empties them (appointments slice)                                                                     |
 | features/billing/components/CreditNoteRequestForm.tsx                            | 106                     | a / c→b | keyed under `BranchCreditNotes` in CreditNotesScreen (a); on an invoice's own page nothing is keyed, so `onDiscard` empties amount and reason and renews the transport key                                                                            |
@@ -1747,18 +1751,18 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/administration/appointment-setup`                   | form fields, `OperationalGrid`, `ConfirmDialog`, `DecisionDialog`, states                     | F1–F6; G1–G9; S1–S4                              | built on Material UI — see "Appointments for tenant administrators"          | focused suites, en and ar                             |
 | `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated — its person picker is `EntityPicker` since `P1-32-PRE-OD-ADM3` | person picker case only, en — see `P1-32-PRE-OD-ADM3` |
 | `/administration/audit-log`                           | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated — its "Who" picker is `EntityPicker` since `P1-32-PRE-OD-ADM3`  | person picker case only, en — see `P1-32-PRE-OD-ADM3` |
-| `/administration/currencies`                          | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                            |
-| `/administration/departments`                         | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                            |
+| `/administration/currencies`                          | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
+| `/administration/departments`                         | form fields, `FormDialog`, `ConfirmDialog`, states                                            | F1–F4; D1–D4; S1–S4                              | migrated — see below the table (ADM2)                                        | focused suites, en and ar — see below                 |
 | `/administration/discount-threshold`                  | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
-| `/administration/employees`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                            |
-| `/administration/languages`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                            |
-| `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                            |
-| `/administration/organization`                        | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                            |
+| `/administration/employees`                           | form fields, `OperationalGrid`, `FormDialog`, `ConfirmDialog`, drawer, states                 | F1–F6; G1–G9, G11; D1–D4; S1–S4                  | migrated — see below the table (ADM2)                                        | focused suites, en and ar — see below                 |
+| `/administration/languages`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (ADM-1)                                       | focused suites, en and ar — see below                 |
+| `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
+| `/administration/organization`                        | form fields, `ConfirmDialog`, `ReasonDialog`, states                                          | F1–F7; D1–D5; S1–S4                              | migrated — see below the table (ADM-1)                                       | focused suites, en and ar — see below                 |
 | `/administration`                                     | none found                                                                                    | —                                                | not migrated                                                                 | not run — nothing migrated                            |
 | `/administration/permissions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
 | `/administration/roles`                               | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
-| `/administration/system-settings`                     | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                            |
-| `/administration/taxes`                               | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                            |
+| `/administration/system-settings`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
+| `/administration/taxes`                               | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
 | `/administration/users/[userId]`                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see "Users and a person's access on Material UI" below the table  | focused suites, en and ar — see below                 |
 | `/administration/users`                               | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see "Users and a person's access on Material UI" below the table  | focused suites, en and ar — see below                 |
 | `/appointments/[appointmentId]`                       | form fields, `ZonedDateTimeField`, `DecisionDialog`, states                                   | F1–F6; E1–E4; D1–D4; S1–S4                       | migrated — see below the table                                               | focused suites, en and ar — see below                 |
@@ -1773,19 +1777,19 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/inventory/adjustments`                              | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below                 |
 | `/inventory/categories`                               | form fields, `OperationalGrid`, `TreePicker`, states                                          | F1–F4; G1–G9; H1–H5; S1–S4                       | built on Material UI — see below the table                                   | focused suites, en and ar — see below                 |
 | `/inventory/counter-sales`                            | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below                 |
-| `/inventory/counts`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                             | shared pieces: consumer suites, see INV1b             |
+| `/inventory/counts`                                   | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (INV5)                                        | focused suites, en and ar — see below                 |
 | `/inventory/customer-returns`                         | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | migrated — see below the table                                               | focused suites, en and ar — see below                 |
 | `/inventory/goods-receipts`                           | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below                 |
-| `/inventory/items/[itemId]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table                                               | focused suites, en and ar — see below                 |
+| `/inventory/items/[itemId]`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (MUI7A1; item header INV2A)                   | focused suites, en and ar — see below                 |
 | `/inventory/labels`                                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below                 |
 | `/inventory/movements`                                | form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states                       | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table (INV1B, INV1C)                                | focused suites, en and ar — see below                 |
 | `/inventory/opening-stock`                            | form fields, `DateField`, states                                                              | F1–F6; E1–E4; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below                 |
 | `/inventory`                                          | `FilterToolbar`, form fields, `OperationalGrid`, `EntityPicker`, `DateTimeField`, states      | F1–F6; G1–G9; P1–P10; T1, T5; E1–E4; S1–S4       | migrated — see below the table (INV1B, INV1C)                                | focused suites, en and ar — see below                 |
-| `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | shared pieces only (INV1b) — screen not migrated                             | shared pieces: consumer suites, see INV1b             |
-| `/inventory/setup`                                    | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                             | shared pieces: consumer suites, see INV1b             |
+| `/inventory/parts`                                    | form fields, `OperationalGrid`, `EntityPicker`, `TreePicker`, states                          | F1–F6; G1–G9, G12; P1–P10; H1–H5; S1–S4          | migrated — see below the table (INV5)                                        | focused suites, en and ar — see below                 |
+| `/inventory/setup`                                    | form fields, `TreePicker`, states                                                             | F1–F7; H1–H5; S1–S4                              | migrated — see below the table (INV2A)                                       | focused suites, en and ar — see below                 |
 | `/inventory/transfers`                                | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see below the table                                               | focused suites, en and ar — see below                 |
-| `/inventory/unit-conversions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                             | shared pieces: consumer suites, see INV1b             |
-| `/inventory/vehicle-specifications`                   | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | shared pieces only (INV1b) — screen not migrated                             | shared pieces: consumer suites, see INV1b             |
+| `/inventory/unit-conversions`                         | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (INV2A)                                       | focused suites, en and ar — see below                 |
+| `/inventory/vehicle-specifications`                   | form fields, `TreePicker`, states                                                             | F1–F6; H1–H5; S1–S4                              | migrated — see below the table (INV2A)                                       | focused suites, en and ar — see below                 |
 | `/invoices`                                           | form fields, `EntityPicker`, `ConfirmDialog`, `ReasonDialog`, states                          | F1–F6; P1–P10; D1–D5; S1–S4                      | migrated — see below the table                                               | focused suites, en and ar — see below                 |
 | `/`                                                   | `FilterToolbar`, `MetricCard`, `ChartPanel`, states                                           | S1–S4; T1–T6, T8; M1–M6                          | migrated — see below the table                                               | focused suites, en and ar — see below                 |
 | `/payments`                                           | `FilterToolbar`, `OperationalGrid`, `EntityPicker`, form fields, `ConfirmDialog`, states      | F1–F6; G1–G9, G12; P1–P10; D1–D4; S1–S4          | migrated — see below the table                                               | focused suites, en and ar — see below                 |
@@ -3553,7 +3557,7 @@ is loading, and a refused or failed read is a sentence (a retry where retrying c
 named `CategoryTreePicker` because `shared.tsx` already exports a different `CategoryPicker` (the
 one-page select), which this slice does not touch. No screen adopts it in this slice; the setup
 item form, the vehicle specifications and the material-requirements panel are to move onto it
-later.
+later. **The material-requirements panel adopted it in INV5** — see that section below.
 
 Tests (`apps/web/tests/inventory-categories.dom.test.tsx`, new, en and ar for every case): an empty
 catalogue; 260 categories over three cursor pages, all drawn on "Expand all"; a repeated cursor
@@ -3640,6 +3644,12 @@ Known limitations, one line each:
 - A disabled "Show movements" cannot take focus; the reason is the status notice beside it.
 - `DateField` (calendar days) with an unrecognised working zone now draws on the browser's
   calendar rather than on the unknown name; a day names no instant, so nothing is sent differently.
+- Outside inventory, the same `workingZone` refusal reaches two screens, and both are now pinned by
+  DOM cases in en and ar (`P1-32-PRE-OD-INVR`): `/appointments/new` refuses the requested window
+  on an unrecognised zone name exactly as on a missing one — the "time zone not known" sentence, no
+  picker, "Book" unavailable (`appointments-booking.dom`); the check-in start screen labels a
+  confirmed appointment's time as the browser writes it, never on the unknown name, and still offers
+  the row to choose (`reception-checkin.dom`).
 - Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in
   hosted CI. No web test file was added or removed.
 
@@ -3766,6 +3776,8 @@ Known limitations of this slice, one line each:
   `EntityPicker` (the same `listItems` read of 25 active items as before).
 - The adjustment decision is an inline panel, not a dialog, as before; opening it does not move the
   cursor into it.
+- (Closed by `P1-32-PRE-OD-INVR`: a count date or a day received typed whole but impossible is
+  refused as an impossible date, and a receipt with no reference says so in the page's direction.)
 - A refused form does not move the cursor to its first refused field (as before;
   `useFocusFirstInvalid` is not wired on these forms).
 - No browser spec covers these three routes, so none was changed; the Playwright tiers run only in
@@ -3840,8 +3852,9 @@ Known limitations of this slice, one line each:
 - `ItemFinder`, `BranchListView` and `LocationPicker` are drawn as the shared pieces draw them at
   this head (the older drawing until INV1b lands); this screen moves with them without an edit,
   except the `locale` INV1b hands `BranchListView`, which whichever change lands second carries.
-- A row action opens its form inline below the lists, as before; it is not a dialog, so focus is
-  not moved into the form or returned to the row when it closes.
+- A row action opens its form inline below the lists, as before; it is not a dialog. (Focus closed
+  by `P1-32-PRE-OD-INVR`: opening moves the cursor onto the form's heading, and closing gives it
+  back to the row action, or to its list's heading where that action is gone.)
 - The aged-in-transit alert is not drawn on this screen (it was not before); it is read by the
   attention board (`/attention`).
 - Names instead of identifiers, no backend read added: a transfer names its item by stock code and
@@ -3965,6 +3978,575 @@ Known limitations of this slice, one line each:
 - Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
   they run in hosted CI. The web tier gains cases in existing files (no web test file added or
   removed).
+
+### Inventory setup, unit conversions and vehicle specifications on Material UI, and the item page's own read (`P1-32-PRE-OD-INV2A`)
+
+The setup screen (categories, units, items, locations, reorder levels), the unit conversions and the
+vehicle specifications moved onto the shared wrappers; every category is now chosen from the
+category tree; and the item page reads its own item. The page refusals before any read are
+unchanged (`inv.item.read` on all four routes), and so are the per-control codes (`inv.item.manage`
+on setup, `inv.stock.read` for its locations and levels, `inv.unit_conversion.manage`,
+`inv.specification.manage`, `veh.vehicle.read`) and the route branch scope in
+`route-branch-scope.ts` (setup `concrete`; conversions, specifications and the item page `none`).
+Every write is sent with the same arguments as before.
+
+What moved to which wrapper:
+
+- `/inventory/setup` — every list (categories, units, the locations of the branch, the reorder
+  levels, the items created on the page) is Material's table; under the planner ruling of 2026-10-09
+  none is a cursor-paged read: the categories are read whole, the units are one list, and the
+  locations and levels are one bounded page each with their "more exist" sentence. Each list's wait,
+  empty answer and failure are the shared states in the list's own words (a retry after an outage;
+  none after a refusal or an ended session; the locations keep no retry, as their shared read has
+  none). Every field is a `forms/mui` wrapper: the codes, names and descriptions `FormTextField`,
+  the unit, item type, location type, warehouse and level item `FormSelectField`, the two item flags
+  `FormCheckboxField`, the two level quantities `FormNumberField`; every button is Material's.
+- `/inventory/unit-conversions` — the list is Material's table; the units `FormSelectField`, the
+  factor `FormNumberField`, the source `FormTextField`, the item the shared `ItemFinder`; the
+  retire action is Material's outlined error button with the same name.
+- `/inventory/vehicle-specifications` — the list is Material's table; the state filter, make, model
+  and unit `FormSelectField`, the two model years and the capacity `FormNumberField`, the texts
+  `FormTextField`; confirm and retire are Material's buttons with the same names.
+
+Categories by name, chosen from the tree:
+
+- The setup category list reads EVERY page of `inv.item-category-list` (`useAllItemCategories`,
+  the walk the category tree makes) instead of the one-page `listItemCategories`, and says each
+  row's parent by its NAME and path ("Brakes / Pads"), a top-level category as "Top level", and a
+  parent missing from the list with the tree's own note — never the parent's code alone.
+- A new category's parent and a new item's category are chosen with `CategoryTreePicker` (H1–H5):
+  the parent is optional, with a "No parent" row; the item's category is required
+  (`clearLabel={null}`, `required`), so no row clears it. A category created on the page is added
+  to the list and to both trees at once, from the server's echo, without a second walk.
+- The vehicle specification's part category is chosen with `CategoryTreePicker` over the whole
+  tree (optional, "No category") instead of the one-page `CategoryPicker` select.
+- The setup categories, the specification form and the item header link to `/inventory/categories`.
+- No field anywhere on these routes takes a typed identifier.
+
+The item page's own read — a new backend operation, `inv.item-detail`:
+
+- `GET /api/v1/items/{itemId}` (`apps/api/src/app/api/v1/items/[itemId]/route.ts`), `inv.item.read`,
+  `scope: 'tenant'` like the item search, audit class `none`, `expensive-read`, `answersNotFound`.
+  It answers the item's code, name, description, unit (id, code and name), type, tracking flags,
+  lifecycle, an `archived` flag, and its category chain walked in the database (top level first,
+  the item's own category last; bounded and cycle-safe). No cost and no price. Another tenant's item
+  and an unknown id are both 404, read alike. Every registry it owes moved with it: the route
+  template list, the OpenAPI document and its import list, the P1-14 and P1-21 operation matrices,
+  the P1-19 and P1-21 endpoint inventories, the P1-24 register, the idempotent-operations manifest
+  and the operation coverage manifest. Backend tests: `tests/backend/od-inventory-item-detail.test.ts`
+  (found with a two-step path, top level, archived, no cost or price key, not found, another tenant,
+  no permission, a malformed id).
+- `/inventory/items/[itemId]` draws the item's own header above its codes and prices: the name, the
+  stock code, the category path by name with the link to the tree, the unit, the type and whether it
+  is archived. Its wait says "Reading the item…"; a refusal, an ended session, a missing item and an
+  outage are the shared states (a retry after an outage only). The header edits nothing.
+
+The completion standard, as these screens now hold it:
+
+- Duplicate submits: every write (category, item, location, reorder level and its retirement,
+  conversion and its retirement, specification and its confirmation and retirement) is held by
+  `useSingleFlight`, a ref set before the first await, so a second press sends nothing even before
+  the button has re-rendered disabled. The tests press twice inside ONE `act()`; with the ref
+  guard removed, the four setup cases fail (counterfactual run, not committed).
+- Field errors: each form marks a refused field on itself (`aria-invalid` only while refused, the
+  sentence as its error message) and moves the cursor to its first refused field
+  (`useFocusFirstInvalid`, counted per refusal); what was typed stays.
+- Unsaved work: the category, item and reorder-level forms, the conversion form and the
+  specification form declare their work to the shell (a chosen category included) and empty
+  themselves on a confirmed discard; the location form keeps its rule (code and name only, keyed on
+  the branch).
+- Focus: opening the conversion or specification form moves the cursor onto its heading; a saved
+  form closes and gives the cursor back to the button that opened it.
+- Moments: "Stated on" and "Recorded on" are written on the clock of the one branch in force, or
+  on UTC under "All my branches" or a branch whose zone is unknown, with the clock named beside the
+  moment (`RecordedMoment`), never on the browser's clock and never inside a forced left-to-right
+  span.
+- Precision: factors, capacities, years and levels are the strings typed and the server's strings;
+  nothing is parsed for display.
+- Arabic and English, right to left, in every suite.
+
+The `CategoryTreePicker` review minors of `P1-32-PRE-OD-INV2B`: while the categories are read, and
+when the read fails, the picker's sentence sits in a `group` labelled by the field's own label
+(`aria-labelledby`), so a screen reader hears which field it is about; a refused required picker
+without a tree still shows its error.
+
+Tests (en and ar unless marked): `inventory-setup.dom` — parents by name and path, the tree link,
+every page read and a second-page category chosen for an item, no category-less row on the item
+tree, a parent chosen from the tree and the echo listed under it and offered at once, the cursor
+moved to the item tree when an empty item form is refused, an unavailable category list with its
+reference read again on retry, a refusal with no retry, right to left; two presses in one `act()` for
+a category, an item, a location, a level and its retirement (en); Enter in the level's item search
+searching and sending nothing (en); the level quantity a numeric-keypad text box read left to right
+(en); a half-typed category and a chosen item category asking before a branch switch, a discard
+emptying the form (en). `inventory-unit-conversions.dom` — the stated moment on the branch's clock
+with its name, an outage with a retry, a refusal with none, the empty sentence, focus into the form
+and back, a refused factor on its own box; two presses in one `act()` for stating and retiring (en);
+a half-stated conversion asking before a switch (en). `inventory-vehicle-specifications.dom` — the
+part category from the whole tree by path and sent, the tree link, focus into the form and back, a
+refused year on its own box, an outage with a retry, the empty sentence; two presses in one `act()`
+for recording and confirming (en). `inventory-item-codes.dom` — the header's name, code, path,
+unit, type and status, archived, not found, an outage with a retry, a refusal with none (en), the
+wait (en). `inventory-categories.dom` — the items grid's second page read with the category and the
+cursor; the picker as a field: unavailable inside a labelled group with a retry that walks again,
+the wait inside a labelled group, no "No category" row for a required field with `clearLabel={null}`,
+the empty catalogue in the field's description, ArrowDown with Enter and Space; `category-tree.ts`
+stopping at the 500-page budget with `truncated` and an A → B → A cycle with exactly one misplaced
+member, `pathOf(B)` = A, B, and a search that ends. `inventory-api` — the item read's address and a
+missing item as not found.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- Every render of the three screens goes under `UiFoundationProvider` (and, for conversions and
+  specifications, a working context), as the locale layout mounts them.
+- The setup suite mocks `listItemCategoryPage` (the whole-tree walk) where it mocked
+  `listItemCategories`, and asserts the walk's first page instead of the one-page read.
+- The item's category is chosen by clicking its row in the tree instead of `selectOptions` on a
+  select.
+- The vehicle specifications suite mocks `listItemCategoryPage` beside `listItemCategories`.
+- `inventory-item-codes.dom`'s accessibility case waits for the stock code twice (header and codes
+  panel) instead of once, because the header now says it too.
+
+Deliberate behaviour changes:
+
+- The setup category list and the specification category read every page, not the first hundred.
+- A parent is said by name and path; a top-level category says "Top level" instead of an empty
+  cell.
+- Loading is said (it drew nothing before); an empty list is said under "Nothing here yet" with the
+  same sentence; a failed list is the shared state, with its reference and a retry after an outage
+  (the conversions, specifications and units offered no retry before).
+- Enter in the reorder level's item search searches; it used to submit the level form.
+- The category, item, reorder-level, conversion and specification forms now ask before a branch
+  switch or leaving the page with unsaved work, and empty on a confirmed discard.
+- Recorded moments are written on the branch's clock (or UTC) with the clock named, no longer the
+  browser's.
+- A second press while a write is out sends nothing; before, only the re-rendered disabled button
+  held it.
+
+Known limitations, one line each:
+
+- No item update operation: an item's name, category and unit cannot be changed (Backend
+  prerequisites, item 15); the item page's header edits nothing.
+- A vehicle specification still names its make and model by identifier in the list (as before); the
+  catalogue is read only inside the form.
+- A conversion names its item by stock code, and a location's parent by code (as before).
+- The locations' failure offers no retry: the shared read keeps only which sentence it earned.
+- The material-requirements panel still draws the one-page `CategoryPicker`; it moves with its own
+  slice.
+- The setup lists other than the categories show the first bounded page with the "more exist"
+  sentence and no way to the rest (as before).
+- No browser spec covers these routes; the Playwright tiers run only in hosted CI.
+- Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in hosted
+  CI. No web test file was added or removed; the backend tier gains one file
+  (`deliverable-manifest.md` and `risk-register.md` count it).
+
+### Stock counts, the parts of a work order and the material allowed on Material UI (`P1-32-PRE-OD-INV5`)
+
+`/inventory/counts` and `/inventory/parts`, with the material-requirements panel the parts screen
+embeds (`MaterialRequirementsPanel`, its only consumer), moved onto the shared wrappers; the item
+family of a requirement is chosen from the category tree; and every moment an inventory screen
+writes is written on the branch's clock. Nothing about how either route reads, authorizes or scopes
+changed: the same reads and writes with the same arguments and the same idempotency keys —
+`GET /api/v1/stock-counts` and `/{id}`, `POST /stock-counts`, `/{id}/lines/{itemId}` (the count's
+`recordVersion` as If-Match), `/{id}/reconciliation`, `/{id}/cancellation`;
+`GET /work-orders/{id}/part-issues`, `/work-orders/{id}/required-parts`, `/stock-reservations`,
+`POST /stock-issues`, `/stock-returns`, `/stock-reservations`; `GET /material-requirements` and
+`/{id}`, the work order's service lines, `POST /material-requirements`, `/{id}/approval`,
+`/{id}/recheck`, `/{id}/cancellation`, `/{id}/exceptions`, `/material-exceptions/{id}/decision`,
+`/material-requests/{id}/closure` and `/cancellation` — the same page refusals before any read
+(`inv.stock.read` on both), the same per-control codes (`inv.stock.operate`, `wo.work_order.read`,
+`inv.item.read`, `inv.material.request`, `inv.material.approve`, `inv.material.exception.approve`),
+the same navigation gates, and the same route branch scope, unchanged in `route-branch-scope.ts`
+(both `concrete`). No backend file, operation, permission code or migration changed. The count
+discrepancy signal is still `StockAlertIndicator` beside the counts. The server's rules — no
+double consumption, explicit adjustments, reconciled balances, the reservation, issue and return
+rules and the second person on every exception — are untouched and still said in words.
+
+What moved to which wrapper:
+
+- `/inventory/counts` (`StockCountsScreen.tsx`) — the counts of the branch and a count's lines are
+  Material's table: the list read answers one bounded page with a "more exist" notice and no cursor
+  (planner ruling of 2026-10-09), and a count's lines are the whole count. The counted quantity is
+  `FormNumberField` (the string typed is the string sent, zero allowed for an empty shelf), the
+  notes and the cancel reason multi-line `FormTextField`, the location `LocationPicker`; Reconcile,
+  Cancel count, Save (named with the stock code), Open (named with the location) and Close are
+  Material's buttons.
+- `/inventory/parts` (`PartsScreen.tsx`) — the issues of the order are `OperationalGrid` over the
+  same cursor-paged read (G1–G9: server pages, `rowCount` -1, "Page N", no total); Return is the
+  row's action, named with the stock code and pressed on the row whose form is open (G12). The
+  required parts are Material's table (that read answers the job's whole list) with the shared
+  states and a retry after an outage. The job chooser is `WorkOrderPicker` on `EntityPicker`; the
+  quantities are `FormNumberField`, the reservation and required-part line `FormSelectField`, the
+  reasons `FormTextField`; every button is Material's.
+- `MaterialRequirementsPanel.tsx` — every field is a `forms/mui` wrapper (each quantity
+  `FormNumberField`), every button Material's, and the list's and the exceptions' wait, empty
+  answer and failures are the shared states in the panel's own sentences, with a retry after an
+  outage. The item family is CHOSEN with `CategoryTreePicker` (H1–H5) over every page of
+  `inv.item-category-list` (`GET /api/v1/item-categories`), read once for the panel and only when a
+  listed requirement names a family or the request form opens; the chosen family's path is said
+  under the tree. A listed family is said by its path and code (`Engine fluids / Oils oils`), never
+  by its identifier. Without `inv.item.read` the categories are not read and the typed family
+  reference stays, exactly as before.
+
+Moments on the branch's clock (Owner decision D-17). `formatDateTime` in `lib/format.ts` writes on
+the browser's clock, so a laptop on another zone showed the right instant at the wrong wall time
+(INV1b had moved the moments a person TYPES; this moves the moments a screen SHOWS). Every
+inventory screen now writes a recorded moment with `StockMoment` (`stock-operations.tsx`): the
+branch's wall time with that clock's name beside it (`GMT+3`), each part isolated rather than forced
+left to right, so an Arabic date keeps its month name in order. The clock is the one the screen is
+addressed to (`useStockDisplayZone`): the count's start (list and count), each part issue, a
+reservation's expiry on `/inventory`, each movement, each adjustment request, a receipt's posting
+and each cost layer, a transfer's dispatch and a write-off's request, the stock signal's freshness
+stamp, and on the returns desk each return's arrival, each offered sale's issue and each issued
+part's issue in the picker's option (`momentText`). The organisation's own records — an item's codes, its unit conversions, the
+vehicle capacities — belong to no branch and are written on the working branch's clock
+(`useWorkingDisplayZone` on the item's codes; the conversions and capacities take the same
+rule from `RecordedMoment`, `P1-32-PRE-OD-INV2A`). Where the branch keeps no zone, or one the browser does not recognise,
+and under "All my branches" on those three, the moment is written on UTC and named `UTC` — never on
+the browser's clock.
+
+Shared additions (`features/inventory/components/stock-operations.tsx`), no wrapper changed:
+`StockMoment`, `momentText`, `useStockDisplayZone`, `useWorkingDisplayZone`, `useFocusOnOpen`,
+`useReturnFocus` and `refusalState`. `useAllItemCategories` (`CategoryTree.tsx`) takes an optional
+`enabled` (on unless stated), latched once true, so the panel reads the tree only when it needs it;
+the categories screen and the picker's suite are unchanged.
+
+Completion standard, each held by a case in `inventory-counts.dom`, `inventory-parts.dom` or
+`inventory-material-requirements.dom` (en and ar where marked):
+
+- Duplicate submits: every write — open, record a line, reconcile, cancel a count (en and ar);
+  reserve, issue, return (en and ar), settle; ask for material, approve, turn down, ask for an
+  extra (en and ar), decide an extra — is held by a ref set before anything is awaited, and each
+  case sends both presses inside ONE `act`, so it is the ref and not a re-rendered disabled button
+  that holds the second.
+- Field errors: a malformed counted quantity, a refused return quantity and a refused extra
+  quantity are marked on their own box (`aria-invalid` only while refused, the sentence as its
+  error), what was typed stays, the box reads left to right with a numeric keypad, and on the two
+  forms the cursor goes to it (en and ar). The count, draw, return and panel forms move the cursor
+  to their first refused field after a refusal (`useFocusFirstInvalid`).
+- Unsaved work: the count forms as before; the panel's request, turn-down, withdrawal and extra
+  forms, the return form and the material request's reason are now unsaved work — a branch switch
+  or leaving the page asks, staying keeps it, and a confirmed discard closes the form.
+- Names and scope: the item family by its path and code; every read addressed as before.
+- Focus: opening a count moves the cursor to its heading and closing it returns the cursor to the
+  row's Open button; the cancel form takes the cursor into its reason box and gives it back to
+  "Cancel count"; the reserve and issue forms take it to their heading and give it back to their
+  toggle when their write closes them; the panel's forms take it into their first field or heading
+  and give it back to the button that opened them.
+- Branch-local display of moments, with a clock no test environment keeps (en and ar), and UTC
+  named where the branch's zone is not known.
+- Permissions, refusals, the server's figures as strings and the route page refusals: every
+  existing case passes.
+
+Test changes forced by the new structure, the asserted behaviour unchanged (no assertion was
+deleted or weakened):
+
+- `inventory-parts.dom`: the issues list is found as a `grid` (five cases) and its cells as
+  `gridcell` (the row still holds seven); Return is found by a name anchored at its start, because
+  its name now carries the stock code (three cases, one of them an absence check); the job
+  chooser's match is an `option` of the combobox's listbox under `PICKER_OPTION_WAIT_MS` (four
+  cases, one of them an absence check), and the chosen job is read as the combobox's value instead of the
+  `work-order-picker-chosen` test id, empty again after a discard (one case). In the case where a
+  reply still in flight at a branch switch is dropped, the absence check now opens the job chooser's
+  list first and also asserts no list is shown: the switch closes the box, and a closed list shows
+  no option whatever it holds, so the check had stopped proving anything (INV5 review).
+- `inventory-counts.dom`, `inventory-parts.dom`, `inventory-material-requirements.dom`: every render
+  goes under `UiFoundationProvider` (and, for the panel, a working context), as the locale layout
+  mounts them; the panel's renders pass `canReadItems`, and both api mocks answer
+  `listItemCategoryPage`.
+
+New cases: the completion standard above (`inventory-counts.dom`, `inventory-parts.dom`,
+`inventory-material-requirements.dom`); the family chosen from the tree and sent, said by its path
+and code, not read without a need, kept as a typed reference without `inv.item.read`, and said by
+its reference after a refused read; one moment case per screen in `inventory.dom`,
+`inventory-movements.dom`, `inventory-adjustments.dom`, `inventory-goods-receipts.dom`,
+`inventory-transfers.dom`, `inventory-item-codes.dom` (and UTC with no branch),
+`inventory-unit-conversions.dom`, `inventory-vehicle-specifications.dom` and `attention.dom` (the
+stock signal), each in en and ar; in `inventory-customer-returns.dom`, a return's arrival and an
+offered sale's issue, and an issued part's issue in the picker's option, each in en and ar. From the
+review: a second press of "Cancel count" keeps the half-typed cancel form open (the button only
+opens it, as before) in `inventory-counts.dom`, and an ended session while reading a requirement's
+extras offers the sign-in link, as the panel's list already did, in
+`inventory-material-requirements.dom`. `tests/support/stock-operations.ts` gains `FAR_ZONE`, `onClock`,
+`clockName` and `expectOnClock`.
+
+Messages added (en and ar): `inventory.material.create.itemCategory` ("Part group"), plain language.
+
+Deliberate behaviour changes:
+
+- Recorded moments on every inventory screen, the returns desk included, are written on the branch's
+  clock (or the working branch's, or UTC, as above) with the clock named, no longer on the
+  browser's; an Arabic date is no longer forced left to right.
+- The item family is chosen from the tree and shown by its path and code, no longer typed and shown
+  as an identifier (with `inv.item.read`).
+- Return is a toggle (`aria-pressed`) named with the stock code, no longer `aria-expanded` with the
+  bare word; an order with no issues says so under the shared "Nothing here yet" heading.
+- The panel's list, the exceptions and the required parts are the shared states: the wait is
+  announced, a failure carries the shared heading, the reference and a retry after an outage
+  (there was none), an empty answer is said under "Nothing here yet".
+- A second press of any write made before the button is disabled sends nothing.
+- The panel's forms, the return form and the material request's reason ask before a branch switch
+  or leaving the page; a confirmed discard closes the form (they asked nothing before).
+- The cursor moves into a form that opens and back to what opened it, and to the first refused
+  field after a refusal.
+- "Withdraw it" on the material a draw opened is drawn in the error colour.
+
+Known limitations of this slice, one line each:
+
+- After a write the parts screen re-reads by remounting its panels, so there the cursor is not
+  returned to the button that opened the form; the write's notice is announced instead.
+- The issues grid owns its row buttons, so closing the return form returns the cursor to the
+  issues heading rather than to the row's Return.
+- Names instead of identifiers, no backend read added: a requirement's service line, item and
+  matched capacity, the chosen requirement and the material request are still shown by reference;
+  a count's lines by stock code and its location by code.
+- The count list shows the newest fifty with the "more exist" sentence and no way to the rest, as
+  before; a paged read would be a backend-visible change.
+- "Issue this part" on a required part does not name the part in its accessible name (as before).
+- A count line is not a form, so a refused counted quantity is marked on its box but the cursor is
+  not moved to it (as before).
+- A refused or failed category read leaves a listed family as its reference and the picker as its
+  refusal sentence.
+- No browser spec covers these routes, so none was changed; the Playwright tiers run only in hosted
+  CI.
+- Not run locally: the full unit and web tiers, the browser tiers, the builds and
+  `verify:workspaces`; they run in hosted CI. The web tier gains cases in existing files (no web
+  test file added or removed).
+
+### Review follow-ups on the inventory slices (`P1-32-PRE-OD-INVR`)
+
+Closes the review minors left on the merged inventory slices (INV1C, INV2A, INV3, INV4, INV6). One
+backend read changed (`inv.item-detail`'s category walk); no route, operation, permission code,
+contract, branch scope or migration changed.
+
+- **Setup: what a save keeps is not unsaved work (INV2A).** The item form keeps the chosen category
+  and unit after a successful create, and the reorder-level form keeps the chosen item after a
+  successful set, as defaults for the next entry. Their unsaved guards counted those kept choices,
+  so every branch switch after a save asked a question. Each guard now compares the choice with
+  what was last saved: only a different category, unit or item, or what success clears (stock code,
+  name and description; the two quantities) is work. A confirmed discard forgets the kept values.
+- **The item's category path walks through a soft-deleted ancestor (INV2A).** The recursive walk
+  in `readItemDetail` stopped at an ancestor whose `deleted_at` is set, which answered a shorter path
+  that read as complete. The parent link still stands (the cycle guard follows it the same way), so
+  ancestors are now followed whether or not they are soft-deleted; the item's own category is still
+  read only while live.
+- **An impossible date is refused as one (INV3).** On `/inventory/opening-stock` and
+  `/inventory/goods-receipts`, a count date or a day received typed whole but impossible (31/02,
+  the picker's `invalidDate`) holds no day, and was refused as missing. It is now refused with its
+  own sentence (`inventory.opening.batch.dateInvalid`, en and ar), never as required or as
+  unfinished, and it counts as unsaved work.
+- **No reference is said in the page's direction (INV3).** The receipts list wrote "No reference"
+  inside the left-to-right span meant for a reference code; the sentence is now outside it.
+- **Transfers: focus follows the inline form (INV4).** Receive, settle, cancel and decide open
+  their forms inline. Opening now moves the cursor onto the form's heading; closing gives it back to
+  the row action that opened it or, where that action is gone after the write, to its list's
+  heading.
+- **Second-press cases test the ref guard (INV3, INV6).** New cases for opening a batch, adding an
+  opening line, posting a receipt and requesting an adjustment, and the existing counter-sale
+  (draft, issue, void) and customer-return cases, now press twice inside ONE `act()`, so the second
+  press arrives before the button re-renders disabled and the screen's own `sending` hold is what is
+  tested.
+- **An unrecognised working zone outside inventory (INV1C).** The behaviour INV1C introduced on
+  `/appointments/new` and the check-in start screen is pinned by DOM cases and recorded in the INV1C
+  notes above.
+
+Messages added (en and ar): `inventory.opening.batch.dateInvalid`, plain language.
+
+Added cases: `inventory-setup.dom` — after a successful item create the category and unit stay and
+a branch switch asks nothing; after a successful reorder level the item stays and a switch asks
+nothing; another item chosen after it asks again. `inventory-opening-stock.dom` — an impossible
+count date refused as one, en and ar; one batch and one line per double press.
+`inventory-goods-receipts.dom` — an impossible day received refused as one, en and ar; "No
+reference" in the page's direction, en and ar; one posting per double press.
+`inventory-adjustments.dom` — one request per double press. `inventory-transfers.dom` — receive,
+settle and cancel: the cursor moves into the form and back to the row action, en and ar; a
+write-off decision the same, en and ar; after a cancellation the cursor lands on the list heading,
+en and ar. `appointments-booking.dom` — the window refused on `Mars/Base`, en and ar.
+`reception-checkin.dom` — the appointment time labelled without the unknown zone, en and ar.
+`tests/backend/od-inventory-item-detail.test.ts` — a three-step path through a soft-deleted middle
+category.
+
+Changed cases: the counter-sale draft, issue and void cases and the customer-return case replace two
+separate `fireEvent.click` calls with two clicks inside one `act()`; every assertion is kept.
+
+Counterfactual runs (local, not committed): with each screen's `sending` hold disabled, the
+batch, line, posting, adjustment-request, counter-sale (four) and customer-return (two) double-press
+cases fail; with the previous `OpeningStockScreen`, `GoodsReceiptsScreen`, `TransfersScreen` and
+`SetupScreen`, the impossible-date, direction, focus and kept-choice cases fail; with the previous
+`readItemDetail`, the soft-deleted-ancestor backend case fails.
+
+Run locally (targeted): the ten web test files above; `typecheck:web`, `lint:web`,
+`format:check:web`, `style:check:web`, `typecheck:api`, `lint:api`, `format:check:api`; the
+module-boundary, API backend-only, web-boundary, web-topology, plain-language, encoding,
+generated-artifact and operation-coverage validators; the backend file on a disposable PostgreSQL
+with every migration and seed applied; `verify:repository`, whose unit tier timed out in three
+unrelated gate files under machine load, which then passed when re-run alone, with
+`security:all` run after them. Not run locally: the full web and backend tiers, the browser tiers
+and the builds; they run in hosted CI. No test file was added or removed.
+
+Preserved: the choices kept after a save, the guard on anything typed or chosen anew, the
+unfinished-date refusal, every request body, every refusal sentence, en and ar, right to left.
+
+Known limitations, one line each:
+
+- The item's OWN category, when soft-deleted, still answers an empty path (unchanged; only
+  ancestors were in scope).
+- A transfer's dispatch form and the inventory forms outside INV4 were not touched for focus.
+- No browser spec covers these routes; the Playwright tiers run only in hosted CI.
+
+### Departments and employees on Material UI (`P1-32-PRE-OD-ADM2`)
+
+`/administration/departments` and `/administration/employees` moved onto the shared wrappers, and
+the employee register gained a detail view. Nothing about how either reads, authorizes or scopes
+changed: the same page refusals before any read (`org.department.read` with `org.branch.read`;
+`org.employee.read` with `org.branch.read`), the same per-control codes (`org.department.manage`
+for create, rename, retire and reinstate; `org.employee.manage` for add, deactivate and reactivate;
+`iam.user.read` for the login-account picker; `org.company.read` for company names), the same
+reads and writes with the same arguments (`org.department-list`, `org.department-create`,
+`org.department-update`; `org.employee-list`, `org.employee-create`, `org.employee-status-set`,
+`iam.user-list?status=active`), the same navigation gates, and the same route branch scope,
+unchanged in `route-branch-scope.ts` (`concrete`). One operation gained its first web caller:
+`org.employee-detail` (`GET /api/v1/org/employees/{employeeId}`, `org.employee.read`), which the
+detail view reads. No backend file, migration, permission or catalogue entry changed.
+
+What moved to which wrapper:
+
+- `/administration/departments` (`DepartmentsScreen.tsx`) — the list is Material's table:
+  `org.department-list` answers one bounded list with no cursor (planner ruling 2026-10-09), named
+  first, its code left to right beside it. When exactly 500 rows come back — the operation's limit —
+  a notice above the table says only the first 500 are shown and more may exist (planner ruling
+  2026-10-09; see the recorded gaps below). Loading, empty, refused, outage (with a retry that reads
+  again) and ended session are the shared states (`MuiStates`). Create and rename are `FormDialog`
+  forms of `FormTextField`s (F1–F4); retire and reinstate ask first through `ConfirmDialog`
+  (D1–D4), which names the department. Every button is Material's.
+- `/administration/employees` (`EmployeesScreen.tsx`) — the register is `OperationalGrid` over
+  `useServerTable` (G1–G9, G11): the server's cursor pages, no count, Previous and Next, the
+  product's page sizes with the first page at 50 as before, and the grid's own refused,
+  unavailable, ended-session and failed states; "nothing yet" is the register's own sentence. The
+  add form is a `FormDialog` of `FormTextField`s and the native `FormSelectField` (F6) for the
+  login account; deactivate and reactivate ask through `ConfirmDialog`. Each row offers "Details",
+  named with the employee.
+- The detail view is Material's drawer at the logical end of the page. It reads
+  `org.employee-detail` when opened and says the employee's name, branch and company, login account,
+  employment reference and status in words — never a reference — with the shared states for a read
+  that failed (a retry) or a record no longer there. Focus moves into it and returns to "Details" on
+  Escape or Close; a closed drawer leaves the page at once.
+- `FormDialog` (`features/administration/shared/components/FormDialog.tsx`, new) is a form in an
+  ordinary Material dialog. `DecisionDialog` is an ALERT dialog, and the working context's "discard
+  your changes?" question asked over a form would then be a second alert dialog awaited at once. It
+  keeps D1–D4: named and described, Tab kept inside, the first field focused, Escape cancels and a
+  click outside does not, both buttons disabled while the write is out, focus returned on close.
+- `useWorkingBranch` now derives the register's branch on every render instead of remembering the
+  last one it was called back with.
+
+Scope and unsaved work (the rows for these two screens in the unsaved-work table above, and the gap
+this slice closes): everything addressed to the branch — the list, Add and every form — lives in a
+child keyed on the branch pair, so a switch to another branch remounts it and a switch to "All my
+branches" unmounts it. Before, "All my branches" left the previous branch's list, its Add button
+and any untouched form in place, still writing to a branch the header no longer named, and the
+create forms' guard only closed the dialog. Every field of each create form is now unsaved work —
+the department's code and name; the employee's name, chosen login account and reference — and a
+confirmed discard empties them all and closes the form, towards another branch or towards "All my
+branches".
+
+Preserved, each held by a case in `departments-employees.dom.test.tsx`, every case in English and in
+Arabic:
+
+- Scope: nothing is read until a branch is named; the read names both halves of it; the register
+  states the working branch and offers no chooser of its own, and follows a switch.
+- Permissions: without `org.department.manage` / `org.employee.manage` there is no Add, rename,
+  retire or status control (the employee details are still offered); the page refusals before any
+  read are unchanged (`route-permission-binding.test.ts`).
+- States: loading, empty, refused (never drawn as an empty branch), outage with a retry that reads
+  again; a detail read that failed offers a retry.
+- Field errors: a malformed code and an empty name are refused on their own field (`aria-invalid`
+  only while refused), the cursor moves to the first, what was typed stays, and the complaint goes
+  once the field is edited; the reference box holds no more than the column's 64 characters.
+- Conflicts: a stale rename is said in the form with "Load the latest version", which brings the
+  stored name and version, and the next save sends that version; a stale retirement or
+  deactivation is said beside the list with the same way out; a refused create keeps every field.
+- Versions: rename, retire and deactivate send the row's version as `If-Match`.
+- Duplicate submits: create (both registers), rename, retire, reinstate, deactivate and reactivate
+  send once for two presses made inside one render frame (`sending` guards, pressed twice inside one
+  `act()`); each of these cases fails with its guard removed.
+- Names: a linked login account is named from the picker's list or, for one outside it, from its
+  own read (`iam.user.read`); the detail view names the branch, the company and the account.
+- Focus: the first field takes the cursor when a form opens and Add (Add department, Add employee)
+  takes it back on Cancel; the detail drawer takes it and returns it to "Details" on Escape.
+- Arabic and English, right to left.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- Every render goes under `UiFoundationProvider`, as the locale layout mounts it, and the suite runs
+  each case in both languages.
+- The stand-in branch switches are found among hidden elements (`hidden: true`) while a form is open,
+  because a Material dialog hides the rest of the page from assistive technology; the suite carries
+  its own two switch helpers for that and uses the shared stay and discard helpers unchanged.
+- A row action of the grid is named by its label and the employee (`Deactivate Handover Clerk`), the
+  grid's `about`, instead of `Deactivate: Handover Clerk`; the department buttons keep their names.
+
+Assertions changed, with the reason:
+
+- "creates a department" and "adds an employee" asserted the success sentence inside the dialog;
+  they now assert the dialog closes, the same sentence (`departments.created`, `employees.created`)
+  appears in the notification, mounted as the locale layout mounts it, and the list is read again,
+  because a stored entry now closes its form (below). The request bodies asserted are unchanged (the
+  employee case adds the reference).
+- "lists the branch register and pages on request" pressed "Show more" and asserted both pages on
+  screen; it now presses "Next page" and asserts the next page and the cursor sent, because the
+  grid pages instead of appending (G3).
+- "refuses a malformed code beside the field" asserted the hint text appears; it now asserts the
+  field is marked invalid, takes the cursor and keeps the value (the B3 case it duplicated is merged
+  into it).
+- "refuses an empty name" adds the cursor and the kept reference.
+- "the registers open on the working branch": the employee case's "no combobox anywhere" is scoped to
+  the branch statement, because the grid's page-size select is a combobox of its own.
+- The "all my branches" cases now also assert the register closes (no list, no Add), and a new case
+  holds that an untouched form closes towards "All my branches" without a question.
+- Two cases of develop that the first head of this slice dropped are restored, asserting the same
+  behaviour with only the selectors adapted to the Material dialog: "departments: an untouched
+  dialog is closed by the switch without a question" (towards another branch) and "employees: a
+  typed new employee makes the switch ask, and "stay" keeps it" (then a discard towards another
+  branch closes it).
+
+Deliberate behaviour changes:
+
+- A stored department or employee closes its form and is announced by a notification; the list is
+  read again. Before, the form stayed open with a sentence and a Close button.
+- The employee register pages with Previous and Next over the server's cursor, with the product's
+  page sizes, instead of "Show more" appending to one long list.
+- Under "All my branches" both registers close and ask for one branch, as their `concrete` route
+  already declared.
+- A stale retirement, reinstatement or status change closes the question and is said beside the
+  list with "Load the latest version"; before, the conflict was said inside the question.
+- The confirmation questions name the department or employee they are about.
+
+Recorded gaps (no control is drawn for any of them):
+
+- No operation changes an employee's name, login account or employment reference
+  (`org.employee-update` does not exist). The register offers no edit; the detail view says in words
+  that this screen cannot change them.
+- The API's fourteen `tech.technician-*` operations — create, update, availability record and
+  withdrawal, skill set and withdrawal, certification record, update and detail record, and the
+  list, detail, availability and queue reads — have no administration screen. They are left for the
+  separate technician-administration slice and are not built here.
+- `org.department-list` answers at most 500 departments with no cursor and no "more exist" flag. The
+  register infers from the length alone: exactly 500 rows draw the notice that only the first 500
+  are shown and more may exist (`DEPARTMENT_LIST_CAP` in `DepartmentsScreen.tsx`, the
+  `departments.listCapped` sentence). A branch with exactly 500 departments draws it too; no control
+  reaches a 501st.
+
+Known limitations of this slice, one line each:
+
+- The detail view is a drawer, not a route: a deep link reaches the register, not one employee.
+- While a form is open the header's branch selector is behind the dialog; a switch can still
+  arrive from another tab or a held change, which the cases stand in for.
+- The login-account picker still offers the first hundred active accounts.
+- The page-level refusal before any read is still the shared `PermissionDeniedState`, as on every
+  administration page.
+- No browser spec changed: the authenticated accessibility sweep already visits both routes in the
+  English and the Arabic projects. The Playwright tiers run only in hosted CI.
+- Not run locally (machine memory): the full unit and web tiers, the browser tiers and the builds;
+  they run in hosted CI. No web test file was added or removed; the suite gains cases.
 
 ### Users and a person's access on Material UI (`P1-32-PRE-OD-ADM3`)
 
@@ -5533,3 +6115,123 @@ Known limitations, one line each:
   named-QA backfill are operator steps (CC-OD-58, README question 22).
 - The DB and backend tiers were run on the development machine on a disposable database only for the
   files named in the pull request; the full tiers run on hosted CI.
+
+### Organisation and languages on Material UI, and editing a company or a branch (`P1-32-PRE-OD-ADM1`)
+
+`/administration/organization` and `/administration/languages` moved onto the shared wrappers, and
+the Organisation screen gained the journey it never had: a company or a branch could be added and
+switched on or off, but not renamed or corrected, because `org.company-update`
+(`PATCH /org/companies/{companyId}`) and `org.branch-update` (`PATCH /org/branches/{branchId}`) had no
+caller. Both are now called from an Edit dialog. Nothing about how the screens read, authorize or
+scope changed: the same reads (`iam.tenant-settings-read`, `org.capacity-read`,
+`org.reference-values-read`, `org.company-list`, `org.branch-list`, `iam.company-settings-read`,
+`iam.branch-settings-read`, `shared.branch-status-read`), each made only for a holder of the code it
+declares; the same writes with the same arguments; the same page gate and navigation entries; and
+the same route branch scope (`none` for both, unchanged in `route-branch-scope.ts`). No migration,
+route, operation, permission code or audit action was added.
+
+One response detail is added, in the API: `org.company-list` and `org.branch-list` publish each row's
+`recordVersion` (`CompanyReachRow` and `BranchReachRow` in
+`modules/iam/data/organization-administration-repository.ts`). Both updates refuse a request without
+`If-Match`, and no read published a company's version at all, so without it the screen had nothing
+honest to send. The version sent is the one the list published for the row the operator opened —
+never one read again at the moment of saving. `pre-p1-29-wave-c-company-rbac.test.ts` W37 holds the
+listed versions against the rows and an update sent with the listed version.
+
+What moved to which wrapper:
+
+- Companies and branches (`OrganizationStructure.tsx`) — both lists are Material's table:
+  `org.company-list` and `org.branch-list` each answer one bounded list with no cursor, so there is
+  no pager to drive (planner ruling of 2026-10-09). A status is a chip in words, the place is the
+  city and the country's name in the reader's language ("Amman, Jordan"), and the time zone its
+  name with its identifier. The allowance notice is an outlined warning; an empty list is
+  `MuiEmptyState` with the screen's sentences; a list that did not answer is `MuiReadFailureState`
+  (Try again re-renders the route, which repeats the read; a refusal is offered nothing). Add company
+  and Add branch are Material dialogs with `FormTextField` and `FormSelectField` (native, F6),
+  controlled from a draft; the status change is the shared `ReasonDialog`.
+- Edit company and Edit branch (`StructureDialogs.tsx`, new) — Edit company sends the legal name;
+  Edit branch sends only the fields the operator changed among the name, the city, the country and
+  the time zone, and a city or a country the operator emptied is sent as "remove it". A conflict
+  (`ERR-CON-001`, someone else changed the record first) is said in the dialog, the typed values
+  stay, and Save waits for **Load the latest version**, which re-reads the page; when the record's
+  version has moved, the dialog puts the latest saved values in front of the operator, says so, and
+  saves against the new version. Saving with nothing changed says so and sends nothing.
+- The dialog frame (`StructureDialog.tsx`, new) — named by its title, described by its sentence;
+  focus goes into it (on the first field) and returns to the button that opened it; Tab stays
+  inside. A click outside does nothing; Escape, Close and Cancel close at once when nothing is typed
+  and otherwise ask the shared question ("Discard your changes?"), keeping everything on Cancel.
+  While a write is in flight it cannot be dismissed. Under "reduce motion" there is no fade.
+- Workspace (`TenantForm.tsx`, on both routes) — already on `FormTextField` and `FormSelectField`;
+  Save and Try again are now Material's buttons.
+- Subscription and capacity (`CapacityPanel.tsx`) — each bar is Material's determinate
+  `LinearProgress`, named by the kind and the numbers.
+- Company and branch settings (`SettingsEditor.tsx`, shared with system settings, numbering rules,
+  taxes and currencies) — the scope, the setting, its kind and its value are the Material fields, the
+  sensitive mark `FormCheckboxField`, the stored settings Material's table, the read's failure the
+  shared state with Try again where it can help, and the wait for the read `MuiLoadingState`. The
+  kind is said in words ("Text", "Number", "Yes or no", "Structured value"); before, the select and
+  the table printed the stored type names. The props are unchanged, so the four other screens render
+  the migrated editor without a change of their own; their page frames move with ADM-5.
+- `/administration/languages` — a workspace read that did not answer is the shared state (a
+  refusal, an ended session, or an outage with Try again) instead of one line that said
+  "unavailable" for every failure.
+
+Preserved, each held by a case in `organization-structure.dom` (en and ar where marked) or
+`unsaved-navigation.dom` (en and ar):
+
+| Property                                                                                           | Case                                                                   |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Each control only with the code its operation declares (`org.company.manage`, `org.branch.manage`) | "offers Edit only with the code…", "offers no branch Edit…" (en, ar)   |
+| An edit sends the listed version as `If-Match`, and only what changed                              | "renames a company…", "sends only the branch fields that changed…"     |
+| A refusal on its field, the cursor there, nothing typed lost                                       | "refuses a blank legal name…", "puts a time zone the platform…"        |
+| A conflict holds Save until the latest version is loaded, then saves against the new version       | "says a conflict, keeps the typed name…" (en, ar)                      |
+| No published version: the dialog asks for the latest one and sends nothing                         | "asks for the latest version when the list published none…"            |
+| Typed work asks before Escape or Cancel discards it, and is declared to the shell                  | "asks before Escape or Cancel…", "declares typed work to the shell…"   |
+| Focus into the dialog and back to the opener                                                       | "renames a company…", "asks before Escape or Cancel…"                  |
+| Two presses inside one `act()` send once                                                           | edit, Add company, status change, workspace form, a setting (en, ar)   |
+| A list read that did not answer: the shared state, a retry only for the outage                     | "draws a list that could not be read…"                                 |
+| Country and time zone said as names                                                                | "names a branch's country and time zone…"                              |
+| A setting's kind in words; a typed setting is unsaved work; a failed settings read retries         | the settings-editor cases (en, ar); "leaving a typed setting" (en, ar) |
+
+Test changes forced by the new structure, the asserted behaviour unchanged: none. Every existing
+case of both suites passes as it stood; the new cases are added to the two existing files (no web
+test file added). In `unsaved-navigation.dom` the mocked client also answers `get`, which the
+settings editor reads; no existing assertion changed. In the authenticated browser tier,
+`administration.spec.ts` gains two read-only Arabic cases (Organisation and Languages, right to
+left, headings from the catalogue, no refusal in either language), because its loop reads the
+refusal sentence in English only.
+
+Deliberate behaviour changes:
+
+- Companies and branches can be edited (above).
+- Add company and Add branch gain a Cancel button, and Escape, Close and Cancel ask before
+  discarding typed values; a click outside no longer closes them.
+- The branch list names the country and the time zone instead of printing their codes.
+- A list or workspace read that did not answer offers Try again where it can help.
+- A setting's kind is said in words, and a typed setting asks before leaving the page.
+
+Known limitations and recorded gaps of this slice, one line each:
+
+- Recorded gap: a company's base currency is not offered for editing. The API accepts it, but
+  changing the currency a company's records are kept in is a money decision this slice does not
+  take.
+- Recorded gap: a company's registration numbers are not offered for editing. The list does not
+  publish them, and the `org.company.updated` audit detail names only the legal name and the base
+  currency, so an edit would be recorded without its change.
+- Recorded gap: a branch's address lines, region and postal code are not offered for editing, for
+  the same two reasons (not in the list; not in the `org.branch.updated` audit detail).
+- Recorded gap: `org.company-list` and `org.branch-list` stop at 500 rows (`ORG_REACH_LIMIT`) and
+  publish no "more exist" flag, so the screen cannot say a list was cut short.
+- "Load the latest version" replaces the typed values with the latest saved ones (said on screen);
+  the operator makes the change again if it is still needed.
+- The branch status change still reads the branch's version at confirmation, as before; it is not a
+  form the operator edits.
+- `Panel`, `Fact` and `ContractNotice` (layout only) still come from the administration
+  `ScreenStates` module, `DirectoryEmptyNotice` from the working-context module, and the result
+  banner is the shared `FormFeedback`.
+- The Languages screen still renders the whole workspace form (name, language and time zone), as
+  before.
+- Focus return and the reduced-motion fade are proven in jsdom only; the two Arabic browser cases
+  run only in the authenticated tier and were not run locally.
+- Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
+  W37 needs a database and was not run locally. They run in hosted CI.

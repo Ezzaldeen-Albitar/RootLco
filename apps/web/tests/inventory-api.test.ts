@@ -55,6 +55,7 @@ const {
   listReorderLevels,
   listReservations,
   listUnitsOfMeasure,
+  readItemDetail,
   readOpeningBatch,
   releaseReservation,
   setSalePrice,
@@ -569,6 +570,17 @@ describe('W10 — the setup reads are tenant-wide and assert no scope', () => {
     expect(String(get.mock.calls[1]?.[0])).toBe('/api/v1/item-categories?cursor=c-2&limit=100');
     get.mockResolvedValueOnce(failure('forbidden'));
     expect((await listItemCategoryPage(null)).status).toBe('denied');
+  });
+
+  it('reads one item for its own page at its own address, and says an absent one is not found', async () => {
+    get.mockResolvedValueOnce(ok({ id: 'item-1', sku: 'BRK-001' }));
+    const found = await readItemDetail('a0000000-0000-4000-8000-000000000001');
+    expect(found.status).toBe('ok');
+    expect(String(get.mock.calls[0]?.[0])).toBe(
+      '/api/v1/items/a0000000-0000-4000-8000-000000000001'
+    );
+    get.mockResolvedValueOnce(failure('not-found'));
+    expect((await readItemDetail('a0000000-0000-4000-8000-000000000002')).status).toBe('not-found');
   });
 
   it('reports a refused read as denied, not as an empty catalogue', async () => {
