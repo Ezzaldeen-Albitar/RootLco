@@ -79,6 +79,7 @@ import {
   type BranchPair,
 } from './shared';
 import { ItemPicker, REFERENCE, ReferenceBox, withoutKey, type ItemChoice } from './pickers';
+import { useItemNames, type NameAnswer } from './requirement-names';
 import { useUnitList } from './unit-list';
 import {
   StockMoment,
@@ -337,6 +338,7 @@ export function PartsScreen({
           messages={messages}
           workOrderId={workOrderId}
           canOperate={canOperate}
+          canReadItems={canReadItems}
           onIssue={(part) => {
             setPrefill(part);
             setDrawing('issue');
@@ -716,17 +718,39 @@ function useRequiredParts(workOrderId: string | null): {
   return { items: answer.items, refused: answer.refused };
 }
 
+/** The item a required-part line names: its name, the wait for it, or that it cannot be shown. */
+function RequiredPartItem({
+  messages,
+  answer,
+}: {
+  readonly messages: Messages;
+  readonly answer: NameAnswer;
+}) {
+  if (answer.phase === 'named') return <bdi data-testid="parts-required-item">{answer.name}</bdi>;
+  return (
+    <span className="text-text-muted" data-testid="parts-required-item">
+      {translate(
+        messages,
+        answer.phase === 'pending' ? 'state.loading' : 'inventory.material.itemUnavailable'
+      )}
+    </span>
+  );
+}
+
 function RequiredPartsPanel({
   locale,
   messages,
   workOrderId,
   canOperate,
+  canReadItems,
   onIssue,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly workOrderId: string;
   readonly canOperate: boolean;
+  /** `inv.item.read` — the item a line is recorded against is named by its catalogue name. */
+  readonly canReadItems: boolean;
   readonly onIssue: (prefill: IssuePrefill) => void;
 }) {
   /*
@@ -773,6 +797,17 @@ function RequiredPartsPanel({
     };
   }, [workOrderId, attempt]);
   const current = answer !== null && answer.attempt === attempt ? answer : null;
+  /*
+   * A line recorded against an item carries the item's identifier. The column
+   * names the item (LANG-identifiers): its catalogue name when the operator may
+   * read it, and otherwise a sentence that its details are not available —
+   * never the identifier.
+   */
+  const itemIds = useMemo(
+    () => (current?.items ?? []).flatMap((part) => (part.reference ? [part.reference] : [])),
+    [current]
+  );
+  const itemName = useItemNames(itemIds, canReadItems);
 
   return (
     <section
@@ -841,9 +876,7 @@ function RequiredPartsPanel({
                   </TableCell>
                   <TableCell>
                     {part.reference ? (
-                      <code className="font-mono text-caption" dir="ltr">
-                        {part.reference}
-                      </code>
+                      <RequiredPartItem messages={messages} answer={itemName(part.reference)} />
                     ) : (
                       <span className="text-text-muted">
                         {translate(messages, 'inventory.parts.required.noItem')}

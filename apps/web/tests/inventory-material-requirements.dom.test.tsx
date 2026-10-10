@@ -1137,13 +1137,17 @@ describe('the material panel on Material UI (P1-32-PRE-OD-INV5)', () => {
     expect(listItemCategoryPage).not.toHaveBeenCalled();
   });
 
-  it('without the item read, keeps the typed family reference and reads no category', async () => {
+  it('without the item read, names no family on the card, keeps the typed reference box and reads no category', async () => {
     listMaterialRequirements.mockImplementation(async () =>
       listing([requirement({ itemId: null, itemCategoryId: OILS_ID })])
     );
     const user = userEvent.setup();
-    renderIn('en', { canRequest: true, canReadItems: false });
-    expect(await screen.findByText(OILS_ID)).toBeVisible();
+    const { container } = renderIn('en', { canRequest: true, canReadItems: false });
+    // The listed card names no family it cannot read — in words, not by reference.
+    expect(
+      await screen.findByText(EN['inventory.material.familyUnavailable'] as string)
+    ).toBeVisible();
+    expect(container.textContent).not.toContain(OILS_ID);
     await user.click(
       screen.getByRole('button', { name: EN['inventory.material.create.open'] as string })
     );
@@ -1157,7 +1161,20 @@ describe('the material panel on Material UI (P1-32-PRE-OD-INV5)', () => {
     expect(listItemCategoryPage).not.toHaveBeenCalled();
   });
 
-  it('a refused category read leaves the listed family as its reference', async () => {
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: a requirement taken from a capacity says so in words, never by the capacity identifier`, async () => {
+      listMaterialRequirements.mockImplementation(async () => listing([requirement()]));
+      const { container } = renderIn(locale);
+      const source = await screen.findByTestId('material-source-specification');
+      expect(source).toHaveTextContent(
+        CATALOGUE[locale]['inventory.material.source.specification'] as string
+      );
+      expect(source).toHaveTextContent('oil_change');
+      expect(container.textContent).not.toContain(SPECIFICATION_ID);
+    });
+  }
+
+  it('a refused category read says the family cannot be named, never its reference', async () => {
     listItemCategoryPage.mockImplementation(async () => ({
       status: 'denied' as const,
       correlationId: 'corr',
@@ -1165,9 +1182,12 @@ describe('the material panel on Material UI (P1-32-PRE-OD-INV5)', () => {
     listMaterialRequirements.mockImplementation(async () =>
       listing([requirement({ itemId: null, itemCategoryId: OILS_ID })])
     );
-    renderIn('en');
-    expect(await screen.findByText(OILS_ID)).toBeVisible();
+    const { container } = renderIn('en');
+    expect(
+      await screen.findByText(EN['inventory.material.familyUnavailable'] as string)
+    ).toBeVisible();
     expect(screen.queryByTestId('material-category-path')).toBeNull();
+    expect(container.textContent).not.toContain(OILS_ID);
   });
 
   it('a second press of Approve inside the same moment decides once', async () => {

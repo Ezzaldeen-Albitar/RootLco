@@ -545,13 +545,42 @@ describe('reached from a work order', () => {
     expect(screen.getByText(EN['inventory.parts.workOrderNotReadable'] as string)).toBeVisible();
   });
 
-  it('shows the required parts with their item reference', async () => {
+  it('shows the required parts, saying the item cannot be named without the item read', async () => {
     renderScreen();
     await waitFor(() => expect(listRequiredParts).toHaveBeenCalledWith(WORK_ORDER_ID));
     const region = requiredRegion();
     expect(await within(region).findByText('Front brake pads')).toBeVisible();
     expect(within(region).getByText('2.000')).toBeVisible();
-    expect(within(region).getByText(ITEM_ID)).toBeVisible();
+    expect(within(region).getByTestId('parts-required-item')).toHaveTextContent(
+      EN['inventory.material.itemUnavailable'] as string
+    );
+    expect(region.textContent).not.toContain(ITEM_ID);
+    expect(readItemDetail).not.toHaveBeenCalled();
+  });
+
+  it('names the item a required part is recorded against, never its identifier (LANG-identifiers)', async () => {
+    readItemDetail.mockResolvedValue(okRead({ id: ITEM_ID, name: 'Brake pad set, front' }));
+    renderScreen({ canReadItems: true });
+    const region = requiredRegion();
+    await waitFor(() =>
+      expect(within(region).getByTestId('parts-required-item')).toHaveTextContent(
+        'Brake pad set, front'
+      )
+    );
+    expect(readItemDetail).toHaveBeenCalledWith(ITEM_ID);
+    expect(region.textContent).not.toContain(ITEM_ID);
+  });
+
+  it('a refused item read leaves the required part unnamed in words, not by identifier', async () => {
+    renderScreen({ canReadItems: true });
+    const region = requiredRegion();
+    await waitFor(() =>
+      expect(within(region).getByTestId('parts-required-item')).toHaveTextContent(
+        EN['inventory.material.itemUnavailable'] as string
+      )
+    );
+    expect(readItemDetail).toHaveBeenCalledWith(ITEM_ID);
+    expect(region.textContent).not.toContain(ITEM_ID);
   });
 
   it('renders the denied state instead of an empty list', async () => {

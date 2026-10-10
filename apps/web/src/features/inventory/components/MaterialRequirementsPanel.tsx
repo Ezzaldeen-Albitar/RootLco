@@ -778,11 +778,9 @@ function RequirementSource({
 }) {
   if (requirement.basis === 'specification') {
     return requirement.specificationId ? (
-      <span>
-        {translate(messages, 'inventory.material.source.specification')}{' '}
-        <code className="font-mono text-caption" dir="ltr">
-          {requirement.specificationId}
-        </code>
+      <span data-testid="material-source-specification">
+        {/* The capacity is named by the sentence; its identifier is not shown (LANG-identifiers). */}
+        {translate(messages, 'inventory.material.source.specification')}
         {requirement.serviceCondition ? (
           <>
             {' · '}
@@ -854,7 +852,8 @@ function AllowanceBar({
  * path of names and the code beside it, so two families of the same name read
  * apart. While the tree is being read the panel says so; where it cannot be
  * read at all — no `inv.item.read`, or a refused or failed read — or no longer
- * holds the family, the reference the requirement carries is shown, as before.
+ * holds the family, the card says the family's details are not available; the
+ * reference the requirement carries is never shown in its place.
  */
 /** A name read for an identifier, the wait for it, or the sentence that it cannot be shown. */
 function NamedValue({
@@ -923,9 +922,9 @@ function CategoryName({
   const category = read !== null && read.status === 'ok' ? read.forest.byId.get(categoryId) : null;
   if (read === null || read.status !== 'ok' || category === undefined || category === null) {
     return (
-      <code className="font-mono text-caption" dir="ltr">
-        {categoryId}
-      </code>
+      <span className="text-text-muted">
+        {translate(messages, 'inventory.material.familyUnavailable')}
+      </span>
     );
   }
   return (
