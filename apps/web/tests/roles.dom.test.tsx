@@ -38,6 +38,24 @@ const CATALOGUE = { en: EN, ar: AR } as const;
 const send = vi.fn();
 const get = vi.fn();
 vi.mock('@/lib/api/server-client', () => ({ authorizedClient: async () => ({ send, get }) }));
+
+/*
+ * Every screen reports its write's outcome through `notifyActionResult` once
+ * its submit handler has the answer. The real function still runs; the count
+ * only lets a case know the handler has reached that point.
+ */
+const answersHandled = vi.hoisted(() => ({ count: 0 }));
+vi.mock('@/components/notifications/action-notifications', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/components/notifications/action-notifications')>();
+  return {
+    ...actual,
+    notifyActionResult: (...args: Parameters<typeof actual.notifyActionResult>) => {
+      answersHandled.count += 1;
+      return actual.notifyActionResult(...args);
+    },
+  };
+});
 let SESSION_PERMISSIONS: readonly string[] = [];
 vi.mock('@/features/authentication/api/session', () => ({
   requireSession: async () => ({ permissions: SESSION_PERMISSIONS, email: 'admin@test.local' }),
@@ -157,11 +175,16 @@ function answeredOneByOne() {
 /**
  * Lets an answer reach the dialog's submit handler and run it to its end
  * WITHOUT letting React draw the outcome: only promise jobs run here, and the
- * render the answer schedules is a later task. A key or a press now lands in
- * the moment between the answer and the dialog closing.
+ * render the answer schedules is a later task. It asserts the handler did
+ * finish (its outcome was reported) before returning, so a key or a press
+ * after it lands in the moment between the answer and the dialog closing.
  */
-async function answerHandledNotYetDrawn(): Promise<void> {
-  for (let job = 0; job < 50; job += 1) await Promise.resolve();
+async function answerHandledNotYetDrawn(handledBefore: number): Promise<void> {
+  for (let job = 0; job < 200 && answersHandled.count === handledBefore; job += 1) {
+    await Promise.resolve();
+  }
+  // The handler has reported the outcome, so it has run to its end.
+  expect(answersHandled.count).toBe(handledBefore + 1);
 }
 
 /** The service could not be reached: the ordinary refusal a retry is for. */
@@ -477,6 +500,26 @@ describe('the shared form dialog sends once, whatever Enter does (P1-32-PRE-OD-A
     expect(submitted).toHaveBeenCalledTimes(2);
   });
 
+  it('leaves Enter in the open calendar to the calendar, and submits nothing', async () => {
+    const submitted = vi.fn();
+    const user = userEvent.setup();
+    mountProbe(false, submitted);
+    const dialog = await screen.findByRole('dialog', { name: 'Probe form' });
+    await user.click(
+      within(dialog).getByRole('button', { name: new RegExp(`^${EN('mui.pickers.chooseDate')}`) })
+    );
+    const calendar = await screen.findByRole('grid');
+    // The calendar is drawn outside the form's own markup; React still hands
+    // its key events to the form, which is what this case is about.
+    expect(dialog.querySelector('form')?.contains(calendar)).toBe(false);
+    const day = within(calendar)
+      .getAllByRole('gridcell')
+      .find((cell) => cell.textContent === '15') as HTMLElement;
+    day.focus();
+    await user.keyboard('{Enter}');
+    expect(submitted).not.toHaveBeenCalled();
+  });
+
   it('while the write is in flight, neither Enter nor the form submit event reaches the caller', async () => {
     const submitted = vi.fn();
     const user = userEvent.setup();
@@ -496,6 +539,15 @@ describe('the shared form dialog sends once, whatever Enter does (P1-32-PRE-OD-A
 });
 
 describe('a role form is sent once between the answer and the dialog closing (P1-32-PRE-OD-ADM4 review)', () => {
+  /*
+   * The "right after the answer" cases show the COMBINED behaviour of the
+   * shared dialog and the form. In that moment the dialog's last drawing is
+   * still the pending one, so its own `pending` guard refuses Enter and the
+   * button is disabled. The form's single-flight guard, held after a success
+   * until the dialog closes, is defence in depth: with that hold reverted these
+   * cases still pass, so they do not claim to prove it. The retry cases do rest
+   * on the form: it must let go of its guard after a refusal.
+   */
   async function openCreate(user: ReturnType<typeof userEvent.setup>) {
     get.mockResolvedValue(page([SUPERVISOR]));
     mount('en');
@@ -506,7 +558,7 @@ describe('a role form is sent once between the answer and the dialog closing (P1
     return dialog;
   }
 
-  it('create: Enter while pending, and Enter or a press right after the answer, send nothing more', async () => {
+  it('create: the dialog and the form together send nothing more for Enter while pending, or for Enter or a press right after the answer', async () => {
     const answer = answeredOneByOne();
     const user = userEvent.setup();
     const dialog = await openCreate(user);
@@ -518,8 +570,11 @@ describe('a role form is sent once between the answer and the dialog closing (P1
     await user.keyboard('{Enter}{Enter}{Enter}');
     expect(send).toHaveBeenCalledTimes(1);
 
+    const handled = answersHandled.count;
+
     answer({ ok: true, status: 201, data: { id: 'x' }, correlationId: 'c' });
-    await answerHandledNotYetDrawn();
+
+    await answerHandledNotYetDrawn(handled);
     // The answer is in, and the dialog has not yet been closed.
     expect(dialog).toBeInTheDocument();
     fireEvent.keyDown(name, { key: 'Enter' });
@@ -568,7 +623,7 @@ describe('a role form is sent once between the answer and the dialog closing (P1
     return { dialog, name };
   }
 
-  it('edit: Enter while pending, and Enter or a press right after the answer, send no second change', async () => {
+  it('edit: the dialog and the form together send no second change for Enter while pending, or for Enter or a press right after the answer', async () => {
     const answer = answeredOneByOne();
     const user = userEvent.setup();
     const { dialog, name } = await openEdit(user);
@@ -577,8 +632,11 @@ describe('a role form is sent once between the answer and the dialog closing (P1
     await user.keyboard('{Enter}{Enter}');
     expect(send).toHaveBeenCalledTimes(1);
 
+    const handled = answersHandled.count;
+
     answer({ ok: true, status: 200, data: { id: SUPERVISOR.id }, correlationId: 'c' });
-    await answerHandledNotYetDrawn();
+
+    await answerHandledNotYetDrawn(handled);
     expect(dialog).toBeInTheDocument();
     // A second change here would carry the version the first one replaced.
     fireEvent.keyDown(name, { key: 'Enter' });

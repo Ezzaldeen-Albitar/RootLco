@@ -41,6 +41,24 @@ const AR = (key: string): string => {
 const send = vi.fn();
 const get = vi.fn();
 vi.mock('@/lib/api/server-client', () => ({ authorizedClient: async () => ({ send, get }) }));
+
+/*
+ * Every screen reports its write's outcome through `notifyActionResult` once
+ * its submit handler has the answer. The real function still runs; the count
+ * only lets a case know the handler has reached that point.
+ */
+const answersHandled = vi.hoisted(() => ({ count: 0 }));
+vi.mock('@/components/notifications/action-notifications', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/components/notifications/action-notifications')>();
+  return {
+    ...actual,
+    notifyActionResult: (...args: Parameters<typeof actual.notifyActionResult>) => {
+      answersHandled.count += 1;
+      return actual.notifyActionResult(...args);
+    },
+  };
+});
 let SESSION_PERMISSIONS: readonly string[] = [];
 vi.mock('@/features/authentication/api/session', () => ({
   requireSession: async () => ({ permissions: SESSION_PERMISSIONS, email: 'admin@test.local' }),
@@ -2463,11 +2481,16 @@ function answeredOneByOne() {
 /**
  * Lets an answer reach the dialog's submit handler and run it to its end
  * WITHOUT letting React draw the outcome: only promise jobs run here, and the
- * render the answer schedules is a later task. A key or a press now lands in
- * the moment between the answer and the dialog closing.
+ * render the answer schedules is a later task. It asserts the handler did
+ * finish (its outcome was reported) before returning, so a key or a press
+ * after it lands in the moment between the answer and the dialog closing.
  */
-async function answerHandledNotYetDrawn(): Promise<void> {
-  for (let job = 0; job < 50; job += 1) await Promise.resolve();
+async function answerHandledNotYetDrawn(handledBefore: number): Promise<void> {
+  for (let job = 0; job < 200 && answersHandled.count === handledBefore; job += 1) {
+    await Promise.resolve();
+  }
+  // The handler has reported the outcome, so it has run to its end.
+  expect(answersHandled.count).toBe(handledBefore + 1);
 }
 
 /** The service could not be reached: the ordinary refusal a retry is for. */
@@ -2480,6 +2503,15 @@ const OUTAGE = {
 };
 
 describe('the invitation is sent once between the answer and the outcome (P1-32-PRE-OD-ADM4 review)', () => {
+  /*
+   * The "right after the answer" cases show the COMBINED behaviour of the
+   * shared dialog and the form. In that moment the dialog's last drawing is
+   * still the pending one, so its own `pending` guard refuses Enter and the
+   * button is disabled. The form's single-flight guard, held after a success
+   * until the dialog closes, is defence in depth: with that hold reverted these
+   * cases still pass, so they do not claim to prove it. The retry cases do rest
+   * on the form: it must let go of its guard after a refusal.
+   */
   async function openFilled(user: ReturnType<typeof userEvent.setup>) {
     get.mockResolvedValue(page([USER]));
     mountUsers('en');
@@ -2492,7 +2524,7 @@ describe('the invitation is sent once between the answer and the outcome (P1-32-
     return { dialog, name, press };
   }
 
-  it('sends no second invitation for Enter while pending, nor for Enter or a press right after the answer', async () => {
+  it('the dialog and the form together send no second invitation for Enter while pending, or for Enter or a press right after the answer', async () => {
     const answer = answeredOneByOne();
     const user = userEvent.setup();
     const { dialog, name, press } = await openFilled(user);
@@ -2501,8 +2533,11 @@ describe('the invitation is sent once between the answer and the outcome (P1-32-
     await user.keyboard('{Enter}{Enter}{Enter}');
     expect(send).toHaveBeenCalledTimes(1);
 
+    const handled = answersHandled.count;
+
     answer({ ok: true, status: 201, data: { id: 'x' }, correlationId: 'c' });
-    await answerHandledNotYetDrawn();
+
+    await answerHandledNotYetDrawn(handled);
     // The answer is in; the form is still on screen, not yet the sentence.
     expect(name).toBeInTheDocument();
     fireEvent.keyDown(name, { key: 'Enter' });
@@ -2536,6 +2571,15 @@ describe('the invitation is sent once between the answer and the outcome (P1-32-
 });
 
 describe('an approval limit is sent once, and Enter in a date submits (P1-32-PRE-OD-ADM4 review)', () => {
+  /*
+   * The "right after the answer" cases show the COMBINED behaviour of the
+   * shared dialog and the form. In that moment the dialog's last drawing is
+   * still the pending one, so its own `pending` guard refuses Enter and the
+   * button is disabled. The form's single-flight guard, held after a success
+   * until the dialog closes, is defence in depth: with that hold reverted these
+   * cases still pass, so they do not claim to prove it. The retry cases do rest
+   * on the form: it must let go of its guard after a refusal.
+   */
   const LIMIT = {
     id: `limit-${ROLE.id}`,
     companyId: 'company-1',
@@ -2584,7 +2628,7 @@ describe('an approval limit is sent once, and Enter in a date submits (P1-32-PRE
     return { dialog, press };
   }
 
-  it('create: Enter in a date part sends it; Enter while pending and right after the answer send nothing more', async () => {
+  it('create: Enter in a date part sends it; the dialog and the form together send nothing more for Enter while pending or right after the answer', async () => {
     const answer = answeredOneByOne();
     const user = userEvent.setup();
     const { dialog, press } = await openCreate(user);
@@ -2599,8 +2643,11 @@ describe('an approval limit is sent once, and Enter in a date submits (P1-32-PRE
     await user.keyboard('{Enter}{Enter}');
     expect(send).toHaveBeenCalledTimes(1);
 
+    const handled = answersHandled.count;
+
     answer({ ok: true, status: 201, data: { id: 'x' }, correlationId: 'c' });
-    await answerHandledNotYetDrawn();
+
+    await answerHandledNotYetDrawn(handled);
     expect(dialog).toBeInTheDocument();
     fireEvent.keyDown(part, { key: 'Enter' });
     fireEvent.click(press);
@@ -2645,7 +2692,7 @@ describe('an approval limit is sent once, and Enter in a date submits (P1-32-PRE
     return { dialog, press };
   }
 
-  it('end: Enter in its only field sends it, once, and the button says it is saving meanwhile', async () => {
+  it('end: Enter in its only field sends it; the button says it is saving meanwhile, and the dialog and the form together send it once', async () => {
     const answer = answeredOneByOne();
     const user = userEvent.setup();
     const { dialog, press } = await openEnd(user);
@@ -2667,8 +2714,11 @@ describe('an approval limit is sent once, and Enter in a date submits (P1-32-PRE
     fireEvent.click(press);
     expect(send).toHaveBeenCalledTimes(1);
 
+    const handled = answersHandled.count;
+
     answer({ ok: true, status: 200, data: { id: LIMIT.id }, correlationId: 'c' });
-    await answerHandledNotYetDrawn();
+
+    await answerHandledNotYetDrawn(handled);
     expect(dialog).toBeInTheDocument();
     fireEvent.keyDown(part, { key: 'Enter' });
     fireEvent.click(press);
@@ -2694,6 +2744,75 @@ describe('an approval limit is sent once, and Enter in a date submits (P1-32-PRE
     await waitFor(() => expect(press).toBeEnabled());
 
     await user.click(dayPart(dialog, EN('approvalLimits.field.effectiveTo')));
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(3));
+  });
+});
+
+describe('the account’s details are saved once (P1-32-PRE-OD-ADM4 review)', () => {
+  /*
+   * The "right after the answer" case shows the COMBINED behaviour of the
+   * shared dialog and the form: in that moment the dialog's last drawing is
+   * still the pending one, so its own guard and the disabled button refuse.
+   * The form's hold after a success is defence in depth, not proved here. The
+   * retry case does rest on the form letting go of its guard after a refusal.
+   */
+  async function openEdit(user: ReturnType<typeof userEvent.setup>) {
+    mountAccess('en');
+    await user.click(
+      screen.getByRole('button', { name: `${EN('users.edit.open')}: ${USER.displayName}` })
+    );
+    const dialog = await screen.findByRole('dialog', { name: EN('users.edit.title') });
+    const name = within(dialog).getByLabelText(new RegExp(`^${EN('users.edit.displayName')}`));
+    await user.clear(name);
+    await user.type(name, 'Senior Supervisor');
+    const press = within(dialog).getByRole('button', { name: EN('users.edit.save') });
+    return { dialog, name, press };
+  }
+
+  it('the dialog and the form together send one change for Enter while pending, and for Enter or a press right after the answer', async () => {
+    const answer = answeredOneByOne();
+    const user = userEvent.setup();
+    const { dialog, name, press } = await openEdit(user);
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await user.keyboard('{Enter}{Enter}');
+    expect(send).toHaveBeenCalledTimes(1);
+
+    const handled = answersHandled.count;
+    answer({ ok: true, status: 200, data: { ...USER }, correlationId: 'c' });
+    await answerHandledNotYetDrawn(handled);
+    expect(dialog).toBeInTheDocument();
+    fireEvent.keyDown(name, { key: 'Enter' });
+    fireEvent.click(press);
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: EN('users.edit.title') })).toBeNull()
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      'PATCH',
+      `/api/v1/iam/users/${USER.id}`,
+      { displayName: 'Senior Supervisor' },
+      { ifMatch: USER.recordVersion }
+    );
+  });
+
+  it('a refused change can be sent again, by a press and by Enter', async () => {
+    const answer = answeredOneByOne();
+    const user = userEvent.setup();
+    const { dialog, press } = await openEdit(user);
+    await user.click(press);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    answer(OUTAGE);
+    await waitFor(() => expect(press).toBeEnabled());
+
+    await user.click(press);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    answer(OUTAGE);
+    await waitFor(() => expect(press).toBeEnabled());
+
+    await user.click(within(dialog).getByLabelText(new RegExp(`^${EN('users.edit.displayName')}`)));
     await user.keyboard('{Enter}');
     await waitFor(() => expect(send).toHaveBeenCalledTimes(3));
   });
