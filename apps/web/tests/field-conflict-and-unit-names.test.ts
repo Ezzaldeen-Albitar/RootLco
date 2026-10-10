@@ -26,6 +26,7 @@ vi.mock('@/components/notifications/notification-store', () => ({
 }));
 
 const { fromFailure, isFieldConflict } = await import('@/lib/forms/action-result');
+const { failureMessageValues, refusalMessageKey } = await import('@/lib/api/client');
 const { notifyActionResult } = await import('@/components/notifications/action-notifications');
 const { unitName, unitNameByCode, unitNameById, unitOptions } = await import('@/lib/unit-name');
 
@@ -106,6 +107,99 @@ describe('a conflict that names no field keeps the concurrency message', () => {
     );
     expect(state.messageKey).not.toBe('form.formError');
     expect(isFieldConflict(state)).toBe(false);
+  });
+});
+
+describe('only a genuine duplicate value is treated as a field conflict', () => {
+  /** The kind's own banner, values and toast, exactly as without the narrowing. */
+  function expectOwnMessage(failure: ApiFailure): void {
+    const state = fromFailure(failure, 1);
+    expect(state.status).toBe('conflict');
+    expect(state.messageKey).toBe(refusalMessageKey(failure));
+    expect(state.messageKey).not.toBe('form.formError');
+    expect(state.messageValues).toEqual(failureMessageValues(failure));
+    expect(state.duplicateField).toBeUndefined();
+    expect(isFieldConflict(state)).toBe(false);
+    expect(notifyActionResult(state, EN)).toBe(true);
+    expect(notify).toHaveBeenCalledTimes(1);
+  }
+
+  it('a duplicate_code on a field alone: neutral banner, marker set, no toast', () => {
+    const state = fromFailure(
+      conflict('ERR-CON-001', [{ path: 'body.code', rule: 'duplicate_code' }]),
+      1
+    );
+    expect(state.messageKey).toBe('form.formError');
+    expect(state.messageValues).toBeUndefined();
+    expect(state.duplicateField).toBe(true);
+    expect(isFieldConflict(state)).toBe(true);
+    expect(notifyActionResult(state, EN)).toBe(false);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  it('a conflict with another catalogued rule on a field keeps its own key and its toast', () => {
+    const failure = conflict('ERR-CON-001', [{ path: 'body.userId', rule: 'already_assigned' }]);
+    expect(fromFailure(failure, 1).fieldErrors).toEqual({
+      userId: 'form.violation.already_assigned',
+    });
+    expectOwnMessage(failure);
+  });
+
+  it('a conflict with an uncatalogued rule on a field keeps its own key and its toast', () => {
+    const failure = conflict('ERR-CON-001', [{ path: 'body.code', rule: 'not_a_catalogued_rule' }]);
+    expect(fromFailure(failure, 1).fieldErrors).toEqual({ code: 'form.violation.invalid' });
+    expectOwnMessage(failure);
+  });
+
+  it('a conflict with no violation keeps the concurrency sentence and its toast', () => {
+    expectOwnMessage(conflict('ERR-CON-001', []));
+  });
+
+  it('a duplicate mixed with any other rule keeps the kind message and its toast', () => {
+    expectOwnMessage(
+      conflict('ERR-CON-001', [
+        { path: 'body.code', rule: 'duplicate_code' },
+        { path: 'body.userId', rule: 'already_assigned' },
+      ])
+    );
+    notify.mockClear();
+    expectOwnMessage(
+      conflict('ERR-CON-001', [
+        { path: 'body.code', rule: 'duplicate_code' },
+        { path: 'body', rule: 'not_a_catalogued_rule' },
+      ])
+    );
+  });
+
+  it('a validation refusal carrying duplicate_code is not a field conflict', () => {
+    const failure: ApiFailure = {
+      ok: false,
+      kind: 'validation',
+      status: 422,
+      problem: {
+        code: 'ERR-VAL-001',
+        status: 422,
+        violations: [{ path: 'body.code', rule: 'duplicate_code' }],
+      },
+      correlationId: 'corr-1',
+    };
+    const state = fromFailure(failure, 1);
+    expect(state.status).toBe('invalid');
+    expect(state.messageKey).toBe(refusalMessageKey(failure));
+    expect(state.fieldErrors).toEqual({ code: 'form.violation.duplicate_code' });
+    expect(state.duplicateField).toBeUndefined();
+    expect(isFieldConflict(state)).toBe(false);
+  });
+
+  it('a conflict state built any other way, with the shared banner key, is not taken for one', () => {
+    expect(
+      isFieldConflict({
+        status: 'conflict',
+        messageKey: 'form.formError',
+        fieldErrors: { code: 'form.violation.duplicate_code' },
+        attempt: 1,
+      })
+    ).toBe(false);
   });
 });
 
