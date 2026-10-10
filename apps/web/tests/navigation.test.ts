@@ -436,17 +436,25 @@ describe('permission filtering — unknown means denied', () => {
     };
     const SETTINGS_MANAGE = 'org.settings.manage';
 
-    it.each(['settings.numberingRules', 'settings.taxes'])(
-      '%s: shown to a reader of companies or of branches, and to nobody else',
-      (key) => {
-        const shown = (permissions: readonly string[]) => isVisible({ permissions }, entry(key));
-        expect(shown(['org.company.read'])).toBe(true);
-        expect(shown(['org.branch.read'])).toBe(true);
-        expect(shown([SETTINGS_MANAGE])).toBe(false);
-        expect(shown(['org.tenant.read', SETTINGS_MANAGE])).toBe(false);
-        expect(shown(['org.tax.manage'])).toBe(false);
-      }
-    );
+    it('settings.numberingRules: shown to a reader of companies or of branches, and to nobody else', () => {
+      const shown = (permissions: readonly string[]) =>
+        isVisible({ permissions }, entry('settings.numberingRules'));
+      expect(shown(['org.company.read'])).toBe(true);
+      expect(shown(['org.branch.read'])).toBe(true);
+      expect(shown([SETTINGS_MANAGE])).toBe(false);
+      expect(shown(['org.tenant.read', SETTINGS_MANAGE])).toBe(false);
+      expect(shown(['org.tax.manage'])).toBe(false);
+    });
+
+    it('settings.taxes: shown to a reader of companies or of branches, and to nobody else', () => {
+      const shown = (permissions: readonly string[]) =>
+        isVisible({ permissions }, entry('settings.taxes'));
+      expect(shown(['org.company.read'])).toBe(true);
+      expect(shown(['org.branch.read'])).toBe(true);
+      expect(shown([SETTINGS_MANAGE])).toBe(false);
+      expect(shown(['org.tenant.read', SETTINGS_MANAGE])).toBe(false);
+      expect(shown(['org.tax.manage'])).toBe(false);
+    });
 
     it('settings.currencies: shown to a reader of the workspace or of companies, and to nobody else', () => {
       const shown = (permissions: readonly string[]) =>
