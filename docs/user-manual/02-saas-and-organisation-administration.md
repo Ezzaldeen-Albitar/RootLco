@@ -801,10 +801,11 @@ the settings-management permission. **Where** Sidebar → **Administration** →
 ### 2.10.8 System settings — IMPLEMENTED (UI), key-and-value settings
 
 **Label** **System settings** <!-- systemSettings.title --> (إعدادات النظام) — _"Settings held at
-the workspace, company and branch levels."_ <!-- systemSettings.description --> **Who** The
-navigation entry and every save need the settings-management permission. The screen itself opens
-only if you may read companies or branches; if you may read neither, the whole page is the
-permission-denied state. **Where** Sidebar → **Administration** → **Settings** → **System settings** <!-- nav.systemSettings -->
+the workspace, company and branch levels."_ <!-- systemSettings.description --> **Who** Anyone
+holding the company-read or the branch-read permission sees the navigation entry, the link on the
+Administration page and the settings they may read; if you may read neither, the whole page is the
+permission-denied state. Every save needs the settings-management permission; without it the
+settings are shown read only. **Where** Sidebar → **Administration** → **Settings** → **System settings** <!-- nav.systemSettings -->
 . **Steps** Choose the **Level** <!-- systemSettings.level --> — **Workspace** <!-- admin.scope.tenant -->
 , **Company** <!-- admin.scope.company --> or **Branch** <!-- admin.scope.branch --> — supply the
 **Company reference** or **Branch reference** where your session does not resolve one, then add a
@@ -990,7 +991,7 @@ administrator backfill for it, which by that decision is done for named organisa
 | **Numbering rules**                          | Yes, read only                               | Shown on company-read or branch-read, which are both in the set; nothing is changed there (2.10.4).                            |
 | **Taxes**                                    | Yes, read only                               | Same (2.10.5).                                                                                                                 |
 | **Currencies**                               | Yes, and the enabled currencies are editable | Shown on tenant-read or company-read; changing the enabled currencies needs settings-management, which is in the set (2.10.6). |
-| **System settings**                          | Yes                                          | Gated on settings-management, which is in the set.                                                                             |
+| **System settings**                          | Yes, and editable                            | Shown on company-read or branch-read; saving needs settings-management, which is in the set (2.10.8).                          |
 | **Notifications**, **Documents**             | **No**                                       | Planned, not built — see 2.13.                                                                                                 |
 | **Appointments**                             | Yes                                          | The four appointment permissions are in the set since the Owner decision of 2026-09-29. See Part 4A.                           |
 | **Appointment setup**                        | Yes, and fully usable                        | Same decision. The lists start empty; the organisation enters its own (2.10.11).                                               |

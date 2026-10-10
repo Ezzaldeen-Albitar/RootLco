@@ -1004,7 +1004,11 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             labelKey: 'nav.systemSettings',
             icon: 'settings',
             href: '/administration/system-settings',
-            permission: 'org.settings.manage',
+            // The page shows the company settings to `org.company.read` and the
+            // branch settings to `org.branch.read`, read only without
+            // `org.settings.manage`, and refuses only a session holding neither.
+            permission: 'org.company.read',
+            orPermissions: ['org.branch.read'],
             status: 'available',
             scope: 'tenant',
           },

@@ -465,21 +465,22 @@ describe('permission filtering — unknown means denied', () => {
       expect(shown(['org.branch.read', SETTINGS_MANAGE])).toBe(false);
     });
 
-    it('a reader without settings management sees all three in the sidebar', () => {
+    it('a reader without settings management sees all three, and System settings, in the sidebar', () => {
       const reader = { permissions: ['org.tenant.read', 'org.company.read', 'org.branch.read'] };
       const keys = flattenNavigation(visibleNavigation(NAVIGATION, reader)).map((e) => e.key);
       expect(keys).toEqual(
         expect.arrayContaining(['settings.numberingRules', 'settings.taxes', 'settings.currencies'])
       );
-      expect(keys).not.toContain('settings.systemSettings');
+      expect(keys).toContain('settings.systemSettings');
     });
 
-    it('a settings manager who may read nothing on them sees none of the three', () => {
+    it('a settings manager who may read nothing on them sees none of the three, nor System settings', () => {
       const manager = { permissions: ['org.settings.manage'] };
       const keys = flattenNavigation(visibleNavigation(NAVIGATION, manager)).map((e) => e.key);
       expect(keys).not.toContain('settings.numberingRules');
       expect(keys).not.toContain('settings.taxes');
       expect(keys).not.toContain('settings.currencies');
+      expect(keys).not.toContain('settings.systemSettings');
     });
   });
 

@@ -2748,13 +2748,13 @@ describe.each(READERS)('$locale: the settings screens (ADM-5)', ({ locale, M, pa
       screen.queryAllByRole('link').map((link) => link.getAttribute('href') ?? '');
     const at = (path: string) => `/${locale}/administration/${path}`;
 
-    it('shows Numbering rules, Taxes and Currencies to a reader without settings management', async () => {
+    it('shows Numbering rules, Taxes, Currencies and System settings to a reader without settings management', async () => {
       SESSION_PERMISSIONS = [READ_TENANT, READ_COMPANY];
       await open(AdministrationHub);
       expect(hubLinks()).toEqual(
         expect.arrayContaining([at('numbering-rules'), at('taxes'), at('currencies')])
       );
-      expect(hubLinks()).not.toContain(at('system-settings'));
+      expect(hubLinks()).toContain(at('system-settings'));
     });
 
     it('shows Numbering rules and Taxes to a reader of branches alone, and not Currencies', async () => {
@@ -2764,13 +2764,13 @@ describe.each(READERS)('$locale: the settings screens (ADM-5)', ({ locale, M, pa
       expect(hubLinks()).not.toContain(at('currencies'));
     });
 
-    it('shows none of the three to a settings manager who may read none of them', async () => {
+    it('shows none of the four to a settings manager who may read none of them', async () => {
       SESSION_PERMISSIONS = [MANAGE_SETTINGS];
       await open(AdministrationHub);
       expect(hubLinks()).not.toContain(at('numbering-rules'));
       expect(hubLinks()).not.toContain(at('taxes'));
       expect(hubLinks()).not.toContain(at('currencies'));
-      expect(hubLinks()).toContain(at('system-settings'));
+      expect(hubLinks()).not.toContain(at('system-settings'));
     });
   });
 
