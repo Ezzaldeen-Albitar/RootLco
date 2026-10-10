@@ -173,9 +173,12 @@ describe('the navigation model', () => {
       'settings.taxes',
       // The technician workspace landed with P1-29 W4 at /technicians/me,
       // gated on `tech.technician.read` — the permission its queue requires.
-      // The child names the same route as its parent; see navigation.ts.
+      // The roster landed with P1-32-PRE-OD-ADM2B at /technicians, on the same
+      // code its list declares; its child names the same route as its parent,
+      // so the expanded sidebar has a link to mark. See navigation.ts.
       'technicians',
       'technicians.me',
+      'technicians.roster',
       'vehicle-duplicates',
       'vehicles',
       // The walk-in intake screen landed with P1-28-FE-006 at

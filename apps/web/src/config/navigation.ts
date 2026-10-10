@@ -296,21 +296,32 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
       },
       {
         /*
-         * P1-29 W4: the technician's own workspace. The parent names
-         * `/technicians/me` rather than `/technicians` because that is the
-         * screen that exists — the roster (BR-03's administration surface) has
-         * no page yet, and a rail link to it would 404. When the roster lands,
-         * the parent moves to `/technicians` and gains a `technicians.roster`
-         * child; this entry does not change.
+         * P1-29 W4 landed the technician's own workspace at `/technicians/me`,
+         * and the parent named it because it was the only screen. The roster
+         * (`P1-32-PRE-OD-ADM2B`) now exists at `/technicians`, so the parent
+         * names it and gains the `technicians.roster` child — the
+         * `work-orders.queue` pattern, a child naming its parent's own route so
+         * the expanded sidebar has a link to mark. The workspace entry does not
+         * change. Both are gated on `tech.technician.read`, the code the
+         * roster list and the own queue declare.
          */
         key: 'technicians',
         labelKey: 'nav.technicians',
         icon: 'technicians',
-        href: '/technicians/me',
+        href: '/technicians',
         permission: 'tech.technician.read',
         status: 'available',
         scope: 'branch',
         children: [
+          {
+            key: 'technicians.roster',
+            labelKey: 'nav.technicianRoster',
+            icon: 'technicians',
+            href: '/technicians',
+            permission: 'tech.technician.read',
+            status: 'available',
+            scope: 'branch',
+          },
           {
             // The workspace itself, naming the SAME route as its parent — the
             // `work-orders.queue` pattern, for the same reason: a disclosure

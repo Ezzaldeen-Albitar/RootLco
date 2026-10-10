@@ -984,18 +984,18 @@ returns an explicit `OWNER ACCEPTANCE: PASS`. Silence is not Pass.**
      an earlier revision put them in the label column and broke two other gates
      whose regexes read the label and the number as adjacent cells. -->
 
-<!-- derived: files apps/web/tests = 202 -->
+<!-- derived: files apps/web/tests = 203 -->
 <!-- derived: files tests/ci = 86 -->
 <!-- derived: files scripts/ci = 68 -->
 <!-- derived: files apps/web/scripts = 5 -->
 <!-- derived: files supabase/migrations = 187 -->
 <!-- derived: files tests/db = 169 -->
 <!-- derived: files tests/db:all = 173 -->
-<!-- derived: files tests/backend = 172 -->
-<!-- derived: files tests/backend:all = 181 -->
+<!-- derived: files tests/backend = 173 -->
+<!-- derived: files tests/backend:all = 182 -->
 <!-- derived: files apps/web/src/features/crm = 20 -->
 <!-- derived: files apps/web/src/features/vehicles = 25 -->
-<!-- derived: files p1-27-frontend-gate = 182 -->
+<!-- derived: files p1-27-frontend-gate = 184 -->
 <!-- derived: files p1-27-frontend-gate:trees = 5 -->
 <!-- derived: tracked docs/phase-1/phase-1-27 = 42 -->
 <!-- derived: tracked docs/phase-1/phase-1-27:md = 32 -->

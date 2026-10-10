@@ -56,6 +56,8 @@ export type {
   HeldSkillView,
   TechnicianProfileDetail,
   TechnicianProfileView,
+  TechnicianRosterEntry,
+  TechnicianSkillCatalogue,
 } from './application/technician-roster-service';
 export type { LaborReportFilter, LaborSessionRow } from './data/labor-session-repository';
 /**

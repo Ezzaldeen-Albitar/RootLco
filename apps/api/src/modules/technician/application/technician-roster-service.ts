@@ -36,6 +36,7 @@ import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { SQLSTATE, isSqlState } from '@/server/db/repository';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { appendAudit } from '@/server/audit/audit';
+import { iamDirectory } from '@/modules/iam';
 import {
   TECHNICIAN_ROSTER_ORDER,
   type AvailabilityWindowRow,
@@ -46,7 +47,12 @@ import {
   type TechnicianRosterRepository,
 } from '../data/technician-roster-repository';
 import type { TechnicianCatalogRepository } from '../data/technician-catalog-repository';
-import type { HeldCertificationRow, HeldSkillRow } from '../data/technician-catalog-repository';
+import type {
+  HeldCertificationRow,
+  HeldSkillRow,
+  SkillLevelRow,
+  SkillRow,
+} from '../data/technician-catalog-repository';
 import type { AvailabilityKind, CertificationStatus } from '../domain/technician';
 
 export interface TechnicianProfileView {
@@ -60,8 +66,25 @@ export interface TechnicianProfileView {
   readonly recordVersion: number;
 }
 
+/**
+ * A roster row as the list and the detail read publish it: the profile, and the
+ * person it belongs to by name (`P1-32-PRE-OD-ADM2B`, route checklist
+ * prerequisite 13).
+ *
+ * The name is NOT stored on the profile — `tech.technician_profiles` holds no
+ * personal data by design. It is resolved per read through the iam directory,
+ * which narrows and never widens: a caller without `iam.user.read` is handed an
+ * empty map, so `displayName` is `null` and the `userId` beside it is all they
+ * had before. Null therefore means "this caller may not be told who that is",
+ * the same reading the label port and the labour report give it. The create
+ * and update responses stay without it: they answer the write, not the roster.
+ */
+export interface TechnicianRosterEntry extends TechnicianProfileView {
+  readonly displayName: string | null;
+}
+
 export interface TechnicianProfileDetail {
-  readonly profile: TechnicianProfileView;
+  readonly profile: TechnicianRosterEntry;
   readonly skills: readonly HeldSkillRow[];
   readonly certifications: readonly HeldCertificationRow[];
   readonly availability: readonly AvailabilityWindowView[];
@@ -90,6 +113,17 @@ export interface AvailabilityWindowView {
   readonly availabilityKind: string;
   readonly reason: string | null;
   readonly recordVersion: number;
+}
+
+/**
+ * The skill vocabulary a technician can be given (`tech.skill-list`): the
+ * active skills and the active proficiency levels the caller's tenant may
+ * reference, tenant rows shadowing platform rows of the same code — exactly the
+ * set `tech.technician-skill-set` accepts.
+ */
+export interface TechnicianSkillCatalogue {
+  readonly skills: readonly SkillRow[];
+  readonly skillLevels: readonly SkillLevelRow[];
 }
 
 export interface CertificateNumberView {
@@ -361,7 +395,42 @@ export class TechnicianRosterService extends ApplicationService {
       { companyId: filter.companyId, branchId: filter.branchId, isActive: filter.isActive },
       pageRequest(TECHNICIAN_ROSTER_ORDER, { limit: filter.limit, cursor: filter.cursor })
     );
-    return { ...page, items: page.items.map(view) };
+    return { ...page, items: await this.named(db, page.items) };
+  }
+
+  /**
+   * Each profile with its person's display name, or null where this caller may
+   * not be told it. BATCHED: one directory statement for the whole page,
+   * whatever its size, so a roster page is never an N+1.
+   */
+  private async named(
+    db: DbHandle,
+    rows: readonly RosterProfileRow[]
+  ): Promise<TechnicianRosterEntry[]> {
+    if (rows.length === 0) return [];
+    const identities = await iamDirectory().directory.resolveDisplayIdentities(db, [
+      ...new Set(rows.map((row) => row.userId)),
+    ]);
+    return rows.map((row) => ({
+      ...view(row),
+      displayName: identities.get(row.userId)?.displayName ?? null,
+    }));
+  }
+
+  /**
+   * The skill vocabulary `tech.technician-skill-set` accepts, for a picker.
+   *
+   * Tenant-wide reference data, read under RLS: the catalogue rows a caller sees
+   * are the platform's and their own tenant's, never another tenant's. The same
+   * resolution the eligibility read uses, so the picker offers exactly what a
+   * set will accept.
+   */
+  async skillCatalogue(db: DbHandle): Promise<TechnicianSkillCatalogue> {
+    const [skills, skillLevels] = await Promise.all([
+      this.catalog.skills(db),
+      this.catalog.skillLevels(db),
+    ]);
+    return { skills, skillLevels };
   }
 
   /**
@@ -372,11 +441,12 @@ export class TechnicianRosterService extends ApplicationService {
    * requires `iam.sensitive.view`; folding it in here would publish restricted
    * data to a caller holding only `tech.technician.read`.
    *
-   * It also carries no human name. `tech.technician_profiles` holds none by
-   * design — its own comment forbids duplicating personal data — so this returns
-   * `userId` and the operational attributes. Resolving that id to a name has no
-   * contract in this platform, and inventing one here would be a second identity
-   * model beside `iam.user_accounts`.
+   * The human name is not stored here either. `tech.technician_profiles` holds
+   * none by design — its own comment forbids duplicating personal data — so the
+   * name beside the profile is resolved through the iam directory on this read
+   * (`TechnicianRosterEntry`), and is null for a caller without `iam.user.read`.
+   * Each held skill and certification carries the catalogue's name for it, and
+   * each certification its version for `tech.technician-certification-update`.
    */
   async profileDetail(
     db: DbHandle,
@@ -389,8 +459,9 @@ export class TechnicianRosterService extends ApplicationService {
       this.catalog.heldCertifications(db, profile.id),
       this.roster.upcomingAvailability(db, profile.id, MAX_DETAIL_AVAILABILITY),
     ]);
+    const [named] = await this.named(db, [profile]);
     return {
-      profile: view(profile),
+      profile: named ?? { ...view(profile), displayName: null },
       skills,
       certifications,
       availability: availability.map((row) => this.availabilityView(row)),
