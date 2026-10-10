@@ -28,12 +28,7 @@ import { intlLocale } from '@/lib/format';
 import { useServerTable, type ServerPageStatus } from '../../shared/use-server-table';
 import { AccountPicker, type ChosenAccount } from '../../users/components/AccountPicker';
 import { listAuditEvents, readAuditEvent } from '../api';
-import {
-  auditActionLabel,
-  auditEntityLabel,
-  auditFieldLabel,
-  isNamedAuditField,
-} from '../labels';
+import { auditActionLabel, auditEntityLabel, auditFieldLabel, isNamedAuditField } from '../labels';
 import { openingWindow, rangeProblem, type DayRange } from '../range';
 import {
   NO_AUDIT_FILTERS,

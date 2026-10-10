@@ -954,7 +954,9 @@ describe('audit codes in words, never as the primary text (P1-32-PRE-OD-ADM6)', 
     listAuditEvents.mockResolvedValue(okPage([row, roleChanged, inventoryCount, unknownPart]));
     renderScreen();
     const table = await screen.findByRole('grid', { name: EN['audit.title'] as string });
-    expect(await within(table).findByText(EN['audit.event.iamAuditViewed'] as string)).toBeVisible();
+    expect(
+      await within(table).findByText(EN['audit.event.iamAuditViewed'] as string)
+    ).toBeVisible();
     expect(within(table).getByText(EN['audit.record.iamAuditRecord'] as string)).toBeVisible();
     expect(within(table).getByText(EN['audit.event.iamRoleUpdated'] as string)).toBeVisible();
     expect(within(table).getByText(EN['audit.record.iamRole'] as string)).toBeVisible();
@@ -966,23 +968,34 @@ describe('audit codes in words, never as the primary text (P1-32-PRE-OD-ADM6)', 
     // The row action names the action in words too.
     expect(
       within(grid()).getAllByRole('button', {
-        name: new RegExp(`^${escape(EN['admin.open'] as string)} ${escape(EN['audit.event.iamRoleUpdated'] as string)}`),
+        name: new RegExp(
+          `^${escape(EN['admin.open'] as string)} ${escape(EN['audit.event.iamRoleUpdated'] as string)}`
+        ),
       })
     ).toHaveLength(1);
     // The support reference keeps its label.
-    expect(within(table).getByRole('columnheader', { name: EN['audit.column.correlationId'] as string })).toBeVisible();
+    expect(
+      within(table).getByRole('columnheader', { name: EN['audit.column.correlationId'] as string })
+    ).toBeVisible();
   });
 
   it('names them in Arabic, right to left', async () => {
     listAuditEvents.mockResolvedValue(okPage([roleChanged, inventoryCount, unknownPart]));
     renderRtl(
       withMui(
-        <AuditLogScreen locale="ar" messages={ar} initialFrom="2026-09-01" initialTo="2026-09-08" />,
+        <AuditLogScreen
+          locale="ar"
+          messages={ar}
+          initialFrom="2026-09-01"
+          initialTo="2026-09-08"
+        />,
         'ar'
       )
     );
     const table = await screen.findByRole('grid', { name: AR['audit.title'] as string });
-    expect(await within(table).findByText(AR['audit.event.iamRoleUpdated'] as string)).toBeVisible();
+    expect(
+      await within(table).findByText(AR['audit.event.iamRoleUpdated'] as string)
+    ).toBeVisible();
     expect(within(table).getByText(AR['audit.record.iamRole'] as string)).toBeVisible();
     expect(
       within(table).getByText(
@@ -1006,8 +1019,18 @@ describe('audit codes in words, never as the primary text (P1-32-PRE-OD-ADM6)', 
       record: {
         ...roleChanged,
         details: [
-          { fieldName: 'status', oldValueMasked: 'active', newValueMasked: 'archived', valueClassification: 'internal' },
-          { fieldName: 'role_code', oldValueMasked: null, newValueMasked: 'R-1', valueClassification: 'internal' },
+          {
+            fieldName: 'status',
+            oldValueMasked: 'active',
+            newValueMasked: 'archived',
+            valueClassification: 'internal',
+          },
+          {
+            fieldName: 'role_code',
+            oldValueMasked: null,
+            newValueMasked: 'R-1',
+            valueClassification: 'internal',
+          },
         ],
       },
       correlationId: 'corr-d',
@@ -1020,7 +1043,9 @@ describe('audit codes in words, never as the primary text (P1-32-PRE-OD-ADM6)', 
       })
     );
     const drawer = await screen.findByRole('dialog', { name: EN['audit.detail.title'] as string });
-    expect(await within(drawer).findByText(EN['audit.event.iamRoleUpdated'] as string)).toBeVisible();
+    expect(
+      await within(drawer).findByText(EN['audit.event.iamRoleUpdated'] as string)
+    ).toBeVisible();
     expect(within(drawer).getByText(EN['audit.record.iamRole'] as string)).toBeVisible();
     const term = (key: string) => {
       const dt = within(drawer).getByText(EN[key] as string, { selector: 'dt' });
@@ -1034,7 +1059,9 @@ describe('audit codes in words, never as the primary text (P1-32-PRE-OD-ADM6)', 
     const details = within(drawer).getAllByRole('listitem');
     expect(details).toHaveLength(2);
     expect(details[0]).toHaveTextContent(EN['audit.field.status'] as string);
-    expect(within(details[0] as HTMLElement).queryByText(EN['audit.detail.fieldCode'] as string)).toBeNull();
+    expect(
+      within(details[0] as HTMLElement).queryByText(EN['audit.detail.fieldCode'] as string)
+    ).toBeNull();
     expect(details[1]).toHaveTextContent(EN['audit.field.other'] as string);
     expect(details[1]).toHaveTextContent(`${EN['audit.detail.fieldCode'] as string} role_code`);
   });
@@ -1045,7 +1072,9 @@ describe('audit codes in words, never as the primary text (P1-32-PRE-OD-ADM6)', 
       'utf8'
     );
     const written = new Map<string, string>();
-    for (const match of catalogue.matchAll(/code: '([^']+)',\s*class: '[a-z]+',\s*entityType: '([^']+)'/g)) {
+    for (const match of catalogue.matchAll(
+      /code: '([^']+)',\s*class: '[a-z]+',\s*entityType: '([^']+)'/g
+    )) {
       written.set(match[1] as string, match[2] as string);
     }
     expect(written.size).toBeGreaterThan(100);
@@ -1378,7 +1407,9 @@ describe('the administration hub never offers a page that refuses (P1-32-PRE-OD-
     expect(loader, `${href} has a page to render`).toBeDefined();
     const page = (await (loader as () => Promise<{ default: unknown }>)())
       .default as unknown as RoutePage;
-    const view = renderLtr(withMui((await page({ params: Promise.resolve({ locale: 'en' }) })) as never));
+    const view = renderLtr(
+      withMui((await page({ params: Promise.resolve({ locale: 'en' }) })) as never)
+    );
     const refused = screen.queryByText(EN['state.denied.title'] as string) !== null;
     view.unmount();
     return refused;
@@ -1389,7 +1420,12 @@ describe('the administration hub never offers a page that refuses (P1-32-PRE-OD-
     const item = navigation.find((entry) => entry.href === href);
     expect(item, `${href} has a navigation entry`).toBeDefined();
     const code = item?.permission as string;
-    const read = ['org.company.read', 'org.branch.read', 'org.department.read', 'org.employee.read'];
+    const read = [
+      'org.company.read',
+      'org.branch.read',
+      'org.department.read',
+      'org.employee.read',
+    ];
     const codes = [code, ...read.filter((other) => other !== code)];
     for (const held of subsets(codes)) {
       const refused = await pageRefuses(href, held);
