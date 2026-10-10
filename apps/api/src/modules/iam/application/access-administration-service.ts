@@ -34,15 +34,25 @@ import { isSqlState, sqlState, SQLSTATE } from '@/server/db/repository';
 import {
   AuthorizationRepository,
   ROLE_ORDERING,
-  type ApprovalLimitRow,
+  type ApprovalLimitListRow,
   type GrantRow,
   type RoleRow,
 } from '../data/authorization-repository';
 import { IdentityRepository } from '../data/identity-repository';
+import { IdentityDirectoryService } from './identity-directory-service';
 import { OrganizationRepository } from '../data/organization-repository';
 import { DelegationPolicy, type GrantFacts, type ScopeRequest } from '../domain/delegation-policy';
 import { CredentialPolicy } from '../domain/credential-policy';
 import { IdentityPolicy } from '../domain/identity-policy';
+
+/**
+ * One row of `iam.approval-limit-list`: the stored limit, the role's name
+ * (`null` without `iam.role.read`, or for a person's limit) and the person's
+ * display name (`null` without `iam.user.read`, or for a role's limit).
+ */
+export interface ApprovalLimitListItem extends ApprovalLimitListRow {
+  readonly userDisplayName: string | null;
+}
 
 /** SQLSTATE for an EXCLUDE-constraint violation (overlapping effective windows). */
 const EXCLUSION_VIOLATION = '23P01';
@@ -647,11 +657,36 @@ export class AccessAdministrationService extends ApplicationService {
 
   // ---- Approval limits ---------------------------------------------------
 
+  /**
+   * The approval limits, each with the names its references need
+   * (`P1-32-PRE-OD-ADM4`, route checklist prerequisite 9).
+   *
+   * `userDisplayName` names a person's limit through the identity directory,
+   * which publishes a name only to a caller holding `iam.user.read` and an
+   * empty answer to anyone else — so without that code every name is `null`,
+   * and the caller learns nothing it could not already read; and only an
+   * account the user list shows is named (`listedOnly`). `roleName` is
+   * resolved by the list's own statement under `iam.role.read` the same way.
+   * Both are additive: the references are published as before, and a `null`
+   * is the screen's cue to say a name is not available, never to print an id.
+   */
   async listApprovalLimits(
     db: DbHandle,
     filters: { companyId?: string | undefined; userId?: string | undefined }
-  ): Promise<readonly ApprovalLimitRow[]> {
-    return this.authorization.listApprovalLimits(db, filters, 200);
+  ): Promise<readonly ApprovalLimitListItem[]> {
+    const rows = await this.authorization.listApprovalLimits(db, filters, 200);
+    const people = [...new Set(rows.flatMap((row) => (row.userId === null ? [] : [row.userId])))];
+    // `listedOnly`: a limit names its CURRENT subject, so an account the user
+    // list no longer shows (soft-deleted) is not named here either.
+    const names = await new IdentityDirectoryService(this.identities).resolveDisplayIdentities(
+      db,
+      people,
+      { listedOnly: true }
+    );
+    return rows.map((row) => ({
+      ...row,
+      userDisplayName: row.userId === null ? null : (names.get(row.userId)?.displayName ?? null),
+    }));
   }
 
   /**

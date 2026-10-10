@@ -321,9 +321,9 @@ test.describe('authenticated accessibility', () => {
     }
     await opener.click();
 
-    // The invitation is the shared Material decision dialog since
-    // P1-32-PRE-OD-ADM3 (ADR-022), which is an `alertdialog` named by its title.
-    const dialog = page.getByRole('alertdialog');
+    // The invitation is a form, so the shared `FormDialog` since
+    // P1-32-PRE-OD-ADM4 — a `dialog` named by its title, not an alert.
+    const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
     // Material fades a dialog in. Measured mid-fade, its buttons are part-
     // transparent and the contrast rule reads the blend, not the colours the

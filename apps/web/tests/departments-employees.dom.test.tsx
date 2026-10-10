@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -88,6 +88,24 @@ async function switchWithoutQuestion(user: User, label: string): Promise<void> {
 const send = vi.fn();
 const get = vi.fn();
 vi.mock('@/lib/api/server-client', () => ({ authorizedClient: async () => ({ send, get }) }));
+
+/*
+ * Every screen reports its write's outcome through `notifyActionResult` once
+ * its submit handler has the answer. The real function still runs; the count
+ * only lets a case know the handler has reached that point.
+ */
+const answersHandled = vi.hoisted(() => ({ count: 0 }));
+vi.mock('@/components/notifications/action-notifications', async (importOriginal) => {
+  const actual =
+    await importOriginal<typeof import('@/components/notifications/action-notifications')>();
+  return {
+    ...actual,
+    notifyActionResult: (...args: Parameters<typeof actual.notifyActionResult>) => {
+      answersHandled.count += 1;
+      return actual.notifyActionResult(...args);
+    },
+  };
+});
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
   notFound: () => {
@@ -184,6 +202,37 @@ const stale = {
   problem: { code: 'ERR-CON-001' },
   correlationId: 'corr-stale',
 };
+
+/** Every write held until the case answers it, one answer per write, in order. */
+function answeredOneByOne() {
+  const waiting: ((value: unknown) => void)[] = [];
+  send.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        waiting.push(resolve);
+      })
+  );
+  return (value: unknown) => {
+    const next = waiting.shift();
+    if (next === undefined) throw new Error('no write is waiting for an answer');
+    next(value);
+  };
+}
+
+/**
+ * Lets an answer reach the dialog's submit handler and run it to its end
+ * WITHOUT letting React draw the outcome: only promise jobs run here, and the
+ * render the answer schedules is a later task. It asserts the handler did
+ * finish (its outcome was reported) before returning, so a key or a press
+ * after it lands in the moment between the answer and the dialog closing.
+ */
+async function answerHandledNotYetDrawn(handledBefore: number): Promise<void> {
+  for (let job = 0; job < 200 && answersHandled.count === handledBefore; job += 1) {
+    await Promise.resolve();
+  }
+  // The handler has reported the outcome, so it has run to its end.
+  expect(answersHandled.count).toBe(handledBefore + 1);
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -405,6 +454,39 @@ describe.each(['en', 'ar'] as const)('Departments (%s)', (locale) => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
+  it('the dialog and the form together send no second create for Enter while pending, or for Enter or a press right after the answer', async () => {
+    // Combined behaviour: right after the answer the dialog's last drawing is
+    // still the pending one, so its own guard and the disabled button refuse.
+    // The form's hold after a success is defence in depth, not proved here.
+    get.mockResolvedValue(departments([]));
+    const answer = answeredOneByOne();
+    const u = user();
+    mount(departmentsScreen(locale), locale);
+    await u.click(screen.getByRole('button', { name: 'first' }));
+    await u.click(await screen.findByRole('button', { name: T('departments.add') }));
+    const dialog = screen.getByRole('dialog');
+    await u.type(field(dialog, T('departments.name')), 'Parts desk');
+    const code = field(dialog, T('organization.structure.code'));
+    await u.type(code, 'parts_desk');
+    const create = within(dialog).getByRole('button', { name: T('admin.create') });
+    await u.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await u.keyboard('{Enter}{Enter}');
+    expect(send).toHaveBeenCalledTimes(1);
+
+    const handled = answersHandled.count;
+
+    answer({ ok: true, status: 201, data: {}, correlationId: 'c2' });
+
+    await answerHandledNotYetDrawn(handled);
+    expect(dialog).toBeInTheDocument();
+    fireEvent.keyDown(code, { key: 'Enter' });
+    fireEvent.click(create);
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
   it('says a refused create in the form and keeps every field', async () => {
     get.mockResolvedValue(departments([]));
     send.mockResolvedValue(stale);
@@ -547,6 +629,71 @@ describe.each(['en', 'ar'] as const)('Departments (%s)', (locale) => {
       { name: 'Service desk' },
       { ifMatch: 4 }
     );
+  });
+
+  it('the dialog and the form together send one rename for Enter while pending, and for Enter or a press right after the answer', async () => {
+    // Combined behaviour: right after the answer the dialog's last drawing is
+    // still the pending one, so its own guard and the disabled button refuse.
+    // The form's hold after a success is defence in depth, not proved here.
+    get.mockResolvedValue(departments([DEPARTMENT]));
+    const answer = answeredOneByOne();
+    const u = user();
+    mount(departmentsScreen(locale), locale);
+    await u.click(screen.getByRole('button', { name: 'first' }));
+    await u.click(
+      await screen.findByRole('button', { name: `${T('departments.rename')}: Service` })
+    );
+    const dialog = screen.getByRole('dialog');
+    const name = field(dialog, T('departments.name'));
+    await u.type(name, ' desk');
+    const save = within(dialog).getByRole('button', { name: T('admin.save') });
+    await u.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await u.keyboard('{Enter}{Enter}');
+    expect(send).toHaveBeenCalledTimes(1);
+
+    const handled = answersHandled.count;
+    answer({ ok: true, status: 200, data: {}, correlationId: 'c3' });
+    await answerHandledNotYetDrawn(handled);
+    expect(dialog).toBeInTheDocument();
+    fireEvent.keyDown(name, { key: 'Enter' });
+    fireEvent.click(save);
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      'PATCH',
+      `/api/v1/org/departments/${DEPARTMENT.id}`,
+      { name: 'Service desk' },
+      { ifMatch: 4 }
+    );
+  });
+
+  it('a refused rename can be sent again, by a press and by Enter', async () => {
+    get.mockResolvedValue(departments([DEPARTMENT]));
+    const answer = answeredOneByOne();
+    const u = user();
+    mount(departmentsScreen(locale), locale);
+    await u.click(screen.getByRole('button', { name: 'first' }));
+    await u.click(
+      await screen.findByRole('button', { name: `${T('departments.rename')}: Service` })
+    );
+    const dialog = screen.getByRole('dialog');
+    await u.type(field(dialog, T('departments.name')), ' desk');
+    const save = within(dialog).getByRole('button', { name: T('admin.save') });
+    await u.click(save);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    answer(outage);
+    await waitFor(() => expect(save).toBeEnabled());
+
+    await u.click(save);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    answer(outage);
+    await waitFor(() => expect(save).toBeEnabled());
+
+    await u.click(field(dialog, T('departments.name')));
+    await u.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(3));
   });
 
   it('reinstates with the row version as If-Match, sent once for two presses', async () => {
@@ -769,6 +916,38 @@ describe.each(['en', 'ar'] as const)('Employees (%s)', (locale) => {
       create.click();
       create.click();
     });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('the dialog and the form together send no second create for Enter while pending, or for Enter or a press right after the answer', async () => {
+    // Combined behaviour: right after the answer the dialog's last drawing is
+    // still the pending one, so its own guard and the disabled button refuse.
+    // The form's hold after a success is defence in depth, not proved here.
+    serve({ list: employeePage([]) });
+    const answer = answeredOneByOne();
+    const u = user();
+    mount(employeesScreen(locale), locale);
+    await u.click(screen.getByRole('button', { name: 'first' }));
+    await u.click(await screen.findByRole('button', { name: T('employees.add') }));
+    const dialog = screen.getByRole('dialog');
+    const name = field(dialog, T('employees.displayName'));
+    await u.type(name, 'New Clerk');
+    const create = within(dialog).getByRole('button', { name: T('admin.create') });
+    await u.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await u.keyboard('{Enter}{Enter}');
+    expect(send).toHaveBeenCalledTimes(1);
+
+    const handled = answersHandled.count;
+
+    answer({ ok: true, status: 201, data: {}, correlationId: 'c2' });
+
+    await answerHandledNotYetDrawn(handled);
+    expect(dialog).toBeInTheDocument();
+    fireEvent.keyDown(name, { key: 'Enter' });
+    fireEvent.click(create);
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(send).toHaveBeenCalledTimes(1);
   });
 

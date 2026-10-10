@@ -101,6 +101,38 @@ export async function addRolePermissionAction(
   return success('admin.saved', 1);
 }
 
+/**
+ * Changes an existing mapping between allow and deny — `iam.role-permission-update`
+ * (`PATCH /iam/roles/{roleId}/permissions/{mappingId}`, `iam.role.manage`),
+ * which had no caller before `P1-32-PRE-OD-ADM4`.
+ *
+ * The operation is version-guarded and refuses a request without `If-Match`, so
+ * the mapping's `recordVersion` — the one the screen displayed — travels with
+ * it; a mapping changed since is the server's conflict, never retried here.
+ * A change TO allow is delegation-checked by the backend, exactly as an add is.
+ */
+export async function changeRolePermissionEffectAction(
+  roleId: string,
+  mappingId: string,
+  recordVersion: number,
+  effect: 'allow' | 'deny'
+): Promise<ActionState> {
+  if (effect !== 'allow' && effect !== 'deny') {
+    return invalid({ effect: 'field.required' }, 1);
+  }
+  const client = await authorizedClient();
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt: 1 };
+
+  const result = await client.send(
+    'PATCH',
+    `/api/v1/iam/roles/${encodeURIComponent(roleId)}/permissions/${encodeURIComponent(mappingId)}`,
+    { effect },
+    { ifMatch: recordVersion }
+  );
+  if (!result.ok) return fromFailure(result, 1);
+  return success('admin.saved', 1);
+}
+
 export async function removeRolePermissionAction(
   roleId: string,
   mappingId: string

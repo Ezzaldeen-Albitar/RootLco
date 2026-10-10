@@ -224,12 +224,49 @@ test.describe('the eleven administration screens', () => {
     expect(consoleErrors, 'the access page console').toEqual([]);
   });
 
-  test('the roles table finishes loading too', async ({ page }) => {
-    await page.goto('/en/administration/roles');
-    const body = page.locator('table tbody');
-    await expect(body).toBeVisible();
-    await expect(body).toHaveAttribute('aria-busy', 'false', { timeout: 20_000 });
-    await expect(body.getByText('acceptance_administrator')).toBeVisible({ timeout: 20_000 });
+  test('the roles grid finishes loading too, in the project’s language', async ({
+    page,
+  }, testInfo) => {
+    // The operational grid since P1-32-PRE-OD-ADM4 (ADR-022): one grid named by
+    // the page title, in the project's language.
+    const lang = locale(testInfo.project.name);
+    await page.goto(`/${lang}/administration/roles`);
+    await expect(page.locator('html')).toHaveAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+    const grid = page.getByRole('grid', { name: say(lang, 'roles.title') });
+    await expect(grid).toBeVisible({ timeout: 20_000 });
+    await expect(
+      page.getByTestId('roles-grid').locator('[aria-busy="true"]'),
+      'the grid must stop being busy'
+    ).toHaveCount(0, { timeout: 20_000 });
+    await expect(grid.getByText('acceptance_administrator')).toBeVisible({ timeout: 20_000 });
+  });
+
+  test('the permissions and approval limits screens draw their data, in the project’s language', async ({
+    page,
+  }, testInfo) => {
+    // P1-32-PRE-OD-ADM4: the permission catalogue under the chosen role, and the
+    // approval-limit grid — each in the project's language and direction, and
+    // neither drawn as a refusal.
+    const lang = locale(testInfo.project.name);
+    const consoleErrors = collectConsole(page);
+    await page.goto(`/${lang}/administration/permissions`);
+    await expect(page.locator('html')).toHaveAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+    await expect(page.getByText(say(lang, 'permissions.visibilityNotice'))).toBeVisible();
+    await expect(
+      page.getByRole('combobox', { name: new RegExp(`^${say(lang, 'permissions.selectRole')}`) })
+    ).toBeVisible();
+    await expect(page.getByRole('table').first()).toBeVisible({ timeout: 20_000 });
+
+    await page.goto(`/${lang}/administration/approval-limits`);
+    await expect(page.getByRole('grid', { name: say(lang, 'approvalLimits.title') })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(
+      page.getByTestId('approval-limits-grid').locator('[aria-busy="true"]'),
+      'the grid must stop being busy'
+    ).toHaveCount(0, { timeout: 20_000 });
+    await expect(page.getByText(say(lang, 'state.denied.title'))).toHaveCount(0);
+    expect(consoleErrors, 'the permissions and approval limits console').toEqual([]);
   });
 
   test('no screen leaks a token or a session into browser storage', async ({ page }) => {

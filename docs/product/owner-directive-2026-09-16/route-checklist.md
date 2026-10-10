@@ -244,7 +244,7 @@ hand-built form moves the cursor to the refused field and withdraws a corrected 
 | `/administration/users/[userId]`                           | `apps/web/src/features/administration/users/components/UserAccessScreen.tsx`             | n/a — one account, reached by address; its grants name companies and branches from the reads | pass                                                                                                | pass                                                                                                                                                                                                  | n/a                                                          | n/a                                | fixed (B3-04) — the grant dialog's role                                                                                                                     | pass                                                                                                          | pass | pass |
 | `/administration/roles`                                    | `apps/web/src/features/administration/access/components/RolesScreen.tsx`                 | n/a — roles are the tenant's                                                                 | pass                                                                                                | pass                                                                                                                                                                                                  | n/a — the role read publishes no free-text parameter         | n/a                                | fixed (B3-03)                                                                                                                                               | pass                                                                                                          | pass | pass |
 | `/administration/permissions`                              | `apps/web/src/features/administration/access/components/PermissionsScreen.tsx`           | n/a                                                                                          | pass — the first role's mappings are read on arrival                                                | pass — roles by name; each permission by its code and description                                                                                                                                     | n/a                                                          | n/a                                | n/a — a click per permission, no form                                                                                                                       | fixed (B3-02) — a refused or failed catalogue read is drawn through the shared states, never as an empty role | pass | pass |
-| `/administration/approval-limits`                          | `apps/web/src/features/administration/access/components/ApprovalLimitsScreen.tsx`        | pass — the company is named from the working context                                         | pass — the complete list is read on arrival                                                         | fixed (B3-02) — the person is found by name or email through `iam.user-list`; without `iam.user.read` the labelled reference stays; blocked — a listed limit names its person by reference, see below | n/a                                                          | n/a                                | fixed (B3-02, B3-03) — a missing role or person is refused on its own control                                                                               | pass                                                                                                          | pass | pass |
+| `/administration/approval-limits`                          | `apps/web/src/features/administration/access/components/ApprovalLimitsScreen.tsx`        | pass — the company is named from the working context                                         | pass — the complete list is read on arrival                                                         | fixed (B3-02) — the person is found by name or email through `iam.user-list`; without `iam.user.read` the labelled reference stays; fixed (ADM4) — a listed limit names its person and role, in words | n/a                                                          | n/a                                | fixed (B3-02, B3-03) — a missing role or person is refused on its own control                                                                               | pass                                                                                                          | pass | pass |
 | `/administration/audit-log`                                | `apps/web/src/features/administration/audit/components/AuditLogScreen.tsx`               | n/a — the log is tenant-wide; a named company and branch may narrow it                       | pass — a seven-day window, read on arrival                                                          | fixed (B3-02) — "who" is found by name or email; without `iam.user.read` the labelled, shape-checked reference stays; blocked — a row names its actor by reference, see below                         | n/a — the read takes exact criteria, applied on submit       | pass — the window and the criteria | pass — a malformed reference is said on its box                                                                                                             | pass                                                                                                          | pass | pass |
 | `/administration/departments`                              | `apps/web/src/features/administration/departments/components/DepartmentsScreen.tsx`      | fixed (B3-02) — opens on and follows the working branch; another branch is chosen by name    | fixed (B3-02) — read on arrival                                                                     | pass                                                                                                                                                                                                  | n/a                                                          | n/a                                | fixed (B3-03)                                                                                                                                               | pass                                                                                                          | pass | pass |
 | `/administration/employees`                                | `apps/web/src/features/administration/employees/components/EmployeesScreen.tsx`          | fixed (B3-02) — as departments                                                               | fixed (B3-02)                                                                                       | pass — the login account is chosen by name                                                                                                                                                            | n/a                                                          | n/a                                | fixed (B3-03)                                                                                                                                               | pass                                                                                                          | pass | pass |
@@ -1054,8 +1054,8 @@ interface's to make. Nothing below is worked around on the client.
    `svc.service.read`; `/quotations` and `/quotations/[quotationId]` the line builder's service
    likewise (prerequisite 7).
 6. `/warranty/[warrantyId]` — the job is a link in words, not its number (prerequisite 8).
-7. `/administration/approval-limits` — a listed limit names its person by reference
-   (prerequisite 9).
+7. Resolved (`P1-32-PRE-OD-ADM4`). `/administration/approval-limits` — a listed limit names its
+   person and its role from the list itself (prerequisite 9).
 8. `/administration/audit-log` — a row names its actor by reference; `/platform/audit` shows a
    shortened actor reference (prerequisite 10).
 9. `/work-orders/quality` — each row prints its job's reference beside the link in words
@@ -1109,10 +1109,13 @@ nothing below is invented on the client.
    and `svc.price.manage` can reach.
 8. **A work order's number on a warranty.** `wty.warranty-list` and `wty.warranty-detail` publish
    `workOrderId` and nothing else about the job.
-9. **A person's and a role's name on an approval limit.** `iam.approval-limit-list` publishes
-   `userId` and `roleId` only, so the approval-limits list and the quotation's discount-limits panel
-   name the subject by reference. The names, resolved in the same statement and withheld without
-   `iam.user.read` and `iam.role.read`, would close both.
+9. **Resolved (`P1-32-PRE-OD-ADM4`) for the approval-limits list. A person's and a role's name on
+   an approval limit.** `iam.approval-limit-list` now publishes `userDisplayName` (through the
+   identity directory, `null` without `iam.user.read`) and `roleName` (in the list's own statement,
+   `null` without `iam.role.read`) beside `userId` and `roleId`; read-only, no migration. The
+   approval-limits screen shows them and says "Name not available" for a `null`. The quotation's
+   discount-limits panel does not read them yet and still says only whether a person or a role
+   holds each limit.
 10. **An actor's name on an audit record.** `iam.audit-event-list` and the console's audit read
     publish the actor's identifier only.
 11. **A work order's number on a quality check.** The quality-control list publishes `workOrderId`
@@ -1749,18 +1752,18 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/login`                                              | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                            |
 | `/reset-password`                                     | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                            |
 | `/administration/appointment-setup`                   | form fields, `OperationalGrid`, `ConfirmDialog`, `DecisionDialog`, states                     | F1–F6; G1–G9; S1–S4                              | built on Material UI — see "Appointments for tenant administrators"          | focused suites, en and ar                             |
-| `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated — its person picker is `EntityPicker` since `P1-32-PRE-OD-ADM3` | person picker case only, en — see `P1-32-PRE-OD-ADM3` |
+| `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, `FormDialog`, `DateField`, states             | F1–F6; G1–G9; P1–P10; S1–S4                      | migrated — see below the table (ADM4); the person picker moved in ADM3 first | focused suites, en and ar — see below                 |
 | `/administration/audit-log`                           | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated — its "Who" picker is `EntityPicker` since `P1-32-PRE-OD-ADM3`  | person picker case only, en — see `P1-32-PRE-OD-ADM3` |
 | `/administration/currencies`                          | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
 | `/administration/departments`                         | form fields, `FormDialog`, `ConfirmDialog`, states                                            | F1–F4; D1–D4; S1–S4                              | migrated — see below the table (ADM2)                                        | focused suites, en and ar — see below                 |
-| `/administration/discount-threshold`                  | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
+| `/administration/discount-threshold`                  | form fields, Material table, states                                                           | F1–F6; S1–S4                                     | migrated — see below the table (ADM4)                                        | focused suites, en and ar — see below                 |
 | `/administration/employees`                           | form fields, `OperationalGrid`, `FormDialog`, `ConfirmDialog`, drawer, states                 | F1–F6; G1–G9, G11; D1–D4; S1–S4                  | migrated — see below the table (ADM2)                                        | focused suites, en and ar — see below                 |
 | `/administration/languages`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (ADM-1)                                       | focused suites, en and ar — see below                 |
 | `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
 | `/administration/organization`                        | form fields, `ConfirmDialog`, `ReasonDialog`, states                                          | F1–F7; D1–D5; S1–S4                              | migrated — see below the table (ADM-1)                                       | focused suites, en and ar — see below                 |
 | `/administration`                                     | none found                                                                                    | —                                                | not migrated                                                                 | not run — nothing migrated                            |
-| `/administration/permissions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
-| `/administration/roles`                               | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
+| `/administration/permissions`                         | form fields, Material table, `ConfirmDialog`, states                                          | F1–F6; D1–D4; S1–S4                              | migrated — see below the table (ADM4)                                        | focused suites, en and ar — see below                 |
+| `/administration/roles`                               | form fields, `OperationalGrid`, `FormDialog`, `ConfirmDialog`, states                         | F1–F6; G1–G9; D1–D4; S1–S4                       | migrated — see below the table (ADM4)                                        | focused suites, en and ar — see below                 |
 | `/administration/system-settings`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
 | `/administration/taxes`                               | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
 | `/administration/users/[userId]`                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see "Users and a person's access on Material UI" below the table  | focused suites, en and ar — see below                 |
@@ -4695,6 +4698,99 @@ Known limitations and recorded gaps, one line each:
   only their person picker moved.
 - Not run locally: the full unit and web tiers, the browser tiers and the builds; they run in
   hosted CI. The web tier gains cases in existing files (no web test file added or removed).
+
+### Roles, permissions, approval limits and the discount threshold on Material UI (`P1-32-PRE-OD-ADM4`)
+
+`/administration/roles`, `/administration/permissions`, `/administration/approval-limits` and
+`/administration/discount-threshold` moved onto the shared wrappers. The page refusals before any
+read (`iam.role.read`, `iam.role.read`, `iam.approval.manage`, `svc.price.read`), the per-control
+codes, the navigation entries and the route branch scope (`none`, `none`, `none`, `concrete`) are
+unchanged. No migration, no new route, no new operation and no new permission code.
+
+One write gained its first caller: `iam.role-permission-update`
+(`PATCH /api/v1/iam/roles/{roleId}/permissions/{mappingId}`, `iam.role.manage`, version-guarded)
+— "Change to deny" and "Change to allow" on an existing mapping, sent with the mapping's
+`recordVersion` as `If-Match`. A change to allow is delegation-checked by the service exactly as an
+add is.
+
+One read gained two fields (prerequisite 9): `iam.approval-limit-list` publishes `userDisplayName`
+and `roleName` beside `userId` and `roleId`. The person's name comes from the identity directory
+(`IdentityDirectoryService.resolveDisplayIdentities`), which answers nothing to a caller without
+`iam.user.read`; the role's name is resolved in the list's own statement under
+`iam.has_permission('iam.role.read')`. Both are `null` when withheld; the references are published
+as before. `tests/backend/iam-access-administration.test.ts` holds both cases (hosted CI).
+
+What moved to which wrapper:
+
+- `/administration/roles`: `OperationalGrid` over the cursor-paged `iam.role-list` (G1–G9); create
+  and a new "Edit" (name and description, only what changed, the displayed version as `If-Match`)
+  are `FormDialog`; archive is `ConfirmDialog`. A system role offers no action.
+- `/administration/permissions`: the role is `FormSelectField`; each area is a Material table; a
+  mapping is added (allow or deny), changed between allow and deny, or removed after
+  `ConfirmDialog`. A refused or failed read of the catalogue OR of the role's mappings is the
+  shared refusal or failure state with its reference — the mapping read used to fall back to an
+  empty list, drawn as a role that holds nothing.
+- `/administration/approval-limits`: `OperationalGrid` over the complete list (paged in the
+  loader, "complete" or "may be incomplete" said as before); the create and end forms are
+  `FormDialog` with `FormSelectField`, `FormTextField`, `EntityPicker` (`AccountPicker`) and
+  `DateField`; days are written on the working branch's clock.
+- `/administration/discount-threshold`: `FormSelectField` and `FormTextField`; the read's loading,
+  refusal (no retry) and outage (with retry) are `MuiStates`; the history is a Material table;
+  days and the recorded moment are on the working branch's clock, the moment with its clock's name.
+
+Form dialogs are `FormDialog` (`role="dialog"`), confirmations stay `DecisionDialog`
+(`alertdialog`) — planner ruling. The ADM-3 forms that were `DecisionDialog` — the invitation,
+"Edit details" and the grant and add-place dialog — moved onto `FormDialog` too. `FormDialog`
+gained two things for them: Enter in a one-line text box submits the form through the same path
+as the submit button (a combobox, a multi-line box and an input method still composing are left
+alone), and `completed` — a done sentence with only Close, which the invitation uses so its outcome
+stays on screen.
+
+Preserved and added, each held by a case (en and ar where marked):
+
+- Money: the approval-limit amount and the threshold value stay decimal strings from the box to
+  the request, checked by pattern; a value with more than four decimal places is refused on its
+  box and nothing is sent (en and ar).
+- ADR-023 D8 and D13: `assertApprovalLimitNotForSelf`, `assertApprovalLimitNotForHeldRole` and
+  `assertNotSelf` are unchanged; the screens offer no control that exempts anyone, and a limit for
+  yourself or for a role you hold is said as that refusal, never as a missing permission (en and
+  ar), with every entry kept. A credit-note limit is its own type with its own currency and must be
+  above zero (en and ar). VL-P132-001 and VL-P132-002 (FIN02) stay open; no policy changed.
+- Names: a person and a role on a limit are named from the list; a withheld name says "Name not
+  available" (en and ar), or that the caller may not see who it is without `iam.user.read`; no
+  reference is printed. The screen no longer reads each person one by one.
+- Conflicts: a stale role edit, mapping change, threshold save or limit end is the server's
+  conflict, said with "Load the latest version"; nothing is retried on the operator's behalf.
+- Duplicate submits: role create, mapping change, limit create and threshold save each send one
+  request when pressed twice inside one `act()`.
+- Unsaved work: every typed entry in the role, limit and threshold forms counts as unsaved work;
+  a confirmed discard empties the form.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- The approval-limit cases render under `UiFoundationProvider`, as the locale layout mounts it
+  (the date pickers need it), and type a day into the picker's parts instead of a text box; the
+  end-date invalid mark is read on the picker's group.
+- The labelled reference box's description is read on its input, which the test id's wrapper
+  holds.
+- The DF-B6 cases answer the person's name in the list itself, as the service now does, and
+  without the user read the list answers `null`.
+- The invitation, "Edit details" and grant dialogs are found as `dialog` instead of `alertdialog`.
+- `tests/form-reset-class.test.ts`: the approval-limits screen no longer owns a Server Action form,
+  so it leaves the scan's required list, as the appointment screens did.
+- `tests/e2e/authenticated/administration.spec.ts`: the roles case reads the grid in the project's
+  language; a new case reads the permissions catalogue and the approval-limits grid in either
+  language. `shared-ux.spec.ts` measures the shared table's region on `/en/administration/audit-log`,
+  still drawn by `DataTable`. `accessibility.spec.ts` finds the invitation as a `dialog`.
+- `tests/ci/p1-31-version-sourcing.test.ts`: the versioned sends outside the P1-31 subject move by
+  one with the mapping change.
+
+Known limitations and recorded gaps, one line each:
+
+- The quotation's discount-limits panel does not yet read the new names (prerequisite 9, consumer
+  half).
+- The role list has no assigned-user count and no role detail; neither is offered.
+- Not run locally: the backend and database tiers and the browser tiers; they run in hosted CI.
 
 ### Finance controls that need no business decision (P1-32-PRE-OD-FIN)
 
