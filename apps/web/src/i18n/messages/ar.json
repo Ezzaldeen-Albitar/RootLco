@@ -3081,7 +3081,7 @@
   "inventory.specifications.create.makesUnavailable": "تعذّر تحميل قائمة صانعي المركبات، لذلك لا يمكن تسجيل سعة الآن. حاول مرة أخرى بعد قليل.",
   "inventory.specifications.create.model": "الطراز",
   "inventory.specifications.create.modelHelp": "اتركه فارغًا حين يسري الرقم على كل طرازات الصانع.",
-  "inventory.specifications.create.noMakes": "لا تتوفر لك أي ماركة مركبة، والمواصفة يجب أن تكون لماركة. اطلب صلاحية الوصول إلى دليل المركبات.",
+  "inventory.specifications.create.noMakes": "لا يتوفر لك أي صانع مركبات، والمواصفة يجب أن تكون لصانع. اطلب صلاحية الوصول إلى دليل المركبات.",
   "inventory.specifications.create.noMakesRecorded": "لا يوجد صانعو مركبات مسجّلون بعد، لذلك لا يمكن تسجيل سعة. لا يُضاف صانعو المركبات من هذه الشاشة.",
   "inventory.specifications.create.open": "سجِّل سعة",
   "inventory.specifications.create.refused": "توجد سعة لتلك المركبة ونوع الخدمة في الملف، أو أنّ صلاحياتك لا تغطي كل الفروع.",

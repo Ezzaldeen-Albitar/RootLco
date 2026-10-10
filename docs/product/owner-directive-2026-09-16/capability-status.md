@@ -441,8 +441,9 @@ otherwise. FRX1-c is addressed by the same branch, implemented and not yet runti
 self-read routes' raw-key guard never sees a lone `__proto__` key, because Next.js rebuilds the
 request URL from its parsed query object before the route handler runs and that object cannot hold
 the key, so `apps/api/src/proxy.ts`, matched on every `/api/v1/auth/` path and handed the URL as it
-arrived (`skipProxyUrlNormalize` in `apps/api/next.config.ts`), refuses any query string with the
-routes' own validation error when a GET or HEAD request's canonical path — dot segments resolved,
+arrived (`skipProxyUrlNormalize` in `apps/api/next.config.ts`), refuses a query string with anything after
+the `?` with the routes' own validation error (a bare `?` with nothing after it passes, as the routes
+pass it) when a GET or HEAD request's canonical path — dot segments resolved,
 escaped unreserved characters decoded, repeated and trailing slashes removed — is one of the two
 self-reads, passes every other request through, and logs each refusal once without the query text,
 parameter values or headers; the in-route guards stay, and the row stays as recorded.

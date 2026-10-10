@@ -137,6 +137,17 @@ describe('only a genuine duplicate value is treated as a field conflict', () => 
     expect(notify).not.toHaveBeenCalled();
   });
 
+  it('a duplicate_sku on the stock code alone: neutral banner, marker set, no toast', () => {
+    const state = fromFailure(conflict('ERR-CON-001', [{ path: 'body.sku', rule: 'duplicate_sku' }]), 1);
+    expect(state.fieldErrors).toEqual({ sku: 'form.violation.duplicate_sku' });
+    expect(state.messageKey).toBe('form.formError');
+    expect(state.messageValues).toBeUndefined();
+    expect(state.duplicateField).toBe(true);
+    expect(isFieldConflict(state)).toBe(true);
+    expect(notifyActionResult(state, EN)).toBe(false);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
   it('a conflict with another catalogued rule on a field keeps its own key and its toast', () => {
     const failure = conflict('ERR-CON-001', [{ path: 'body.userId', rule: 'already_assigned' }]);
     expect(fromFailure(failure, 1).fieldErrors).toEqual({
