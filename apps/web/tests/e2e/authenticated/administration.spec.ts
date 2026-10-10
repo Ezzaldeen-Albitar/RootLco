@@ -1,5 +1,7 @@
 import { expect, test, type Page, type Request } from '@playwright/test';
+import ar from '../../../src/i18n/messages/ar.json';
 import { readSignedInAccount } from './account-manifest';
+import { say } from './p1-31-handoff';
 
 /**
  * This file assumes the ACCEPTANCE OWNER, so it runs only when that is who signed in.
@@ -112,34 +114,114 @@ test.describe('the eleven administration screens', () => {
     });
   }
 
-  test('the users table actually finishes loading and shows the operators', async ({ page }) => {
+  /*
+   * P1-32-PRE-OD-ADM1: the loop above runs in Arabic only on the `-ar` project,
+   * and its refusal check reads the English sentence. These two open the
+   * Organisation and Languages screens in Arabic on every project and read them
+   * in Arabic: the direction, the headings from the catalogue, and no refusal
+   * in either language. Read only — nothing here writes.
+   */
+  test('organisation reads in Arabic, right to left, with its companies and branches', async ({
+    page,
+  }) => {
+    const consoleErrors = collectConsole(page);
+    const response = await page.goto('/ar/administration/organization');
+    expect(response?.status()).toBeLessThan(400);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(
+      page.getByRole('heading', { name: ar['organization.title'], level: 1 })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: ar['organization.company.title'], exact: true })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: ar['organization.branch.title'], exact: true })
+    ).toBeVisible();
+    await expect(page.getByText(ar['state.denied.title'])).toHaveCount(0);
+    await expect(page.getByText(/You do not have access/i)).toHaveCount(0);
+    expect(consoleErrors, 'organisation console (ar)').toEqual([]);
+  });
+
+  test('languages reads in Arabic, right to left, with the default language form', async ({
+    page,
+  }) => {
+    const consoleErrors = collectConsole(page);
+    const response = await page.goto('/ar/administration/languages');
+    expect(response?.status()).toBeLessThan(400);
+    await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
+    await expect(
+      page.getByRole('heading', { name: ar['languages.title'], level: 1 })
+    ).toBeVisible();
+    await expect(page.getByText(ar['state.denied.title'])).toHaveCount(0);
+    expect(consoleErrors, 'languages console (ar)').toEqual([]);
+  });
+
+  test('the users grid actually finishes loading and shows the operators', async ({
+    page,
+  }, testInfo) => {
     // The assertion this file was missing, and the reason it was missing is
     // instructive: every other case here proves the screen RENDERS. None of
-    // them proved it renders *data*. A table stuck in its loading state
+    // them proved it renders *data*. A list stuck in its loading state
     // satisfies "the route loads", "no console error", "no denial" and "no
     // horizontal overflow" simultaneously, and looks completely broken to the
     // person the phase is being accepted by.
-    await page.goto('/en/administration/users');
+    //
+    // The list is the operational grid since P1-32-PRE-OD-ADM3 (ADR-022): one
+    // grid named by the page title, in the project's language — English in the
+    // English project, Arabic and right to left in the Arabic one.
+    const lang = locale(testInfo.project.name);
+    await page.goto(`/${lang}/administration/users`);
+    await expect(page.locator('html')).toHaveAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
 
-    const body = page.locator('table tbody');
-    await expect(body).toBeVisible();
+    const grid = page.getByRole('grid', { name: say(lang, 'users.title') });
+    await expect(grid).toBeVisible({ timeout: 20_000 });
 
-    // `aria-busy` is how the table announces loading. It must CLEAR.
-    await expect(body, 'the table must stop being busy').toHaveAttribute('aria-busy', 'false', {
-      timeout: 20_000,
-    });
+    // `aria-busy` is how the grid's frame announces loading. It must CLEAR.
+    await expect(
+      page.getByTestId('users-grid').locator('[aria-busy="true"]'),
+      'the grid must stop being busy'
+    ).toHaveCount(0, { timeout: 20_000 });
 
     // And the rows must be the seeded operators, not an empty set rendered
     // confidently.
     //
-    // Scoped to the table body, and that scoping is the assertion, not tidiness.
-    // A page-wide `getByText('owner.acceptance@crm.local')` also matches the
+    // Scoped to the grid, and that scoping is the assertion, not tidiness. A
+    // page-wide `getByText('owner.acceptance@crm.local')` also matches the
     // account menu in the sidebar, which renders the SIGNED-IN user's own
-    // address — so it would go green against a completely empty table. The
+    // address — so it would go green against a completely empty list. The
     // check that exists to prove rows load must not be satisfiable by the
     // identity of the person looking at them.
-    await expect(body.getByText('owner.acceptance@crm.local')).toBeVisible({ timeout: 20_000 });
-    await expect(body.getByText('reader.acceptance@crm.local')).toBeVisible();
+    await expect(grid.getByText('owner.acceptance@crm.local')).toBeVisible({ timeout: 20_000 });
+    await expect(grid.getByText('reader.acceptance@crm.local')).toBeVisible();
+    // Every row leads to the person's own page, in the same language.
+    await expect(
+      grid.getByRole('link', { name: new RegExp(`^${say(lang, 'users.action.access')}`) }).first()
+    ).toHaveAttribute('href', new RegExp(`^/${lang}/administration/users/`));
+  });
+
+  test('a person’s access page opens from the grid, in the project’s language', async ({
+    page,
+  }, testInfo) => {
+    const lang = locale(testInfo.project.name);
+    const consoleErrors = collectConsole(page);
+    await page.goto(`/${lang}/administration/users`);
+    const grid = page.getByRole('grid', { name: say(lang, 'users.title') });
+    await expect(grid.getByText('reader.acceptance@crm.local')).toBeVisible({ timeout: 20_000 });
+
+    await grid
+      .getByRole('link', { name: new RegExp(`^${say(lang, 'users.action.access')}`) })
+      .first()
+      .click();
+    await expect(page).toHaveURL(new RegExp(`/${lang}/administration/users/[0-9a-f-]{36}$`));
+    await expect(page.locator('html')).toHaveAttribute('dir', lang === 'ar' ? 'rtl' : 'ltr');
+    await expect(
+      page.getByRole('heading', { level: 1, name: say(lang, 'users.access.title') })
+    ).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: say(lang, 'users.detail.grants') })
+    ).toBeVisible();
+    await expect(page.getByText(/You do not have access/i)).toHaveCount(0);
+    expect(consoleErrors, 'the access page console').toEqual([]);
   });
 
   test('the roles table finishes loading too', async ({ page }) => {

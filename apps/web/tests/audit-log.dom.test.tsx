@@ -338,7 +338,8 @@ describe('who: found by name for a caller holding the user read (route sweep B3)
     expect(within(form).queryByText(EN['audit.filter.identifierHelp'] as string)).toBeNull();
     await user.type(within(form).getByLabelText(EN['audit.filter.actor'] as string), 'Rana{Enter}');
     await user.click(
-      await within(form).findByRole('button', {
+      // An option of the combobox (EntityPicker), drawn in its listbox popup.
+      await screen.findByRole('option', {
         name: `Rana Saleh — rana@example.test (${EN['users.status.locked'] as string})`,
       })
     );

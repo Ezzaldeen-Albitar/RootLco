@@ -321,8 +321,17 @@ test.describe('authenticated accessibility', () => {
     }
     await opener.click();
 
-    const dialog = page.getByRole('dialog');
+    // The invitation is the shared Material decision dialog since
+    // P1-32-PRE-OD-ADM3 (ADR-022), which is an `alertdialog` named by its title.
+    const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible();
+    // Material fades a dialog in. Measured mid-fade, its buttons are part-
+    // transparent and the contrast rule reads the blend, not the colours the
+    // operator sees once it has opened — so the scan waits for the entrance to
+    // finish (no CSS transition or animation still running).
+    await page.waitForFunction(() =>
+      document.getAnimations().every((animation) => animation.playState !== 'running')
+    );
     const violations = await scan(page);
     const blocking = violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
     expect(blocking, 'the open dialog must be free of critical/serious violations').toEqual([]);

@@ -22,7 +22,9 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
  * scopes and role names by `iam.role.read`, company and branch names by
  * `org.company.read` and `org.branch.read`, department names by
  * `org.department.read`. Granting, adding and removing places appear only with
- * `iam.grant.manage`, and the server refuses them without it either way.
+ * `iam.grant.manage`, and editing the account's own details only with
+ * `iam.user.manage` (`iam.user-update`); the server refuses each without its
+ * code either way.
  */
 export default async function UserAccessPage({
   params,
@@ -104,6 +106,7 @@ export default async function UserAccessPage({
               branches={branches?.status === 'ok' ? branches.data : []}
               departmentNames={departmentNames}
               canManageGrants={holds(session.permissions, PERMISSIONS.grantManage)}
+              canManageUser={holds(session.permissions, PERMISSIONS.userManage)}
               canReadRoles={canReadRoles}
               canReadDepartments={canReadDepartments}
             />

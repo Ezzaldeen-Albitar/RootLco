@@ -1,25 +1,27 @@
 'use client';
 
-import { useActionState, useCallback, useState, useTransition } from 'react';
-import Link from 'next/link';
-import { DataTable, type Column } from '@/components/data-table/DataTable';
+import { useCallback, useRef, useState, useTransition } from 'react';
+import Button from '@mui/material/Button';
 import {
-  withFilter,
-  withSearch,
-  withoutFilter,
-  type TableRequest,
-} from '@/components/data-table/table-state';
-import { CheckboxField, SelectField, TextField } from '@/components/forms/Field';
-import { Dialog, ReasonConfirmDialog } from '@/components/overlays/Overlays';
+  OperationalGrid,
+  type OperationalColumn,
+  type RowAction,
+} from '@/components/data/OperationalGrid';
+import { withFilter, withSearch, withoutFilter } from '@/components/data-table/table-state';
+import { DecisionActions, DecisionDialog } from '@/components/dialogs/ConfirmDialog';
+import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
+import { FilterToolbar } from '@/components/filters/FilterToolbar';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
-import { roleDisplayName } from '../../access/role-name';
+import { translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import { formatDate } from '@/lib/format';
-import { notifyActionResult } from '@/components/notifications/action-notifications';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
-import { FormFeedback } from '@/features/authentication/components/FormFeedback';
-import { SubmitButton } from '@/features/authentication/components/SubmitButton';
+import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
+import { roleDisplayName } from '../../access/role-name';
 import { useServerTable } from '../../shared/use-server-table';
 import { listUsers, type RoleOption, type UserRow } from '../api';
 import {
@@ -29,42 +31,58 @@ import {
   inviteUserAction,
   revokeUserSessionsAction,
 } from '../actions';
-import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
- * The Users screen.
+ * The Users screen, on Material UI (ADR-022, `P1-32-PRE-OD-ADM3`).
+ *
+ * ## What it reads, and how
+ *
+ * `GET /api/v1/iam/users` (`iam.user-list`, `iam.user.read`) is cursor-paged
+ * with no total, so the list is the operational grid driven by
+ * `useServerTable` (G1–G9): Previous and Next walk the server's cursor, the
+ * label is "Page N", and nothing on the screen counts the people. The search
+ * term and the status filter go to the server as part of the request and never
+ * into the address.
  *
  * ## Every row action is a confirmation with a written reason
  *
  * Not decoration: `iam.user-status-change`, `iam.invitation-cancel`,
  * `iam.invitation-activate` and `iam.user-session-revoke-all` all take a
  * `reason` that becomes an audit record, and the backend refuses an empty one.
- * `ReasonConfirmDialog` is the shared control for exactly this, and it keeps the
- * reason in component state until submit — an audit reason is free text about an
- * operational decision and belongs in neither a store nor a URL.
+ * `ReasonDialog` keeps the reason in component state until submit — an audit
+ * reason is free text about an operational decision and belongs in neither a
+ * store nor a URL — and counts a typed reason as unsaved work.
  *
  * ## Which actions appear
  *
  * Only those the actor's permissions could satisfy, and only those legal from
  * the row's current status: `invited` may be activated or cancelled, `active`
- * may be locked or archived, `locked` may be unlocked or archived, `archived` is
- * terminal. Offering an action the transition engine will reject is a promise
- * the product cannot keep.
+ * may be locked (a suspension) or archived, `locked` may be unlocked (a
+ * reactivation) or archived, `archived` is terminal. Offering an action the
+ * transition engine will reject is a promise the product cannot keep.
  *
  * The visibility rule is courtesy. Every action still calls the operation and
- * the backend's refusal is the one that counts.
+ * the backend's refusal is the one that counts — including the refusal of an
+ * administrator changing their own account.
+ *
+ * ## One press, one request
+ *
+ * A confirmation and the invitation are each held by a ref while their answer
+ * is awaited, so two presses inside one frame send one request; the disabled
+ * button is the visible half of the same rule.
  */
 
+const STATUS_VALUES = ['invited', 'active', 'locked', 'archived'] as const;
+
+/** The status filter's definition, so the grid can label the chip it shows. */
 const STATUS_FILTER = {
   key: 'status',
   labelKey: 'users.filter.status',
-  options: [
-    { value: 'invited', labelKey: 'users.status.invited' },
-    { value: 'active', labelKey: 'users.status.active' },
-    { value: 'locked', labelKey: 'users.status.locked' },
-    { value: 'archived', labelKey: 'users.status.archived' },
-  ],
+  options: STATUS_VALUES.map((value) => ({ value, labelKey: `users.status.${value}` })),
 } as const;
+
+/** The longest term `iam.user-list` accepts. */
+const MAX_SEARCH = 120;
 
 type PendingAction = {
   readonly kind: 'lock' | 'unlock' | 'archive' | 'activate' | 'cancel' | 'revoke';
@@ -89,18 +107,29 @@ export function UsersScreen({
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [actionState, setActionState] = useState<ActionState>(IDLE);
   const [running, startTransition] = useTransition();
+  // The request in flight, held across the frame the disabled state needs to
+  // reach the button: two presses inside one frame send one request.
+  const inFlight = useRef(false);
 
-  const t = useCallback((key: string) => translate(messages, key as keyof Messages), [messages]);
+  const t = useCallback((key: string) => translateDynamic(messages, key), [messages]);
 
   const statusFilter = table.request.filters.find((filter) => filter.key === 'status')?.value;
 
-  const columns: readonly Column<UserRow>[] = [
+  const columns: readonly OperationalColumn<UserRow>[] = [
     {
       id: 'displayName',
       headerKey: 'users.column.displayName',
+      flex: 1.2,
       cell: (row) => <span className="font-medium text-text-primary">{row.displayName}</span>,
     },
-    { id: 'email', headerKey: 'users.column.email', cell: (row) => row.email },
+    {
+      id: 'email',
+      headerKey: 'users.column.email',
+      flex: 1.4,
+      // The address is also on the person's own page, which every row links to.
+      hideBelow: 'md',
+      cell: (row) => <span dir="ltr">{row.email}</span>,
+    },
     {
       id: 'status',
       headerKey: 'users.column.status',
@@ -109,36 +138,59 @@ export function UsersScreen({
     {
       id: 'mfa',
       headerKey: 'users.column.mfa',
-      cell: (row) => (row.mfaRequired ? t('field.active') : '—'),
+      hideBelow: 'lg',
+      cell: (row) => t(row.mfaRequired ? 'users.mfa.required' : 'users.mfa.notRequired'),
     },
     {
       id: 'createdAt',
-      headerKey: 'column.updated',
+      headerKey: 'users.column.createdAt',
+      hideBelow: 'lg',
       cell: (row) => formatDate(row.createdAt, locale),
     },
   ];
 
+  const rowActions = (row: UserRow): readonly RowAction[] => [
+    // Roles and where they apply live on the person's own page. Offered to every
+    // reader of this list: that page reads with `iam.user.read`, the code this
+    // list already required, and shows its management controls only to a
+    // session holding the codes they declare.
+    {
+      kind: 'link',
+      label: t('users.action.access'),
+      href: `/${locale}/administration/users/${encodeURIComponent(row.id)}`,
+      about: row.displayName,
+    },
+    ...availableActions(row, canManage, canRevokeSessions).map((kind): RowAction => ({
+      kind: 'button',
+      label: t(ACTION_LABEL[kind]),
+      about: row.displayName,
+      onClick: () => {
+        setActionState(IDLE);
+        setPending({ kind, user: row });
+      },
+    })),
+  ];
+
   const run = (task: () => Promise<ActionState>) => {
+    if (inFlight.current) return;
+    inFlight.current = true;
     startTransition(async () => {
-      const result = await task();
-      // The attempt number is what makes FormFeedback remount and re-announce.
-      // A server action that always returns 1 renders an identical node the
-      // second time a row action fails, and the repeat is announced to nobody
-      // (P1-26-F-038). The COUNTER lives here, where the repeats happen.
-      setActionState({ ...result, attempt: (actionState.attempt ?? 0) + 1 });
-
-      // The OPERATION result goes to the global notification authority, not into
-      // this screen's flow (`P1-26-F-070`). It used to render at the top of the
-      // page, which meant an operator who had scrolled a hundred rows down to
-      // lock an account was told the outcome somewhere they could not see. A
-      // toast is fixed to the viewport, so the answer arrives where the person
-      // is rather than where the form was.
-      //
-      // `invalid` is not raised here: field errors stay beside their fields, and
-      // `notifyActionResult` returns false for that status rather than leaving
-      // the decision to each caller.
+      let result: ActionState;
+      try {
+        result = await task();
+      } catch {
+        // The answer never arrived: nothing is known to have changed.
+        result = { status: 'unavailable', messageKey: 'state.unavailable.message', attempt: 1 };
+      } finally {
+        inFlight.current = false;
+      }
+      // The attempt number makes a repeated refusal a new announcement
+      // (P1-26-F-038); the counter lives here, where the repeats happen.
+      setActionState((was) => ({ ...result, attempt: (was.attempt ?? 0) + 1 }));
+      // The OPERATION result goes to the global notification authority, fixed
+      // to the viewport, so the answer arrives where the person is
+      // (`P1-26-F-070`). `invalid` is not raised there: it stays in the dialog.
       notifyActionResult(result, messages);
-
       if (result.status === 'success') {
         setPending(null);
         table.refresh();
@@ -146,112 +198,77 @@ export function UsersScreen({
     });
   };
 
+  const refused = actionState.status !== 'idle' && actionState.status !== 'success';
+  const reasonRefusal = refused ? actionState.fieldErrors?.reason : undefined;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
-      {/*
-        Kept for `invalid` ONLY. That is the one status whose message names a
-        control on this screen, so it belongs on this screen; every other outcome
-        is now a toast. Rendering both would say the same thing twice in two
-        places, which is how an interface teaches people to ignore one of them.
-      */}
-      {actionState.status === 'invalid' && !pending ? (
-        <FormFeedback state={actionState} messages={messages} />
-      ) : null}
-
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="w-full max-w-sm">
-            <TextField
-              label={t('users.searchLabel')}
-              description={t('users.searchHint')}
-              type="search"
-              value={table.request.search}
-              onChange={(event) => table.setRequest(withSearch(table.request, event.target.value))}
-            />
-          </div>
-          {/*
-            The control that applies the filter. `filterDefinitions` alone only
-            teaches the table how to LABEL a chip and how to remove one — it
-            renders nothing that can add one, so declaring a status filter with
-            no control left the whole server-side status path unreachable
-            (P1-26-F-031).
-          */}
-          <div className="w-48">
-            <SelectField
-              label={t('users.filter.status')}
-              value={statusFilter ?? ''}
-              placeholder={t('users.filter.all')}
-              onChange={(event) => {
-                const chosen = event.target.value;
-                const cleared = statusFilter
-                  ? withoutFilter(table.request, { key: 'status', value: statusFilter })
-                  : table.request;
-                table.setRequest(
-                  chosen ? withFilter(cleared, { key: 'status', value: chosen }) : cleared
-                );
-              }}
-              options={STATUS_FILTER.options.map((option) => ({
-                value: option.value,
-                label: t(option.labelKey),
-              }))}
-            />
-          </div>
-        </div>
-        {canManage ? (
-          <button
+      {canManage ? (
+        <div className="flex justify-end">
+          <Button
             type="button"
+            variant="contained"
             onClick={() => {
               setActionState(IDLE);
               setInviteOpen(true);
             }}
-            className="rounded-lg bg-primary px-4 py-2 text-button font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             {t('users.invite')}
-          </button>
-        ) : null}
-      </div>
+          </Button>
+        </div>
+      ) : null}
 
-      <DataTable<UserRow>
+      <FilterToolbar
         messages={messages}
+        label={t('users.title')}
+        testId="users-toolbar"
+        search={{
+          label: t('users.searchLabel'),
+          example: t('users.searchHint'),
+          value: table.request.search,
+          maxLength: MAX_SEARCH,
+          onChange: (next) => table.setRequest(withSearch(table.request, next)),
+        }}
+        filters={[
+          {
+            kind: 'select',
+            key: 'status',
+            label: t('users.filter.status'),
+            placeholder: t('users.filter.all'),
+            value: statusFilter ?? '',
+            options: STATUS_VALUES.map((value) => ({ value, label: t(`users.status.${value}`) })),
+            onChange: (chosen) => {
+              const cleared = statusFilter
+                ? withoutFilter(table.request, { key: 'status', value: statusFilter })
+                : table.request;
+              table.setRequest(
+                chosen ? withFilter(cleared, { key: 'status', value: chosen }) : cleared
+              );
+            },
+          },
+        ]}
+      />
+
+      <OperationalGrid<UserRow>
+        messages={messages}
+        locale={locale}
+        label={t('users.title')}
         columns={columns}
         rowId={(row) => row.id}
-        request={table.request}
-        response={table.response}
-        status={table.status}
+        table={table}
         filterDefinitions={[STATUS_FILTER]}
-        onRequestChange={(next: TableRequest) => table.setRequest(next)}
-        onRetry={table.refresh}
-        correlationId={table.correlationId}
-        caption={t('users.title')}
-        rowActions={(row) => (
-          <RowActions
-            row={row}
-            locale={locale}
-            messages={messages}
-            canManage={canManage}
-            canRevokeSessions={canRevokeSessions}
-            onChoose={(kind) => {
-              setActionState(IDLE);
-              setPending({ kind, user: row });
-            }}
-          />
-        )}
+        rowActions={rowActions}
+        testId="users-grid"
       />
 
       {/*
-        MOUNTED ONLY WHILE OPEN. `Dialog` returns null when closed, but the form
-        inside kept its `useActionState` — so after one successful invitation,
-        reopening showed the previous success and a Close button where the submit
-        should be, and no second user could be invited without a reload
-        (P1-26-F-020). Unmounting is what resets it.
+        MOUNTED ONLY WHILE OPEN, so a second invitation starts from an empty
+        form rather than the previous answer (P1-26-F-020).
       */}
       {inviteOpen ? (
         <InviteDialog
-          open
-          // Closing always re-reads the list. An invitation that succeeded has
-          // added a row; one that failed has not, and a re-read of an unchanged
-          // list costs one request. That is cheaper than an auto-close, which
-          // would take the confirmation off screen before it had been read.
+          // Closing always re-reads the list: an invitation that succeeded has
+          // added a row, and a re-read of an unchanged list costs one request.
           onClose={() => {
             setInviteOpen(false);
             table.refresh();
@@ -261,61 +278,67 @@ export function UsersScreen({
         />
       ) : null}
 
-      {pending ? (
-        <ReasonConfirmDialog
-          open
-          messages={messages}
-          destructive={pending.kind !== 'activate' && pending.kind !== 'unlock'}
-          pending={running}
-          title={t(CONFIRM_TITLE[pending.kind])}
-          description={t(CONFIRM_BODY[pending.kind])}
-          confirmLabel={t(ACTION_LABEL[pending.kind])}
-          reasonLabel={t('admin.reason')}
-          error={
-            actionState.status !== 'idle' && actionState.status !== 'success'
-              ? t(dialogErrorKey(actionState))
-              : undefined
-          }
-          onCancel={() => setPending(null)}
-          onConfirm={(text) => {
-            const { kind, user } = pending;
-            run(() => {
-              if (kind === 'cancel') return cancelInvitationAction(user.id, text);
-              if (kind === 'activate') return activateInvitationAction(user.id, text);
-              if (kind === 'revoke') return revokeUserSessionsAction(user.id, text);
-              const next = kind === 'archive' ? 'archived' : kind === 'lock' ? 'locked' : 'active';
-              return changeUserStatusAction(user.id, next, text);
-            });
-          }}
-        />
-      ) : null}
+      <ReasonDialog
+        open={pending !== null}
+        messages={messages}
+        destructive={pending?.kind !== 'activate' && pending?.kind !== 'unlock'}
+        pending={running}
+        countsAsUnsaved
+        title={pending ? t(CONFIRM_TITLE[pending.kind]) : ''}
+        description={
+          pending ? `${pending.user.displayName} — ${t(CONFIRM_BODY[pending.kind])}` : undefined
+        }
+        confirmLabel={pending ? t(ACTION_LABEL[pending.kind]) : ''}
+        reasonLabel={t('admin.reason')}
+        maxLength={500}
+        reasonError={reasonRefusal ? t(reasonRefusal) : undefined}
+        error={
+          refused && !reasonRefusal
+            ? translateWithValues(
+                messages,
+                actionState.fieldErrors?.status ?? actionState.messageKey ?? 'admin.actionFailed',
+                actionState.fieldErrors?.status ? undefined : actionState.messageValues
+              )
+            : undefined
+        }
+        onCancel={() => setPending(null)}
+        onConfirm={(text) => {
+          if (!pending) return;
+          const { kind, user } = pending;
+          run(() => {
+            if (kind === 'cancel') return cancelInvitationAction(user.id, text);
+            if (kind === 'activate') return activateInvitationAction(user.id, text);
+            if (kind === 'revoke') return revokeUserSessionsAction(user.id, text);
+            const next = kind === 'archive' ? 'archived' : kind === 'lock' ? 'locked' : 'active';
+            return changeUserStatusAction(user.id, next, text);
+          });
+        }}
+      />
     </div>
   );
 }
 
 /**
- * The one sentence the confirmation can show, chosen so the specific one wins.
+ * The actions legal from a row's current status.
  *
- * The dialog carries a single error slot and exactly one control — the written
- * reason — so there is nowhere else for a per-control sentence to go. Two of the
- * three refusals this dialog can meet name a control rather than the request:
- * the reason itself (empty, over five hundred characters, or carrying characters
- * that cannot be stored) and the chosen state (already held, or not reachable
- * from the one the account is in). Those arrive as field errors, which nothing
- * on this dialog rendered, so the operator was shown the general "that change
- * was not saved" and told nothing they could act on.
- *
- * `reason` is preferred over `status` because it is the control they can edit
- * here; `messageKey` remains the answer for a refusal about the whole request,
- * which is how an account that has been switched off still explains itself.
+ * `archived` is terminal in the transition engine, so it offers nothing —
+ * showing a disabled Archive on an archived account invites the operator to
+ * wonder what is wrong with the button.
  */
-function dialogErrorKey(state: ActionState): string {
-  return (
-    state.fieldErrors?.reason ??
-    state.fieldErrors?.status ??
-    state.messageKey ??
-    'admin.actionFailed'
-  );
+function availableActions(
+  row: UserRow,
+  canManage: boolean,
+  canRevokeSessions: boolean
+): PendingAction['kind'][] {
+  const available: PendingAction['kind'][] = [];
+  if (canManage) {
+    if (row.status === 'invited') available.push('activate', 'cancel');
+    if (row.status === 'active') available.push('lock', 'archive');
+    if (row.status === 'locked') available.push('unlock', 'archive');
+  }
+  // Revoking sessions needs BOTH permissions the operation declares.
+  if (canManage && canRevokeSessions && row.status !== 'archived') available.push('revoke');
+  return available;
 }
 
 const ACTION_LABEL: Record<PendingAction['kind'], string> = {
@@ -363,70 +386,19 @@ function StatusPill({
     <span
       className={`inline-flex rounded-full border px-2 py-0.5 text-caption text-text-primary ${STATUS_TONE[status]}`}
     >
-      {translate(messages, `users.status.${status}` as keyof Messages)}
+      {translateDynamic(messages, `users.status.${status}`)}
     </span>
   );
 }
 
-/**
- * The actions legal from a row's current status.
- *
- * `archived` is terminal in the transition engine, so it offers nothing —
- * showing a disabled Archive on an archived account invites the operator to
- * wonder what is wrong with the button.
- */
-function RowActions({
-  row,
-  locale,
-  messages,
-  canManage,
-  canRevokeSessions,
-  onChoose,
-}: {
-  readonly row: UserRow;
-  readonly locale: Locale;
-  readonly messages: Messages;
-  readonly canManage: boolean;
-  readonly canRevokeSessions: boolean;
-  readonly onChoose: (kind: PendingAction['kind']) => void;
-}) {
-  const available: PendingAction['kind'][] = [];
-  if (canManage) {
-    if (row.status === 'invited') available.push('activate', 'cancel');
-    if (row.status === 'active') available.push('lock', 'archive');
-    if (row.status === 'locked') available.push('unlock', 'archive');
-  }
-  // Revoking sessions needs BOTH permissions the operation declares.
-  if (canManage && canRevokeSessions && row.status !== 'archived') available.push('revoke');
-
-  return (
-    <div className="flex flex-wrap justify-end gap-1">
-      {/*
-        Roles and where they apply live on the user's own page. Offered to every
-        reader of this list: the page reads with `iam.user.read`, the code this
-        list already required, and shows its management controls only to a
-        session holding `iam.grant.manage`.
-      */}
-      <Link
-        href={`/${locale}/administration/users/${encodeURIComponent(row.id)}`}
-        aria-label={`${translate(messages, 'users.action.access')}: ${row.displayName}`}
-        className="rounded-md border border-border bg-surface px-2 py-1 text-caption text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-subtle hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-      >
-        {translate(messages, 'users.action.access')}
-      </Link>
-      {available.map((kind) => (
-        <button
-          key={kind}
-          type="button"
-          onClick={() => onChoose(kind)}
-          className="rounded-md border border-border bg-surface px-2 py-1 text-caption text-text-secondary transition-colors duration-fast ease-standard hover:bg-surface-subtle hover:text-text-primary"
-        >
-          {translate(messages, ACTION_LABEL[kind] as keyof Messages)}
-        </button>
-      ))}
-    </div>
-  );
+interface InviteDraft {
+  readonly email: string;
+  readonly displayName: string;
+  readonly mfaRequired: boolean;
+  readonly roleIds: readonly string[];
 }
+
+const EMPTY_INVITE: InviteDraft = { email: '', displayName: '', mfaRequired: false, roleIds: [] };
 
 /**
  * The invitation dialog.
@@ -435,145 +407,207 @@ function RowActions({
  * screen before it has been read, and the operator is left guessing whether the
  * invitation was sent. The dialog shows the outcome; closing it is the
  * operator's decision, and closing re-reads the list.
+ *
+ * Every entry is held in this component's state and sent from it, so a refused
+ * invitation — a duplicate address is the ordinary case — keeps the address,
+ * the name, the two-factor requirement and every role that was chosen
+ * (`NEW-FE-01`, which the Server Action form reset caused before). Every entry
+ * counts as unsaved work until the invitation is sent.
  */
 function InviteDialog({
-  open,
   onClose,
   messages,
   roles,
 }: {
-  readonly open: boolean;
   readonly onClose: () => void;
   readonly messages: Messages;
   readonly roles: readonly RoleOption[];
 }) {
-  const [state, formAction] = useActionState<ActionState, FormData>(inviteUserAction, IDLE);
-  /*
-   * The two non-text controls are held in state so the safe shape has
-   * something to seed `defaultChecked` and `defaultValue` FROM.
-   *
-   * They were plain uncontrolled controls, which is the same defect as a
-   * controlled `value=` and slightly worse to read: React resets the form DOM
-   * once the Server Action settles, and an uncontrolled checkbox reverts to
-   * cleared while an uncontrolled multi-select reverts to nothing selected.
-   * So a refused invite — a duplicate address is the ordinary case — silently
-   * discarded both the MFA requirement and every role the operator had picked,
-   * and a retry that only corrected the address invited the user with no roles
-   * and no MFA. Nothing on the screen said so.
-   */
-  const [mfaRequired, setMfaRequired] = useState(false);
-  const [roleIds, setRoleIds] = useState<readonly string[]>([]);
-  const [draft, setDraft] = useState<Record<string, string>>({});
-  const retained = (name: string) => draft[name] ?? '';
-  // Question f: the cursor goes to the refused field, and its complaint goes
-  // once the operator edits it (route sweep B3).
-  const {
-    edited: refusalEdited,
-    errorKey: refusalErrorKey,
-    formRef: refusalFormRef,
-  } = useActionRefusal(state);
-  const retain = (name: string) => (event: { target: { value: string } }) => {
-    refusalEdited(name);
-    setDraft((current) => ({ ...current, [name]: event.target.value }));
+  const t = (key: string) => translateDynamic(messages, key);
+  const [draft, setDraft] = useState<InviteDraft>(EMPTY_INVITE);
+  const [state, setState] = useState<ActionState>(IDLE);
+  const [sending, setSending] = useState(false);
+  const inFlight = useRef(false);
+  const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
+  const { errors, formRef } = useHeldRefusal(fieldErrors, {
+    email: draft.email,
+    displayName: draft.displayName,
+    roleIds: draft.roleIds.join(','),
+  });
+  const sent = state.status === 'success';
+  const dirty =
+    !sent &&
+    (draft.email.trim() !== '' ||
+      draft.displayName.trim() !== '' ||
+      draft.mfaRequired ||
+      draft.roleIds.length > 0);
+  useUnsavedGuard(dirty, onClose);
+
+  const submit = async () => {
+    if (inFlight.current || sent) return;
+    const local: Record<string, string> = {};
+    if (draft.email.trim() === '') local['email'] = 'field.required';
+    if (draft.displayName.trim() === '') local['displayName'] = 'field.required';
+    if (Object.keys(local).length > 0) {
+      setFieldErrors(local);
+      setState(IDLE);
+      return;
+    }
+    inFlight.current = true;
+    setSending(true);
+    const form = new FormData();
+    form.set('email', draft.email);
+    form.set('displayName', draft.displayName);
+    if (draft.mfaRequired) form.set('mfaRequired', 'on');
+    for (const id of draft.roleIds) form.append('roleIds', id);
+    let result: ActionState;
+    try {
+      result = await inviteUserAction(state, form);
+    } catch {
+      result = { status: 'unavailable', messageKey: 'state.unavailable.message', attempt: 1 };
+    } finally {
+      inFlight.current = false;
+      setSending(false);
+    }
+    notifyActionResult(result, messages);
+    // The duplicate address is a statement about the address: said on its box.
+    const own =
+      result.status === 'conflict' && result.messageKey === 'users.invite.duplicate'
+        ? { email: 'users.invite.duplicate' }
+        : (result.fieldErrors ?? {});
+    setFieldErrors(own);
+    setState(result);
   };
-  const t = (key: string) => translate(messages, key as keyof Messages);
+
+  const refusal =
+    state.status !== 'idle' &&
+    state.status !== 'success' &&
+    Object.keys(state.fieldErrors ?? {}).length === 0 &&
+    state.messageKey !== 'users.invite.duplicate'
+      ? translateWithValues(messages, state.messageKey ?? 'admin.actionFailed', state.messageValues)
+      : undefined;
+  const fieldError = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
 
   return (
-    <Dialog
-      open={open}
-      onClose={onClose}
-      messages={messages}
+    <DecisionDialog
       title={t('users.invite.title')}
       description={t('users.invite.description')}
-    >
-      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
-        <FormFeedback state={state} messages={messages} />
-
-        {/*
-          The 409 this dialog exists to survive is a DUPLICATE ADDRESS, so the
-          refusal that emptied this box was the one whose message names it.
-        */}
-        <TextField
-          key={`email-${state.attempt ?? 0}`}
-          name="email"
-          type="email"
-          label={t('users.invite.email')}
-          required
-          autoComplete="off"
-          spellCheck={false}
-          defaultValue={retained('email')}
-          onChange={retain('email')}
-          error={refusalErrorKey('email') ? t(refusalErrorKey('email') as string) : undefined}
-        />
-        <TextField
-          key={`displayName-${state.attempt ?? 0}`}
-          name="displayName"
-          label={t('users.invite.displayName')}
-          required
-          autoComplete="off"
-          defaultValue={retained('displayName')}
-          onChange={retain('displayName')}
-          error={
-            refusalErrorKey('displayName') ? t(refusalErrorKey('displayName') as string) : undefined
-          }
-        />
-        {/*
-          `key` + a default + `onChange`, the shape this repository has now had
-          to apply seven times. `key` on the attempt forces the remount,
-          `defaultChecked` seeds it from retained state and is what the reset
-          restores TO, and `onChange` keeps that state current.
-        */}
-        <CheckboxField
-          key={`mfaRequired-${state.attempt ?? 0}`}
-          name="mfaRequired"
-          label={t('users.invite.mfaRequired')}
-          defaultChecked={mfaRequired}
-          onChange={(event) => setMfaRequired(event.target.checked)}
-        />
-
-        {roles.length > 0 ? (
-          <SelectField
-            key={`roleIds-${state.attempt ?? 0}`}
-            name="roleIds"
-            multiple
-            size={Math.min(roles.length, 6)}
-            label={t('users.invite.roles')}
-            description={t('users.invite.rolesHint')}
-            /*
-             * A MULTIPLE select takes an array default, and every selected
-             * option has to be read back on change — `event.target.value` is
-             * only ever the first of them, so seeding from it would restore one
-             * role out of however many were chosen.
-             */
-            defaultValue={[...roleIds]}
-            onChange={(event) =>
-              setRoleIds(Array.from(event.target.selectedOptions, (option) => option.value))
-            }
-            options={roles.map((role) => ({
-              value: role.id,
-              label: roleDisplayName(messages, role),
-            }))}
+      onCancel={onClose}
+      pending={sending}
+      testId="users-invite-dialog"
+      actions={
+        sent ? (
+          <Button type="button" variant="contained" onClick={onClose} autoFocus>
+            {t('admin.close')}
+          </Button>
+        ) : (
+          <DecisionActions
+            messages={messages}
+            error={refusal}
+            pending={sending}
+            destructive={false}
+            confirmLabel={t('users.invite.submit')}
+            onCancel={onClose}
+            onConfirm={() => void submit()}
+            focusCancel={false}
           />
-        ) : null}
-
-        <div className="flex justify-end gap-2">
-          {state.status === 'success' ? (
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg border border-border bg-surface px-4 py-2 text-button text-text-secondary hover:bg-surface-subtle"
+        )
+      }
+    >
+      {sent ? (
+        <p role="status" className="pt-2 text-supporting text-text-primary">
+          {t('users.invite.done')}
+        </p>
+      ) : (
+        <form
+          ref={formRef}
+          noValidate
+          className="flex flex-col gap-4 pt-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void submit();
+          }}
+          // Send sits in the dialog's action row, outside this form, so the
+          // browser finds no submit button here and Enter in either box would
+          // do nothing. Enter in a text box submits this form instead, and the
+          // submit above is the one path both Enter and Send reach, behind the
+          // same single-flight guard. Enter on a checkbox and Enter while an
+          // input method is still composing a word are left alone.
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
+            const box = event.target;
+            if (!(box instanceof HTMLInputElement)) return;
+            if (box.type !== 'text' && box.type !== 'email') return;
+            event.preventDefault();
+            event.currentTarget.requestSubmit();
+          }}
+        >
+          <FormTextField
+            name="email"
+            type="email"
+            label={t('users.invite.email')}
+            required
+            autoFocus
+            autoComplete="off"
+            spellCheck={false}
+            dir="ltr"
+            maxLength={320}
+            value={draft.email}
+            onChange={(email) => setDraft((was) => ({ ...was, email }))}
+            error={fieldError('email')}
+          />
+          <FormTextField
+            name="displayName"
+            label={t('users.invite.displayName')}
+            required
+            autoComplete="off"
+            maxLength={200}
+            value={draft.displayName}
+            onChange={(displayName) => setDraft((was) => ({ ...was, displayName }))}
+            error={fieldError('displayName')}
+          />
+          <FormCheckboxField
+            name="mfaRequired"
+            label={t('users.invite.mfaRequired')}
+            checked={draft.mfaRequired}
+            onChange={(mfaRequired) => setDraft((was) => ({ ...was, mfaRequired }))}
+          />
+          {roles.length > 0 ? (
+            <fieldset
+              className="flex flex-col gap-1"
+              aria-describedby="users-invite-roles-hint"
+              data-invalid={errors['roleIds'] ? true : undefined}
             >
-              {t('admin.close')}
-            </button>
-          ) : (
-            <SubmitButton
-              label={t('users.invite.submit')}
-              pendingLabel={t('admin.creating')}
-              full={false}
-            />
-          )}
-        </div>
-      </form>
-    </Dialog>
+              <legend className="text-label font-medium text-text-primary">
+                {t('users.invite.roles')}
+              </legend>
+              <p id="users-invite-roles-hint" className="text-caption text-text-secondary">
+                {t('users.invite.rolesHint')}
+              </p>
+              {roles.map((role) => (
+                <FormCheckboxField
+                  key={role.id}
+                  label={roleDisplayName(messages, role)}
+                  checked={draft.roleIds.includes(role.id)}
+                  onChange={(on) =>
+                    setDraft((was) => ({
+                      ...was,
+                      roleIds: on
+                        ? [...was.roleIds, role.id]
+                        : was.roleIds.filter((id) => id !== role.id),
+                    }))
+                  }
+                />
+              ))}
+              {errors['roleIds'] ? (
+                <p role="alert" className="text-caption text-error">
+                  {t(errors['roleIds'])}
+                </p>
+              ) : null}
+            </fieldset>
+          ) : null}
+        </form>
+      )}
+    </DecisionDialog>
   );
 }
