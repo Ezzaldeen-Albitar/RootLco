@@ -51,7 +51,8 @@ export default async function AuditLogPage({
 
   const now = new Date();
   const scopeOptions = await readAuditScopeOptions();
-  const from = new Date(now.getTime() - DEFAULT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+  // Today is one of the window's days, so the first is one fewer days back.
+  const from = new Date(now.getTime() - (DEFAULT_WINDOW_DAYS - 1) * 24 * 60 * 60 * 1000);
 
   return (
     <>

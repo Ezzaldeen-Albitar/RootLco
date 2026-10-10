@@ -23,21 +23,13 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate } from '@/i18n/get-messages';
 import type { BranchTarget } from '@/lib/api/read-operation';
-import {
-  addDays,
-  dayIn,
-  endOfDay,
-  isCalendarDay,
-  startOfDay,
-  zoneDisplayName,
-} from '@/lib/branch-time';
+import { endOfDay, isCalendarDay, startOfDay, zoneDisplayName } from '@/lib/branch-time';
 import { intlLocale } from '@/lib/format';
 import { useServerTable, type ServerPageStatus } from '../../shared/use-server-table';
 import { AccountPicker, type ChosenAccount } from '../../users/components/AccountPicker';
 import { listAuditEvents, readAuditEvent } from '../api';
+import { openingWindow, rangeProblem, type DayRange } from '../range';
 import {
-  DEFAULT_WINDOW_DAYS,
-  MAX_WINDOW_DAYS,
   NO_AUDIT_FILTERS,
   type AuditDetail,
   type AuditFilters,
@@ -55,30 +47,6 @@ const IDENTIFIER = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 
 /** The entity type every user-account audit record is written under. */
 const USER_ACCOUNT_ENTITY = 'iam.user_account';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-interface DayRange {
-  readonly from: string;
-  readonly to: string;
-}
-
-type RangeProblem = 'audit.range.incomplete' | 'audit.range.order' | 'audit.range.tooWide';
-
-/**
- * What is wrong with a pair of days, or `null`. Checked before a read, so a
- * window the service would refuse (`MAX_RANGE_DAYS`) is said on the box rather
- * than drawn as a failed read.
- */
-function rangeProblem(range: DayRange): RangeProblem | null {
-  if (!isCalendarDay(range.from) || !isCalendarDay(range.to)) return 'audit.range.incomplete';
-  if (range.to < range.from) return 'audit.range.order';
-  const span =
-    (Date.parse(`${range.to}T00:00:00Z`) - Date.parse(`${range.from}T00:00:00Z`)) / DAY_MS;
-  // Both days are whole, so the window is one day longer than their distance.
-  if (span + 1 > MAX_WINDOW_DAYS) return 'audit.range.tooWide';
-  return null;
-}
 
 /**
  * Who did it, in words — never an identifier (`P1-32-PRE-OD-ADM6`).
@@ -186,8 +154,7 @@ export function AuditLogScreen({
   // rather than leaving it on the clock it opened on.
   const opening = useMemo<DayRange>(() => {
     if (openedAt === undefined) return { from: initialFrom, to: initialTo };
-    const today = dayIn(zone, new Date(openedAt));
-    return { from: addDays(today, -DEFAULT_WINDOW_DAYS), to: today };
+    return openingWindow(zone, new Date(openedAt));
   }, [openedAt, initialFrom, initialTo, zone]);
   // The days in the boxes, and the last pair that was whole and in bounds. A
   // pair being edited never reaches the read half-typed.
@@ -197,7 +164,9 @@ export function AuditLogScreen({
   } | null>(null);
   const range = edited?.range ?? opening;
   const appliedRange = edited?.applied ?? opening;
-  const problem = rangeProblem(range);
+  // Measured on the clock in force, as the service measures it: the instants the
+  // read would send, not a count of calendar days.
+  const problem = rangeProblem(range, zone);
   // An unfinished day is said on its own box; an order or a width is said on
   // the last day, which is the one to move.
   const fromError =
@@ -209,7 +178,7 @@ export function AuditLogScreen({
         ? t(problem)
         : undefined;
   const changeRange = (next: DayRange) => {
-    setEdited({ range: next, applied: rangeProblem(next) === null ? next : appliedRange });
+    setEdited({ range: next, applied: rangeProblem(next, zone) === null ? next : appliedRange });
   };
 
   // Two states, not one: `draft` is what the operator is typing and `applied`
@@ -385,6 +354,7 @@ export function AuditLogScreen({
         className="flex flex-wrap items-start gap-3"
         onSubmit={(event) => {
           event.preventDefault();
+          if (table.status === 'loading') return;
           const actorId = canReadUsers ? (actor?.id ?? '') : draft.actorId.trim();
           // Refused here rather than sent: the parameter is schema-checked, so
           // a malformed one fails the WHOLE request and the operator is told
@@ -492,7 +462,12 @@ export function AuditLogScreen({
           </div>
         )}
         <div className="flex w-full flex-wrap items-center gap-2">
-          <Button type="submit" variant="contained">
+          {/*
+            Held while a read is in flight: the read is audited and rate-limited
+            as an expensive one, so a second press would be a second recorded
+            read of the trail for the same question.
+          */}
+          <Button type="submit" variant="contained" disabled={table.status === 'loading'}>
             {t('audit.filter.apply')}
           </Button>
           <Button type="button" variant="outlined" onClick={clearCriteria}>

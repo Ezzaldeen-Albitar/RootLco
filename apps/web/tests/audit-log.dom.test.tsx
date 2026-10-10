@@ -10,6 +10,7 @@ import { ADMINISTRATION_PERMISSIONS } from '@/features/administration/shared/per
 import { muiTextOf } from '@/components/ui-foundation/mui-text';
 import { getMessages } from '@/i18n/get-messages';
 import { CLIENT_READ_TIMEOUT_MS, clientReadTimeoutMs } from '@/lib/api/read-budget';
+import { endOfDay, startOfDay } from '@/lib/branch-time';
 import {
   BranchSwitch,
   OTHER_BRANCH,
@@ -91,7 +92,9 @@ function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
 
 const { AuditLogScreen } =
   await import('@/features/administration/audit/components/AuditLogScreen');
-const { DEFAULT_WINDOW_DAYS } = await import('@/features/administration/audit/types');
+const { DEFAULT_WINDOW_DAYS, MAX_WINDOW_DAYS } =
+  await import('@/features/administration/audit/types');
+const { openingWindow, rangeProblem } = await import('@/features/administration/audit/range');
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const AuditLogPage = (await import('@/app/[locale]/(dashboard)/administration/audit-log/page'))
   .default as unknown as RoutePage;
@@ -186,6 +189,131 @@ describe('the window the screen opens on', () => {
     renderScreen();
     await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
     expect(lastFilters()).toEqual({ action: '', entityType: '', actorId: '' });
+  });
+});
+
+/**
+ * The width rule, as the service applies it (`resolveRange`): the instants the
+ * read sends may be at most 92 × 24 hours apart. America/New_York leaves summer
+ * time on 2026-11-01 and enters it on 2026-03-08, so a window of whole days
+ * there is an hour longer, or shorter, than its count of days.
+ */
+describe('the window is measured as the service measures it (P1-32-PRE-OD-ADM6)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('takes 92 whole days and refuses 93 on a clock without daylight saving', () => {
+    expect(MAX_WINDOW_DAYS).toBe(92);
+    expect(rangeProblem({ from: '2026-01-01', to: '2026-04-02' }, 'UTC')).toBeNull();
+    expect(rangeProblem({ from: '2026-01-01', to: '2026-04-03' }, 'UTC')).toBe(
+      'audit.range.tooWide'
+    );
+    expect(rangeProblem({ from: '2026-01-01', to: '2026-04-02' }, 'Asia/Riyadh')).toBeNull();
+  });
+
+  it('refuses 92 calendar days that cross a fall back, because they are 92 days and an hour', () => {
+    // 1 September to 1 December: 30 + 31 + 30 + 1 = 92 calendar days.
+    expect(rangeProblem({ from: '2026-09-01', to: '2026-12-01' }, 'America/New_York')).toBe(
+      'audit.range.tooWide'
+    );
+    // The same days on UTC, and one day fewer on the same clock, are in bounds.
+    expect(rangeProblem({ from: '2026-09-01', to: '2026-12-01' }, 'UTC')).toBeNull();
+    expect(rangeProblem({ from: '2026-09-02', to: '2026-12-01' }, 'America/New_York')).toBeNull();
+  });
+
+  it('takes 92 calendar days that cross a spring forward, and still refuses 93', () => {
+    expect(rangeProblem({ from: '2026-01-01', to: '2026-04-02' }, 'America/New_York')).toBeNull();
+    expect(rangeProblem({ from: '2026-01-01', to: '2026-04-03' }, 'America/New_York')).toBe(
+      'audit.range.tooWide'
+    );
+  });
+
+  it('agrees with the service on the instants the read sends', () => {
+    // What the screen would send for the fall-back window, and the service's
+    // own test against it: wider than 92 × 24 hours.
+    const from = startOfDay('America/New_York', '2026-09-01');
+    const to = endOfDay('America/New_York', '2026-12-01');
+    expect(from.toISOString()).toBe('2026-09-01T04:00:00.000Z');
+    expect(to.toISOString()).toBe('2026-12-02T04:59:59.999Z');
+    expect(to.getTime() - from.getTime() - MAX_WINDOW_DAYS * DAY).toBe(60 * 60 * 1000 - 1);
+  });
+
+  it('says an unfinished day and a reversed pair before it measures anything', () => {
+    expect(rangeProblem({ from: '2026-09-0', to: '2026-09-08' }, 'UTC')).toBe(
+      'audit.range.incomplete'
+    );
+    expect(rangeProblem({ from: '2026-09-08', to: '2026-09-01' }, 'UTC')).toBe('audit.range.order');
+    expect(rangeProblem({ from: '2026-09-08', to: '2026-09-08' }, 'America/New_York')).toBeNull();
+  });
+
+  it('opens on seven whole days, today the last of them', () => {
+    expect(DEFAULT_WINDOW_DAYS).toBe(7);
+    expect(openingWindow('UTC', new Date('2026-09-08T10:00:00.000Z'))).toEqual({
+      from: '2026-09-02',
+      to: '2026-09-08',
+    });
+    // Already the ninth in Riyadh.
+    expect(openingWindow('Asia/Riyadh', new Date('2026-09-08T22:30:00.000Z'))).toEqual({
+      from: '2026-09-03',
+      to: '2026-09-09',
+    });
+  });
+
+  it('says a window too wide for the service on the last day, and reads nothing for it', async () => {
+    const user = userEvent.setup();
+    const newYork = { ...TEST_BRANCH, timezone: 'America/New_York' };
+    renderLtr(
+      withMui(
+        inBranch(
+          <AuditLogScreen
+            locale="en"
+            messages={en}
+            initialFrom="2026-09-01"
+            initialTo="2026-09-08"
+          />,
+          { snapshot: branchSnapshot([newYork]) }
+        )
+      )
+    );
+    await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
+    const to = screen.getByRole('group', { name: labelled('audit.to') });
+    await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+    // Day, month, year: 1 December 2026, 92 calendar days after 1 September.
+    await user.keyboard('01122026');
+    expect(await screen.findByText(EN['audit.range.tooWide'] as string)).toBeVisible();
+    expect(to).toHaveAttribute('aria-invalid', 'true');
+    // Days typed on the way may be read; the refused window never is.
+    const ends = listAuditEvents.mock.calls.map((call) => (call[2] as { to: string }).to);
+    expect(ends).not.toContain('2026-12-02T04:59:59.999Z');
+    expect(lastRange().from).toBe('2026-09-01T04:00:00.000Z');
+  });
+});
+
+/** A read held in flight, released by the case. */
+function pendingRead() {
+  let release: (value: unknown) => void = () => undefined;
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  return { pending, release: () => release(okPage([row])) };
+}
+
+describe('one read at a time from the filter form (P1-32-PRE-OD-ADM6)', () => {
+  it('holds Apply while a read is in flight, and gives it back when the read settles', async () => {
+    const first = pendingRead();
+    listAuditEvents.mockReturnValueOnce(first.pending);
+    renderScreen();
+    const applyButton = within(filterForm()).getByRole('button', {
+      name: EN['audit.filter.apply'] as string,
+    });
+    await waitFor(() => expect(listAuditEvents).toHaveBeenCalledTimes(1));
+    expect(applyButton).toBeDisabled();
+    // Enter in a box does not submit around the held button either.
+    fireEvent.submit(filterForm());
+    expect(listAuditEvents).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      first.release();
+    });
+    await waitFor(() => expect(applyButton).toBeEnabled());
   });
 });
 
@@ -454,10 +582,10 @@ describe('the /administration/audit-log route page decides before it reads', () 
     );
     await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
     const { from, to } = lastRange();
-    const days = (Date.parse(to) - Date.parse(from)) / (24 * 60 * 60 * 1000);
-    // The screen widens the given dates to whole days, so the measured span is
-    // the window plus the last day's tail rather than exactly seven.
-    expect(Math.floor(days)).toBe(DEFAULT_WINDOW_DAYS);
+    // Seven whole days on the clock in force (UTC here), today the last: the
+    // read runs from the first day's start to the last millisecond of today.
+    expect(Date.parse(to) + 1 - Date.parse(from)).toBe(DEFAULT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    expect(to.slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
     expect(lastFilters()).toEqual({ action: '', entityType: '', actorId: '' });
   });
 });
@@ -832,9 +960,9 @@ describe('the clock the log is read and drawn on (P1-32-PRE-OD-ADM6)', () => {
     );
     await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
     // 22:30 UTC on the eighth is already the ninth in Riyadh: the window ends
-    // on the branch's today and starts seven days before it.
+    // on the branch's today, and today is the seventh of its seven days.
     expect(lastRange()).toEqual({
-      from: '2026-09-01T21:00:00.000Z',
+      from: '2026-09-02T21:00:00.000Z',
       to: '2026-09-09T20:59:59.999Z',
     });
   });
