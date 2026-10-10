@@ -41,6 +41,8 @@ interface Entry {
   readonly permission: AdministrationPermission;
   /** Further codes the page refuses without, beside `permission`. All are needed. */
   readonly alsoRequires?: readonly AdministrationPermission[];
+  /** Codes of which the page needs at least ONE, beside `permission`. */
+  readonly requiresAnyOf?: readonly AdministrationPermission[];
 }
 
 const SECTIONS: readonly {
@@ -98,6 +100,9 @@ const SECTIONS: readonly {
         href: '/administration/numbering-rules',
         labelKey: 'nav.numberingRules',
         permission: PERMISSIONS.settingsManage,
+        // Numbering, taxes and currencies are one settings-backed screen, which
+        // refuses without the company settings read (`SettingsBackedScreen.tsx`).
+        alsoRequires: [PERMISSIONS.companyRead],
       },
       {
         href: '/administration/taxes',
@@ -105,11 +110,13 @@ const SECTIONS: readonly {
         // See navigation.ts: the screen's operations require settings
         // management, not `org.tax.manage` (P1-26-F-029).
         permission: PERMISSIONS.settingsManage,
+        alsoRequires: [PERMISSIONS.companyRead],
       },
       {
         href: '/administration/currencies',
         labelKey: 'nav.currencies',
         permission: PERMISSIONS.settingsManage,
+        alsoRequires: [PERMISSIONS.companyRead],
       },
       {
         href: '/administration/languages',
@@ -120,6 +127,9 @@ const SECTIONS: readonly {
         href: '/administration/system-settings',
         labelKey: 'nav.systemSettings',
         permission: PERMISSIONS.settingsManage,
+        // The page draws the company panel, the branch panel, or both, and
+        // refuses only when neither read is held (`system-settings/page.tsx`).
+        requiresAnyOf: [PERMISSIONS.companyRead, PERMISSIONS.branchRead],
       },
       {
         href: '/administration/appointment-setup',
@@ -158,7 +168,9 @@ export default async function AdministrationPage({
     entries: section.entries.filter(
       (entry) =>
         holds(session.permissions, entry.permission) &&
-        (entry.alsoRequires ?? []).every((code) => holds(session.permissions, code))
+        (entry.alsoRequires ?? []).every((code) => holds(session.permissions, code)) &&
+        (entry.requiresAnyOf === undefined ||
+          entry.requiresAnyOf.some((code) => holds(session.permissions, code)))
     ),
   })).filter((section) => section.entries.length > 0);
 
