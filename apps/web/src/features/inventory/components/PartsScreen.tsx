@@ -41,6 +41,7 @@ import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { unitNameByCode, type NamedUnit } from '@/lib/unit-name';
 
 import {
   cancelMaterialRequest,
@@ -64,7 +65,7 @@ import {
   type StockReservation,
   type StockTarget,
 } from '../inventory-contract';
-import { MaterialRequirementsPanel } from './MaterialRequirementsPanel';
+import { MaterialRequirementsPanel, type RequirementSummary } from './MaterialRequirementsPanel';
 import {
   BranchPairPicker,
   EMPTY_PAIR,
@@ -78,6 +79,8 @@ import {
   type BranchPair,
 } from './shared';
 import { ItemPicker, REFERENCE, ReferenceBox, withoutKey, type ItemChoice } from './pickers';
+import { useItemNames, type NameAnswer } from './requirement-names';
+import { useUnitList } from './unit-list';
 import {
   StockMoment,
   refusalState,
@@ -182,6 +185,7 @@ export function PartsScreen({
   canOperate,
   canReadWorkOrder,
   canReadItems = false,
+  canReadVehicleCatalogue = false,
   canReadBranches,
   currentUserId,
   canRequestMaterial,
@@ -202,6 +206,8 @@ export function PartsScreen({
   readonly canReadWorkOrder: boolean;
   /** `inv.item.read` — the item is found in the catalogue, or given as a reference. */
   readonly canReadItems?: boolean;
+  /** `veh.vehicle.read` — the confirmed capacities a requirement form lists are named by their make. */
+  readonly canReadVehicleCatalogue?: boolean;
   /**
    * `org.branch.read`. Accepted so the route did not have to change, and no
    * longer read: the branch is the working context's own named selection, and
@@ -234,6 +240,10 @@ export function PartsScreen({
   // The requirement a draw is measured against, chosen in the panel. Held here
   // because both draw forms name it and the panel is a sibling of both.
   const [requirement, setRequirement] = useState<MaterialRequirement | null>(null);
+  // What the forms say about it, in words (LANG-identifiers), set with it.
+  const [summary, setSummary] = useState<RequirementSummary | null>(null);
+  // The units a refusal's figures are named in (UNIT-names); null without `inv.item.read`.
+  const units = useUnitList(canReadItems);
   // The material request the last draw opened, when a requirement governed it.
   // It is what "finish" and "withdraw" act on; null when no draw has landed.
   const [materialRequestId, setMaterialRequestId] = useState<string | null>(null);
@@ -328,6 +338,7 @@ export function PartsScreen({
           messages={messages}
           workOrderId={workOrderId}
           canOperate={canOperate}
+          canReadItems={canReadItems}
           onIssue={(part) => {
             setPrefill(part);
             setDrawing('issue');
@@ -347,15 +358,18 @@ export function PartsScreen({
         canDecideException={canDecideMaterialException}
         canReadWorkOrder={canReadWorkOrder}
         canReadItems={canReadItems}
+        canReadVehicleCatalogue={canReadVehicleCatalogue}
         chosenId={requirement?.id ?? null}
-        onChoose={(chosen) => {
+        onChoose={(chosen, chosenSummary) => {
           setRequirement(chosen);
+          setSummary(chosenSummary);
           setPrefill(null);
         }}
         onChanged={() => {
           // A decision may have changed the requirement the forms hold, so the
           // choice is dropped rather than carried forward as a stale copy.
           setRequirement(null);
+          setSummary(null);
           setEpoch((n) => n + 1);
         }}
       />
@@ -423,6 +437,8 @@ export function PartsScreen({
           locale={locale}
           workOrderId={workOrderId}
           requirement={requirement}
+          summary={summary}
+          units={units}
           target={target}
           canReadBranches={canReadBranches ?? false}
           canReadItems={canReadItems}
@@ -444,6 +460,8 @@ export function PartsScreen({
           messages={messages}
           workOrderId={workOrderId}
           requirement={requirement}
+          summary={summary}
+          units={units}
           target={target}
           canReadBranches={canReadBranches ?? false}
           canReadItems={canReadItems}
@@ -700,17 +718,39 @@ function useRequiredParts(workOrderId: string | null): {
   return { items: answer.items, refused: answer.refused };
 }
 
+/** The item a required-part line names: its name, the wait for it, or that it cannot be shown. */
+function RequiredPartItem({
+  messages,
+  answer,
+}: {
+  readonly messages: Messages;
+  readonly answer: NameAnswer;
+}) {
+  if (answer.phase === 'named') return <bdi data-testid="parts-required-item">{answer.name}</bdi>;
+  return (
+    <span className="text-text-muted" data-testid="parts-required-item">
+      {translate(
+        messages,
+        answer.phase === 'pending' ? 'state.loading' : 'inventory.material.itemUnavailable'
+      )}
+    </span>
+  );
+}
+
 function RequiredPartsPanel({
   locale,
   messages,
   workOrderId,
   canOperate,
+  canReadItems,
   onIssue,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly workOrderId: string;
   readonly canOperate: boolean;
+  /** `inv.item.read` — the item a line is recorded against is named by its catalogue name. */
+  readonly canReadItems: boolean;
   readonly onIssue: (prefill: IssuePrefill) => void;
 }) {
   /*
@@ -757,6 +797,17 @@ function RequiredPartsPanel({
     };
   }, [workOrderId, attempt]);
   const current = answer !== null && answer.attempt === attempt ? answer : null;
+  /*
+   * A line recorded against an item carries the item's identifier. The column
+   * names the item (LANG-identifiers): its catalogue name when the operator may
+   * read it, and otherwise a sentence that its details are not available —
+   * never the identifier.
+   */
+  const itemIds = useMemo(
+    () => (current?.items ?? []).flatMap((part) => (part.reference ? [part.reference] : [])),
+    [current]
+  );
+  const itemName = useItemNames(itemIds, canReadItems);
 
   return (
     <section
@@ -825,9 +876,7 @@ function RequiredPartsPanel({
                   </TableCell>
                   <TableCell>
                     {part.reference ? (
-                      <code className="font-mono text-caption" dir="ltr">
-                        {part.reference}
-                      </code>
+                      <RequiredPartItem messages={messages} answer={itemName(part.reference)} />
                     ) : (
                       <span className="text-text-muted">
                         {translate(messages, 'inventory.parts.required.noItem')}
@@ -885,6 +934,8 @@ function IssueForm({
   messages,
   workOrderId,
   requirement,
+  summary,
+  units,
   target,
   canReadBranches,
   canReadItems,
@@ -897,6 +948,10 @@ function IssueForm({
   readonly workOrderId: string;
   /** The requirement this draw is measured against. Without one there is nothing to submit. */
   readonly requirement: MaterialRequirement | null;
+  /** The requirement in words, as its card showed it. */
+  readonly summary: RequirementSummary | null;
+  /** The units a refusal's figures are named in; null when not read. */
+  readonly units: readonly NamedUnit[] | null;
   /** The work order's branch when it could be read; else taken from the operator. */
   readonly target: StockTarget | null;
   readonly canReadBranches: boolean;
@@ -976,7 +1031,7 @@ function IssueForm({
       : requirement?.itemId
         ? {
             id: requirement.itemId,
-            label: translate(messages, 'inventory.itemPicker.fromRequirement'),
+            label: summary?.itemName ?? translate(messages, 'inventory.itemPicker.fromRequirement'),
           }
         : null
   );
@@ -1097,8 +1152,9 @@ function IssueForm({
     });
     sending.current = false;
     setBusy(false);
-    setOutcome(result.state);
-    notifyActionResult(result.state, messages);
+    const state = withUnitNamed(result.state, messages, units);
+    setOutcome(state);
+    notifyActionResult(state, messages);
     if (result.state.status === 'success' && result.created) {
       setOutcome(null);
       onIssued(result.created);
@@ -1131,6 +1187,7 @@ function IssueForm({
         <ChosenRequirement
           messages={messages}
           requirement={requirement}
+          summary={summary}
           error={errorFor('materialRequirementId')}
         />
       </div>
@@ -1350,10 +1407,13 @@ function IssueForm({
 function ChosenRequirement({
   messages,
   requirement,
+  summary,
   error,
 }: {
   readonly messages: Messages;
   readonly requirement: MaterialRequirement | null;
+  /** The requirement in words (LANG-identifiers); its identifier is never shown. */
+  readonly summary: RequirementSummary | null;
   readonly error?: string | undefined;
 }) {
   const refusal =
@@ -1374,22 +1434,53 @@ function ChosenRequirement({
   }
   return (
     <>
-      <p className="text-caption text-text-muted">
-        {translate(messages, 'inventory.parts.draw.usingRequirement')}{' '}
-        <code className="font-mono" dir="ltr">
-          {requirement.id}
-        </code>
+      <p className="text-caption text-text-muted" data-testid="parts-chosen-requirement">
+        {summary === null ? (
+          translate(messages, 'inventory.parts.draw.usingRequirement')
+        ) : (
+          <>
+            {translate(messages, 'inventory.parts.draw.usingRequirementFor')}{' '}
+            <bdi>{summary.what}</bdi>
+          </>
+        )}
         {' · '}
         {translate(messages, 'inventory.material.allowance.remaining')}{' '}
         {requirement.remainingQuantity === null ? (
           translate(messages, 'inventory.material.allowance.unset')
         ) : (
-          <Qty value={requirement.remainingQuantity} />
+          <>
+            <Qty value={requirement.remainingQuantity} />
+            {summary?.unit ? (
+              <>
+                {' '}
+                <bdi>{summary.unit}</bdi>
+              </>
+            ) : null}
+          </>
         )}
       </p>
       {refusal}
     </>
   );
+}
+
+/**
+ * A refused draw's figures name their unit by code (`ERR-INV-001`, CC-OD-32),
+ * inside a sentence read in the operator's language, so the unit is named the
+ * same way (P1-32-PRE-OD-INVF, UNIT-names) — from the unit list, and left as
+ * the code when the list does not name it. Nothing else in the state changes.
+ */
+function withUnitNamed(
+  state: ActionState,
+  messages: Messages,
+  units: readonly NamedUnit[] | null
+): ActionState {
+  const code = state.messageValues?.['unit'];
+  if (code === undefined) return state;
+  return {
+    ...state,
+    messageValues: { ...state.messageValues, unit: unitNameByCode(messages, code, units) },
+  };
 }
 
 /**
@@ -1404,6 +1495,8 @@ function ReserveForm({
   messages,
   workOrderId,
   requirement,
+  summary,
+  units,
   target,
   canReadBranches,
   canReadItems,
@@ -1413,6 +1506,10 @@ function ReserveForm({
   readonly messages: Messages;
   readonly workOrderId: string;
   readonly requirement: MaterialRequirement | null;
+  /** The requirement in words, as its card showed it. */
+  readonly summary: RequirementSummary | null;
+  /** The units a refusal's figures are named in; null when not read. */
+  readonly units: readonly NamedUnit[] | null;
   readonly target: StockTarget | null;
   readonly canReadBranches: boolean;
   /** `inv.item.read` — the item is found in the catalogue, or given as a reference. */
@@ -1434,7 +1531,7 @@ function ReserveForm({
     requirement?.itemId
       ? {
           id: requirement.itemId,
-          label: translate(messages, 'inventory.itemPicker.fromRequirement'),
+          label: summary?.itemName ?? translate(messages, 'inventory.itemPicker.fromRequirement'),
         }
       : null
   );
@@ -1507,8 +1604,9 @@ function ReserveForm({
     });
     sending.current = false;
     setBusy(false);
-    setOutcome(result.state);
-    notifyActionResult(result.state, messages);
+    const state = withUnitNamed(result.state, messages, units);
+    setOutcome(state);
+    notifyActionResult(state, messages);
     if (result.state.status === 'success' && result.created) {
       setOutcome(null);
       onReserved(result.created);
@@ -1541,6 +1639,7 @@ function ReserveForm({
         <ChosenRequirement
           messages={messages}
           requirement={requirement}
+          summary={summary}
           error={errorFor('materialRequirementId')}
         />
       </div>

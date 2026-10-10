@@ -14,6 +14,8 @@ import { DeliveryDocument } from '@/features/delivery/components/DeliveryDocumen
 import { ReceiptDocument } from '@/features/payments/components/ReceiptDocument';
 import type { ReceiptDetail } from '@/features/payments/payments-contract';
 import { QuotationDocument } from '@/features/quotations/components/QuotationPrint';
+import { LabelRun, type LabelPreset } from '@/features/inventory/components/LabelRun';
+import type { ItemLabel } from '@/features/inventory/inventory-contract';
 import { AcknowledgementDocument } from '@/features/receptions/components/AcknowledgementDocument';
 import type { ReceptionDetail } from '@/features/receptions/receptions-contract';
 import type { Locale } from '@/i18n/config';
@@ -915,4 +917,75 @@ export function printCases(locale: Locale): PrintCase[] {
     deliveryCase(locale),
     acknowledgementCase(locale),
   ];
+}
+
+// --- the labels: `app/[locale]/(dashboard)/inventory/labels/page.tsx`, `LabelsScreen`
+//
+// Not one of the seven documents: a run of labels has no identity row and no
+// title on paper (`LabelRun`), so it is held by its own cases in
+// `print-layout.spec.ts` (P1-32-PRE-OD-INVF, LBL-sheet-print / LBL-roll-print).
+
+/** The stock code every fixture label carries — what a printed page is counted by. */
+export const LABEL_SKU = 'LBLTEST-0001';
+
+/** A label as `inv.item-label-data` publishes one. Test data. */
+const LABEL: ItemLabel = {
+  itemId: '0f0f0f0f-0f0f-4f0f-8f0f-0f0f0f0f0f0f',
+  sku: LABEL_SKU,
+  name: 'Shelf part of the test',
+  primaryBarcode: {
+    identifierId: '1e1e1e1e-1e1e-4e1e-8e1e-1e1e1e1e1e1e',
+    kind: 'ean',
+    value: '4006381333931',
+    normalizedValue: '4006381333931',
+    symbology: 'ean13',
+  },
+  unit: { id: '2d2d2d2d-2d2d-4d2d-8d2d-2d2d2d2d2d2d', code: 'each' },
+  packQuantity: '1.000',
+};
+
+export interface LabelPrintCase {
+  readonly locale: Locale;
+  readonly preset: LabelPreset;
+  readonly copies: number;
+  /** Screen text around the run — the page heading, its description, the sheet title. */
+  readonly chrome: readonly string[];
+  readonly page: () => ReactElement;
+}
+
+export function labelCase(locale: Locale, preset: LabelPreset, copies: number): LabelPrintCase {
+  return {
+    locale,
+    preset,
+    copies,
+    chrome: [
+      t(locale, 'inventory.labels.title'),
+      t(locale, 'inventory.labels.description'),
+      t(locale, 'inventory.labels.explain'),
+      t(locale, 'inventory.labels.documentTitle'),
+      t(locale, 'inventory.labels.noPriceNote'),
+    ],
+    page: () => (
+      <ScopedPage
+        locale={locale}
+        titleKey="inventory.labels.title"
+        descriptionKey="inventory.labels.description"
+      >
+        <div className="flex min-h-0 flex-col gap-4">
+          <div data-print="hide" className="flex flex-col gap-4">
+            <p className="text-caption text-text-muted">{t(locale, 'inventory.labels.explain')}</p>
+            <WorkingPanel label="Label controls of the test" />
+          </div>
+          <LabelRun
+            locale={locale}
+            messages={MESSAGES[locale]}
+            label={LABEL}
+            preset={preset}
+            copies={copies}
+            units={null}
+          />
+        </div>
+      </ScopedPage>
+    ),
+  };
 }

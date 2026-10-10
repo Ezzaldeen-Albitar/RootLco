@@ -1,3 +1,6 @@
+import { join } from 'node:path';
+import postcss, { type AtRule } from 'postcss';
+import * as sass from 'sass';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -60,7 +63,10 @@ const renderRtl = (ui: ReactElement) => renderBareRtl(withMui(ui, 'ar'));
 const readItemLabel = vi.fn();
 const resolveBarcode = vi.fn();
 const listItems = vi.fn();
+// P1-32-PRE-OD-INVF: units named through the list (UNIT-names).
+const listUnitsOfMeasure = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
+  listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
   readItemLabel: (...args: unknown[]) => readItemLabel(...args),
   resolveBarcode: (...args: unknown[]) => resolveBarcode(...args),
   listItems: (...args: unknown[]) => listItems(...args),
@@ -132,6 +138,12 @@ function resolution(over: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // P1-32-PRE-OD-INVF: the screen names a unit by code through the unit list.
+  listUnitsOfMeasure.mockResolvedValue({
+    status: 'ok',
+    data: { items: [] },
+    correlationId: 'corr',
+  });
   PERMISSIONS = ['inv.item.read'];
   readItemLabel.mockResolvedValue(okRead(label()));
   resolveBarcode.mockResolvedValue(okRead(resolution()));
@@ -472,5 +484,152 @@ describe('on Material UI (INV6)', () => {
     await wedgeIn(user, AR, GOOD_EAN);
     await screen.findByRole('img');
     expect(await seriousViolations(container)).toEqual([]);
+  });
+});
+
+/**
+ * P1-32-PRE-OD-INVF — LBL-sheet-print and LBL-roll-print.
+ *
+ * The CP-20261009-1 Chrome PDFs printed the page heading and its description
+ * above the labels, and a 50 x 25 mm roll of two labels as THREE pages: the
+ * heading with the first label, the second label, and a blank page after the
+ * last (`break-after: page` on every roll label). These hold the two causes
+ * where a DOM test can see them — what the route opts into and what the
+ * compiled print stylesheet says — and the pagination itself stays with the
+ * next runtime print retest, which only a browser can measure.
+ */
+describe('P1-32-PRE-OD-INVF: a run of labels prints as labels only', () => {
+  interface PrintRule {
+    /** The selector as compiled, for `matches`. */
+    readonly raw: string;
+    /** The same with every quote removed, for comparison: Sass unquotes identifiers. */
+    readonly selector: string;
+    readonly print: boolean;
+    readonly declarations: Readonly<Record<string, string>>;
+  }
+
+  const compiled = sass.compile(join(__dirname, '..', 'src', 'app', 'globals.scss')).css;
+  const root = postcss.parse(compiled);
+  const rules: PrintRule[] = [];
+  root.walkRules((rule) => {
+    let print = false;
+    for (let node = rule.parent; node && node.type !== 'root'; node = node.parent) {
+      if (node.type === 'atrule' && (node as AtRule).name === 'media') {
+        print ||= /\bprint\b/.test((node as AtRule).params);
+      }
+    }
+    const declarations: Record<string, string> = {};
+    rule.walkDecls((decl) => {
+      declarations[decl.prop] = decl.value;
+    });
+    for (const selector of rule.selectors) {
+      rules.push({
+        raw: selector.trim(),
+        selector: selector.trim().replace(/["']/g, ''),
+        print,
+        declarations,
+      });
+    }
+  });
+  const labelRules = rules.filter((rule) => rule.selector.includes('[data-label'));
+
+  it('breaks between roll labels and never after the last one', () => {
+    for (const preset of ['50x25', '70x40']) {
+      const cell = `[data-label-sheet=${preset}] [data-label=cell]`;
+      const between = labelRules.find(
+        (rule) => rule.print && rule.selector === `${cell} + [data-label=cell]`
+      );
+      expect(between?.declarations['break-before']).toBe('page');
+      // No label rule forces a break AFTER a label: that is what left a blank
+      // page, a wasted label on a roll printer, after the last one.
+      for (const rule of labelRules) {
+        expect(rule.declarations['break-after']).toBeUndefined();
+        expect(rule.declarations['page-break-after']).toBeUndefined();
+      }
+      // The rule that applies to EVERY label (the first included) forces no break.
+      const every = labelRules.filter((rule) => rule.print && rule.selector === cell);
+      expect(every.length).toBeGreaterThan(0);
+      for (const rule of every) expect(rule.declarations['break-before']).toBeUndefined();
+    }
+  });
+
+  it('puts each roll label on a page the size of the label, with no margin', () => {
+    const pages: Record<string, Record<string, string>> = {};
+    root.walkAtRules('page', (rule) => {
+      const declarations: Record<string, string> = {};
+      rule.walkDecls((decl) => {
+        declarations[decl.prop] = decl.value;
+      });
+      pages[rule.params.trim()] = declarations;
+    });
+    expect(pages['label-50x25']).toMatchObject({ size: '50mm 25mm', margin: '0' });
+    expect(pages['label-70x40']).toMatchObject({ size: '70mm 40mm', margin: '0' });
+    const named = (preset: string) =>
+      labelRules.find(
+        (rule) =>
+          rule.print &&
+          rule.selector === `[data-label-sheet=${preset}] [data-label=cell]` &&
+          rule.declarations['page'] !== undefined
+      )?.declarations['page'];
+    expect(named('50x25')).toBe('label-50x25');
+    expect(named('70x40')).toBe('label-70x40');
+  });
+
+  it('leaves the sheet title off the paper, so a run starts with a label', () => {
+    const header = rules.find(
+      (rule) =>
+        rule.print && rule.selector === '[data-print=document]:has([data-label-sheet]) > header'
+    );
+    expect(header?.declarations['display']).toBe('none');
+  });
+
+  it('a roll of two labels: only the second is broken before, and nothing follows the last', async () => {
+    const user = userEvent.setup();
+    const { container } = renderLtr(<LabelsScreen locale="en" messages={en} />);
+    await wedge(user, GOOD_EAN);
+    await screen.findAllByRole('img');
+    const copies = screen.getByLabelText(labelled('inventory.labels.format.copies'));
+    await user.clear(copies);
+    await user.type(copies, '2');
+    await waitFor(() =>
+      expect(
+        container.querySelectorAll('[data-label-sheet="50x25"] [data-label="cell"]')
+      ).toHaveLength(2)
+    );
+    const cells = [
+      ...container.querySelectorAll<HTMLElement>('[data-label-sheet="50x25"] [data-label="cell"]'),
+    ];
+    const breakBefore = labelRules.filter(
+      (rule) => rule.print && rule.declarations['break-before'] === 'page'
+    );
+    expect(breakBefore.length).toBeGreaterThan(0);
+    const breaks = cells.map((cell) => breakBefore.some((rule) => cell.matches(rule.raw)));
+    expect(breaks).toEqual([false, true]);
+  });
+
+  it('the route opts into the print scope, so its heading and description stay off the paper', async () => {
+    const user = userEvent.setup();
+    PERMISSIONS = ['inv.item.read'];
+    const { container } = renderLtr(
+      (await LabelsPage({ params: Promise.resolve({ locale: 'en' }) })) as React.ReactElement
+    );
+    await wedge(user, GOOD_EAN);
+    await screen.findAllByRole('img');
+    const scope = container.querySelector<HTMLElement>('[data-print-scope="document"]');
+    expect(scope).not.toBeNull();
+    const sheet = scope?.querySelector('[data-print="document"]');
+    expect(sheet).not.toBeNull();
+    // The scope's rule leaves off every direct child holding no document: the
+    // page heading and its description are in such a child.
+    const heading = screen.getByRole('heading', {
+      level: 1,
+      name: EN['inventory.labels.title'] as string,
+    });
+    const description = screen.getByText(EN['inventory.labels.description'] as string);
+    for (const node of [heading, description]) {
+      const child = [...(scope?.children ?? [])].find((candidate) => candidate.contains(node));
+      expect(child).toBeDefined();
+      expect(child?.contains(sheet ?? null)).toBe(false);
+    }
   });
 });

@@ -108,7 +108,13 @@ const readMaterialRequirement = vi.fn();
 const closeMaterialRequest = vi.fn();
 const cancelMaterialRequest = vi.fn();
 const listItemCategoryPage = vi.fn();
+// P1-32-PRE-OD-INVF: units named through the list (UNIT-names).
+const listUnitsOfMeasure = vi.fn();
+// P1-32-PRE-OD-INVF: the requirement card names its part and service line (LANG-identifiers).
+const readItemDetail = vi.fn();
+const listServiceLines = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
+  readItemDetail: (...args: unknown[]) => readItemDetail(...args),
   listPartIssues: (...args: unknown[]) => listPartIssues(...args),
   listRequiredParts: (...args: unknown[]) => listRequiredParts(...args),
   listReservations: (...args: unknown[]) => listReservations(...args),
@@ -138,13 +144,14 @@ vi.mock('@/features/inventory/api', () => ({
   decideMaterialException: vi.fn(),
   closeMaterialRequest: (...args: unknown[]) => closeMaterialRequest(...args),
   cancelMaterialRequest: (...args: unknown[]) => cancelMaterialRequest(...args),
-  listUnitsOfMeasure: vi.fn(),
+  listUnitsOfMeasure: (...args: unknown[]) => listUnitsOfMeasure(...args),
 }));
 
 const readWorkOrderDetail = vi.fn();
 const listWorkOrders = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   readWorkOrderDetail: (...args: unknown[]) => readWorkOrderDetail(...args),
+  listServiceLines: (...args: unknown[]) => listServiceLines(...args),
 }));
 vi.mock('@/features/work-orders/work-order-list-read', () => ({
   listWorkOrdersCancellable: (...args: unknown[]) => listWorkOrders(...args),
@@ -365,6 +372,14 @@ const chooseRequirement = async (user: ReturnType<typeof userEvent.setup>) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // P1-32-PRE-OD-INVF: the screen names a unit by code through the unit list.
+  listUnitsOfMeasure.mockResolvedValue({
+    status: 'ok',
+    data: { items: [] },
+    correlationId: 'corr',
+  });
+  readItemDetail.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+  listServiceLines.mockResolvedValue({ status: 'ok', data: { items: [] }, correlationId: 'corr' });
   PERMISSIONS = [];
   // Fresh objects on every call, as a Server Action's deserialised answer is:
   // a stable mock would let a re-render loop hide behind React's bail-out.
@@ -530,13 +545,42 @@ describe('reached from a work order', () => {
     expect(screen.getByText(EN['inventory.parts.workOrderNotReadable'] as string)).toBeVisible();
   });
 
-  it('shows the required parts with their item reference', async () => {
+  it('shows the required parts, saying the item cannot be named without the item read', async () => {
     renderScreen();
     await waitFor(() => expect(listRequiredParts).toHaveBeenCalledWith(WORK_ORDER_ID));
     const region = requiredRegion();
     expect(await within(region).findByText('Front brake pads')).toBeVisible();
     expect(within(region).getByText('2.000')).toBeVisible();
-    expect(within(region).getByText(ITEM_ID)).toBeVisible();
+    expect(within(region).getByTestId('parts-required-item')).toHaveTextContent(
+      EN['inventory.material.itemUnavailable'] as string
+    );
+    expect(region.textContent).not.toContain(ITEM_ID);
+    expect(readItemDetail).not.toHaveBeenCalled();
+  });
+
+  it('names the item a required part is recorded against, never its identifier (LANG-identifiers)', async () => {
+    readItemDetail.mockResolvedValue(okRead({ id: ITEM_ID, name: 'Brake pad set, front' }));
+    renderScreen({ canReadItems: true });
+    const region = requiredRegion();
+    await waitFor(() =>
+      expect(within(region).getByTestId('parts-required-item')).toHaveTextContent(
+        'Brake pad set, front'
+      )
+    );
+    expect(readItemDetail).toHaveBeenCalledWith(ITEM_ID);
+    expect(region.textContent).not.toContain(ITEM_ID);
+  });
+
+  it('a refused item read leaves the required part unnamed in words, not by identifier', async () => {
+    renderScreen({ canReadItems: true });
+    const region = requiredRegion();
+    await waitFor(() =>
+      expect(within(region).getByTestId('parts-required-item')).toHaveTextContent(
+        EN['inventory.material.itemUnavailable'] as string
+      )
+    );
+    expect(readItemDetail).toHaveBeenCalledWith(ITEM_ID);
+    expect(region.textContent).not.toContain(ITEM_ID);
   });
 
   it('renders the denied state instead of an empty list', async () => {
@@ -2419,5 +2463,146 @@ describe('the parts screen on Material UI (P1-32-PRE-OD-INV5)', () => {
       await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
       expect(screen.queryByRole('form', { name: labelled('inventory.return.heading') })).toBeNull();
     });
+  });
+});
+
+/**
+ * P1-32-PRE-OD-INVF — the parts screen in plain words.
+ *
+ * LANG-identifiers: the reserve and issue forms said "Measured against the
+ * chosen allowance. b2ba1062-…" — the requirement's identifier. They now say
+ * which part the allowance is for, by the name its card showed, and what is
+ * still available in the requirement's unit.
+ *
+ * UNIT-names: the refused draw's figures carried the unit code into the Arabic
+ * sentence ("المعتمد 1.000 each"). The unit is now named in the page language
+ * when the unit list names it.
+ */
+describe('P1-32-PRE-OD-INVF: the chosen allowance and its unit in words', () => {
+  const reserveForm = (messages: Record<string, string>) =>
+    screen.findByRole('form', { name: messages['inventory.parts.reserve.heading'] as string });
+  const litre = {
+    id: UOM_ID,
+    scope: 'platform',
+    code: 'litre',
+    name: 'Litre',
+    dimension: 'volume',
+  };
+
+  function renderIn(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    const props = {
+      locale,
+      messages: locale === 'en' ? en : ar,
+      workOrderId: WORK_ORDER_ID,
+      workOrder: workOrder as never,
+      workOrderRefused: false,
+      canOperate: true,
+      canReadWorkOrder: false,
+      canReadBranches: false,
+      canReadItems: true,
+      currentUserId: USER_ID,
+      canRequestMaterial: false,
+      canApproveMaterial: false,
+      canDecideMaterialException: false,
+      ...over,
+    } as const;
+    return locale === 'en'
+      ? renderLtr(<PartsScreen {...props} />)
+      : renderRtl(<PartsScreen {...props} />);
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    const messages = locale === 'en' ? EN : AR;
+
+    it(`${locale}: the reserve form names the part the allowance is for, never the requirement identifier`, async () => {
+      const user = userEvent.setup();
+      listMaterialRequirements.mockImplementation(async () =>
+        okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+      );
+      listUnitsOfMeasure.mockResolvedValue(okRead({ items: [litre] }));
+      readItemDetail.mockResolvedValue(okRead({ id: ITEM_ID, name: 'Engine oil 5W-30' }));
+      const { container } = renderIn(locale);
+      await waitFor(() =>
+        expect(screen.getByTestId('material-item').textContent).toBe('Engine oil 5W-30')
+      );
+      await user.click(
+        screen.getByRole('button', { name: messages['inventory.material.use'] as string })
+      );
+      await user.click(
+        screen.getByRole('button', { name: messages['inventory.parts.reserve.open'] as string })
+      );
+      const form = await reserveForm(messages);
+      const note = within(form).getByTestId('parts-chosen-requirement');
+      expect(note).toHaveTextContent(
+        messages['inventory.parts.draw.usingRequirementFor'] as string
+      );
+      expect(note).toHaveTextContent('Engine oil 5W-30');
+      expect(note).toHaveTextContent(
+        `3.500 ${locale === 'en' ? 'Litre' : (AR['units.name.litre'] as string)}`
+      );
+      expect(container.textContent).not.toContain(REQUIREMENT_ID);
+    });
+  }
+
+  it('without the item read, the form says the part cannot be named rather than identifying it', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    const { container } = renderIn('en', { canReadItems: false });
+    await user.click(
+      await screen.findByRole('button', { name: EN['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: EN['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm(EN);
+    const note = within(form).getByTestId('parts-chosen-requirement');
+    expect(note).toHaveTextContent(EN['inventory.material.itemUnavailable'] as string);
+    expect(container.textContent).not.toContain(REQUIREMENT_ID);
+    expect(readItemDetail).not.toHaveBeenCalled();
+  });
+
+  it('ar: a refused draw names its standard unit in Arabic inside the Arabic sentence', async () => {
+    const user = userEvent.setup();
+    listMaterialRequirements.mockImplementation(async () =>
+      okRead({ items: [materialRequirement()], nextCursor: null, hasMore: false })
+    );
+    listUnitsOfMeasure.mockResolvedValue(okRead({ items: [litre] }));
+    createReservation.mockImplementation(async () => ({
+      state: {
+        status: 'error',
+        messageKey: 'inventory.refusal.materialDraw.exceeds_requirement.figures',
+        messageValues: { allowance: '1.000', used: '1.000', requested: '0.500', unit: 'litre' },
+        correlationId: 'corr',
+      },
+      created: null,
+    }));
+    renderIn('ar');
+    await user.click(
+      await screen.findByRole('button', { name: AR['inventory.material.use'] as string })
+    );
+    await user.click(
+      screen.getByRole('button', { name: AR['inventory.parts.reserve.open'] as string })
+    );
+    const form = await reserveForm(AR);
+    await user.selectOptions(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(AR['inventory.reserve.location'] as string)}`)
+      ),
+      LOCATION_ID
+    );
+    await user.type(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(AR['inventory.reserve.quantity'] as string)}`)
+      ),
+      '0.500'
+    );
+    await user.click(
+      within(form).getByRole('button', { name: AR['inventory.parts.reserve.submit'] as string })
+    );
+    const refusal = await screen.findByRole('alert');
+    expect(refusal.textContent ?? '').toContain(`1.000 ${AR['units.name.litre'] as string}`);
+    expect(refusal.textContent ?? '').not.toContain('litre');
   });
 });

@@ -79,6 +79,7 @@ import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadFailureStatus } from '@/lib/api/read-operation';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+import { unitName, unitOptions } from '@/lib/unit-name';
 import {
   createItem,
   createItemCategory,
@@ -621,7 +622,7 @@ function UnitsSection({ messages, units }: { readonly messages: Messages; readon
                     </code>
                   </TableCell>
                   <TableCell>
-                    <bdi>{unit.name}</bdi>
+                    <bdi>{unitName(messages, unit)}</bdi>
                   </TableCell>
                   <TableCell>
                     <bdi>{unit.dimension}</bdi>
@@ -916,10 +917,7 @@ function ItemForm({
         required
         value={form.uomId}
         onChange={(uomId) => edit({ uomId })}
-        options={unitItems.map((unit) => ({
-          value: unit.id,
-          label: `${unit.code} — ${unit.name}`,
-        }))}
+        options={unitOptions(messages, unitItems)}
         placeholder={translate(messages, 'inventory.setup.item.chooseUnit')}
         error={errorFor('uomId')}
       />

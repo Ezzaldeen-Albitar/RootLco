@@ -25,6 +25,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
+import { unitNameByCode } from '@/lib/unit-name';
 
 import {
   createReservation,
@@ -64,6 +65,7 @@ import {
 } from './shared';
 import { ItemPicker, REFERENCE, ReferenceBox, withoutKey, type ItemChoice } from './pickers';
 import { StockAlertIndicator } from './StockAlertIndicator';
+import { useUnitList } from './unit-list';
 import {
   BranchTargetForm,
   LINK,
@@ -482,6 +484,8 @@ function ItemResults({
     [criteria]
   );
   const table = useServerTable<InventoryItem>(load, { initial: INITIAL_REQUEST });
+  // A row names its unit by code; the list names it in the reader's language (UNIT-names).
+  const units = useUnitList();
 
   const columns = useMemo<readonly OperationalColumn<InventoryItem>[]>(
     () => [
@@ -516,11 +520,7 @@ function ItemResults({
       {
         id: 'unit',
         headerKey: 'inventory.items.column.unit',
-        cell: (row) => (
-          <code className="font-mono text-caption" dir="ltr">
-            {row.unitOfMeasure.code}
-          </code>
-        ),
+        cell: (row) => <bdi>{unitNameByCode(messages, row.unitOfMeasure.code, units)}</bdi>,
       },
       {
         id: 'tracked',
@@ -553,7 +553,7 @@ function ItemResults({
         ),
       },
     ],
-    [messages, locale]
+    [messages, locale, units]
   );
 
   return (

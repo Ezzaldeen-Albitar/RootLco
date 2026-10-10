@@ -5,11 +5,14 @@ import type { Locale } from '@/i18n/config';
 import {
   counterSaleCase,
   invoiceCase,
+  LABEL_SKU,
+  labelCase,
   MESSAGES,
   printCases,
   quotationCase,
   QUOTATION_TOTAL,
   SHELL_CHROME,
+  type LabelPrintCase,
   type PrintCase,
 } from './print/fixtures';
 import { pdfPages, type PrintedPage } from './print/pdf-text';
@@ -533,3 +536,62 @@ function expectNothingClosingAlone(
     ).toBe(true);
   }
 }
+
+/**
+ * Label runs, printed (P1-32-PRE-OD-INVF, LBL-sheet-print and LBL-roll-print).
+ *
+ * The CP-20261009-1 runtime prints carried the page heading and its description
+ * above the labels, and printed a 50 x 25 mm roll of two labels as THREE pages:
+ * the heading with the first label, the second, and a blank page after the
+ * last. A run of labels has no identity row, so it is not one of the documents
+ * above; per page it asserts what a roll printer and a sheet need: the labels
+ * and nothing of the screen, one label per roll page, and no page without one.
+ */
+test.describe('label runs print as labels only (P1-32-PRE-OD-INVF)', () => {
+  async function printLabels(page: Page, labelPrint: LabelPrintCase): Promise<PrintedPage[]> {
+    const dir = labelPrint.locale === 'ar' ? 'rtl' : 'ltr';
+    await page.emulateMedia({ media: null });
+    await page.setContent(
+      `<!doctype html><html lang="${labelPrint.locale}" dir="${dir}"><head><meta charset="utf-8">` +
+        `<style>${stylesheet}</style></head><body class="app-viewport">` +
+        `${renderToStaticMarkup(labelPrint.page())}</body></html>`
+    );
+    return pdfPages(await page.pdf({ format: 'A4', preferCSSPageSize: true }));
+  }
+
+  function expectNoScreenText(pages: readonly PrintedPage[], labelPrint: LabelPrintCase): void {
+    const everything = pages.map((printedPage) => printedPage.text).join(' ');
+    for (const chrome of [...labelPrint.chrome, ...SHELL_CHROME]) {
+      expect(printed(everything, opening(chrome)), `screen text "${chrome}" was printed`).toBe(
+        false
+      );
+    }
+  }
+
+  test('an A4 sheet of six labels prints on one page, holding the six labels and nothing of the screen', async ({
+    page,
+  }, testInfo) => {
+    const labelPrint = labelCase(localeOf(testInfo), 'a4', 6);
+    const pages = await printLabels(page, labelPrint);
+    testInfo.annotations.push({ type: 'a4 sheet', description: summary(pages) });
+    expect(pages.length, summary(pages)).toBe(1);
+    expect(timesPrinted((pages[0] as PrintedPage).text, LABEL_SKU), summary(pages)).toBe(6);
+    expectNoScreenText(pages, labelPrint);
+  });
+
+  test('a 50 x 25 mm roll of two labels prints exactly two pages, one label on each', async ({
+    page,
+  }, testInfo) => {
+    const labelPrint = labelCase(localeOf(testInfo), '50x25', 2);
+    const pages = await printLabels(page, labelPrint);
+    testInfo.annotations.push({ type: '50 x 25 roll', description: summary(pages) });
+    expect(pages.length, summary(pages)).toBe(2);
+    pages.forEach((printedPage, index) => {
+      expect(
+        timesPrinted(printedPage.text, LABEL_SKU),
+        `page ${index + 1} holds exactly one label\n${summary(pages)}`
+      ).toBe(1);
+    });
+    expectNoScreenText(pages, labelPrint);
+  });
+});

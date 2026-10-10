@@ -223,15 +223,55 @@
 }
 
 @media print {
-  // One label per page for the roll presets, and no cutting guide on paper —
-  // the label stock already has edges.
-  [data-label-sheet='50x25'] [data-label='cell'],
-  [data-label-sheet='70x40'] [data-label='cell'] {
+  // The roll presets are plain block flow on paper, one label after another, so
+  // the page fragmenter breaks between them exactly where it is told to.
+  [data-label-sheet='50x25'],
+  [data-label-sheet='70x40'] {
+    display: block;
+  }
+
+  // No cutting guide on paper — the label stock already has edges — and each
+  // label on its own named page, whose size is the label's (below).
+  [data-label-sheet='50x25'] [data-label='cell'] {
+    page: label-50x25;
     border: 0;
-    break-after: page;
+  }
+
+  [data-label-sheet='70x40'] [data-label='cell'] {
+    page: label-70x40;
+    border: 0;
+  }
+
+  // One label per page: a break BEFORE every label but the first. A break AFTER
+  // every label (as this read before P1-32-PRE-OD-INVF, LBL-roll-print) also
+  // broke after the last one, and the roll printed a blank label at the end.
+  [data-label-sheet='50x25'] [data-label='cell'] + [data-label='cell'],
+  [data-label-sheet='70x40'] [data-label='cell'] + [data-label='cell'] {
+    break-before: page;
   }
 
   [data-label-sheet='a4'] [data-label='cell'] {
     break-inside: avoid;
   }
+
+  // A run of labels starts with a label. The sheet's own title is for the
+  // screen; on paper it took the top of the first page and pushed the first
+  // roll label onto a page of its own (LBL-sheet-print, LBL-roll-print). The
+  // page heading around it is left off by the route's `data-print-scope`.
+  [data-print='document']:has([data-label-sheet]) > header {
+    display: none;
+  }
+}
+
+// The paper of a roll label is the label: its own size and no margin, so a
+// roll printer advances exactly one label per page. The A4 sheet keeps the
+// default page above.
+@page label-50x25 {
+  size: 50mm 25mm;
+  margin: 0;
+}
+
+@page label-70x40 {
+  size: 70mm 40mm;
+  margin: 0;
 }

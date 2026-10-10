@@ -82,7 +82,10 @@ const listItemCategoryPage = vi.fn();
 vi.mock('@/features/work-orders/api', () => ({
   listServiceLines: (...args: unknown[]) => listServiceLines(...args),
 }));
+// P1-32-PRE-OD-INVF: the card names its part by reading the item (LANG-identifiers).
+const readItemDetail = vi.fn();
 vi.mock('@/features/inventory/api', () => ({
+  readItemDetail: (...args: unknown[]) => readItemDetail(...args),
   listMaterialRequirements: (...args: unknown[]) => listMaterialRequirements(...args),
   readMaterialRequirement: (...args: unknown[]) => readMaterialRequirement(...args),
   createMaterialRequirement: (...args: unknown[]) => createMaterialRequirement(...args),
@@ -98,6 +101,15 @@ vi.mock('@/features/inventory/api', () => ({
   listItems: (...args: unknown[]) => listItems(...args),
   // P1-32-PRE-OD-INV5: the item family is chosen from, and named by, the category tree.
   listItemCategoryPage: (...args: unknown[]) => listItemCategoryPage(...args),
+}));
+
+// P1-32-PRE-OD-INVF: a listed confirmed capacity is named by its make, read from the make catalogue.
+const listMakes = vi.fn();
+// ...and by its model, read from that make's model catalogue.
+const listModels = vi.fn();
+vi.mock('@/features/vehicles/catalogue-api', () => ({
+  listMakes: (...args: unknown[]) => listMakes(...args),
+  listModels: (...args: unknown[]) => listModels(...args),
 }));
 
 const notifyActionResult = vi.fn((..._args: unknown[]): boolean => true);
@@ -275,6 +287,7 @@ const allowance = () => screen.getByTestId('material-allowance');
 
 beforeEach(() => {
   vi.clearAllMocks();
+  readItemDetail.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
   listMaterialRequirements.mockImplementation(async () => listing([requirement()]));
   readMaterialRequirement.mockImplementation(async () =>
     okRead({ ...requirement(), exceptions: [] })
@@ -296,6 +309,12 @@ beforeEach(() => {
   listItemCategoryPage.mockImplementation(async () =>
     okRead({ items: categoryRows, nextCursor: null, hasMore: false })
   );
+  listModels.mockImplementation(async () => ({
+    status: 'denied' as const,
+    options: [],
+    truncated: false,
+    correlationId: 'corr',
+  }));
 });
 
 describe('the allowance is the server figure', () => {
@@ -811,6 +830,9 @@ describe('the service line is offered rather than demanded', () => {
 
   it('reads the lines only when the form is opened, and only for this work order', async () => {
     const user = userEvent.setup();
+    // No requirement is listed, so no card needs a line named (P1-32-PRE-OD-INVF):
+    // the form opening is the only thing that asks for the lines.
+    listMaterialRequirements.mockImplementation(async () => listing([]));
     renderPanel({ canRequest: true });
     await waitFor(() => expect(listMaterialRequirements).toHaveBeenCalled());
     expect(listServiceLines).not.toHaveBeenCalled();
@@ -1115,13 +1137,17 @@ describe('the material panel on Material UI (P1-32-PRE-OD-INV5)', () => {
     expect(listItemCategoryPage).not.toHaveBeenCalled();
   });
 
-  it('without the item read, keeps the typed family reference and reads no category', async () => {
+  it('without the item read, names no family on the card, keeps the typed reference box and reads no category', async () => {
     listMaterialRequirements.mockImplementation(async () =>
       listing([requirement({ itemId: null, itemCategoryId: OILS_ID })])
     );
     const user = userEvent.setup();
-    renderIn('en', { canRequest: true, canReadItems: false });
-    expect(await screen.findByText(OILS_ID)).toBeVisible();
+    const { container } = renderIn('en', { canRequest: true, canReadItems: false });
+    // The listed card names no family it cannot read — in words, not by reference.
+    expect(
+      await screen.findByText(EN['inventory.material.familyUnavailable'] as string)
+    ).toBeVisible();
+    expect(container.textContent).not.toContain(OILS_ID);
     await user.click(
       screen.getByRole('button', { name: EN['inventory.material.create.open'] as string })
     );
@@ -1135,7 +1161,20 @@ describe('the material panel on Material UI (P1-32-PRE-OD-INV5)', () => {
     expect(listItemCategoryPage).not.toHaveBeenCalled();
   });
 
-  it('a refused category read leaves the listed family as its reference', async () => {
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: a requirement taken from a capacity says so in words, never by the capacity identifier`, async () => {
+      listMaterialRequirements.mockImplementation(async () => listing([requirement()]));
+      const { container } = renderIn(locale);
+      const source = await screen.findByTestId('material-source-specification');
+      expect(source).toHaveTextContent(
+        CATALOGUE[locale]['inventory.material.source.specification'] as string
+      );
+      expect(source).toHaveTextContent('oil_change');
+      expect(container.textContent).not.toContain(SPECIFICATION_ID);
+    });
+  }
+
+  it('a refused category read says the family cannot be named, never its reference', async () => {
     listItemCategoryPage.mockImplementation(async () => ({
       status: 'denied' as const,
       correlationId: 'corr',
@@ -1143,9 +1182,12 @@ describe('the material panel on Material UI (P1-32-PRE-OD-INV5)', () => {
     listMaterialRequirements.mockImplementation(async () =>
       listing([requirement({ itemId: null, itemCategoryId: OILS_ID })])
     );
-    renderIn('en');
-    expect(await screen.findByText(OILS_ID)).toBeVisible();
+    const { container } = renderIn('en');
+    expect(
+      await screen.findByText(EN['inventory.material.familyUnavailable'] as string)
+    ).toBeVisible();
     expect(screen.queryByTestId('material-category-path')).toBeNull();
+    expect(container.textContent).not.toContain(OILS_ID);
   });
 
   it('a second press of Approve inside the same moment decides once', async () => {
@@ -1486,5 +1528,343 @@ describe('the material panel on Material UI (P1-32-PRE-OD-INV5)', () => {
         screen.queryByRole('form', { name: EN['inventory.material.create.heading'] as string })
       ).toBeNull();
     });
+  });
+});
+
+/**
+ * P1-32-PRE-OD-INVF, LANG-identifiers: the requirement card named its service
+ * line by its raw identifier, though the form had offered that line by its
+ * description. The card now says the line's description and the part's name,
+ * read through the reads that already exist, and says in words when either
+ * cannot be read — never the identifier.
+ */
+describe('P1-32-PRE-OD-INVF: a requirement is named, never identified', () => {
+  function renderIn(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    const props = {
+      locale,
+      messages: locale === 'en' ? en : ar,
+      workOrderId: WORK_ORDER_ID,
+      target: { companyId: COMPANY_ID, branchId: BRANCH_ID },
+      currentUserId: USER_ID,
+      canRequest: false,
+      canApprove: false,
+      canDecideException: false,
+      canReadWorkOrder: true,
+      canReadItems: true,
+      chosenId: null,
+      onChoose: vi.fn(),
+      onChanged: vi.fn(),
+      ...over,
+    } as const;
+    return locale === 'en'
+      ? renderLtr(<MaterialRequirementsPanel {...props} />)
+      : renderRtl(<MaterialRequirementsPanel {...props} />);
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    const messages = locale === 'en' ? EN : AR;
+
+    it(`${locale}: the card says the service line and the part by name`, async () => {
+      readItemDetail.mockResolvedValue(okRead({ id: ITEM_ID, name: 'Engine oil 5W-30' }));
+      const { container } = renderIn(locale);
+      const line = await screen.findByTestId('material-service-line');
+      await waitFor(() => expect(line.textContent).toBe('Engine oil change'));
+      const part = screen.getByTestId('material-item');
+      await waitFor(() => expect(part.textContent).toBe('Engine oil 5W-30'));
+      expect(readItemDetail).toHaveBeenCalledWith(ITEM_ID);
+      expect(container.textContent).not.toContain(SERVICE_LINE_ID);
+      expect(container.textContent).not.toContain(ITEM_ID);
+      expect(container.textContent).not.toContain(REQUIREMENT_ID);
+    });
+
+    it(`${locale}: a name that cannot be read is said in words, not as the identifier`, async () => {
+      listServiceLines.mockImplementation(async () => ({
+        status: 'denied' as const,
+        correlationId: 'corr',
+      }));
+      readItemDetail.mockResolvedValue({ status: 'denied', correlationId: 'corr' });
+      const { container } = renderIn(locale);
+      const line = await screen.findByTestId('material-service-line');
+      await waitFor(() =>
+        expect(line.textContent).toBe(messages['inventory.material.serviceLineUnavailable'])
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId('material-item').textContent).toBe(
+          messages['inventory.material.itemUnavailable']
+        )
+      );
+      expect(container.textContent).not.toContain(SERVICE_LINE_ID);
+      expect(container.textContent).not.toContain(ITEM_ID);
+    });
+  }
+
+  it('without the work order read, no line read is made and the card says the line is not available', async () => {
+    const { container } = renderIn('en', { canReadWorkOrder: false });
+    const line = await screen.findByTestId('material-service-line');
+    expect(line.textContent).toBe(EN['inventory.material.serviceLineUnavailable']);
+    expect(listServiceLines).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain(SERVICE_LINE_ID);
+  });
+
+  it('a service line the work order no longer lists is said to be unavailable', async () => {
+    listServiceLines.mockImplementation(async () => okRead({ items: [] }));
+    renderIn('en');
+    const line = await screen.findByTestId('material-service-line');
+    await waitFor(() =>
+      expect(line.textContent).toBe(EN['inventory.material.serviceLineUnavailable'])
+    );
+  });
+
+  it('choosing the requirement hands the forms its part and unit in words', async () => {
+    const user = userEvent.setup();
+    const onChoose = vi.fn();
+    readItemDetail.mockResolvedValue(okRead({ id: ITEM_ID, name: 'Engine oil 5W-30' }));
+    renderIn('ar', { onChoose });
+    await waitFor(() =>
+      expect(screen.getByTestId('material-item').textContent).toBe('Engine oil 5W-30')
+    );
+    await user.click(screen.getByRole('button', { name: AR['inventory.material.use'] as string }));
+    expect(onChoose).toHaveBeenCalledTimes(1);
+    const [chosen, summary] = onChoose.mock.calls[0] as [
+      { id: string },
+      { what: string; itemName: string | null; unit: string | null },
+    ];
+    expect(chosen.id).toBe(REQUIREMENT_ID);
+    expect(summary).toEqual({
+      what: 'Engine oil 5W-30',
+      itemName: 'Engine oil 5W-30',
+      unit: 'Litre',
+    });
+  });
+});
+
+/**
+ * P1-32-PRE-OD-INVF: a confirmed capacity the requirement form lists named its
+ * make by the raw identifier. It is now named from the make catalogue the
+ * vehicle specifications screen reads, when the operator holds the code that
+ * reads it, and is said in words to be not available otherwise — never the
+ * identifier.
+ */
+describe('P1-32-PRE-OD-INVF: a listed capacity names its make, never its identifier', () => {
+  const MAKE_NAME = 'Make Alpha';
+
+  function makes(options: readonly { id: string; name: string }[]) {
+    return {
+      status: 'ok' as const,
+      options: options.map((option) => ({
+        ...option,
+        scope: 'platform',
+        code: option.name.toUpperCase().replace(/\s+/g, '_'),
+        status: 'active',
+      })),
+      truncated: false,
+      correlationId: 'corr',
+    };
+  }
+
+  async function openMatches(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    const messages = locale === 'en' ? EN : AR;
+    const user = userEvent.setup();
+    const props = {
+      locale,
+      messages: locale === 'en' ? en : ar,
+      workOrderId: WORK_ORDER_ID,
+      target: { companyId: COMPANY_ID, branchId: BRANCH_ID },
+      currentUserId: USER_ID,
+      canRequest: true,
+      canApprove: false,
+      canDecideException: false,
+      canReadWorkOrder: true,
+      canReadItems: true,
+      chosenId: null,
+      onChoose: vi.fn(),
+      onChanged: vi.fn(),
+      ...over,
+    } as const;
+    const { container } =
+      locale === 'en'
+        ? renderLtr(<MaterialRequirementsPanel {...props} />)
+        : renderRtl(<MaterialRequirementsPanel {...props} />);
+    await user.click(
+      screen.getByRole('button', { name: messages['inventory.material.create.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: messages['inventory.material.create.heading'] as string,
+    });
+    await user.type(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(messages['inventory.material.create.serviceCondition'] as string)}`)
+      ),
+      'oil_change'
+    );
+    const make = await within(form).findByTestId('material-match-make');
+    return { container, form, make, messages };
+  }
+
+  beforeEach(() => {
+    listMakes.mockImplementation(async () => makes([{ id: MAKE_ID, name: MAKE_NAME }]));
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: the make is named from the make catalogue`, async () => {
+      const { form, make } = await openMatches(locale, { canReadVehicleCatalogue: true });
+      await waitFor(() => expect(make.textContent).toBe(MAKE_NAME));
+      expect(listMakes).toHaveBeenCalledTimes(1);
+      expect(form.textContent).not.toContain(MAKE_ID);
+    });
+
+    it(`${locale}: a make the catalogue cannot name is said to be not available`, async () => {
+      listMakes.mockImplementation(async () => ({
+        status: 'denied' as const,
+        options: [],
+        truncated: false,
+        correlationId: 'corr',
+      }));
+      const { form, make, messages } = await openMatches(locale, {
+        canReadVehicleCatalogue: true,
+      });
+      await waitFor(() =>
+        expect(make.textContent).toBe(messages['inventory.material.create.matchMakeUnavailable'])
+      );
+      expect(form.textContent).not.toContain(MAKE_ID);
+    });
+  }
+
+  it('a make missing from the catalogue answer is said to be not available', async () => {
+    listMakes.mockImplementation(async () =>
+      makes([{ id: '34343434-3434-4343-8343-343434343434', name: 'Make Beta' }])
+    );
+    const { form, make } = await openMatches('en', { canReadVehicleCatalogue: true });
+    await waitFor(() =>
+      expect(make.textContent).toBe(EN['inventory.material.create.matchMakeUnavailable'])
+    );
+    expect(form.textContent).not.toContain(MAKE_ID);
+    expect(form.textContent).not.toContain('Make Beta');
+  });
+
+  it('without the vehicle read, no make read is made and the make is said to be not available', async () => {
+    const { form, make } = await openMatches('en');
+    expect(make.textContent).toBe(EN['inventory.material.create.matchMakeUnavailable']);
+    expect(listMakes).not.toHaveBeenCalled();
+    expect(form.textContent).not.toContain(MAKE_ID);
+  });
+});
+
+describe('P1-32-PRE-OD-INVF: a listed capacity names its model, never its identifier', () => {
+  const MODEL_NAME = 'Model Alpha';
+
+  function models(options: readonly { id: string; name: string }[]) {
+    return {
+      status: 'ok' as const,
+      options: options.map((option) => ({
+        ...option,
+        scope: 'platform',
+        code: option.name.toUpperCase().replace(/\s+/g, '_'),
+        status: 'active',
+      })),
+      truncated: false,
+      correlationId: 'corr',
+    };
+  }
+
+  async function openMatches(locale: 'en' | 'ar', over: Record<string, unknown> = {}) {
+    const messages = locale === 'en' ? EN : AR;
+    const user = userEvent.setup();
+    const props = {
+      locale,
+      messages: locale === 'en' ? en : ar,
+      workOrderId: WORK_ORDER_ID,
+      target: { companyId: COMPANY_ID, branchId: BRANCH_ID },
+      currentUserId: USER_ID,
+      canRequest: true,
+      canApprove: false,
+      canDecideException: false,
+      canReadWorkOrder: true,
+      canReadItems: true,
+      chosenId: null,
+      onChoose: vi.fn(),
+      onChanged: vi.fn(),
+      ...over,
+    } as const;
+    if (locale === 'en') renderLtr(<MaterialRequirementsPanel {...props} />);
+    else renderRtl(<MaterialRequirementsPanel {...props} />);
+    await user.click(
+      screen.getByRole('button', { name: messages['inventory.material.create.open'] as string })
+    );
+    const form = await screen.findByRole('form', {
+      name: messages['inventory.material.create.heading'] as string,
+    });
+    await user.type(
+      within(form).getByLabelText(
+        new RegExp(`^${escape(messages['inventory.material.create.serviceCondition'] as string)}`)
+      ),
+      'oil_change'
+    );
+    const model = await within(form).findByTestId('material-match-model');
+    return { form, model, messages };
+  }
+
+  beforeEach(() => {
+    listMakes.mockImplementation(async () => ({
+      status: 'ok' as const,
+      options: [],
+      truncated: false,
+      correlationId: 'corr',
+    }));
+    listModels.mockImplementation(async () => models([{ id: MODEL_ID, name: MODEL_NAME }]));
+  });
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`${locale}: the model is named from the model catalogue of its make`, async () => {
+      const { form, model } = await openMatches(locale, { canReadVehicleCatalogue: true });
+      await waitFor(() => expect(model.textContent).toBe(MODEL_NAME));
+      expect(listModels).toHaveBeenCalledTimes(1);
+      expect(listModels).toHaveBeenCalledWith(MAKE_ID);
+      expect(form.textContent).not.toContain(MODEL_ID);
+    });
+
+    it(`${locale}: a model the catalogue cannot name is said to be not available`, async () => {
+      listModels.mockImplementation(async () => ({
+        status: 'unavailable' as const,
+        options: [],
+        truncated: false,
+        correlationId: 'corr',
+      }));
+      const { form, model, messages } = await openMatches(locale, {
+        canReadVehicleCatalogue: true,
+      });
+      await waitFor(() =>
+        expect(model.textContent).toBe(messages['inventory.material.create.matchModelUnavailable'])
+      );
+      expect(form.textContent).not.toContain(MODEL_ID);
+    });
+
+    it(`${locale}: a capacity for every model of its make says so in words`, async () => {
+      listVehicleSpecifications.mockImplementation(async () =>
+        listing([specification({ modelId: null })])
+      );
+      const { model, messages } = await openMatches(locale, { canReadVehicleCatalogue: true });
+      expect(model.textContent).toBe(messages['inventory.specifications.create.anyModel']);
+      expect(listModels).not.toHaveBeenCalled();
+    });
+  }
+
+  it('a model missing from the catalogue of its make is said to be not available', async () => {
+    listModels.mockImplementation(async () =>
+      models([{ id: '35353535-3535-4353-8353-353535353535', name: 'Model Beta' }])
+    );
+    const { form, model } = await openMatches('en', { canReadVehicleCatalogue: true });
+    await waitFor(() =>
+      expect(model.textContent).toBe(EN['inventory.material.create.matchModelUnavailable'])
+    );
+    expect(form.textContent).not.toContain(MODEL_ID);
+    expect(form.textContent).not.toContain('Model Beta');
+  });
+
+  it('without the vehicle read, no model read is made and the model is said to be not available', async () => {
+    const { form, model } = await openMatches('en');
+    expect(model.textContent).toBe(EN['inventory.material.create.matchModelUnavailable']);
+    expect(listModels).not.toHaveBeenCalled();
+    expect(form.textContent).not.toContain(MODEL_ID);
   });
 });

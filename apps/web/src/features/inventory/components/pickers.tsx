@@ -12,6 +12,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateWithValues } from '@/i18n/get-messages';
 import type { CursorPage, ReadState } from '@/lib/api/read-operation';
+import { unitNameByCode } from '@/lib/unit-name';
 
 import { listIssuedParts, listItems } from '../api';
 import {
@@ -24,6 +25,7 @@ import {
   type StockTarget,
 } from '../inventory-contract';
 import { momentText, useStockDisplayZone } from './stock-operations';
+import { useUnitList } from './unit-list';
 
 /**
  * The inventory pickers (Owner directive, `P1-32-PRE-OD-UX`, route sweep B2).
@@ -298,6 +300,8 @@ export function IssuedPartPicker({
   const { companyId, branchId } = target;
   // The issue's moment is written on the branch's clock, never the browser's.
   const zone = useStockDisplayZone(target);
+  // The issue names its unit by code; the list names it in the reader's language.
+  const units = useUnitList();
   const load = useCallback(
     async (term: string, cursor: string | null): Promise<ReadState<CursorPage<IssuedPart>>> => {
       const state = await listIssuedParts({ companyId, branchId }, { q: term }, cursor);
@@ -314,7 +318,7 @@ export function IssuedPartPicker({
       when: momentText(part.issuedAt, locale, zone),
       issued: part.quantity,
       returnable: part.returnableQuantity,
-      unit: part.unitCode,
+      unit: unitNameByCode(messages, part.unitCode, units),
     });
   return (
     <EntityPicker<IssuedPart>
