@@ -1,7 +1,7 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ReactElement } from 'react';
+import { useState, type ReactElement } from 'react';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
 import { inBranch, renderLtr, renderRtl } from './render';
@@ -50,6 +50,9 @@ vi.mock('next/navigation', () => ({
 }));
 
 const { RolesScreen } = await import('@/features/administration/access/components/RolesScreen');
+const { FormDialog } = await import('@/features/administration/shared/components/FormDialog');
+const { FormTextField } = await import('@/components/forms/mui/FormTextField');
+const { DateField } = await import('@/components/forms/mui/DateField');
 const RolesPage = (await import('@/app/[locale]/(dashboard)/administration/roles/page'))
   .default as unknown as (args: {
   params: Promise<Record<string, string>>;
@@ -131,6 +134,44 @@ function heldSend() {
   );
   return (value: unknown) => answer(value);
 }
+
+/**
+ * Every write held until the case answers it, one answer per write, in order —
+ * so "while the write is in flight" is a real wait, not a synchronous mock.
+ */
+function answeredOneByOne() {
+  const waiting: ((value: unknown) => void)[] = [];
+  send.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        waiting.push(resolve);
+      })
+  );
+  return (value: unknown) => {
+    const next = waiting.shift();
+    if (next === undefined) throw new Error('no write is waiting for an answer');
+    next(value);
+  };
+}
+
+/**
+ * Lets an answer reach the dialog's submit handler and run it to its end
+ * WITHOUT letting React draw the outcome: only promise jobs run here, and the
+ * render the answer schedules is a later task. A key or a press now lands in
+ * the moment between the answer and the dialog closing.
+ */
+async function answerHandledNotYetDrawn(): Promise<void> {
+  for (let job = 0; job < 50; job += 1) await Promise.resolve();
+}
+
+/** The service could not be reached: the ordinary refusal a retry is for. */
+const OUTAGE = {
+  ok: false as const,
+  kind: 'unavailable' as const,
+  status: 503,
+  problem: { code: 'ERR-SYS-001' },
+  correlationId: 'corr-down',
+};
 
 beforeEach(() => {
   send.mockReset();
@@ -368,5 +409,211 @@ describe('archiving a role', () => {
         { ifMatch: 3 }
       )
     );
+  });
+});
+
+describe('the shared form dialog sends once, whatever Enter does (P1-32-PRE-OD-ADM4 review)', () => {
+  /** A form dialog with a one-line box, a multi-line box and a date field. */
+  function Probe({
+    pending,
+    onSubmit,
+  }: {
+    readonly pending: boolean;
+    readonly onSubmit: () => void;
+  }) {
+    const [code, setCode] = useState('');
+    const [note, setNote] = useState('');
+    const [day, setDay] = useState<'' | `${number}-${number}-${number}`>('');
+    return (
+      <FormDialog
+        messages={en}
+        title="Probe form"
+        submitLabel="Save probe"
+        pending={pending}
+        onCancel={() => undefined}
+        onSubmit={onSubmit}
+      >
+        <FormTextField name="code" label="Probe code" value={code} onChange={setCode} />
+        <FormTextField
+          name="note"
+          label="Probe note"
+          value={note}
+          onChange={setNote}
+          multiline
+          rows={3}
+        />
+        <DateField
+          name="day"
+          label="Probe day"
+          value={day}
+          onChange={(next) => setDay(next as typeof day)}
+        />
+      </FormDialog>
+    );
+  }
+
+  function mountProbe(pending: boolean, onSubmit: () => void) {
+    return renderLtr(withMui(inBranch(<Probe pending={pending} onSubmit={onSubmit} />), 'en'));
+  }
+
+  it('reaches the caller on Enter in a one-line box and in a date field part, not in a multi-line box', async () => {
+    const submitted = vi.fn();
+    const user = userEvent.setup();
+    mountProbe(false, submitted);
+    const dialog = await screen.findByRole('dialog', { name: 'Probe form' });
+
+    await user.click(within(dialog).getByLabelText(/^Probe note/));
+    await user.keyboard('{Enter}');
+    expect(submitted).not.toHaveBeenCalled();
+
+    await user.click(within(dialog).getByLabelText(/^Probe code/));
+    await user.keyboard('{Enter}');
+    expect(submitted).toHaveBeenCalledTimes(1);
+
+    const group = within(dialog).getByRole('group', { name: /^Probe day/ });
+    const part = within(group).getAllByRole('spinbutton')[0] as HTMLElement;
+    await user.click(part);
+    await user.keyboard('{Enter}');
+    expect(submitted).toHaveBeenCalledTimes(2);
+  });
+
+  it('while the write is in flight, neither Enter nor the form submit event reaches the caller', async () => {
+    const submitted = vi.fn();
+    const user = userEvent.setup();
+    mountProbe(true, submitted);
+    const dialog = await screen.findByRole('dialog', { name: 'Probe form' });
+
+    await user.click(within(dialog).getByLabelText(/^Probe code/));
+    await user.keyboard('{Enter}{Enter}');
+    const group = within(dialog).getByRole('group', { name: /^Probe day/ });
+    await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('{Enter}');
+    // `requestSubmit` does not consult the disabled button; the form refuses it.
+    const form = dialog.querySelector('form') as HTMLFormElement;
+    act(() => form.requestSubmit());
+    expect(submitted).not.toHaveBeenCalled();
+  });
+});
+
+describe('a role form is sent once between the answer and the dialog closing (P1-32-PRE-OD-ADM4 review)', () => {
+  async function openCreate(user: ReturnType<typeof userEvent.setup>) {
+    get.mockResolvedValue(page([SUPERVISOR]));
+    mount('en');
+    await user.click(await screen.findByRole('button', { name: EN('roles.create') }));
+    const dialog = await screen.findByRole('dialog', { name: EN('roles.create.title') });
+    await user.type(within(dialog).getByLabelText(/^Code/), 'service_advisor');
+    await user.type(within(dialog).getByLabelText(/^Name/), 'Service adviser');
+    return dialog;
+  }
+
+  it('create: Enter while pending, and Enter or a press right after the answer, send nothing more', async () => {
+    const answer = answeredOneByOne();
+    const user = userEvent.setup();
+    const dialog = await openCreate(user);
+    const name = within(dialog).getByLabelText(/^Name/);
+    await user.click(name);
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    // Held, auto-repeating Enter while the answer is awaited.
+    await user.keyboard('{Enter}{Enter}{Enter}');
+    expect(send).toHaveBeenCalledTimes(1);
+
+    answer({ ok: true, status: 201, data: { id: 'x' }, correlationId: 'c' });
+    await answerHandledNotYetDrawn();
+    // The answer is in, and the dialog has not yet been closed.
+    expect(dialog).toBeInTheDocument();
+    fireEvent.keyDown(name, { key: 'Enter' });
+    fireEvent.click(within(dialog).getByRole('button', { name: EN('admin.creating') }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: EN('roles.create.title') })).toBeNull()
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('create: a failed save can be sent again, by a press and by Enter', async () => {
+    const answer = answeredOneByOne();
+    const user = userEvent.setup();
+    const dialog = await openCreate(user);
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    answer(OUTAGE);
+    expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    answer(OUTAGE);
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: EN('admin.create') })).toBeEnabled()
+    );
+
+    await user.click(within(dialog).getByLabelText(/^Name/));
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(3));
+    answer({ ok: true, status: 201, data: { id: 'x' }, correlationId: 'c' });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: EN('roles.create.title') })).toBeNull()
+    );
+    expect(send).toHaveBeenCalledTimes(3);
+  });
+
+  async function openEdit(user: ReturnType<typeof userEvent.setup>) {
+    get.mockResolvedValue(page([SUPERVISOR]));
+    mount('en');
+    await user.click(await screen.findByRole('button', { name: `${EN('roles.edit')} Supervisor` }));
+    const dialog = await screen.findByRole('dialog', { name: EN('roles.edit.title') });
+    const name = within(dialog).getByLabelText(/^Name/);
+    await user.clear(name);
+    await user.type(name, 'Floor supervisor');
+    return { dialog, name };
+  }
+
+  it('edit: Enter while pending, and Enter or a press right after the answer, send no second change', async () => {
+    const answer = answeredOneByOne();
+    const user = userEvent.setup();
+    const { dialog, name } = await openEdit(user);
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await user.keyboard('{Enter}{Enter}');
+    expect(send).toHaveBeenCalledTimes(1);
+
+    answer({ ok: true, status: 200, data: { id: SUPERVISOR.id }, correlationId: 'c' });
+    await answerHandledNotYetDrawn();
+    expect(dialog).toBeInTheDocument();
+    // A second change here would carry the version the first one replaced.
+    fireEvent.keyDown(name, { key: 'Enter' });
+    fireEvent.click(within(dialog).getByRole('button', { name: EN('admin.saving') }));
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: EN('roles.edit.title') })).toBeNull()
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(
+      'PATCH',
+      `/api/v1/iam/roles/${SUPERVISOR.id}`,
+      { name: 'Floor supervisor' },
+      { ifMatch: 3 }
+    );
+  });
+
+  it('edit: a failed save can be sent again, by a press and by Enter', async () => {
+    const answer = answeredOneByOne();
+    const user = userEvent.setup();
+    const { dialog } = await openEdit(user);
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.save') }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    answer(OUTAGE);
+    expect(await within(dialog).findByRole('alert')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.save') }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    answer(OUTAGE);
+    await waitFor(() =>
+      expect(within(dialog).getByRole('button', { name: EN('admin.save') })).toBeEnabled()
+    );
+
+    await user.click(within(dialog).getByLabelText(/^Name/));
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(3));
   });
 });

@@ -2440,3 +2440,261 @@ describe('an approval limit for yourself is refused as that, and the form is one
     expect(send).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * Every write held until the case answers it, one answer per write, in order —
+ * so "while the write is in flight" is a real wait, not a synchronous mock.
+ */
+function answeredOneByOne() {
+  const waiting: ((value: unknown) => void)[] = [];
+  send.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        waiting.push(resolve);
+      })
+  );
+  return (value: unknown) => {
+    const next = waiting.shift();
+    if (next === undefined) throw new Error('no write is waiting for an answer');
+    next(value);
+  };
+}
+
+/**
+ * Lets an answer reach the dialog's submit handler and run it to its end
+ * WITHOUT letting React draw the outcome: only promise jobs run here, and the
+ * render the answer schedules is a later task. A key or a press now lands in
+ * the moment between the answer and the dialog closing.
+ */
+async function answerHandledNotYetDrawn(): Promise<void> {
+  for (let job = 0; job < 50; job += 1) await Promise.resolve();
+}
+
+/** The service could not be reached: the ordinary refusal a retry is for. */
+const OUTAGE = {
+  ok: false as const,
+  kind: 'unavailable' as const,
+  status: 503,
+  problem: { code: 'ERR-SYS-001' },
+  correlationId: 'corr-down',
+};
+
+describe('the invitation is sent once between the answer and the outcome (P1-32-PRE-OD-ADM4 review)', () => {
+  async function openFilled(user: ReturnType<typeof userEvent.setup>) {
+    get.mockResolvedValue(page([USER]));
+    mountUsers('en');
+    await user.click(await screen.findByRole('button', { name: EN('users.invite') }));
+    const dialog = await screen.findByRole('dialog', { name: EN('users.invite.title') });
+    await user.type(within(dialog).getByLabelText(/^Email address/), 'new.person@example.test');
+    const name = within(dialog).getByLabelText(/^Display name/);
+    await user.type(name, 'New Person');
+    const press = within(dialog).getByRole('button', { name: EN('users.invite.submit') });
+    return { dialog, name, press };
+  }
+
+  it('sends no second invitation for Enter while pending, nor for Enter or a press right after the answer', async () => {
+    const answer = answeredOneByOne();
+    const user = userEvent.setup();
+    const { dialog, name, press } = await openFilled(user);
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await user.keyboard('{Enter}{Enter}{Enter}');
+    expect(send).toHaveBeenCalledTimes(1);
+
+    answer({ ok: true, status: 201, data: { id: 'x' }, correlationId: 'c' });
+    await answerHandledNotYetDrawn();
+    // The answer is in; the form is still on screen, not yet the sentence.
+    expect(name).toBeInTheDocument();
+    fireEvent.keyDown(name, { key: 'Enter' });
+    fireEvent.click(press);
+
+    expect(await within(dialog).findByText(EN('users.invite.done'))).toBeInTheDocument();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('a refused invitation can be sent again, by a press and by Enter', async () => {
+    const answer = answeredOneByOne();
+    const user = userEvent.setup();
+    const { dialog, press } = await openFilled(user);
+    await user.click(press);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    answer(OUTAGE);
+    await waitFor(() => expect(press).toBeEnabled());
+
+    await user.click(press);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    answer(OUTAGE);
+    await waitFor(() => expect(press).toBeEnabled());
+
+    await user.click(within(dialog).getByLabelText(/^Display name/));
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(3));
+    answer({ ok: true, status: 201, data: { id: 'x' }, correlationId: 'c' });
+    expect(await within(dialog).findByText(EN('users.invite.done'))).toBeInTheDocument();
+    expect(send).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe('an approval limit is sent once, and Enter in a date submits (P1-32-PRE-OD-ADM4 review)', () => {
+  const LIMIT = {
+    id: `limit-${ROLE.id}`,
+    companyId: 'company-1',
+    roleId: ROLE.id,
+    userId: null,
+    limitType: 'discount',
+    amount: '250.0000',
+    currencyCode: 'JOD',
+    effectiveFrom: '2026-10-01',
+    effectiveTo: null,
+    recordVersion: 2,
+  };
+  function mountLimits(items: readonly unknown[]) {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items, nextCursor: null },
+      correlationId: 'corr-limits',
+    });
+    renderLtr(
+      withMui(
+        inBranch(
+          <ApprovalLimitsScreen locale="en" messages={en} roles={[PERMISSION_ROLE]} canManage />
+        ),
+        'en'
+      )
+    );
+  }
+  const dayPart = (dialog: HTMLElement, label: string) =>
+    within(within(dialog).getByRole('group', { name: new RegExp(`^${label}`) })).getAllByRole(
+      'spinbutton'
+    )[0] as HTMLElement;
+
+  async function openCreate(user: ReturnType<typeof userEvent.setup>) {
+    mountLimits([]);
+    await user.click(await screen.findByRole('button', { name: EN('approvalLimits.create') }));
+    const dialog = await screen.findByRole('dialog', { name: EN('approvalLimits.create.title') });
+    const field = (key: string) => within(dialog).getByLabelText(new RegExp(`^${EN(key)}`));
+    await user.selectOptions(field('approvalLimits.field.subject'), 'user');
+    await user.type(field('approvalLimits.field.userId'), USER.id);
+    await user.selectOptions(field('approvalLimits.field.limitType'), 'credit_note');
+    await user.type(field('approvalLimits.field.amount'), '75.500');
+    await user.type(field('approvalLimits.field.currency'), 'JOD');
+    await typeDay(user, dialog, EN('approvalLimits.field.effectiveFrom'), '2026-10-01');
+    const press = within(dialog).getByRole('button', { name: EN('admin.create') });
+    return { dialog, press };
+  }
+
+  it('create: Enter in a date part sends it; Enter while pending and right after the answer send nothing more', async () => {
+    const answer = answeredOneByOne();
+    const user = userEvent.setup();
+    const { dialog, press } = await openCreate(user);
+    const part = dayPart(dialog, EN('approvalLimits.field.effectiveFrom'));
+    await user.click(part);
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send.mock.calls[0]?.[2]).toMatchObject({
+      amount: '75.500',
+      effectiveFrom: '2026-10-01',
+    });
+    await user.keyboard('{Enter}{Enter}');
+    expect(send).toHaveBeenCalledTimes(1);
+
+    answer({ ok: true, status: 201, data: { id: 'x' }, correlationId: 'c' });
+    await answerHandledNotYetDrawn();
+    expect(dialog).toBeInTheDocument();
+    fireEvent.keyDown(part, { key: 'Enter' });
+    fireEvent.click(press);
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: EN('approvalLimits.create.title') })).toBeNull()
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('create: a refused limit can be sent again, by a press and by Enter', async () => {
+    const answer = answeredOneByOne();
+    const user = userEvent.setup();
+    const { dialog, press } = await openCreate(user);
+    await user.click(press);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    answer(OUTAGE);
+    await waitFor(() => expect(press).toBeEnabled());
+
+    await user.click(press);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    answer(OUTAGE);
+    await waitFor(() => expect(press).toBeEnabled());
+
+    await user.click(
+      within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.currency')}`))
+    );
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(3));
+  });
+
+  async function openEnd(user: ReturnType<typeof userEvent.setup>) {
+    mountLimits([LIMIT]);
+    await user.click(
+      await screen.findByRole('button', {
+        name: `${EN('approvalLimits.end')} ${PERMISSION_ROLE.name}, ${EN('approvalLimits.type.discount')}`,
+      })
+    );
+    const dialog = await screen.findByRole('dialog', { name: EN('approvalLimits.end.title') });
+    await typeDay(user, dialog, EN('approvalLimits.field.effectiveTo'), '2026-12-31');
+    const press = within(dialog).getByRole('button', { name: EN('admin.save') });
+    return { dialog, press };
+  }
+
+  it('end: Enter in its only field sends it, once, and the button says it is saving meanwhile', async () => {
+    const answer = answeredOneByOne();
+    const user = userEvent.setup();
+    const { dialog, press } = await openEnd(user);
+    const part = dayPart(dialog, EN('approvalLimits.field.effectiveTo'));
+    await user.click(part);
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send).toHaveBeenCalledWith(
+      'PATCH',
+      `/api/v1/iam/approval-limits/${LIMIT.id}`,
+      { effectiveTo: '2026-12-31' },
+      { ifMatch: 2 }
+    );
+    // Pending is real: the write is still awaited, the button is disabled and
+    // neither Enter nor a press sends a second end.
+    expect(press).toBeDisabled();
+    expect(press).toHaveTextContent(EN('admin.saving'));
+    await user.keyboard('{Enter}{Enter}');
+    fireEvent.click(press);
+    expect(send).toHaveBeenCalledTimes(1);
+
+    answer({ ok: true, status: 200, data: { id: LIMIT.id }, correlationId: 'c' });
+    await answerHandledNotYetDrawn();
+    expect(dialog).toBeInTheDocument();
+    fireEvent.keyDown(part, { key: 'Enter' });
+    fireEvent.click(press);
+
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: EN('approvalLimits.end.title') })).toBeNull()
+    );
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('end: a refused end can be sent again, by a press and by Enter', async () => {
+    const answer = answeredOneByOne();
+    const user = userEvent.setup();
+    const { dialog, press } = await openEnd(user);
+    await user.click(press);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    answer(OUTAGE);
+    await waitFor(() => expect(press).toBeEnabled());
+
+    await user.click(press);
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+    answer(OUTAGE);
+    await waitFor(() => expect(press).toBeEnabled());
+
+    await user.click(dayPart(dialog, EN('approvalLimits.field.effectiveTo')));
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(3));
+  });
+});

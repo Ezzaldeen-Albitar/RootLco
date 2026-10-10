@@ -539,10 +539,11 @@ function EditDetailsDialog({
       result = await updateUserProfileAction(user.id, edit.version, edit.values, edit.baseline);
     } catch {
       result = { status: 'unavailable', messageKey: 'state.unavailable.message', attempt: 1 };
-    } finally {
-      inFlight.current = false;
-      setSaving(false);
     }
+    // Held after a success until the dialog closes: an Enter or a press in the
+    // moment before it does would otherwise send the same values again.
+    if (result.status !== 'success') inFlight.current = false;
+    setSaving(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
       edit.rebase({

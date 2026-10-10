@@ -36,10 +36,13 @@ import { translate } from '@/i18n/get-messages';
  *
  * The submit button belongs to the form by its `form` attribute, so Enter in a
  * field and a press of the button are the same submission. Enter in a one-line
- * text box submits the form through `requestSubmit` — the one path the button
- * takes too, behind the caller's single-flight guard — and is left alone in a
- * multi-line box, on a choice list (a combobox handles its own Enter), while an
- * input method is still composing a word, and when a control already used it.
+ * text box or in a part of a date field submits the form through
+ * `requestSubmit` — the one path the button takes too, behind the caller's
+ * single-flight guard — and is left alone in a multi-line box, on a choice list
+ * (a combobox handles its own Enter), in a picker's calendar, while an input
+ * method is still composing a word, and when a control already used it. While
+ * the write is in flight neither Enter nor the form's submit event reaches the
+ * caller: `requestSubmit` does not consult the disabled button.
  *
  * `completed` is a write that is done but whose outcome the operator should
  * read before leaving (an invitation sent): the form gives way to that sentence,
@@ -119,16 +122,17 @@ export function FormDialog({
             noValidate
             onSubmit={(event) => {
               event.preventDefault();
+              // `requestSubmit` does not consult the disabled button: the
+              // write in flight is refused here, whichever key or press asked.
+              if (pending) return;
               onSubmit();
             }}
             onKeyDown={(event) => {
               if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
               if (event.defaultPrevented) return;
-              const box = event.target;
-              if (!(box instanceof HTMLInputElement)) return;
-              if (!ENTER_SUBMITS.has(box.type)) return;
-              if (box.getAttribute('role') === 'combobox') return;
+              if (!entersSubmit(event.target, event.currentTarget)) return;
               event.preventDefault();
+              if (pending) return;
               event.currentTarget.requestSubmit();
             }}
             className="flex flex-col gap-3 pt-2"
@@ -160,6 +164,28 @@ export function FormDialog({
 
 /** The one-line boxes in which Enter submits the form. */
 const ENTER_SUBMITS: ReadonlySet<string> = new Set(['text', 'email', 'tel', 'url']);
+
+/**
+ * Whether Enter pressed on `target` submits `form`: a one-line text box that is
+ * not a choice list, or a part (day, month, year) of a date field. A date
+ * field's parts are not inputs — each is a `spinbutton` — so they are named on
+ * their own. Only what is inside the form's own markup counts: a
+ * picker's calendar opens in a popover elsewhere in the page, and its events
+ * reach this form through React alone, so Enter there stays the calendar's.
+ */
+function entersSubmit(target: EventTarget, form: HTMLFormElement): boolean {
+  if (!(target instanceof HTMLElement) || !form.contains(target)) return false;
+  if (target instanceof HTMLInputElement) {
+    return ENTER_SUBMITS.has(target.type) && target.getAttribute('role') !== 'combobox';
+  }
+  // One part holds the cursor; or every part is selected, and the editable
+  // element is then the list of parts itself.
+  if (target.getAttribute('role') === 'spinbutton') return true;
+  return (
+    target.getAttribute('contenteditable') === 'true' &&
+    target.querySelector('[role="spinbutton"]') !== null
+  );
+}
 
 function FormButtons({
   messages,

@@ -428,6 +428,9 @@ function InviteDialog({
   const [state, setState] = useState<ActionState>(IDLE);
   const [sending, setSending] = useState(false);
   const inFlight = useRef(false);
+  // Read by the submit handler, which may still be the render before the one
+  // that shows the invitation as sent: state alone would be a stale answer.
+  const sentRef = useRef(false);
   const [fieldErrors, setFieldErrors] = useState<Readonly<Record<string, string>>>({});
   const { errors, formRef } = useHeldRefusal(fieldErrors, {
     email: draft.email,
@@ -444,7 +447,7 @@ function InviteDialog({
   useUnsavedGuard(dirty, onClose);
 
   const submit = async () => {
-    if (inFlight.current || sent) return;
+    if (inFlight.current || sentRef.current) return;
     const local: Record<string, string> = {};
     if (draft.email.trim() === '') local['email'] = 'field.required';
     if (draft.displayName.trim() === '') local['displayName'] = 'field.required';
@@ -465,10 +468,12 @@ function InviteDialog({
       result = await inviteUserAction(state, form);
     } catch {
       result = { status: 'unavailable', messageKey: 'state.unavailable.message', attempt: 1 };
-    } finally {
-      inFlight.current = false;
-      setSending(false);
     }
+    // Held after a success until the dialog closes: an Enter or a press in the
+    // moment before it does would otherwise send the same values again.
+    if (result.status === 'success') sentRef.current = true;
+    else inFlight.current = false;
+    setSending(false);
     notifyActionResult(result, messages);
     // The duplicate address is a statement about the address: said on its box.
     const own =

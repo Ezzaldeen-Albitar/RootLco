@@ -355,10 +355,11 @@ function EndDialog({
       result = await endApprovalLimitAction(limit.id, limit.recordVersion, effectiveTo);
     } catch {
       result = { status: 'unavailable', messageKey: 'state.unavailable.message', attempt: 1 };
-    } finally {
-      sending.current = false;
-      setRunning(false);
     }
+    // Held after a success until the dialog closes: an Enter or a press in the
+    // moment before it does would otherwise send the same values again.
+    if (result.status !== 'success') sending.current = false;
+    setRunning(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
       onEnded();
@@ -510,10 +511,11 @@ function CreateDialog({
       outcome = await createApprovalLimitAction(IDLE, form);
     } catch {
       outcome = { status: 'unavailable', messageKey: 'state.unavailable.message', attempt: 1 };
-    } finally {
-      sending.current = false;
-      setRunning(false);
     }
+    // Held after a success until the dialog closes: an Enter or a press in the
+    // moment before it does would otherwise send the same values again.
+    if (outcome.status !== 'success') sending.current = false;
+    setRunning(false);
     if (outcome.status !== 'invalid') notifyActionResult(outcome, messages);
     if (outcome.status === 'success') {
       setDraft(initial);

@@ -1,4 +1,4 @@
-import { act, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -184,6 +184,32 @@ const stale = {
   problem: { code: 'ERR-CON-001' },
   correlationId: 'corr-stale',
 };
+
+/** Every write held until the case answers it, one answer per write, in order. */
+function answeredOneByOne() {
+  const waiting: ((value: unknown) => void)[] = [];
+  send.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        waiting.push(resolve);
+      })
+  );
+  return (value: unknown) => {
+    const next = waiting.shift();
+    if (next === undefined) throw new Error('no write is waiting for an answer');
+    next(value);
+  };
+}
+
+/**
+ * Lets an answer reach the dialog's submit handler and run it to its end
+ * WITHOUT letting React draw the outcome: only promise jobs run here, and the
+ * render the answer schedules is a later task. A key or a press now lands in
+ * the moment between the answer and the dialog closing.
+ */
+async function answerHandledNotYetDrawn(): Promise<void> {
+  for (let job = 0; job < 50; job += 1) await Promise.resolve();
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -402,6 +428,33 @@ describe.each(['en', 'ar'] as const)('Departments (%s)', (locale) => {
       create.click();
       create.click();
     });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends no second create for Enter while pending, nor for Enter or a press right after the answer', async () => {
+    get.mockResolvedValue(departments([]));
+    const answer = answeredOneByOne();
+    const u = user();
+    mount(departmentsScreen(locale), locale);
+    await u.click(screen.getByRole('button', { name: 'first' }));
+    await u.click(await screen.findByRole('button', { name: T('departments.add') }));
+    const dialog = screen.getByRole('dialog');
+    await u.type(field(dialog, T('departments.name')), 'Parts desk');
+    const code = field(dialog, T('organization.structure.code'));
+    await u.type(code, 'parts_desk');
+    const create = within(dialog).getByRole('button', { name: T('admin.create') });
+    await u.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await u.keyboard('{Enter}{Enter}');
+    expect(send).toHaveBeenCalledTimes(1);
+
+    answer({ ok: true, status: 201, data: {}, correlationId: 'c2' });
+    await answerHandledNotYetDrawn();
+    expect(dialog).toBeInTheDocument();
+    fireEvent.keyDown(code, { key: 'Enter' });
+    fireEvent.click(create);
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(send).toHaveBeenCalledTimes(1);
   });
 
@@ -769,6 +822,32 @@ describe.each(['en', 'ar'] as const)('Employees (%s)', (locale) => {
       create.click();
       create.click();
     });
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends no second create for Enter while pending, nor for Enter or a press right after the answer', async () => {
+    serve({ list: employeePage([]) });
+    const answer = answeredOneByOne();
+    const u = user();
+    mount(employeesScreen(locale), locale);
+    await u.click(screen.getByRole('button', { name: 'first' }));
+    await u.click(await screen.findByRole('button', { name: T('employees.add') }));
+    const dialog = screen.getByRole('dialog');
+    const name = field(dialog, T('employees.displayName'));
+    await u.type(name, 'New Clerk');
+    const create = within(dialog).getByRole('button', { name: T('admin.create') });
+    await u.keyboard('{Enter}');
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    await u.keyboard('{Enter}{Enter}');
+    expect(send).toHaveBeenCalledTimes(1);
+
+    answer({ ok: true, status: 201, data: {}, correlationId: 'c2' });
+    await answerHandledNotYetDrawn();
+    expect(dialog).toBeInTheDocument();
+    fireEvent.keyDown(name, { key: 'Enter' });
+    fireEvent.click(create);
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(send).toHaveBeenCalledTimes(1);
   });
 
