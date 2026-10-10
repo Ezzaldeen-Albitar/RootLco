@@ -1000,8 +1000,9 @@ administrator backfill for it, which by that decision is done for named organisa
 **You still cannot fix the gaps from inside the workspace.** A role may only be given a permission
 that the person granting it already holds, and this is enforced by the database as well as by the
 application, so a code outside the set cannot be granted by anyone in the workspace, including the
-first administrator. If you need **Numbering rules**, **Taxes**, **Currencies**, **System settings**
-or the ability to deactivate a branch, ask whoever runs the platform.
+first administrator. If you need a permission outside the set, ask whoever runs the platform. In an
+organisation provisioned before 2026-09-27 that includes settings management, which changing the
+enabled currencies, saving a system setting and deactivating a branch need.
 
 The same rule explains the report export limitation described in Part 6: the export permission is
 deliberately left out of the set, so exporting a report is unavailable until that code is granted.
