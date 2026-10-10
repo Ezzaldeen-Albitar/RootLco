@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
@@ -95,6 +97,8 @@ const { AuditLogScreen } =
 const { DEFAULT_WINDOW_DAYS, MAX_WINDOW_DAYS } =
   await import('@/features/administration/audit/types');
 const { openingWindow, rangeProblem } = await import('@/features/administration/audit/range');
+const { NAMED_AUDIT_ACTIONS, NAMED_AUDIT_ENTITIES } =
+  await import('@/features/administration/audit/labels');
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const AuditLogPage = (await import('@/app/[locale]/(dashboard)/administration/audit-log/page'))
   .default as unknown as RoutePage;
@@ -870,7 +874,9 @@ describe('people by name, never by identifier (P1-32-PRE-OD-ADM6)', () => {
     renderScreen({ canReadUsers: true });
     await user.click(
       await within(grid()).findByRole('button', {
-        name: new RegExp(`^${escape(EN['admin.open'] as string)} iam\\.user\\.updated`),
+        name: new RegExp(
+          `^${escape(EN['admin.open'] as string)} ${escape(EN['audit.event.iamUserUpdated'] as string)}`
+        ),
       })
     );
     const drawer = await screen.findByRole('dialog', { name: EN['audit.detail.title'] as string });
@@ -897,6 +903,165 @@ describe('people by name, never by identifier (P1-32-PRE-OD-ADM6)', () => {
     const before = readAuditEvent.mock.calls.length;
     await user.click(within(drawer).getByRole('button', { name: EN['action.retry'] as string }));
     await waitFor(() => expect(readAuditEvent.mock.calls.length).toBeGreaterThan(before));
+  });
+});
+
+/**
+ * Codes in words (`P1-32-PRE-OD-ADM6`): the action, the record type and each
+ * detail's field are named from the catalogue, in both languages; a code the
+ * catalogue does not name is said by its part of the product, or plainly; and
+ * a code is printed only in the drawer, under a label saying it is a reference
+ * for support.
+ */
+describe('audit codes in words, never as the primary text (P1-32-PRE-OD-ADM6)', () => {
+  const roleChanged = {
+    ...row,
+    id: '88888888-8888-4888-8888-888888888888',
+    seq: '5000',
+    action: 'iam.role.updated',
+    entityType: 'iam.role',
+  };
+  const inventoryCount = {
+    ...row,
+    id: '99999999-9999-4999-8999-999999999999',
+    seq: '5001',
+    action: 'inv.stock_count.closed',
+    entityType: 'inv.stock_count',
+  };
+  const unknownPart = {
+    ...row,
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    seq: '5002',
+    action: 'zzz.thing.happened',
+    entityType: 'zzz.thing',
+  };
+  const RAW = [
+    'iam.audit.viewed',
+    'iam.audit_record',
+    'iam.role.updated',
+    'iam.role',
+    'inv.stock_count.closed',
+    'inv.stock_count',
+    'zzz.thing.happened',
+    'zzz.thing',
+  ];
+
+  function grid(name = EN['audit.title'] as string): HTMLElement {
+    return screen.getByRole('grid', { name });
+  }
+
+  it('names known actions and record types, and says unknown ones by their part of the product', async () => {
+    listAuditEvents.mockResolvedValue(okPage([row, roleChanged, inventoryCount, unknownPart]));
+    renderScreen();
+    const table = await screen.findByRole('grid', { name: EN['audit.title'] as string });
+    expect(await within(table).findByText(EN['audit.event.iamAuditViewed'] as string)).toBeVisible();
+    expect(within(table).getByText(EN['audit.record.iamAuditRecord'] as string)).toBeVisible();
+    expect(within(table).getByText(EN['audit.event.iamRoleUpdated'] as string)).toBeVisible();
+    expect(within(table).getByText(EN['audit.record.iamRole'] as string)).toBeVisible();
+    expect(within(table).getByText('Another change in inventory')).toBeVisible();
+    expect(within(table).getByText('A record in inventory')).toBeVisible();
+    expect(within(table).getByText(EN['audit.event.other'] as string)).toBeVisible();
+    expect(within(table).getByText(EN['audit.record.other'] as string)).toBeVisible();
+    for (const code of RAW) expect(table.textContent, code).not.toContain(code);
+    // The row action names the action in words too.
+    expect(
+      within(grid()).getAllByRole('button', {
+        name: new RegExp(`^${escape(EN['admin.open'] as string)} ${escape(EN['audit.event.iamRoleUpdated'] as string)}`),
+      })
+    ).toHaveLength(1);
+    // The support reference keeps its label.
+    expect(within(table).getByRole('columnheader', { name: EN['audit.column.correlationId'] as string })).toBeVisible();
+  });
+
+  it('names them in Arabic, right to left', async () => {
+    listAuditEvents.mockResolvedValue(okPage([roleChanged, inventoryCount, unknownPart]));
+    renderRtl(
+      withMui(
+        <AuditLogScreen locale="ar" messages={ar} initialFrom="2026-09-01" initialTo="2026-09-08" />,
+        'ar'
+      )
+    );
+    const table = await screen.findByRole('grid', { name: AR['audit.title'] as string });
+    expect(await within(table).findByText(AR['audit.event.iamRoleUpdated'] as string)).toBeVisible();
+    expect(within(table).getByText(AR['audit.record.iamRole'] as string)).toBeVisible();
+    expect(
+      within(table).getByText(
+        (AR['audit.event.otherIn'] as string).replace('{area}', AR['audit.area.inv'] as string)
+      )
+    ).toBeVisible();
+    expect(
+      within(table).getByText(
+        (AR['audit.record.otherIn'] as string).replace('{area}', AR['audit.area.inv'] as string)
+      )
+    ).toBeVisible();
+    expect(within(table).getByText(AR['audit.event.other'] as string)).toBeVisible();
+    for (const code of RAW) expect(table.textContent, code).not.toContain(code);
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('puts words first in the drawer, and each code only under a label naming it a support reference', async () => {
+    listAuditEvents.mockResolvedValue(okPage([roleChanged]));
+    readAuditEvent.mockResolvedValue({
+      status: 'ok',
+      record: {
+        ...roleChanged,
+        details: [
+          { fieldName: 'status', oldValueMasked: 'active', newValueMasked: 'archived', valueClassification: 'internal' },
+          { fieldName: 'role_code', oldValueMasked: null, newValueMasked: 'R-1', valueClassification: 'internal' },
+        ],
+      },
+      correlationId: 'corr-d',
+    });
+    const user = userEvent.setup();
+    renderScreen();
+    await user.click(
+      await within(grid()).findByRole('button', {
+        name: new RegExp(`^${escape(EN['admin.open'] as string)}`),
+      })
+    );
+    const drawer = await screen.findByRole('dialog', { name: EN['audit.detail.title'] as string });
+    expect(await within(drawer).findByText(EN['audit.event.iamRoleUpdated'] as string)).toBeVisible();
+    expect(within(drawer).getByText(EN['audit.record.iamRole'] as string)).toBeVisible();
+    const term = (key: string) => {
+      const dt = within(drawer).getByText(EN[key] as string, { selector: 'dt' });
+      return dt.nextElementSibling as HTMLElement;
+    };
+    expect(term('audit.detail.actionCode')).toHaveTextContent('iam.role.updated');
+    expect(term('audit.detail.entityCode')).toHaveTextContent(/^iam\.role$/);
+    expect(term('audit.column.correlationId')).toHaveTextContent('corr-9');
+    // A named field is said in words, with no code; an unnamed one is "Another
+    // detail" with its code under the support label.
+    const details = within(drawer).getAllByRole('listitem');
+    expect(details).toHaveLength(2);
+    expect(details[0]).toHaveTextContent(EN['audit.field.status'] as string);
+    expect(within(details[0] as HTMLElement).queryByText(EN['audit.detail.fieldCode'] as string)).toBeNull();
+    expect(details[1]).toHaveTextContent(EN['audit.field.other'] as string);
+    expect(details[1]).toHaveTextContent(`${EN['audit.detail.fieldCode'] as string} role_code`);
+  });
+
+  it('names only codes the service writes, under the record type it writes them with', () => {
+    const catalogue = readFileSync(
+      join(process.cwd(), '..', 'api', 'src', 'server', 'auth', 'audit-actions.ts'),
+      'utf8'
+    );
+    const written = new Map<string, string>();
+    for (const match of catalogue.matchAll(/code: '([^']+)',\s*class: '[a-z]+',\s*entityType: '([^']+)'/g)) {
+      written.set(match[1] as string, match[2] as string);
+    }
+    expect(written.size).toBeGreaterThan(100);
+    const entities = new Set(written.values());
+    for (const code of NAMED_AUDIT_ACTIONS) {
+      expect(written.has(code), `${code} is a code the service writes`).toBe(true);
+    }
+    for (const type of NAMED_AUDIT_ENTITIES) {
+      expect(entities.has(type), `${type} is a record type the service writes`).toBe(true);
+    }
+    // Every identity, access and organisation action and record type is named.
+    for (const [code, type] of written) {
+      if (!/^(iam|org)\./.test(code)) continue;
+      expect(NAMED_AUDIT_ACTIONS, `${code} is named`).toContain(code);
+      expect(NAMED_AUDIT_ENTITIES, `${type} is named`).toContain(type);
+    }
   });
 });
 

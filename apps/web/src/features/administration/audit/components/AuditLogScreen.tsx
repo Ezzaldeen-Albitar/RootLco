@@ -28,6 +28,12 @@ import { intlLocale } from '@/lib/format';
 import { useServerTable, type ServerPageStatus } from '../../shared/use-server-table';
 import { AccountPicker, type ChosenAccount } from '../../users/components/AccountPicker';
 import { listAuditEvents, readAuditEvent } from '../api';
+import {
+  auditActionLabel,
+  auditEntityLabel,
+  auditFieldLabel,
+  isNamedAuditField,
+} from '../labels';
 import { openingWindow, rangeProblem, type DayRange } from '../range';
 import {
   NO_AUDIT_FILTERS,
@@ -263,7 +269,9 @@ export function AuditLogScreen({
         id: 'action',
         headerKey: 'audit.column.action',
         flex: 2,
-        cell: (row) => <code className="font-mono text-caption">{row.action}</code>,
+        // In words from the catalogue, never the code the service writes; the
+        // code stays in the drawer as a reference for support.
+        cell: (row) => <span>{auditActionLabel(messages, row.action)}</span>,
       },
       {
         id: 'entity',
@@ -273,7 +281,7 @@ export function AuditLogScreen({
           const subject = subjectLabel(messages, row);
           return (
             <span className="text-text-secondary">
-              <code className="font-mono text-caption">{row.entityType}</code>
+              {auditEntityLabel(messages, row.entityType)}
               {subject === null ? null : (
                 <>
                   {' · '}
@@ -305,7 +313,7 @@ export function AuditLogScreen({
       {
         kind: 'button',
         label: translate(messages, 'admin.open'),
-        about: `${row.action}, ${momentText(row.occurredAt, locale, zone)}`,
+        about: `${auditActionLabel(messages, row.action)}, ${momentText(row.occurredAt, locale, zone)}`,
         onClick: () => setViewing(row),
       },
     ],
@@ -629,7 +637,7 @@ function AuditDetailDrawer({
         ) : (
           <dl className="flex flex-col gap-4">
             <DetailRow term={t('audit.column.action')}>
-              <code className="break-all font-mono">{record.action}</code>
+              {auditActionLabel(messages, record.action)}
             </DetailRow>
             <DetailRow term={t('audit.column.occurredAt')}>
               <StockMoment value={record.occurredAt} locale={locale} zone={zone} />
@@ -638,16 +646,32 @@ function AuditDetailDrawer({
               <bdi>{actorLabel(messages, record)}</bdi>
             </DetailRow>
             <DetailRow term={t('audit.column.entity')}>
-              <code className="break-all font-mono">{record.entityType}</code>
+              {auditEntityLabel(messages, record.entityType)}
             </DetailRow>
             {subjectLabel(messages, record) === null ? null : (
               <DetailRow term={t('audit.detail.subject')}>
                 <bdi>{subjectLabel(messages, record)}</bdi>
               </DetailRow>
             )}
+            {/*
+              The codes and the reference are for whoever helps the reader,
+              and each is labelled as that — never the primary text.
+            */}
+            <DetailRow term={t('audit.detail.actionCode')}>
+              <code dir="ltr" className="break-all font-mono text-caption">
+                {record.action}
+              </code>
+            </DetailRow>
+            <DetailRow term={t('audit.detail.entityCode')}>
+              <code dir="ltr" className="break-all font-mono text-caption">
+                {record.entityType}
+              </code>
+            </DetailRow>
             <DetailRow term={t('audit.column.correlationId')}>
               {record.correlationId ? (
-                <code className="break-all font-mono">{record.correlationId}</code>
+                <code dir="ltr" className="break-all font-mono text-caption">
+                  {record.correlationId}
+                </code>
               ) : (
                 '—'
               )}
@@ -674,7 +698,17 @@ function AuditDetailDrawer({
                         key={entry.fieldName}
                         className="rounded-md border border-border-subtle p-2"
                       >
-                        <p className="font-mono text-caption text-text-muted">{entry.fieldName}</p>
+                        <p className="text-caption font-medium text-text-secondary">
+                          {auditFieldLabel(messages, entry.fieldName)}
+                        </p>
+                        {isNamedAuditField(entry.fieldName) ? null : (
+                          <p className="text-caption text-text-muted">
+                            {t('audit.detail.fieldCode')}{' '}
+                            <code dir="ltr" className="break-all font-mono">
+                              {entry.fieldName}
+                            </code>
+                          </p>
+                        )}
                         <p className="break-all text-supporting text-text-primary">
                           {entry.oldValueMasked !== null ? (
                             <>

@@ -6269,7 +6269,14 @@ What moved to which wrapper on `/administration/audit-log`:
   total, so Previous and Next walk the server's cursor (G1–G9); the row action "Open" names the
   action and the time it opens.
 - The two days are `DateField` (E1–E4), checked before a read: both whole, the last not before the
-  first, at most 92 days, each refusal said on its box; a pair being edited never reaches the read.
+  first, and no wider than the service takes, each refusal said on its box; a pair being edited
+  never reaches the read. The width is measured as the service's `resolveRange` measures it — the
+  instants the read sends, the first day's start to the last day's end on the clock in force, at
+  most 92 × 24 hours apart — so 92 calendar days that cross a daylight-saving fall back are refused
+  on the last day instead of failing as a refused read (`audit/range.ts`).
+- The screen opens on seven whole days with today the last (`openingWindow`; the route page's UTC
+  fallback likewise), where it used to open on eight.
+- Apply filters is held while a read is in flight, and a submit then makes no second read.
 - The criteria are `FormSelectField` (company and branch, native) and `FormTextField` (action,
   record type, and the "Who" reference without `iam.user.read`); "Who" by name stays the
   `EntityPicker` it became in ADM3. They still apply on submit only.
@@ -6281,6 +6288,13 @@ What moved to which wrapper on `/administration/audit-log`:
 
 Names and clocks:
 
+- The action, the record type and each detail's field are named from the catalogue in English and
+  Arabic (`audit/labels.ts`): every identity, access and organisation action and record type the
+  service writes has a label of its own, a code from another part of the product reads "Another
+  change in inventory" or "A record in inventory", and a code from no known part reads "Another
+  recorded action" or "Another record". A code is printed only in the drawer, under "Action code,
+  for support", "Record type code, for support" or, for an unnamed detail field, "Code, for
+  support"; the correlation identifier is the "Support reference" column and drawer row.
 - "Who" is the actor's name. Where the read names nobody, the row says why instead of printing an
   identifier: "Name not available" for an actor the session may not have named, "The system" or
   "An automated service" for a record with no actor by design, "No person recorded" otherwise. A
@@ -6297,9 +6311,12 @@ Names and clocks:
 
 The hub (`/administration`): departments (`org.department.read`) and employees
 (`org.employee.read`) join "People and access", each also requiring `org.branch.read`, which both
-pages refuse without. Every other entry's code was checked against its navigation entry
-(`config/navigation.ts`) and its page, and they agree. There is no technician roster entry,
-because no `/technicians` roster route exists (only `/technicians/me`).
+pages refuse without. Numbering rules, taxes and currencies, on `org.settings.manage`, also require
+`org.company.read`, which their shared settings-backed screen refuses without; system settings
+requires `org.company.read` or `org.branch.read`, since its page refuses only without both. The hub
+cases render those six pages for every subset of the codes they read and hold the hub to them: it
+never offers a page that would refuse, and with the entry's own code held it offers the page
+exactly when the page draws something else.
 
 Preserved, each held by a case in `audit-log.dom.test.tsx` (which also holds the hub cases):
 
@@ -6335,9 +6352,13 @@ Known limitations and recorded gaps, one line each:
 - A record about something other than a user account (a role, a grant, a company) names its type
   only; resolving every entity type to a name is not part of this slice.
 - Recorded gap: the sidebar's departments and employees entries are gated on their own code only,
-  not also on `org.branch.read`; the hub is stricter than the sidebar for those two entries.
-- The range checks were not exercised by typing into the pickers in jsdom; they are unit logic in
-  the screen and the backend still refuses a range wider than 92 days.
+  not also on `org.branch.read`, and its numbering rules, taxes, currencies and system settings
+  entries on `org.settings.manage` only; the hub is stricter than the sidebar for those entries.
+- Recorded gap: the detail drawer imports Material's `Drawer` directly in the screen rather than
+  through a shared RootLco wrapper; no drawer wrapper exists in `components/` yet.
+- The range rule is unit logic (`audit/range.ts`, with UTC, fall-back and spring-forward cases on
+  America/New_York); one case types a too-wide last day into the picker under jsdom, and the
+  backend still refuses a range wider than 92 × 24 hours.
 - Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
   they run in hosted CI. The web tier gains cases in an existing file (no web test file added or
   removed): the hub cases live in `audit-log.dom.test.tsx`.
