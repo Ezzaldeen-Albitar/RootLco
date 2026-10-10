@@ -2679,6 +2679,44 @@ describe.each(READERS)('$locale: the settings screens (ADM-5)', ({ locale, M, pa
       expect(screen.getAllByRole('button', { name: M('admin.save') })).toHaveLength(2);
     });
 
+    it.each([
+      ['a code the platform does not hold', '["GBP"]', 'currencies.error.notHeld'],
+      ['a repeated code', '["EUR","EUR"]', 'currencies.error.duplicate'],
+    ])(
+      'refuses %s in the enabled codes typed into the general editor, and sends nothing',
+      async (_case, typed, errorKey) => {
+        SESSION_PERMISSIONS = [READ_TENANT, READ_COMPANY, MANAGE_SETTINGS];
+        const user = userEvent.setup();
+        await open(SystemSettingsPage);
+        await user.type(
+          screen.getByLabelText(new RegExp(`^${escapeRegExp(M('organization.setting.key'))}`)),
+          ' currency.enabled_codes '
+        );
+        await user.selectOptions(
+          screen.getByLabelText(new RegExp(`^${escapeRegExp(M('organization.setting.type'))}`)),
+          'json'
+        );
+        // The hint is the rule's own sentence, looked up by the same trimmed key.
+        expect(valueBox()).toHaveAccessibleDescription(
+          expect.stringContaining(M('currencies.field.enabledHint'))
+        );
+        await user.click(valueBox());
+        await user.paste(typed);
+        await user.click(screen.getByRole('button', { name: M('admin.save') }));
+        expect(await screen.findByText(M(errorKey))).toBeVisible();
+        expect(valueBox()).toHaveAttribute('aria-invalid', 'true');
+        expect(send).not.toHaveBeenCalled();
+        expect(get).toHaveBeenCalledWith(REFERENCES_PATH);
+      }
+    );
+
+    it('reads no currency list for an operator who may not write', async () => {
+      SESSION_PERMISSIONS = [READ_TENANT, READ_COMPANY];
+      await open(SystemSettingsPage);
+      await waitFor(() => expect(get).toHaveBeenCalledWith(COMPANY_SETTINGS));
+      expect(get).not.toHaveBeenCalledWith(REFERENCES_PATH);
+    });
+
     it('refuses the page without a company or branch read, and reads nothing', async () => {
       SESSION_PERMISSIONS = [READ_TENANT];
       await open(SystemSettingsPage);

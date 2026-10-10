@@ -3,8 +3,10 @@ import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { MuiRefusedState } from '@/components/states/MuiStates';
 import { requireSession } from '@/features/authentication/api/session';
 import { SettingsEditor } from '@/features/administration/organization/components/SettingsEditor';
+import { readReferenceValues } from '@/features/administration/organization/reference-values';
 import { MuiContractNotice, Panel } from '@/features/administration/shared/components/ScreenStates';
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
+import { CURRENCY_RULES } from '@/features/administration/shared/settings-keys';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate, type Messages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -29,6 +31,12 @@ import { pageMetadata } from '@/lib/page-metadata';
  * company and branch settings it actually serves; the tenant record is edited
  * on the Organization and Languages screens, and platform settings stay
  * unreachable until an operation publishes them.
+ *
+ * The general editor can write `currency.enabled_codes` too, so it applies the
+ * same check the Currencies screen does (`CURRENCY_RULES`): a malformed or
+ * repeated code is refused before anything is sent, and — when the platform's
+ * currency list could be read, which takes `org.tenant.read` — so is a code the
+ * platform does not hold. That list is read only for an operator who may write.
  */
 export default async function SystemSettingsPage({
   params,
@@ -67,6 +75,11 @@ export default async function SystemSettingsPage({
   }
 
   const canWrite = holds(session.permissions, PERMISSIONS.settingsManage);
+  const references =
+    canWrite && holds(session.permissions, PERMISSIONS.tenantRead)
+      ? await readReferenceValues()
+      : null;
+  const knownCodes = references ? references.currencies.map((currency) => currency.code) : null;
 
   return (
     <>
@@ -97,13 +110,22 @@ export default async function SystemSettingsPage({
                 scope="company"
                 canWrite={canWrite}
                 keyPrefix=""
+                valueRules={CURRENCY_RULES}
+                knownCodes={knownCodes}
               />
             </Panel>
           ) : null}
 
           {canReadBranch ? (
             <Panel title={t('organization.settings.branch')}>
-              <SettingsEditor messages={messages} scope="branch" canWrite={canWrite} keyPrefix="" />
+              <SettingsEditor
+                messages={messages}
+                scope="branch"
+                canWrite={canWrite}
+                keyPrefix=""
+                valueRules={CURRENCY_RULES}
+                knownCodes={knownCodes}
+              />
             </Panel>
           ) : null}
         </div>

@@ -233,9 +233,11 @@ export function SettingsEditor({
   const visible = (settings ?? []).filter((setting) => setting.settingKey.startsWith(keyPrefix));
   const reading =
     selectedId.length > 0 && !unreadableCompany && settings === null && readStatus === 'idle';
+  // One normalised key for the hint and for the rule checked on submit, so the
+  // sentence shown beside the value is always the rule that will be applied.
+  const chosenKey = form.settingKey.trim();
   const chosenHint =
-    valueRules[form.settingKey]?.hintKey ??
-    suggestions.find((entry) => entry.key === form.settingKey)?.hintKey;
+    valueRules[chosenKey]?.hintKey ?? suggestions.find((entry) => entry.key === chosenKey)?.hintKey;
   const typeLabel = (type: string) =>
     VALUE_TYPES.includes(type as SettingValueType)
       ? t(`organization.setting.kind.${type}`)
@@ -341,7 +343,7 @@ export function SettingsEditor({
             const previous = state;
             // A value the chosen key's rule refuses is refused beside its box,
             // and nothing is sent.
-            const ruleError = ruleRefusal(valueRules[input.settingKey.trim()], input, knownCodes);
+            const ruleError = ruleRefusal(valueRules[chosenKey], input, knownCodes);
             if (ruleError !== null) {
               setState(invalid({ settingValue: ruleError }, (previous.attempt ?? 0) + 1));
               return;

@@ -1479,10 +1479,11 @@ describe('P1-28 — P1-OD-025 is recorded as RESOLVED, and no copy says otherwis
     // retiring an item category have no operation while the Owner's decision
     // CAT01 is open, and the read-only category tree says so.
     //
-    // A fifth and a sixth since P1-32-PRE-OD-ADM5, both genuine: numbering
-    // formats have no operation while DOC01 (ADR-023 D10) is open, and tax
-    // classes and rates have none while ACC01 is open; the read-only Numbering
-    // rules and Taxes screens say so.
+    // A fifth and a sixth since P1-32-PRE-OD-ADM5, both genuine: a credit note's
+    // own number waits on DOC01 (ADR-023 D10) — the read-only Numbering rules
+    // screen says so beside the fact that numbering formats have no operation
+    // (F-003) — and tax classes and rates have no operation while ACC01 is open,
+    // which the read-only Taxes screen says.
     const expected = [
       'crm.duplicates.mergePendingDecision',
       'inventory.categories.readOnly.body',

@@ -10,9 +10,11 @@ import { pageMetadata } from '@/lib/page-metadata';
  *
  * `sal.invoice_numbering_configs` and `shared.number_sequences` exist in the
  * schema and **no route handler exposes either** (`P1-26-F-003`): there is no
- * operation that reads or changes how a document number is formed, and how
- * documents beyond the invoice are numbered waits on an Owner decision (DOC01,
- * ADR-023 D10).
+ * operation that reads or changes how a document number is formed. Number
+ * sequences already exist for the documents the platform numbers — invoices,
+ * quotations and receipts are configured per branch when the branch is created —
+ * and the service assigns those numbers itself. What waits on an Owner decision
+ * is narrower: a credit note's own number (DOC01, ADR-023 D10).
  *
  * So this screen changes nothing (P1-32-PRE-OD-ADM5). A numbering setting
  * written to the company or branch settings would be applied by nothing — the

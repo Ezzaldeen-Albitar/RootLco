@@ -1756,7 +1756,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/administration/discount-threshold`                  | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
 | `/administration/employees`                           | form fields, `OperationalGrid`, `FormDialog`, `ConfirmDialog`, drawer, states                 | F1–F6; G1–G9, G11; D1–D4; S1–S4                  | migrated — see below the table (ADM2)                                        | focused suites, en and ar — see below                 |
 | `/administration/languages`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (ADM-1)                                       | focused suites, en and ar — see below                 |
-| `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated (ADM5) — read-only; F-003 open (DOC01, ADR-023 D10); see below      | focused suites, en and ar — see below                 |
+| `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated (ADM5) — read-only; F-003 open; credit notes: DOC01; see below      | focused suites, en and ar — see below                 |
 | `/administration/organization`                        | form fields, `ConfirmDialog`, `ReasonDialog`, states                                          | F1–F7; D1–D5; S1–S4                              | migrated — see below the table (ADM-1)                                       | focused suites, en and ar — see below                 |
 | `/administration`                                     | none found                                                                                    | —                                                | not migrated                                                                 | not run — nothing migrated                            |
 | `/administration/permissions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
@@ -6244,8 +6244,9 @@ existing operations support. No migration, route, operation, permission code or 
 added, and nothing new is written. The reads are the ones that already existed, each made only for
 a holder of the code it declares: `org.reference-values-read` (`org.tenant.read`),
 `iam.company-settings-read` (`org.company.read`) and `iam.branch-settings-read` (`org.branch.read`).
-The one write is the existing `iam.company-settings-write` (`org.settings.manage`), on the
-Currencies and System settings screens only.
+The writes are the existing `iam.company-settings-write` (`org.settings.manage`), on the
+Currencies and System settings screens, and `iam.branch-settings-write` (`org.settings.manage`), on
+System settings only.
 
 What each screen now shows:
 
@@ -6304,8 +6305,9 @@ to six.
 Known limitations and recorded gaps of this slice, one line each:
 
 - Recorded gap: numbering formats — `sal.invoice_numbering_configs` and `shared.number_sequences`
-  have no route (`P1-26-F-003`, open); numbering of documents other than invoices waits on DOC01
-  (ADR-023 D10).
+  have no route (`P1-26-F-003`, open), so no screen views or changes how numbers are formed. Number
+  sequences exist for invoices, quotations and receipts (set up per branch when it is created); a
+  credit note's own number waits on DOC01 (ADR-023 D10).
 - Recorded gap: tax classes and rates — `org.tax_classes` and `org.tax_rates` have no read or write
   (`P1-26-F-004`, open); tax policy waits on ACC01.
 - Recorded gap: platform settings — `shared.system_settings` has no route (`P1-26-F-007`, open).
