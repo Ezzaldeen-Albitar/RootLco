@@ -713,70 +713,70 @@ approval-management permission. The first administrator holds it. **Where** Side
 - _"Choose whether this applies to a role or to a person."_ <!-- approvalLimits.error.subject -->
   **Screenshot** no screenshot available at this version.
 
-### 2.10.4 Numbering rules — IMPLEMENTED (UI), key-and-value settings
+### 2.10.4 Numbering rules — IMPLEMENTED (UI), read only
 
-**Label** **Numbering rules** <!-- numbering.title --> (قواعد الترقيم) — _"How reference numbers are
-formed, stored as organization settings."_ <!-- numbering.description --> **Who** The screen
-requires the company-read permission to open; saving requires the settings-management permission.
-The navigation entry only appears for someone holding the settings-management permission, which the
-first administrator does **not** have (2.11). **Where** Sidebar → **Administration** → **Settings**
-→ **Numbering rules** <!-- nav.numberingRules --> . **Steps** Choose or type the **Company
-reference**, then fill the slots: **Prefix** <!-- numbering.field.prefix --> , **Suffix** <!-- numbering.field.suffix -->
-, **Minimum digits** <!-- numbering.field.padding --> , **Start at** <!-- numbering.field.startAt -->
-, **Reset** <!-- numbering.field.resetPeriod --> — **Never** <!-- numbering.reset.never --> ,
-**Every month** <!-- numbering.reset.monthly --> or **Every year** <!-- numbering.reset.yearly --> .
-**Save**. **Result** **"Saved."** The values are stored against that company exactly as you entered
-them. **Restrictions**
+**Label** **Numbering rules** <!-- numbering.title --> (قواعد الترقيم) — _"How reference numbers are formed. This release shows the numbering settings that are stored and changes none of them."_ <!-- numbering.description -->
+**Who** Anyone holding the company-read permission sees the company settings; anyone holding the
+branch-read permission sees the branch settings. Holding either one shows the navigation entry and
+the link on the Administration page; holding neither, the page says
+**You do not have access** <!-- state.denied.title -->. The settings-management permission is not needed and changes nothing
+here. **Where** Sidebar → **Administration** → **Settings** → **Numbering rules** <!-- nav.numberingRules --> .
+**Steps** Choose the **Company** <!-- admin.scope.company --> in the **Company settings** <!-- organization.settings.company -->
+panel, or the **Branch** <!-- admin.scope.branch --> in the **Branch settings** <!-- organization.settings.branch -->
+panel. Each panel lists the settings stored under this screen's keys, with the columns **Setting** <!-- organization.setting.key -->, **Value** <!-- organization.setting.value -->, **Type** <!-- organization.setting.type --> and **Version** <!-- organization.setting.version -->; a sensitive value reads **Configured, value withheld** <!-- organization.setting.withheld -->. Under each panel: _"These settings are shown as stored and are not changed from this screen."_ <!-- admin.contractGap.notChangedHere --> **Result** You see what is stored; there is no form and no **Save** on this
+screen. **Restrictions**
 
-- Standing notices: _"Numbers are always allocated by the service. Nothing on this screen produces
-  one."_ <!-- numbering.noGeneration --> and _"The service publishes no preview operation, so no
-  example number is shown here."_ <!-- numbering.noPreview -->
-- The slots on this screen cover **invoice** numbering only.
-- **Nothing in the service reads these values at this version.** They are stored for you; the
-  invoice number an invoice actually receives comes from the branch's own sequence, which this
-  screen does not configure and cannot show you. Treat this screen as a place to record your
-  intention, not as a control. **If it goes wrong**
-- _"Use up to 12 characters: letters, digits, hyphens or underscores."_ <!-- numbering.error.affix -->
-- _"Enter a whole number between 1 and 12."_ <!-- numbering.error.padding -->
-- _"Enter a whole number of 1 or more."_ <!-- numbering.error.startAt --> **Screenshot** no
+- Standing notices, under **Limited in this release** <!-- admin.contractGap.title -->: _"Number sequences exist for invoices, quotations and receipts, and the service assigns those numbers itself. This release has no screen or operation to view or change how document numbers are formed. A separate number for credit notes waits on an Owner decision."_ <!-- numbering.gap.formats -->,
+  _"The service publishes no preview operation, so no example number is shown here."_ <!-- numbering.noPreview -->, _"Numbers are always allocated by the service. Nothing on this screen produces one."_ <!-- numbering.noGeneration --> and
+  _"The settings below are shown as they are stored. Nothing in this release applies them, so this screen does not change them."_ <!-- admin.contractGap.settingsShownOnly -->
+- The number a quotation, an invoice or a receipt receives comes from the branch's own sequence,
+  which the service keeps and this screen neither configures nor shows. **If it goes wrong** If a
+  panel's read does not answer, the panel says so and offers **Try again**. **Screenshot** no
   screenshot available at this version.
 
-### 2.10.5 Taxes — IMPLEMENTED (UI), key-and-value settings
+### 2.10.5 Taxes — IMPLEMENTED (UI), read only
 
-**Label** **Taxes** <!-- taxes.title --> (الضرائب) — _"Tax configuration for a company, stored as
-organization settings."_ <!-- taxes.description --> **Who** As 2.10.4 — company-read to open,
-settings-management to save and to see the navigation entry. **Where** Sidebar → **Administration**
-→ **Settings** → **Taxes** <!-- nav.taxes --> . **Steps** With a **Company reference** entered,
-fill: **Tax code** <!-- taxes.field.code --> , **Name** <!-- taxes.field.name --> , **Rate (%)** <!-- taxes.field.rate -->
-(_"Entered and stored as an exact decimal. No rate is assumed for you."_ <!-- taxes.field.rateHint -->
-), **Effective from** <!-- taxes.field.effectiveFrom --> , **Active** <!-- taxes.field.active --> .
-**Save**. **Result** **"Saved."** **Restrictions**
+**Label** **Taxes** <!-- taxes.title --> (الضرائب) — _"Tax configuration for a company. This release shows the tax settings that are stored and changes none of them."_ <!-- taxes.description --> **Who** As 2.10.4 — company-read
+for the company settings, branch-read for the branch settings, either one for the navigation entry.
+**Where** Sidebar → **Administration** → **Settings** → **Taxes** <!-- nav.taxes --> . **Steps** As 2.10.4:
+choose the company or the branch. Each panel lists the settings stored under this screen's keys, with the columns **Setting** <!-- organization.setting.key -->, **Value** <!-- organization.setting.value -->, **Type** <!-- organization.setting.type --> and **Version** <!-- organization.setting.version -->; a sensitive value reads **Configured, value withheld** <!-- organization.setting.withheld -->. Under each panel: _"These settings are shown as stored and are not changed from this screen."_ <!-- admin.contractGap.notChangedHere --> **Result** You see what is stored; there is no form
+and no **Save** on this screen. **Restrictions**
 
-- Standing notices: **"Limited in this release"** / _"The platform reference list behind this screen
-  is not published by the service in this release."_ <!-- admin.contractGap.noCatalogue --> and _"No
-  country or tax regime is assumed. Every value here is one your organization has decided."_ <!-- taxes.noJurisdiction -->
-- **Nothing in the service reads these values at this version.** Entering a rate here does not put
-  tax on a quotation or an invoice. **If it goes wrong**
-- _"Use up to 32 characters: letters, digits, hyphens or underscores."_ <!-- taxes.error.code -->
-- _"Enter a rate between 0 and 100, with at most 4 decimal places."_ <!-- taxes.error.rate -->
-  **Screenshot** no screenshot available at this version.
+- Standing notices, under **Limited in this release** <!-- admin.contractGap.title -->: _"Tax classes and tax rates are not available in this release: the service publishes nothing that reads or changes them. Tax policy waits on an Owner decision on accounting."_ <!-- taxes.gap.catalogue -->,
+  _"No country or tax regime is assumed. Every value here is one your organization has decided."_ <!-- taxes.noJurisdiction --> and _"The settings below are shown as they are stored. Nothing in this release applies them, so this screen does not change them."_ <!-- admin.contractGap.settingsShownOnly -->
+- **Nothing in the service reads a tax setting at this version.** No setting shown here puts tax on
+  a quotation or an invoice. **If it goes wrong** As 2.10.4. **Screenshot** no screenshot available
+  at this version.
 
-### 2.10.6 Currencies — IMPLEMENTED (UI), key-and-value settings
+### 2.10.6 Currencies — IMPLEMENTED (UI), list read only, enabled codes editable
 
-**Label** **Currencies** <!-- currencies.title --> (العملات) — _"The currencies this workspace uses,
-stored as organization settings."_ <!-- currencies.description --> **Who** As 2.10.4. **Where**
-Sidebar → **Administration** → **Settings** → **Currencies** <!-- nav.currencies --> . **Steps**
-With a **Company reference** entered, use **Enabled currencies** <!-- currencies.field.enabled -->
-(_"Three-letter ISO codes, in capitals. No base currency is chosen for you."_ <!-- currencies.field.enabledHint -->
-). **Add currency** <!-- currencies.add --> adds a **Currency code** <!-- currencies.field.code -->
-; **Remove** <!-- currencies.remove --> takes one out. **Save**. **Result** **"Saved."**
-**Restrictions** Standing notice: _"No exchange rate is held or calculated here."_ <!-- currencies.noRates -->
-**Nothing in the service reads this list at this version.** The company's base currency is the one
-recorded when the workspace was created (2.2). **If it goes wrong**
+**Label** **Currencies** <!-- currencies.title --> (العملات) — _"The currencies the platform holds, and the ones each company has enabled."_ <!-- currencies.description --> **Who** Anyone holding
+the tenant-read permission sees the platform's currency list; anyone holding the company-read
+permission sees the company's enabled currencies. Either one shows the navigation entry and the
+link on the Administration page. Changing the enabled currencies also needs the settings-management
+permission. **Where** Sidebar → **Administration** → **Settings** → **Currencies** <!-- nav.currencies --> .
+**Steps**
 
+1. **Currencies the platform holds** <!-- currencies.catalogue.title --> — _"The platform's list of active currencies, as the service publishes it. Which currencies it holds is not decided on this screen."_ <!-- currencies.catalogue.description --> The table lists
+   **Code** <!-- currencies.catalogue.code -->, **Name** <!-- currencies.catalogue.name --> (in the language you are
+   reading in) and **Decimal places** <!-- currencies.catalogue.minorUnit -->. When the platform lists none:
+   **No currencies are listed** <!-- currencies.catalogue.empty.title --> — _"The platform's currency list has no active currency yet."_ <!-- currencies.catalogue.empty.description -->
+2. In **Company settings** <!-- organization.settings.company --> choose the
+   **Company** <!-- admin.scope.company -->. With the settings-management permission, **Add or update a setting** <!-- organization.setting.add -->
+   offers the setting **Enabled currencies** <!-- currencies.field.enabled -->, with the hint
+   _"The currencies this company uses, as a list of three-letter codes from the platform's list. For example, to enable the Jordanian dinar and the US dollar, enter ["JOD","USD"]. No base currency is chosen for you."_ <!-- currencies.field.enabledHint --> Enter the codes as the hint shows, then **Save**.
+
+**Result** **"Saved."** <!-- admin.saved --> The Organization screen then offers these codes first
+when a currency is chosen. **Restrictions** Standing notices, under **Limited in this release** <!-- admin.contractGap.title -->:
+_"This screen edits organization settings. The service publishes no dedicated operation for this area yet, so nothing here is assumed on your behalf — the values are exactly the ones you enter."_ <!-- admin.contractGap.settingsBacked -->, _"No exchange rate is held or calculated here."_ <!-- currencies.noRates --> and _"No base currency is chosen for you here."_ <!-- currencies.noBase -->
+The screen checks the codes against the platform's list only when that list could be read; the
+service itself stores any well-formed value for this setting without checking it, and an empty list
+— no enabled currency — is accepted. **If it goes wrong**
+
+- _"Enter the currencies as a list of three-letter codes, for example ["JOD","USD"]."_ <!-- currencies.error.list -->
 - _"Enter a three-letter ISO currency code, in capitals."_ <!-- currencies.error.code -->
-- _"That currency is already in the list."_ <!-- currencies.error.duplicate --> **Screenshot** no
-  screenshot available at this version.
+- _"That currency is already in the list."_ <!-- currencies.error.duplicate -->
+- _"Use only currencies from the platform's list on this page."_ <!-- currencies.error.notHeld --> **Screenshot** no screenshot available at this version.
 
 ### 2.10.7 Languages — IMPLEMENTED (UI)
 
@@ -801,10 +801,11 @@ the settings-management permission. **Where** Sidebar → **Administration** →
 ### 2.10.8 System settings — IMPLEMENTED (UI), key-and-value settings
 
 **Label** **System settings** <!-- systemSettings.title --> (إعدادات النظام) — _"Settings held at
-the workspace, company and branch levels."_ <!-- systemSettings.description --> **Who** The
-navigation entry and every save need the settings-management permission. The screen itself opens
-only if you may read companies or branches; if you may read neither, the whole page is the
-permission-denied state. **Where** Sidebar → **Administration** → **Settings** → **System settings** <!-- nav.systemSettings -->
+the workspace, company and branch levels."_ <!-- systemSettings.description --> **Who** Anyone
+holding the company-read or the branch-read permission sees the navigation entry, the link on the
+Administration page and the settings they may read; if you may read neither, the whole page is the
+permission-denied state. Every save needs the settings-management permission; without it the
+settings are shown read only. **Where** Sidebar → **Administration** → **Settings** → **System settings** <!-- nav.systemSettings -->
 . **Steps** Choose the **Level** <!-- systemSettings.level --> — **Workspace** <!-- admin.scope.tenant -->
 , **Company** <!-- admin.scope.company --> or **Branch** <!-- admin.scope.branch --> — supply the
 **Company reference** or **Branch reference** where your session does not resolve one, then add a
@@ -976,31 +977,32 @@ branch keeps its own time zone. No company or branch manager receives this permi
 An organisation provisioned before this change gets it only if the platform operator runs the
 administrator backfill for it, which by that decision is done for named organisations only.
 
-| Screen                                       | Visible to the first administrator? | Why                                                                                                                |
-| -------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| **Users**, **Roles**, **Permissions**        | Yes                                 | The identity and access permissions are in the set.                                                                |
-| **Approval limits**                          | Yes                                 | The approval-management permission is in the set.                                                                  |
-| **Departments**, **Employees**               | Yes, and fully usable               | Their read and management permissions are both in the set.                                                         |
-| **Organization** — companies and branches    | Yes, and fully usable               | Company and branch management are both in the set.                                                                 |
-| **Organization** — subscription and capacity | Yes, read-only                      | Tenant-read is in the set. Nobody inside a workspace can change a plan; that is the platform owner's (2.9).        |
-| **Organization** — settings blocks           | Yes, and fully usable               | Settings-management is in the set since the Owner decision of 2026-09-27.                                          |
-| **Organization** — branch status             | Yes                                 | Activating or deactivating a branch is gated on settings-management, which is in the set (2.5.3).                  |
-| **Languages**                                | Yes, and editable                   | Same reason as the settings blocks.                                                                                |
-| **Audit log**                                | Yes                                 | Audit-view and sensitive-view are both in the set.                                                                 |
-| **Numbering rules**                          | Yes                                 | Gated on settings-management, which is in the set.                                                                 |
-| **Taxes**                                    | Yes                                 | Same.                                                                                                              |
-| **Currencies**                               | Yes                                 | Same.                                                                                                              |
-| **System settings**                          | Yes                                 | Same.                                                                                                              |
-| **Notifications**, **Documents**             | **No**                              | Planned, not built — see 2.13.                                                                                     |
-| **Appointments**                             | Yes                                 | The four appointment permissions are in the set since the Owner decision of 2026-09-29. See Part 4A.               |
-| **Appointment setup**                        | Yes, and fully usable               | Same decision. The lists start empty; the organisation enters its own (2.10.11).                                   |
-| **Credit notes**                             | Yes                                 | The credit and finance-view permissions are both in the set. Approving still needs a second person. Part 6, §6.2a. |
+| Screen                                       | Visible to the first administrator?          | Why                                                                                                                            |
+| -------------------------------------------- | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| **Users**, **Roles**, **Permissions**        | Yes                                          | The identity and access permissions are in the set.                                                                            |
+| **Approval limits**                          | Yes                                          | The approval-management permission is in the set.                                                                              |
+| **Departments**, **Employees**               | Yes, and fully usable                        | Their read and management permissions are both in the set.                                                                     |
+| **Organization** — companies and branches    | Yes, and fully usable                        | Company and branch management are both in the set.                                                                             |
+| **Organization** — subscription and capacity | Yes, read-only                               | Tenant-read is in the set. Nobody inside a workspace can change a plan; that is the platform owner's (2.9).                    |
+| **Organization** — settings blocks           | Yes, and fully usable                        | Settings-management is in the set since the Owner decision of 2026-09-27.                                                      |
+| **Organization** — branch status             | Yes                                          | Activating or deactivating a branch is gated on settings-management, which is in the set (2.5.3).                              |
+| **Languages**                                | Yes, and editable                            | Same reason as the settings blocks.                                                                                            |
+| **Audit log**                                | Yes                                          | Audit-view and sensitive-view are both in the set.                                                                             |
+| **Numbering rules**                          | Yes, read only                               | Shown on company-read or branch-read, which are both in the set; nothing is changed there (2.10.4).                            |
+| **Taxes**                                    | Yes, read only                               | Same (2.10.5).                                                                                                                 |
+| **Currencies**                               | Yes, and the enabled currencies are editable | Shown on tenant-read or company-read; changing the enabled currencies needs settings-management, which is in the set (2.10.6). |
+| **System settings**                          | Yes, and editable                            | Shown on company-read or branch-read; saving needs settings-management, which is in the set (2.10.8).                          |
+| **Notifications**, **Documents**             | **No**                                       | Planned, not built — see 2.13.                                                                                                 |
+| **Appointments**                             | Yes                                          | The four appointment permissions are in the set since the Owner decision of 2026-09-29. See Part 4A.                           |
+| **Appointment setup**                        | Yes, and fully usable                        | Same decision. The lists start empty; the organisation enters its own (2.10.11).                                               |
+| **Credit notes**                             | Yes                                          | The credit and finance-view permissions are both in the set. Approving still needs a second person. Part 6, §6.2a.             |
 
 **You still cannot fix the gaps from inside the workspace.** A role may only be given a permission
 that the person granting it already holds, and this is enforced by the database as well as by the
 application, so a code outside the set cannot be granted by anyone in the workspace, including the
-first administrator. If you need **Numbering rules**, **Taxes**, **Currencies**, **System settings**
-or the ability to deactivate a branch, ask whoever runs the platform.
+first administrator. If you need a permission outside the set, ask whoever runs the platform. In an
+organisation provisioned before 2026-09-27 that includes settings management, which changing the
+enabled currencies, saving a system setting and deactivating a branch need.
 
 The same rule explains the report export limitation described in Part 6: the export permission is
 deliberately left out of the set, so exporting a report is unavailable until that code is granted.

@@ -14,7 +14,7 @@ import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { MuiEmptyState, MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
-import { IDLE, unreachable, type ActionState } from '@/lib/forms/action-result';
+import { IDLE, invalid, unreachable, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
 import { DirectoryEmptyNotice } from '@/features/working-context/components/WorkingBranchField';
 import {
@@ -81,8 +81,24 @@ export interface SuggestedKey {
   readonly hintKey?: string;
 }
 
+/**
+ * A check a key's value must pass before anything is sent, and the sentence said
+ * under the value box while that key is chosen (P1-32-PRE-OD-ADM5). Data, not a
+ * function, because it crosses from a Server Component. Kept apart from
+ * `SuggestedKey` on purpose: a suggestion is only where a value lives.
+ *
+ *   - `currency-codes` — a list of distinct three-letter codes, each one the
+ *     platform holds when its currency list was read (`knownCodes`).
+ */
+export interface ValueRule {
+  readonly rule: 'currency-codes';
+  readonly hintKey: string;
+}
+
 /** A stable empty set, so the refusal hook sees no new attempt on every render. */
 const NO_ERRORS: Readonly<Record<string, string>> = Object.freeze({});
+/** No key carries a rule unless the screen says so. */
+const NO_RULES: Readonly<Record<string, ValueRule>> = Object.freeze({});
 
 export function SettingsEditor({
   messages,
@@ -90,6 +106,9 @@ export function SettingsEditor({
   canWrite,
   keyPrefix,
   suggestions = [],
+  readOnlyKey = 'admin.readOnly',
+  valueRules = NO_RULES,
+  knownCodes = null,
 }: {
   readonly messages: Messages;
   readonly scope: SettingsScope;
@@ -97,6 +116,16 @@ export function SettingsEditor({
   /** Only keys under this prefix are listed. Empty string lists everything. */
   readonly keyPrefix: string;
   readonly suggestions?: readonly SuggestedKey[];
+  /**
+   * The sentence in place of the form when nothing is written here. The default
+   * is the permission sentence; a screen that shows settings it has no operation
+   * to apply says that instead (P1-32-PRE-OD-ADM5).
+   */
+  readonly readOnlyKey?: string;
+  /** Checks on the values of particular keys, by key. */
+  readonly valueRules?: Readonly<Record<string, ValueRule>>;
+  /** The currency codes the platform holds, for a `currency-codes` rule; null when not read. */
+  readonly knownCodes?: readonly string[] | null;
 }) {
   const t = (key: string) => translate(messages, key as keyof Messages);
 
@@ -204,6 +233,11 @@ export function SettingsEditor({
   const visible = (settings ?? []).filter((setting) => setting.settingKey.startsWith(keyPrefix));
   const reading =
     selectedId.length > 0 && !unreadableCompany && settings === null && readStatus === 'idle';
+  // One normalised key for the hint and for the rule checked on submit, so the
+  // sentence shown beside the value is always the rule that will be applied.
+  const chosenKey = form.settingKey.trim();
+  const chosenHint =
+    valueRules[chosenKey]?.hintKey ?? suggestions.find((entry) => entry.key === chosenKey)?.hintKey;
   const typeLabel = (type: string) =>
     VALUE_TYPES.includes(type as SettingValueType)
       ? t(`organization.setting.kind.${type}`)
@@ -305,8 +339,16 @@ export function SettingsEditor({
             event.preventDefault();
             const id = scopeId.trim();
             if (id.length === 0) return;
-            const input = form;
+            // The key is sent exactly as its rule was looked up: trimmed.
+            const input = { ...form, settingKey: chosenKey };
             const previous = state;
+            // A value the chosen key's rule refuses is refused beside its box,
+            // and nothing is sent.
+            const ruleError = ruleRefusal(valueRules[chosenKey], input, knownCodes);
+            if (ruleError !== null) {
+              setState(invalid({ settingValue: ruleError }, (previous.attempt ?? 0) + 1));
+              return;
+            }
             saving.run(async () => {
               let result: ActionState;
               try {
@@ -318,7 +360,11 @@ export function SettingsEditor({
               }
               setState(result);
               if (result.status === 'success') {
-                setForm((current) => ({ ...current, settingValue: '' }));
+                setForm((current) => ({
+                  ...current,
+                  settingKey: input.settingKey,
+                  settingValue: '',
+                }));
                 setBaseline({ ...input, settingValue: '' });
                 setGeneration((value) => value + 1);
               }
@@ -383,7 +429,7 @@ export function SettingsEditor({
           */}
           <FormTextField
             label={t('organization.setting.value')}
-            description={t('organization.setting.valueHint')}
+            description={t(chosenHint ?? 'organization.setting.valueHint')}
             value={form.settingValue}
             multiline
             rows={form.valueType === 'json' ? 5 : 2}
@@ -410,7 +456,9 @@ export function SettingsEditor({
           </div>
         </form>
       ) : (
-        <p className="text-supporting text-text-muted">{t('admin.readOnly')}</p>
+        <p className="text-supporting text-text-muted" data-testid="settings-read-only">
+          {t(readOnlyKey)}
+        </p>
       )}
     </div>
   );
@@ -425,6 +473,46 @@ interface SettingForm {
 
 /** The kinds a setting may declare, in the order the select offers them. */
 const VALUE_TYPES: readonly SettingValueType[] = ['string', 'number', 'boolean', 'json'];
+
+const CURRENCY_CODE = /^[A-Z]{3}$/;
+
+/**
+ * The catalogue key of what a suggestion's rule refuses in this value, or null.
+ *
+ * `currency-codes`: a list of distinct three-letter codes, stored as a
+ * structured value so the Organisation screen can read it back as a list
+ * (`readCurrencyChoices`). When the platform's currency list was read, each code
+ * must be one it holds; when it was not, the shape is all that can be checked,
+ * and nothing is refused for a list the screen does not have.
+ *
+ * This check is the screen's alone: the company settings write stores any
+ * well-formed value for this key without checking it, and an empty list (no
+ * enabled currency) passes here as it passes there. Neither is given a rule of
+ * its own until one is decided (recorded in route-checklist.md, ADM-5).
+ */
+function ruleRefusal(
+  valueRule: ValueRule | undefined,
+  form: SettingForm,
+  knownCodes: readonly string[] | null
+): string | null {
+  if (valueRule?.rule !== 'currency-codes') return null;
+  if (form.valueType !== 'json') return 'currencies.error.list';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(form.settingValue);
+  } catch {
+    return 'currencies.error.list';
+  }
+  if (!Array.isArray(parsed)) return 'currencies.error.list';
+  const seen = new Set<string>();
+  for (const code of parsed as unknown[]) {
+    if (typeof code !== 'string' || !CURRENCY_CODE.test(code)) return 'currencies.error.code';
+    if (seen.has(code)) return 'currencies.error.duplicate';
+    seen.add(code);
+    if (knownCodes !== null && !knownCodes.includes(code)) return 'currencies.error.notHeld';
+  }
+  return null;
+}
 
 /** Renders a stored value for display. Never parsed back. */
 function render(value: unknown): string {

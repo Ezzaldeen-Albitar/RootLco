@@ -1,4 +1,6 @@
 import type { ReactNode } from 'react';
+import Alert from '@mui/material/Alert';
+import AlertTitle from '@mui/material/AlertTitle';
 import {
   BackendUnavailableState,
   ErrorState,
@@ -88,6 +90,35 @@ export function ContractNotice({
         ))}
       </ul>
     </aside>
+  );
+}
+
+/**
+ * `ContractNotice` on Material UI (ADR-022, P1-32-PRE-OD-ADM5): the same heading
+ * and sentences, drawn as an outlined information `Alert`.
+ *
+ * `role="note"`, not Material's default `alert`: the notice is part of the page,
+ * not the result of anything the operator just did, so it is never announced as
+ * an interruption — and it does not compete with a save's own announcement.
+ */
+export function MuiContractNotice({
+  messages,
+  bodyKeys,
+  testId = 'contract-gap',
+}: {
+  readonly messages: Messages;
+  readonly bodyKeys: readonly string[];
+  readonly testId?: string;
+}) {
+  return (
+    <Alert severity="info" variant="outlined" role="note" data-testid={testId}>
+      <AlertTitle>{translate(messages, 'admin.contractGap.title')}</AlertTitle>
+      <ul className="flex flex-col gap-1">
+        {bodyKeys.map((key) => (
+          <li key={key}>{translate(messages, key as keyof Messages)}</li>
+        ))}
+      </ul>
+    </Alert>
   );
 }
 

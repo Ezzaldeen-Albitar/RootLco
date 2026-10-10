@@ -896,40 +896,38 @@ whoever raised a credit note cannot approve it." <!-- creditNotes.detail.approva
 
 **IMPLEMENTED (UI)**, with an important limitation
 
-Invoice numbering is configured at "Administration" › "Settings" <!-- nav.settings --> › "Numbering
-rules" <!-- nav.numberingRules --> , which needs `org.settings.manage`. The fields are "Prefix",
-"Suffix", "Minimum digits", "Start at" and "Reset" (with the choices "Never", "Every month", "Every
-year").
+Numbering is shown at "Administration" › "Settings" <!-- nav.settings --> › "Numbering rules" <!-- nav.numberingRules --> ,
+to an account that may read companies or branches. The screen is read only: it lists the numbering
+settings that are stored and changes none of them (Part 2, §2.10.4).
 
 Two sentences on that screen are binding for finance work:
 
 - "Numbers are always allocated by the service. Nothing on this screen produces one."
 - "The service publishes no preview operation, so no example number is shown here."
 
-**The screen writes organization settings, because no dedicated numbering operation exists.** It is
-one of four administration areas in that position (the others are Taxes, Currencies and System
-settings). **The tenant-administrator bundle holds `org.settings.manage`** since the Owner decision
-of 2026-09-27, so a freshly provisioned administrator sees this menu entry. An organisation
-provisioned earlier holds it only once its operator has brought the administrator role forward;
-until then the code must be granted first. Part 3 covers granting.
+**No dedicated numbering operation exists**, so the screen shows organization settings. It is one of
+four administration areas in that position (the others are Taxes, Currencies and System settings).
+The sequences the service numbers invoices from are kept by the service; this screen neither
+configures nor shows them.
 
-If issuing an invoice is refused because the branch has no numbering set up, this is where it is
-fixed — or, where the screen is not reachable, by your operator.
+If issuing an invoice is refused because the branch has no numbering set up, it is not fixed on
+this screen: ask your operator.
 
 ### 6.2.12 Currencies and exchange rates
 
 **IMPLEMENTED (UI)** for the list of currencies · **NOT AVAILABLE** for any rate
 
-"Administration" › "Settings" › "Currencies" <!-- nav.currencies --> holds "Enabled currencies" with
-a "Currency code" field ("Three-letter ISO codes, in capitals. No base currency is chosen for you.")
-and the buttons "Add currency" and "Remove".
+"Administration" › "Settings" › "Currencies" <!-- nav.currencies --> shows the platform's currency
+list to an account that may read the workspace, and each company's enabled currencies to one that
+may read companies. The enabled currencies are entered as a list of three-letter codes in the
+company's settings (Part 2, §2.10.6). No base currency is chosen for you.
 
 The screen carries this standing notice: **"No exchange rate is held or calculated here."** Nothing
 in this release converts one currency into another. Reports keep currencies apart and never add
 across them.
 
-Like Numbering rules, this screen writes organization settings and needs `org.settings.manage`,
-which the tenant-administrator bundle holds since 2026-09-27.
+Changing the enabled currencies needs `org.settings.manage`, which the tenant-administrator bundle
+holds since 2026-09-27.
 
 ### 6.2.13 Amounts and rounding
 
@@ -2080,8 +2078,11 @@ stated where you meet it.
     page and no per-technician page for a report row to link to. **DEFERRED**
 17. **There is no analytics dashboard.** **NOT AVAILABLE**
 18. **Four administration areas — Numbering rules, Taxes, Currencies and System settings — are
-    key-and-value settings screens, not dedicated features**, and they need `org.settings.manage`,
-    which the tenant-administrator bundle holds since the Owner decision of 2026-09-27.
+    key-and-value settings screens, not dedicated features.** Numbering rules, Taxes and System
+    settings are shown on company-read or branch-read, and Currencies on company-read or
+    tenant-read. Numbering rules and Taxes are read only; changing the enabled currencies or saving
+    a system setting needs `org.settings.manage`, which the tenant-administrator bundle holds since
+    the Owner decision of 2026-09-27.
 19. **The product name, logo and colours are provisional.** The interface shows a placeholder name
     with the banner "Provisional appearance — final brand pending".
 20. **Printing is always your browser's own print.** No PDF is generated and there is no server-side

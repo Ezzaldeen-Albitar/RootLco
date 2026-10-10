@@ -1,10 +1,12 @@
 import { notFound } from 'next/navigation';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
-import { PermissionDeniedState } from '@/components/states/States';
+import { MuiRefusedState } from '@/components/states/MuiStates';
 import { requireSession } from '@/features/authentication/api/session';
 import { SettingsEditor } from '@/features/administration/organization/components/SettingsEditor';
-import { ContractNotice, Panel } from '@/features/administration/shared/components/ScreenStates';
+import { readReferenceValues } from '@/features/administration/organization/reference-values';
+import { MuiContractNotice, Panel } from '@/features/administration/shared/components/ScreenStates';
 import { PERMISSIONS, holds } from '@/features/administration/shared/permissions';
+import { CURRENCY_RULES } from '@/features/administration/shared/settings-keys';
 import { isLocale } from '@/i18n/config';
 import { getMessages, translate, type Messages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -22,6 +24,19 @@ import { pageMetadata } from '@/lib/page-metadata';
  * screens — numbering, taxes, currencies — are the same editor narrowed, and
  * anything they write is visible here too, which is the correct relationship
  * between a specific view and the general one.
+ *
+ * On Material UI (ADR-022, P1-32-PRE-OD-ADM5): the editor was migrated by ADM-1;
+ * the page frame now draws the platform-scope notice and a page the operator
+ * may not read with the shared Material states. The editor stays scoped to the
+ * company and branch settings it actually serves; the tenant record is edited
+ * on the Organization and Languages screens, and platform settings stay
+ * unreachable until an operation publishes them.
+ *
+ * The general editor can write `currency.enabled_codes` too, so it applies the
+ * same check the Currencies screen does (`CURRENCY_RULES`): a malformed or
+ * repeated code is refused before anything is sent, and — when the platform's
+ * currency list could be read, which takes `org.tenant.read` — so is a code the
+ * platform does not hold. That list is read only for an operator who may write.
  */
 export default async function SystemSettingsPage({
   params,
@@ -53,13 +68,18 @@ export default async function SystemSettingsPage({
           crumbs={crumbs}
         />
         <PageBody>
-          <PermissionDeniedState messages={messages} />
+          <MuiRefusedState messages={messages} testId="settings-screen-refused" />
         </PageBody>
       </>
     );
   }
 
   const canWrite = holds(session.permissions, PERMISSIONS.settingsManage);
+  const references =
+    canWrite && holds(session.permissions, PERMISSIONS.tenantRead)
+      ? await readReferenceValues()
+      : null;
+  const knownCodes = references ? references.currencies.map((currency) => currency.code) : null;
 
   return (
     <>
@@ -81,7 +101,7 @@ export default async function SystemSettingsPage({
             is looking at. The platform-scope sentence stays — that limit is
             real.
           */}
-          <ContractNotice messages={messages} bodyKeys={['systemSettings.noPlatformScope']} />
+          <MuiContractNotice messages={messages} bodyKeys={['systemSettings.noPlatformScope']} />
 
           {canReadCompany ? (
             <Panel title={t('organization.settings.company')}>
@@ -90,13 +110,22 @@ export default async function SystemSettingsPage({
                 scope="company"
                 canWrite={canWrite}
                 keyPrefix=""
+                valueRules={CURRENCY_RULES}
+                knownCodes={knownCodes}
               />
             </Panel>
           ) : null}
 
           {canReadBranch ? (
             <Panel title={t('organization.settings.branch')}>
-              <SettingsEditor messages={messages} scope="branch" canWrite={canWrite} keyPrefix="" />
+              <SettingsEditor
+                messages={messages}
+                scope="branch"
+                canWrite={canWrite}
+                keyPrefix=""
+                valueRules={CURRENCY_RULES}
+                knownCodes={knownCodes}
+              />
             </Panel>
           ) : null}
         </div>

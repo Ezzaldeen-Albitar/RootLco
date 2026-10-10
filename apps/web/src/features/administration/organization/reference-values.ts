@@ -1,4 +1,5 @@
 import { authorizedClient } from '@/lib/api/server-client';
+import { readOperation, type ReadState } from '@/lib/api/read-operation';
 import type { ReferenceValues } from './types';
 
 /**
@@ -28,4 +29,17 @@ export async function readReferenceValues(): Promise<ReferenceValues | null> {
   if (!client) return null;
   const result = await client.get<ReferenceValues>('/api/v1/org/reference-values');
   return result.ok ? result.data : null;
+}
+
+/**
+ * The same read, keeping HOW it did not answer (P1-32-PRE-OD-ADM5).
+ *
+ * The Currencies screen shows the platform's currency list itself, so "could
+ * not be read" is not enough there: a refusal, an ended session and an outage
+ * are different states with different ways forward, and only an outage is
+ * offered Try again. Same path, same permission, same server-only rule as
+ * `readReferenceValues` above.
+ */
+export async function readReferenceValuesState(): Promise<ReadState<ReferenceValues>> {
+  return readOperation<ReferenceValues>('/api/v1/org/reference-values');
 }

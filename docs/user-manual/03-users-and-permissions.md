@@ -694,7 +694,7 @@ held but no screen exposes it.
 | **Approval limits**                                                              | **no**                                           | yes                                                                                                                                                                                                                           |
 | **Audit log**, including values otherwise **Withheld**                           | **no**                                           | yes                                                                                                                                                                                                                           |
 | Read the workspace, companies, branches; manage departments and employee records | **no**                                           | yes (departments and employees are operations only)                                                                                                                                                                           |
-| **Change** a company or a branch; organisation settings, taxes, subscription     | **no**                                           | **no**                                                                                                                                                                                                                        |
+| **Change** a company or a branch; organisation settings, taxes, subscription     | **no**                                           | companies, branches and organisation settings: yes (settings since 2026-09-27); taxes: nothing to change, the Taxes screen is read only; subscription: **no**                                                                 |
 | Customers and vehicles                                                           | **no**                                           | read, create a customer, record a customer's contacts, addresses and preferences, manage a customer's vehicles, manage vehicles — **not** merge, duplicate review, notes, consent, restrictions, odometer or status           |
 | **Appointments**                                                                 | **no**                                           | **no** — no appointment permission at all, so the Appointments entry is hidden                                                                                                                                                |
 | Reception                                                                        | **no**                                           | read, manage, parties, verify an authorization, evidence management, signatures, approve, convert to a work order — **not** the evidence override that waives a required capture, closing a visit, or the reception catalogue |
@@ -744,14 +744,19 @@ Three further facts about export belong here because they are access facts, not 
   who did it, the branch, the period and the counts — it does not keep the exported content, so it
   cannot later prove exactly which bytes left the system.
 
-**Three other exclusions worth naming:**
+**Two other exclusions worth naming:**
 
 - The bundle holds no notification permission, so the **Notifications** entry is hidden from a
   freshly provisioned administrator.
-- The bundle cannot change organisation **settings**, so **Numbering rules**, **Taxes**,
-  **Currencies** and **System settings** are hidden from it, and so is the control that activates or
-  deactivates a branch (Part 2, §2.5.3).
 - The bundle holds no appointment permission, so **Appointments** is hidden from it (Part 4A).
+
+**The settings screens are shown on read permissions.** **Numbering rules**, **Taxes** and **System
+settings** are shown to an account that may read companies or branches, and **Currencies** to one
+that may read the workspace or companies. Numbering rules and Taxes are read only. Changing the
+enabled currencies, saving a system setting and activating or deactivating a branch (Part 2, §2.5.3)
+also need settings management, which the bundle holds since the Owner decision of 2026-09-27; an
+organisation provisioned earlier holds it only once its operator has brought the administrator role
+forward (Part 2, §2.10).
 
 **What it does now hold, and did not before.** At this version the bundle carries company and branch
 management, department and employee read and management, and the inventory codes an organisation

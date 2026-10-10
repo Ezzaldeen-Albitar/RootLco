@@ -1,4 +1,4 @@
-import type { SuggestedKey } from '../organization/components/SettingsEditor';
+import type { SuggestedKey, ValueRule } from '../organization/components/SettingsEditor';
 
 /**
  * Where a settings-backed screen stores what the operator enters.
@@ -63,3 +63,12 @@ export const CURRENCY_PREFIX = 'currency.';
 export const CURRENCY_KEYS: readonly SuggestedKey[] = Object.freeze([
   { key: 'currency.enabled_codes', labelKey: 'currencies.field.enabled', valueType: 'json' },
 ]);
+
+/**
+ * What the enabled codes are checked against before sending (P1-32-PRE-OD-ADM5):
+ * distinct three-letter codes, each one the platform holds when its list was
+ * read. A check, not a value — still no default and no base currency.
+ */
+export const CURRENCY_RULES: Readonly<Record<string, ValueRule>> = Object.freeze({
+  'currency.enabled_codes': { rule: 'currency-codes', hintKey: 'currencies.field.enabledHint' },
+});
