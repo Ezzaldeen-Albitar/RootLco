@@ -6271,6 +6271,7 @@
   "technicians.availability.kind.available": "متاح",
   "technicians.availability.kind.unavailable": "غير متاح",
   "technicians.availability.kindLabel": "النوع",
+  "technicians.availability.kindUnknown": "أخرى",
   "technicians.availability.noClock": "لا يمكن إضافة فترة هنا، لأن توقيت فرع الفنّي غير معروف في مساحة عملك.",
   "technicians.availability.none": "لا توجد فترات حالية أو قادمة مسجّلة.",
   "technicians.availability.reason": "السبب",

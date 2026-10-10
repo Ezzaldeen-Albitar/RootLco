@@ -558,6 +558,26 @@ describe('a technician profile', () => {
     expect(windows).toHaveTextContent(/17:00/);
     expect(windows).not.toHaveTextContent(/06:00/);
     expect(windows).toHaveTextContent('Training');
+    // The work assigned now carries its since column on the branch clock.
+    const queue = await screen.findByTestId('technician-profile-queue');
+    expect(await within(queue).findByText('Replace front pads')).toBeVisible();
+    expect(within(queue).getByText(EN('technicians.workspace.since'))).toBeInTheDocument();
+  });
+
+  it('names a window of a kind this screen does not know in words, never by its code', async () => {
+    serveProfile({
+      detail: ok({
+        ...DETAIL,
+        availability: DETAIL.availability.map((window) => ({
+          ...window,
+          availabilityKind: 'sabbatical',
+        })),
+      }),
+    });
+    mount(profile());
+    const windows = await screen.findByTestId('technician-availability');
+    expect(windows).toHaveTextContent(EN('technicians.availability.kindUnknown'));
+    expect(windows).not.toHaveTextContent('sabbatical');
   });
 
   it('says not-found and reads nothing else of it', async () => {
@@ -890,6 +910,10 @@ describe('a technician profile', () => {
     expect(screen.getByTestId('technician-availability-clock')).toHaveTextContent(
       EN('technicians.availability.timesHidden')
     );
+    // The work list leaves out its since column rather than drawing it empty.
+    const queue = await screen.findByTestId('technician-profile-queue');
+    expect(await within(queue).findByText('Replace front pads')).toBeVisible();
+    expect(within(queue).queryByText(EN('technicians.workspace.since'))).toBeNull();
     expect(
       screen.queryByRole('button', {
         name: new RegExp(`^${escape(EN('technicians.availability.withdraw'))}`),

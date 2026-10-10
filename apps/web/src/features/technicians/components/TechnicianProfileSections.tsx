@@ -702,7 +702,7 @@ function CertificateNumberDialog({
 function availabilityKindText(messages: Messages, kind: string): string {
   return (AVAILABILITY_KINDS as readonly string[]).includes(kind)
     ? translateDynamic(messages, `technicians.availability.kind.${kind}`)
-    : kind;
+    : translate(messages, 'technicians.availability.kindUnknown');
 }
 
 export function AvailabilitySection({
@@ -1082,15 +1082,20 @@ export function QueueSection({
         hideBelow: 'md',
         cell: (row) => assignmentRoleLabel(row.assignmentRole, t),
       },
-      {
-        id: 'since',
-        headerKey: 'technicians.workspace.since',
-        hideBelow: 'md',
-        cell: (row) => {
-          const since = momentText(row.validFrom, locale, zone);
-          return since === null ? null : <bdi>{since}</bdi>;
-        },
-      },
+      // Without the branch clock no time is shown, so the column is left out
+      // rather than drawn empty; the availability section says why.
+      ...(zone === null
+        ? []
+        : [
+            {
+              id: 'since',
+              headerKey: 'technicians.workspace.since',
+              hideBelow: 'md',
+              cell: (row: TechnicianQueueItem) => (
+                <bdi>{momentText(row.validFrom, locale, zone)}</bdi>
+              ),
+            } satisfies OperationalColumn<TechnicianQueueItem>,
+          ]),
     ],
     [locale, messages, t, zone]
   );

@@ -62,8 +62,9 @@ import { refusalSentence, technicianName } from './roster-parts';
  * without `iam.user.read` is told no name — the server publishes `null` — and
  * the row says so in words rather than printing the account reference. Adding a
  * technician picks a person by name or email from the account directory
- * (`AccountPicker`); without `iam.user.read` the picker says it cannot search,
- * and nobody can be added from here.
+ * (`AccountPicker`), which can search only with `iam.user.read`. Without it the
+ * Add action is withheld and a sentence says that adding a technician needs
+ * access to the user list, so no dialog opens that could pick nobody.
  *
  * ## The list
  *

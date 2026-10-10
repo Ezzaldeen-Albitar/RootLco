@@ -32,7 +32,7 @@ export default async function TechnicianProfilePage({
   const session = await requireSession(locale);
   const messages = getMessages(locale);
   const crumbs = [
-    { labelKey: 'nav.technicians', href: `/${locale}/technicians` },
+    { labelKey: 'nav.technicianRoster', href: `/${locale}/technicians` },
     { labelKey: 'technicians.profile.title' },
   ];
 

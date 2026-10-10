@@ -34,7 +34,7 @@ export default async function TechnicianRosterPage({
 
   const session = await requireSession(locale);
   const messages = getMessages(locale);
-  const crumbs = [{ labelKey: 'nav.technicians' }];
+  const crumbs = [{ labelKey: 'nav.technicianRoster' }];
 
   if (!holds(session.permissions, TECHNICIAN_ROSTER_PERMISSIONS.read)) {
     return (
