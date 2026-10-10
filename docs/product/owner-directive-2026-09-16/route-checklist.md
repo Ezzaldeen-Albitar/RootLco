@@ -6301,7 +6301,7 @@ pages refuse without. Every other entry's code was checked against its navigatio
 (`config/navigation.ts`) and its page, and they agree. There is no technician roster entry,
 because no `/technicians` roster route exists (only `/technicians/me`).
 
-Preserved, each held by a case in `audit-log.dom.test.tsx` or `administration-hub.dom.test.tsx`:
+Preserved, each held by a case in `audit-log.dom.test.tsx` (which also holds the hub cases):
 
 - The route page refuses before it reads without `iam.audit.view`; the window, the criteria and
   the branch target reach the adapter under the same names; a malformed reference is refused on its
@@ -6339,4 +6339,5 @@ Known limitations and recorded gaps, one line each:
 - The range checks were not exercised by typing into the pickers in jsdom; they are unit logic in
   the screen and the backend still refuses a range wider than 92 days.
 - Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
-  they run in hosted CI. One web test file is added (`administration-hub.dom.test.tsx`).
+  they run in hosted CI. The web tier gains cases in an existing file (no web test file added or
+  removed): the hub cases live in `audit-log.dom.test.tsx`.

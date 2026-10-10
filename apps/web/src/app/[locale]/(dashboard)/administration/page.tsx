@@ -28,8 +28,8 @@ import { pageMetadata } from '@/lib/page-metadata';
  * the hub and the sidebar offer the same screens. Where the page refuses
  * without a further code as well, that code is in `alsoRequires` — all of them,
  * never "any of" — so an entry is shown exactly when its page would draw
- * something other than a refusal. `tests/administration-hub.dom.test.tsx`
- * holds both halves.
+ * something other than a refusal. The hub cases in
+ * `tests/audit-log.dom.test.tsx` hold both halves.
  *
  * No technician roster entry: no `/technicians` roster route exists, only the
  * technician's own workspace (`/technicians/me`), which is not administration.
