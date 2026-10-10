@@ -15,8 +15,14 @@ import { pageMetadata } from '@/lib/page-metadata';
  * Gated on `tech.technician.read`, the code `tech.technician-list` declares, and
  * decided BEFORE any read — the rule `check-p1-29-access.mjs` enforces. Adding a
  * technician appears only with `tech.technician.manage`; the person picker on it
- * searches only with `iam.user.read`. These are affordances: the server decides
- * every request again against the branch it names.
+ * searches only with `iam.user.read`, and without it the add is withheld with a
+ * sentence saying why. These are affordances: the server decides every request
+ * again against the branch it names.
+ *
+ * Every technician holds `tech.technician.read` for their own queue, so a plain
+ * technician can still open this page by address and read the roster the server
+ * answers them. The sidebar does not advertise it to them: its roster entry needs
+ * `tech.technician.manage` too, and the module link names `/technicians/me`.
  */
 export default async function TechnicianRosterPage({
   params,

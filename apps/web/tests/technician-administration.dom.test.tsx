@@ -368,6 +368,9 @@ describe('the technician roster', () => {
     await u.click(screen.getByRole('button', { name: 'first' }));
     await screen.findByText('Fixture Technician', { selector: 'bdi' });
     expect(screen.queryByRole('button', { name: EN('technicians.roster.add') })).toBeNull();
+    // Nor the sentence about the user list: that explains a withheld action,
+    // and without the manage code there is no action to withhold.
+    expect(screen.queryByText(EN('technicians.roster.addNeedsUserList'))).toBeNull();
   });
 
   it('refuses an add with nobody chosen on the person field, and sends nothing', async () => {
@@ -471,15 +474,19 @@ describe('the technician roster', () => {
     expect(screen.getByRole('dialog')).toBeVisible();
   });
 
-  it('says the picker cannot search without the user read', async () => {
+  it('withholds the add action without the user read, and says why', async () => {
+    // The person picker searches only with `iam.user.read`; a dialog opened
+    // without it could never pick anyone, so the action is not offered.
     get.mockResolvedValue(page([]));
     const u = userEvent.setup();
     mount(roster('en', { canReadUsers: false }));
     await u.click(screen.getByRole('button', { name: 'first' }));
-    await u.click(await screen.findByRole('button', { name: EN('technicians.roster.add') }));
-    expect(
-      within(screen.getByRole('dialog')).getByText(EN('users.picker.notPermitted'))
-    ).toBeVisible();
+    expect(await screen.findByText(EN('technicians.roster.addNeedsUserList'))).toBeVisible();
+    expect(screen.queryByRole('button', { name: EN('technicians.roster.add') })).toBeNull();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    // The empty roster does not invite an add the operator cannot make.
+    expect(await screen.findByText(EN('technicians.roster.emptyBodyReadOnly'))).toBeVisible();
+    expect(screen.queryByText(EN('technicians.roster.emptyBody'))).toBeNull();
   });
 });
 
@@ -503,6 +510,33 @@ describe.each(['en', 'ar'] as const)('a technician profile (%s)', (locale) => {
       expect(screen.queryByText(new RegExp(reference))).toBeNull();
     }
     if (locale === 'ar') expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('says, before a move or a retirement, that skills, certifications and availability are not carried over', async () => {
+    // BR-03's transfer path is retire-then-re-add; the holdings stay with the
+    // retired profile. Both places that lead an operator onto that path say so.
+    const notCarried = locale === 'en' ? /not carried over/ : /لا تُنقل/;
+    for (const key of [
+      'technicians.profile.editDescription',
+      'technicians.profile.confirmRetireBody',
+    ]) {
+      expect(T(key), key).toMatch(notCarried);
+    }
+    serveProfile();
+    const u = userEvent.setup();
+    mount(profile(locale), locale);
+    await u.click(await screen.findByRole('button', { name: T('technicians.profile.edit') }));
+    expect(
+      within(screen.getByRole('dialog')).getByText(T('technicians.profile.editDescription'))
+    ).toBeVisible();
+    await u.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: T('admin.cancel') })
+    );
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await u.click(screen.getByRole('button', { name: T('technicians.profile.retire') }));
+    expect(screen.getByRole('alertdialog')).toHaveTextContent(
+      T('technicians.profile.confirmRetireBody')
+    );
   });
 
   it('says a withheld name in words', async () => {
@@ -847,5 +881,19 @@ describe('a technician profile', () => {
     expect(await screen.findByTestId('technician-availability-no-clock')).toBeVisible();
     expect(screen.queryByRole('button', { name: EN('technicians.availability.add') })).toBeNull();
     expect(screen.getByText(EN('technicians.profile.branchNotListed'))).toBeVisible();
+    // No time is read off this device's clock in place of the branch's: the
+    // window is named by its kind and reason, its times are not drawn, the
+    // sentence says why, and it is not offered for withdrawal.
+    const windows = screen.getByTestId('technician-availability');
+    expect(windows).toHaveTextContent('Training');
+    expect(windows).not.toHaveTextContent(/\d{1,2}:\d{2}/);
+    expect(screen.getByTestId('technician-availability-clock')).toHaveTextContent(
+      EN('technicians.availability.timesHidden')
+    );
+    expect(
+      screen.queryByRole('button', {
+        name: new RegExp(`^${escape(EN('technicians.availability.withdraw'))}`),
+      })
+    ).toBeNull();
   });
 });

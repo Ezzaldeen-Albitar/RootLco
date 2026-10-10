@@ -4722,17 +4722,25 @@ Routes, gates and scope:
   filter (active or inactive, sent as `isActive`). "Add technician" (`tech.technician-create`) is a
   `FormDialog` that picks the person by name or email (`AccountPicker`, `iam.user-list`, searched
   only with `iam.user.read`), with an optional trade and employment reference. The page refuses
-  before any read without `tech.technician.read`; Add appears only with `tech.technician.manage`.
+  before any read without `tech.technician.read`; Add appears only with `tech.technician.manage`
+  and `iam.user.read` together. With the manage code but without the user read, the action is
+  withheld and a sentence says that adding a technician needs access to the user list.
 - `/technicians/[technicianProfileId]` — one profile reached by its address (`none`): the details
   (edit trade and reference, make active or inactive, take off the roster — each version-guarded
-  with the version the detail read published), skills (give a skill at a level from
+  with the version the detail read published; the edit and retire wording says that retiring then
+  adding again — BR-03's transfer path — leaves skills, certifications and availability with the
+  retired profile, not carried over), skills (give a skill at a level from
   `tech.skill-list`, change its level, remove it), certifications (change the status and the expiry
   with the holding's own version; record the restricted certificate number only with
   `iam.sensitive.view` as well, and never shown back), availability windows (add on the profile's
   branch clock with `ZonedDateTimeField`, withdraw with the window's version) and the work assigned
   now (`tech.technician-queue`, unpaged, read-only, each row opening its work order).
-- Navigation: the Technicians entry now names `/technicians` and gains a Roster child, gated on
-  `tech.technician.read`; the workspace child is unchanged.
+- Navigation: the Technicians entry still names `/technicians/me`, because every technician holds
+  `tech.technician.read` for their own queue. A separate Technician roster entry at `/technicians`
+  sits beside it, offered only with `tech.technician.manage` (and the read its list declares), so a
+  plain technician is not pointed at the administration screen. It is a sibling rather than a child
+  so the collapsed rail still marks the roster and its profile pages. The page itself still renders
+  the roster for a read-only holder who opens it by address — the server decides each read.
 
 Backend, in the same slice:
 
@@ -4753,11 +4761,16 @@ Recorded gaps (no control is drawn for any of them):
   changed.
 - The certificate number has no read; it is recorded and never shown.
 - A profile whose branch is not among the session's branches has no known clock: its windows are
-  shown on the device's clock with that said, and no window can be added from it.
+  named by kind and reason with their times not shown (never on the device's clock), that is said,
+  and no window can be added or withdrawn from it.
 
 Known limitations of this slice, one line each:
 
-- The job-assignment and rework sign-off pickers still take the roster reference (prerequisite 13).
+- Open: recording a new certification — no certification catalogue read exists (above).
+- Open: the job-assignment and rework sign-off pickers still take the roster reference
+  (prerequisite 13).
+- Open: `tech.skill-list` declares the `expensive-read` rate-limit policy; whether that budget fits
+  a bounded catalogue read is left for review, and the declaration is unchanged.
 - No browser spec covers the technician screens; none was extended. The Playwright tiers run only in
   hosted CI.
 - The backend proof (`tests/backend/od-technician-administration.test.ts`) runs only in the hosted

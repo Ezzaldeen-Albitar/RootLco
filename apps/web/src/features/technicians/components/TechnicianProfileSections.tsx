@@ -34,7 +34,7 @@ import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import { formatDayInZone, formatInZone, type CalendarDay } from '@/lib/branch-time';
-import { formatDateTime, intlLocale } from '@/lib/format';
+import { intlLocale } from '@/lib/format';
 import type { ReadState } from '@/lib/api/read-operation';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
@@ -84,11 +84,13 @@ function fieldError(
   return key ? translateDynamic(messages, key) : undefined;
 }
 
-/** A moment on the branch's clock, or on this device's clock with the clock said. */
-function momentText(value: string, locale: Locale, zone: string | null): string {
-  return zone === null
-    ? formatDateTime(value, locale)
-    : formatInZone(value, intlLocale(locale), zone);
+/**
+ * A moment on the technician's branch clock, or nothing at all where that clock
+ * is not known. This device's clock is never used: a time read off it would be
+ * a different hour from the one the branch keeps, with nothing to say so.
+ */
+function momentText(value: string, locale: Locale, zone: string | null): string | null {
+  return zone === null ? null : formatInZone(value, intlLocale(locale), zone);
 }
 
 /**
@@ -726,8 +728,9 @@ export function AvailabilitySection({
   const [answer, setAnswer] = useState<ActionState>(IDLE);
   const write = useOneWrite();
 
+  // Used only where `zone` is known: without it no window time is drawn.
   const spanText = (window: AvailabilityWindow) =>
-    `${momentText(window.availableFrom, locale, zone)} – ${momentText(window.availableTo, locale, zone)}`;
+    `${momentText(window.availableFrom, locale, zone) ?? ''} – ${momentText(window.availableTo, locale, zone) ?? ''}`;
 
   const withdraw = async (window: AvailabilityWindow) => {
     const outcome = await write.run(() =>
@@ -754,7 +757,7 @@ export function AvailabilitySection({
       </h2>
       <p className="text-caption text-text-muted" data-testid="technician-availability-clock">
         {zone === null
-          ? t('technicians.availability.deviceClock')
+          ? t('technicians.availability.timesHidden')
           : t('technicians.availability.branchClock')}
       </p>
       {windows.length === 0 ? (
@@ -769,8 +772,12 @@ export function AvailabilitySection({
                 <span className="font-medium">
                   {availabilityKindText(messages, window.availabilityKind)}
                 </span>
-                {' · '}
-                <bdi>{spanText(window)}</bdi>
+                {zone === null ? null : (
+                  <>
+                    {' · '}
+                    <bdi>{spanText(window)}</bdi>
+                  </>
+                )}
                 {window.reason ? (
                   <>
                     {' · '}
@@ -778,7 +785,9 @@ export function AvailabilitySection({
                   </>
                 ) : null}
               </span>
-              {canManage ? (
+              {/* A window whose times cannot be shown is not offered for withdrawal:
+                  the operator could not tell which one they were withdrawing. */}
+              {canManage && zone !== null ? (
                 <Button
                   type="button"
                   size="small"
@@ -1077,7 +1086,10 @@ export function QueueSection({
         id: 'since',
         headerKey: 'technicians.workspace.since',
         hideBelow: 'md',
-        cell: (row) => <bdi>{momentText(row.validFrom, locale, zone)}</bdi>,
+        cell: (row) => {
+          const since = momentText(row.validFrom, locale, zone);
+          return since === null ? null : <bdi>{since}</bdi>;
+        },
       },
     ],
     [locale, messages, t, zone]

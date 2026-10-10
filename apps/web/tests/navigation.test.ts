@@ -173,9 +173,9 @@ describe('the navigation model', () => {
       'settings.taxes',
       // The technician workspace landed with P1-29 W4 at /technicians/me,
       // gated on `tech.technician.read` — the permission its queue requires.
-      // The roster landed with P1-32-PRE-OD-ADM2B at /technicians, on the same
-      // code its list declares; its child names the same route as its parent,
-      // so the expanded sidebar has a link to mark. See navigation.ts.
+      // The roster landed with P1-32-PRE-OD-ADM2B at /technicians as a sibling
+      // entry offered only with `tech.technician.manage` (beside the read its
+      // list declares); the workspace entry still names /technicians/me.
       'technicians',
       'technicians.me',
       'technicians.roster',
@@ -390,6 +390,43 @@ describe('permission filtering — unknown means denied', () => {
         false
       );
     }
+  });
+
+  describe('the technician entries (P1-32-PRE-OD-ADM2B)', () => {
+    const visibleKeys = (permissions: readonly string[]) =>
+      flattenNavigation(visibleNavigation(NAVIGATION, { permissions })).map((entry) => entry.key);
+    const workspace = (permissions: readonly string[]) =>
+      visibleNavigation(NAVIGATION, { permissions })
+        .flatMap((group) => group.items)
+        .find((entry) => entry.key === 'technicians');
+
+    it('points a technician who holds only the read at their own workspace, never the roster', () => {
+      // Every technician holds `tech.technician.read` for their own queue.
+      const permissions = ['tech.technician.read'];
+      expect(workspace(permissions)?.href).toBe('/technicians/me');
+      expect(visibleKeys(permissions)).toEqual(
+        expect.arrayContaining(['technicians', 'technicians.me'])
+      );
+      expect(visibleKeys(permissions)).not.toContain('technicians.roster');
+      expect(
+        flattenNavigation(visibleNavigation(NAVIGATION, { permissions })).some(
+          (entry) => entry.href === '/technicians'
+        )
+      ).toBe(false);
+    });
+
+    it('offers the roster to a manager beside the workspace, which still names /technicians/me', () => {
+      const permissions = ['tech.technician.read', 'tech.technician.manage'];
+      expect(workspace(permissions)?.href).toBe('/technicians/me');
+      const roster = flattenNavigation(visibleNavigation(NAVIGATION, { permissions })).find(
+        (entry) => entry.key === 'technicians.roster'
+      );
+      expect(roster?.href).toBe('/technicians');
+    });
+
+    it('does not offer the roster on the manage code alone, where the page could only refuse', () => {
+      expect(visibleKeys(['tech.technician.manage'])).not.toContain('technicians.roster');
+    });
   });
 
   it('reads `alsoRequires` as a conjunction, never as "any of"', () => {

@@ -146,6 +146,7 @@ function BranchRoster({
 }) {
   const t = (key: keyof Messages) => translate(messages, key);
   const [creating, setCreating] = useState(false);
+  const canAdd = canManage && canReadUsers;
 
   const load = useCallback(
     async (
@@ -251,12 +252,24 @@ function BranchRoster({
 
   return (
     <div className="flex flex-col gap-4" data-testid="technician-roster">
-      {canManage ? (
+      {/*
+       * Adding a technician means choosing a person, and the person picker can
+       * search only with the user read. Without it the dialog could never pick
+       * anyone, so the action is withheld and the reason is said instead.
+       */}
+      {canAdd ? (
         <div>
           <Button type="button" variant="contained" onClick={() => setCreating(true)}>
             {t('technicians.roster.add')}
           </Button>
         </div>
+      ) : canManage ? (
+        <p
+          className="text-body text-text-secondary"
+          data-testid="technician-roster-add-needs-users"
+        >
+          {t('technicians.roster.addNeedsUserList')}
+        </p>
       ) : null}
 
       <FilterToolbar
@@ -310,13 +323,13 @@ function BranchRoster({
           messages={messages}
           titleKey="technicians.roster.emptyTitle"
           descriptionKey={
-            canManage ? 'technicians.roster.emptyBody' : 'technicians.roster.emptyBodyReadOnly'
+            canAdd ? 'technicians.roster.emptyBody' : 'technicians.roster.emptyBodyReadOnly'
           }
           testId="technician-roster-empty"
         />
       ) : null}
 
-      {creating ? (
+      {creating && canAdd ? (
         <AddTechnicianDialog
           messages={messages}
           locale={locale}

@@ -296,32 +296,19 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
       },
       {
         /*
-         * P1-29 W4 landed the technician's own workspace at `/technicians/me`,
-         * and the parent named it because it was the only screen. The roster
-         * (`P1-32-PRE-OD-ADM2B`) now exists at `/technicians`, so the parent
-         * names it and gains the `technicians.roster` child — the
-         * `work-orders.queue` pattern, a child naming its parent's own route so
-         * the expanded sidebar has a link to mark. The workspace entry does not
-         * change. Both are gated on `tech.technician.read`, the code the
-         * roster list and the own queue declare.
+         * P1-29 W4: the technician's own workspace. The parent names
+         * `/technicians/me`: every technician holds `tech.technician.read` for
+         * their own queue, so the module link is the workspace, never the
+         * branch roster.
          */
         key: 'technicians',
         labelKey: 'nav.technicians',
         icon: 'technicians',
-        href: '/technicians',
+        href: '/technicians/me',
         permission: 'tech.technician.read',
         status: 'available',
         scope: 'branch',
         children: [
-          {
-            key: 'technicians.roster',
-            labelKey: 'nav.technicianRoster',
-            icon: 'technicians',
-            href: '/technicians',
-            permission: 'tech.technician.read',
-            status: 'available',
-            scope: 'branch',
-          },
           {
             // The workspace itself, naming the SAME route as its parent — the
             // `work-orders.queue` pattern, for the same reason: a disclosure
@@ -335,6 +322,35 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             scope: 'branch',
           },
         ],
+      },
+      {
+        /*
+         * The branch roster (`P1-32-PRE-OD-ADM2B`) at `/technicians` — the
+         * administration surface, offered only to holders of
+         * `tech.technician.manage`, so a plain technician is not pointed at it.
+         * It also requires `tech.technician.read`, the code its list declares,
+         * so a manager without the read is not sent to a page that could only
+         * refuse. The page itself still renders the roster for a read-only
+         * holder who opens it by address (the server decides every read); the
+         * sidebar simply does not advertise it to them.
+         *
+         * A SIBLING of the workspace entry, not its child — the
+         * `vehicle-duplicates` arrangement. The workspace parent names
+         * `/technicians/me`, which is not a prefix of `/technicians`, so in the
+         * 64px rail (where children are not rendered) a roster child would
+         * leave the roster and every profile page under it with no current
+         * page at all. As a sibling it is its own rail link and marks
+         * `/technicians` and `/technicians/<profile>`, while the longer
+         * `/technicians/me` keeps the marker on the workspace.
+         */
+        key: 'technicians.roster',
+        labelKey: 'nav.technicianRoster',
+        icon: 'technicians',
+        href: '/technicians',
+        permission: 'tech.technician.manage',
+        alsoRequires: ['tech.technician.read'],
+        status: 'available',
+        scope: 'branch',
       },
     ],
   },
