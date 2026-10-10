@@ -184,6 +184,7 @@ export function PartsScreen({
   canOperate,
   canReadWorkOrder,
   canReadItems = false,
+  canReadVehicleCatalogue = false,
   canReadBranches,
   currentUserId,
   canRequestMaterial,
@@ -204,6 +205,8 @@ export function PartsScreen({
   readonly canReadWorkOrder: boolean;
   /** `inv.item.read` — the item is found in the catalogue, or given as a reference. */
   readonly canReadItems?: boolean;
+  /** `veh.vehicle.read` — the confirmed capacities a requirement form lists are named by their make. */
+  readonly canReadVehicleCatalogue?: boolean;
   /**
    * `org.branch.read`. Accepted so the route did not have to change, and no
    * longer read: the branch is the working context's own named selection, and
@@ -353,6 +356,7 @@ export function PartsScreen({
         canDecideException={canDecideMaterialException}
         canReadWorkOrder={canReadWorkOrder}
         canReadItems={canReadItems}
+        canReadVehicleCatalogue={canReadVehicleCatalogue}
         chosenId={requirement?.id ?? null}
         onChoose={(chosen, chosenSummary) => {
           setRequirement(chosen);

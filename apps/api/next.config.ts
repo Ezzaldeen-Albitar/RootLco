@@ -14,6 +14,13 @@ const nextConfig: NextConfig = {
   // Do not advertise the framework/version.
   poweredByHeader: false,
 
+  // Hand `src/proxy.ts` the request URL as it arrived. Without this Next
+  // rebuilds the proxy's URL from a parsed query object, which cannot hold a
+  // `__proto__` key, so the proxy could not refuse `?__proto__=x` on the two
+  // self-reads that take no parameter (P1-32-PRE-OD-INVF, FRX1-c). The proxy
+  // matches only those two paths; route handlers are unaffected.
+  skipProxyUrlNormalize: true,
+
   // Conservative baseline headers. The full security-header set (a Content
   // Security Policy in particular) is deliberately deferred: a CSP written
   // before any UI exists would be either uselessly permissive or immediately

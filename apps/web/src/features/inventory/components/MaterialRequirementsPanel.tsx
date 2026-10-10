@@ -111,7 +111,12 @@ import {
 } from '../inventory-contract';
 import { CategoryTreePicker } from './CategoryTreePicker';
 import { pathText, useAllItemCategories, type CategoryList } from './CategoryTree';
-import { useItemNames, useServiceLineNames, type NameAnswer } from './requirement-names';
+import {
+  useItemNames,
+  useMakeNames,
+  useServiceLineNames,
+  type NameAnswer,
+} from './requirement-names';
 import { OutcomeNote, Qty, UUID } from './shared';
 import {
   ItemFinder,
@@ -198,6 +203,7 @@ export function MaterialRequirementsPanel({
   canDecideException,
   canReadWorkOrder,
   canReadItems,
+  canReadVehicleCatalogue = false,
   chosenId,
   onChoose,
   onChanged,
@@ -215,6 +221,12 @@ export function MaterialRequirementsPanel({
    * typed reference, and a listed family is shown by its reference.
    */
   readonly canReadItems: boolean;
+  /**
+   * `veh.vehicle.read` — whether the make catalogue is read, so a confirmed
+   * capacity the form lists is named by its make. Without it the make is said
+   * to be not available; its identifier is never shown.
+   */
+  readonly canReadVehicleCatalogue?: boolean;
   /** The signed-in person, so the panel can say why they cannot decide their own request. */
   readonly currentUserId: string;
   /** `inv.material.request` — asking, re-checking, withdrawing, asking for an exception. */
@@ -316,6 +328,7 @@ export function MaterialRequirementsPanel({
               messages={messages}
               workOrderId={workOrderId}
               canReadWorkOrder={canReadWorkOrder}
+              canReadVehicleCatalogue={canReadVehicleCatalogue}
               categories={categoryList}
               onCreated={afterWrite}
               onDiscard={() => setAdding(false)}
@@ -1258,6 +1271,7 @@ function CreateRequirementForm({
   messages,
   workOrderId,
   canReadWorkOrder,
+  canReadVehicleCatalogue,
   categories,
   onCreated,
   onDiscard,
@@ -1266,6 +1280,8 @@ function CreateRequirementForm({
   readonly workOrderId: string;
   /** `wo.work_order.read` — whether the service lines are requested for the picker. */
   readonly canReadWorkOrder: boolean;
+  /** `veh.vehicle.read` — whether the listed capacities are named by their make. */
+  readonly canReadVehicleCatalogue: boolean;
   /** The whole category tree, or `null` without `inv.item.read` (the family is then typed). */
   readonly categories: CategoryList | null;
   readonly onCreated: () => void;
@@ -1399,6 +1415,10 @@ function CreateRequirementForm({
     : found !== null && found.condition === condition
       ? found.result
       : { phase: 'loading' };
+  // Read once the form lists a capacity to name, and only with the code that reads it.
+  const makeName = useMakeNames(
+    canReadVehicleCatalogue && match.phase === 'listed' && match.rows.length > 0
+  );
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -1663,9 +1683,13 @@ function CreateRequirementForm({
                         <bdi>{unitNameByCode(messages, row.uomCode, units)}</bdi>
                       </span>
                       {' · '}
-                      <code className="font-mono text-caption" dir="ltr">
-                        {row.makeId}
-                      </code>
+                      <span data-testid="material-match-make">
+                        <NamedValue
+                          messages={messages}
+                          answer={makeName(row.makeId)}
+                          unavailableKey="inventory.material.create.matchMakeUnavailable"
+                        />
+                      </span>
                       {row.modelId ? (
                         <>
                           {' · '}

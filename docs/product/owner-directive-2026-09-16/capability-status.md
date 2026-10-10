@@ -437,10 +437,12 @@ at `2376b1adecd6583c14e7514d7d953b09dd52206f`, carries fixes for nine of them â€
 SETUP-cat-errors, SETUP-item-errors, SPEC-no-makes, LBL-sheet-print, LBL-roll-print, ATT-clock,
 LANG-identifiers and COUNT-focus â€” implemented, not yet runtime-retested. Each row keeps the FAIL
 the acceptance recorded until a signed-in retest at a records revision containing the merge says
-otherwise. FRX1-c is not addressed by that branch: the self-read routes' raw-key guard never sees a
-lone `__proto__` key, because Next.js rebuilds the request URL from its parsed query object before
-the route handler runs and that object cannot hold the key; closing it needs a decision on where the
-raw query is read, and the row stays as recorded.
+otherwise. FRX1-c is addressed by the same branch, implemented and not yet runtime-retested: the
+self-read routes' raw-key guard never sees a lone `__proto__` key, because Next.js rebuilds the
+request URL from its parsed query object before the route handler runs and that object cannot hold
+the key, so `apps/api/src/proxy.ts`, matched on exactly the two self-read paths and handed the URL as
+it arrived (`skipProxyUrlNormalize` in `apps/api/next.config.ts`), refuses any query string there
+with the routes' own validation error; the in-route guards stay, and the row stays as recorded.
 
 ### Features delivered or planned under this directive
 

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { listMakes } from '@/features/vehicles/catalogue-api';
 import { listServiceLines } from '@/features/work-orders/api';
 
 import { readItemDetail } from '../api';
@@ -108,5 +109,39 @@ export function useItemNames(
       return known === null ? UNAVAILABLE : named(known);
     },
     [answers, enabled]
+  );
+}
+
+/**
+ * The name of each vehicle make, by make id, for the confirmed capacities the
+ * requirement form lists (P1-32-PRE-OD-INVF). A capacity names its make by
+ * identifier only; the name comes from the same make catalogue the vehicle
+ * specifications screen offers (`veh.vehicle.read`), read once and only when
+ * `enabled` — the operator holds that code and there is a capacity to name.
+ * A make the catalogue does not hold, a truncated catalogue that stops before
+ * it, or a refused or failed read is `unavailable`, never the identifier.
+ */
+export function useMakeNames(enabled: boolean): (makeId: string) => NameAnswer {
+  const [names, setNames] = useState<ReadonlyMap<string, string> | null | undefined>(undefined);
+  useEffect(() => {
+    if (!enabled) return;
+    let live = true;
+    void listMakes().then((result) => {
+      if (!live) return;
+      setNames(
+        result.status === 'ok' ? new Map(result.options.map((make) => [make.id, make.name])) : null
+      );
+    });
+    return () => {
+      live = false;
+    };
+  }, [enabled]);
+  return useCallback(
+    (makeId: string) => {
+      if (!enabled) return UNAVAILABLE;
+      if (names === undefined) return PENDING;
+      return names === null ? UNAVAILABLE : named(names.get(makeId));
+    },
+    [enabled, names]
   );
 }

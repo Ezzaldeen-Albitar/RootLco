@@ -2358,6 +2358,7 @@
   "inventory.material.create.matchExplain": "هذه السعات مؤكَّدة ويمكن أن تنطبق على هذه المركبة. ومركبة هذا الطلب هي التي تحدد أيها يُستخدم، ويذكر الطلب المحفوظ السعة التي طابقها والمصدر الذي قُرئت منه.",
   "inventory.material.create.matchHeading": "السعات المؤكَّدة المسجَّلة لهذه الخدمة",
   "inventory.material.create.matchIdle": "اكتب نوع الخدمة أعلاه لعرض السعات المؤكَّدة المسجَّلة له.",
+  "inventory.material.create.matchMakeUnavailable": "صانع المركبة غير متاح.",
   "inventory.material.create.matchNone": "لا توجد سعة مؤكَّدة مسجَّلة لنوع الخدمة هذا. يمكنك تقديم الطلب مع ذلك، وسيذكر الطلب أن السعة ناقصة لتُؤكَّد بدل أن تُخمَّن.",
   "inventory.material.create.matchRefused": "صلاحيتك لا تشمل سعات المركبات، لذلك لا يمكن عرض أي منها هنا.",
   "inventory.material.create.matchUnavailable": "تعذّرت قراءة سعات المركبات الآن.",

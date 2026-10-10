@@ -2358,6 +2358,7 @@
   "inventory.material.create.matchExplain": "These capacities are confirmed and can answer for this vehicle. The vehicle on this job decides which one is used, and the saved request names the one it matched together with where it was read.",
   "inventory.material.create.matchHeading": "Confirmed capacities on file for this service",
   "inventory.material.create.matchIdle": "Type the service kind above to see the confirmed capacities on file for it.",
+  "inventory.material.create.matchMakeUnavailable": "Vehicle make not available.",
   "inventory.material.create.matchNone": "No confirmed capacity is on file for this service kind. You can still ask, and the request will say the capacity is missing, so it can be confirmed rather than guessed.",
   "inventory.material.create.matchRefused": "Your access does not include the vehicle capacities, so none can be shown here.",
   "inventory.material.create.matchUnavailable": "The vehicle capacities could not be read just now.",
