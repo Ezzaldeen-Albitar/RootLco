@@ -21,12 +21,28 @@ import { pageMetadata } from '@/lib/page-metadata';
  * Each card is shown only when the actor holds the permission its screen needs —
  * the same rule the sidebar uses, and for the same reason. An entry an operator
  * cannot open is a door with no handle.
+ *
+ * ## Every code its page asks for (`P1-32-PRE-OD-ADM6`)
+ *
+ * `permission` is the navigation entry's own code (`config/navigation.ts`), so
+ * the hub and the sidebar offer the same screens. Where the page refuses
+ * without a further code as well, that code is in `alsoRequires` — all of them,
+ * never "any of" — so an entry is shown exactly when its page would draw
+ * something other than a refusal. The hub cases in
+ * `tests/audit-log.dom.test.tsx` hold both halves.
+ *
+ * No technician roster entry: no `/technicians` roster route exists, only the
+ * technician's own workspace (`/technicians/me`), which is not administration.
  */
 
 interface Entry {
   readonly href: string;
   readonly labelKey: string;
-  readonly permission: string;
+  readonly permission: AdministrationPermission;
+  /** Further codes the page refuses without, beside `permission`. All are needed. */
+  readonly alsoRequires?: readonly AdministrationPermission[];
+  /** Codes of which the page needs at least ONE, beside `permission`. */
+  readonly requiresAnyOf?: readonly AdministrationPermission[];
 }
 
 const SECTIONS: readonly {
@@ -39,6 +55,20 @@ const SECTIONS: readonly {
     bodyKey: 'admin.section.identityBody',
     entries: [
       { href: '/administration/users', labelKey: 'nav.users', permission: PERMISSIONS.userRead },
+      {
+        href: '/administration/departments',
+        labelKey: 'nav.departments',
+        permission: PERMISSIONS.departmentRead,
+        // The page lists one branch's departments and refuses without the
+        // branch read (`administration/departments/page.tsx`).
+        alsoRequires: [PERMISSIONS.branchRead],
+      },
+      {
+        href: '/administration/employees',
+        labelKey: 'nav.employees',
+        permission: PERMISSIONS.employeeRead,
+        alsoRequires: [PERMISSIONS.branchRead],
+      },
       { href: '/administration/roles', labelKey: 'nav.roles', permission: PERMISSIONS.roleRead },
       {
         href: '/administration/permissions',
@@ -70,6 +100,9 @@ const SECTIONS: readonly {
         href: '/administration/numbering-rules',
         labelKey: 'nav.numberingRules',
         permission: PERMISSIONS.settingsManage,
+        // Numbering, taxes and currencies are one settings-backed screen, which
+        // refuses without the company settings read (`SettingsBackedScreen.tsx`).
+        alsoRequires: [PERMISSIONS.companyRead],
       },
       {
         href: '/administration/taxes',
@@ -77,11 +110,13 @@ const SECTIONS: readonly {
         // See navigation.ts: the screen's operations require settings
         // management, not `org.tax.manage` (P1-26-F-029).
         permission: PERMISSIONS.settingsManage,
+        alsoRequires: [PERMISSIONS.companyRead],
       },
       {
         href: '/administration/currencies',
         labelKey: 'nav.currencies',
         permission: PERMISSIONS.settingsManage,
+        alsoRequires: [PERMISSIONS.companyRead],
       },
       {
         href: '/administration/languages',
@@ -92,6 +127,9 @@ const SECTIONS: readonly {
         href: '/administration/system-settings',
         labelKey: 'nav.systemSettings',
         permission: PERMISSIONS.settingsManage,
+        // The page draws the company panel, the branch panel, or both, and
+        // refuses only when neither read is held (`system-settings/page.tsx`).
+        requiresAnyOf: [PERMISSIONS.companyRead, PERMISSIONS.branchRead],
       },
       {
         href: '/administration/appointment-setup',
@@ -127,8 +165,12 @@ export default async function AdministrationPage({
 
   const sections = SECTIONS.map((section) => ({
     ...section,
-    entries: section.entries.filter((entry) =>
-      holds(session.permissions, entry.permission as AdministrationPermission)
+    entries: section.entries.filter(
+      (entry) =>
+        holds(session.permissions, entry.permission) &&
+        (entry.alsoRequires ?? []).every((code) => holds(session.permissions, code)) &&
+        (entry.requiresAnyOf === undefined ||
+          entry.requiresAnyOf.some((code) => holds(session.permissions, code)))
     ),
   })).filter((section) => section.entries.length > 0);
 

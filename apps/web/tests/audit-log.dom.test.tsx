@@ -1,10 +1,27 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { flattenNavigation } from '@/config/navigation';
+import { ADMINISTRATION_PERMISSIONS } from '@/features/administration/shared/permissions';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 import { CLIENT_READ_TIMEOUT_MS, clientReadTimeoutMs } from '@/lib/api/read-budget';
-import { renderLtr, renderRtl } from './render';
+import { endOfDay, startOfDay } from '@/lib/branch-time';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  branchSnapshot,
+  inBranch,
+  renderLtr,
+  renderRtl,
+} from './render';
 
 /**
  * The audit log, rendered as a report (P1-31, `FE-015`, decision `D-6`).
@@ -20,6 +37,20 @@ import { renderLtr, renderRtl } from './render';
  *
  * Company/branch choices use authorized directory rows and the existing paired
  * resource-query contract. Direct Server Action calls recheck pair membership.
+ *
+ * Since `P1-32-PRE-OD-ADM6` the screen is on Material UI (the operational grid,
+ * the form fields, the date pickers, the states and the drawer), so every render
+ * goes under `UiFoundationProvider`, as the locale layout mounts it. The
+ * properties added with it: people are named from the read and never by an
+ * identifier, with a truthful sentence where a name is absent; times and the
+ * window are on the working branch's clock, or UTC without one, and the clock is
+ * named; the grid walks the server's cursor; a refused read is a refusal; and
+ * the detail drawer reads one record and names its people.
+ *
+ * The administration hub, the audit log's parent route, is held here too: its
+ * departments and employees entries, and that every entry is shown exactly on
+ * the codes its page needs — its navigation entry's code, plus any further code
+ * the page refuses without — and hidden without them.
  */
 
 const EN = en as Record<string, string>;
@@ -52,11 +83,26 @@ vi.mock('@/features/authentication/api/session', () => ({
   requireSession: async () => ({ permissions: PERMISSIONS, email: 'reviewer@test.local' }),
 }));
 
+/** Under the Material foundation, as the locale layout mounts it. */
+function withMui(ui: ReactElement, locale: 'en' | 'ar' = 'en'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+
 const { AuditLogScreen } =
   await import('@/features/administration/audit/components/AuditLogScreen');
-const { DEFAULT_WINDOW_DAYS } = await import('@/features/administration/audit/types');
+const { DEFAULT_WINDOW_DAYS, MAX_WINDOW_DAYS } =
+  await import('@/features/administration/audit/types');
+const { openingWindow, rangeProblem } = await import('@/features/administration/audit/range');
+const { NAMED_AUDIT_ACTIONS, NAMED_AUDIT_ENTITIES } =
+  await import('@/features/administration/audit/labels');
 type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<React.ReactNode>;
 const AuditLogPage = (await import('@/app/[locale]/(dashboard)/administration/audit-log/page'))
+  .default as unknown as RoutePage;
+const AdministrationPage = (await import('@/app/[locale]/(dashboard)/administration/page'))
   .default as unknown as RoutePage;
 
 const ACTOR_ID = '11111111-1111-4111-8111-111111111111';
@@ -75,6 +121,8 @@ const row = {
   correlationId: 'corr-9',
   requestRef: null,
   occurredAt: '2026-09-05T09:00:00.000Z',
+  actorDisplayName: null as string | null,
+  subjectDisplayName: null as string | null,
 };
 
 const okPage = (rows: readonly unknown[]) => ({
@@ -95,13 +143,15 @@ beforeEach(() => {
 
 function renderScreen(over: Record<string, unknown> = {}) {
   return renderLtr(
-    <AuditLogScreen
-      locale="en"
-      messages={en}
-      initialFrom="2026-09-01"
-      initialTo="2026-09-08"
-      {...over}
-    />
+    withMui(
+      <AuditLogScreen
+        locale="en"
+        messages={en}
+        initialFrom="2026-09-01"
+        initialTo="2026-09-08"
+        {...over}
+      />
+    )
   );
 }
 
@@ -143,6 +193,131 @@ describe('the window the screen opens on', () => {
     renderScreen();
     await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
     expect(lastFilters()).toEqual({ action: '', entityType: '', actorId: '' });
+  });
+});
+
+/**
+ * The width rule, as the service applies it (`resolveRange`): the instants the
+ * read sends may be at most 92 × 24 hours apart. America/New_York leaves summer
+ * time on 2026-11-01 and enters it on 2026-03-08, so a window of whole days
+ * there is an hour longer, or shorter, than its count of days.
+ */
+describe('the window is measured as the service measures it (P1-32-PRE-OD-ADM6)', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+
+  it('takes 92 whole days and refuses 93 on a clock without daylight saving', () => {
+    expect(MAX_WINDOW_DAYS).toBe(92);
+    expect(rangeProblem({ from: '2026-01-01', to: '2026-04-02' }, 'UTC')).toBeNull();
+    expect(rangeProblem({ from: '2026-01-01', to: '2026-04-03' }, 'UTC')).toBe(
+      'audit.range.tooWide'
+    );
+    expect(rangeProblem({ from: '2026-01-01', to: '2026-04-02' }, 'Asia/Riyadh')).toBeNull();
+  });
+
+  it('refuses 92 calendar days that cross a fall back, because they are 92 days and an hour', () => {
+    // 1 September to 1 December: 30 + 31 + 30 + 1 = 92 calendar days.
+    expect(rangeProblem({ from: '2026-09-01', to: '2026-12-01' }, 'America/New_York')).toBe(
+      'audit.range.tooWide'
+    );
+    // The same days on UTC, and one day fewer on the same clock, are in bounds.
+    expect(rangeProblem({ from: '2026-09-01', to: '2026-12-01' }, 'UTC')).toBeNull();
+    expect(rangeProblem({ from: '2026-09-02', to: '2026-12-01' }, 'America/New_York')).toBeNull();
+  });
+
+  it('takes 92 calendar days that cross a spring forward, and still refuses 93', () => {
+    expect(rangeProblem({ from: '2026-01-01', to: '2026-04-02' }, 'America/New_York')).toBeNull();
+    expect(rangeProblem({ from: '2026-01-01', to: '2026-04-03' }, 'America/New_York')).toBe(
+      'audit.range.tooWide'
+    );
+  });
+
+  it('agrees with the service on the instants the read sends', () => {
+    // What the screen would send for the fall-back window, and the service's
+    // own test against it: wider than 92 × 24 hours.
+    const from = startOfDay('America/New_York', '2026-09-01');
+    const to = endOfDay('America/New_York', '2026-12-01');
+    expect(from.toISOString()).toBe('2026-09-01T04:00:00.000Z');
+    expect(to.toISOString()).toBe('2026-12-02T04:59:59.999Z');
+    expect(to.getTime() - from.getTime() - MAX_WINDOW_DAYS * DAY).toBe(60 * 60 * 1000 - 1);
+  });
+
+  it('says an unfinished day and a reversed pair before it measures anything', () => {
+    expect(rangeProblem({ from: '2026-09-0', to: '2026-09-08' }, 'UTC')).toBe(
+      'audit.range.incomplete'
+    );
+    expect(rangeProblem({ from: '2026-09-08', to: '2026-09-01' }, 'UTC')).toBe('audit.range.order');
+    expect(rangeProblem({ from: '2026-09-08', to: '2026-09-08' }, 'America/New_York')).toBeNull();
+  });
+
+  it('opens on seven whole days, today the last of them', () => {
+    expect(DEFAULT_WINDOW_DAYS).toBe(7);
+    expect(openingWindow('UTC', new Date('2026-09-08T10:00:00.000Z'))).toEqual({
+      from: '2026-09-02',
+      to: '2026-09-08',
+    });
+    // Already the ninth in Riyadh.
+    expect(openingWindow('Asia/Riyadh', new Date('2026-09-08T22:30:00.000Z'))).toEqual({
+      from: '2026-09-03',
+      to: '2026-09-09',
+    });
+  });
+
+  it('says a window too wide for the service on the last day, and reads nothing for it', async () => {
+    const user = userEvent.setup();
+    const newYork = { ...TEST_BRANCH, timezone: 'America/New_York' };
+    renderLtr(
+      withMui(
+        inBranch(
+          <AuditLogScreen
+            locale="en"
+            messages={en}
+            initialFrom="2026-09-01"
+            initialTo="2026-09-08"
+          />,
+          { snapshot: branchSnapshot([newYork]) }
+        )
+      )
+    );
+    await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
+    const to = screen.getByRole('group', { name: labelled('audit.to') });
+    await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+    // Day, month, year: 1 December 2026, 92 calendar days after 1 September.
+    await user.keyboard('01122026');
+    expect(await screen.findByText(EN['audit.range.tooWide'] as string)).toBeVisible();
+    expect(to).toHaveAttribute('aria-invalid', 'true');
+    // Days typed on the way may be read; the refused window never is.
+    const ends = listAuditEvents.mock.calls.map((call) => (call[2] as { to: string }).to);
+    expect(ends).not.toContain('2026-12-02T04:59:59.999Z');
+    expect(lastRange().from).toBe('2026-09-01T04:00:00.000Z');
+  });
+});
+
+/** A read held in flight, released by the case. */
+function pendingRead() {
+  let release: (value: unknown) => void = () => undefined;
+  const pending = new Promise((resolve) => {
+    release = resolve;
+  });
+  return { pending, release: () => release(okPage([row])) };
+}
+
+describe('one read at a time from the filter form (P1-32-PRE-OD-ADM6)', () => {
+  it('holds Apply while a read is in flight, and gives it back when the read settles', async () => {
+    const first = pendingRead();
+    listAuditEvents.mockReturnValueOnce(first.pending);
+    renderScreen();
+    const applyButton = within(filterForm()).getByRole('button', {
+      name: EN['audit.filter.apply'] as string,
+    });
+    await waitFor(() => expect(listAuditEvents).toHaveBeenCalledTimes(1));
+    expect(applyButton).toBeDisabled();
+    // Enter in a box does not submit around the held button either.
+    fireEvent.submit(filterForm());
+    expect(listAuditEvents).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      first.release();
+    });
+    await waitFor(() => expect(applyButton).toBeEnabled());
   });
 });
 
@@ -271,7 +446,15 @@ describe('clearing the criteria', () => {
 describe('Arabic', () => {
   it('names every criterion and both buttons in Arabic', async () => {
     renderRtl(
-      <AuditLogScreen locale="ar" messages={ar} initialFrom="2026-09-01" initialTo="2026-09-08" />
+      withMui(
+        <AuditLogScreen
+          locale="ar"
+          messages={ar}
+          initialFrom="2026-09-01"
+          initialTo="2026-09-08"
+        />,
+        'ar'
+      )
     );
     await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
     const form = screen.getByRole('form', { name: AR['audit.filter.formLabel'] as string });
@@ -289,7 +472,15 @@ describe('Arabic', () => {
 
   it('still states in Arabic that no export exists', async () => {
     renderRtl(
-      <AuditLogScreen locale="ar" messages={ar} initialFrom="2026-09-01" initialTo="2026-09-08" />
+      withMui(
+        <AuditLogScreen
+          locale="ar"
+          messages={ar}
+          initialFrom="2026-09-01"
+          initialTo="2026-09-08"
+        />,
+        'ar'
+      )
     );
     await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
     expect(screen.getByText(new RegExp(escape(AR['audit.noExport'] as string)))).toBeVisible();
@@ -365,7 +556,7 @@ describe('who: found by name for a caller holding the user read (route sweep B3)
     ] as const) {
       PERMISSIONS = permissions;
       const view = renderLtr(
-        (await AuditLogPage({ params: Promise.resolve({ locale: 'en' }) })) as never
+        withMui((await AuditLogPage({ params: Promise.resolve({ locale: 'en' }) })) as never)
       );
       await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
       expect(screen.queryByTestId('audit-actor-picker') !== null).toBe(searchable);
@@ -380,7 +571,9 @@ describe('who: found by name for a caller holding the user read (route sweep B3)
 describe('the /administration/audit-log route page decides before it reads', () => {
   it('refuses without the audit code, and issues no read', async () => {
     PERMISSIONS = [];
-    renderLtr((await AuditLogPage({ params: Promise.resolve({ locale: 'en' }) })) as never);
+    renderLtr(
+      withMui((await AuditLogPage({ params: Promise.resolve({ locale: 'en' }) })) as never)
+    );
     expect(screen.getByText(EN['state.denied.title'] as string)).toBeVisible();
     expect(listAuditEvents).not.toHaveBeenCalled();
     expect(readAuditScopeOptions).not.toHaveBeenCalled();
@@ -388,13 +581,15 @@ describe('the /administration/audit-log route page decides before it reads', () 
 
   it('reads a seven-day window with the code held, computed on the server', async () => {
     PERMISSIONS = ['iam.audit.view'];
-    renderLtr((await AuditLogPage({ params: Promise.resolve({ locale: 'en' }) })) as never);
+    renderLtr(
+      withMui((await AuditLogPage({ params: Promise.resolve({ locale: 'en' }) })) as never)
+    );
     await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
     const { from, to } = lastRange();
-    const days = (Date.parse(to) - Date.parse(from)) / (24 * 60 * 60 * 1000);
-    // The screen widens the given dates to whole days, so the measured span is
-    // the window plus the last day's tail rather than exactly seven.
-    expect(Math.floor(days)).toBe(DEFAULT_WINDOW_DAYS);
+    // Seven whole days on the clock in force (UTC here), today the last: the
+    // read runs from the first day's start to the last millisecond of today.
+    expect(Date.parse(to) + 1 - Date.parse(from)).toBe(DEFAULT_WINDOW_DAYS * 24 * 60 * 60 * 1000);
+    expect(to.slice(0, 10)).toBe(new Date().toISOString().slice(0, 10));
     expect(lastFilters()).toEqual({ action: '', entityType: '', actorId: '' });
   });
 });
@@ -501,13 +696,16 @@ describe('authorized company and branch selection', () => {
 
   it('names company and branch choices in Arabic', async () => {
     renderRtl(
-      <AuditLogScreen
-        locale="ar"
-        messages={ar}
-        initialFrom="2026-09-01"
-        initialTo="2026-09-08"
-        scopeOptions={scopeOptions}
-      />
+      withMui(
+        <AuditLogScreen
+          locale="ar"
+          messages={ar}
+          initialFrom="2026-09-01"
+          initialTo="2026-09-08"
+          scopeOptions={scopeOptions}
+        />,
+        'ar'
+      )
     );
     await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
     expect(screen.getByLabelText(labelledAr('audit.filter.company'))).toBeVisible();
@@ -589,5 +787,653 @@ describe('authorized company and branch selection', () => {
     expect(
       apiGet.mock.calls.some(([path]) => String(path).startsWith('/api/v1/audit-events'))
     ).toBe(false);
+  });
+});
+
+describe('people by name, never by identifier (P1-32-PRE-OD-ADM6)', () => {
+  const SYSTEM_ID = '33333333-3333-4333-8333-333333333333';
+  const SUBJECT_ID = '44444444-4444-4444-8444-444444444444';
+  const named = { ...row, actorDisplayName: 'Rana Saleh' };
+  const unnamed = { ...row, id: SYSTEM_ID, seq: '4097' };
+  const bySystem = {
+    ...row,
+    id: '55555555-5555-4555-8555-555555555555',
+    seq: '4098',
+    actorId: null,
+    actorKind: 'system',
+  };
+  const aboutAccount = {
+    ...row,
+    id: '66666666-6666-4666-8666-666666666666',
+    seq: '4099',
+    actorDisplayName: 'Rana Saleh',
+    action: 'iam.user.updated',
+    entityType: 'iam.user_account',
+    entityId: SUBJECT_ID,
+    subjectDisplayName: 'Omar Haddad',
+  };
+
+  function grid(): HTMLElement {
+    return screen.getByRole('grid', { name: EN['audit.title'] as string });
+  }
+
+  it('names the actor and the account a record is about, and prints no identifier', async () => {
+    listAuditEvents.mockResolvedValue(okPage([named, aboutAccount]));
+    renderScreen({ canReadUsers: true });
+    expect(await within(grid()).findAllByText('Rana Saleh')).toHaveLength(2);
+    expect(within(grid()).getByText('Omar Haddad')).toBeVisible();
+    expect(document.body.textContent).not.toContain(ACTOR_ID);
+    expect(document.body.textContent).not.toContain(SUBJECT_ID);
+    // Names come from the read: the screen asks nobody else for them.
+    expect(apiGet).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('audit-names-withheld')).toBeNull();
+  });
+
+  it('says a name is not available, or that the system acted, instead of an identifier', async () => {
+    listAuditEvents.mockResolvedValue(okPage([unnamed, bySystem]));
+    renderScreen();
+    expect(await within(grid()).findByText(EN['audit.actor.unnamed'] as string)).toBeVisible();
+    expect(within(grid()).getByText(EN['audit.actor.system'] as string)).toBeVisible();
+    expect(document.body.textContent).not.toContain(ACTOR_ID);
+    // Without the user read, the screen says why names are absent.
+    expect(screen.getByTestId('audit-names-withheld')).toHaveTextContent(
+      EN['audit.actor.namesWithheld'] as string
+    );
+  });
+
+  it('says the same in Arabic, right to left', async () => {
+    listAuditEvents.mockResolvedValue(okPage([unnamed, bySystem, aboutAccount]));
+    renderRtl(
+      withMui(
+        <AuditLogScreen
+          locale="ar"
+          messages={ar}
+          initialFrom="2026-09-01"
+          initialTo="2026-09-08"
+        />,
+        'ar'
+      )
+    );
+    const table = await screen.findByRole('grid', { name: AR['audit.title'] as string });
+    expect(await within(table).findByText(AR['audit.actor.unnamed'] as string)).toBeVisible();
+    expect(within(table).getByText(AR['audit.actor.system'] as string)).toBeVisible();
+    expect(within(table).getByText('Omar Haddad')).toBeVisible();
+    expect(screen.getByTestId('audit-clock')).toHaveTextContent(AR['audit.clock.utc'] as string);
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(document.body.textContent).not.toContain(ACTOR_ID);
+  });
+
+  it('opens one record in a drawer that names its people, and closes back to the grid', async () => {
+    listAuditEvents.mockResolvedValue(okPage([aboutAccount]));
+    readAuditEvent.mockResolvedValue({
+      status: 'ok',
+      record: { ...aboutAccount, details: [] },
+      correlationId: 'corr-d',
+    });
+    const user = userEvent.setup();
+    renderScreen({ canReadUsers: true });
+    await user.click(
+      await within(grid()).findByRole('button', {
+        name: new RegExp(
+          `^${escape(EN['admin.open'] as string)} ${escape(EN['audit.event.iamUserUpdated'] as string)}`
+        ),
+      })
+    );
+    const drawer = await screen.findByRole('dialog', { name: EN['audit.detail.title'] as string });
+    expect(readAuditEvent).toHaveBeenCalledWith(aboutAccount.id);
+    expect(await within(drawer).findByText('Rana Saleh')).toBeVisible();
+    expect(within(drawer).getByText('Omar Haddad')).toBeVisible();
+    expect(within(drawer).getByText(EN['audit.detail.noDetails'] as string)).toBeVisible();
+    expect(drawer.textContent).not.toContain(SUBJECT_ID);
+    await user.click(within(drawer).getByRole('button', { name: EN['admin.close'] as string }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('says a failed record read as itself in the drawer, with a retry', async () => {
+    readAuditEvent.mockResolvedValue({ status: 'unavailable', record: null, correlationId: 'c-x' });
+    const user = userEvent.setup();
+    renderScreen();
+    await user.click(
+      await within(grid()).findByRole('button', {
+        name: new RegExp(`^${escape(EN['admin.open'] as string)}`),
+      })
+    );
+    const drawer = await screen.findByRole('dialog', { name: EN['audit.detail.title'] as string });
+    expect(await within(drawer).findByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    const before = readAuditEvent.mock.calls.length;
+    await user.click(within(drawer).getByRole('button', { name: EN['action.retry'] as string }));
+    await waitFor(() => expect(readAuditEvent.mock.calls.length).toBeGreaterThan(before));
+  });
+});
+
+/**
+ * Codes in words (`P1-32-PRE-OD-ADM6`): the action, the record type and each
+ * detail's field are named from the catalogue, in both languages; a code the
+ * catalogue does not name is said by its part of the product, or plainly; and
+ * a code is printed only in the drawer, under a label saying it is a reference
+ * for support.
+ */
+describe('audit codes in words, never as the primary text (P1-32-PRE-OD-ADM6)', () => {
+  const roleChanged = {
+    ...row,
+    id: '88888888-8888-4888-8888-888888888888',
+    seq: '5000',
+    action: 'iam.role.updated',
+    entityType: 'iam.role',
+  };
+  const inventoryCount = {
+    ...row,
+    id: '99999999-9999-4999-8999-999999999999',
+    seq: '5001',
+    action: 'inv.stock_count.closed',
+    entityType: 'inv.stock_count',
+  };
+  const unknownPart = {
+    ...row,
+    id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    seq: '5002',
+    action: 'zzz.thing.happened',
+    entityType: 'zzz.thing',
+  };
+  const RAW = [
+    'iam.audit.viewed',
+    'iam.audit_record',
+    'iam.role.updated',
+    'iam.role',
+    'inv.stock_count.closed',
+    'inv.stock_count',
+    'zzz.thing.happened',
+    'zzz.thing',
+  ];
+
+  function grid(name = EN['audit.title'] as string): HTMLElement {
+    return screen.getByRole('grid', { name });
+  }
+
+  it('names known actions and record types, and says unknown ones by their part of the product', async () => {
+    listAuditEvents.mockResolvedValue(okPage([row, roleChanged, inventoryCount, unknownPart]));
+    renderScreen();
+    const table = await screen.findByRole('grid', { name: EN['audit.title'] as string });
+    expect(
+      await within(table).findByText(EN['audit.event.iamAuditViewed'] as string)
+    ).toBeVisible();
+    expect(within(table).getByText(EN['audit.record.iamAuditRecord'] as string)).toBeVisible();
+    expect(within(table).getByText(EN['audit.event.iamRoleUpdated'] as string)).toBeVisible();
+    expect(within(table).getByText(EN['audit.record.iamRole'] as string)).toBeVisible();
+    expect(within(table).getByText('Another change in inventory')).toBeVisible();
+    expect(within(table).getByText('A record in inventory')).toBeVisible();
+    expect(within(table).getByText(EN['audit.event.other'] as string)).toBeVisible();
+    expect(within(table).getByText(EN['audit.record.other'] as string)).toBeVisible();
+    for (const code of RAW) expect(table.textContent, code).not.toContain(code);
+    // The row action names the action in words too.
+    expect(
+      within(grid()).getAllByRole('button', {
+        name: new RegExp(
+          `^${escape(EN['admin.open'] as string)} ${escape(EN['audit.event.iamRoleUpdated'] as string)}`
+        ),
+      })
+    ).toHaveLength(1);
+    // The support reference keeps its label.
+    expect(
+      within(table).getByRole('columnheader', { name: EN['audit.column.correlationId'] as string })
+    ).toBeVisible();
+  });
+
+  it('names them in Arabic, right to left', async () => {
+    listAuditEvents.mockResolvedValue(okPage([roleChanged, inventoryCount, unknownPart]));
+    renderRtl(
+      withMui(
+        <AuditLogScreen
+          locale="ar"
+          messages={ar}
+          initialFrom="2026-09-01"
+          initialTo="2026-09-08"
+        />,
+        'ar'
+      )
+    );
+    const table = await screen.findByRole('grid', { name: AR['audit.title'] as string });
+    expect(
+      await within(table).findByText(AR['audit.event.iamRoleUpdated'] as string)
+    ).toBeVisible();
+    expect(within(table).getByText(AR['audit.record.iamRole'] as string)).toBeVisible();
+    expect(
+      within(table).getByText(
+        (AR['audit.event.otherIn'] as string).replace('{area}', AR['audit.area.inv'] as string)
+      )
+    ).toBeVisible();
+    expect(
+      within(table).getByText(
+        (AR['audit.record.otherIn'] as string).replace('{area}', AR['audit.area.inv'] as string)
+      )
+    ).toBeVisible();
+    expect(within(table).getByText(AR['audit.event.other'] as string)).toBeVisible();
+    for (const code of RAW) expect(table.textContent, code).not.toContain(code);
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('puts words first in the drawer, and each code only under a label naming it a support reference', async () => {
+    listAuditEvents.mockResolvedValue(okPage([roleChanged]));
+    readAuditEvent.mockResolvedValue({
+      status: 'ok',
+      record: {
+        ...roleChanged,
+        details: [
+          {
+            fieldName: 'status',
+            oldValueMasked: 'active',
+            newValueMasked: 'archived',
+            valueClassification: 'internal',
+          },
+          {
+            fieldName: 'role_code',
+            oldValueMasked: null,
+            newValueMasked: 'R-1',
+            valueClassification: 'internal',
+          },
+        ],
+      },
+      correlationId: 'corr-d',
+    });
+    const user = userEvent.setup();
+    renderScreen();
+    await user.click(
+      await within(grid()).findByRole('button', {
+        name: new RegExp(`^${escape(EN['admin.open'] as string)}`),
+      })
+    );
+    const drawer = await screen.findByRole('dialog', { name: EN['audit.detail.title'] as string });
+    expect(
+      await within(drawer).findByText(EN['audit.event.iamRoleUpdated'] as string)
+    ).toBeVisible();
+    expect(within(drawer).getByText(EN['audit.record.iamRole'] as string)).toBeVisible();
+    const term = (key: string) => {
+      const dt = within(drawer).getByText(EN[key] as string, { selector: 'dt' });
+      return dt.nextElementSibling as HTMLElement;
+    };
+    expect(term('audit.detail.actionCode')).toHaveTextContent('iam.role.updated');
+    expect(term('audit.detail.entityCode')).toHaveTextContent(/^iam\.role$/);
+    expect(term('audit.column.correlationId')).toHaveTextContent('corr-9');
+    // A named field is said in words, with no code; an unnamed one is "Another
+    // detail" with its code under the support label.
+    const details = within(drawer).getAllByRole('listitem');
+    expect(details).toHaveLength(2);
+    expect(details[0]).toHaveTextContent(EN['audit.field.status'] as string);
+    expect(
+      within(details[0] as HTMLElement).queryByText(EN['audit.detail.fieldCode'] as string)
+    ).toBeNull();
+    expect(details[1]).toHaveTextContent(EN['audit.field.other'] as string);
+    expect(details[1]).toHaveTextContent(`${EN['audit.detail.fieldCode'] as string} role_code`);
+  });
+
+  it('names only codes the service writes, under the record type it writes them with', () => {
+    const catalogue = readFileSync(
+      join(process.cwd(), '..', 'api', 'src', 'server', 'auth', 'audit-actions.ts'),
+      'utf8'
+    );
+    const written = new Map<string, string>();
+    for (const match of catalogue.matchAll(
+      /code: '([^']+)',\s*class: '[a-z]+',\s*entityType: '([^']+)'/g
+    )) {
+      written.set(match[1] as string, match[2] as string);
+    }
+    expect(written.size).toBeGreaterThan(100);
+    const entities = new Set(written.values());
+    for (const code of NAMED_AUDIT_ACTIONS) {
+      expect(written.has(code), `${code} is a code the service writes`).toBe(true);
+    }
+    for (const type of NAMED_AUDIT_ENTITIES) {
+      expect(entities.has(type), `${type} is a record type the service writes`).toBe(true);
+    }
+    // Every identity, access and organisation action and record type is named.
+    for (const [code, type] of written) {
+      if (!/^(iam|org)\./.test(code)) continue;
+      expect(NAMED_AUDIT_ACTIONS, `${code} is named`).toContain(code);
+      expect(NAMED_AUDIT_ENTITIES, `${type} is named`).toContain(type);
+    }
+  });
+});
+
+describe('the clock the log is read and drawn on (P1-32-PRE-OD-ADM6)', () => {
+  /** The times drawn on `zone`'s clock inside `root`, as written. */
+  const momentsIn = (root: HTMLElement, zone: string) =>
+    [...root.querySelectorAll(`[data-moment-zone="${zone}"] > bdi:first-child`)].map(
+      (node) => node.textContent ?? ''
+    );
+
+  function mountInBranch(snapshot = branchSnapshot()) {
+    return renderLtr(
+      withMui(
+        inBranch(
+          <>
+            <BranchSwitch to="all" label="everywhere" />
+            <AuditLogScreen
+              locale="en"
+              messages={en}
+              initialFrom="2026-09-01"
+              initialTo="2026-09-08"
+            />
+          </>,
+          { snapshot }
+        )
+      )
+    );
+  }
+
+  it('reads whole days and draws every time on the working branch clock, and names it', async () => {
+    mountInBranch();
+    await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
+    // Asia/Riyadh is three hours ahead of UTC all year.
+    expect(TEST_BRANCH.timezone).toBe('Asia/Riyadh');
+    expect(lastRange()).toEqual({
+      from: '2026-08-31T21:00:00.000Z',
+      to: '2026-09-08T20:59:59.999Z',
+    });
+    const table = screen.getByRole('grid', { name: EN['audit.title'] as string });
+    // 09:00 UTC is midday on the branch clock, written with its offset.
+    await waitFor(() =>
+      expect(momentsIn(table, 'Asia/Riyadh')).toContainEqual(expect.stringMatching(/12:00$/))
+    );
+    expect(within(table).getByText('GMT+3')).toBeVisible();
+    expect(screen.getByTestId('audit-clock').textContent).toMatch(/GMT\+3/);
+  });
+
+  it('opens on the branch clock today when the route page gives its moment of opening', async () => {
+    renderLtr(
+      withMui(
+        inBranch(
+          <AuditLogScreen
+            locale="en"
+            messages={en}
+            initialFrom="2026-09-01"
+            initialTo="2026-09-08"
+            openedAt="2026-09-08T22:30:00.000Z"
+          />
+        )
+      )
+    );
+    await waitFor(() => expect(listAuditEvents).toHaveBeenCalled());
+    // 22:30 UTC on the eighth is already the ninth in Riyadh: the window ends
+    // on the branch's today, and today is the seventh of its seven days.
+    expect(lastRange()).toEqual({
+      from: '2026-09-02T21:00:00.000Z',
+      to: '2026-09-09T20:59:59.999Z',
+    });
+  });
+
+  it('falls back to UTC under all branches, says so, and reads the window again', async () => {
+    const user = userEvent.setup();
+    mountInBranch(branchSnapshot([TEST_BRANCH, OTHER_BRANCH]));
+    await user.click(screen.getByRole('button', { name: 'everywhere' }));
+    await waitFor(() =>
+      expect(lastRange()).toEqual({
+        from: '2026-09-01T00:00:00.000Z',
+        to: '2026-09-08T23:59:59.999Z',
+      })
+    );
+    expect(screen.getByTestId('audit-clock')).toHaveTextContent(EN['audit.clock.utc'] as string);
+    const table = screen.getByRole('grid', { name: EN['audit.title'] as string });
+    await waitFor(() =>
+      expect(momentsIn(table, 'UTC')).toContainEqual(expect.stringMatching(/09:00$/))
+    );
+    expect(within(table).getByText('UTC')).toBeVisible();
+  });
+});
+
+describe('paging, empty and refused reads on the grid (P1-32-PRE-OD-ADM6)', () => {
+  it('walks the server cursor with Next and Previous, and never counts the records', async () => {
+    listAuditEvents
+      .mockResolvedValueOnce({ ...okPage([row]), nextCursor: 'cursor-2', hasMore: true })
+      .mockResolvedValue(okPage([{ ...row, id: '77777777-7777-4777-8777-777777777777' }]));
+    const user = userEvent.setup();
+    renderScreen();
+    const next = await screen.findByRole('button', { name: EN['table.nextPage'] as string });
+    await waitFor(() => expect(next).toBeEnabled());
+    await user.click(next);
+    await waitFor(() => expect(listAuditEvents.mock.calls.length).toBeGreaterThanOrEqual(2));
+    expect(listAuditEvents.mock.calls.at(-1)?.[1]).toBe('cursor-2');
+    expect(screen.queryByText(/\bof\b \d+/)).toBeNull();
+  });
+
+  it('says a refused read as a refusal, never as an empty log', async () => {
+    listAuditEvents.mockResolvedValue({
+      status: 'denied',
+      rows: [],
+      nextCursor: null,
+      hasMore: false,
+      correlationId: 'corr-denied',
+    });
+    renderScreen();
+    expect(await screen.findByText(EN['state.denied.title'] as string)).toBeVisible();
+    expect(screen.queryByTestId('audit-empty')).toBeNull();
+    expect(screen.queryByRole('grid')).toBeNull();
+  });
+
+  it('says an empty period, and an empty filtered period with a way to clear it', async () => {
+    listAuditEvents.mockResolvedValue(okPage([]));
+    const user = userEvent.setup();
+    renderScreen();
+    expect(await screen.findByText(EN['audit.empty.title'] as string)).toBeVisible();
+    await user.type(
+      within(filterForm()).getByLabelText(labelled('audit.filter.action')),
+      'iam.audit.viewed'
+    );
+    await apply(user);
+    const empty = await screen.findByTestId('audit-empty-filtered');
+    expect(empty).toHaveTextContent(EN['audit.empty.filteredTitle'] as string);
+    await user.click(
+      within(empty).getByRole('button', { name: EN['audit.filter.clear'] as string })
+    );
+    await waitFor(() => expect(lastFilters()).toEqual({ action: '', entityType: '', actorId: '' }));
+  });
+});
+
+/**
+ * Codes a page refuses without, beyond its navigation entry's own — read from
+ * the pages themselves: departments and employees list one branch's records and
+ * refuse without the branch read; numbering rules, taxes and currencies are the
+ * one settings-backed screen, which refuses without the company settings read.
+ * `the administration hub never offers a page that refuses` below renders those
+ * pages, so an entry missing here or in the hub fails against the page itself.
+ */
+const PAGE_ALSO_REQUIRES: Record<string, readonly string[]> = {
+  '/administration/departments': ['org.branch.read'],
+  '/administration/employees': ['org.branch.read'],
+  '/administration/numbering-rules': ['org.company.read'],
+  '/administration/taxes': ['org.company.read'],
+  '/administration/currencies': ['org.company.read'],
+};
+
+/**
+ * Codes of which a page needs at least one: system settings draws the company
+ * panel, the branch panel, or both, and refuses only without either read.
+ */
+const PAGE_REQUIRES_ANY_OF: Record<string, readonly string[]> = {
+  '/administration/system-settings': ['org.company.read', 'org.branch.read'],
+};
+
+/** The route pages whose refusals the hub is checked against, rendered for real. */
+const GATED_PAGES: Record<string, () => Promise<{ default: unknown }>> = {
+  '/administration/departments': () =>
+    import('@/app/[locale]/(dashboard)/administration/departments/page'),
+  '/administration/employees': () =>
+    import('@/app/[locale]/(dashboard)/administration/employees/page'),
+  '/administration/numbering-rules': () =>
+    import('@/app/[locale]/(dashboard)/administration/numbering-rules/page'),
+  '/administration/taxes': () => import('@/app/[locale]/(dashboard)/administration/taxes/page'),
+  '/administration/currencies': () =>
+    import('@/app/[locale]/(dashboard)/administration/currencies/page'),
+  '/administration/system-settings': () =>
+    import('@/app/[locale]/(dashboard)/administration/system-settings/page'),
+};
+
+async function hubHrefs(
+  permissions: readonly string[],
+  locale: 'en' | 'ar' = 'en'
+): Promise<string[]> {
+  PERMISSIONS = permissions;
+  const ui = (await AdministrationPage({ params: Promise.resolve({ locale }) })) as never;
+  const view = locale === 'en' ? renderLtr(ui) : renderRtl(ui);
+  const hrefs = screen
+    .queryAllByRole('link')
+    .map((link) => link.getAttribute('href') ?? '')
+    .filter((href) => href.startsWith(`/${locale}/administration/`))
+    .map((href) => href.slice(`/${locale}`.length));
+  view.unmount();
+  return hrefs;
+}
+
+describe('the administration hub: departments and employees (P1-32-PRE-OD-ADM6)', () => {
+  it('offers both to an administrator holding their codes, under People and access', async () => {
+    PERMISSIONS = ['org.department.read', 'org.employee.read', 'org.branch.read'];
+    renderLtr((await AdministrationPage({ params: Promise.resolve({ locale: 'en' }) })) as never);
+    expect(
+      screen.getByRole('heading', { name: EN['admin.section.identity'] as string })
+    ).toBeVisible();
+    expect(
+      screen.getByRole('link', { name: new RegExp(`^${EN['nav.departments']}`) })
+    ).toHaveAttribute('href', '/en/administration/departments');
+    expect(
+      screen.getByRole('link', { name: new RegExp(`^${EN['nav.employees']}`) })
+    ).toHaveAttribute('href', '/en/administration/employees');
+  });
+
+  it('names both in Arabic, right to left', async () => {
+    PERMISSIONS = ['org.department.read', 'org.employee.read', 'org.branch.read'];
+    renderRtl((await AdministrationPage({ params: Promise.resolve({ locale: 'ar' }) })) as never);
+    expect(
+      screen.getByRole('link', { name: new RegExp(`^${AR['nav.departments']}`) })
+    ).toHaveAttribute('href', '/ar/administration/departments');
+    expect(
+      screen.getByRole('link', { name: new RegExp(`^${AR['nav.employees']}`) })
+    ).toHaveAttribute('href', '/ar/administration/employees');
+    expect(document.documentElement.dir).toBe('rtl');
+  });
+
+  it('hides each without its own code, and both without the branch read their pages refuse without', async () => {
+    expect(await hubHrefs(['org.employee.read', 'org.branch.read'])).toEqual([
+      '/administration/employees',
+    ]);
+    expect(await hubHrefs(['org.department.read', 'org.branch.read'])).toEqual([
+      '/administration/departments',
+    ]);
+    expect(await hubHrefs(['org.department.read', 'org.employee.read'])).toEqual([]);
+  });
+});
+
+describe('the administration hub: every entry is gated as its route is (P1-32-PRE-OD-ADM6)', () => {
+  const navigation = flattenNavigation();
+
+  it('shows nothing to a session holding no administration code', async () => {
+    expect(await hubHrefs([])).toEqual([]);
+  });
+
+  it('matches each entry to its navigation entry, shows it on exactly its codes, and hides it without each', async () => {
+    const all = [...ADMINISTRATION_PERMISSIONS];
+    const offered = await hubHrefs(all);
+    expect(offered).toEqual(
+      expect.arrayContaining([
+        '/administration/users',
+        '/administration/departments',
+        '/administration/employees',
+        '/administration/numbering-rules',
+        '/administration/system-settings',
+        '/administration/audit-log',
+      ])
+    );
+    for (const href of offered) {
+      const item = navigation.find((entry) => entry.href === href);
+      expect(item, `${href} has a navigation entry`).toBeDefined();
+      const code = item?.permission as string;
+      const allOf = [...(item?.alsoRequires ?? []), ...(PAGE_ALSO_REQUIRES[href] ?? [])];
+      const anyOf = PAGE_REQUIRES_ANY_OF[href] ?? [];
+      const minimal = [code, ...allOf, ...anyOf.slice(0, 1)];
+      expect(await hubHrefs(minimal), `${href} is shown on ${minimal.join(', ')}`).toContain(href);
+      for (const alternative of anyOf) {
+        const held = [code, ...allOf, alternative];
+        expect(await hubHrefs(held), `${href} is shown on ${held.join(', ')}`).toContain(href);
+      }
+      for (const needed of [code, ...allOf]) {
+        expect(
+          await hubHrefs(all.filter((held) => held !== needed)),
+          `${href} is hidden without ${needed}`
+        ).not.toContain(href);
+      }
+      if (anyOf.length > 0) {
+        expect(
+          await hubHrefs(all.filter((held) => !anyOf.includes(held))),
+          `${href} is hidden without any of ${anyOf.join(', ')}`
+        ).not.toContain(href);
+      }
+    }
+  });
+
+  it('hides numbering rules, taxes and currencies without the company read, and system settings without company or branch read', async () => {
+    const settings = [
+      '/administration/numbering-rules',
+      '/administration/taxes',
+      '/administration/currencies',
+    ];
+    expect(await hubHrefs(['org.settings.manage'])).toEqual([]);
+    expect(await hubHrefs(['org.settings.manage', 'org.company.read'])).toEqual([
+      ...settings,
+      '/administration/system-settings',
+    ]);
+    expect(await hubHrefs(['org.settings.manage', 'org.branch.read'])).toEqual([
+      '/administration/system-settings',
+    ]);
+  });
+});
+
+/**
+ * The hub against the pages themselves: every subset of the codes a gated page
+ * reads is rendered twice — the page, and the hub — and the hub never offers a
+ * page that would draw a refusal; with the entry's own navigation code held, it
+ * offers the page exactly when the page draws something else.
+ */
+describe('the administration hub never offers a page that refuses (P1-32-PRE-OD-ADM6)', () => {
+  const navigation = flattenNavigation();
+
+  function subsets(codes: readonly string[]): string[][] {
+    return codes.reduce<string[][]>(
+      (sets, code) => [...sets, ...sets.map((set) => [...set, code])],
+      [[]]
+    );
+  }
+
+  async function pageRefuses(href: string, permissions: readonly string[]): Promise<boolean> {
+    PERMISSIONS = permissions;
+    const loader = GATED_PAGES[href];
+    expect(loader, `${href} has a page to render`).toBeDefined();
+    const page = (await (loader as () => Promise<{ default: unknown }>)())
+      .default as unknown as RoutePage;
+    const view = renderLtr(
+      withMui((await page({ params: Promise.resolve({ locale: 'en' }) })) as never)
+    );
+    const refused = screen.queryByText(EN['state.denied.title'] as string) !== null;
+    view.unmount();
+    return refused;
+  }
+
+  it.each(Object.keys(GATED_PAGES))('%s', async (href) => {
+    apiGet.mockResolvedValue({ ok: false, kind: 'unavailable', correlationId: 'corr-page' });
+    const item = navigation.find((entry) => entry.href === href);
+    expect(item, `${href} has a navigation entry`).toBeDefined();
+    const code = item?.permission as string;
+    const read = [
+      'org.company.read',
+      'org.branch.read',
+      'org.department.read',
+      'org.employee.read',
+    ];
+    const codes = [code, ...read.filter((other) => other !== code)];
+    for (const held of subsets(codes)) {
+      const refused = await pageRefuses(href, held);
+      const offered = (await hubHrefs(held)).includes(href);
+      if (offered) expect(refused, `${href} offered on [${held.join(', ')}] refuses`).toBe(false);
+      if (held.includes(code)) {
+        expect(offered, `${href} on [${held.join(', ')}] matches its page`).toBe(!refused);
+      }
+    }
   });
 });
