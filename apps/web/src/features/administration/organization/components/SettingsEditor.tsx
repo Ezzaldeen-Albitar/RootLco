@@ -339,7 +339,8 @@ export function SettingsEditor({
             event.preventDefault();
             const id = scopeId.trim();
             if (id.length === 0) return;
-            const input = form;
+            // The key is sent exactly as its rule was looked up: trimmed.
+            const input = { ...form, settingKey: chosenKey };
             const previous = state;
             // A value the chosen key's rule refuses is refused beside its box,
             // and nothing is sent.
@@ -359,7 +360,11 @@ export function SettingsEditor({
               }
               setState(result);
               if (result.status === 'success') {
-                setForm((current) => ({ ...current, settingValue: '' }));
+                setForm((current) => ({
+                  ...current,
+                  settingKey: input.settingKey,
+                  settingValue: '',
+                }));
                 setBaseline({ ...input, settingValue: '' });
                 setGeneration((value) => value + 1);
               }
@@ -479,6 +484,11 @@ const CURRENCY_CODE = /^[A-Z]{3}$/;
  * (`readCurrencyChoices`). When the platform's currency list was read, each code
  * must be one it holds; when it was not, the shape is all that can be checked,
  * and nothing is refused for a list the screen does not have.
+ *
+ * This check is the screen's alone: the company settings write stores any
+ * well-formed value for this key without checking it, and an empty list (no
+ * enabled currency) passes here as it passes there. Neither is given a rule of
+ * its own until one is decided (recorded in route-checklist.md, ADM-5).
  */
 function ruleRefusal(
   valueRule: ValueRule | undefined,

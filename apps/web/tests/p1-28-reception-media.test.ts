@@ -1483,7 +1483,9 @@ describe('P1-28 — P1-OD-025 is recorded as RESOLVED, and no copy says otherwis
     // own number waits on DOC01 (ADR-023 D10) — the read-only Numbering rules
     // screen says so beside the fact that numbering formats have no operation
     // (F-003) — and tax classes and rates have no operation while ACC01 is open,
-    // which the read-only Taxes screen says.
+    // which the read-only Taxes screen says. The two ids are records, not copy:
+    // the strings say a decision is pending without naming it, and the
+    // matchers above match that wording.
     const expected = [
       'crm.duplicates.mergePendingDecision',
       'inventory.categories.readOnly.body',

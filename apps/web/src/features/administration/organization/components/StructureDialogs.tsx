@@ -430,6 +430,29 @@ export function AddBranchDialog({
  * then replaced the typed draft the operator never asked to replace. The
  * request now ends when its refresh ends, whatever it brought; the draft is
  * replaced only when that refresh actually delivered a NEWER version.
+ *
+ * When a load counts as over, and what it is taken to have brought:
+ *
+ *   - The request is "in flight" only once a render has been SEEN with
+ *     `refreshing` true. Nothing is decided before that, so a newer version
+ *     already on the page from an unrelated render (a list's Try again) does
+ *     not end the request on the click's own render and drop what the refresh
+ *     then brings.
+ *   - The load is over on the first render after that with `refreshing` false,
+ *     and the version on THAT render is what the load brought: newer than the
+ *     draft's, the draft is replaced and "latest loaded" is said; otherwise the
+ *     request simply ends, the typed draft stays, and "latest loaded" is
+ *     withdrawn, because nothing newer was put in front of the operator.
+ *
+ * The assumption this rests on: `router.refresh()` inside `startTransition`
+ * keeps the transition pending until the refreshed server props are committed,
+ * so the render that ends `refreshing` is the render that carries them (the
+ * App Router's behaviour). If a pending state ever ended BEFORE the props
+ * arrived, the load would end as "nothing newer"; the props arriving later are
+ * then treated as any other render — the draft is kept, nothing claims the
+ * latest was loaded, and a save is refused as the ordinary conflict, after
+ * which a second "Load the latest version" brings them. That path is pinned in
+ * organization-structure.dom.test.tsx.
  */
 function useVersionGuard(version: number | undefined) {
   const router = useRouter();
@@ -442,20 +465,25 @@ function useVersionGuard(version: number | undefined) {
   const [latestLoaded, setLatestLoaded] = useState(false);
   const [refreshing, startRefresh] = useTransition();
   const newer = version !== undefined && (seen === undefined || version > seen);
-  const moved = requested && newer;
+  // The load is over only after it was seen in flight; what is on this render
+  // is what it brought.
+  const ended = requested && inFlight && !refreshing;
+  const moved = ended && newer;
   if (moved) {
     setSeen(version);
     setRequested(false);
     setInFlight(false);
     setConflicted(false);
     setLatestLoaded(true);
-  } else if (requested && refreshing && !inFlight) {
-    setInFlight(true);
-  } else if (requested && !refreshing && inFlight) {
+  } else if (ended) {
     // The load finished with the same version, no version, or a failure: the
-    // request is over and the typed draft stays exactly as it is.
+    // request is over, the typed draft stays exactly as it is, and nothing
+    // claims that the latest saved details are shown.
     setRequested(false);
     setInFlight(false);
+    setLatestLoaded(false);
+  } else if (requested && refreshing && !inFlight) {
+    setInFlight(true);
   }
   const loadLatest = () => {
     setRequested(true);

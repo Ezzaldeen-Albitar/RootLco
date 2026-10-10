@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState, type ReactElement } from 'react';
+import { startTransition, useState, type ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
@@ -929,6 +929,60 @@ describe('a setting value the platform will not store', () => {
   });
 });
 
+describe('a key typed with spaces around it', () => {
+  it('is checked by its rule and sent trimmed', async () => {
+    get.mockResolvedValue({ ok: true, status: 200, data: { items: [] }, correlationId: 'corr-1' });
+    send.mockResolvedValue({ ok: true, status: 201, data: {}, correlationId: 'corr-trim' });
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <SettingsEditor
+          messages={en}
+          scope="company"
+          canWrite
+          keyPrefix=""
+          valueRules={{
+            'currency.enabled_codes': {
+              rule: 'currency-codes',
+              hintKey: 'currencies.field.enabledHint',
+            },
+          }}
+          knownCodes={['JOD', 'USD']}
+        />,
+        { locale: 'en' }
+      )
+    );
+
+    const key = await screen.findByLabelText(new RegExp(`^${EN('organization.setting.key')}`));
+    await user.type(key, '  currency.enabled_codes  ');
+    await user.selectOptions(
+      screen.getByLabelText(new RegExp(`^${EN('organization.setting.type')}`)),
+      'json'
+    );
+    const value = screen.getByLabelText(new RegExp(`^${EN('organization.setting.value')}`));
+    // The rule's sentence is under the box for the trimmed key.
+    expect(screen.getByText(EN('currencies.field.enabledHint'))).toBeVisible();
+
+    await user.click(value);
+    await user.paste('["GBP"]');
+    await user.click(screen.getByRole('button', { name: EN('admin.save') }));
+    expect(await screen.findByText(EN('currencies.error.notHeld'))).toBeVisible();
+    expect(send).not.toHaveBeenCalled();
+
+    await user.clear(value);
+    await user.click(value);
+    await user.paste('["JOD"]');
+    await user.click(screen.getByRole('button', { name: EN('admin.save') }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send).toHaveBeenCalledWith('POST', expect.any(String), {
+      settingKey: 'currency.enabled_codes',
+      settingValue: ['JOD'],
+      valueType: 'json',
+      isSensitive: false,
+    });
+  });
+});
+
 describe('the settings editor when there is nothing to choose', () => {
   it('SAYS SO rather than rendering a labelled area with no control', () => {
     /*
@@ -1585,6 +1639,24 @@ describe.each(READERS)(
 const COMPANY_V: CompanyView = { ...COMPANY, recordVersion: 4 };
 const BRANCH_V: BranchView = { ...BRANCH, recordVersion: 7 };
 
+/*
+ * A refresh that resolves LATER, the way the App Router delivers one: the
+ * refresh starts an async transition that waits on the server's answer, and
+ * the new props are rendered only once it arrives — after a timer, outside the
+ * refresh call. React holds every transition entangled with a pending async
+ * action, so the dialog's own transition stays pending until that render is
+ * in: the props are committed while `refreshing` is still true, and the
+ * pending state ends on the render after.
+ */
+function slowLoad() {
+  let deliver: () => void = () => undefined;
+  const until = new Promise<void>((resolve) => {
+    deliver = resolve;
+  });
+  return { until, deliver: () => deliver() };
+}
+const afterTimer = (ms = 25) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
 const conflictFailure = {
   ok: false,
   kind: 'conflict',
@@ -1986,6 +2058,209 @@ describe.each(READERS)(
       expect(
         within(screen.getByRole('dialog')).getByRole('button', { name: M('admin.save') })
       ).toBeEnabled();
+    });
+
+    /*
+     * The same three loads, with the refresh resolving LATER: the props it
+     * brings are committed after a timer, outside the click, while the load is
+     * still pending. And the one ordering the guard does not handle in a single
+     * load — the pending state ending before the props arrive — pinned as what
+     * it actually does.
+     */
+    async function conflictedBranchEdit() {
+      send.mockResolvedValueOnce(conflictFailure);
+      const user = userEvent.setup();
+      await user.click(editButton(BRANCH.name));
+      const dialog = screen.getByRole('dialog', { name: M('organization.branch.edit') });
+      await user.type(field(dialog, 'organization.branch.city'), ' North');
+      await user.click(within(dialog).getByRole('button', { name: M('admin.save') }));
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(M('state.conflict.title'));
+      return user;
+    }
+    const loadButton = () =>
+      within(screen.getByRole('dialog')).queryByRole('button', { name: M('form.loadLatest') });
+    const saveButton = () =>
+      within(screen.getByRole('dialog')).getByRole('button', { name: M('admin.save') });
+
+    it('puts the saved values back when a later-resolving load brings a newer version', async () => {
+      const view = paint(structure(partialLists));
+      const user = await conflictedBranchEdit();
+
+      const load = slowLoad();
+      refresh.mockImplementationOnce(() => {
+        startTransition(async () => {
+          await load.until;
+          view.rerender(
+            structure({
+              ...partialLists,
+              branches: ok([{ ...BRANCH_V, city: 'Irbid', recordVersion: 8 }]),
+            })
+          );
+        });
+      });
+      await user.click(loadButton() as HTMLElement);
+      expect(refresh).toHaveBeenCalledTimes(1);
+
+      // Still loading: the typed draft is in front of the operator, Save is held
+      // and the button says it is busy.
+      expect(cityIn()).toHaveValue('Amman North');
+      expect(loadButton()).toBeDisabled();
+      expect(loadButton()).toHaveAttribute('aria-busy', 'true');
+      expect(saveButton()).toBeDisabled();
+      expect(screen.queryByText(M('organization.edit.latestLoaded'))).toBeNull();
+
+      await act(async () => {
+        await afterTimer();
+        load.deliver();
+        await load.until;
+      });
+      await waitFor(() => expect(cityIn()).toHaveValue('Irbid'));
+      expect(screen.getByText(M('organization.edit.latestLoaded'))).toBeVisible();
+      expect(saveButton()).toBeEnabled();
+    });
+
+    it('ends the request and keeps the draft when a later-resolving load brings the same version', async () => {
+      const view = paint(structure(partialLists));
+      const user = await conflictedBranchEdit();
+
+      const load = slowLoad();
+      refresh.mockImplementationOnce(() => {
+        startTransition(async () => {
+          await load.until;
+          view.rerender(structure({ ...partialLists, branches: ok([{ ...BRANCH_V }]) }));
+        });
+      });
+      await user.click(loadButton() as HTMLElement);
+      expect(loadButton()).toHaveAttribute('aria-busy', 'true');
+
+      await act(async () => {
+        await afterTimer();
+        load.deliver();
+        await load.until;
+      });
+      await waitFor(() => expect(loadButton()).toBeNull());
+      expect(cityIn()).toHaveValue('Amman North');
+      // Nothing claims the latest was loaded; the refusal the save met still stands.
+      expect(screen.queryByText(M('organization.edit.latestLoaded'))).toBeNull();
+      expect(within(screen.getByRole('dialog')).getByRole('alert')).toHaveTextContent(
+        M('state.conflict.title')
+      );
+
+      // The request is over: a later Try again that renders a newer version
+      // replaces nothing.
+      refresh.mockImplementationOnce(() => {
+        view.rerender(
+          structure({
+            ...partialLists,
+            branches: ok([{ ...BRANCH_V, city: 'Irbid', recordVersion: 8 }]),
+          })
+        );
+      });
+      await user.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: M('form.retry') })
+      );
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(cityIn()).toHaveValue('Amman North');
+      expect(screen.queryByText(M('organization.edit.latestLoaded'))).toBeNull();
+    });
+
+    it('waits for what the load brings when a newer version was already on the page', async () => {
+      const view = paint(structure(partialLists));
+      const user = await conflictedBranchEdit();
+
+      // An unrelated render (a list's Try again) has already put version 8 on
+      // the page; the draft is kept, as it must be.
+      await act(async () => {
+        view.rerender(
+          structure({
+            ...partialLists,
+            branches: ok([{ ...BRANCH_V, city: 'Irbid', recordVersion: 8 }]),
+          })
+        );
+      });
+      expect(cityIn()).toHaveValue('Amman North');
+
+      // The load the operator then asks for brings version 9. The click's own
+      // render must not end the request on version 8 and drop what follows.
+      const load = slowLoad();
+      refresh.mockImplementationOnce(() => {
+        startTransition(async () => {
+          await load.until;
+          view.rerender(
+            structure({
+              ...partialLists,
+              branches: ok([{ ...BRANCH_V, city: 'Zarqa', recordVersion: 9 }]),
+            })
+          );
+        });
+      });
+      await user.click(loadButton() as HTMLElement);
+      expect(cityIn()).toHaveValue('Amman North');
+      expect(screen.queryByText(M('organization.edit.latestLoaded'))).toBeNull();
+
+      await act(async () => {
+        await afterTimer();
+        load.deliver();
+        await load.until;
+      });
+      await waitFor(() => expect(cityIn()).toHaveValue('Zarqa'));
+      expect(screen.getByText(M('organization.edit.latestLoaded'))).toBeVisible();
+
+      send.mockResolvedValue({ ok: true, status: 200, data: {}, correlationId: 'corr-nine' });
+      await user.type(cityIn(), ' East');
+      await user.click(saveButton());
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+      expect(send).toHaveBeenLastCalledWith(
+        'PATCH',
+        `/api/v1/org/branches/${BRANCH.id}`,
+        { city: 'Zarqa East' },
+        { ifMatch: 9 }
+      );
+    });
+
+    it('needs a second load when the pending state ends before the newer props arrive', async () => {
+      const view = paint(structure(partialLists));
+      const user = await conflictedBranchEdit();
+
+      // The refresh call returns with nothing rendered, so the load ends as
+      // "nothing newer"; the newer props are only rendered after a timer.
+      await user.click(loadButton() as HTMLElement);
+      expect(refresh).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(loadButton()).toBeNull());
+      await act(async () => {
+        await afterTimer();
+      });
+      view.rerender(
+        structure({
+          ...partialLists,
+          branches: ok([{ ...BRANCH_V, city: 'Irbid', recordVersion: 8 }]),
+        })
+      );
+
+      // What actually happens: the late props are treated as any other render.
+      // The draft is kept and nothing claims the latest was loaded.
+      expect(cityIn()).toHaveValue('Amman North');
+      expect(screen.queryByText(M('organization.edit.latestLoaded'))).toBeNull();
+
+      // A save is refused as the ordinary conflict, with the draft's version.
+      send.mockResolvedValueOnce(conflictFailure);
+      await user.click(saveButton());
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+      expect(send).toHaveBeenLastCalledWith(
+        'PATCH',
+        `/api/v1/org/branches/${BRANCH.id}`,
+        { city: 'Amman North' },
+        { ifMatch: 7 }
+      );
+      expect(await within(screen.getByRole('dialog')).findByRole('alert')).toHaveTextContent(
+        M('state.conflict.title')
+      );
+
+      // A second "Load the latest version" is what brings the newer values.
+      await user.click(loadButton() as HTMLElement);
+      expect(refresh).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(cityIn()).toHaveValue('Irbid'));
+      expect(screen.getByText(M('organization.edit.latestLoaded'))).toBeVisible();
     });
 
     it('asks before Escape or Cancel throws typed work away, and keeps it on Cancel', async () => {
@@ -2412,6 +2687,8 @@ const TaxesPage = (await import('@/app/[locale]/(dashboard)/administration/taxes
 const SystemSettingsPage = (
   await import('@/app/[locale]/(dashboard)/administration/system-settings/page')
 ).default as unknown as RoutePage;
+const AdministrationHub = (await import('@/app/[locale]/(dashboard)/administration/page'))
+  .default as unknown as RoutePage;
 
 const READ_TENANT = 'org.tenant.read';
 const READ_COMPANY = 'org.company.read';
@@ -2465,6 +2742,37 @@ describe.each(READERS)('$locale: the settings screens (ADM-5)', ({ locale, M, pa
   const notice = () => screen.getByTestId('contract-gap');
   const valueBox = () =>
     screen.getByLabelText(new RegExp(`^${escapeRegExp(M('organization.setting.value'))}`));
+
+  describe('the administration hub offers each settings screen on the codes it reads with', () => {
+    const hubLinks = () =>
+      screen.queryAllByRole('link').map((link) => link.getAttribute('href') ?? '');
+    const at = (path: string) => `/${locale}/administration/${path}`;
+
+    it('shows Numbering rules, Taxes and Currencies to a reader without settings management', async () => {
+      SESSION_PERMISSIONS = [READ_TENANT, READ_COMPANY];
+      await open(AdministrationHub);
+      expect(hubLinks()).toEqual(
+        expect.arrayContaining([at('numbering-rules'), at('taxes'), at('currencies')])
+      );
+      expect(hubLinks()).not.toContain(at('system-settings'));
+    });
+
+    it('shows Numbering rules and Taxes to a reader of branches alone, and not Currencies', async () => {
+      SESSION_PERMISSIONS = [READ_BRANCH];
+      await open(AdministrationHub);
+      expect(hubLinks()).toEqual(expect.arrayContaining([at('numbering-rules'), at('taxes')]));
+      expect(hubLinks()).not.toContain(at('currencies'));
+    });
+
+    it('shows none of the three to a settings manager who may read none of them', async () => {
+      SESSION_PERMISSIONS = [MANAGE_SETTINGS];
+      await open(AdministrationHub);
+      expect(hubLinks()).not.toContain(at('numbering-rules'));
+      expect(hubLinks()).not.toContain(at('taxes'));
+      expect(hubLinks()).not.toContain(at('currencies'));
+      expect(hubLinks()).toContain(at('system-settings'));
+    });
+  });
 
   describe('currencies', () => {
     it('lists exactly the currencies the read published, named in the page language', async () => {
@@ -2617,11 +2925,14 @@ describe.each(READERS)('$locale: the settings screens (ADM-5)', ({ locale, M, pa
       stored: 'tax.code',
     },
   ])('$name', ({ route, gapKey, decision, stored }) => {
-    it('names what is not available and the decision it waits on', async () => {
+    it('names what is not available and that it waits on a decision, without the internal id', async () => {
       SESSION_PERMISSIONS = [READ_COMPANY, READ_BRANCH, MANAGE_SETTINGS];
       await open(route());
       expect(notice()).toHaveTextContent(M(gapKey));
-      expect(notice()).toHaveTextContent(decision);
+      // The decision's id is a record for the team, kept in code comments and
+      // the capability records; the operator reads that a decision is pending.
+      expect(M(gapKey)).not.toContain(decision);
+      expect(notice()).not.toHaveTextContent(decision);
       expect(notice()).toHaveTextContent(M('admin.contractGap.settingsShownOnly'));
       expect(notice()).not.toHaveTextContent(M('admin.contractGap.settingsBacked'));
     });
