@@ -18,7 +18,9 @@ const nextConfig: NextConfig = {
   // rebuilds the proxy's URL from a parsed query object, which cannot hold a
   // `__proto__` key, so the proxy could not refuse `?__proto__=x` on the two
   // self-reads that take no parameter (P1-32-PRE-OD-INVF, FRX1-c). The proxy
-  // matches only those two paths; route handlers are unaffected.
+  // runs for `/api/v1/auth/*` and judges only the two self-reads; the URL a
+  // route handler reads is still rebuilt by Next (see the header of
+  // `src/proxy.ts` for what else the flag touches in Next 16.3.8).
   skipProxyUrlNormalize: true,
 
   // Conservative baseline headers. The full security-header set (a Content
