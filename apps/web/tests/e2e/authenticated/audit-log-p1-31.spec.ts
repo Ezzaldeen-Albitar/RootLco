@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { holds, readAccountKind } from './account-manifest';
 import {
   NO_HANDOFF_REASON,
@@ -47,6 +47,19 @@ function dayOffset(days: number): string {
   return new Date(Date.now() + days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+/**
+ * Types a day into a Material date picker (`P1-32-PRE-OD-ADM6`), part by part:
+ * the picker is a group of spin buttons named by its label, not a text box a
+ * value can be filled into. Both languages write the day first — day, month,
+ * year — as `typeIntoPicker` in `appointments-and-receptions.spec.ts` does.
+ */
+async function typeDay(page: Page, label: string, day: string): Promise<void> {
+  const [year, month, date] = day.split('-');
+  const group = page.getByRole('group', { name: label, exact: true });
+  await group.getByRole('spinbutton').first().click();
+  await page.keyboard.type(`${date}${month}${year}`);
+}
+
 test.describe('P1-31 audit log, over the acceptance journey writes', () => {
   test('the log records the handover completion and the warranty issue', async ({
     page,
@@ -84,12 +97,8 @@ test.describe('P1-31 audit log, over the acceptance journey writes', () => {
     //
     // Widen the range past the default seven days in both directions, so a run made just
     // after midnight cannot fall outside it, then narrow to the journey's own branch.
-    await page
-      .getByRole('textbox', { name: say(locale, 'audit.from'), exact: true })
-      .fill(dayOffset(-2));
-    await page
-      .getByRole('textbox', { name: say(locale, 'audit.to'), exact: true })
-      .fill(dayOffset(1));
+    await typeDay(page, say(locale, 'audit.from'), dayOffset(-2));
+    await typeDay(page, say(locale, 'audit.to'), dayOffset(1));
     await page
       .getByRole('combobox', { name: say(locale, 'audit.filter.company'), exact: true })
       .selectOption(h.companyId);
@@ -100,7 +109,8 @@ test.describe('P1-31 audit log, over the acceptance journey writes', () => {
       .getByRole('button', { name: say(locale, 'audit.filter.apply'), exact: true })
       .click();
 
-    const table = page.getByRole('table', { name: say(locale, 'audit.title') });
+    // The operational grid since `P1-32-PRE-OD-ADM6`: role `grid`, its cells `gridcell`.
+    const table = page.getByRole('grid', { name: say(locale, 'audit.title') });
     await expect(table).toBeVisible();
     // Each header by its WHOLE name: a header name is matched as a substring otherwise, and
     // "Action" is inside the row-actions column's own name, so the loose query matched two
@@ -130,7 +140,7 @@ test.describe('P1-31 audit log, over the acceptance journey writes', () => {
         .getByRole('button', { name: say(locale, 'audit.filter.apply'), exact: true })
         .click();
       await expect(
-        table.getByRole('cell').filter({ hasText: action }).first(),
+        table.getByRole('gridcell').filter({ hasText: action }).first(),
         `the audit log must carry ${action}; the operation declares it as its auditAction`
       ).toBeVisible();
     }

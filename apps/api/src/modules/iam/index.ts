@@ -388,7 +388,11 @@ export const iamModule = composeModule({
       ),
       organization: organizationSettings,
       organizationAdministration: new OrganizationAdministrationService(organizationAdministration),
-      auditView: new AuditViewService(audit, authorization),
+      auditView: new AuditViewService(
+        audit,
+        authorization,
+        new IdentityDirectoryService(identities)
+      ),
       // Owner directive P1-32-PRE-OD-UX. On `iamModule` rather than in a root of
       // its own: it is the working companion of `authentication.describeSession`,
       // reached by the same caller on the same screen, and a fifth composition

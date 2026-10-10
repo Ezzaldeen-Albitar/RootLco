@@ -245,7 +245,7 @@ hand-built form moves the cursor to the refused field and withdraws a corrected 
 | `/administration/roles`                                    | `apps/web/src/features/administration/access/components/RolesScreen.tsx`                 | n/a — roles are the tenant's                                                                 | pass                                                                                                | pass                                                                                                                                                                                                  | n/a — the role read publishes no free-text parameter         | n/a                                | fixed (B3-03)                                                                                                                                               | pass                                                                                                          | pass | pass |
 | `/administration/permissions`                              | `apps/web/src/features/administration/access/components/PermissionsScreen.tsx`           | n/a                                                                                          | pass — the first role's mappings are read on arrival                                                | pass — roles by name; each permission by its code and description                                                                                                                                     | n/a                                                          | n/a                                | n/a — a click per permission, no form                                                                                                                       | fixed (B3-02) — a refused or failed catalogue read is drawn through the shared states, never as an empty role | pass | pass |
 | `/administration/approval-limits`                          | `apps/web/src/features/administration/access/components/ApprovalLimitsScreen.tsx`        | pass — the company is named from the working context                                         | pass — the complete list is read on arrival                                                         | fixed (B3-02) — the person is found by name or email through `iam.user-list`; without `iam.user.read` the labelled reference stays; blocked — a listed limit names its person by reference, see below | n/a                                                          | n/a                                | fixed (B3-02, B3-03) — a missing role or person is refused on its own control                                                                               | pass                                                                                                          | pass | pass |
-| `/administration/audit-log`                                | `apps/web/src/features/administration/audit/components/AuditLogScreen.tsx`               | n/a — the log is tenant-wide; a named company and branch may narrow it                       | pass — a seven-day window, read on arrival                                                          | fixed (B3-02) — "who" is found by name or email; without `iam.user.read` the labelled, shape-checked reference stays; blocked — a row names its actor by reference, see below                         | n/a — the read takes exact criteria, applied on submit       | pass — the window and the criteria | pass — a malformed reference is said on its box                                                                                                             | pass                                                                                                          | pass | pass |
+| `/administration/audit-log`                                | `apps/web/src/features/administration/audit/components/AuditLogScreen.tsx`               | n/a — the log is tenant-wide; a named company and branch may narrow it                       | pass — a seven-day window, read on arrival                                                          | fixed (B3-02) — "who" is found by name or email; without `iam.user.read` the labelled, shape-checked reference stays; fixed (ADM6) — a row names its actor from the read                              | n/a — the read takes exact criteria, applied on submit       | pass — the window and the criteria | pass — a malformed reference is said on its box                                                                                                             | pass                                                                                                          | pass | pass |
 | `/administration/departments`                              | `apps/web/src/features/administration/departments/components/DepartmentsScreen.tsx`      | fixed (B3-02) — opens on and follows the working branch; another branch is chosen by name    | fixed (B3-02) — read on arrival                                                                     | pass                                                                                                                                                                                                  | n/a                                                          | n/a                                | fixed (B3-03)                                                                                                                                               | pass                                                                                                          | pass | pass |
 | `/administration/employees`                                | `apps/web/src/features/administration/employees/components/EmployeesScreen.tsx`          | fixed (B3-02) — as departments                                                               | fixed (B3-02)                                                                                       | pass — the login account is chosen by name                                                                                                                                                            | n/a                                                          | n/a                                | fixed (B3-03)                                                                                                                                               | pass                                                                                                          | pass | pass |
 | `/administration/organization`                             | `apps/web/src/features/administration/organization/components/OrganizationStructure.tsx` | n/a — the organisation's companies and branches                                              | pass                                                                                                | fixed (P1-32-PRE-OD-REF) — currency, time zone and language are chosen from `org.reference-values-read`                                                                                               | n/a                                                          | n/a                                | fixed (B3-03) — the company and branch dialogs, the tenant form                                                                                             | pass                                                                                                          | pass | pass |
@@ -1056,8 +1056,8 @@ interface's to make. Nothing below is worked around on the client.
 6. `/warranty/[warrantyId]` — the job is a link in words, not its number (prerequisite 8).
 7. `/administration/approval-limits` — a listed limit names its person by reference
    (prerequisite 9).
-8. `/administration/audit-log` — a row names its actor by reference; `/platform/audit` shows a
-   shortened actor reference (prerequisite 10).
+8. `/platform/audit` shows a shortened actor reference (prerequisite 10; the tenant audit log names
+   its actors since `P1-32-PRE-OD-ADM6`).
 9. `/work-orders/quality` — each row prints its job's reference beside the link in words
    (prerequisite 11).
 10. `/work-orders/[workOrderId]` and `/work-orders/[workOrderId]/closure` — a technician is named by
@@ -1113,8 +1113,12 @@ nothing below is invented on the client.
    `userId` and `roleId` only, so the approval-limits list and the quotation's discount-limits panel
    name the subject by reference. The names, resolved in the same statement and withheld without
    `iam.user.read` and `iam.role.read`, would close both.
-10. **An actor's name on an audit record.** `iam.audit-event-list` and the console's audit read
-    publish the actor's identifier only.
+10. **Resolved for the tenant audit log (`P1-32-PRE-OD-ADM6`). An actor's name on an audit
+    record.** `iam.audit-event-list` and `iam.audit-event-detail` now name the actor, and the account
+    a user-account record is about, in the same read (`actorDisplayName`, `subjectDisplayName`), one
+    lookup per page, withheld without `iam.user.read` and never across tenants. The console's audit
+    read (`platform.audit-search`, cross-tenant) still publishes the actor's identifier only; it was
+    out of this slice's scope.
 11. **A work order's number on a quality check.** The quality-control list publishes `workOrderId`
     only; the queue links to the job in words and prints the reference to tell rows apart.
 12. **The documents of a quotation.** No read lists the documents attached to a quotation or its
@@ -1750,7 +1754,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/reset-password`                                     | form fields, states                                                                           | F1–F6; S1–S4                                     | not migrated                                                                 | not run — nothing migrated                            |
 | `/administration/appointment-setup`                   | form fields, `OperationalGrid`, `ConfirmDialog`, `DecisionDialog`, states                     | F1–F6; G1–G9; S1–S4                              | built on Material UI — see "Appointments for tenant administrators"          | focused suites, en and ar                             |
 | `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated — its person picker is `EntityPicker` since `P1-32-PRE-OD-ADM3` | person picker case only, en — see `P1-32-PRE-OD-ADM3` |
-| `/administration/audit-log`                           | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated — its "Who" picker is `EntityPicker` since `P1-32-PRE-OD-ADM3`  | person picker case only, en — see `P1-32-PRE-OD-ADM3` |
+| `/administration/audit-log`                           | form fields, `OperationalGrid`, `EntityPicker`, `DateField`, drawer, states                   | F1–F6; G1–G9; P1–P10; E1–E4; S1–S4               | migrated — see below the table (ADM6)                                        | focused suites, en and ar — see below                 |
 | `/administration/currencies`                          | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
 | `/administration/departments`                         | form fields, `FormDialog`, `ConfirmDialog`, states                                            | F1–F4; D1–D4; S1–S4                              | migrated — see below the table (ADM2)                                        | focused suites, en and ar — see below                 |
 | `/administration/discount-threshold`                  | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
@@ -1758,7 +1762,7 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/administration/languages`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (ADM-1)                                       | focused suites, en and ar — see below                 |
 | `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
 | `/administration/organization`                        | form fields, `ConfirmDialog`, `ReasonDialog`, states                                          | F1–F7; D1–D5; S1–S4                              | migrated — see below the table (ADM-1)                                       | focused suites, en and ar — see below                 |
-| `/administration`                                     | none found                                                                                    | —                                                | not migrated                                                                 | not run — nothing migrated                            |
+| `/administration`                                     | none found                                                                                    | —                                                | migrated — no wrapper applies; see below the table (ADM6)                    | focused suites, en and ar — see below                 |
 | `/administration/permissions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
 | `/administration/roles`                               | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
 | `/administration/system-settings`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
@@ -6235,3 +6239,104 @@ Known limitations and recorded gaps of this slice, one line each:
   run only in the authenticated tier and were not run locally.
 - Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
   W37 needs a database and was not run locally. They run in hosted CI.
+
+### The audit log with names, and the administration hub (`P1-32-PRE-OD-ADM6`)
+
+`/administration/audit-log` moved onto the shared wrappers, and its rows name people. Until now a
+row printed the actor's account identifier in the column headed "Who" (prerequisite 10), because
+`iam.audit_records` stores an `actor_id` and no name. The hub (`/administration`) gained the
+departments and employees entries, and every entry is now shown on exactly the codes its page
+needs.
+
+**Backend.** `iam.audit-event-list` (`GET /audit-events`) and `iam.audit-event-detail`
+(`GET /audit-events/{recordId}`), both `iam.audit.view`, publish two new fields on every record,
+both required and nullable on the published type (`NamedAuditRecord` in
+`apps/api/src/modules/iam/application/audit-view-service.ts`): `actorDisplayName`, and
+`subjectDisplayName` for a record whose `entityType` is `iam.user_account`. They are resolved in
+the same read through the module's own `IdentityDirectoryService` — one capability check and one
+tenant-scoped statement for the whole page, never one per row — and are `null` without
+`iam.user.read`, for a record with no actor, and for an id that is not this organisation's. The
+fields are additive: `actorId`, `actorKind` and `entityId` are unchanged. The operations' ids,
+paths, permissions, audit actions, rate-limit policies and the OpenAPI document are unchanged
+(the document publishes a generic object for both responses). No migration; the console's
+`platform.audit-search` is untouched. `tests/backend/iam-operations.test.ts` gains four cases:
+names with `iam.user.read`, `null` without it (identifiers kept), another tenant's account never
+named, and the detail read on the same terms.
+
+What moved to which wrapper on `/administration/audit-log`:
+
+- The list is `OperationalGrid` driven by `useServerTable` — the read is cursor-paged with no
+  total, so Previous and Next walk the server's cursor (G1–G9); the row action "Open" names the
+  action and the time it opens.
+- The two days are `DateField` (E1–E4), checked before a read: both whole, the last not before the
+  first, at most 92 days, each refusal said on its box; a pair being edited never reaches the read.
+- The criteria are `FormSelectField` (company and branch, native) and `FormTextField` (action,
+  record type, and the "Who" reference without `iam.user.read`); "Who" by name stays the
+  `EntityPicker` it became in ADM3. They still apply on submit only.
+- "Nothing on these days" and "nothing matches these filters" are two `MuiEmptyState` sentences,
+  the second with Clear filters; a refused, ended or failed read is the grid's own state.
+- One record opens in a Material drawer that reads `iam.audit-event-detail`, with
+  `MuiLoadingState` and `MuiReadFailureState` (a retry only where it can help); Tab stays inside,
+  Escape and Close close it.
+
+Names and clocks:
+
+- "Who" is the actor's name. Where the read names nobody, the row says why instead of printing an
+  identifier: "Name not available" for an actor the session may not have named, "The system" or
+  "An automated service" for a record with no actor by design, "No person recorded" otherwise. A
+  session without `iam.user.read` is told that names appear only for accounts allowed to see the
+  list of users. A user-account record also names the account it is about.
+- Times are written on the working branch's clock when one branch with a known zone is in force,
+  and on UTC under "All my branches" — never the browser's — with the clock named above the table
+  and beside every time (`useWorkingDisplayZone`, `StockMoment`, `momentText` from the
+  inventory slice). The two days are that clock's whole days, and the route page now passes its
+  moment of opening, so a branch ahead of UTC opens on its own today rather than on the server's
+  UTC day.
+- The screen made no client-side name lookup before this slice (`usePersonNames` was never used
+  here), so there was no fan-out to remove; it makes none now.
+
+The hub (`/administration`): departments (`org.department.read`) and employees
+(`org.employee.read`) join "People and access", each also requiring `org.branch.read`, which both
+pages refuse without. Every other entry's code was checked against its navigation entry
+(`config/navigation.ts`) and its page, and they agree. There is no technician roster entry,
+because no `/technicians` roster route exists (only `/technicians/me`).
+
+Preserved, each held by a case in `audit-log.dom.test.tsx` or `administration-hub.dom.test.tsx`:
+
+- The route page refuses before it reads without `iam.audit.view`; the window, the criteria and
+  the branch target reach the adapter under the same names; a malformed reference is refused on its
+  box before any read; clearing returns to the unfiltered read; no export is offered; the company
+  and branch pair is rechecked by the adapter; one read's ceiling without a branch, two with one.
+- The audited read is still made only on arrival, on a change of days, and on submit.
+
+Test changes forced by the new structure, the asserted behaviour unchanged:
+
+- Every render of the audit screen goes under `UiFoundationProvider`, as the locale layout mounts
+  it.
+- `tests/e2e/authenticated/audit-log-p1-31.spec.ts` types the two days into the pickers' spin
+  buttons instead of filling text boxes, and reads the grid (`role="grid"`, `gridcell`) instead of
+  a table. It is skipped without the P1-31 acceptance handoff and was not run locally.
+
+Deliberate behaviour changes:
+
+- Names instead of identifiers in the grid and the drawer; the record's own identifier is no longer
+  printed beside its type (the user-account subject is named instead), and "Copy it from a row" is
+  replaced by "Enter the account reference exactly as it was given to you", because no row prints a
+  reference any more.
+- Days and times on the working branch's clock, or UTC, instead of the browser's clock for the times
+  and UTC days for the window.
+- The hub's People and access card says "Who works here, who has an account, …", with the two new
+  entries.
+
+Known limitations and recorded gaps, one line each:
+
+- Recorded gap: the console's audit read (`platform.audit-search`) still shows a shortened actor
+  reference (prerequisite 10, console half).
+- A record about something other than a user account (a role, a grant, a company) names its type
+  only; resolving every entity type to a name is not part of this slice.
+- Recorded gap: the sidebar's departments and employees entries are gated on their own code only,
+  not also on `org.branch.read`; the hub is stricter than the sidebar for those two entries.
+- The range checks were not exercised by typing into the pickers in jsdom; they are unit logic in
+  the screen and the backend still refuses a range wider than 92 days.
+- Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
+  they run in hosted CI. One web test file is added (`administration-hub.dom.test.tsx`).
