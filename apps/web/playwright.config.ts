@@ -252,7 +252,41 @@ export default defineConfig({
              * here: a document obliges the surface to work at tablet width.
              */
             name: 'authenticated-tablet',
-            testMatch: /authenticated[\\/](administration|appointments-and-receptions)\.spec\.ts/,
+            testMatch:
+              /authenticated[\\/](administration|appointments-and-receptions|audit-log-p1-31|delivery-p1-31|delivery-writes-p1-31|overview-p1-31|reports-p1-31|warranty-p1-31)\.spec\.ts/,
+            /*
+             * THE SIX P1-31 NAMES ARE THE SAME RULE APPLIED A SECOND TIME, and
+             * the document that obliges those surfaces at tablet width is
+             * `docs/phase-1/phase-1-31/canonical-plan.md:220-226`: the chapter
+             * gives all sixteen P1-31 Frontend tasks one identical description,
+             * and that description names `desktop/tablet` among the five
+             * obligations binding every one of them. Until this line the six
+             * P1-31 specs ran at 1440x900 only, in the two locale projects, so
+             * the breakpoint half of that criterion had no browser evidence at
+             * all — the same hole P1-28 had, found the same way.
+             *
+             * ONE IDENTITY, BUT A THIRD SET OF FIXTURES. This project renders in
+             * English, and for a case that only READS, that is the whole story.
+             * The P1-31 handover writes are different: they CONSUME what they act
+             * on, so the single-use handovers the acceptance harness leaves for
+             * `authenticated-en` are already spent by the time this project runs.
+             * The harness publishes a third set under its own key and
+             * `fixtureKeyOf` in `tests/e2e/authenticated/p1-31-handoff.ts` is
+             * what selects it — content locale and fixture identity are two
+             * different questions, and only the second is answered by the
+             * project.
+             *
+             * WRITTEN BELOW THE MATCH RATHER THAN IN THE DOCBLOCK ABOVE IT, for
+             * one mechanical reason: 27 cells of
+             * `docs/phase-1/phase-1-28/task-matrix-verdicts.json` cite
+             * `apps/web/playwright.config.ts:254-255` as their reproof, and
+             * `scripts/ci/build-p1-28-evidence-manifest.mjs` refuses a citation
+             * that lands only on comment lines. Prose added above these two lines
+             * pushes them down and turns 27 resolved citations into 27 stale
+             * ones, in a phase that is closed and sealed. So this paragraph sits
+             * where it costs nothing, and the two lines it is about keep the
+             * numbers a sealed record already committed to.
+             */
             dependencies: ['auth-setup'],
             use: {
               ...devices['Desktop Chrome'],

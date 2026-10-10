@@ -1,27 +1,25 @@
 'use client';
 
-import { useCallback, useId, useMemo, useState } from 'react';
-import { INITIAL_REQUEST, withPage, type TableRequest } from '@/components/data-table/table-state';
-import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { TextField, SelectField } from '@/components/forms/Field';
 import { PartyLabel } from '@/components/party/PartyLabel';
-import {
-  BackendUnavailableState,
-  ErrorState,
-  LoadingState,
-  NoResultsState,
-  PermissionDeniedState,
-  SessionExpiredState,
-} from '@/components/states/States';
+import { SearchBox } from '@/components/search/SearchBox';
+import { SearchStates } from '@/components/search/SearchStates';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
+import { useSearchRequest, type SearchPhase } from '@/lib/api/use-search-request';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
-import { searchCustomerDirectory } from '@/lib/customers/directory';
+import { searchCustomerDirectoryCancellable } from '@/lib/customers/directory-read';
+import { DigitsEcho } from '@/components/forms/DigitsEcho';
 import {
   MAX_CUSTOMER_NUMBER_LENGTH,
   MAX_NAME_LENGTH,
+  MAX_PHONE_LENGTH,
   PARTY_TYPES,
   isEmptyCriteria,
+  isFreeTextTooShort,
   normalizeCriteria,
   toPartyIdentity,
   type CustomerSearchCriteria,
@@ -30,7 +28,13 @@ import {
 } from '@/lib/customers/directory-contract';
 
 /**
- * Choosing a customer by name (`P1-27-FE-021`, `P1-27-FE-025`).
+ * Choosing a customer by name, number or phone (`P1-27-FE-021`, `P1-27-FE-025`,
+ * P1-32).
+ *
+ * P1-32 added two boxes: one free-text box (`q`, part of a name, a customer
+ * number or a phone number) and a phone box (the whole number or at least its
+ * last seven digits). A match shows its primary phone exactly as the backend
+ * returned it — partly hidden unless the operator may see it whole.
  *
  * Ownership transfer and relationship linking both need an operator to name the
  * customer a vehicle is being attached to. The contract wants a `partnerId`, and
@@ -48,13 +52,35 @@ import {
  * rather than a second search invented here. Same move, same reason, as
  * `RecordForm` and `lib/api/read-operation.ts`.
  *
- * ## It searches on intent, never on a keystroke
+ * ## It searches as the operator types, and that is FEWER requests
  *
  * `GET /api/v1/customers` is `expensive-read`: 30 requests per 60 seconds, keyed
- * by operation, tenant and user. A search-as-you-type selector spends that
- * budget in under three seconds of typing and then rate-limits the operator out
- * of the form they are trying to submit. Typing changes a draft; only Search
- * submits it.
+ * by operation, workspace and user. This component used to answer that with an
+ * explicit Search button and no debounce, on the reasoning that "a debounce is
+ * still a request per pause". True, and it does not follow — the honest
+ * comparison is not "debounced typing versus nothing" but "debounced typing
+ * versus what an operator actually does", which is: type a few characters,
+ * press Search, read, correct the spelling, press Search again. That is one
+ * request per attempt, uncancelled and unbounded.
+ *
+ * `useSearchRequest` sends one per PAUSE and discards every superseded answer,
+ * which is fewer requests against the same limit — and it is what stops the
+ * receptionist who is reading a phone number aloud from having to find a button
+ * between every correction. The rate limit therefore argues FOR the debounce.
+ *
+ * The Search control stays, and it is not decoration: it SUBMITS NOW, skipping
+ * the wait for somebody who has already decided, and it re-issues after a
+ * failure — which is what makes it usable as a retry. Enter does the same.
+ *
+ * ## The failure states are the shared ones, and there is no longer an exception
+ *
+ * `SearchStates` renders every non-answer phase, so a refusal cannot collapse
+ * into "no matches" here any more than it can on a search screen. This control
+ * used to carry one special case of its own — an ended session, which the hook
+ * reported as `failed` carrying `state.expired.message` and which
+ * `SearchStates` rendered as a generic fault with a retry that could not work.
+ * The hook publishes `expired` as its own phase now and `SearchStates` renders
+ * it as itself, so the special case is gone rather than duplicated.
  *
  * ## It is not a `<form>`
  *
@@ -76,6 +102,23 @@ import {
  *
  * The operation publishes `{ items, nextCursor, hasMore }` and accepts no `sort`.
  * The list offers Previous/Next and no range, and no column ordering.
+ *
+ * ## A refusal about the choice is drawn ON the choice
+ *
+ * The caller's complaint — nothing chosen yet, for instance — arrives as
+ * `error` and lands on the free-text box (`aria-invalid`, a red edge, the
+ * sentence beneath it) or, once a customer is chosen, on the control that
+ * changes it. It used to be drawn beside the caller's submit button, some
+ * 460 px below the selector, with the selector itself unmarked (browser QA
+ * part 7, row 6.6); marking the control is also what lets
+ * `useFocusFirstInvalid` bring the cursor here.
+ *
+ * ## Choosing keeps the cursor
+ *
+ * The pressed match leaves the page when the list collapses, and a focused
+ * element that leaves the page drops the cursor to the document body (row
+ * 10.4). The cursor moves to the Change control instead, which is described by
+ * the chosen customer's name, so what was chosen is announced.
  */
 
 /** What the caller gets back: an id to submit and a label already resolved. */
@@ -85,15 +128,6 @@ export interface SelectedCustomer {
   readonly displayNumber: string | null;
   readonly partyType: string;
 }
-
-/** The page a selector holds before anybody has searched. Never rendered. */
-const UNASKED: ServerPage<CustomerSearchHit> = {
-  status: 'ok',
-  rows: [],
-  nextCursor: null,
-  hasMore: false,
-  correlationId: null,
-};
 
 export function toSelectedCustomer(hit: CustomerSearchHit): SelectedCustomer {
   return {
@@ -107,16 +141,19 @@ export function toSelectedCustomer(hit: CustomerSearchHit): SelectedCustomer {
 /** A page of matches, or the reason there is none. */
 function Results({
   messages,
-  status,
+  locale,
+  phase,
   rows,
   correlationId,
   onRetry,
   onChoose,
 }: {
   readonly messages: Messages;
-  readonly status: ReturnType<typeof useServerTable<CustomerSearchHit>>['status'];
-  readonly rows: readonly CustomerSearchHit[] | null;
-  readonly correlationId: string | undefined;
+  /** Carried through so the ended-session state can offer the way back. */
+  readonly locale: Locale;
+  readonly phase: SearchPhase;
+  readonly rows: readonly CustomerSearchHit[];
+  readonly correlationId: string | null;
   readonly onRetry: () => void;
   readonly onChoose: (hit: CustomerSearchHit) => void;
 }) {
@@ -130,37 +167,17 @@ function Results({
     </button>
   );
 
-  if (status === 'loading') return <LoadingState messages={messages} />;
-  if (status === 'denied') {
+  if (phase !== 'ready') {
     return (
-      <PermissionDeniedState messages={messages} {...(correlationId ? { correlationId } : {})} />
-    );
-  }
-  if (status === 'expired') {
-    // No Retry. Re-issuing the same request with the same dead session fails
-    // identically, and offering the button suggests otherwise.
-    return <SessionExpiredState messages={messages} />;
-  }
-  if (status === 'unavailable') {
-    return (
-      <BackendUnavailableState
+      <SearchStates
         messages={messages}
-        action={retry}
-        {...(correlationId ? { correlationId } : {})}
+        locale={locale}
+        phase={phase}
+        correlationId={correlationId}
+        {...(phase === 'unavailable' || phase === 'failed' ? { retry } : {})}
       />
     );
   }
-  if (status === 'error' || status === 'not-found') {
-    return (
-      <ErrorState
-        messages={messages}
-        action={retry}
-        {...(correlationId ? { correlationId } : {})}
-      />
-    );
-  }
-  if (rows === null) return null;
-  if (rows.length === 0) return <NoResultsState messages={messages} />;
 
   return (
     <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
@@ -178,6 +195,18 @@ function Results({
                 `partnerName` is non-null here by construction — a search hit is
                 a customer this caller can see. */}
             <PartyLabel messages={messages} party={toPartyIdentity(hit)} />
+            {hit.primaryPhone ? (
+              <span className="ms-auto flex shrink-0 flex-col items-end">
+                <span className="font-mono text-caption text-text-secondary" dir="ltr">
+                  {hit.primaryPhone}
+                </span>
+                {hit.phoneMasked ? (
+                  <span className="text-caption text-text-muted">
+                    {translate(messages, 'crm.customers.search.phonePartlyHidden')}
+                  </span>
+                ) : null}
+              </span>
+            ) : null}
           </button>
         </li>
       ))}
@@ -194,6 +223,8 @@ export function CustomerSelector({
   onChange,
   required = false,
   attempt = 0,
+  error,
+  describedBy,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
@@ -219,59 +250,100 @@ export function CustomerSelector({
    * inside a form to pass it.
    */
   readonly attempt?: number;
+  /** The caller's refusal about the choice, already translated. */
+  readonly error?: string | undefined;
+  /** Further ids describing the choice, added to the box or the change control. */
+  readonly describedBy?: string | undefined;
 }) {
   const base = useId();
+  const chosenId = `${base}-chosen`;
+  const errorId = `${base}-error`;
   const [draft, setDraft] = useState<CustomerSearchCriteria>({});
-  /**
-   * The criteria actually sent. Separate from `draft` on purpose: this is what
-   * makes typing free and searching deliberate. `null` means "the operator has
-   * not searched yet", which is a different state from "searched and found
-   * nothing".
-   */
-  const [submitted, setSubmitted] = useState<CustomerSearchCriteria | null>(null);
 
-  const loadKey = JSON.stringify(submitted ?? {});
+  /*
+   * The cursor after a choice — see the docblock. A ref flag set by the click
+   * that chose, so a value the CALLER supplies (a walk-in handed over with its
+   * customer) moves nobody's cursor on arrival.
+   */
+  const changeRef = useRef<HTMLButtonElement | null>(null);
+  const focusChosen = useRef(false);
+  /*
+   * The flag answers ONE commit — the one the press produced. A caller that
+   * refuses the choice keeps the value null, so an effect keyed on the value
+   * alone never ran and the flag outlived the press: a customer the caller set
+   * later (a walk-in handed over) then pulled the cursor away from wherever the
+   * operator had gone (QA round three). `SearchPicker` follows the same rule.
+   */
+  const [pressed, setPressed] = useState(0);
+  useEffect(() => {
+    if (!focusChosen.current) return;
+    focusChosen.current = false;
+    if (value !== null) changeRef.current?.focus();
+  }, [value, pressed]);
+
+  /*
+   * What is asked for, or `null` for "nothing yet".
+   *
+   * Built inline: `useSearchRequest` keys on the SERIALISED criteria rather than
+   * on the object's identity, so a new object with the same content asks for the
+   * same thing. `null` covers both reasons there is nothing to ask — an
+   * untouched form, and a free-text box holding one character the backend would
+   * refuse — and in that state the hook issues no request at all. That is what
+   * makes "a form that merely renders a selector costs nothing" a property of
+   * the hook rather than a local guard somebody can forget.
+   */
+  const normalized = normalizeCriteria(draft);
+  const tooShort = isFreeTextTooShort(draft);
+  const criteria = tooShort || isEmptyCriteria(normalized) ? null : normalized;
+
   const load = useCallback(
-    (request: TableRequest, cursor: string | null): Promise<ServerPage<CustomerSearchHit>> =>
-      submitted === null
-        ? // Not merely "an empty search". `searchCustomerDirectory` is a Server
-          // Action, so CALLING it is a network round-trip to the server even
-          // though it returns early for empty criteria — and `useServerTable`
-          // runs its effect on mount. Resolving locally means a form that
-          // renders a selector costs nothing until somebody searches. A test
-          // caught this: it counted one call before a single key was pressed.
-          Promise.resolve(UNASKED)
-        : searchCustomerDirectory(request, cursor, submitted),
-    [submitted]
+    async (
+      asked: CustomerSearchCriteria,
+      cursor: string | null,
+      signal: AbortSignal
+    ): Promise<ReadState<CursorPage<CustomerSearchHit>>> => {
+      // The directory answers in `ServerPage`, which is the shape
+      // `useServerTable` consumes; the hook reads `ReadState<CursorPage>`. The
+      // two carry the same facts under different names, and writing the
+      // translation here keeps it at the one place they meet.
+      // Cancellable (P1-32-PRE-OD-READ): a superseded search is aborted, not
+      // only discarded.
+      const page = await searchCustomerDirectoryCancellable(
+        { ...INITIAL_REQUEST, pageSize: 10 },
+        cursor,
+        asked,
+        signal
+      );
+      if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
+      return {
+        status: 'ok',
+        data: { items: page.rows, nextCursor: page.nextCursor, hasMore: page.hasMore },
+        correlationId: page.correlationId,
+      };
+    },
+    []
   );
-  const table = useServerTable<CustomerSearchHit>(load, {
-    initial: { ...INITIAL_REQUEST, pageSize: 10 },
-    loadKey,
-  });
+
+  const search = useSearchRequest<CustomerSearchHit, CustomerSearchCriteria>({ criteria, load });
 
   const partyOptions = useMemo(
     () => PARTY_TYPES.map((v) => ({ value: v, label: translate(messages, `crm.partyType.${v}`) })),
     [messages]
   );
 
-  const search = () => {
-    const normalized = normalizeCriteria(draft);
-    // An empty search would ask the backend for "everything", spending one of
-    // thirty requests to say something the operator did not ask.
-    if (isEmptyCriteria(normalized)) return;
-    setSubmitted(normalized);
-  };
-
   const choose = (hit: CustomerSearchHit) => {
+    focusChosen.current = true;
+    setPressed((count) => count + 1);
     onChange(toSelectedCustomer(hit));
     // Collapse the list. Leaving it open invites a second click that silently
-    // replaces the choice the operator just made.
-    setSubmitted(null);
+    // replaces the choice the operator just made. Clearing the draft is what
+    // collapses it, because the criteria are what the list exists for.
+    setDraft({});
   };
 
   const clear = () => {
     onChange(null);
-    setSubmitted(null);
+    setDraft({});
   };
 
   if (value !== null) {
@@ -281,22 +353,46 @@ export function CustomerSelector({
           {translateDynamic(messages, labelKey)}
         </span>
         <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-surface-subtle px-3 py-2">
-          <PartyLabel
-            messages={messages}
-            party={{
-              partnerName: value.displayName,
-              partnerNumber: value.displayNumber,
-              partnerType: value.partyType,
-            }}
-          />
+          <span id={chosenId}>
+            <PartyLabel
+              messages={messages}
+              party={{
+                partnerName: value.displayName,
+                partnerNumber: value.displayNumber,
+                partnerType: value.partyType,
+              }}
+            />
+          </span>
           <button
+            ref={changeRef}
             type="button"
             onClick={clear}
-            className="shrink-0 rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            // Not `aria-invalid`: ARIA 1.2 does not support it on the button
+            // role. The control is DESCRIBED by the refusal, which is itself a
+            // `role="alert"`; `data-invalid` is the non-ARIA marker
+            // `useFocusFirstInvalid` also finds, so a refused submit still
+            // brings the cursor here. `SearchPicker` does the same.
+            data-invalid={error ? 'true' : undefined}
+            aria-describedby={
+              [chosenId, error ? errorId : undefined, describedBy].filter(Boolean).join(' ') ||
+              undefined
+            }
+            className={`shrink-0 rounded-md border ${error ? 'border-error' : 'border-border'} px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring`}
           >
             {translate(messages, 'customerSelector.change')}
           </button>
         </div>
+        {error ? (
+          <p role="alert" className="flex items-start gap-1.5 text-supporting text-error">
+            <span
+              aria-hidden="true"
+              className="mt-px inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-error text-caption font-bold leading-none"
+            >
+              !
+            </span>
+            <span id={errorId}>{error}</span>
+          </p>
+        ) : null}
         {/* The uuid, submitted and never shown. This is the whole reason the
             component exists: the contract needs an identifier, and an operator
             must never be asked to know one. */}
@@ -347,6 +443,49 @@ export function CustomerSelector({
         have happened in the wizard all along.
       */}
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(11rem,1fr))]">
+        <div className="flex flex-col gap-1">
+          <SearchBox
+            messages={messages}
+            label={translate(messages, 'customerSelector.q')}
+            value={draft.q ?? ''}
+            maxLength={MAX_NAME_LENGTH}
+            busy={search.phase === 'loading'}
+            // The control already carries the page's own Search button below, so
+            // it does not add a second one: two controls with the same name on
+            // one form are two things for a keyboard user to disambiguate.
+            inlineSubmit={false}
+            onSubmit={search.submit}
+            onChange={(next) => setDraft({ ...draft, q: next })}
+            describedBy={describedBy}
+            // The length refusal is about what was typed and wins while it
+            // stands; the caller's refusal is about the choice, and the box is
+            // where the choice is made — so it is the control marked for it.
+            {...(tooShort
+              ? { error: translate(messages, 'crm.customers.search.qTooShort') }
+              : error
+                ? { error }
+                : {})}
+          />
+          <DigitsEcho messages={messages} value={draft.q} />
+        </div>
+        <div className="flex flex-col gap-1">
+          <TextField
+            label={translate(messages, 'customerSelector.phone')}
+            description={translate(messages, 'crm.customers.search.phoneHint')}
+            value={draft.phone ?? ''}
+            maxLength={MAX_PHONE_LENGTH}
+            inputMode="tel"
+            dir="ltr"
+            onChange={(event) => setDraft({ ...draft, phone: event.target.value })}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                search.submit();
+              }
+            }}
+          />
+          <DigitsEcho messages={messages} value={draft.phone} />
+        </div>
         <TextField
           label={translate(messages, 'crm.customers.column.name')}
           value={draft.name ?? ''}
@@ -357,7 +496,7 @@ export function CustomerSelector({
             // outer ownership-transfer form submits with no customer chosen.
             if (event.key === 'Enter') {
               event.preventDefault();
-              search();
+              search.submit();
             }
           }}
         />
@@ -370,7 +509,7 @@ export function CustomerSelector({
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
               event.preventDefault();
-              search();
+              search.submit();
             }
           }}
         />
@@ -397,18 +536,16 @@ export function CustomerSelector({
       <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={search}
+          onClick={search.submit}
           className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         >
           {translate(messages, 'customerSelector.search')}
         </button>
-        {/* Deliberately no phone or email box. `NFR-PRV-001` makes raw contact
-            values non-searchable, so a control for one could not work — and
-            offering it disabled would advertise a capability the product does
-            not have. */}
+        {/* Deliberately no email box: email is not in the search allow-list, so
+            a control for it could not work. Phone is, since P1-32. */}
       </div>
 
-      {submitted === null ? (
+      {search.phase === 'idle' ? (
         <p className="text-supporting text-text-muted" lang={locale}>
           {translate(messages, 'customerSelector.idle')}
         </p>
@@ -416,27 +553,28 @@ export function CustomerSelector({
         <div aria-live="polite" className="flex flex-col gap-3">
           <Results
             messages={messages}
-            status={table.status}
-            rows={table.response?.rows ?? null}
-            correlationId={table.correlationId}
-            onRetry={table.refresh}
+            locale={locale}
+            phase={search.phase}
+            rows={search.rows}
+            correlationId={search.correlationId}
+            onRetry={search.submit}
             onChoose={choose}
           />
 
-          {table.response && (table.response.hasMore || table.request.page > 1) ? (
+          {search.phase === 'ready' && (search.hasMore || search.pageNumber > 1) ? (
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                disabled={table.request.page <= 1}
-                onClick={() => table.setRequest(withPage(table.request, table.request.page - 1))}
+                disabled={search.pageNumber <= 1}
+                onClick={search.previous}
                 className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
               >
                 {translate(messages, 'table.previousPage')}
               </button>
               <button
                 type="button"
-                disabled={!table.response.hasMore}
-                onClick={() => table.setRequest(withPage(table.request, table.request.page + 1))}
+                disabled={!search.hasMore}
+                onClick={search.next}
                 className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
               >
                 {translate(messages, 'table.nextPage')}

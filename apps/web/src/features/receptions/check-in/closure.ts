@@ -4,6 +4,7 @@ import {
   MAX_CLOSURE_REASON,
   type ReceptionStatus,
 } from '../receptions-contract';
+import { PARTIES_STEP_ID } from './wizard';
 
 /**
  * Closure rules for the reception summary, approval, terminal exits and
@@ -138,6 +139,97 @@ export type ConflictKind = 'stale' | 'blocked';
 
 export function conflictKindOf(messageKey: string | undefined): ConflictKind {
   return messageKey === 'state.conflict.title' ? 'stale' : 'blocked';
+}
+
+/* ------------------------------------------------------------------ *
+ * Which precondition a blocked command named (DEF-T-10)
+ * ------------------------------------------------------------------ */
+
+/**
+ * The refusal reasons a reception command publishes, and the step that
+ * satisfies each one.
+ *
+ * `ERR-TRN-001` is one code for five different unmet preconditions, and a
+ * screen holding only the code can say nothing but "the state does not allow
+ * this". That sentence is true and useless: an operator met it when what was
+ * actually missing was the customer's authorization, recorded on a step eleven
+ * places back, and nothing on the screen said so.
+ *
+ * The API now publishes a rule token beside each refusal —
+ * `{ path: 'path.receptionId', rule: … }` — which `violationKeysOf` turns into
+ * a `form.violation.*` key and `fromFailure` puts in `messageKey`. This table
+ * says which of those keys this module has been told about and, for the ones an
+ * operator can act on, which step to open. A key absent from the table gets the
+ * generic sentence, which is what should happen: a reason this module has never
+ * been told about must not be dressed up as one it understands.
+ *
+ * Not approval's alone: `assertStandingAuthorization` guards the CONVERSION
+ * command as well, so the two authorization tokens reach that screen too. The
+ * sentences therefore name the precondition and the step that cures it, and
+ * never the command the operator happened to press — one catalogue entry has to
+ * read correctly under both buttons.
+ *
+ * `already_authorized` and `state_not_approvable` name no step on purpose.
+ * Neither is cured by filling something in — the visit has moved on — so
+ * offering a step would invite work that changes nothing.
+ *
+ * ## The conversion and closure half (Owner directive, user-facing errors)
+ *
+ * The approval refusals above were the only ones that had ever been given a
+ * token, so the three commands beside approve — convert, close without work and
+ * refuse — were still printing the generic sentence for refusals with quite
+ * different cures. `reception_not_authorised` is the one an operator can act on,
+ * and it points at the same step the authorization tokens do, because it is the
+ * same missing thing seen from the conversion button. The other two describe a
+ * visit that has moved on and offer no step, for the reason the paragraph above
+ * gives.
+ *
+ * ## The two the evidence forms raise
+ *
+ * `reception_party_not_authorised` and `reception_closed_to_evidence` are raised
+ * by the authorization and refusal forms on the parties step rather than by a
+ * command on the summary, and they were left out of this list when the rest were
+ * added. Left out, they resolved to the generic sentence on the very forms whose
+ * refusal they describe, and nothing failed when they did — which is why the
+ * catalogue test reads this list. The first is cured on the parties step, by
+ * recording the role the person actually holds, so it names that step even
+ * though it is usually raised there; the second describes a visit that has been
+ * closed and names none.
+ */
+export const COMMAND_REFUSAL_KEYS: readonly string[] = Object.freeze([
+  'form.violation.already_authorized',
+  'form.violation.state_not_approvable',
+  'form.violation.authorization_missing',
+  'form.violation.authorization_withdrawn',
+  'form.violation.requester_or_authorization_missing',
+  'form.violation.reception_already_converted',
+  'form.violation.reception_not_authorised',
+  'form.violation.reception_already_finished',
+  'form.violation.reception_party_not_authorised',
+  'form.violation.reception_closed_to_evidence',
+]);
+
+const REFUSAL_STEPS: Readonly<Record<string, string>> = Object.freeze({
+  'form.violation.authorization_missing': PARTIES_STEP_ID,
+  'form.violation.authorization_withdrawn': PARTIES_STEP_ID,
+  'form.violation.requester_or_authorization_missing': PARTIES_STEP_ID,
+  'form.violation.reception_not_authorised': PARTIES_STEP_ID,
+  'form.violation.reception_party_not_authorised': PARTIES_STEP_ID,
+});
+
+/**
+ * The specific reason key a blocked command carried, or `null` when it carried
+ * none and the generic sentence is all there is to say.
+ */
+export function refusalReasonKey(messageKey: string | undefined): string | null {
+  if (messageKey === undefined) return null;
+  return COMMAND_REFUSAL_KEYS.includes(messageKey) ? messageKey : null;
+}
+
+/** The step that satisfies the named precondition, or `null` when none does. */
+export function refusalFixStepId(messageKey: string | undefined): string | null {
+  if (messageKey === undefined) return null;
+  return REFUSAL_STEPS[messageKey] ?? null;
 }
 
 /* ------------------------------------------------------------------ *

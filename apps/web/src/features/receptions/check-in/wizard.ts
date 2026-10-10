@@ -162,7 +162,34 @@ export interface CheckInStepProps {
   readonly writesLocked: boolean;
   /** Re-reads `rec.reception-detail` and re-renders every step with it. */
   readonly refresh: () => Promise<void>;
+  /**
+   * Moves the wizard to another step by `id` — the shell's own navigation,
+   * handed to the steps (DEF-T-10).
+   *
+   * A refusal that names an unmet precondition is only half an answer: the
+   * operator also has to reach the step that satisfies it, and the summary is
+   * eleven steps away from the authorization form. This is the same call the
+   * numbered buttons above make, so nothing new decides what "going to a step"
+   * means.
+   *
+   * Required rather than optional deliberately. An optional callback would let
+   * a caller mount a step with no way out of a refusal and fail silently on
+   * screen; making it part of the contract puts that mistake in front of the
+   * compiler.
+   */
+  readonly goToStep: (stepId: string) => void;
 }
+
+/**
+ * The parties-and-authorization step, named once.
+ *
+ * `steps.tsx` registers the step under this constant and `closure.ts` points a
+ * refusal at it under the same one, so the identifier the refusal navigates to
+ * cannot drift from the identifier the registry renders. Written here rather
+ * than in the registry because the registry imports every step COMPONENT, and a
+ * pure module must not.
+ */
+export const PARTIES_STEP_ID = 'parties-and-authorization';
 
 /** One registered step. Waves E append to `steps.tsx`, never to the shell. */
 export interface CheckInStepDefinition {

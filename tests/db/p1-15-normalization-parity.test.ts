@@ -138,12 +138,18 @@ describe('P1-15 / normalization parity with the frozen SQL', () => {
     expect(normalizePhoneDigits('+')).toBe('+');
   });
 
-  it('Arabic-Indic digits normalize away in both implementations', async () => {
+  // Until P1-32 this case pinned the OPPOSITE behaviour — Arabic-Indic digits were
+  // stripped as if they were punctuation and the number normalized to null. That
+  // was recorded in phase-1-15-implementation-decisions.md §2.2 as a limitation of
+  // the frozen contract that only a database change could lift; migration
+  // 20260916094000_shared_text_folding.sql is that change, and this case now pins
+  // the folded result in BOTH implementations so neither can regress alone.
+  it('Arabic-Indic digits fold to ASCII in both implementations', async () => {
     const { rows } = await admin.query<{ sql: string | null }>(
       `SELECT crm.normalize_phone('٠٧٩٠١٢٣٤٥٦') AS sql`
     );
-    expect(rows[0]?.sql).toBeNull();
-    expect(normalizePhoneDigits('٠٧٩٠١٢٣٤٥٦')).toBeNull();
+    expect(rows[0]?.sql).toBe('0790123456');
+    expect(normalizePhoneDigits('٠٧٩٠١٢٣٤٥٦')).toBe('0790123456');
   });
 
   it('VIN keeps I, O and Q in both implementations', async () => {

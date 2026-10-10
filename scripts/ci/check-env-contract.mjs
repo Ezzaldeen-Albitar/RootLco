@@ -15,6 +15,20 @@
  * Only the second direction is a warning. A name can legitimately be documented
  * ahead of the code that will read it; the reverse is never legitimate.
  *
+ * ## Two ways a name is "read"
+ *
+ * A literal `process.env.NAME` is the obvious one. The larger one is invisible
+ * to it: `apps/api/src/server/config/backend-config.ts` hands the WHOLE of
+ * `process.env` to a zod object and reads roughly fifty names by schema key, so
+ * not one of them appears as a literal anywhere. Scanning only for literals
+ * therefore reported "pass" over a contract missing most of the backend's
+ * configuration surface. Both sources of truth are read here.
+ *
+ * ## Two contract files
+ *
+ * The root `.env.example` documents the compose-level file; `apps/api/.env.example`
+ * documents the API tier's own. A name documented in EITHER is documented.
+ *
  * Usage: node scripts/ci/check-env-contract.mjs [--json out.json]
  * Exit codes: 0 pass · 1 undocumented variable · 2 IO error.
  */
@@ -25,6 +39,10 @@ import { API_SRC_ROOT, fromRoot, toRepositoryPath } from '../lib/repository-path
 
 export const SOURCE_ROOT = API_SRC_ROOT;
 export const CONTRACT = fromRoot('.env.example');
+/** The API tier's own template. Equally authoritative for a server-only name. */
+export const API_CONTRACT = fromRoot('apps', 'api', '.env.example');
+/** The zod schema whose keys ARE environment reads. */
+export const BACKEND_CONFIG = join(API_SRC_ROOT, 'server', 'config', 'backend-config.ts');
 
 /** Names that Next.js or Node provide, so they need no entry in the contract. */
 export const PROVIDED_BY_RUNTIME = new Set([
@@ -71,6 +89,42 @@ export function scanSource(root = SOURCE_ROOT) {
   return usage;
 }
 
+/**
+ * The environment names a zod object declares as keys.
+ *
+ * **This is a regex over source text, not a parse, and that is a deliberate
+ * limit rather than an oversight.** Importing the module would mean running
+ * TypeScript from a dependency-free CI script; parsing it properly would mean a
+ * TypeScript compiler here for one list of identifiers. So the shape it matches
+ * is narrow and stated: a line that is INDENTED (a property, never a top-level
+ * declaration), whose key is SCREAMING_SNAKE (an environment name is never
+ * camelCase), immediately followed by `z.` — the schema's own spelling for
+ * every one of its entries.
+ *
+ * What it therefore cannot see, and what a future entry must not rely on it
+ * seeing: a key built by `z.object({ ...spread })`, a key whose value is a
+ * helper call that does not begin `z.` on the same line, or a computed key.
+ * `bounded(...)` entries are the one such helper in use today, so they are
+ * matched by the second pattern below and a third helper would need a third —
+ * which is why the test asserts a COUNT as well as membership: a helper this
+ * cannot see shrinks the extracted set silently.
+ */
+export function readSchemaKeys(source) {
+  const names = new Set();
+  const patterns = [
+    // `  DATABASE_URL: z.string()...`, and the wrapped form the formatter
+    // produces for a long entry: `  WORKER_ID: z\n    .string()`.
+    /^[ \t]+([A-Z][A-Z0-9_]*):\s*z\b/gm,
+    // `  DB_POOL_MAX: bounded(1, 50, 10),` — the local range helper.
+    /^[ \t]+([A-Z][A-Z0-9_]*):\s*bounded\(/gm,
+  ];
+  for (const pattern of patterns) {
+    let match;
+    while ((match = pattern.exec(source)) !== null) names.add(match[1]);
+  }
+  return names;
+}
+
 export function documentedNames(contract) {
   const names = new Set();
   for (const line of contract.split(/\r?\n/)) {
@@ -101,10 +155,36 @@ export function evaluate(usage, documented) {
   };
 }
 
+/**
+ * Adds the schema-declared names to a usage map, citing the schema file.
+ *
+ * Kept separate from `scanSource` so the literal scan stays exactly what it was
+ * and the two sources of truth remain individually inspectable from a test.
+ */
+export function addSchemaUsage(usage, schemaFile = BACKEND_CONFIG) {
+  if (!existsSync(schemaFile)) return usage;
+  const citation = toRepositoryPath(schemaFile);
+  for (const name of readSchemaKeys(readFileSync(schemaFile, 'utf8'))) {
+    if (!usage.has(name)) usage.set(name, []);
+    usage.get(name).push(citation);
+  }
+  return usage;
+}
+
+/** The union of every tracked template's documented names. */
+export function allDocumentedNames(files = [CONTRACT, API_CONTRACT]) {
+  const names = new Set();
+  for (const file of files) {
+    if (!existsSync(file)) continue;
+    for (const name of documentedNames(readFileSync(file, 'utf8'))) names.add(name);
+  }
+  return names;
+}
+
 export function toMarkdown(result) {
   const lines = ['### Environment contract', ''];
   lines.push(
-    `Names read by \`src/\`: **${result.read}** · documented in \`.env.example\`: **${result.documented}**`
+    `Names read by \`src/\` (literals and schema keys): **${result.read}** · documented in \`.env.example\` or \`apps/api/.env.example\`: **${result.documented}**`
   );
   lines.push('');
   if (result.undocumented.length) {
@@ -136,14 +216,14 @@ function main(argv) {
     );
     process.exit(2);
   }
-  const usage = scanSource();
+  const usage = addSchemaUsage(scanSource());
   if (usage.size === 0) {
     console.error(
       'no environment variable reads found under src/ — refusing to report "clean" over an empty set'
     );
     process.exit(2);
   }
-  const result = evaluate(usage, documentedNames(readFileSync(CONTRACT, 'utf8')));
+  const result = evaluate(usage, allDocumentedNames());
 
   const jsonOut = arg('--json');
   if (jsonOut) writeFileSync(jsonOut, `${JSON.stringify(result, null, 2)}\n`);
@@ -153,7 +233,7 @@ function main(argv) {
   console.log(toMarkdown(result));
   for (const entry of result.undocumented) {
     console.log(
-      `::error file=${entry.files[0]}::${entry.name} is read by the source but absent from ${CONTRACT}`
+      `::error file=${entry.files[0]}::${entry.name} is read by the source but absent from both ${CONTRACT} and ${API_CONTRACT}`
     );
   }
   process.exit(result.ok ? 0 : 1);

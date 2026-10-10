@@ -1,8 +1,46 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import ar from '../src/i18n/messages/ar.json';
 import en from '../src/i18n/messages/en.json';
-import { renderLtr } from './render';
+import {
+  BranchSwitch,
+  OTHER_BRANCH,
+  TEST_BRANCH,
+  WorkingBranchProbe,
+  branchSnapshot,
+  TEST_COMPANY,
+  inBranch,
+  renderLtr as renderLtrBare,
+  renderRtl as renderRtlBare,
+} from './render';
+import {
+  discardAndSwitch,
+  forgetRememberedBranch,
+  heldBranch,
+  stayOnBranch,
+  switchExpectingQuestion,
+  switchWithoutQuestion,
+} from './support/branch-switch';
+import type { ReactElement } from 'react';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
+
+/**
+ * The product's Material provider, as the locale layout mounts it: the screen's
+ * date fields are the MIT pickers and need its localisation (ADR-022). Every
+ * render in this file goes through it, in the render's own language.
+ */
+function withMui(ui: ReactElement, locale: 'en' | 'ar'): ReactElement {
+  return (
+    <UiFoundationProvider locale={locale} text={muiTextOf(getMessages(locale))}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+const renderLtr = (ui: ReactElement) => renderLtrBare(withMui(ui, 'en'));
+const renderRtl = (ui: ReactElement) => renderRtlBare(withMui(ui, 'ar'));
 
 /**
  * One price list, rendered (P1-30, `W2`, FE-002).
@@ -87,6 +125,7 @@ const DRAFT_ID = '66666666-6666-4666-8666-666666666666';
 const SERVICE_ID = '55555555-5555-4555-8555-555555555555';
 const BRANCH = '22222222-2222-4222-8222-222222222222';
 const COMPANY = '11111111-1111-4111-8111-111111111111';
+const TAX_CLASS = '33333333-3333-4333-8333-333333333333';
 
 const published = {
   id: PUBLISHED_ID,
@@ -153,6 +192,30 @@ function rulesOf(versionId: string, rules: readonly unknown[]) {
   });
 }
 
+/**
+ * The detail inside a working context holding the `BRANCH` pair. The rule's
+ * branch narrowing is CHOSEN from that named list now; there is no box to type
+ * a company or branch reference into (Owner directive, `P1-32-PRE-OD-UX`).
+ */
+function detailFor(over: Record<string, unknown> = {}, list = priceList()) {
+  return (
+    <PriceListDetailScreen
+      locale="en"
+      messages={en}
+      priceList={list as never}
+      canManage
+      canPublish={false}
+      canReadBranches={false}
+      canReadServices={true}
+      {...over}
+    />
+  );
+}
+
+function renderDetailInBranch(over: Record<string, unknown> = {}, list = priceList()) {
+  return renderLtr(inBranch(detailFor(over, list)));
+}
+
 function renderDetail(over: Record<string, unknown> = {}, list = priceList()) {
   return renderLtr(
     <PriceListDetailScreen
@@ -162,11 +225,52 @@ function renderDetail(over: Record<string, unknown> = {}, list = priceList()) {
       canManage
       canPublish={false}
       canReadBranches={false}
-      canReadServices={false}
+      canReadServices={true}
       {...over}
     />
   );
 }
+
+/**
+ * The service, FOUND in the catalogue and chosen — the way to name one with
+ * `svc.service.read` (Owner directive, `P1-32-PRE-OD-UX`). Without that read the
+ * form keeps a labelled service reference instead; see the cases below.
+ */
+async function pickService(user: ReturnType<typeof userEvent.setup>, form: HTMLElement) {
+  // `EntityPicker`: the server is asked as the operator types, and the matches
+  // are options in a list.
+  await user.type(serviceBox(form), 'OIL');
+  await user.click(await screen.findByRole('option', { name: 'OIL-CHANGE — Oil change' }));
+  expect(serviceBox(form)).toHaveValue('OIL-CHANGE — Oil change');
+}
+
+/** The rule form's service combobox, named by the field's label. */
+const serviceBox = (form: HTMLElement) =>
+  within(form).getByRole('combobox', { name: labelled('pricing.rule.service') });
+
+/** A date field inside a form, found by its label. */
+const dayField = (form: HTMLElement, labelKey: string) =>
+  within(form).getByRole('group', { name: labelled(labelKey) });
+
+/** Types a calendar day into a date field, part by part (day, month, year in English). */
+async function typeDay(
+  user: ReturnType<typeof userEvent.setup>,
+  form: HTMLElement,
+  labelKey: string,
+  digits: string
+): Promise<HTMLElement> {
+  const group = dayField(form, labelKey);
+  await user.click(within(group).getAllByRole('spinbutton')[0] as HTMLElement);
+  await user.keyboard(digits);
+  return group;
+}
+
+/** What a date field shows, part by part. */
+const shownDay = (group: HTMLElement) =>
+  within(group)
+    .getAllByRole('spinbutton')
+    .map((part) => part.textContent)
+    .join('/');
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -176,6 +280,23 @@ beforeEach(() => {
   listBranches.mockResolvedValue(
     okRead({ items: [{ id: BRANCH, companyId: COMPANY, branchCode: 'B1', name: 'Main' }] })
   );
+  listServices.mockResolvedValue({
+    status: 'ok',
+    rows: [
+      {
+        id: SERVICE_ID,
+        serviceCode: 'OIL-CHANGE',
+        name: 'Oil change',
+        description: null,
+        categoryId: 'c',
+        lifecycleStatus: 'active',
+        recordVersion: 1,
+      },
+    ],
+    nextCursor: null,
+    hasMore: false,
+    correlationId: 'corr',
+  });
   createPriceListVersion.mockResolvedValue({
     state: success('pricing.version.created'),
     created: { ...draft, id: 'v-new', versionNo: 4 },
@@ -276,9 +397,7 @@ describe('guarded writes send the LIST version and renew it', () => {
     const user = userEvent.setup();
     renderDetail();
     const form = screen.getByRole('form', { name: EN['pricing.version.createHeading'] as string });
-    fireEvent.change(within(form).getByLabelText(labelled('pricing.version.effectiveFrom')), {
-      target: { value: '2026-11-01' },
-    });
+    await typeDay(user, form, 'pricing.version.effectiveFrom', '01112026');
     await user.type(within(form).getByLabelText(labelled('pricing.version.notes')), 'Spring');
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.version.createDraft'] as string })
@@ -301,9 +420,7 @@ describe('guarded writes send the LIST version and renew it', () => {
       within(form).getByLabelText(labelled('pricing.publish.version')),
       DRAFT_ID
     );
-    fireEvent.change(within(form).getByLabelText(labelled('pricing.publish.effectiveFrom')), {
-      target: { value: '2026-11-01' },
-    });
+    await typeDay(user, form, 'pricing.publish.effectiveFrom', '01112026');
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.publish.submit'] as string })
     );
@@ -330,9 +447,7 @@ describe('guarded writes send the LIST version and renew it', () => {
       within(form).getByLabelText(labelled('pricing.publish.version')),
       DRAFT_ID
     );
-    fireEvent.change(within(form).getByLabelText(labelled('pricing.publish.effectiveFrom')), {
-      target: { value: '2026-11-01' },
-    });
+    await typeDay(user, form, 'pricing.publish.effectiveFrom', '01112026');
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.publish.submit'] as string })
     );
@@ -350,20 +465,15 @@ describe('guarded writes send the LIST version and renew it', () => {
 describe('a rule on a draft carries the canonical amount string', () => {
   it('sends the service, the amount as a string, and the narrowing, then reloads the rules', async () => {
     const user = userEvent.setup();
-    renderDetail();
+    renderDetailInBranch();
     const region = rulesRegion();
     const form = await within(region).findByRole('form', {
       name: EN['pricing.rule.heading'] as string,
     });
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      SERVICE_ID
-    );
+    await pickService(user, form);
     await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '12.5');
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.common.companyIdField')),
-      COMPANY
-    );
+    // The narrowing is a NAMED branch; choosing it fills its company too.
+    await user.selectOptions(within(form).getByLabelText(labelled('pricing.rule.branch')), BRANCH);
     await user.type(within(form).getByLabelText(labelled('pricing.rule.priority')), '5');
     listPriceRules.mockClear();
     await user.click(
@@ -381,32 +491,407 @@ describe('a rule on a draft carries the canonical amount string', () => {
     expect(typeof body['amount']).toBe('string');
     expect(body['amount']).toMatch(/^12\.5(000)?$/);
     expect(body['companyId']).toBe(COMPANY);
+    expect(body['branchId']).toBe(BRANCH);
     expect(body['priority']).toBe(5);
-    expect(body).not.toHaveProperty('branchId');
     await waitFor(() => expect(listPriceRules).toHaveBeenCalledWith(LIST_ID, DRAFT_ID));
   });
 
-  it('refuses a branch without its company before any request', async () => {
+  it('shows a duplicate rule refusal beside the priority, with the amount still typed', async () => {
+    recordPriceRule.mockResolvedValue({
+      state: {
+        status: 'conflict',
+        messageKey: 'form.formError',
+        fieldErrors: { priority: 'form.violation.duplicate_signature' },
+        attempt: 1,
+      },
+      created: null,
+    });
     const user = userEvent.setup();
     renderDetail();
     const region = rulesRegion();
     const form = await within(region).findByRole('form', {
       name: EN['pricing.rule.heading'] as string,
     });
-    await user.type(
-      within(form).getByLabelText(labelled('pricing.picker.serviceIdField')),
-      SERVICE_ID
-    );
+    await pickService(user, form);
     await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '12.5');
-    await user.type(within(form).getByLabelText(labelled('pricing.common.branchIdField')), BRANCH);
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.priority')), '5');
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.rule.submit'] as string })
     );
     expect(
-      await within(form).findByText(EN['pricing.rule.branchNeedsCompany'] as string)
+      await within(form).findByText(EN['form.violation.duplicate_signature'] as string)
     ).toBeVisible();
+    // The money control canonicalises what was typed; it is still the operator's
+    // figure, and it was not cleared by the refusal.
+    expect(
+      (within(form).getByLabelText(labelled('pricing.rule.amount')) as HTMLInputElement).value
+    ).toMatch(/^12\.5(000)?$/);
+    expect(within(form).getByLabelText(labelled('pricing.rule.priority'))).toHaveValue('5');
+  });
+
+  it('states a tax class that needs a company beside the tax class box', async () => {
+    /*
+     * `svc.price-rule-record` publishes `body.taxClassId` / `tax_needs_company`
+     * from the database constraint, so the sentence lands on the tax class box.
+     * The form also refuses the same shape locally; this case covers the arm
+     * where a company WAS given and the server still refused, which the local
+     * check cannot see.
+     */
+    recordPriceRule.mockResolvedValue({
+      state: {
+        status: 'invalid',
+        messageKey: 'form.formError',
+        fieldErrors: { taxClassId: 'form.violation.tax_needs_company' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderDetailInBranch();
+    const region = rulesRegion();
+    const form = await within(region).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    await pickService(user, form);
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '20');
+    await user.selectOptions(within(form).getByLabelText(labelled('pricing.rule.branch')), BRANCH);
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.taxClass')), TAX_CLASS);
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.rule.submit'] as string })
+    );
+    await waitFor(() => expect(recordPriceRule).toHaveBeenCalledTimes(1));
+    expect(
+      await within(form).findByText(EN['form.violation.tax_needs_company'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('pricing.rule.taxClass'))).toHaveValue(TAX_CLASS);
+  });
+
+  it('refuses a tax class with no branch chosen, beside the tax class box, before any request', async () => {
+    const user = userEvent.setup();
+    renderDetailInBranch();
+    const region = rulesRegion();
+    const form = await within(region).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    await pickService(user, form);
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '12.5');
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.taxClass')), TAX_CLASS);
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.rule.submit'] as string })
+    );
+    expect(
+      await within(form).findByText(EN['pricing.rule.taxNeedsCompany'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('pricing.rule.taxClass'))).toHaveAttribute(
+      'aria-invalid',
+      'true'
+    );
     expect(recordPriceRule).not.toHaveBeenCalled();
   });
+});
+
+describe('a rule narrowed to a company is named, never typed', () => {
+  it('lists a company-only rule by the company NAME, never its identifier (row 5.10b)', async () => {
+    const OUTSIDE = '99999999-9999-4999-8999-999999999999';
+    listPriceRules.mockImplementation((_listId: string, versionId: string) =>
+      Promise.resolve(
+        rulesOf(versionId, [
+          {
+            ...rule,
+            id: 'rule-company',
+            appliesTo: { companyId: TEST_COMPANY.id, branchId: null, customerClass: null },
+          },
+          {
+            ...rule,
+            id: 'rule-outside',
+            appliesTo: { companyId: OUTSIDE, branchId: null, customerClass: null },
+          },
+        ])
+      )
+    );
+    for (const [locale, catalogue, render] of [
+      ['en', en, renderLtr],
+      ['ar', ar, renderRtl],
+    ] as const) {
+      const words = catalogue as Record<string, string>;
+      const { unmount } = render(inBranch(detailFor({ locale, messages: catalogue }), { locale }));
+      const region = await screen.findByRole('region', {
+        name: new RegExp(`^${escape(words['pricing.rules.heading'] as string)}`),
+      });
+      const company = words['pricing.rules.company'] as string;
+      expect(await within(region).findByText(`${company}: ${TEST_COMPANY.name}`)).toBeVisible();
+      // A company outside this reader's branches is said in words, not by reference.
+      expect(
+        within(region).getByText(`${company}: ${words['pricing.rules.companyOutsideContext']}`)
+      ).toBeVisible();
+      expect(region.textContent).not.toContain(TEST_COMPANY.id);
+      expect(region.textContent).not.toContain(OUTSIDE);
+      unmount();
+    }
+  });
+
+  it('lists a branch rule by the branch name, and one outside the list in words, never its identifier', async () => {
+    const OUTSIDE_BRANCH = '44444444-4444-4444-8444-444444444444';
+    listPriceRules.mockImplementation((_listId: string, versionId: string) =>
+      Promise.resolve(
+        rulesOf(versionId, [
+          {
+            ...rule,
+            id: 'rule-branch',
+            appliesTo: { companyId: COMPANY, branchId: TEST_BRANCH.id, customerClass: null },
+          },
+          {
+            ...rule,
+            id: 'rule-branch-outside',
+            appliesTo: { companyId: COMPANY, branchId: OUTSIDE_BRANCH, customerClass: null },
+          },
+        ])
+      )
+    );
+    for (const [locale, catalogue, render] of [
+      ['en', en, renderLtr],
+      ['ar', ar, renderRtl],
+    ] as const) {
+      const words = catalogue as Record<string, string>;
+      const { unmount } = render(inBranch(detailFor({ locale, messages: catalogue }), { locale }));
+      const region = await screen.findByRole('region', {
+        name: new RegExp(`^${escape(words['pricing.rules.heading'] as string)}`),
+      });
+      const branch = words['pricing.rules.branch'] as string;
+      expect(
+        await within(region).findByText(`${branch}: ${TEST_BRANCH.code} — ${TEST_BRANCH.name}`)
+      ).toBeVisible();
+      expect(
+        within(region).getByText(`${branch}: ${words['pricing.rules.branchOutsideContext']}`)
+      ).toBeVisible();
+      expect(region.textContent).not.toContain(OUTSIDE_BRANCH);
+      unmount();
+    }
+  });
+
+  it('a rules read that could not be answered offers a retry, which reads the rules again', async () => {
+    const user = userEvent.setup();
+    listPriceRules
+      .mockResolvedValueOnce({ status: 'unavailable', correlationId: 'corr-u' })
+      .mockImplementation((_listId: string, versionId: string) =>
+        Promise.resolve(rulesOf(versionId, []))
+      );
+    renderDetail();
+    const region = rulesRegion();
+    expect(await within(region).findByText(EN['state.unavailable.title'] as string)).toBeVisible();
+    expect(within(region).queryByText(EN['pricing.rules.none'] as string)).toBeNull();
+    await user.click(within(region).getByRole('button', { name: EN['state.retry'] as string }));
+    expect(await within(region).findByText(EN['pricing.rules.none'] as string)).toBeVisible();
+    expect(listPriceRules).toHaveBeenCalledTimes(2);
+  });
+
+  it('narrows a rule to one company and every branch of it, by the company’s name', async () => {
+    const user = userEvent.setup();
+    renderDetailInBranch();
+    const form = await within(rulesRegion()).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    await pickService(user, form);
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '9');
+    const company = within(form).getByLabelText(labelled('pricing.rule.company'));
+    expect(within(company).getByRole('option', { name: /Test Operations/ })).toBeVisible();
+    await user.selectOptions(company, COMPANY);
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.rule.submit'] as string })
+    );
+    await waitFor(() => expect(recordPriceRule).toHaveBeenCalled());
+    const body = recordPriceRule.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(body['companyId']).toBe(COMPANY);
+    expect(body).not.toHaveProperty('branchId');
+  });
+
+  it('choosing a branch names its company, and clearing the branch keeps the company', async () => {
+    const user = userEvent.setup();
+    renderDetailInBranch();
+    const form = await within(rulesRegion()).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    const branch = within(form).getByLabelText(labelled('pricing.rule.branch'));
+    const company = within(form).getByLabelText(labelled('pricing.rule.company'));
+    await user.selectOptions(branch, BRANCH);
+    expect(company).toHaveValue(COMPANY);
+    await user.selectOptions(branch, '');
+    expect(company).toHaveValue(COMPANY);
+    expect(branch).toHaveValue('');
+  });
+
+  it('with the service catalogue, offers the search and no reference box', async () => {
+    renderDetailInBranch({ canReadServices: true });
+    const form = await within(rulesRegion()).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    expect(serviceBox(form)).toBeVisible();
+    expect(within(form).queryByLabelText(labelled('pricing.picker.serviceReference'))).toBeNull();
+  });
+
+  it('without the service catalogue, STILL records the rule through the labelled service reference', async () => {
+    // `svc.price-rule-record` declares `svc.price.manage` only, so a price
+    // manager without `svc.service.read` keeps the rule the server accepts.
+    const user = userEvent.setup();
+    renderDetailInBranch({ canReadServices: false });
+    const form = await within(rulesRegion()).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    expect(
+      within(form).getByText(EN['pricing.picker.servicesNotReadable'] as string)
+    ).toBeVisible();
+    const submit = within(form).getByRole('button', {
+      name: EN['pricing.rule.submit'] as string,
+    });
+    expect(submit).toBeEnabled();
+    const box = within(form).getByLabelText(labelled('pricing.picker.serviceReference'));
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.amount')), '9');
+
+    await user.click(submit);
+    expect(
+      await within(form).findByText(EN['pricing.picker.serviceReferenceFormat'] as string)
+    ).toBeVisible();
+    expect(box).toHaveAttribute('aria-invalid', 'true');
+    expect(recordPriceRule).not.toHaveBeenCalled();
+
+    await user.type(box, SERVICE_ID);
+    await user.click(submit);
+    await waitFor(() => expect(recordPriceRule).toHaveBeenCalledTimes(1));
+    const body = recordPriceRule.mock.calls[0]?.[2] as Record<string, unknown>;
+    expect(body['serviceId']).toBe(SERVICE_ID);
+    expect(listServices).not.toHaveBeenCalled();
+  });
+
+  it('without the service catalogue, a typed service reference is unsaved work: a branch switch asks first', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {detailFor({ canReadServices: false })}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const form = await within(rulesRegion()).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    try {
+      await switchWithoutQuestion(user, 'second');
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await user.type(
+        within(form).getByLabelText(labelled('pricing.picker.serviceReference')),
+        SERVICE_ID
+      );
+      await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+      expect(heldBranch()).toBe(OTHER_BRANCH.id);
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+
+  it('a confirmed discard empties the whole rule, not just the service reference', async () => {
+    /*
+     * A price list is not addressed to the working branch, so nothing on the
+     * rule form follows a switch by itself. The question said the entries go;
+     * a discard that kept the amount and the priority would leave half a rule
+     * ready to be recorded under the next branch.
+     */
+    const user = userEvent.setup();
+    renderLtr(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {detailFor({ canReadServices: false })}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      )
+    );
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    const form = await within(rulesRegion()).findByRole('form', {
+      name: EN['pricing.rule.heading'] as string,
+    });
+    const service = () => within(form).getByLabelText(labelled('pricing.picker.serviceReference'));
+    const amount = () => within(form).getByLabelText(labelled('pricing.rule.amount'));
+    const priority = () => within(form).getByLabelText(labelled('pricing.rule.priority'));
+    try {
+      await user.type(service(), SERVICE_ID);
+      await user.type(amount(), '12.5');
+      await user.type(priority(), '5');
+      await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+      await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+      await waitFor(() => expect(service()).toHaveValue(''));
+      expect((amount() as HTMLInputElement).value).toBe('');
+      expect(priority()).toHaveValue('');
+      await switchWithoutQuestion(user, 'first');
+      expect(recordPriceRule).not.toHaveBeenCalled();
+    } finally {
+      forgetRememberedBranch();
+    }
+  });
+
+  /*
+   * The form guards the rule itself, whichever way the service is named. It
+   * used to lean on the service picker, which counted only a pasted reference:
+   * with the catalogue read, or with only an amount typed, the switch went
+   * through unasked and the rule was lost (QA round three).
+   */
+  it.each([
+    ['with', true],
+    ['without', false],
+  ] as const)(
+    '%s the service catalogue, an amount typed alone asks first, and a discard empties the rule',
+    async (_variant, canReadServices) => {
+      const user = userEvent.setup();
+      renderLtr(
+        inBranch(
+          <>
+            <BranchSwitch to={TEST_BRANCH.id} label="first" />
+            <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+            <WorkingBranchProbe />
+            {detailFor({ canReadServices })}
+          </>,
+          { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+        )
+      );
+      await user.click(screen.getByRole('button', { name: 'first' }));
+      const form = await within(rulesRegion()).findByRole('form', {
+        name: EN['pricing.rule.heading'] as string,
+      });
+      const amount = () => within(form).getByLabelText(labelled('pricing.rule.amount'));
+      const customerClass = () =>
+        within(form).getByLabelText(labelled('pricing.rule.customerClass'));
+      const search = () => serviceBox(form);
+      try {
+        // An untouched rule is not unsaved work.
+        await switchWithoutQuestion(user, 'second');
+        await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+
+        await user.type(amount(), '12.5');
+        if (canReadServices) await user.type(search(), 'OIL');
+        await stayOnBranch(user, await switchExpectingQuestion(user, 'first'));
+        expect(heldBranch()).toBe(OTHER_BRANCH.id);
+        expect((amount() as HTMLInputElement).value).toMatch(/^12\.5(000)?$/);
+
+        // Stayed, then a second field: still one rule, still asked about.
+        await user.type(customerClass(), 'FLEET');
+        await discardAndSwitch(user, await switchExpectingQuestion(user, 'first'));
+        await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+        await waitFor(() => expect((amount() as HTMLInputElement).value).toBe(''));
+        expect(customerClass()).toHaveValue('');
+        if (canReadServices) expect(search()).toHaveValue('');
+        await switchWithoutQuestion(user, 'second');
+        expect(recordPriceRule).not.toHaveBeenCalled();
+      } finally {
+        forgetRememberedBranch();
+      }
+    }
+  );
 });
 
 describe('an assignment is recorded, and the absence of a read is said', () => {
@@ -420,9 +905,7 @@ describe('an assignment is recorded, and the absence of a read is said', () => {
       await within(form).findByLabelText(labelled('pricing.rule.branch')),
       BRANCH
     );
-    fireEvent.change(within(form).getByLabelText(labelled('pricing.assignment.effectiveFrom')), {
-      target: { value: '2026-10-01' },
-    });
+    await typeDay(user, form, 'pricing.assignment.effectiveFrom', '01102026');
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.assignment.submit'] as string })
     );
@@ -433,26 +916,138 @@ describe('an assignment is recorded, and the absence of a read is said', () => {
       branchId: BRANCH,
       effectiveFrom: '2026-10-01',
     });
-    expect(await within(form).findByText('assignment-1')).toBeVisible();
+    // Said in words; the new assignment's reference is not printed.
+    expect(await within(form).findByTestId('price-assignment-recorded')).toHaveTextContent(
+      EN['pricing.assignment.success'] as string
+    );
+    expect(within(form).queryByText('assignment-1')).toBeNull();
+  });
+
+  it('refuses an end date only partly typed, rather than recording the assignment with no end', async () => {
+    for (const [locale, catalogue, render] of [
+      ['en', en, renderLtr],
+      ['ar', ar, renderRtl],
+    ] as const) {
+      createPriceListAssignment.mockClear();
+      const words = catalogue as Record<string, string>;
+      const named = (key: string) => new RegExp(`^${escape(words[key] as string)}`);
+      const user = userEvent.setup();
+      const { unmount } = render(detailFor({ locale, messages: catalogue }));
+      const form = screen.getByRole('form', {
+        name: words['pricing.assignment.heading'] as string,
+      });
+      const from = within(form).getByRole('group', {
+        name: named('pricing.assignment.effectiveFrom'),
+      });
+      await user.click(within(from).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('01102026');
+      // Two parts of the end date, and not the third.
+      const to = within(form).getByRole('group', { name: named('pricing.assignment.effectiveTo') });
+      await user.click(within(to).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('0111');
+      await user.click(
+        within(form).getByRole('button', { name: words['pricing.assignment.submit'] as string })
+      );
+      await waitFor(() => expect(to, locale).toHaveAttribute('aria-invalid', 'true'));
+      expect(to, locale).toHaveAccessibleDescription(
+        new RegExp(escape(words['pricing.common.dateFormat'] as string))
+      );
+      // The sentence asks for what the field takes: it names each part the
+      // field offers, and quotes no typed pattern the parts cannot accept.
+      const said = (words['pricing.common.dateFormat'] as string).toLocaleLowerCase(locale);
+      const parts = within(to)
+        .getAllByRole('spinbutton')
+        .map((part) => (part.getAttribute('aria-label') ?? '').toLocaleLowerCase(locale));
+      expect(parts, locale).toHaveLength(3);
+      for (const part of parts) {
+        expect(part, locale).not.toBe('');
+        expect(said, `${locale}: ${part}`).toContain(part);
+      }
+      expect(to, locale).not.toHaveAccessibleDescription(/YYYY|MM|DD/);
+      // The cursor goes back into the end date, the one field to fix.
+      await waitFor(() => expect(to.contains(document.activeElement), locale).toBe(true));
+      expect(from, locale).not.toHaveAttribute('aria-invalid');
+      expect(createPriceListAssignment, locale).not.toHaveBeenCalled();
+      unmount();
+    }
   });
 
   it('refuses an end date that is not after the start, before any request', async () => {
     const user = userEvent.setup();
     renderDetail();
     const form = screen.getByRole('form', { name: EN['pricing.assignment.heading'] as string });
-    fireEvent.change(within(form).getByLabelText(labelled('pricing.assignment.effectiveFrom')), {
-      target: { value: '2026-10-01' },
-    });
-    fireEvent.change(within(form).getByLabelText(labelled('pricing.assignment.effectiveTo')), {
-      target: { value: '2026-10-01' },
-    });
+    await typeDay(user, form, 'pricing.assignment.effectiveFrom', '01102026');
+    const to = await typeDay(user, form, 'pricing.assignment.effectiveTo', '01102026');
     await user.click(
       within(form).getByRole('button', { name: EN['pricing.assignment.submit'] as string })
     );
-    expect(
-      await within(form).findByText(EN['pricing.assignment.rangeOrder'] as string)
-    ).toBeVisible();
+    await waitFor(() => expect(to).toHaveAttribute('aria-invalid', 'true'));
+    expect(to).toHaveAccessibleDescription(
+      new RegExp(escape(EN['pricing.assignment.rangeOrder'] as string))
+    );
     expect(createPriceListAssignment).not.toHaveBeenCalled();
+  });
+
+  it('moves the cursor to the first refused field, and withdraws a complaint once it is corrected (route sweep B3)', async () => {
+    const user = userEvent.setup();
+    renderDetail();
+    const form = screen.getByRole('form', { name: EN['pricing.assignment.heading'] as string });
+    const from = () => dayField(form, 'pricing.assignment.effectiveFrom');
+    const to = () => dayField(form, 'pricing.assignment.effectiveTo');
+    // Nothing typed: the start date is the first thing to fix.
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.assignment.submit'] as string })
+    );
+    await waitFor(() => expect(from().contains(document.activeElement)).toBe(true));
+    expect(from()).toHaveAttribute('aria-invalid', 'true');
+    // Corrected: the complaint about the old value goes, without a new submit.
+    await typeDay(user, form, 'pricing.assignment.effectiveFrom', '01102026');
+    await waitFor(() => expect(from()).not.toHaveAttribute('aria-invalid', 'true'));
+    expect(within(form).queryByText(EN['pricing.common.dateFormat'] as string)).toBeNull();
+    // A later refusal moves the cursor to ITS field.
+    await typeDay(user, form, 'pricing.assignment.effectiveTo', '01092026');
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.assignment.submit'] as string })
+    );
+    await waitFor(() => expect(to().contains(document.activeElement)).toBe(true));
+    expect(to()).toHaveAttribute('aria-invalid', 'true');
+    expect(createPriceListAssignment).not.toHaveBeenCalled();
+  });
+
+  it('states an already-assigned coverage beside the priority, with the dates kept', async () => {
+    /*
+     * `svc.price-list-assignment-create` publishes `body.priority` /
+     * `context_already_assigned`, so the sentence lands on the priority box —
+     * the control the operator can change to clear it, and the one the sentence
+     * names.
+     *
+     * It says a list is already assigned for this coverage at this priority. It
+     * does NOT say which list, whose it is, or which branch holds it: the
+     * assignment that collides may sit outside what this caller may read.
+     */
+    createPriceListAssignment.mockResolvedValue({
+      state: {
+        status: 'conflict',
+        messageKey: 'form.formError',
+        fieldErrors: { priority: 'form.violation.context_already_assigned' },
+        attempt: 1,
+      },
+      created: null,
+    });
+    const user = userEvent.setup();
+    renderDetail();
+    const form = screen.getByRole('form', { name: EN['pricing.assignment.heading'] as string });
+    await user.type(within(form).getByLabelText(labelled('pricing.rule.priority')), '10');
+    await typeDay(user, form, 'pricing.assignment.effectiveFrom', '01102026');
+    await user.click(
+      within(form).getByRole('button', { name: EN['pricing.assignment.submit'] as string })
+    );
+    await waitFor(() => expect(createPriceListAssignment).toHaveBeenCalledTimes(1));
+    expect(
+      await within(form).findByText(EN['form.violation.context_already_assigned'] as string)
+    ).toBeVisible();
+    expect(within(form).getByLabelText(labelled('pricing.rule.priority'))).toHaveValue('10');
+    expect(shownDay(dayField(form, 'pricing.assignment.effectiveFrom'))).toBe('01/10/2026');
   });
 });
 
@@ -496,5 +1091,388 @@ describe('the /pricing/[priceListId] route page renders the read as what it was'
     await expect(
       renderPage(PriceListDetailPage, { locale: 'xx', priceListId: LIST_ID })
     ).rejects.toThrow('notFound');
+  });
+});
+
+/*
+ * Every form on the detail guards what the operator typed or chose, and only
+ * that (PR #479 fix round 1). A refresh is not the operator's work: the publish
+ * form once compared its chosen draft with a default re-read from the refreshed
+ * versions, so creating a draft (which refreshes) or publishing one left the
+ * form "unsaved" with nothing typed, and the next branch switch asked to
+ * discard nothing.
+ */
+describe('each form on the detail guards only what the operator entered', () => {
+  afterEach(forgetRememberedBranch);
+
+  const SWITCH_SNAPSHOT = branchSnapshot([TEST_BRANCH, OTHER_BRANCH]);
+  const DRAFT_4 = { ...draft, id: '77777777-7777-4777-8777-777777777777', versionNo: 4 };
+
+  function switchable(list = priceList()) {
+    return withMui(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {detailFor({ canPublish: true }, list)}
+        </>,
+        { snapshot: SWITCH_SNAPSHOT }
+      ),
+      'en'
+    );
+  }
+
+  /** Renders the detail, settles on the first branch, and returns the rerender. */
+  async function mount(user: ReturnType<typeof userEvent.setup>, list = priceList()) {
+    const view = renderLtrBare(switchable(list));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+    return (next: ReturnType<typeof priceList>) => view.rerender(switchable(next));
+  }
+
+  const formNamed = (key: string) => screen.getByRole('form', { name: EN[key] as string });
+  const publishChoice = () =>
+    within(formNamed('pricing.publish.heading')).getByLabelText(
+      labelled('pricing.publish.version')
+    );
+
+  it('an untouched detail switches unasked, and still does after a refresh brings a new draft', async () => {
+    const user = userEvent.setup();
+    const refreshWith = await mount(user, priceList({ versions: [published] }));
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+
+    // What `router.refresh()` hands back after a draft was created.
+    refreshWith(priceList({ versions: [draft, published] }));
+    await switchWithoutQuestion(user, 'first');
+    expect(publishChoice()).toHaveValue(DRAFT_ID);
+    await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+  });
+
+  it('after a publish and its refresh, nothing is unsaved and the next draft is the one offered', async () => {
+    const user = userEvent.setup();
+    const refreshWith = await mount(user);
+    const publish = formNamed('pricing.publish.heading');
+    await user.selectOptions(publishChoice(), DRAFT_ID);
+    await typeDay(user, publish, 'pricing.publish.effectiveFrom', '01112026');
+    await user.click(
+      within(publish).getByRole('button', { name: EN['pricing.publish.submit'] as string })
+    );
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+
+    // The published draft left the drafts; another draft was created since.
+    refreshWith(priceList({ versions: [DRAFT_4, { ...draft, status: 'published' }, published] }));
+    await switchWithoutQuestion(user, 'second');
+    expect(publishChoice()).toHaveValue(DRAFT_4.id);
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('a chosen draft that a refresh removes is no longer unsaved work, nor still selected', async () => {
+    const user = userEvent.setup();
+    const refreshWith = await mount(user, priceList({ versions: [draft, DRAFT_4, published] }));
+    await user.selectOptions(publishChoice(), DRAFT_4.id);
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(publishChoice()).toHaveValue(DRAFT_4.id);
+
+    refreshWith(priceList({ versions: [draft, { ...DRAFT_4, status: 'published' }, published] }));
+    await switchWithoutQuestion(user, 'second');
+    expect(publishChoice()).toHaveValue(DRAFT_ID);
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('the publish form: a chosen draft and a typed day ask; staying keeps them, discarding resets them', async () => {
+    const user = userEvent.setup();
+    await mount(user, priceList({ versions: [draft, DRAFT_4, published] }));
+    const publish = formNamed('pricing.publish.heading');
+    await user.selectOptions(publishChoice(), DRAFT_4.id);
+    const day = await typeDay(user, publish, 'pricing.publish.effectiveFrom', '01112026');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(publishChoice()).toHaveValue(DRAFT_4.id);
+    expect(shownDay(day)).toBe('01/11/2026');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() => expect(publishChoice()).toHaveValue(DRAFT_ID));
+    expect(shownDay(dayField(publish, 'pricing.publish.effectiveFrom'))).not.toBe('01/11/2026');
+    await switchWithoutQuestion(user, 'first');
+    expect(publishPriceListVersion).not.toHaveBeenCalled();
+  });
+
+  it('the new-draft form: typed notes and a day ask; staying keeps them, discarding empties them', async () => {
+    const user = userEvent.setup();
+    await mount(user);
+    const create = formNamed('pricing.version.createHeading');
+    const notes = () => within(create).getByLabelText(labelled('pricing.version.notes'));
+    const day = await typeDay(user, create, 'pricing.version.effectiveFrom', '01112026');
+    await user.type(notes(), 'Spring');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(notes()).toHaveValue('Spring');
+    expect(shownDay(day)).toBe('01/11/2026');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() => expect(notes()).toHaveValue(''));
+    expect(shownDay(dayField(create, 'pricing.version.effectiveFrom'))).not.toBe('01/11/2026');
+    await switchWithoutQuestion(user, 'first');
+    expect(createPriceListVersion).not.toHaveBeenCalled();
+  });
+
+  it('the assignment form: a typed priority and day ask; staying keeps them, discarding empties them', async () => {
+    const user = userEvent.setup();
+    await mount(user);
+    const assignment = formNamed('pricing.assignment.heading');
+    const priority = () => within(assignment).getByLabelText(labelled('pricing.rule.priority'));
+    await user.type(priority(), '10');
+    const day = await typeDay(user, assignment, 'pricing.assignment.effectiveFrom', '01102026');
+
+    await stayOnBranch(user, await switchExpectingQuestion(user, 'second'));
+    expect(heldBranch()).toBe(TEST_BRANCH.id);
+    expect(priority()).toHaveValue('10');
+    expect(shownDay(day)).toBe('01/10/2026');
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+    await waitFor(() => expect(priority()).toHaveValue(''));
+    expect(shownDay(dayField(assignment, 'pricing.assignment.effectiveFrom'))).not.toBe(
+      '01/10/2026'
+    );
+    await switchWithoutQuestion(user, 'first');
+    expect(createPriceListAssignment).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * One baseline for every version-guarded form here (`useEditBaseline`, review
+ * round 5): the draft and the publication are typed against the LIST's version.
+ * A clean form follows a refresh; typed work keeps the version it was typed
+ * against, so a write on it after the list moved is the server's conflict —
+ * with a way to the latest — and never a write the operator did not see.
+ */
+describe('the publication and the new draft agree with a refresh on one baseline', () => {
+  afterEach(forgetRememberedBranch);
+
+  const AR = ar as Record<string, string>;
+  const DRAFT_4 = { ...draft, id: '77777777-7777-4777-8777-777777777777', versionNo: 4 };
+  const MOVED = priceList({ versions: [draft, DRAFT_4, published], recordVersion: 4 });
+  const follow = vi.fn();
+  /** A page inside the application, as `unsaved-navigation.dom.test.tsx` names one. */
+  const LEAVE_HREF = '/leave-probe';
+
+  const tree = (list: ReturnType<typeof priceList>) =>
+    withMui(
+      inBranch(
+        <>
+          <BranchSwitch to={TEST_BRANCH.id} label="first" />
+          <BranchSwitch to={OTHER_BRANCH.id} label="second" />
+          <WorkingBranchProbe />
+          {/* A link inside the application; its default is withheld so jsdom stays put. */}
+          <a
+            href={LEAVE_HREF}
+            onClick={(event) => {
+              if (event.defaultPrevented) return;
+              event.preventDefault();
+              follow();
+            }}
+          >
+            elsewhere
+          </a>
+          {detailFor({ canPublish: true }, list)}
+        </>,
+        { snapshot: branchSnapshot([TEST_BRANCH, OTHER_BRANCH]) }
+      ),
+      'en'
+    );
+
+  async function mount(user: ReturnType<typeof userEvent.setup>) {
+    const view = renderLtrBare(tree(priceList({ versions: [draft, DRAFT_4, published] })));
+    await user.click(screen.getByRole('button', { name: 'first' }));
+    await waitFor(() => expect(heldBranch()).toBe(TEST_BRANCH.id));
+    return (next: ReturnType<typeof priceList>) => view.rerender(tree(next));
+  }
+
+  const formNamed = (key: string) => screen.getByRole('form', { name: EN[key] as string });
+  const publishForm = () => formNamed('pricing.publish.heading');
+  const publishChoice = () =>
+    within(publishForm()).getByLabelText(labelled('pricing.publish.version'));
+  const publishNow = (user: ReturnType<typeof userEvent.setup>) =>
+    user.click(
+      within(publishForm()).getByRole('button', { name: EN['pricing.publish.submit'] as string })
+    );
+
+  /** Clicks the link and asserts it was followed without a question. */
+  async function leaveWithoutQuestion(user: ReturnType<typeof userEvent.setup>) {
+    follow.mockClear();
+    await user.click(screen.getByRole('link', { name: 'elsewhere' }));
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(follow).toHaveBeenCalledTimes(1);
+  }
+
+  it('(a) chosen and typed, refreshed, discarded: clean, and the next publication is on the new version', async () => {
+    const user = userEvent.setup();
+    const refreshWith = await mount(user);
+    await user.selectOptions(publishChoice(), DRAFT_4.id);
+    await typeDay(user, publishForm(), 'pricing.publish.effectiveFrom', '01112026');
+    refreshWith(MOVED);
+    expect(publishChoice()).toHaveValue(DRAFT_4.id);
+
+    await discardAndSwitch(user, await switchExpectingQuestion(user, 'second'));
+    await waitFor(() => expect(publishChoice()).toHaveValue(DRAFT_ID));
+    await switchWithoutQuestion(user, 'first');
+    await leaveWithoutQuestion(user);
+
+    await user.selectOptions(publishChoice(), DRAFT_4.id);
+    await typeDay(user, publishForm(), 'pricing.publish.effectiveFrom', '01122026');
+    await publishNow(user);
+    await waitFor(() => expect(publishPriceListVersion).toHaveBeenCalled());
+    expect(publishPriceListVersion).toHaveBeenCalledWith(
+      LIST_ID,
+      DRAFT_4.id,
+      { effectiveFrom: '2026-12-01' },
+      4
+    );
+  });
+
+  it('(b) chosen and typed, refreshed, published: the OLD version, the conflict, and a way to the latest — in English and Arabic', async () => {
+    for (const [locale, catalogue, render] of [
+      ['en', EN, renderLtr],
+      ['ar', AR, renderRtl],
+    ] as const) {
+      publishPriceListVersion.mockReset();
+      publishPriceListVersion.mockResolvedValue({
+        status: 'conflict',
+        correlationId: 'corr-c',
+        attempt: 1,
+      });
+      refresh.mockClear();
+      const user = userEvent.setup();
+      const ui = (list: ReturnType<typeof priceList>) => (
+        <PriceListDetailScreen
+          locale={locale}
+          messages={locale === 'en' ? en : ar}
+          priceList={list as never}
+          canManage
+          canPublish
+          canReadBranches={false}
+          canReadServices={true}
+        />
+      );
+      const view = render(ui(priceList({ versions: [draft, DRAFT_4, published] })));
+      const form = screen.getByRole('form', {
+        name: catalogue['pricing.publish.heading'] as string,
+      });
+      const choice = () =>
+        within(form).getByLabelText(
+          new RegExp(`^${escape(catalogue['pricing.publish.version'] as string)}`)
+        );
+      await user.selectOptions(choice(), DRAFT_4.id);
+      const day = within(form).getByRole('group', {
+        name: new RegExp(`^${escape(catalogue['pricing.publish.effectiveFrom'] as string)}`),
+      });
+      await user.click(within(day).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('01112026');
+      view.rerender(withMui(ui(MOVED), locale));
+
+      await user.click(
+        within(form).getByRole('button', { name: catalogue['pricing.publish.submit'] as string })
+      );
+      await waitFor(() => expect(publishPriceListVersion, locale).toHaveBeenCalled());
+      // Typed against version 3, so guarded by version 3: the server refuses it.
+      expect(publishPriceListVersion.mock.calls[0]?.[3], locale).toBe(3);
+      expect(
+        await within(form).findByText(catalogue['pricing.detail.conflict'] as string),
+        locale
+      ).toBeVisible();
+      expect(choice(), locale).toHaveValue(DRAFT_4.id);
+
+      await user.click(
+        within(form).getByRole('button', { name: catalogue['pricing.detail.reload'] as string })
+      );
+      await waitFor(() => expect(choice(), locale).toHaveValue(DRAFT_ID));
+      expect(within(form).queryByText(catalogue['pricing.detail.conflict'] as string)).toBeNull();
+      expect(refresh, locale).toHaveBeenCalled();
+
+      publishPriceListVersion.mockResolvedValue(success('pricing.version.published'));
+      await user.click(within(day).getAllByRole('spinbutton')[0] as HTMLElement);
+      await user.keyboard('01122026');
+      await user.click(
+        within(form).getByRole('button', { name: catalogue['pricing.publish.submit'] as string })
+      );
+      await waitFor(() => expect(publishPriceListVersion, locale).toHaveBeenCalledTimes(2));
+      expect(publishPriceListVersion.mock.calls[1]?.[3], locale).toBe(4);
+      view.unmount();
+    }
+  });
+
+  it('(b) the new draft: typed, refreshed, created — the OLD version and the conflict; loading the latest empties it', async () => {
+    createPriceListVersion.mockResolvedValue({
+      state: { status: 'conflict', correlationId: 'corr-d', attempt: 1 },
+      created: null,
+    });
+    const user = userEvent.setup();
+    const refreshWith = await mount(user);
+    const create = formNamed('pricing.version.createHeading');
+    const notes = () => within(create).getByLabelText(labelled('pricing.version.notes'));
+    await typeDay(user, create, 'pricing.version.effectiveFrom', '01112026');
+    await user.type(notes(), 'Spring');
+    refreshWith(MOVED);
+    expect(notes()).toHaveValue('Spring');
+
+    await user.click(
+      within(create).getByRole('button', { name: EN['pricing.version.createDraft'] as string })
+    );
+    await waitFor(() => expect(createPriceListVersion).toHaveBeenCalled());
+    expect(createPriceListVersion).toHaveBeenCalledWith(
+      LIST_ID,
+      { effectiveFrom: '2026-11-01', notes: 'Spring' },
+      3
+    );
+    expect(await within(create).findByText(EN['pricing.detail.conflict'] as string)).toBeVisible();
+    await user.click(
+      within(create).getByRole('button', { name: EN['pricing.detail.reload'] as string })
+    );
+    await waitFor(() => expect(notes()).toHaveValue(''));
+    expect(refresh).toHaveBeenCalled();
+    await switchWithoutQuestion(user, 'second');
+  });
+
+  it('(c) a successful publication is clean at once and after its refresh: no question on a link or a switch', async () => {
+    const user = userEvent.setup();
+    const refreshWith = await mount(user);
+    await user.selectOptions(publishChoice(), DRAFT_4.id);
+    await typeDay(user, publishForm(), 'pricing.publish.effectiveFrom', '01112026');
+    await publishNow(user);
+    await waitFor(() => expect(refresh).toHaveBeenCalled());
+    await leaveWithoutQuestion(user);
+
+    refreshWith(
+      priceList({
+        versions: [draft, { ...DRAFT_4, status: 'published' }, published],
+        recordVersion: 4,
+      })
+    );
+    await leaveWithoutQuestion(user);
+    await switchWithoutQuestion(user, 'second');
+    await waitFor(() => expect(heldBranch()).toBe(OTHER_BRANCH.id));
+  });
+
+  it('(d) an untouched form follows a refresh, and publishes on the new version', async () => {
+    const user = userEvent.setup();
+    const refreshWith = await mount(user);
+    refreshWith(MOVED);
+    await leaveWithoutQuestion(user);
+    await typeDay(user, publishForm(), 'pricing.publish.effectiveFrom', '01112026');
+    await publishNow(user);
+    await waitFor(() => expect(publishPriceListVersion).toHaveBeenCalled());
+    expect(publishPriceListVersion).toHaveBeenCalledWith(
+      LIST_ID,
+      DRAFT_ID,
+      { effectiveFrom: '2026-11-01' },
+      4
+    );
   });
 });

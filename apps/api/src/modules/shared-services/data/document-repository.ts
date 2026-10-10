@@ -27,6 +27,7 @@
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
+import { linkedEntityRelation } from '../domain/attachment-policy';
 
 export interface CategoryRow {
   readonly id: string;
@@ -72,6 +73,14 @@ export interface VersionRow {
   readonly quarantined_at: Date | null;
   readonly rejected_at: Date | null;
   readonly sha256_hex: string;
+}
+
+/** What `documentCategory` reports about a document's category. */
+export interface DocumentCategoryFacts {
+  readonly code: string;
+  readonly scope: string;
+  readonly status: string;
+  readonly deleted: boolean;
 }
 
 export interface LinkRow {
@@ -460,5 +469,86 @@ export class DocumentRepository extends Repository {
       [context.principal.tenantId, documentId]
     );
     return result.rows;
+  }
+
+  /**
+   * Which of `entityIds` name a row of `entityType` this session can actually see.
+   *
+   * ## Why it reads another module's table, and why that is the right place
+   *
+   * `shared.document_ids_for_entity` is described by its own migration comment as
+   * "the building block later domain policies compose with 'may the principal see
+   * entity X?'". This method is that second half. The composition has to happen
+   * where the link is read, because the link is the only thing that knows which
+   * entity to ask about, and a consumer answering it for itself would be a second
+   * definition of reachability.
+   *
+   * ## Why it asks the row and not a permission
+   *
+   * Nothing is decided here. The statement selects nothing but the key, under the
+   * caller's own transaction, so each target table's own SELECT policy is the
+   * whole answer: tenant-only for business partners, damage-map templates and
+   * vehicles; company-narrowed for legal companies; company- and branch-narrowed
+   * for appointments, quotations, reception visits, invoices and work orders. A
+   * row the policy hides simply does not come back.
+   *
+   * ## Why the relation name is safe
+   *
+   * It is never interpolated from caller input. `linkedEntityRelation` returns a
+   * relation only for a token in the frozen allow-list, re-checked against a plain
+   * lower-case identifier shape; an unrecognised token yields no relation and this
+   * method reports nothing visible, which is the fail-closed answer. `id` is the
+   * key of every allow-listed table, asserted by
+   * `tests/backend/p1-31-signature-download-refusal.test.ts` against the catalog.
+   */
+  async visibleEntityIds(
+    db: DbHandle,
+    entityType: string,
+    entityIds: readonly string[]
+  ): Promise<readonly string[]> {
+    this.assertContext(db);
+    if (entityIds.length === 0) return [];
+    const relation = linkedEntityRelation(entityType);
+    if (relation === null) return [];
+    const result = await this.run<{ id: string }>(
+      db,
+      `SELECT id FROM "${relation.schema}"."${relation.table}" WHERE id = ANY($1::uuid[])`,
+      [[...entityIds]]
+    );
+    return result.rows.map((row) => row.id);
+  }
+
+  /**
+   * The facts about the category a live document is filed under — its code, its
+   * scope, its status and whether it is soft-deleted — or null when the document
+   * or its category is not visible to this session.
+   *
+   * Read under the caller's own RLS: `sel_documents_tenant` narrows the document
+   * to the session tenant, and `sel_document_categories_visible` admits the
+   * platform row or the session tenant's own override, which is exactly the set
+   * `shared.guard_document_category_scope` allows a document to reference.
+   *
+   * It returns facts rather than a verdict, and filters none of them: a tenant
+   * override carrying a platform code, a disabled category and a soft-deleted
+   * one are all reported as what they are, so the consumer that owns the rule
+   * decides what is acceptable instead of this read deciding it silently.
+   */
+  async documentCategory(db: DbHandle, documentId: string): Promise<DocumentCategoryFacts | null> {
+    const context = this.assertContext(db);
+    const row = await this.runOne<{
+      category_code: string;
+      scope: string;
+      status: string;
+      deleted: boolean;
+    }>(
+      db,
+      `SELECT c.category_code, c.scope, c.status, (c.deleted_at IS NOT NULL) AS deleted
+         FROM shared.documents d
+         JOIN shared.document_categories c ON c.id = d.category_id
+        WHERE d.tenant_id = $1 AND d.id = $2 AND d.deleted_at IS NULL`,
+      [context.principal.tenantId, documentId]
+    );
+    if (!row) return null;
+    return { code: row.category_code, scope: row.scope, status: row.status, deleted: row.deleted };
   }
 }

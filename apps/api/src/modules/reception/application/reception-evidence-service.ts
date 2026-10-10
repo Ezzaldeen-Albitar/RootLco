@@ -60,8 +60,9 @@ import {
   assertQuantity,
   optionalNonBlank,
   requireNonBlank,
+  storedComplaintSeverity,
   type ComplaintCategory,
-  type ComplaintSeverity,
+  type StoredComplaintSeverity,
   type DamageMarkType,
   type EvidenceKind,
   type FindingCategory,
@@ -85,7 +86,8 @@ const LOWERCASE_HEX_PAIRS = /^(?:[0-9a-f]{2})+$/;
 export interface ComplaintEvidence {
   readonly kind: 'complaint';
   readonly category: ComplaintCategory;
-  readonly severity?: ComplaintSeverity | undefined;
+  /** Omitted: the customer gave none, stored as `not_stated`. */
+  readonly severity?: StoredComplaintSeverity | undefined;
   /** The customer's own words. Stored `restricted` and gated at the database. */
   readonly complaintText: string;
   readonly reportedByPartnerId?: string | null | undefined;
@@ -452,7 +454,9 @@ export class ReceptionEvidenceService extends ApplicationService {
             ...scope,
             receptionVisitId,
             category: input.category,
-            severity: input.severity ?? 'medium',
+            // An omitted severity is stored as "not stated", never as a value
+            // the customer did not give (Owner decision of 2026-10-03).
+            severity: storedComplaintSeverity(input.severity),
             reportedByPartnerId: input.reportedByPartnerId ?? null,
             evidenceDocumentId: input.evidenceDocumentId ?? null,
           }),
@@ -781,7 +785,13 @@ export class ReceptionEvidenceService extends ApplicationService {
   /**
    * Turns a domain rule violation into the platform's validation problem. The
    * path comes from the call site because `EvidenceRuleError` carries a message
-   * and no field reference.
+   * and no field reference; the TOKEN comes from the error, because only the
+   * domain knows which of its rules refused.
+   *
+   * All five used to be published as `invalid_value`, whose sentence sends the
+   * reader back to check the choices, the length and the range of what they
+   * entered. For a missing companion field that is the wrong instruction
+   * entirely: nothing entered is wrong, something required was not entered.
    */
   private ruleOrFail<T>(build: () => T, path: string): T {
     try {
@@ -790,7 +800,7 @@ export class ReceptionEvidenceService extends ApplicationService {
       if (error instanceof EvidenceRuleError) {
         throw new AppFailure('ERR-VAL-001', {
           message: error.message,
-          safeDetails: { violations: [{ path, rule: 'invalid_value' }] },
+          safeDetails: { violations: [{ path, rule: error.rule }] },
           cause: error,
         });
       }

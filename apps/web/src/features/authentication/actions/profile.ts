@@ -54,7 +54,7 @@ export async function updateOwnProfileAction(
 
   const client = await authorizedClient();
   if (!client) {
-    return { status: 'expired', messageKey: 'state.expired.title', attempt };
+    return { status: 'expired', messageKey: 'state.expired.message', attempt };
   }
 
   // Re-read the session rather than trusting the form for whose account this is.

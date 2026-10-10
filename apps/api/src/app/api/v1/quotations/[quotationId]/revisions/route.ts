@@ -33,7 +33,13 @@ import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, schemas, searchParamsToObject } from '@/server/http/validation';
 import { AppFailure } from '@/server/errors/app-failure';
 import { INTERNAL_CODE } from '@/modules/service-catalog';
-import { MAX_ITEMS_PER_REVISION, MAX_ITEM_DESCRIPTION, quotationModule } from '@/modules/quotation';
+import {
+  MAX_ITEMS_PER_REVISION,
+  MAX_ITEM_DESCRIPTION,
+  ITEM_KINDS,
+  quotationModule,
+  refineQuotationLine,
+} from '@/modules/quotation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -42,7 +48,13 @@ const Params = z.object({ quotationId: schemas.uuid });
 
 const Line = z
   .object({
-    serviceId: schemas.uuid,
+    // A SERVICE line (the default, so a caller that names no kind is unchanged) or a
+    // PART line (ADR-023 D6). A part line names an item of the catalogue and is
+    // priced by the server at the item selling price that applies to the work
+    // order's branch — never at cost, and never at a price the caller sends.
+    kind: z.enum(ITEM_KINDS).optional(),
+    serviceId: schemas.uuid.optional(),
+    itemId: schemas.uuid.optional(),
     quantity: z
       .string()
       .regex(
@@ -58,14 +70,18 @@ const Line = z
       .optional(),
     description: z.string().min(1).max(MAX_ITEM_DESCRIPTION).optional(),
     sourceServiceLineRef: schemas.uuid.optional(),
+    // The work order's required part this line quotes, when it was quoted from one.
+    sourceRequiredPartRef: schemas.uuid.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine(refineQuotationLine);
 
 export const Body = z
   .object({
     lines: z.array(Line).min(1).max(MAX_ITEMS_PER_REVISION),
     customerClass: z.string().regex(INTERNAL_CODE, 'must be a lower-snake class code').optional(),
-    discountRequestedBy: schemas.uuid.optional(),
+    // No requester field: see `POST /quotations`. A discount that needs approval is
+    // requested by the signed-in person and approved by somebody else.
   })
   .strict();
 
@@ -175,7 +191,6 @@ export async function POST(
         {
           lines: parsed.lines,
           customerClass: parsed.customerClass,
-          discountRequestedBy: parsed.discountRequestedBy,
           expectedVersion,
         },
         authorizeScope

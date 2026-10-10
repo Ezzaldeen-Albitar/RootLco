@@ -207,8 +207,8 @@ vi.mock('@/features/vehicles/documents-api', () => ({
 
 // The customer selector inside the vehicle link form searches the directory.
 // Unmocked it reaches the authorized client and `cookies()` outside a request.
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: listStub,
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: listStub,
 }));
 
 /* ------------------------------------------------------------------ *

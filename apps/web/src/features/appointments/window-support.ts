@@ -49,7 +49,12 @@ export {
 export const WINDOW_ISSUE_KEY: Readonly<Record<WindowIssue, string>> = Object.freeze({
   empty: 'field.required',
   too_long: 'field.tooLong',
+  // Three sentences rather than one, matching the three tokens the server
+  // publishes for the same three causes. An entry that already ends in an offset
+  // must not be answered with "include an offset".
   missing_offset: 'field.instantNeedsOffset',
+  offset_unreadable: 'field.instantOffsetUnreadable',
+  offset_out_of_range: 'field.instantOffsetOutOfRange',
   unparseable: 'field.invalid',
   not_after_start: 'field.windowEndsBeforeStart',
 });

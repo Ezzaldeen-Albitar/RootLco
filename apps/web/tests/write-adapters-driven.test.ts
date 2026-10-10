@@ -776,15 +776,26 @@ describe('recordOdometerAction — FE-023, and the offset rule (F2)', () => {
     expect(translatable(errors.observedAt)).toBe(true);
   });
 
-  it('accepts every offset PostgreSQL does, and refuses the ones it does not', async () => {
-    // The ±15:59 cap is the database's own `timestamptz` limit. V8 parses
-    // `+16:00` happily, so without the cap the value sails past every guard in
-    // the product and dies in the database as an unmapped 22009.
+  it('accepts every offset in civil use, and refuses the ones outside it', async () => {
+    /*
+     * The bound is -12:00…+14:00, the range of offsets actually kept anywhere:
+     * +14:00 is Kiribati and -12:00 the far side of the date line. It used to be
+     * the database's own `timestamptz` limit of ±15:59, which is wider and
+     * corresponds to nowhere, and the shared authority was tightened to the
+     * civil range when the appointment domain gained a refusal sentence that had
+     * to NAME the bound. Nothing the database would have refused is admitted;
+     * the change is that a handful of displacements no clock keeps are now
+     * refused here too, and refused with a sentence that says which values are
+     * allowed instead of quoting a limit nobody could act on.
+     *
+     * V8 parses `+16:00` happily, so without a bound the value sails past every
+     * guard in the product and dies in the database as an unmapped 22009.
+     */
     for (const observedAt of [
       '2026-03-01T09:30:00Z',
       '2026-03-01T09:30:00+03:00',
       '2026-03-01T09:30:00-11:30',
-      '2026-03-01T09:30:00+15:59',
+      '2026-03-01T09:30:00+14:00',
     ]) {
       send.mockReset();
       send.mockResolvedValue({ ok: true, data: {}, correlationId: 'corr-1' });
@@ -798,7 +809,11 @@ describe('recordOdometerAction — FE-023, and the offset rule (F2)', () => {
       expect(body.observedAt, observedAt).toBe(observedAt);
     }
 
-    for (const observedAt of ['2026-03-01T09:30:00+16:00', '2026-03-01T09:30:00+03']) {
+    for (const observedAt of [
+      '2026-03-01T09:30:00+16:00',
+      '2026-03-01T09:30:00+15:59',
+      '2026-03-01T09:30:00+03',
+    ]) {
       send.mockReset();
       const errors = await refused(() =>
         vehHistory.recordOdometerAction(

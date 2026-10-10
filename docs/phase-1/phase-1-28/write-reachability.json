@@ -29,15 +29,22 @@
     "was walked past an earlier version of this gate. The checker now reads the",
     "plan and refuses any reference no decision heading there carries.",
     "",
-    "Twenty-one operations carry it, all of them the intake-catalogue",
-    "management writes PR #227 registered: create, update and status-set across",
-    "the seven catalogues. They are absent from apps/web deliberately. The",
-    "35-task register is the OPERATOR surface and no canonical P1-28 task binds",
-    "a catalogue-administration screen, so who administers these catalogues and",
-    "through which surface is an Owner decision that has not been taken. It is",
-    "recorded as P1-28-OD-001, and this is the vocabulary's stated purpose: a",
-    "future Owner decision recorded AS a decision rather than parked as",
-    "not-yet-wired, which the frozen ratchet would refuse anyway."
+    "Sixteen operations carry it: the reception intake-catalogue management",
+    "writes (create, update and status-set across the four reception",
+    "catalogues PR #227 registered, and the four P1-18 added). They are absent",
+    "from apps/web deliberately. The 35-task register is the OPERATOR surface",
+    "and no canonical P1-28 task binds a catalogue-administration screen, so",
+    "who administers these catalogues and through which surface is an Owner",
+    "decision that has not been taken for them. It is recorded as P1-28-OD-001,",
+    "and this is the vocabulary's stated purpose: a future Owner decision",
+    "recorded AS a decision rather than parked as not-yet-wired, which the",
+    "frozen ratchet would refuse anyway.",
+    "",
+    "The nine APPOINTMENT catalogue writes were taken out of that set by the",
+    "Owner decision of 2026-09-29, which answers P1-28-OD-001 for the three",
+    "appointment catalogues: the standard tenant administrator holds",
+    "apt.catalogue.manage and administers them on the appointment setup screen",
+    "(/administration/appointment-setup). They are REACHABLE through it."
   ],
   "operations": {
     "apt.appointment-create": {
@@ -96,49 +103,40 @@
       "reason": "P1-28-FE-020: the 'refuse the visit' form of the same summary step (apps/web/src/features/receptions/components/steps/SummaryStep.tsx) submits through refuseReception in apps/web/src/features/receptions/api.ts, which forwards to closeVisit and sends POST visitPath(receptionId, '/refuse'). This is the terminal EXIT, not rec.reception-refusal, which appends refusal evidence and changes no status."
     },
     "apt.catalogue-appointment-type-create": {
-      "classification": "DELIBERATELY_ABSENT",
-      "decisionRef": "P1-28-OD-001",
-      "reason": "Catalogue apt.appointment_types — create. No administration screen exists in this product and no canonical P1-28 task binds one; the capability ships as API only, behind apt.catalogue.manage, which no seed grants to any role. Populating this catalogue is what would unblock FE-002, because appointmentTypeId is a required uuid on apt.appointment-create."
+      "classification": "REACHABLE",
+      "reason": "Owner decision 2026-09-29: the appointment setup screen at /administration/appointment-setup (apps/web/src/features/appointments/components/AppointmentSetupScreen.tsx) adds an appointment type through createAppointmentType in apps/web/src/features/appointments/catalogue-api.ts, which sends POST /api/v1/appointment-catalogue/appointment-types. Booking needs at least one active type, so this is what makes FE-002 operable in a new organisation."
     },
     "apt.catalogue-appointment-type-update": {
-      "classification": "DELIBERATELY_ABSENT",
-      "decisionRef": "P1-28-OD-001",
-      "reason": "Catalogue apt.appointment_types — update. Same surface question as the create: an amend needs the same administration screen that has not been decided on, so no apps/web module calls it."
+      "classification": "REACHABLE",
+      "reason": "Owner decision 2026-09-29: the rename dialog of the appointment setup screen at /administration/appointment-setup (apps/web/src/features/appointments/components/AppointmentSetupScreen.tsx) submits through renameAppointmentType, which sends PATCH appointmentTypePath(id) guarded by the If-Match the edit form holds from the management list."
     },
     "apt.catalogue-appointment-type-status-set": {
-      "classification": "DELIBERATELY_ABSENT",
-      "decisionRef": "P1-28-OD-001",
-      "reason": "Catalogue apt.appointment_types — status set (retire or restore). Same surface question: the operator surface never withdraws a catalogue row, and the administration surface that would is undecided."
+      "classification": "REACHABLE",
+      "reason": "Owner decision 2026-09-29: the retire and restore confirmation of the appointment setup screen at /administration/appointment-setup (apps/web/src/features/appointments/components/AppointmentSetupScreen.tsx) submits through setAppointmentTypeStatus, which sends POST appointmentTypePath(id, '/status') guarded by the If-Match the management list showed."
     },
     "apt.catalogue-cancellation-reason-create": {
-      "classification": "DELIBERATELY_ABSENT",
-      "decisionRef": "P1-28-OD-001",
-      "reason": "Catalogue apt.cancellation_reasons — create. No administration screen and no canonical task binding one; API only, behind apt.catalogue.manage, granted to no role. Populating this catalogue is what would unblock FE-004, because cancellationReasonId is mandatory on apt.appointment-cancel with no free-text alternative."
+      "classification": "REACHABLE",
+      "reason": "Owner decision 2026-09-29: the appointment setup screen at /administration/appointment-setup (apps/web/src/features/appointments/components/AppointmentSetupScreen.tsx) adds a cancellation reason through createCancellationReason, which sends POST /api/v1/appointment-catalogue/cancellation-reasons. Cancelling needs a catalogued reason, so this is what makes FE-004 operable in a new organisation."
     },
     "apt.catalogue-cancellation-reason-update": {
-      "classification": "DELIBERATELY_ABSENT",
-      "decisionRef": "P1-28-OD-001",
-      "reason": "Catalogue apt.cancellation_reasons — update. Same surface question as its create; no apps/web module calls it."
+      "classification": "REACHABLE",
+      "reason": "Owner decision 2026-09-29: the rename dialog of the appointment setup screen at /administration/appointment-setup (apps/web/src/features/appointments/components/AppointmentSetupScreen.tsx) submits through renameCancellationReason, which sends PATCH cancellationReasonPath(id) guarded by the If-Match the edit form holds."
     },
     "apt.catalogue-cancellation-reason-status-set": {
-      "classification": "DELIBERATELY_ABSENT",
-      "decisionRef": "P1-28-OD-001",
-      "reason": "Catalogue apt.cancellation_reasons — status set. Same surface question; retiring a reason is an administrative act with no decided surface."
+      "classification": "REACHABLE",
+      "reason": "Owner decision 2026-09-29: the retire and restore confirmation of the appointment setup screen at /administration/appointment-setup (apps/web/src/features/appointments/components/AppointmentSetupScreen.tsx) submits through setCancellationReasonStatus, which sends POST cancellationReasonPath(id, '/status') guarded by the If-Match the management list showed."
     },
     "apt.catalogue-source-channel-create": {
-      "classification": "DELIBERATELY_ABSENT",
-      "decisionRef": "P1-28-OD-001",
-      "reason": "Catalogue apt.source_channels — create. No administration screen and no canonical task binding one; API only, behind apt.catalogue.manage. sourceChannelId is NULLABLE on apt.appointment-create, so an empty channel catalogue degrades FE-002 rather than blocking it — the emptiness is recorded on screen as an absence, not as an error."
+      "classification": "REACHABLE",
+      "reason": "Owner decision 2026-09-29: the appointment setup screen at /administration/appointment-setup (apps/web/src/features/appointments/components/AppointmentSetupScreen.tsx) adds a booking channel through createSourceChannel, which sends POST /api/v1/appointment-catalogue/source-channels. A channel stays optional on booking."
     },
     "apt.catalogue-source-channel-update": {
-      "classification": "DELIBERATELY_ABSENT",
-      "decisionRef": "P1-28-OD-001",
-      "reason": "Catalogue apt.source_channels — update. Same surface question as its create; no apps/web module calls it."
+      "classification": "REACHABLE",
+      "reason": "Owner decision 2026-09-29: the rename dialog of the appointment setup screen at /administration/appointment-setup (apps/web/src/features/appointments/components/AppointmentSetupScreen.tsx) submits through renameSourceChannel, which sends PATCH sourceChannelPath(id) guarded by the If-Match the edit form holds."
     },
     "apt.catalogue-source-channel-status-set": {
-      "classification": "DELIBERATELY_ABSENT",
-      "decisionRef": "P1-28-OD-001",
-      "reason": "Catalogue apt.source_channels — status set. Same surface question; no apps/web module calls it."
+      "classification": "REACHABLE",
+      "reason": "Owner decision 2026-09-29: the retire and restore confirmation of the appointment setup screen at /administration/appointment-setup (apps/web/src/features/appointments/components/AppointmentSetupScreen.tsx) submits through setSourceChannelStatus, which sends POST sourceChannelPath(id, '/status') guarded by the If-Match the management list showed."
     },
     "rec.catalogue-fuel-level-create": {
       "classification": "DELIBERATELY_ABSENT",

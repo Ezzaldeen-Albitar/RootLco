@@ -1,4 +1,35 @@
 import { expect, test } from '@playwright/test';
+import { readSignedInAccount } from './account-manifest';
+
+/**
+ * This file assumes the ACCEPTANCE OWNER, so it runs only when that is who signed in.
+ *
+ * Every case below was written against the world `npm run acceptance:create-owner`
+ * builds — its two tenants, its roles, its branch scoping and its permission set — and
+ * several of them name a row of it outright. They are correct about that world and say
+ * nothing about any other.
+ *
+ * `auth.setup.ts` will sign in as a different person when one is offered: a local P1-31
+ * acceptance run points `ROOTLCO_P131_HANDOFF` at the journey's own organisation
+ * administrator, who is a member of an organisation none of these rows exist in. Run
+ * unguarded against that session, this file reports failures about a fixture that was
+ * never provisioned rather than about the product — measured, in the 2026-09-13 re-run,
+ * as 125 such failures across the seven legacy specs while all forty P1-31 cases passed.
+ *
+ * So the account is READ and the file skips with the account named. Nothing changes in
+ * the governed job, which signs in as the acceptance owner and executes every case here;
+ * what changes is that a handoff-driven local run says "this file wants a different
+ * account" instead of asserting on a world it can see is absent. No assertion below is
+ * altered, relaxed or removed.
+ */
+test.beforeEach(() => {
+  const account = readSignedInAccount();
+  // test-honesty-allow: TH-002 -- this file's fixture belongs to the owner-acceptance account; the reason names the account actually signed in
+  test.skip(
+    account.kind !== 'owner-acceptance',
+    `requires the owner-acceptance account; signed in as ${account.kind}`
+  );
+});
 
 /**
  * The P1-27 CRM and Vehicle screens, against the **running application and the
@@ -142,7 +173,7 @@ test.describe('search asks the real backend only when asked', () => {
 
     await page.goto('/en/vehicles');
     const before = posts.length;
-    await page.getByLabel(/VIN/i).fill('JH4KA7561PC008269');
+    await page.getByLabel('VIN', { exact: true }).fill('JH4KA7561PC008269');
     await page.waitForTimeout(500);
 
     expect(observed.length, 'the listener saw no requests at all').toBeGreaterThan(0);
@@ -281,7 +312,7 @@ test.describe('the client asserts no scope on the wire', () => {
 test.describe('no free-text search term reaches the address bar', () => {
   test('a VIN typed into search never appears in the URL', async ({ page }) => {
     await page.goto('/en/vehicles');
-    await page.getByLabel(/VIN/i).fill('JH4KA7561PC008269');
+    await page.getByLabel('VIN', { exact: true }).fill('JH4KA7561PC008269');
     await page
       .getByRole('button', { name: /search/i })
       .first()

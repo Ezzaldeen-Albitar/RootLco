@@ -29,14 +29,20 @@
  *     consumes it any more**, which is asserted rather than stated.
  *   - `iam.user-detail` — one account by id, the same fields. This is the one
  *     the actor-name resolution spends.
- *   - `iam.auth-session` — the session bootstrap, which registers the SAME code.
  *
- * The third entry decides how this reads. `GET /auth/session` requires
- * `iam.user.read`, so **every operator who can load the application at all
- * already holds it**: resolving an actor's name widens nobody's access. It was
- * never a comfortable argument for a PICKER — "this discloses nothing new" is
- * weaker than "this discloses less" — but for turning an identifier already on
- * the page into the name of the person it names, it is the right one.
+ * It is NO LONGER spent on the session bootstrap either. `iam.auth-session` and
+ * `iam.working-context-read` used to register this code, and with it the argument
+ * that "every operator who can load the application at all already holds it".
+ * That argument was the defect: a role without the directory code could not open
+ * the product (P1-32-PRE-OD-FRX). Both are now authenticated SELF-READS — they
+ * declare no code and answer only about the caller — listed in
+ * `USER_DIRECTORY_SELF_READS` below so the change is checkable.
+ *
+ * So resolving another person's name is a CAPABILITY again, not a universal: an
+ * operator without `iam.user.read` spends no request and sees "unavailable" in
+ * place of the name, which is what `readStaffDirectory` on the check-in page and
+ * `person-name.ts` (`denied`) already do. Nothing about another account is
+ * readable through the two self-reads.
  *
  * ## What is NOT claimed
  *
@@ -50,20 +56,18 @@
 export const USER_DIRECTORY_PERMISSION = 'iam.user.read';
 
 /** Every operation that one code opens, so the disposition can be checked. */
-export const USER_DIRECTORY_OPERATIONS = Object.freeze([
-  'iam.user-list',
-  'iam.user-detail',
-  'iam.auth-session',
-]);
+export const USER_DIRECTORY_OPERATIONS = Object.freeze(['iam.user-list', 'iam.user-detail']);
 
 /**
- * The operation whose requirement makes the code universal.
- *
- * Named separately because it carries the whole argument: without it, resolving
- * a name would be asking for a capability an operator might not otherwise have,
- * and the disposition would have to be a different one.
+ * The two reads that used to register `iam.user.read` and are now authenticated
+ * self-reads with no code (P1-32-PRE-OD-FRX). Named so a test can hold that they
+ * declare nothing — and therefore that holding the directory code is no longer
+ * implied by being able to open the application.
  */
-export const USER_DIRECTORY_BOOTSTRAP_OPERATION = 'iam.auth-session';
+export const USER_DIRECTORY_SELF_READS = Object.freeze([
+  'iam.auth-session',
+  'iam.working-context-read',
+]);
 
 /**
  * The one this code opens that NO P1-28 surface may consume.

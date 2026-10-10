@@ -550,6 +550,29 @@ export async function withIdempotency<T>(
 }
 
 /**
+ * Throws `IdempotencyRaceError` when this key is already stored with this
+ * fingerprint — a concurrent copy of the same request committed first — and
+ * returns normally otherwise (P1-32-PRE-OD-FD16B).
+ *
+ * For a command that met the winner at its own unique index before it reached the
+ * key: the route then rolls back and answers with the stored response, as for any
+ * race. A key stored with ANOTHER fingerprint is not this request's retry, so it
+ * is left to the command's own refusal. Must run on a usable transaction that can
+ * see the winner's commit — READ COMMITTED, after any failed statement has been
+ * rolled back to a savepoint.
+ */
+export async function raceIfKeyStored(
+  db: DbHandle,
+  input: { operationId: string; key: string; fingerprint: string }
+): Promise<void> {
+  const operationCode = toOperationCode(input.operationId);
+  const existing = await readExisting(db, operationCode, input.key);
+  if (existing !== null && existing.request_fingerprint === input.fingerprint) {
+    throw new IdempotencyRaceError(operationCode, input.key, input.fingerprint);
+  }
+}
+
+/**
  * Signals that another transaction won the race for this key. The caller must
  * roll back and re-read on a new transaction — the current one is aborted.
  */

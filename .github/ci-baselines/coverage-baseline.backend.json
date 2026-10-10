@@ -2,23 +2,40 @@
   "tier": "backend",
   "description": "Backend-tier coverage baseline. Scope is apps/api/src/modules/** and apps/api/src/server/** — the code whose behaviour only exists with a real PostgreSQL attached. Measured by `npm run test:backend -- --coverage` inside the integration-tests job.",
   "policy": "docs/engineering/ci-automation/coverage-policy.md",
-  "establishedBy": "PR CI run 19 (run id 30431556718), job `integration-tests / integration-tests`, artifact `evidence-integration-tests`, files `coverage/backend/coverage-summary.json` and `coverage-gate-backend.json`, at feature head 8d7bfff09cf914e00ff5ff4587341ece261185c3, started 2026-07-29T07:24:48Z, GitHub-hosted ubuntu-latest. 1380 backend tests across 393 files, 0 failed, 199 instrumented source files.",
-  "establishmentNote": "Recorded from the first GitHub-hosted run that ever measured this tier. Every figure below is that run's own measurement — none was carried over, estimated, or rounded in the flattering direction. The percentages are coverage-gate.mjs's own `pct()` (covered/total to two decimals, rounded), which is what the ratchet compares against; istanbul's summary truncates instead, so it reports functions as 86.72 where the gate reports 86.73. The gate's convention is authoritative here because the gate is what enforces.",
+  "establishedBy": "RE-ESTABLISHED at the vitest 4 upgrade. GitHub-hosted run id 34321869051, job `integration-tests / integration-tests`, artifact `evidence-integration-tests`, files `coverage/backend/coverage-summary.json` and `coverage-gate-backend.json`, at branch head 64b8cb08b9f81be02ee627bcde83286c0bc25331, ubuntu-latest. 2733 backend tests across 271 instrumented source files. ORIGINAL ESTABLISHMENT, kept for traceability: PR CI run 19 (run id 30431556718) at feature head 8d7bfff09cf914e00ff5ff4587341ece261185c3, started 2026-07-29T07:24:48Z, 1380 backend tests across 393 test files.",
+  "instrumentedFileCountNote": "271, not 199. The superseded text said 199 instrumented source files, and that figure had been stale for a long time before this change: the vitest-3 CONTROL run for this upgrade (run id 34268315150, at sha 8380e587) measured 271 too. So the file count is not something vitest 4 moved — it drifted upward with the modules the tier covers while this line went uncorrected. It is corrected here because the re-establishment reads it, not because the upgrade caused it.",
+  "establishmentNote": "Every figure below is the named run's own measurement — none was carried over, estimated, or rounded in the flattering direction. The percentages are coverage-gate.mjs's own `pct()` (covered/total to two decimals, rounded), which is what the ratchet compares against; the summary truncates instead. The worked example has been rebuilt on the current counts, because the old one (functions reported as 86.72 against a gate figure of 86.73) belongs to counts this tier no longer holds: functions are now 2442/2746 = 88.9293…, truncated to 88.92 and computed by the gate as 88.93. The gate's convention is authoritative here because the gate is what enforces.",
+  "reEstablishmentReason": "@vitest/coverage-v8 moved from 3.2.7 to 4.1.11 (forced: the 3.x line carries no patched release for GHSA-82fw-gwwq-j7x9). Vitest 4 replaced the v8 provider's RANGE mapping with AST-aware remapping, so covered/total is computed over a different unit of account and the superseded percentages are not comparable with these. NO APPLICATION SOURCE CHANGED IN THE BRANCH THAT MOVED THEM. The control is unusually clean on this tier and is the reason the claim is stated rather than assumed: the vitest-3 control run (run id 34268315150, sha 8380e587) and the vitest-4 branch run (run id 34321869051, head 64b8cb08) report the SAME 271 instrumented files and the SAME 2733 of 2733 tests. Per file, `lines.total` FELL on 271 of 271 files, median ratio 0.269, while the function count ROSE from 2268 to 2746 — a direction of travel no coverage regression produces. And the `lines === statements` identity, byte-identical in every vitest-3 measurement of this tier, disappears exactly at the major: 9948/11734 lines against 10454/12525 statements. See docs/engineering/ci-automation/coverage-policy.md, `When the coverage provider changes major version`.",
+  "previousBaselineBeforeReEstablishment": {
+    "lines": 86.38,
+    "statements": 86.38,
+    "functions": 86.73,
+    "branches": 80.08,
+    "rawCounts": {
+      "lines": "25794/29860",
+      "statements": "25794/29860",
+      "functions": "1320/1522",
+      "branches": "4189/5231"
+    },
+    "measuredUnder": "@vitest/coverage-v8 3.2.7",
+    "why": "Kept so the re-establishment is a visible diff rather than a silent overwrite. Three of the four fell and one rose. None of the four movements is a statement about how well this tier is tested."
+  },
   "tolerancePercentagePoints": 1,
   "touchedFileMinimum": 0,
   "touchedFileExemptPrefixes": [],
   "global": {
-    "lines": 86.38,
-    "statements": 86.38,
-    "functions": 86.73,
-    "branches": 80.08
+    "lines": 84.78,
+    "statements": 83.47,
+    "functions": 88.93,
+    "branches": 70.01
   },
   "globalRawCounts": {
-    "lines": "25794/29860",
-    "statements": "25794/29860",
-    "functions": "1320/1522",
-    "branches": "4189/5231"
+    "lines": "9948/11734",
+    "statements": "10454/12525",
+    "functions": "2442/2746",
+    "branches": "5062/7230"
   },
+  "branchFallNote": "READ THIS BEFORE READING THE BRANCH FIGURE AS A ROUNDING ARTEFACT. IT IS NOT ONE. Branches fell 80.08 -> 70.01, and the mechanism is specific: under vitest 3 whole files reported `branches.total: 0`, and coverage-gate.mjs's `pct()` defines nothing-to-cover as 100, so those files scored a perfect branch percentage while no branch in them had ever been evaluated. Vitest 4 reports their real branches, uncovered. Four measured examples, all files this branch does not touch: `apps/api/src/modules/iam/provider/supabase-provider.ts` went from 0 branches at 100% to 125 branches at 0% covered; `apps/api/src/modules/shared-services/provider/s3-storage-provider.ts` from 0 to 66, 0% covered; `apps/api/src/server/cache/cache.ts` from 1 to 32, 0% covered; `apps/api/src/modules/pricing/domain/pricing.ts` from 0 to 20, 0% covered. THE NEW FLOOR RECORDS A GENUINELY UNCOVERED SURFACE THAT THE PREVIOUS INSTRUMENT WAS CONCEALING. Branch coverage on this tier did not improve and did not hold; it was never as high as 80.08, and the number that said so was measuring less than it appeared to. Closing that surface is backend-coverage work, not baseline work, and it is tracked separately from this re-establishment — recording it at 70.01 is what makes the next movement in either direction legible, and nothing here should be read as the gap being addressed.",
   "criticalModules": [
     {
       "id": "iam-authorization",
@@ -27,7 +44,7 @@
       "minimum": 68,
       "why": "every scope decision in the product; H6 taught that a scope predicate can be wrong in a direction no test looks at",
       "minMatchedFiles": 18,
-      "measuredAtEstablishment": 74.3
+      "measuredAtEstablishment": 77.1
     },
     {
       "id": "inventory",
@@ -36,7 +53,7 @@
       "minimum": 85,
       "why": "negative stock, reservation locks, exact quantities",
       "minMatchedFiles": 6,
-      "measuredAtEstablishment": 91.15
+      "measuredAtEstablishment": 89.47
     },
     {
       "id": "work-order",
@@ -45,7 +62,7 @@
       "minimum": 88,
       "why": "lifecycle guards and closure eligibility",
       "minMatchedFiles": 8,
-      "measuredAtEstablishment": 94.63
+      "measuredAtEstablishment": 91.94
     },
     {
       "id": "quotation",
@@ -54,7 +71,7 @@
       "minimum": 83,
       "why": "approval and revision races",
       "minMatchedFiles": 5,
-      "measuredAtEstablishment": 89.73
+      "measuredAtEstablishment": 90.87
     },
     {
       "id": "pricing",
@@ -63,7 +80,7 @@
       "minimum": 75,
       "why": "exact money arithmetic and discount authorization",
       "minMatchedFiles": 8,
-      "measuredAtEstablishment": 81.62
+      "measuredAtEstablishment": 81.4
     },
     {
       "id": "audit-and-outbox",
@@ -72,10 +89,10 @@
       "minimum": 38,
       "why": "append-only audit and at-least-once delivery",
       "minMatchedFiles": 2,
-      "measuredAtEstablishment": 40.45
+      "measuredAtEstablishment": 71.43
     }
   ],
-  "criticalModuleFloorNote": "Floors are set below the first hosted measurement — by roughly 5-7 points for the large modules, so ordinary churn does not trip them, and by 2.45 points for `audit-and-outbox`, whose 89 instrumented lines across 2 files do not churn enough to need a wide band. `minMatchedFiles` pins the instrumented file count at each prefix: a floor that silently starts protecting fewer files is a floor that has been weakened without a diff. `audit-and-outbox` at 40.45% is the honest weak spot of this tier and is recorded rather than omitted — most of that code is exercised in the unit tier, where `worker-backoff` sits at 100%, but that is an explanation and not a defence. Raising it is backend-coverage work, not baseline work.",
+  "criticalModuleFloorNote": "Floors are set below their measurement, and `measuredAtEstablishment` on every rule above has been REFRESHED to the vitest-4 hosted run named in `establishedBy` (run id 34321869051, head 64b8cb08) while NO FLOOR MOVED — the six had been left at their vitest-3 figures when the globals were re-based, which made this file internally inconsistent. Re-measured, all six pass: `iam-authorization` 77.10 over 68, `inventory` 89.47 over 85, `work-order` 91.94 over 88, `quotation` 90.87 over 83, `pricing` 81.40 over 75, `audit-and-outbox` 71.43 over 38. The bands are therefore no longer the uniform 5-7 points this note used to describe, and they are not evenly distributed: 3.94 points on `work-order` and 4.47 on `inventory` are the narrow ones, 9.10 on `iam-authorization` and 33.43 on `audit-and-outbox` the wide. `tolerancePercentagePoints` does NOT apply to a critical module — coverage-gate.mjs compares a module measurement against its floor directly — so the narrow bands are the whole margin. `minMatchedFiles` pins the instrumented file count at each prefix: a floor that silently starts protecting fewer files is a floor that has been weakened without a diff. READ `audit-and-outbox` CAREFULLY. Its 71.43 is not coverage work: the superseded 40.45 was a vitest-3 measurement of the same 2 untouched files, and AST-aware remapping re-denominates them, exactly as it does everywhere else in this file. Nothing in this branch tests that code more than before, the 33.43-point band above 38 is an artefact of a floor set against the old instrument, and the honest reading is that the floor is now loose rather than that the gap closed. Tightening it is a deliberate act with its own measurement and its own commit; widening anything here is not on the table.",
   "plannedCriticalModules": [
     {
       "id": "idempotency",

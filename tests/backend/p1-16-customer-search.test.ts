@@ -42,6 +42,15 @@ const PARTNER_A = 'c1600000-0000-4000-8000-0000000000b1';
 const PARTNER_B = 'c1600000-0000-4000-8000-0000000000b2';
 
 const BASE = 'http://localhost/api/v1/customers';
+/**
+ * The published key set, asserted in both directions so an ADDITION is caught.
+ *
+ * P1-32 added three keys, each chosen so a person can pick the right customer
+ * from a list: `primaryPhone` (masked to its last four digits unless the caller
+ * holds `iam.sensitive.view`), `phoneMasked` (so a screen never has to guess
+ * which it received) and `vehicleCount`. None is a sensitive identifier; the
+ * masking is proved in tests/backend/p1-32-friendly-search.test.ts.
+ */
 const SAFE_KEYS = [
   'id',
   'displayNumber',
@@ -49,6 +58,9 @@ const SAFE_KEYS = [
   'partyType',
   'lifecycleStatus',
   'createdAt',
+  'primaryPhone',
+  'phoneMasked',
+  'vehicleCount',
 ];
 
 interface Hit {
@@ -184,7 +196,7 @@ describe('bounded, privacy-safe search', () => {
     expect(Object.keys(hit ?? {}).sort()).toEqual([...SAFE_KEYS].sort());
   });
 
-  it('matches an allow-listed normalized name prefix', async () => {
+  it('matches an allow-listed normalized name fragment', async () => {
     authenticateAs(CRM_READER_SUBJECT);
     const response = await search('?name=acme');
     const body = (await response.json()) as SearchBody;
@@ -197,7 +209,8 @@ describe('bounded, privacy-safe search', () => {
     const response = await search('?name=%25'); // URL-encoded '%'
     const body = (await response.json()) as SearchBody;
     expect(response.status).toBe(200);
-    // No customer's name starts with a literal '%', so the injection returns none.
+    // No customer's name contains a literal '%', so the injection returns none —
+    // and in particular the fragment did NOT widen into a match-everything scan.
     expect((body.items ?? []).length).toBe(0);
   });
 

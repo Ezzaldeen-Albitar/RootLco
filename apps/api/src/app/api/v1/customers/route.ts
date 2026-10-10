@@ -4,10 +4,17 @@
  *
  * Cursor-paginated, tenant-scoped, deterministically ordered by
  * `(created_at DESC, id DESC)`. The searchable surface is a closed allow-list —
- * a normalised name prefix, an exact customer number, and the party-type and
- * lifecycle discriminators — and the projection carries no sensitive identifier.
- * Page size is clamped to the platform `MAX_PAGE_SIZE`, so scraping is bounded by
- * the same limit as every other list.
+ * a folded name fragment, an exact customer number, a phone number, one free-text
+ * box that tries all three, and the party-type and lifecycle discriminators — and
+ * the projection carries no sensitive identifier. Page size is clamped to the
+ * platform `MAX_PAGE_SIZE`, so scraping is bounded by the same limit as every
+ * other list.
+ *
+ * The projected primary phone is masked to its last four digits unless the caller
+ * additionally holds `iam.sensitive.view`. That is a projection rule, not an
+ * access rule: a caller without it still receives the page, which is why
+ * `iam.sensitive.view` is NOT declared in `permissions` below — declaring it
+ * there would refuse the whole search to the receptionist it was widened for.
  *
  * Everything cross-cutting (correlation, rate limit, authentication, context,
  * scoped session, authorization, problem-document errors, OpenAPI) lives in
@@ -21,6 +28,8 @@ import {
   CUSTOMER_LIFECYCLE_STATUSES,
   CUSTOMER_PARTY_TYPES,
   MAX_NAME_FRAGMENT,
+  MAX_PHONE_FRAGMENT,
+  MIN_SEARCH_FRAGMENT,
   crmModule,
 } from '@/modules/crm';
 
@@ -31,10 +40,24 @@ const Query = z
   .object({
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
-    /** Normalised as a prefix; a leading-wildcard scan is never issued. */
+    /**
+     * Folded, then matched as a CONTAINS over the normalised display name. The
+     * work is bounded by the trigram index on that same expression and by the
+     * page limit, not by the shape of the fragment. Its one-character minimum is
+     * the contract this parameter already had and existing screens rely on; the
+     * two-character floor applies to the new free-text box only.
+     */
     name: z.string().min(1).max(MAX_NAME_FRAGMENT).optional(),
     /** Exact customer display number. */
     customerNumber: z.string().min(1).max(64).optional(),
+    /**
+     * Matched against the customer's phone contact points: exactly, or as a tail
+     * of at least `MIN_PHONE_SUFFIX` digits. Arabic-Indic digits fold to ASCII
+     * before the comparison, so either keyboard finds the same person.
+     */
+    phone: z.string().min(1).max(MAX_PHONE_FRAGMENT).optional(),
+    /** One box: part of the name, the customer number, or a phone number. */
+    q: z.string().min(MIN_SEARCH_FRAGMENT).max(MAX_NAME_FRAGMENT).optional(),
     partyType: z.enum(CUSTOMER_PARTY_TYPES).optional(),
     lifecycleStatus: z.enum(CUSTOMER_LIFECYCLE_STATUSES).optional(),
   })
@@ -63,6 +86,8 @@ export async function GET(request: Request): Promise<Response> {
         {
           name: query.name,
           customerNumber: query.customerNumber,
+          phone: query.phone,
+          q: query.q,
           partyType: query.partyType,
           lifecycleStatus: query.lifecycleStatus,
         },

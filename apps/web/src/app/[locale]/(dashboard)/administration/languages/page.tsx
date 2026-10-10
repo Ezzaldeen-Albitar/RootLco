@@ -2,7 +2,9 @@ import { notFound } from 'next/navigation';
 import { PageBody, PageHeader } from '@/components/shell/PageHeader';
 import { requireSession } from '@/features/authentication/api/session';
 import { readTenant } from '@/features/administration/organization/api';
+import { OrgReadFailure } from '@/features/administration/organization/components/OrgReadFailure';
 import { TenantForm } from '@/features/administration/organization/components/TenantForm';
+import { readReferenceValues } from '@/features/administration/organization/reference-values';
 import {
   ContractNotice,
   Fact,
@@ -27,10 +29,17 @@ import { pageMetadata } from '@/lib/page-metadata';
  * writable through `PATCH /api/v1/org/tenant` and foreign-key constrained to
  * `shared.languages` server-side.
  *
- * `shared.languages` itself has no read operation (`P1-26-F-006`), so this
- * screen does not claim to manage the platform's language registry, and does not
- * validate the default against a list it does not have — the backend's "not a
- * registered platform value" verdict is the authority.
+ * `shared.languages` is read through `org.reference-values-read`
+ * (P1-32-PRE-OD-REF, closing `P1-26-F-006`), only for a holder of
+ * `org.tenant.read`, so the default is chosen from the languages the platform
+ * holds and the interface can be shown in. This screen still does not manage the
+ * platform's language registry — it has no write to it — and the backend's "not
+ * a registered platform value" verdict stays the authority.
+ *
+ * On Material UI (ADR-022, P1-32-PRE-OD-ADM1): the default is the workspace
+ * form's Material fields, and a workspace read that did not answer is the shared
+ * Material state — a refusal, an ended session, or an outage with Try again —
+ * rather than one line that said "unavailable" for all of them.
  */
 export default async function LanguagesPage({
   params,
@@ -43,7 +52,14 @@ export default async function LanguagesPage({
   const session = await requireSession(locale);
   const messages: Messages = getMessages(locale);
   const t = (key: string) => translate(messages, key as keyof Messages);
-  const tenant = await readTenant();
+  const canReadTenant = holds(session.permissions, PERMISSIONS.tenantRead);
+  // `iam.tenant-settings-read` declares `org.tenant.read`: without it the panel
+  // says so, and no read is made to be refused.
+  const tenant = canReadTenant
+    ? await readTenant()
+    : { status: 'denied' as const, data: null, correlationId: null };
+  const referenceValues = canReadTenant ? await readReferenceValues() : null;
+  const referenceUnavailable = canReadTenant && referenceValues === null;
 
   return (
     <>
@@ -59,10 +75,7 @@ export default async function LanguagesPage({
       />
       <PageBody>
         <div className="flex flex-col gap-6">
-          <ContractNotice
-            messages={messages}
-            bodyKeys={['admin.contractGap.noCatalogue', 'languages.required']}
-          />
+          <ContractNotice messages={messages} bodyKeys={['languages.required']} />
 
           <Panel title={t('languages.available')}>
             <dl className="grid gap-4 sm:grid-cols-2">
@@ -84,18 +97,20 @@ export default async function LanguagesPage({
           <Panel title={t('languages.default')} description={t('languages.defaultHint')}>
             {tenant.status === 'ok' && tenant.data ? (
               <TenantForm
+                locale={locale}
                 messages={messages}
                 tenant={tenant.data}
                 canWrite={holds(session.permissions, PERMISSIONS.settingsManage)}
+                referenceValues={referenceValues}
+                referenceUnavailable={referenceUnavailable}
               />
             ) : (
-              <p role="status" className="text-body text-text-secondary">
-                {t(
-                  tenant.status === 'denied'
-                    ? 'state.denied.description'
-                    : 'state.unavailable.description'
-                )}
-              </p>
+              <OrgReadFailure
+                messages={messages}
+                locale={locale}
+                status={tenant.status === 'ok' ? 'error' : tenant.status}
+                correlationId={tenant.correlationId}
+              />
             )}
           </Panel>
         </div>

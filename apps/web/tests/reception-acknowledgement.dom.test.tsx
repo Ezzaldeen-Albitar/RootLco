@@ -138,9 +138,26 @@ describe('the sheet uses the print foundation rather than a second one', () => {
     ).toBeVisible();
   });
 
+  it('names the visit at the top of every printed page, in a head row drawn only on paper', () => {
+    // Pages after the first otherwise said nothing about which visit they
+    // belonged to (2026-10-07 browser retest). The title already carries the
+    // visit's number, so it repeats as it is, with nothing added.
+    renderSheet();
+    const identity = screen.getByTestId('print-document-identity');
+    expect(identity.tagName).toBe('THEAD');
+    const classes = identity.className.split(/\s+/);
+    expect(classes).toContain('hidden');
+    expect(classes).toContain('print:table-header-group');
+    expect(identity.textContent).toBe(`${EN['receptions.acknowledgement.title']} — R-0001`);
+  });
+
   it('uses REAL table markup, so a header repeats across a page break', () => {
     const { container } = renderSheet();
-    const tables = Array.from(container.querySelectorAll('table'));
+    // The frame's own layout table (`role="presentation"`, the paper-only head
+    // that names the document on every page) is not one of the sections.
+    const tables = Array.from(
+      container.querySelectorAll<HTMLTableElement>('table:not([role="presentation"])')
+    );
     // Three sections carry rows in this fixture; a grid of divs would repeat no
     // header on page two, which is the defect `PrintTable` exists to prevent.
     expect(tables.length).toBe(3);

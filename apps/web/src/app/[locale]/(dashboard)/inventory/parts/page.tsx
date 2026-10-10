@@ -37,7 +37,7 @@ export default async function InventoryPartsPage({
   const session = await requireSession(locale);
   const messages = getMessages(locale);
   const crumbs = [
-    { labelKey: 'nav.inventory', href: '/inventory' },
+    { labelKey: 'nav.inventory', href: `/${locale}/inventory` },
     { labelKey: 'inventory.parts.title' },
   ];
 
@@ -91,7 +91,15 @@ export default async function InventoryPartsPage({
           workOrderRefused={workOrderRefused}
           canOperate={holds(session.permissions, INVENTORY_PERMISSIONS.operate)}
           canReadWorkOrder={canReadWorkOrder}
+          canReadItems={holds(session.permissions, INVENTORY_PERMISSIONS.itemRead)}
           canReadBranches={holds(session.permissions, INVENTORY_PERMISSIONS.branchRead)}
+          currentUserId={session.userId}
+          canRequestMaterial={holds(session.permissions, INVENTORY_PERMISSIONS.materialRequest)}
+          canApproveMaterial={holds(session.permissions, INVENTORY_PERMISSIONS.materialApprove)}
+          canDecideMaterialException={holds(
+            session.permissions,
+            INVENTORY_PERMISSIONS.materialExceptionApprove
+          )}
         />
       </PageBody>
     </>

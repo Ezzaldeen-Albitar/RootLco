@@ -18,13 +18,24 @@
  * The operations appear in the order the register lists them.
  */
 
-/** A line as the builder sends it; the server prices it. */
+/**
+ * A line as the builder sends it; the server prices it.
+ *
+ * A SERVICE line (no `kind`, or `service`) names `serviceId`; a PART line
+ * (`kind: 'part'`, ADR-023 D6) names `itemId` and is priced by the server at
+ * the item selling price of the work order's branch. Neither carries a price, a
+ * unit or a tax figure. The route refuses a service line naming an item and a
+ * part line naming a service.
+ */
 export interface QuotationLineBody {
-  readonly serviceId: string;
+  readonly kind?: 'service' | 'part';
+  readonly serviceId?: string;
+  readonly itemId?: string;
   readonly quantity: string;
   readonly discount?: string;
   readonly description?: string;
   readonly sourceServiceLineRef?: string;
+  readonly sourceRequiredPartRef?: string;
 }
 
 /** Evidence recorded with a decision. `document` needs `documentVersionId`. */
@@ -39,12 +50,17 @@ export interface DecisionEvidenceBody {
  *
  * `presentedRevisionId` is required: the decision is about the revision the
  * customer was shown, and the server refuses one that is no longer current.
+ * `contactName` and `contactPhone` name who spoke for the customer; the server
+ * keeps them on the acceptance record when this decision completes the
+ * acceptance (ADR-023 D11) and refuses them on a rejection.
  */
 export interface QuotationItemDecideBody {
   readonly decision: 'approved' | 'rejected';
   readonly channel: 'in_person' | 'phone' | 'portal' | 'email' | 'system';
   readonly decidingPartyRef?: string;
   readonly evidence?: DecisionEvidenceBody;
+  readonly contactName?: string;
+  readonly contactPhone?: string;
   readonly presentedRevisionId: string;
 }
 
@@ -57,22 +73,23 @@ export interface QuotationRevisionDecideBody {
   readonly channel: 'in_person' | 'phone' | 'portal' | 'email' | 'system';
   readonly decidingPartyRef?: string;
   readonly evidence?: DecisionEvidenceBody;
+  readonly contactName?: string;
+  readonly contactPhone?: string;
   readonly presentedRevisionId: string;
 }
 
 /**
  * `quo.quotation-create` — `POST /quotations`.
  *
- * No company or branch: the scope comes from the work order. `discountRequestedBy`
- * names the user who asked for a discount when the company's policy keeps the
- * requester and the approver distinct.
+ * No company or branch: the scope comes from the work order. There is no
+ * requester field: a discount that needs approval is requested by whoever is
+ * signed in, and approved by somebody else (`DiscountApprovalDecideBody`).
  */
 export interface QuotationCreateBody {
   readonly workOrderId: string;
   readonly payerPartnerRef?: string;
   readonly customerClass?: string;
   readonly lines: readonly QuotationLineBody[];
-  readonly discountRequestedBy?: string;
 }
 
 /**
@@ -92,5 +109,16 @@ export interface QuotationIssueBody {
 export interface QuotationRevisionCreateBody {
   readonly lines: readonly QuotationLineBody[];
   readonly customerClass?: string;
-  readonly discountRequestedBy?: string;
+}
+
+/**
+ * `quo.discount-approval-decide` — `POST /discount-approvals/{approvalId}/decision`.
+ *
+ * The approver is whoever is signed in and is never the requester. The route is
+ * gated by `quo.quotation.read`; the permission the request recorded is checked on
+ * the row. A reason is required to turn a request down.
+ */
+export interface DiscountApprovalDecideBody {
+  readonly decision: 'approved' | 'rejected';
+  readonly reason?: string;
 }

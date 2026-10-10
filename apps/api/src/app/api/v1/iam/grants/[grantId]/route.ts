@@ -47,11 +47,12 @@ export async function DELETE(
   request: Request,
   route: { params: Promise<{ grantId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     GRANT_REVOKE_OPERATION,
     request,
     async ({ db, request: raw, expectedVersion }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const body = await parseJsonBody(raw, RevokeBody);
       if (expectedVersion === null) {
         throw new AppFailure('ERR-CON-002', { message: 'If-Match is required' });
@@ -59,6 +60,6 @@ export async function DELETE(
       await iamModule().access.revokeGrant(db, params.grantId, expectedVersion, body.reason);
       return { body: { status: 'revoked' } };
     },
-    { params }
+    { params: rawParams }
   );
 }

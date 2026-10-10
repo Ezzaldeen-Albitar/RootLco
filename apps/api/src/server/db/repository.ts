@@ -105,3 +105,59 @@ export function isSqlState(
 ): boolean {
   return sqlState(error) === state;
 }
+
+/**
+ * Reads the violated constraint name from an unknown driver error, if present.
+ *
+ * A SQLSTATE says WHICH KIND of rule was broken and a table usually has several of
+ * the same kind, so a mapping keyed on the state alone answers for constraints it
+ * was never written for. `violatedConstraint` is what lets a handler map exactly
+ * the one it means and re-throw the rest. It lives beside `sqlState` because two
+ * modules now need it and a copy in each is how two readings of the same driver
+ * error start to disagree; the name is the driver's `constraint` field, which
+ * PostgreSQL populates for the integrity-violation classes.
+ */
+export function violatedConstraint(error: unknown): string | undefined {
+  if (typeof error === 'object' && error !== null && 'constraint' in error) {
+    const name = (error as { constraint?: unknown }).constraint;
+    return typeof name === 'string' ? name : undefined;
+  }
+  return undefined;
+}
+
+/**
+ * Translates a foreign-key refusal into a refusal of the ONE request field that
+ * carried the reference, or answers `undefined` so the caller re-throws.
+ *
+ * A reference column (a currency, a language, a time zone) is checked by its
+ * foreign key, and before this helper the violation reached the caller as
+ * `500 ERR-SYS-001`: the input was wrong, and the answer said the server was.
+ * The map is keyed on the constraint NAME, never on the SQLSTATE alone, because
+ * one table carries several foreign keys and a state-only mapping would label a
+ * tenant or company key as a bad currency. A constraint the map does not name is
+ * left to the caller, which re-throws it to the unchanged 500 path.
+ *
+ * Nothing from the driver is copied — not `detail`, which carries the submitted
+ * value (`Key (base_currency_code)=(JOR)`), and not `message`. The refusal says
+ * which field and which rule, and nothing else.
+ */
+export function referenceRefusal(
+  error: unknown,
+  pointerByConstraint: Readonly<Record<string, string>>,
+  rule = 'unknown_reference'
+): AppFailure | undefined {
+  if (!isSqlState(error, SQLSTATE.foreignKeyViolation)) return undefined;
+  const constraint = violatedConstraint(error);
+  if (
+    constraint === undefined ||
+    !Object.prototype.hasOwnProperty.call(pointerByConstraint, constraint)
+  ) {
+    return undefined;
+  }
+  const path = pointerByConstraint[constraint];
+  if (path === undefined) return undefined;
+  return new AppFailure('ERR-VAL-001', {
+    message: `The value at ${path} does not name a registered platform reference`,
+    safeDetails: { violations: [{ path, rule }] },
+  });
+}

@@ -776,6 +776,37 @@ export function importClosure(entry, read) {
  * ------------------------------------------------------------------ */
 
 /**
+ * Module-level string constants, so an address ASSEMBLED from one resolves.
+ *
+ * `checkInWizardHref` builds `` `/${locale}${CHECK_IN_WIZARD_PATH}?…` ``, and
+ * the path half of that link is a named constant rather than text in the
+ * template — which is the shape `intake-handoff.ts` deliberately uses so the two
+ * ends of the handoff cannot point at different addresses. Collapsing every
+ * interpolation to `:p` erased the segment the link is FOR, so the one link in
+ * these trees that names its destination through a shared constant was the one
+ * link the derivation could not follow.
+ *
+ * Only a plain single-line string literal counts: a value assembled at runtime
+ * is not an address this function can claim to have read.
+ */
+export function stringConstants(text) {
+  const constants = new Map();
+  const declaration =
+    /\b(?:export\s+)?const\s+([A-Za-z_$][\w$]*)\s*(?::\s*string\s*)?=\s*(['"])((?:(?!\2)[^\\\n])*)\2/g;
+  let match;
+  while ((match = declaration.exec(text)) !== null) constants.set(match[1], match[3]);
+  return constants;
+}
+
+/** `${CHECK_IN_WIZARD_PATH}` → its literal value, where one is known. */
+export function inlineStringConstants(text, constants) {
+  if (constants.size === 0) return text;
+  return text.replace(/\$\{\s*([A-Za-z_$][\w$]*)\s*\}/g, (whole, name) =>
+    constants.has(name) ? constants.get(name) : whole
+  );
+}
+
+/**
  * The dashboard routes one source navigates to, as page-file paths.
  *
  * A locale-prefixed application path is the one link shape these screens use
@@ -783,11 +814,28 @@ export function importClosure(entry, read) {
  * interpolation is the marker. A dynamic segment matches a `[param]`
  * directory, which is how `/${locale}/appointments/${row.id}` finds
  * `appointments/[appointmentId]/page.tsx`.
+ *
+ * ## A link that carries a query string is still a link
+ *
+ * The pattern's character class held no `?`, so the moment a screen navigated
+ * with a parameter — which is exactly how the walk-in handoff travels,
+ * `/${locale}/receptions/check-in?customerId=…&vehicleId=…` — the whole literal
+ * stopped matching and the destination vanished from the reachable set. The
+ * consequence points the wrong way: the route that OFFERS the link is then
+ * reported as consulting surplus privilege for demanding the very permission
+ * its destination requires, and the cheap way out is to drop the gate.
+ *
+ * So the address is now PARSED the way a URL is: the path is what precedes the
+ * first `?` or `#`, and the query and the fragment are read and discarded
+ * rather than being allowed to hide the path. Nothing is listed by name and no
+ * link is exempted — a query-carrying link to a route outside these segments is
+ * still ignored, for the same reason it always was.
  */
 export function linkedRoutes(source, segments = routeSegments()) {
-  const text = normaliseSourcePaths(stripComments(source));
+  const stripped = stripComments(source);
+  const text = normaliseSourcePaths(inlineStringConstants(stripped, stringConstants(stripped)));
   const found = new Set();
-  const pattern = /['"`]\/:p\/([A-Za-z0-9\-_/:]*)['"`]/g;
+  const pattern = /['"`]\/:p\/([A-Za-z0-9\-_/:]*)(?:[?#][^'"`\s]*)?['"`]/g;
   let match;
   while ((match = pattern.exec(text)) !== null) {
     const parts = match[1].split('/').filter((part) => part !== '');

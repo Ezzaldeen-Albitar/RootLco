@@ -40,14 +40,17 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ vehicleId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const raw = await route.params;
   return handleOperation(
     VEHICLE_DUPLICATE_SCAN_OPERATION,
     request,
-    async ({ db }) => ({
-      status: 200,
-      body: await vehicleModule().vehicleIdentity.scanForDuplicates(db, params.vehicleId),
-    }),
-    { params }
+    async ({ db }) => {
+      const params = parseOrFail(Params, raw, 'path');
+      return {
+        status: 200,
+        body: await vehicleModule().vehicleIdentity.scanForDuplicates(db, params.vehicleId),
+      };
+    },
+    { params: raw }
   );
 }

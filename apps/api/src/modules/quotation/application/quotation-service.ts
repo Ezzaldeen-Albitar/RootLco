@@ -31,7 +31,9 @@
 import type { DbHandle } from '@/server/db/transaction';
 import { pageRequest, type Page } from '@/server/db/pagination';
 import { AppFailure } from '@/server/errors/app-failure';
-import { callerHoldsPermission, type ScopeAuthorizer } from '@/server/auth/authorization';
+import { SQLSTATE, isSqlState } from '@/server/db/repository';
+import { assertMinorUnitScale } from '@/server/http/validation';
+import type { ScopeAuthorizer } from '@/server/auth/authorization';
 import { appendAudit } from '@/server/audit/audit';
 import { publishEvent } from '@/server/events/publisher';
 import { serviceCatalogModule } from '@/modules/service-catalog';
@@ -41,11 +43,14 @@ import {
   QUANTITY,
   parsePositive,
   pricingModule,
-  type DiscountAuthorization,
-  type PermissionProbe,
+  DEFAULT_DISCOUNT_APPROVAL_PERMISSION,
+  type DiscountThresholdSnapshot,
+  type PinnedDiscountPolicy,
 } from '@/modules/pricing';
 import { sharedServicesModule } from '@/modules/shared-services';
+import { inventoryModule, Quantity } from '@/modules/inventory';
 import { workOrderModule } from '@/modules/work-order';
+import { partPriceRaceRule, resolveAuthorisedPartPrice } from '../domain/part-price-source';
 import {
   MAX_ITEMS_PER_REVISION,
   QuotationRuleError,
@@ -53,19 +58,35 @@ import {
   hasExpired,
   isTerminalRevision,
   rollUpDecisions,
+  type ItemKind,
 } from '../domain/quotation';
 import { QUOTATION_LIST_ORDERING, REVISION_LIST_ORDERING } from '../data/quotation-repository';
 import type {
+  DiscountApprovalRow,
   ItemRow,
   NewItemInput,
+  QuotationDiscountPolicyRow,
   QuotationRepository,
   QuotationRow,
   RevisionRow,
 } from '../data/quotation-repository';
+import { describeDiscountApproval, type DiscountApprovalView } from './discount-approval-service';
 
-/** One line a caller asked for. Carries no computed money — by design. */
+/**
+ * One line a caller asked for. Carries no computed money — by design.
+ *
+ * A SERVICE line (`kind` absent or `service`) names a service; a PART line
+ * (`kind: 'part'`, ADR-023 D6) names an item of the inventory catalogue and is
+ * priced at the item selling price that applies to the work order's branch.
+ * Neither names a price, a tax rate or a unit: the server resolves the first two
+ * and captures the third from the item.
+ */
 export interface QuotationLineInput {
-  readonly serviceId: string;
+  readonly kind?: ItemKind | undefined;
+  /** Required on a service line; refused on a part line. */
+  readonly serviceId?: string | undefined;
+  /** Required on a part line; refused on a service line. */
+  readonly itemId?: string | undefined;
   /** `numeric(12,3)` decimal STRING, strictly positive. */
   readonly quantity: string;
   /** `numeric(18,4)` decimal STRING. Optional; defaults to zero. */
@@ -73,6 +94,8 @@ export interface QuotationLineInput {
   readonly description?: string | undefined;
   /** Provenance when the line came from a work-order service line. */
   readonly sourceServiceLineRef?: string | undefined;
+  /** Provenance when a part line was quoted from the work order's required part. */
+  readonly sourceRequiredPartRef?: string | undefined;
 }
 
 export interface CreateQuotationInput {
@@ -81,28 +104,39 @@ export interface CreateQuotationInput {
   /** `svc.price_rules.customer_class`; `null` matches wildcard rules only. */
   readonly customerClass?: string | undefined;
   readonly lines: readonly QuotationLineInput[];
-  /** Who requested a discount, when that differs from the caller. */
-  readonly discountRequestedBy?: string | undefined;
 }
 
 /**
- * What a revision's discounts needed, for the audit record.
+ * What a revision's discounts need, measured against the policy version its
+ * quotation is held to.
  *
- * Collected while pricing the lines because that is the only place the policy and
- * the ceiling are read; recorded after the revision exists, because an audit record
- * has to name the row it is about.
+ * Measured once the quotation exists, because the database pins that version when
+ * the quotation is written; recorded after the revision exists, because the
+ * approval request has to name the revision it is about.
  */
 interface DiscountSummary {
   /** `numeric(18,4)` STRING: every line's discount, summed by PostgreSQL. */
   readonly total: string;
+  /** `numeric(18,4)` STRING: every line's base before discount, summed by PostgreSQL. */
+  readonly base: string;
   readonly currency: string;
-  /** How many lines needed the elevated permission. Zero means nothing to audit. */
+  /** Whether a person other than the requester must approve before issue. */
+  readonly requiresApproval: boolean;
+  /** How many individual lines were at or over the threshold on their own. */
   readonly elevatedLines: number;
+  /** The permission an approver must hold, when approval is required. */
   readonly permissionCode: string | null;
-  readonly ceiling: { amount: string; currency: string } | null;
-  /** Who the maker/approver control was satisfied by. Resolved, not merely supplied. */
-  readonly requestedBy: string | null;
-  readonly threshold: DiscountAuthorization['threshold'];
+  /** The policy version measured against; `null` when none was configured. */
+  readonly threshold: DiscountThresholdSnapshot | null;
+}
+
+/** One priced line's discount and the base it applies to, ready to be measured. */
+interface LineDiscount {
+  readonly lineNumber: number;
+  /** `numeric(18,4)` decimal STRING. */
+  readonly discount: string;
+  /** `unit * quantity`, exact at scale 4, as a `numeric(18,4)` decimal STRING. */
+  readonly base: string;
 }
 
 export interface IssueQuotationInput {
@@ -112,11 +146,31 @@ export interface IssueQuotationInput {
   readonly expectedVersion: number;
 }
 
+/**
+ * The item a part line quotes, as it was when it was quoted (ADR-023 D6). `code`
+ * is the stock code. A later rename of the item does not change it.
+ */
+export interface QuotationLineItemView {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
+/** The unit a part line's quantity is in, as it was when it was quoted. */
+export interface QuotationLineUnitView {
+  readonly code: string;
+  readonly name: string;
+}
+
 export interface MoneyLine {
   readonly id: string;
   readonly lineNumber: number;
   readonly itemKind: string;
   readonly serviceId: string | null;
+  /** The quoted item of a part line; `null` on a service line. */
+  readonly item: QuotationLineItemView | null;
+  /** The unit a part line's quantity is in; `null` on a service line. */
+  readonly unit: QuotationLineUnitView | null;
   readonly description: string | null;
   readonly currency: string;
   readonly unitPrice: string;
@@ -141,6 +195,12 @@ export interface RevisionView {
   readonly grandTotal: string;
   readonly recordVersion: number;
   readonly lines: readonly MoneyLine[];
+  /**
+   * The discount approval this revision needs, or `null` when its discount needs
+   * none (P1-32-PRE-OD-DISC-01). While it is `pending` or `rejected` the revision
+   * cannot be issued.
+   */
+  readonly discountApproval: DiscountApprovalView | null;
 }
 
 /**
@@ -244,6 +304,14 @@ const toLine = (row: ItemRow): MoneyLine => ({
   lineNumber: row.lineNumber,
   itemKind: row.itemKind,
   serviceId: row.serviceId,
+  item:
+    row.itemRef === null || row.quotedItemSku === null || row.quotedItemName === null
+      ? null
+      : { id: row.itemRef, code: row.quotedItemSku, name: row.quotedItemName },
+  unit:
+    row.quotedUnitCode === null || row.quotedUnitName === null
+      ? null
+      : { code: row.quotedUnitCode, name: row.quotedUnitName },
   description: row.description,
   currency: row.currencyCode,
   unitPrice: row.capturedUnitPrice,
@@ -280,7 +348,11 @@ const toRevisionHeader = (
   isCurrent: currentRevisionId !== null && currentRevisionId === row.id,
 });
 
-const toRevisionView = (row: RevisionRow, lines: readonly ItemRow[]): RevisionView => ({
+const toRevisionView = (
+  row: RevisionRow,
+  lines: readonly ItemRow[],
+  discountApproval: DiscountApprovalView | null
+): RevisionView => ({
   id: row.id,
   revisionNumber: row.revisionNumber,
   status: row.status,
@@ -293,6 +365,7 @@ const toRevisionView = (row: RevisionRow, lines: readonly ItemRow[]): RevisionVi
   grandTotal: row.capturedGrandTotal,
   recordVersion: row.recordVersion,
   lines: lines.map(toLine),
+  discountApproval,
 });
 
 export class QuotationService {
@@ -338,12 +411,11 @@ export class QuotationService {
     // resolves to a different list currency is a hard failure, never a conversion.
     const priced = await this.priceLines(db, {
       lines: input.lines,
+      workOrderId: workOrder.id,
       companyId: workOrder.companyId,
       branchId: workOrder.branchId,
       customerClass: input.customerClass ?? null,
       asOf,
-      requestedBy: input.discountRequestedBy ?? null,
-      hasPermission: this.permissionProbe(db, workOrder.companyId, workOrder.branchId),
     });
     const currency = priced.currency;
 
@@ -362,6 +434,19 @@ export class QuotationService {
       payerPartnerRef: input.payerPartnerRef ?? null,
     });
 
+    // The database pinned the discount policy in force as it wrote the quotation
+    // (`quo.pin_quotation_discount_policy`), and every revision of it — this first
+    // one included — is measured against that version for the quotation's whole
+    // life. A threshold change is prospective: this is where it takes effect.
+    const pinned = await this.pinnedDiscountPolicy(db, quotation.id);
+    const discount = await this.measureDiscount(db, {
+      companyId: quotation.companyId,
+      currency,
+      lines: priced.discounts,
+      asOf,
+      pinned,
+    });
+
     const revision = await this.repository.insertRevision(db, {
       id: quotation.id,
       companyId: quotation.companyId,
@@ -369,12 +454,15 @@ export class QuotationService {
       currencyCode: quotation.currencyCode,
     });
 
-    const items: ItemRow[] = [];
-    for (const item of priced.items) {
-      items.push(await this.repository.insertItem(db, revision, item));
-    }
+    const items = await this.insertItems(db, revision, priced.items);
 
-    await this.auditDiscountAuthorization(db, revision, priced.discount);
+    const approval = await this.recordDiscountRequest(
+      db,
+      revision,
+      await this.withoutSelfExemption(db, revision, discount, pinned),
+      asOf,
+      []
+    );
 
     await appendAudit(db, {
       action: 'quo.quotation.created',
@@ -387,6 +475,14 @@ export class QuotationService {
         { field: 'workOrderId', classification: 'internal', value: workOrder.id },
         { field: 'currency', classification: 'public', value: currency },
         { field: 'lineCount', classification: 'public', value: String(items.length) },
+        {
+          field: 'discountPolicyVersion',
+          classification: 'internal',
+          value:
+            pinned.threshold === null
+              ? 'unconfigured'
+              : `${pinned.threshold.policyId}:${pinned.threshold.versionNo}`,
+        },
       ],
     });
 
@@ -411,7 +507,7 @@ export class QuotationService {
       eventKey: `quotation.created:${quotation.id}`,
     });
 
-    return this.view(quotation, revision, items);
+    return this.view(quotation, revision, items, approval);
   }
 
   /**
@@ -421,6 +517,18 @@ export class QuotationService {
    * refuses item writes on a non-draft parent, which is what makes an issued
    * revision an immutable snapshot. So a revision is how a price change reaches a
    * customer, and the previous issued revision stays exactly as it was presented.
+   *
+   * ## Every revision is held to the quotation's pinned policy
+   *
+   * The new revision's discount is measured against the policy version the database
+   * pinned when the QUOTATION was written, never against the company threshold of
+   * the moment (P1-32-PRE-OD-DISC-07). Every open request is superseded by the new
+   * revision — it can no longer be approved — and, when the discount needs approval
+   * under the pinned version, a new pending request is recorded under it with the
+   * signed-in person as its requester. So a requester who raises the threshold gains
+   * nothing by revising, in one step or several: revising the discount away and back
+   * again is measured against the same version each time, and the same discount still
+   * waits for somebody else. A threshold change reaches new quotations only.
    */
   public async revise(
     db: DbHandle,
@@ -428,7 +536,6 @@ export class QuotationService {
     input: {
       readonly lines: readonly QuotationLineInput[];
       readonly customerClass?: string | undefined;
-      readonly discountRequestedBy?: string | undefined;
       readonly expectedVersion: number;
     },
     authorizeScope: ScopeAuthorizer
@@ -451,14 +558,17 @@ export class QuotationService {
     this.assertQuotationOpen(quotation);
 
     const asOf = await this.repository.businessDate(db);
+    // Under the quotation lock: the open requests this revision supersedes, and the
+    // policy version the quotation is held to.
+    const open = await this.repository.lockOpenDiscountApprovals(db, quotation.id);
+    const pinned = await this.pinnedDiscountPolicy(db, quotation.id);
     const priced = await this.priceLines(db, {
       lines: input.lines,
+      workOrderId: quotation.workOrderId,
       companyId: quotation.companyId,
       branchId: quotation.branchId,
       customerClass: input.customerClass ?? null,
       asOf,
-      requestedBy: input.discountRequestedBy ?? null,
-      hasPermission: this.permissionProbe(db, quotation.companyId, quotation.branchId),
     });
 
     // The new revision inherits the quotation's immutable currency. A revision
@@ -471,6 +581,13 @@ export class QuotationService {
           `list is in ${priced.currency}. Currency conversion is not performed.`,
       });
     }
+    const discount = await this.measureDiscount(db, {
+      companyId: quotation.companyId,
+      currency: priced.currency,
+      lines: priced.discounts,
+      asOf,
+      pinned,
+    });
 
     const revision = await this.repository.insertRevision(db, {
       id: quotation.id,
@@ -479,12 +596,23 @@ export class QuotationService {
       currencyCode: quotation.currencyCode,
     });
 
-    const items: ItemRow[] = [];
-    for (const item of priced.items) {
-      items.push(await this.repository.insertItem(db, revision, item));
-    }
+    const items = await this.insertItems(db, revision, priced.items);
 
-    await this.auditDiscountAuthorization(db, revision, priced.discount);
+    // The open requests are replaced by this revision first — the database refuses
+    // a new request while one is open — and a new one is recorded under the pinned
+    // version when the discount needs it.
+    const superseded = await this.repository.supersedeDiscountApprovals(
+      db,
+      open.map((row) => row.id),
+      revision.id
+    );
+    const approval = await this.recordDiscountRequest(
+      db,
+      revision,
+      await this.withoutSelfExemption(db, revision, discount, pinned),
+      asOf,
+      superseded
+    );
 
     await appendAudit(db, {
       action: 'quo.quotation_revision.created',
@@ -500,10 +628,25 @@ export class QuotationService {
           value: String(revision.revisionNumber),
         },
         { field: 'lineCount', classification: 'public', value: String(items.length) },
+        ...(superseded.length === 0
+          ? []
+          : [
+              {
+                field: 'supersededDiscountApprovalIds',
+                classification: 'internal' as const,
+                value: superseded.join(','),
+              },
+              {
+                field: 'discountPolicySnapshot',
+                classification: 'internal' as const,
+                value:
+                  pinned.threshold === null ? 'unconfigured' : String(pinned.threshold.versionNo),
+              },
+            ]),
       ],
     });
 
-    return toRevisionView(revision, items);
+    return toRevisionView(revision, items, approval);
   }
 
   /**
@@ -555,6 +698,24 @@ export class QuotationService {
         message: 'A revision with no lines cannot be issued',
       });
     }
+
+    /**
+     * A discount that needs approval is issued only once somebody other than the
+     * requester has approved it, and only for the amount approved
+     * (P1-32-PRE-OD-DISC-01, -04).
+     *
+     * Decided by the approval RECORD when there is one — never by re-measuring the
+     * discount against the policy in force now: a later raise of the company
+     * threshold must not let a pending discount through, and a later lowering must
+     * not undo an approval. A revision with NO record is measured at the database
+     * (`quo.revision_discount_needs_approval`) against the policy version its
+     * quotation is held to (P1-32-PRE-OD-DISC-07).
+     * `quo.guard_revision_discount_approval` refuses the same transition whatever
+     * reaches the database, summing the lines itself; this names the reason for the
+     * screen.
+     */
+    const approvalRow = await this.repository.findDiscountApprovalForRevision(db, revision.id);
+    await this.assertDiscountIssuable(db, revision, approvalRow);
 
     const expiresAt = input.expiresAt ?? null;
     if (expiresAt !== null && hasExpired(expiresAt, new Date())) {
@@ -619,7 +780,85 @@ export class QuotationService {
       eventKey: `quotation.revision-issued:${issued.id}`,
     });
 
-    return toRevisionView(issued, items);
+    return toRevisionView(
+      issued,
+      items,
+      approvalRow === null
+        ? null
+        : await describeDiscountApproval(db, approvalRow, await this.repository.businessDate(db))
+    );
+  }
+
+  /**
+   * Refuses, by name, a revision whose discount is not approved for issue.
+   *
+   * `discount_approval_pending` / `_rejected` / `_superseded` — the recorded request
+   * is not approved; `discount_approval_amount_mismatch` — the lines no longer carry
+   * the discount that was approved; `discount_approval_required` — no request exists
+   * and the discount needs one.
+   */
+  private async assertDiscountIssuable(
+    db: DbHandle,
+    revision: RevisionRow,
+    approvalRow: DiscountApprovalRow | null
+  ): Promise<void> {
+    const refuseIssue = (rule: string, message: string): never => {
+      throw new AppFailure('ERR-TRN-001', {
+        message,
+        // The whole request, not a control: the revision was chosen correctly, and
+        // what stops it is the approval, which the screen states in its banner.
+        safeDetails: { violations: [{ path: 'body', rule }] },
+      });
+    };
+    if (approvalRow === null) {
+      if (await this.repository.revisionDiscountNeedsApproval(db, revision.id)) {
+        refuseIssue(
+          'discount_approval_required',
+          `Revision ${revision.revisionNumber} carries a discount that needs approval and none ` +
+            'was requested. Revise the quotation to record a request for somebody else to approve.'
+        );
+      }
+      return;
+    }
+    if (approvalRow.status === 'rejected') {
+      refuseIssue(
+        'discount_approval_rejected',
+        `Revision ${revision.revisionNumber} carries a discount that was turned down`
+      );
+    }
+    if (approvalRow.status === 'withdrawn') {
+      refuseIssue(
+        'discount_approval_withdrawn',
+        `Revision ${revision.revisionNumber} carries a discount request its requester withdrew. ` +
+          'Revise the quotation to ask again or to drop the discount.'
+      );
+    }
+    if (approvalRow.status === 'superseded') {
+      refuseIssue(
+        'discount_approval_superseded',
+        `Revision ${revision.revisionNumber} carries a discount request a newer revision replaced`
+      );
+    }
+    if (approvalRow.status !== 'approved') {
+      refuseIssue(
+        'discount_approval_pending',
+        `Revision ${revision.revisionNumber} carries a discount still waiting for approval`
+      );
+    }
+    const carried = await this.repository.revisionDiscountTotal(db, revision.id);
+    if (
+      carried === null ||
+      approvalRow.approvedDiscountTotal === null ||
+      approvalRow.approvedCurrencyCode !== carried.currency ||
+      !Decimal.parse(carried.total, MONEY).equals(
+        Decimal.parse(approvalRow.approvedDiscountTotal, MONEY)
+      )
+    ) {
+      refuseIssue(
+        'discount_approval_amount_mismatch',
+        `Revision ${revision.revisionNumber} no longer carries the discount that was approved`
+      );
+    }
   }
 
   /**
@@ -820,7 +1059,7 @@ export class QuotationService {
     }
     await authorizeScope({ companyId: revision.companyId, branchId: revision.branchId });
     const items = await this.repository.listItems(db, revision.id);
-    return toRevisionView(revision, items);
+    return toRevisionView(revision, items, await this.approvalOf(db, revision.id));
   }
 
   /** One quotation with its current revision, or `ERR-RES-001`. */
@@ -842,13 +1081,26 @@ export class QuotationService {
     if (quotation.currentRevisionId === null) {
       const revisions = await this.repository.listRevisions(db, quotation.id);
       const latest = revisions[0];
-      if (latest === undefined) return this.view(quotation, null, []);
+      if (latest === undefined) return this.view(quotation, null, [], null);
       const items = await this.repository.listItems(db, latest.id);
-      return this.view(quotation, latest, items);
+      return this.view(quotation, latest, items, await this.approvalOf(db, latest.id));
     }
     const revision = await this.repository.findRevision(db, quotation.currentRevisionId);
     const items = revision === null ? [] : await this.repository.listItems(db, revision.id);
-    return this.view(quotation, revision, items);
+    return this.view(
+      quotation,
+      revision,
+      items,
+      revision === null ? null : await this.approvalOf(db, revision.id)
+    );
+  }
+
+  /** The discount approval recorded for one revision, rendered, or `null`. */
+  private async approvalOf(db: DbHandle, revisionId: string): Promise<DiscountApprovalView | null> {
+    const row = await this.repository.findDiscountApprovalForRevision(db, revisionId);
+    return row === null
+      ? null
+      : describeDiscountApproval(db, row, await this.repository.businessDate(db));
   }
 
   /**
@@ -955,21 +1207,6 @@ export class QuotationService {
 
   // ---- internals -----------------------------------------------------------
 
-  /**
-   * A permission probe bound to one company and branch.
-   *
-   * `svc.pricing_approval_policies.required_permission_code` is a value an operator
-   * configured, so it appears in no `defineOperation` declaration and the operation
-   * registry cannot evaluate it. The probe asks the iam module — which owns
-   * authorization — through its public surface, and always names a concrete
-   * company and branch, so the answer consults grant scope rather than falling back
-   * to a scope-blind check.
-   */
-  private permissionProbe(db: DbHandle, companyId: string, branchId: string): PermissionProbe {
-    return (permissionCode: string) =>
-      callerHoldsPermission(db, permissionCode, { companyId, branchId });
-  }
-
   /** Locks the quotation and authorizes against its OWN company and branch. */
   private async lockAndAuthorize(
     db: DbHandle,
@@ -1023,61 +1260,86 @@ export class QuotationService {
   }
 
   /**
-   * Resolves a price, a tax rate and an authorized discount for every line.
+   * Resolves a price, a tax rate and the discount position of every line.
    *
    * Returns repository-ready inputs — still no computed money, because the
    * arithmetic belongs to PostgreSQL. The single currency is established by the
    * first line and every subsequent line must match it; a mismatch is a hard
    * failure, never a conversion.
+   *
+   * Each line's discount and base are collected here and MEASURED afterwards
+   * (`measureDiscount`), once the quotation — and so the policy version it is held
+   * to — exists.
    */
   private async priceLines(
     db: DbHandle,
     context: {
       lines: readonly QuotationLineInput[];
+      workOrderId: string;
       companyId: string;
       branchId: string;
       customerClass: string | null;
       asOf: string;
-      requestedBy: string | null;
-      hasPermission: PermissionProbe;
     }
   ): Promise<{
     currency: string;
     items: readonly NewItemInput[];
-    discount: DiscountSummary;
+    discounts: readonly LineDiscount[];
   }> {
     const catalog = serviceCatalogModule().services;
     const pricing = pricingModule();
     const items: NewItemInput[] = [];
+    const discounts: LineDiscount[] = [];
     let currency: string | null = null;
     let lineNumber = 0;
-    // Document-level discount accounting. A per-line ceiling check is defeated by
-    // splitting one large discount across many lines, so the aggregate is checked
-    // once at the end against the same ceiling.
-    let totalDiscount = '0.0000';
-    // The document's pre-discount base, so the aggregate can be authorized against the
-    // same ratio a single line of that size would be measured against.
-    let totalBase = '0.0000';
-    let elevatedLines = 0;
-    let appliedCeiling: { amount: string; currency: string } | null = null;
-    let appliedThreshold: DiscountAuthorization['threshold'] = null;
-    let elevatedPermission: string | null = null;
-    let appliedRequestedBy: string | null = null;
+    let requiredParts: ReadonlyMap<string, string | null> | null = null;
 
     for (const line of context.lines) {
       lineNumber += 1;
+
+      if (line.kind === 'part') {
+        if (line.sourceRequiredPartRef !== undefined && requiredParts === null) {
+          requiredParts = new Map(
+            (await workOrderModule().workOrders.lines(db, 'part', context.workOrderId)).map(
+              (part) => [part.id, part.reference] as const
+            )
+          );
+        }
+        const part = await this.pricePartLine(db, line, lineNumber, context, requiredParts);
+        if (currency === null) {
+          currency = part.item.currencyCode;
+        } else if (part.item.currencyCode !== currency) {
+          throw new AppFailure('ERR-VAL-001', {
+            message:
+              `Line ${lineNumber} is priced in ${part.item.currencyCode}, but this quotation is in ` +
+              `${currency}. A quotation cannot mix currencies and no conversion is performed.`,
+          });
+        }
+        discounts.push(part.discount);
+        items.push(part.item);
+        continue;
+      }
+      if (line.serviceId === undefined) {
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Line ${lineNumber}: a service line must name a service`,
+          safeDetails: {
+            violations: [{ path: `body.lines[${lineNumber - 1}].serviceId`, rule: 'invalid_type' }],
+          },
+        });
+      }
+      const serviceId = line.serviceId;
 
       const sellable = await catalog.isSellableAt(
         db,
         context.companyId,
         context.branchId,
-        line.serviceId,
+        serviceId,
         context.asOf
       );
       if (!sellable) {
         throw new AppFailure('ERR-VAL-001', {
           message:
-            `Line ${lineNumber}: service ${line.serviceId} is not available at this branch on ` +
+            `Line ${lineNumber}: service ${serviceId} is not available at this branch on ` +
             `${context.asOf}`,
         });
       }
@@ -1100,7 +1362,7 @@ export class QuotationService {
       }
 
       const price = await pricing.prices.resolve(db, {
-        serviceId: line.serviceId,
+        serviceId,
         companyId: context.companyId,
         branchId: context.branchId,
         customerClass: context.customerClass,
@@ -1121,44 +1383,23 @@ export class QuotationService {
       // The base a percentage discount applies to. Computed by the database, and
       // refused unless it is exact at scale 4 — see `lineBase`.
       const base = await this.lineBase(db, lineNumber, price.unitPrice, line.quantity);
-      const authorization = await pricing.discounts.authorize(
-        db,
-        {
-          companyId: context.companyId,
-          branchId: context.branchId,
-          discountAmount: discount,
-          currency: price.currency,
-          lineBase: base,
-          asOf: context.asOf,
-          requestedBy: context.requestedBy,
-          actorId: db.context.principal.userId,
-        },
-        context.hasPermission
-      );
-      // Accumulate for the DOCUMENT-level ceiling check below. A per-line check
-      // alone is defeated by splitting: 200 lines each just under the ceiling
-      // authorize 200× the amount the actor is limited to.
-      totalDiscount = await this.addMoney(db, totalDiscount, discount);
-      totalBase = await this.addMoney(db, totalBase, base);
-      if (authorization.requiredElevatedPermission) {
-        elevatedLines += 1;
-        // The policy and permission that governed the elevated lines. Every line of
-        // one document resolves the same company policy, so the last write is the
-        // policy that applied — not an arbitrary choice between different ones.
-        appliedThreshold = authorization.threshold;
-        elevatedPermission = authorization.permissionCode;
-        appliedRequestedBy = authorization.requestedBy;
-      }
-      if (authorization.ceiling !== null) appliedCeiling = authorization.ceiling;
+      discounts.push({ lineNumber, discount, base });
 
       items.push({
         lineNumber,
         itemKind: 'service',
-        serviceId: line.serviceId,
+        serviceId,
         itemRef: null,
         sourceServiceLineRef: line.sourceServiceLineRef ?? null,
         sourceRequiredPartRef: null,
         priceRuleRef: price.priceRuleId,
+        priceCustomerClass: context.customerClass,
+        itemSalePriceRef: null,
+        quotedItemSku: null,
+        quotedItemName: null,
+        quotedUnitCode: null,
+        quotedUnitName: null,
+        quotedTaxClassRef: null,
         description: line.description ?? null,
         currencyCode: price.currency,
         unitPrice: price.unitPrice,
@@ -1171,156 +1412,500 @@ export class QuotationService {
     if (currency === null) {
       throw new QuotationRuleError('No line resolved a currency');
     }
+    await this.refuseDiscountsFinerThanCurrency(db, currency, discounts);
+    return { currency, items, discounts };
+  }
 
-    /**
-     * The DOCUMENT-level authorization, re-run through the SAME two gates.
-     *
-     * A per-line check does not enforce either gate. `MAX_ITEMS_PER_REVISION` is 200 and
-     * `uq_quotation_items_line` keys only on `line_number`, so one service may occupy
-     * every line — and splitting defeats the policy threshold exactly as it defeats the
-     * ceiling. With a threshold of 50 and a ceiling of 100, two hundred lines of 49.99
-     * are each individually under the threshold, so before this the actor needed no
-     * elevated permission, faced no maker/approver check, and had their ceiling compared
-     * against nothing at all: 9,998 given away by an actor limited to 100.
-     *
-     * An earlier version of this block only ran `if (elevatedLines > 0)`, which is
-     * precisely the case splitting avoids. It also claimed in its own comment to add
-     * "the aggregate the ceiling actually means" while leaving that hole open — the claim
-     * is what made the gap hard to see.
-     *
-     * So the aggregate is authorized the same way a single line of that size would be:
-     * the same `authorize` call, the same policy, the same ceiling, the same
-     * maker/approver rule, against the document's own discount and pre-discount base.
-     * Nothing new is invented, and the two cannot disagree about what the limits mean.
-     *
-     * It runs only when something was actually discounted. A zero-discount quotation
-     * returns early inside `authorize` and demands no configuration.
-     */
-    let aggregate: DiscountAuthorization | null = null;
-    if (!Decimal.parse(totalDiscount, MONEY).isZero) {
-      aggregate = await pricing.discounts.authorize(
-        db,
-        {
-          companyId: context.companyId,
-          branchId: context.branchId,
-          discountAmount: totalDiscount,
-          currency,
-          lineBase: totalBase,
-          asOf: context.asOf,
-          requestedBy: context.requestedBy,
-          actorId: db.context.principal.userId,
-        },
-        context.hasPermission
-      );
-      /**
-       * The AGGREGATE decides whether this was an elevated authorization.
-       *
-       * A document can need elevated authority when no single line did — that is the
-       * splitting case this block exists for — and the audit record must exist for it.
-       * Keying the record on `elevatedLines` alone would have left exactly the
-       * split-discount case unaudited, which is the one worth auditing most.
-       */
-      if (aggregate.requiredElevatedPermission) {
-        elevatedLines = Math.max(elevatedLines, 1);
-        appliedThreshold = aggregate.threshold;
-        elevatedPermission = aggregate.permissionCode;
-        appliedRequestedBy = aggregate.requestedBy;
+  /**
+   * Writes the priced lines of a new revision, in order.
+   *
+   * A part line is priced by reading the item's selling price and tax rate and is
+   * then written; `quo.guard_quotation_part_line` re-reads both as the row is
+   * written. When either moved in between — a price row added, replaced or
+   * withdrawn, a tax rate changed — the guard refuses the row with
+   * `part_line_price` or `part_line_tax`. That is a refusal of the line's part, not
+   * a fault: it answers `422` on the line's item (`part_price_changed`) so the
+   * operator saves again at the price that applies now. The transaction rolls back
+   * with the thrown failure, so nothing of the quotation is written. Every other
+   * error — any other guard token, any other line kind — is re-thrown unchanged.
+   */
+  private async insertItems(
+    db: DbHandle,
+    revision: RevisionRow,
+    priced: readonly NewItemInput[]
+  ): Promise<ItemRow[]> {
+    const items: ItemRow[] = [];
+    for (const item of priced) {
+      try {
+        items.push(await this.repository.insertItem(db, revision, item));
+      } catch (cause) {
+        const rule = item.itemKind === 'part' ? partPriceRaceRule(guardToken(cause)) : null;
+        if (rule === null) throw cause;
+        throw new AppFailure('ERR-VAL-001', {
+          message: `Line ${item.lineNumber}: the selling price or tax of this part changed while it was being quoted`,
+          safeDetails: {
+            violations: [{ path: `body.lines[${item.lineNumber - 1}].itemId`, rule }],
+          },
+        });
       }
-      if (aggregate.ceiling !== null) appliedCeiling = aggregate.ceiling;
+    }
+    return items;
+  }
+
+  /**
+   * Prices one PART line (P1-32-PRE-OD-FD6, Owner decision D6, ADR-023).
+   *
+   * At an AUTHORISED SALES price and never at cost: the only source that can price
+   * an item today is the item selling price, which `@/modules/inventory` resolves
+   * for the work order's branch exactly as a counter sale is priced (the branch
+   * row, else the company row, else the tenant-wide row).
+   * `resolveAuthorisedPartPrice` takes every source's answer and refuses rather
+   * than choosing if two ever disagree. No price is a refusal on the line's item,
+   * never a zero.
+   *
+   * The tax treatment is the counter sale's: the price's tax class, at its
+   * effective rate for the company today, and untaxed when the price names no
+   * class. The quantity follows the inventory quantity rules. The line SNAPSHOTS
+   * the item's stock code, name and unit, the price row, the unit price, the tax
+   * class and rate; `quo.guard_quotation_part_line` refuses any other price and
+   * freezes the snapshot, so a later catalogue change never alters it.
+   */
+  private async pricePartLine(
+    db: DbHandle,
+    line: QuotationLineInput,
+    lineNumber: number,
+    context: { readonly companyId: string; readonly branchId: string; readonly asOf: string },
+    requiredParts: ReadonlyMap<string, string | null> | null
+  ): Promise<{ item: NewItemInput; discount: LineDiscount }> {
+    const at = (field: string): string => `body.lines[${lineNumber - 1}].${field}`;
+    const refuse = (field: string, rule: string, message: string): never => {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `Line ${lineNumber}: ${message}`,
+        safeDetails: { violations: [{ path: at(field), rule }] },
+      });
+    };
+    const itemId = line.itemId;
+    if (itemId === undefined) {
+      return refuse('itemId', 'invalid_type', 'a part line must name an item');
     }
 
+    let quantity: string;
+    try {
+      quantity = Quantity.parse(line.quantity).assertPostable().toString();
+    } catch (cause) {
+      return refuse(
+        'quantity',
+        'quantity',
+        cause instanceof Error ? cause.message : 'invalid quantity'
+      );
+    }
+
+    const facts = await inventoryModule().catalog.quotablePart(db, {
+      itemId,
+      companyId: context.companyId,
+      branchId: context.branchId,
+    });
+    if (facts === null) {
+      return refuse('itemId', 'item_not_found', 'the item is not in this catalogue');
+    }
+    if (facts.lifecycleStatus !== 'active') {
+      return refuse('itemId', 'item_archived', 'the item is archived and cannot be quoted');
+    }
+
+    const resolution = resolveAuthorisedPartPrice([
+      facts.salePrice === null
+        ? null
+        : {
+            source: 'item_sale_price',
+            priceRef: facts.salePrice.priceId,
+            unitPrice: facts.salePrice.unitPrice,
+            currency: facts.salePrice.currencyCode,
+            taxClassId: facts.salePrice.taxClassId,
+          },
+    ]);
+    if (resolution.status === 'refused') {
+      return refuse(
+        'itemId',
+        resolution.rule,
+        resolution.rule === 'no_authorised_sale_price'
+          ? 'no authorised sales price for this item'
+          : 'the authorised sales prices for this item disagree'
+      );
+    }
+    const price = resolution.price;
+
+    if (line.sourceRequiredPartRef !== undefined) {
+      const named = requiredParts?.get(line.sourceRequiredPartRef);
+      if (named === undefined) {
+        return refuse(
+          'sourceRequiredPartRef',
+          'required_part_not_on_work_order',
+          'the required part is not on the work order being quoted'
+        );
+      }
+      if (named !== null && named !== itemId) {
+        return refuse(
+          'sourceRequiredPartRef',
+          'required_part_item_mismatch',
+          'the required part names a different item'
+        );
+      }
+    }
+
+    const tax = await pricingModule().prices.taxRateFor(db, {
+      companyId: context.companyId,
+      taxClassId: price.taxClassId,
+      asOf: context.asOf,
+    });
+    const unitPrice = Decimal.fromDatabase(price.unitPrice, MONEY).toString();
+    const discount = line.discount ?? '0';
+    const base = await this.lineBase(db, lineNumber, unitPrice, quantity);
+
     return {
-      currency,
-      items,
-      discount: {
-        total: totalDiscount,
-        currency,
-        elevatedLines,
-        permissionCode: elevatedPermission,
-        requestedBy: appliedRequestedBy,
-        ceiling: appliedCeiling,
-        threshold: appliedThreshold,
+      discount: { lineNumber, discount, base },
+      item: {
+        lineNumber,
+        itemKind: 'part',
+        serviceId: null,
+        itemRef: facts.itemId,
+        sourceServiceLineRef: null,
+        sourceRequiredPartRef: line.sourceRequiredPartRef ?? null,
+        priceRuleRef: null,
+        priceCustomerClass: null,
+        itemSalePriceRef: price.priceRef,
+        quotedItemSku: facts.sku,
+        quotedItemName: facts.name,
+        quotedUnitCode: facts.unitCode,
+        quotedUnitName: facts.unitName,
+        quotedTaxClassRef: price.taxClassId,
+        description: line.description ?? null,
+        currencyCode: price.currency,
+        unitPrice,
+        quantity,
+        discount,
+        taxRate: tax.taxRate,
       },
     };
   }
 
   /**
-   * Records `svc.discount.authorized` when a revision's lines needed elevated
-   * authority (P1-20-BE-006, P1-20-SEC-004).
+   * A fixed discount is an amount of money, so it must fit the quotation
+   * currency's minor unit (ADR-023, D1) — three decimals for JOD, two for USD.
    *
-   * Emitted once per revision rather than once per line: the ceiling is a limit on
-   * the actor, the document-level check is what enforces it, and 200 records saying
-   * the same thing about the same actor would bury the fact rather than record it.
-   *
-   * Nothing is written when no line needed elevated authority. A discount under the
-   * configured threshold is an ordinary edit any actor who may write the quotation
-   * may make, and auditing it as an *authorization* would misstate what happened.
+   * Checked once the currency is known, which is only after every line resolved
+   * its price: the route's pattern admits the column's four decimals because it
+   * cannot know the currency. Refused here, naming the line's field, rather than
+   * by `tg_quotation_items_money` as an opaque constraint violation. A quantity
+   * and a unit price are not amounts of money and keep their own scales.
    */
-  private async auditDiscountAuthorization(
+  private async refuseDiscountsFinerThanCurrency(
+    db: DbHandle,
+    currency: string,
+    discounts: readonly LineDiscount[]
+  ): Promise<void> {
+    const minorUnit = await this.repository.minorUnitForCurrency(db, currency);
+    if (minorUnit === null) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: `Currency ${currency} is not a supported currency.`,
+        safeDetails: { violations: [{ path: 'body.lines', rule: 'unknown_currency' }] },
+      });
+    }
+    for (const line of discounts) {
+      assertMinorUnitScale(
+        line.discount,
+        currency,
+        minorUnit,
+        `body.lines[${line.lineNumber - 1}].discount`
+      );
+    }
+  }
+
+  /**
+   * The policy version a quotation is held to, as the pricing module measures it:
+   * `threshold: null` is "none was in force when it was written" — a threshold of
+   * zero — and its approver needs the default permission.
+   */
+  private async pinnedDiscountPolicy(
+    db: DbHandle,
+    quotationId: string
+  ): Promise<PinnedDiscountPolicy> {
+    const row: QuotationDiscountPolicyRow | null = await this.repository.quotationDiscountPolicy(
+      db,
+      quotationId
+    );
+    if (row === null) {
+      return { threshold: null, permissionCode: DEFAULT_DISCOUNT_APPROVAL_PERMISSION };
+    }
+    return {
+      threshold: {
+        policyId: row.policyId,
+        versionNo: row.versionNo,
+        kind: row.kind,
+        value: row.value,
+        currency: row.currency,
+      },
+      permissionCode: row.requiredPermissionCode,
+    };
+  }
+
+  /**
+   * Measures a revision's discounts against the version its quotation is held to.
+   *
+   * MEASURED, not authorized: whether the discount needs approval, and which policy
+   * version said so. Approval is a separate act by a different person
+   * (`DiscountApprovalService`), so nothing about the caller's own authority is
+   * consulted. A malformed discount — negative, or larger than its line — is refused
+   * here, whoever would approve it.
+   */
+  private async measureDiscount(
+    db: DbHandle,
+    context: {
+      companyId: string;
+      currency: string;
+      lines: readonly LineDiscount[];
+      asOf: string;
+      pinned: PinnedDiscountPolicy;
+    }
+  ): Promise<DiscountSummary> {
+    const pricing = pricingModule();
+    // Document-level discount accounting. A per-line threshold check is defeated by
+    // splitting one large discount across many lines, so the aggregate is measured
+    // once at the end against the same version.
+    let totalDiscount = '0.0000';
+    // The document's pre-discount base, so the aggregate is measured against the
+    // same ratio a single line of that size would be.
+    let totalBase = '0.0000';
+    let elevatedLines = 0;
+    let appliedThreshold: DiscountThresholdSnapshot | null = null;
+    let requiredPermission: string | null = null;
+
+    for (const line of context.lines) {
+      const assessment = await pricing.discounts.assess(
+        db,
+        {
+          companyId: context.companyId,
+          discountAmount: line.discount,
+          currency: context.currency,
+          lineBase: line.base,
+          asOf: context.asOf,
+        },
+        context.pinned
+      );
+      totalDiscount = await this.addMoney(db, totalDiscount, line.discount);
+      totalBase = await this.addMoney(db, totalBase, line.base);
+      if (assessment.requiresApproval) {
+        elevatedLines += 1;
+        // Every line of one document is measured against the same pinned version, so
+        // the last write is the version that applied — not a choice between several.
+        appliedThreshold = assessment.threshold;
+        requiredPermission = assessment.permissionCode;
+      }
+    }
+
+    /**
+     * The DOCUMENT-level measurement, through the SAME policy.
+     *
+     * A per-line measurement alone is defeated by splitting: `MAX_ITEMS_PER_REVISION`
+     * is 200 and one service may occupy every line, so with a threshold of 50, two
+     * hundred lines of 49.99 are each individually under it. The aggregate is
+     * measured the way a single line of that size would be — the same `assess`, the
+     * same policy, against the document's own discount and pre-discount base — so a
+     * split discount needs approval exactly when the whole would.
+     *
+     * It runs only when something was actually discounted. A zero-discount quotation
+     * needs no configuration, and no approval under the threshold; a price its writer
+     * set is the separate D8 question `withoutSelfExemption` asks.
+     */
+    let requiresApproval = elevatedLines > 0;
+    if (!Decimal.parse(totalDiscount, MONEY).isZero) {
+      const aggregate = await pricing.discounts.assess(
+        db,
+        {
+          companyId: context.companyId,
+          discountAmount: totalDiscount,
+          currency: context.currency,
+          lineBase: totalBase,
+          asOf: context.asOf,
+        },
+        context.pinned
+      );
+      if (aggregate.requiresApproval) {
+        requiresApproval = true;
+        appliedThreshold = aggregate.threshold;
+        requiredPermission = aggregate.permissionCode;
+      }
+    }
+
+    return {
+      total: totalDiscount,
+      base: totalBase,
+      currency: context.currency,
+      requiresApproval,
+      elevatedLines,
+      permissionCode: requiredPermission,
+      threshold: appliedThreshold,
+    };
+  }
+
+  /**
+   * ADR-023, D8 — a person's own policy or price change never exempts their own
+   * quotation from discount approval.
+   *
+   * Asked AFTER the lines are written, because the database snapshots on each line
+   * who had last changed or published the price it was priced from. When the
+   * requester (the signed-in person writing the revision) recorded the discount
+   * policy version the quotation is held to, or set a price a line was priced at,
+   * any discount at all needs approval by somebody else: the threshold their own
+   * change produced is not relied on. Approval still follows the quotation's pinned
+   * version — its permission and its snapshot — and the request records why
+   * (`requester_set_policy`, `requester_set_price`, computed by the database).
+   *
+   * The reading chosen is the one that never grants more: the version in force
+   * before the person's change cannot always be reconstructed (a price changes in
+   * place, and the earlier policy version may be theirs too), so an independent
+   * approver is required instead.
+   *
+   * A price the requester set needs somebody else even with NO discount (fix round
+   * 3): the price itself can carry the discount — lowering one's own price from 100
+   * to 10 and quoting at 10 gives the same 90 away that a discount of 90 would. The
+   * request is then recorded with a discount total of zero and `requester_set_price`,
+   * which is the only zero-discount request the database admits. A threshold the
+   * requester recorded is not in question when nothing is discounted. The issue guard
+   * holds the same rule for a revision with no request
+   * (`quo.revision_discount_needs_approval`).
+   */
+  private async withoutSelfExemption(
     db: DbHandle,
     revision: RevisionRow,
-    summary: DiscountSummary
-  ): Promise<void> {
-    if (summary.elevatedLines === 0) return;
-    await appendAudit(db, {
-      action: 'svc.discount.authorized',
-      entityType: 'quo.quotation_revision',
-      entityId: revision.id,
+    summary: DiscountSummary,
+    pinned: PinnedDiscountPolicy
+  ): Promise<DiscountSummary> {
+    if (summary.requiresApproval) return summary;
+    const basis = await this.repository.revisionSelfChangeBasis(
+      db,
+      revision.id,
+      db.context.principal.userId
+    );
+    const discounted = !Decimal.parse(summary.total, MONEY).isZero;
+    if (!basis.ownPrice && !(discounted && basis.ownPolicy)) return summary;
+    return {
+      ...summary,
+      requiresApproval: true,
+      permissionCode: pinned.permissionCode,
+      threshold: pinned.threshold,
+    };
+  }
+
+  /**
+   * Records that a revision's discount needs approval, and audits the request
+   * (P1-32-PRE-OD-DISC-01).
+   *
+   * One request per revision: the approval is of the DOCUMENT's discount, because
+   * the aggregate is what a split cannot hide. The requester is the signed-in person
+   * — the repository takes it from the request context and row security refuses any
+   * other — and the quotation's pinned policy version it was measured against is
+   * copied onto the row; the database refuses any other snapshot, and any total the
+   * lines do not carry.
+   *
+   * Nothing is written when no approval is needed: a discount under the threshold is
+   * an ordinary edit anyone who may write the quotation may make.
+   */
+  private async recordDiscountRequest(
+    db: DbHandle,
+    revision: RevisionRow,
+    summary: DiscountSummary,
+    asOf: string,
+    supersedes: readonly string[]
+  ): Promise<DiscountApprovalView | null> {
+    if (!summary.requiresApproval) return null;
+    const approval = await this.repository.insertDiscountApproval(db, {
       companyId: revision.companyId,
       branchId: revision.branchId,
+      quotationId: revision.quotationId,
+      quotationRevisionId: revision.id,
+      currencyCode: summary.currency,
+      discountTotal: summary.total,
+      discountBase: summary.base,
+      elevatedLineCount: summary.elevatedLines,
+      policyId: summary.threshold?.policyId ?? null,
+      policyVersionNo: summary.threshold?.versionNo ?? null,
+      thresholdKind: summary.threshold?.kind ?? null,
+      thresholdValue: summary.threshold?.value ?? null,
+      thresholdCurrencyCode: summary.threshold?.currency ?? null,
+      requiredPermissionCode: summary.permissionCode ?? DEFAULT_DISCOUNT_APPROVAL_PERMISSION,
+    });
+
+    await appendAudit(db, {
+      action: 'quo.discount_approval.requested',
+      entityType: 'quo.discount_approval',
+      entityId: approval.id,
+      companyId: approval.companyId,
+      branchId: approval.branchId,
       details: [
+        { field: 'quotationRevisionId', classification: 'internal', value: revision.id },
         // The amount given away is what the business charges, so it carries the same
         // classification as every other price in the trail.
-        { field: 'discountTotal', classification: 'restricted', value: summary.total },
-        { field: 'currency', classification: 'public', value: summary.currency },
+        { field: 'discountTotal', classification: 'restricted', value: approval.discountTotal },
+        { field: 'currency', classification: 'public', value: approval.currencyCode },
         {
           field: 'elevatedLineCount',
           classification: 'public',
-          value: String(summary.elevatedLines),
+          value: String(approval.elevatedLineCount),
         },
         {
           field: 'requiredPermission',
           classification: 'internal',
-          value: summary.permissionCode ?? 'none',
+          value: approval.requiredPermissionCode,
         },
-        // WHO asked for it. A separation-of-duties control that leaves no record of the
-        // party it was satisfied by cannot be audited after the fact, which is how an
-        // invented requester went undetectable.
-        {
-          field: 'requestedBy',
-          classification: 'internal',
-          value: summary.requestedBy ?? 'self',
-        },
+        { field: 'requestedBy', classification: 'internal', value: approval.requestedBy },
         // A null policy is recorded as such rather than omitted: "no policy was
-        // configured, so the threshold was zero" is the reason the discount needed
-        // authorizing, and an absent field would read as "not applicable".
+        // configured, so the threshold was zero" is the reason the discount needs
+        // approval, and an absent field would read as "not applicable".
         {
           field: 'thresholdPolicyId',
           classification: 'internal',
-          value: summary.threshold?.policyId ?? 'unconfigured',
+          value: approval.policyId ?? 'unconfigured',
+        },
+        {
+          field: 'thresholdVersionNo',
+          classification: 'internal',
+          value:
+            approval.policyVersionNo === null ? 'unconfigured' : String(approval.policyVersionNo),
         },
         {
           field: 'thresholdKind',
           classification: 'internal',
-          value: summary.threshold?.kind ?? 'zero-by-default',
+          value: approval.thresholdKind ?? 'zero-by-default',
         },
         {
           field: 'thresholdValue',
           classification: 'internal',
-          value: summary.threshold?.value ?? '0',
+          value: approval.thresholdValue ?? '0',
+        },
+        // ADR-023, D8: why another person must approve even under the threshold —
+        // computed by the database from the provenance it snapshotted.
+        {
+          field: 'requesterSetPolicy',
+          classification: 'internal',
+          value: String(approval.requesterSetPolicy),
         },
         {
-          field: 'ceilingAmount',
-          classification: 'restricted',
-          value: summary.ceiling?.amount ?? 'none',
+          field: 'requesterSetPrice',
+          classification: 'internal',
+          value: String(approval.requesterSetPrice),
         },
-        {
-          field: 'ceilingCurrency',
-          classification: 'public',
-          value: summary.ceiling?.currency ?? 'none',
-        },
+        ...(supersedes.length === 0
+          ? []
+          : [
+              {
+                field: 'supersedesDiscountApprovalIds',
+                classification: 'internal' as const,
+                value: supersedes.join(','),
+              },
+            ]),
       ],
     });
+    return describeDiscountApproval(db, approval, asOf);
   }
 
   /**
@@ -1345,33 +1930,23 @@ export class QuotationService {
   /**
    * `unit * qty` computed by PostgreSQL, and refused unless it is EXACT at scale 4.
    *
-   * The exactness check is the load-bearing part, and it closes a defect that made
-   * some perfectly legal quotations permanently unissuable.
-   *
+   * The exactness refusal is kept for ONE reason now: the discount ceiling.
    * `captured_unit_price` is `numeric(18,4)` and `captured_quantity` is
-   * `numeric(12,3)`, so the raw product has scale **7**. Two constraints then
-   * disagree about what to do with those extra digits:
+   * `numeric(12,3)`, so the raw product has scale **7**, and
+   * `ck_quotation_items_discount` compares a discount against that **unrounded**
+   * product. A base rounded to scale 4 could therefore authorize a discount the
+   * CHECK then rejects; returning only an EXACT product keeps the two in step, and
+   * a quantity whose product does not fit is refused here, naming the field,
+   * instead of failing as an opaque constraint violation.
    *
-   *  - `ck_quotation_items_line_total` rounds per line, so each stored line holds
-   *    `round(baseᵢ, 4)`;
-   *  - `quo.issue_revision` assigns `SUM(captured_unit_price * captured_quantity)`
-   *    into a `numeric(18,4)` variable, i.e. `round(Σ baseᵢ, 4)`, and
-   *    `ck_quotation_revisions_totals` compares that against `SUM(line_total)`.
-   *
-   * `Σ round(baseᵢ, 4) = round(Σ baseᵢ, 4)` is **not** an identity. Two lines of
-   * `1.0001 × 1.500` give `1.5001500` each: the per-line sum is `3.0004` and the
-   * rounded sum is `3.0003`, so the revision CHECK fails inside
-   * `quo.issue_revision` — a `23514` surfacing as `ERR-SYS-001`, HTTP 500, with the
-   * draft left unissuable and the caller told nothing useful.
-   *
-   * Both constraints are frozen, so the application must keep the disagreement from
-   * arising: if every line's product is exact at scale 4 then `round(baseᵢ,4) = baseᵢ`
-   * and the two expressions coincide by construction. A quantity whose product does
-   * not fit is refused here, naming the field, instead of failing far away at issue.
-   *
-   * Returning the EXACT product also fixes the discount ceiling:
-   * `ck_quotation_items_discount` compares against the **unrounded** product, so a
-   * rounded-up base could authorize a discount the CHECK then rejects.
+   * It is no longer about the revision totals. It was originally added because a
+   * per-line CHECK rounded each line total to scale 4 while `quo.issue_revision`
+   * assigned the unrounded sum of `unit * qty`, and `Σ round(baseᵢ, 4) ≠
+   * round(Σ baseᵢ, 4)` left some drafts unissuable. That CHECK is gone:
+   * `tg_quotation_items_money` now fixes each line's net and tax at the currency's
+   * minor unit, and `quo.issue_revision` writes totals that are sums of those
+   * rounded lines (ADR-023, D1), so the revision totals agree with the lines by
+   * construction whatever scale the product carries.
    */
   private async lineBase(
     db: DbHandle,
@@ -1422,7 +1997,8 @@ export class QuotationService {
   private view(
     quotation: QuotationRow,
     revision: RevisionRow | null,
-    items: readonly ItemRow[]
+    items: readonly ItemRow[],
+    discountApproval: DiscountApprovalView | null
   ): QuotationView {
     return {
       id: quotation.id,
@@ -1435,10 +2011,25 @@ export class QuotationService {
       payerPartnerRef: quotation.payerPartnerRef,
       currentRevisionId: quotation.currentRevisionId,
       recordVersion: quotation.recordVersion,
-      currentRevision: revision === null ? null : toRevisionView(revision, items),
+      currentRevision: revision === null ? null : toRevisionView(revision, items, discountApproval),
     };
   }
 }
 
 /** Re-exported so callers can reason about terminal revisions without the domain. */
 export { isTerminalRevision, assertRevisionEditable };
+
+/**
+ * The identifier a guard of `quo.quotation_items` put before the first colon of
+ * its `check_violation` message, or `null` for any other error. Those guards write
+ * a stable token there precisely so this is the whole parse; nothing else of the
+ * driver's message is read or passed on.
+ */
+function guardToken(error: unknown): string | null {
+  if (!isSqlState(error, SQLSTATE.checkViolation)) return null;
+  const message =
+    typeof error === 'object' && error !== null && 'message' in error
+      ? (error as { message?: unknown }).message
+      : undefined;
+  return typeof message === 'string' ? (/^([a-z_]+):/.exec(message)?.[1] ?? null) : null;
+}

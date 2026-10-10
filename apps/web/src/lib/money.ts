@@ -17,8 +17,10 @@
  *   - no `toFixed`, which formats a double
  *   - comparison and scaling are done on the DIGITS
  *
- * `Intl.NumberFormat` appears exactly once, in `formatMoney`, and only to
- * produce text for a human to read. Its output is never parsed back.
+ * `Intl.NumberFormat` produces text for a human to read in `formatMoney`, and
+ * is asked once more, in `minorUnitOf`, only for the number of decimals a
+ * currency is written with — and only when the server did not say (see
+ * `formatMoney`). Neither output is ever parsed back into an amount.
  *
  * ## Scale
  *
@@ -37,6 +39,12 @@ export interface Money {
   /** Canonical decimal string, e.g. `"1234.5000"`. Never a number. */
   readonly amount: string;
   readonly currency: CurrencyCode;
+  /**
+   * How many decimals the currency is written with, as the server published it
+   * from `shared.currencies.minor_unit` (Owner decision D1). A count of digits,
+   * never an amount. Absent when the read that carried the amount did not say.
+   */
+  readonly minorUnit?: number | undefined;
 }
 
 /** Optional sign, digits, optional fraction. Nothing else — no exponent, no comma. */
@@ -143,18 +151,84 @@ export function isNegativeMoney(value: string): boolean {
  * multi-company tenant may hold. It is never parsed back — `formatMoney` is a
  * one-way function and the canonical string remains the value of record.
  *
+ * ## Decimals follow the currency (P1-32-PRE-OD-FIN, GAP-15)
+ *
+ * An amount is written with its currency's minor unit — three decimals for JOD,
+ * two for USD, none for JPY — so `12.5000 JOD` reads `12.500 JOD`, not
+ * `12.50 JOD`.
+ *
+ * The minor unit is the SERVER's when the amount carries one: the platform
+ * records each currency's minor unit in `shared.currencies`, and that record is
+ * the authority (Owner decision D1, finance retest). The browser's own locale
+ * data disagrees with it for some currencies — it writes the Iraqi dinar with no
+ * decimals where the ISO register gives three — so `Intl` is asked only for an
+ * amount whose read did not say. A digit BELOW the minor unit is never rounded away: `1.9752 JOD`
+ * is shown as `1.9752 JOD`, because a residue a customer cannot pay is a
+ * discrepancy to surface, not a figure to tidy. The count of decimals shown is
+ * therefore the larger of the minor unit and the amount's own significant ones,
+ * and `Intl` is never asked to round.
+ *
  * `Intl` takes a number, which is the one place a double is unavoidable. It is
  * safe here and only here: a rendering error of one ulp changes a pixel, not a
  * ledger. The canonical string is what gets submitted.
  */
 export function formatMoney(money: Money, locale: string): string {
   const canonical = toCanonicalMoney(money.amount);
+  const fraction = canonical.split('.')[1] ?? '';
+  const significant = fraction.replace(/0+$/, '').length;
+  const minorUnit = publishedMinorUnit(money.minorUnit) ?? minorUnitOf(money.currency);
+  const digits = significant > minorUnit ? significant : minorUnit;
   const formatted = new Intl.NumberFormat(locale, {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: MONEY_SCALE,
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
     useGrouping: true,
   }).format(displayNumber(canonical));
   return `${formatted} ${money.currency}`;
+}
+
+/** Every whole count of decimals from none to the column's four. */
+const USABLE_MINOR_UNITS: readonly number[] = [0, 1, 2, 3, 4];
+
+/**
+ * The minor unit the server published, when it is one this module can use: a
+ * whole count of digits from zero to the four decimals `numeric(18,4)` carries.
+ * Anything else is treated as not said, never trusted into the formatter.
+ */
+function publishedMinorUnit(value: number | undefined): number | null {
+  return value !== undefined && USABLE_MINOR_UNITS.includes(value) ? value : null;
+}
+
+/**
+ * Whether a typed amount fits a currency's minor unit: no digit other than zero
+ * below the unit the server published (`shared.currencies.minor_unit`). Read on
+ * the DIGITS, never through a number. An amount that is not a decimal at all is
+ * left to `parseMoneyInput`, and an unknown unit is left to the server.
+ */
+export function fitsMinorUnit(raw: string, minorUnit: number | undefined): boolean {
+  const unit = publishedMinorUnit(minorUnit);
+  if (unit === null) return true;
+  const trimmed = raw.trim();
+  if (!DECIMAL.test(trimmed)) return true;
+  const fraction = trimmed.split('.')[1] ?? '';
+  return !/[1-9]/.test(fraction.slice(unit));
+}
+
+/**
+ * How many decimals a currency is written with as the platform's `Intl` reports
+ * it — the fallback for an amount whose read published no minor unit. `Intl`
+ * follows the locale data, which disagrees with the ISO register (and with
+ * `shared.currencies`) for some currencies. A code `Intl` refuses falls back to
+ * two, and nothing above the four decimals `numeric(18,4)` carries is ever used.
+ */
+function minorUnitOf(currency: CurrencyCode): number {
+  try {
+    const digits = new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions()
+      .maximumFractionDigits;
+    if (typeof digits !== 'number' || digits < 0) return 2;
+    return digits > MONEY_SCALE ? MONEY_SCALE : digits;
+  } catch {
+    return 2;
+  }
 }
 
 /**

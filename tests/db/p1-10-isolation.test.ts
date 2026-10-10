@@ -43,7 +43,23 @@ describe('p1-10 tenant isolation', () => {
         [SCHEMAS]
       )
     ).rows;
-    expect(tables.length).toBe(35);
+    // 41 with the P1-32 preparatory inventory slice: stock transfers, goods receipts
+    // and their lines, the restricted cost layers, and stock counts and their lines.
+    // 44 with P1-32 preparatory slice 2: inv.item_identifiers, inv.item_sale_prices
+    // and inv.sales_returns.
+    // 51 with P1-32 preparatory slice 3a: inv.item_unit_conversions,
+    // inv.vehicle_fluid_specifications, inv.material_requirements,
+    // inv.material_requirement_exceptions, inv.material_requests,
+    // inv.material_request_fulfillments and inv.stock_transfer_settlements.
+    // 52 with the Owner directive operational stock alerts:
+    // inv.item_reorder_levels, which this loop then holds to the same rule as
+    // every other inv table — RLS forced, a SELECT and an INSERT policy, and
+    // iam.current_tenant_id() in the predicate.
+    // 53 with the discount approval record (P1-32-PRE-OD-DISC-01):
+    // quo.discount_approvals, held to the same rule.
+    // 54 with the acceptance record (P1-32-PRE-OD-FD11, ADR-023 D11):
+    // quo.acceptance_records, held to the same rule.
+    expect(tables.length).toBe(54);
     for (const t of tables) {
       const fq = `${t.table_schema}.${t.table_name}`;
       const pol = (

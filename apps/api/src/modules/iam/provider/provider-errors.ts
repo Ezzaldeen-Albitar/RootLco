@@ -46,6 +46,21 @@ export function toAppFailureFromProvider(error: unknown): never {
         message: 'The authentication provider is unavailable',
         cause: error,
       });
+    case 'credential-policy-rejected':
+      // The provider's own strength policy refused the new password. Its
+      // sentence stays on the ProviderFailure — the caller of this function
+      // logs it for operators — and is deliberately NOT placed in
+      // `safeDetails`: a provider message in a response is what ADR-019 §3
+      // forbids, and the web tier renders catalogued keys in two languages, so
+      // an upstream English sentence would be unusable there in any case. The
+      // violation names the field the caller must change, and nothing else.
+      throw new AppFailure('ERR-IAM-004', {
+        message: 'The identity provider refused the new password',
+        safeDetails: {
+          violations: [{ path: 'body.newPassword', rule: 'refused_by_identity_provider' }],
+        },
+        cause: error,
+      });
     case 'provider-rejected':
       // An application defect: we sent something the provider would not accept.
       // 500, not 400 — the caller cannot fix it by changing their request.

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { Icon } from '@/components/primitives/Icon';
 import type { Messages } from '@/i18n/get-messages';
-import { translate } from '@/i18n/get-messages';
+import { explanationFor, translate } from '@/i18n/get-messages';
 
 /**
  * The states every operational screen must be able to show.
@@ -66,6 +66,37 @@ function StateShell({
       ) : null}
     </div>
   );
+}
+
+/**
+ * The second line of a failure banner: what to do about it.
+ *
+ * The states above are full-page and have always rendered a heading and an
+ * explanation beneath it. A banner — the line a form shows when a save is
+ * refused — rendered ONE key, and for a refused permission that key is a label:
+ * "You do not have access". True, and the reader is no further forward.
+ *
+ * This is the missing line, and it is a component rather than a second call at
+ * each banner so that the pairing is decided once. It renders nothing when the
+ * key is already a sentence (`state.expired.message` explains itself) or when
+ * the catalogue carries no explanation for it, so a caller can place it
+ * unconditionally.
+ *
+ * A separate element, not text appended to the heading: every screen test in
+ * this suite finds the heading by its exact words, and joining the two strings
+ * into one node would break that reading while changing nothing an operator can
+ * see.
+ */
+export function FailureExplanation({
+  messages,
+  messageKey,
+}: {
+  readonly messages: Messages;
+  readonly messageKey: string;
+}) {
+  const explanation = explanationFor(messages, messageKey);
+  if (explanation === null) return null;
+  return <span className="mt-1 block font-normal">{explanation}</span>;
 }
 
 export function LoadingState({ messages }: { readonly messages: Messages }) {

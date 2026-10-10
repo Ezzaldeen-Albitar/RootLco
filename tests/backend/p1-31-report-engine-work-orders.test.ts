@@ -1,0 +1,2879 @@
+/**
+ * The report engine, slice 1 of 4 (Phase 1-31, prerequisite P-11).
+ *
+ * P1-23 shipped a report catalogue that could not run anything and said so:
+ * `executable` was the literal `false`, because the frozen `rpt` schema binds no
+ * data source to a report code. The binding this slice adds does not come from a
+ * column — it comes from the Owner requirement that a report code binds to a
+ * **code-registered dataset** (OWR-2026-09-06-A-12). `REPORT_DATASETS` is that
+ * registry, `rpt.report-run` is the operation, and `work_orders_by_status` is the
+ * first and only dataset in it.
+ *
+ * ## The two permissions are proved BEHAVIOURALLY, in both directions
+ *
+ * The route declares `rpt.report.read`; the service then checks the dataset's own
+ * `wo.work_order.read` against the same company and branch. Asserting that a
+ * declaration names two strings proves only that somebody typed them, so two
+ * principals decide it and each is the counterfactual of the other:
+ *
+ *   * `RPT_ONLY` holds `rpt.report.read` and nothing else — refused with
+ *     `ERR-IAM-001` naming `wo.work_order.read`, by the SERVICE.
+ *   * `WO_ONLY` holds `wo.work_order.read` and nothing else — refused with
+ *     `ERR-IAM-001` naming `rpt.report.read`, by the ROUTE.
+ *
+ * Collapse the two codes into one and both cases go red, in opposite directions.
+ *
+ * ## Why the fixtures INSERT work orders instead of converting receptions
+ *
+ * `opened_at` defaults to `now()` and `tg_work_orders_immutable` freezes it, so a
+ * work order created through the authoritative conversion route cannot be given a
+ * chosen instant afterwards — and the half-open period boundary is a claim about
+ * chosen instants, one second apart, in a named zone. Each fixture order is
+ * therefore INSERTed against a real `rec.accept_check_in` visit — the same
+ * preconditions `wo.guard_work_order_refs` demands on insert — with an explicit
+ * `opened_at`, and every STATE it then takes is taken through the real transition
+ * route, because `state` is not immutable and the graph is what decides it.
+ *
+ * ## Why the period is in the future
+ *
+ * `WorkOrderSummary.customer` is a DATED projection resolved at the order's
+ * `opened_at` (PRE-P1-29 BR-05). A back-dated fixture order therefore reports
+ * `customer: null` — correctly, because the party role did not yet exist at that
+ * instant — and the customer column could not be exercised at all. Dating the
+ * period forward is the only arrangement that makes the projection answer, and it
+ * keeps the suite deterministic: nothing here depends on what day it is run.
+ *
+ * ## Operations exercised
+ *
+ * COVERAGE-EVIDENCE (parsed by scripts/check-operation-test-coverage.mjs):
+ *   rpt.report-run: route service authorization success denial cross-tenant isolation pagination
+ *   rpt.report-catalogue: route service success cross-tenant
+ *   rpt.report-read: route service success denial cross-tenant
+ *   rpt.report-export: route service authorization success denial cross-tenant isolation audit
+ *   ovw.dashboard-summary-read: route service authorization success denial cross-tenant isolation
+ *
+ * The three GETs declare `auditClass: 'none'`; only report export declares an
+ * audit witness. None declares idempotency or stale-version evidence.
+ *
+ * ## Why the dashboard is exercised HERE
+ *
+ * Owner directive — the tenant operations overview. It is the same question this
+ * file already builds an environment for: calendar periods cut in a branch's own
+ * timezone, two sibling branches in one company, a principal whose grant reaches
+ * one branch and authorizes the other, and a second tenant. Its fixtures are its
+ * OWN company and branches (`COMPANY_D`) so the counts it asserts are exactly the
+ * rows it inserted and cannot move when this file's report fixtures change; what
+ * it reuses is the harness, the principal seeding and the visit primitive.
+ *
+ * ## Every linked figure equals the list it links to
+ *
+ * The last block holds the Owner rule — a dashboard figure offered as "the list"
+ * counts exactly the set that list shows — against the board route itself, in a
+ * third company of its own (`COMPANY_E`) whose fixtures are the edge cases that
+ * separated the two definitions before they were shared: a FINISHED order with
+ * parts requested, parts `reserved_elsewhere`, a RETIRED work order holding a
+ * pending request, and one order holding TWO pending requests.
+ */
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import type { Pool } from 'pg';
+import { randomUUID } from 'node:crypto';
+import {
+  IDENTITY_PROVIDER,
+  TENANT_A,
+  TENANT_B,
+  USER_A,
+  USER_TENANT_B,
+  adminPool,
+  cleanBackendFixtures,
+  contextFor,
+  ensureBackendFixtures,
+  ensureTestLogins,
+  runtimeAppPool,
+} from './helpers';
+import {
+  FULL,
+  advance,
+  authAs,
+  establishP1_19Fixtures,
+  seedAuthorizedVisit,
+  type Principal,
+} from './p1-19-helpers';
+import { __setPrimaryPoolForTests } from '@/server/db/pool';
+import { __resetAuthenticatorForTests } from '@/server/context/principal';
+import { withTransaction } from '@/server/db/transaction';
+import { AppFailure } from '@/server/errors/app-failure';
+import { callerHoldsPermission } from '@/server/auth/authorization';
+import { reportingModule, REPORT_DATASET_CODES } from '@/modules/reporting';
+import { GET as RUN } from '@/app/api/v1/reports/[reportCode]/rows/route';
+import {
+  GET as READ_DEFINITION,
+  POST as EXPORT_REPORT,
+} from '@/app/api/v1/reports/[reportCode]/route';
+import type { ReportExportView } from '@/modules/reporting';
+import { GET as DASHBOARD_SUMMARY } from '@/app/api/v1/dashboard/summary/route';
+import { POST as CLOSE_WORK_ORDER } from '@/app/api/v1/work-orders/[workOrderId]/closure/route';
+import { POST as CREATE_JOB } from '@/app/api/v1/work-orders/[workOrderId]/jobs/route';
+import { POST as TRANSITION_JOB } from '@/app/api/v1/jobs/[jobId]/transition/route';
+import { GET as LIST_WORK_ORDERS } from '@/app/api/v1/work-orders/route';
+import { GET as LIST_RECEPTIONS } from '@/app/api/v1/receptions/route';
+import { __resetRateLimitForTests } from '@/server/http/rate-limit';
+
+let admin: Pool;
+let runtime: Pool;
+
+// ---- Fixture organisation ---------------------------------------------------
+
+/** A second company in tenant A, so the report's branch is this suite's alone. */
+const COMPANY_R = 'f1310000-0000-4000-8000-0000000000c1';
+/** The reported branch. Its zone is the only non-UTC row `shared.timezones` seeds. */
+const BRANCH_R1 = 'f1310000-0000-4000-8000-0000000000b1';
+/** A sibling branch, for the containment case. Same company, same timezone. */
+const BRANCH_R2 = 'f1310000-0000-4000-8000-0000000000b2';
+/**
+ * `Asia/Amman` — chosen because `supabase/seeds/01_reference_data.sql` seeds exactly
+ * two zones, `UTC` and this one, and `fk_branches_timezone` refuses anything else.
+ * A non-UTC branch is the whole point: with a UTC branch this suite could not tell a
+ * BRANCH reading of a calendar day from a server reading of one, and a case that
+ * cannot fail for the reason it names is not a case.
+ */
+const BRANCH_TIMEZONE = 'Asia/Amman';
+
+const REPORT_CODE = 'work_orders_by_status';
+/** A code the tenant has published a configuration for and the engine does not implement. */
+const UNREGISTERED_CODE = 'p1_31_unimplemented';
+
+const REPORT_READ = 'rpt.report.read';
+const WORK_ORDER_READ = 'wo.work_order.read';
+/** Widens RLS reach without widening authority. Deliberately not a work-order code. */
+const REACH_ONLY = 'org.tenant.read';
+
+// ---- The period, and the five instants that decide it -----------------------
+
+/** First day INCLUDED, in `BRANCH_TIMEZONE`. */
+const FROM = '2027-03-02';
+/** First day EXCLUDED — the day after the last one reported. */
+const TO = '2027-03-04';
+
+/*
+ * The five instants are RESOLVED FROM THE DATABASE rather than written down here.
+ *
+ * The zone offset is a property of the deployed tzdata, not of this file: Jordan
+ * abolished its summer clock in 2022, and a Postgres carrying older tzdata would
+ * place these March days an hour away. Hard-coding the UTC instants would make the
+ * suite assert the tzdata rather than the query, and would fail it on a database
+ * that is correct. So the bounds are read back with the same expression the
+ * repository uses, and the fixtures are placed relative to them.
+ *
+ * `periodOpens` is local midnight on FROM; `periodCloses` is local midnight on TO,
+ * which is the first EXCLUDED instant.
+ */
+let periodOpens = '';
+let periodCloses = '';
+/** One second before the period opens. */
+let beforePeriod = '';
+/** Local 12:00 on the first included day. */
+let middleInstant = '';
+/** Local 23:30 on the last included day — the late case. */
+let lateInstant = '';
+
+const shift = (iso: string, milliseconds: number): string =>
+  new Date(new Date(iso).getTime() + milliseconds).toISOString();
+
+// ---- Principals -------------------------------------------------------------
+
+/** Tenant A, unrestricted, holding BOTH codes. */
+const RPT_FULL: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000101',
+  userId: 'f1310000-0000-4000-8000-000000000102',
+  subject: 'fx_p1_31_rpt_full',
+  tenantId: TENANT_A,
+  permissions: [REPORT_READ, WORK_ORDER_READ],
+};
+
+/** May run reports; may not read work orders. Refused by the SERVICE. */
+const RPT_ONLY: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000111',
+  userId: 'f1310000-0000-4000-8000-000000000112',
+  subject: 'fx_p1_31_rpt_only',
+  tenantId: TENANT_A,
+  permissions: [REPORT_READ],
+};
+
+/** May read work orders; may not run reports. Refused by the ROUTE. */
+const WO_ONLY: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000121',
+  userId: 'f1310000-0000-4000-8000-000000000122',
+  subject: 'fx_p1_31_wo_only',
+  tenantId: TENANT_A,
+  permissions: [WORK_ORDER_READ],
+};
+
+/**
+ * Both codes, granted ONLY in `BRANCH_R2`, with `BRANCH_R1` inside its
+ * permission-blind `iam.allowed_branch_ids()` union through the reach role below.
+ *
+ * The decisive isolation principal: `BRANCH_R1`'s rows ARE visible to RLS for this
+ * caller, so the only thing that can refuse a `BRANCH_R1` report is the scoped
+ * permission evaluation (P1-18-A-01).
+ */
+const RPT_SCOPED_R2: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000131',
+  userId: 'f1310000-0000-4000-8000-000000000132',
+  subject: 'fx_p1_31_rpt_scoped_r2',
+  tenantId: TENANT_A,
+  permissions: [REPORT_READ, WORK_ORDER_READ, 'rpt.export'],
+  scope: { companyId: COMPANY_R, branchId: BRANCH_R2 },
+  grantId: 'f1310000-0000-4000-8000-0000000001f1',
+};
+
+/** Tenant B, unrestricted in its OWN tenant. A refusal is tenancy, not authority. */
+const RPT_TENANT_B: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000141',
+  userId: 'f1310000-0000-4000-8000-000000000142',
+  subject: 'fx_p1_31_rpt_tenant_b',
+  tenantId: TENANT_B,
+  permissions: [REPORT_READ, WORK_ORDER_READ],
+};
+
+const EXPORT_FULL: Principal = {
+  ...RPT_FULL,
+  roleId: 'f1310000-0000-4000-8000-000000000191',
+  userId: 'f1310000-0000-4000-8000-000000000192',
+  subject: 'fx_p1_31_export_full',
+  permissions: [REPORT_READ, WORK_ORDER_READ, 'rpt.export'],
+};
+const EXPORT_NO_DATASET: Principal = {
+  ...EXPORT_FULL,
+  roleId: 'f1310000-0000-4000-8000-0000000001a1',
+  userId: 'f1310000-0000-4000-8000-0000000001a2',
+  subject: 'fx_p1_31_export_no_dataset',
+  permissions: [REPORT_READ, 'rpt.export'],
+};
+const EXPORT_TENANT_B: Principal = {
+  ...RPT_TENANT_B,
+  roleId: 'f1310000-0000-4000-8000-0000000001b1',
+  userId: 'f1310000-0000-4000-8000-0000000001b2',
+  subject: 'fx_p1_31_export_tenant_b',
+  permissions: [REPORT_READ, WORK_ORDER_READ, 'rpt.export'],
+};
+const PRINCIPALS: readonly Principal[] = [
+  RPT_FULL,
+  RPT_ONLY,
+  WO_ONLY,
+  RPT_SCOPED_R2,
+  RPT_TENANT_B,
+  EXPORT_FULL,
+  EXPORT_NO_DATASET,
+  EXPORT_TENANT_B,
+];
+
+const REACH_ROLE = 'f1310000-0000-4000-8000-000000000151';
+const REACH_GRANT = 'f1310000-0000-4000-8000-000000000152';
+
+// ---- Response shapes --------------------------------------------------------
+
+interface Cell {
+  readonly key: string;
+  readonly label: string | null;
+  readonly value: string | null;
+}
+interface Column {
+  readonly key: string;
+  readonly kind: string;
+  readonly drillThrough: string | null;
+}
+interface StateCount {
+  readonly stateCode: string;
+  readonly stateName: string;
+  readonly count: number;
+}
+interface RunBody {
+  readonly reportCode: string;
+  readonly titleKey: string;
+  readonly scope: string;
+  readonly period: { readonly from: string; readonly to: string; readonly timezone: string };
+  readonly generatedAt: string;
+  readonly freshness: string;
+  readonly columns: readonly Column[];
+  readonly countsByState: readonly StateCount[];
+  readonly rows: {
+    readonly items: readonly { readonly cells: readonly Cell[] }[];
+    readonly nextCursor: string | null;
+    readonly hasMore: boolean;
+  };
+}
+interface Problem {
+  readonly code: string;
+  readonly requiredPermissions?: readonly string[];
+}
+
+function run(query: Record<string, string>, reportCode = REPORT_CODE): Promise<Response> {
+  const url = new URL(`http://localhost/api/v1/reports/${reportCode}/rows`);
+  for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+  return RUN(new Request(url), { params: Promise.resolve({ reportCode }) });
+}
+
+/** The default report: this suite's branch, over the whole period. */
+function report(extra: Record<string, string> = {}): Promise<Response> {
+  return run({ companyId: COMPANY_R, branchId: BRANCH_R1, from: FROM, to: TO, ...extra });
+}
+
+const body = async (response: Response): Promise<RunBody> => (await response.json()) as RunBody;
+
+/** The `value` of one named cell of one row. */
+function cellValue(row: { readonly cells: readonly Cell[] }, key: string): string | null {
+  return row.cells.find((entry) => entry.key === key)?.value ?? null;
+}
+function cellLabel(row: { readonly cells: readonly Cell[] }, key: string): string | null {
+  return row.cells.find((entry) => entry.key === key)?.label ?? null;
+}
+function countOf(view: RunBody, stateCode: string): number {
+  return view.countsByState.find((entry) => entry.stateCode === stateCode)?.count ?? -1;
+}
+
+// ---- Fixture construction ---------------------------------------------------
+
+async function seedPrincipal(principal: Principal): Promise<void> {
+  await admin.query(
+    `INSERT INTO iam.user_accounts
+       (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+     VALUES ($1,$2,$3,$4,$4||'@example.test','P1-31 Principal','active',$5)
+     ON CONFLICT (id) DO NOTHING`,
+    [
+      principal.userId,
+      principal.tenantId,
+      IDENTITY_PROVIDER,
+      principal.subject,
+      principal.tenantId === TENANT_B ? USER_TENANT_B : USER_A,
+    ]
+  );
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$2,$3,'P1-31 fixture',$4) ON CONFLICT (id) DO NOTHING`,
+    [principal.roleId, principal.tenantId, principal.subject, USER_A]
+  );
+  for (const code of principal.permissions) {
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+        WHERE p.permission_code = $4
+       ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+      [principal.tenantId, principal.roleId, USER_A, code]
+    );
+  }
+  if (principal.scope === undefined) {
+    await admin.query(
+      `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       VALUES ($1,$2,$3,'unrestricted',$4,$4)`,
+      [principal.tenantId, principal.userId, principal.roleId, USER_A]
+    );
+    return;
+  }
+  // A scoped grant must carry at least one scope, enforced by a DEFERRABLE
+  // constraint trigger, so the grant and the scope land in ONE transaction.
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+      [principal.grantId, principal.tenantId, principal.userId, principal.roleId, USER_A]
+    );
+    await client.query(
+      `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+       VALUES ($1,$2,'branch',$3,$4,$5)`,
+      [
+        principal.tenantId,
+        principal.grantId,
+        principal.scope.companyId,
+        principal.scope.branchId,
+        USER_A,
+      ]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * A work order in `BRANCH_R1` (unless told otherwise) opened at a CHOSEN instant.
+ *
+ * The visit is real — `rec.accept_check_in` writes the service-requester role,
+ * the accepted custody event and the first status-history row — because
+ * `wo.guard_work_order_refs` checks all three on insert and a fixture that
+ * satisfied the foreign keys without satisfying the reception contract would be
+ * faking past the guard this platform relies on.
+ */
+async function seedWorkOrder(input: {
+  readonly openedAt: string;
+  readonly branchId?: string;
+}): Promise<{ workOrderId: string; vehicleId: string; partnerId: string }> {
+  const branchId = input.branchId ?? BRANCH_R1;
+  const visit = await seedAuthorizedVisit({ companyId: COMPANY_R, branchId });
+  const inserted = await admin.query<{ id: string }>(
+    `INSERT INTO wo.work_orders
+       (tenant_id, company_id, branch_id, reception_visit_id, vehicle_id, opened_at, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6::timestamptz,$7) RETURNING id`,
+    [TENANT_A, COMPANY_R, branchId, visit.visitId, visit.vehicleId, input.openedAt, USER_A]
+  );
+  const partner = await admin.query<{ partner_id: string }>(
+    `SELECT partner_id FROM rec.reception_party_roles
+      WHERE reception_visit_id = $1 AND relationship_role = 'service_requester'
+      ORDER BY valid_from LIMIT 1`,
+    [visit.visitId]
+  );
+  return {
+    workOrderId: inserted.rows[0]?.id ?? '',
+    vehicleId: visit.vehicleId,
+    partnerId: partner.rows[0]?.partner_id ?? '',
+  };
+}
+
+async function seedReportConfiguration(input: {
+  readonly code: string;
+  readonly scopeLevel: string;
+  readonly id?: string;
+  readonly status?: 'draft' | 'published' | 'archived';
+  readonly parameterSchema?: unknown;
+}): Promise<void> {
+  const id = input.id ?? randomUUID();
+  await admin.query(
+    `INSERT INTO rpt.report_configurations
+       (id, tenant_id, report_code, name, scope_level, export_permission_code,
+        owner_user_id, status, created_by)
+     VALUES ($1,$2,$3,$4,$5,'rpt.export',$6,$7,$6)`,
+    [
+      id,
+      TENANT_A,
+      input.code,
+      `Configured ${input.code}`,
+      input.scopeLevel,
+      USER_A,
+      input.status ?? 'published',
+    ]
+  );
+  await admin.query(
+    `INSERT INTO rpt.report_configuration_versions
+       (tenant_id, report_configuration_id, version_number, parameter_schema,
+        status, published_at, created_by)
+     VALUES ($1,$2,1,$3::jsonb,'published',now(),$4)`,
+    [
+      TENANT_A,
+      id,
+      JSON.stringify(input.parameterSchema ?? { filters: { branchId: { type: 'uuid' } } }),
+      USER_A,
+    ]
+  );
+}
+
+/** Each case owns a newly generated configuration, never an existing fixture. */
+async function withExplicitReportConfiguration(
+  input: {
+    readonly status?: 'draft' | 'published' | 'archived';
+    readonly parameterSchema: unknown;
+  },
+  verify: (configurationId: string) => Promise<void>
+): Promise<void> {
+  const id = randomUUID();
+  try {
+    await seedReportConfiguration({ id, code: REPORT_CODE, scopeLevel: 'branch', ...input });
+    await verify(id);
+  } finally {
+    // Retire only the header this invocation created. The ordinary suite-owned
+    // teardown handles its rows later; no pre-existing fixture is deleted here.
+    await admin.query(
+      `UPDATE rpt.report_configurations SET deleted_at = now(), deleted_by = $3
+        WHERE tenant_id = $1 AND id = $2 AND created_by = $3`,
+      [TENANT_A, id, USER_A]
+    );
+  }
+}
+
+describe('rpt.report-export — explicit disclosure contract', () => {
+  function requestExport(
+    segment = `${REPORT_CODE}:export`,
+    overrides: Record<string, unknown> = {}
+  ): Promise<Response> {
+    return EXPORT_REPORT(
+      new Request(`http://localhost/api/v1/reports/${segment}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          companyId: COMPANY_R,
+          branchId: BRANCH_R1,
+          from: FROM,
+          to: TO,
+          reason: 'Backend export acceptance',
+          ...overrides,
+        }),
+      }),
+      { params: Promise.resolve({ reportCode: segment }) }
+    );
+  }
+
+  it('exports the same live branch/period rows and commits a scoped disclosure audit', async () => {
+    await withExplicitReportConfiguration({ parameterSchema: {} }, async (id) => {
+      authAs(EXPORT_FULL);
+      const response = await requestExport();
+      expect(response.status).toBe(200);
+      const result = (await response.json()) as ReportExportView;
+      expect(result).toMatchObject({
+        generated: true,
+        rowCount: 3,
+        freshness: 'live',
+        period: { from: FROM, to: TO, timezone: BRANCH_TIMEZONE },
+      });
+      for (const included of [firstOrder, middleOrder, lateOrder])
+        expect(result.file.content).toContain(included);
+      for (const excluded of [excludedBefore, excludedAfter, otherBranchOrder])
+        expect(result.file.content).not.toContain(excluded);
+      const audit = await admin.query<{ actor_id: string; correlation_id: string }>(
+        `SELECT actor_id, correlation_id FROM iam.audit_records
+         WHERE tenant_id = $1 AND entity_id = $2 AND action = 'rpt.report.exported'`,
+        [TENANT_A, id]
+      );
+      expect(audit.rows).toHaveLength(1);
+      expect(audit.rows[0]?.actor_id).toBe(EXPORT_FULL.userId);
+      expect(audit.rows[0]?.correlation_id).toBe(response.headers.get('x-correlation-id'));
+    });
+  });
+
+  const exportRefusals = [
+    ['read permission only', RPT_FULL],
+    ['missing dataset permission', EXPORT_NO_DATASET],
+    ['grant in the sibling branch despite RLS reach', RPT_SCOPED_R2],
+    ['another tenant', EXPORT_TENANT_B],
+  ] as const;
+  it.each(exportRefusals)('refuses %s with no success audit', async (_label, principal) => {
+    await withExplicitReportConfiguration({ parameterSchema: {} }, async (id) => {
+      authAs(principal);
+      const response = await requestExport();
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ code: 'ERR-IAM-001' });
+      const audit = await admin.query(
+        `SELECT id FROM iam.audit_records WHERE tenant_id = $1 AND entity_id = $2 AND action = 'rpt.report.exported'`,
+        [TENANT_A, id]
+      );
+      expect(audit.rowCount).toBe(0);
+    });
+  });
+
+  it('requires the configured export permission as well as rpt.export', async () => {
+    await withExplicitReportConfiguration({ parameterSchema: {} }, async (id) => {
+      await admin.query(
+        `UPDATE rpt.report_configurations SET export_permission_code = 'sal.finance.view'
+        WHERE tenant_id = $1 AND id = $2`,
+        [TENANT_A, id]
+      );
+      authAs(EXPORT_FULL);
+      const response = await requestExport();
+      expect(response.status).toBe(403);
+      expect(await response.json()).toMatchObject({ code: 'ERR-IAM-001' });
+    });
+  });
+
+  it('does not export through the baseline fallback', async () => {
+    authAs(EXPORT_FULL);
+    const response = await requestExport();
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'ERR-IAM-001' });
+  });
+
+  it('does not treat a plain report-code POST as the canonical export action', async () => {
+    authAs(EXPORT_FULL);
+    expect((await requestExport(REPORT_CODE)).status).toBe(422);
+  });
+
+  it('rejects invalid export request fields before generating a file', async () => {
+    authAs(EXPORT_FULL);
+    for (const invalid of [
+      { reason: ' ' },
+      { reason: 'x'.repeat(501) },
+      { from: 'yesterday' },
+      { extra: true },
+    ]) {
+      const response = await requestExport(`${REPORT_CODE}:export`, invalid);
+      expect(response.status).toBe(422);
+      expect(await response.json()).toMatchObject({ code: 'ERR-VAL-001' });
+    }
+  });
+});
+
+function readReportDefinition(): Promise<Response> {
+  return READ_DEFINITION(new Request(`http://localhost/api/v1/reports/${REPORT_CODE}`), {
+    params: Promise.resolve({ reportCode: REPORT_CODE }),
+  });
+}
+
+let firstOrder = '';
+let middleOrder = '';
+let lateOrder = '';
+let excludedBefore = '';
+let excludedAfter = '';
+let otherBranchOrder = '';
+let middleVehicleId = '';
+let middlePartnerId = '';
+
+// ---------------------------------------------------------------------------
+// ovw.dashboard-summary-read — the tenant operations overview
+// ---------------------------------------------------------------------------
+
+/** This block's OWN company, so every count is exactly the rows it inserted. */
+const COMPANY_D = 'f1310000-0000-4000-8000-0000000000d0';
+/** The first branch, by name. Same zone as the report branches above. */
+const BRANCH_D1 = 'f1310000-0000-4000-8000-0000000000d1';
+/** The sibling branch. Same company, same zone. */
+const BRANCH_D2 = 'f1310000-0000-4000-8000-0000000000d2';
+
+const RECEPTION_READ = 'rec.reception.read';
+const DELIVERY_VIEW = 'sal.delivery.view';
+const TECHNICIAN_READ = 'tech.technician.read';
+const STOCK_READ = 'inv.stock.read';
+/** Without it the identity directory narrows to empty and every label is null. */
+const USER_READ = 'iam.user.read';
+
+/** The codes every section of the dashboard asks for, in one place. */
+const DASHBOARD_CODES = [
+  WORK_ORDER_READ,
+  RECEPTION_READ,
+  DELIVERY_VIEW,
+  TECHNICIAN_READ,
+  STOCK_READ,
+  USER_READ,
+] as const;
+
+/** Tenant A, unrestricted, holding every code the dashboard's sections ask for. */
+const OVW_FULL: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000201',
+  userId: 'f1310000-0000-4000-8000-000000000202',
+  subject: 'fx_ovw_full',
+  tenantId: TENANT_A,
+  permissions: [...DASHBOARD_CODES],
+};
+
+/**
+ * `OVW_FULL` minus `inv.stock.read`, and identical in every other respect.
+ *
+ * The counterfactual that makes the per-section gate testable: same tenant, same
+ * unrestricted scope, one permission apart. Collapse the section gate into the
+ * operation's entitlement and this principal is refused the whole response
+ * instead of one section of it, so the case goes red rather than quiet.
+ */
+const OVW_NO_STOCK: Principal = {
+  ...OVW_FULL,
+  roleId: 'f1310000-0000-4000-8000-000000000211',
+  userId: 'f1310000-0000-4000-8000-000000000212',
+  subject: 'fx_ovw_no_stock',
+  permissions: DASHBOARD_CODES.filter((code) => code !== STOCK_READ),
+};
+
+/**
+ * Work-order authority in `BRANCH_D2` only, with `BRANCH_D1` inside its
+ * permission-BLIND `iam.allowed_branch_ids()` union through the reach grant below.
+ *
+ * The decisive isolation principal, on the same argument the report's
+ * `RPT_SCOPED_R2` is built for: `BRANCH_D1`'s rows ARE visible to RLS for this
+ * caller, so the only thing that can refuse a `BRANCH_D1` dashboard is the scoped
+ * permission evaluation (P1-18-A-01). Without the reach grant the case would pass
+ * because RLS returned nothing, which proves the wrong control.
+ */
+const OVW_SCOPED_D2: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000221',
+  userId: 'f1310000-0000-4000-8000-000000000222',
+  subject: 'fx_ovw_scoped_d2',
+  tenantId: TENANT_A,
+  permissions: [...DASHBOARD_CODES],
+  scope: { companyId: COMPANY_D, branchId: BRANCH_D2 },
+  grantId: 'f1310000-0000-4000-8000-0000000002f1',
+};
+
+const OVW_REACH_ROLE = 'f1310000-0000-4000-8000-000000000231';
+const OVW_REACH_GRANT = 'f1310000-0000-4000-8000-000000000232';
+
+/**
+ * Authorized in BOTH branches for everything except stock, and in stock for the
+ * FIRST branch only.
+ *
+ * The principal that decides the every-branch rule. A dashboard asked for the
+ * whole company resolves both branches, so a `lowStock` computed from the one
+ * branch this caller may read would be a company figure that is really a branch
+ * figure — wrong in a way nothing on the response could reveal. It is seeded by
+ * hand rather than through `seedPrincipal`, because it needs TWO grants with
+ * different scopes and that helper models one.
+ */
+const OVW_STOCK_D1: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000241',
+  userId: 'f1310000-0000-4000-8000-000000000242',
+  subject: 'fx_ovw_stock_d1',
+  tenantId: TENANT_A,
+  permissions: DASHBOARD_CODES.filter((code) => code !== STOCK_READ),
+};
+const OVW_STOCK_BASE_GRANT = 'f1310000-0000-4000-8000-000000000243';
+const OVW_STOCK_ROLE = 'f1310000-0000-4000-8000-000000000244';
+const OVW_STOCK_GRANT = 'f1310000-0000-4000-8000-000000000245';
+
+/** The technician whose workload the board reports. */
+const TECH_USER_D = 'f1310000-0000-4000-8000-000000000251';
+const TECH_PROFILE_D = 'f1310000-0000-4000-8000-000000000252';
+const TECH_DISPLAY_NAME = 'Dashboard Technician';
+
+/** The one part that is low, in BOTH branches — so the union can be measured. */
+const OVW_UOM = 'f1310000-0000-4000-8000-000000000261';
+const OVW_CATEGORY = 'f1310000-0000-4000-8000-000000000262';
+const OVW_ITEM = 'f1310000-0000-4000-8000-000000000263';
+
+/** A section, as the wire carries it. */
+type Section<T> =
+  | { readonly status: 'ok'; readonly value: T }
+  | { readonly status: 'unauthorized' }
+  | { readonly status: 'unavailable'; readonly reason: string };
+
+interface StateBucket {
+  readonly state: string;
+  readonly label: string;
+  readonly count: number;
+  readonly isTerminal: boolean;
+}
+interface TrendPoint {
+  readonly date: string;
+  readonly opened: number;
+  readonly completed: number;
+}
+interface TechnicianLoad {
+  readonly technicianId: string;
+  readonly displayName: string | null;
+  readonly activeCount: number;
+}
+interface SummaryBody {
+  readonly period: {
+    readonly kind: string;
+    readonly from: string;
+    readonly to: string;
+    readonly timezone: string;
+  };
+  readonly generatedAt: string;
+  readonly branchIds: readonly string[];
+  readonly sections: {
+    readonly receptionsOpened: Section<number>;
+    readonly activeWorkOrders: Section<number>;
+    readonly awaitingApproval: Section<number>;
+    readonly awaitingParts: Section<number>;
+    readonly readyForDelivery: Section<number>;
+    readonly completedInPeriod: Section<number>;
+    readonly workOrdersByState: Section<readonly StateBucket[]>;
+    readonly intakeCompletionTrend: Section<readonly TrendPoint[]>;
+    readonly technicianWorkload: Section<readonly TechnicianLoad[]>;
+    readonly lowStock: Section<number>;
+    readonly pendingApprovalsCount: Section<number>;
+    readonly overdue: Section<number>;
+  };
+}
+
+function dashboard(query: Record<string, string>): Promise<Response> {
+  const url = new URL('http://localhost/api/v1/dashboard/summary');
+  for (const [key, entry] of Object.entries(query)) url.searchParams.set(key, entry);
+  return DASHBOARD_SUMMARY(new Request(url));
+}
+
+const summaryBody = async (response: Response): Promise<SummaryBody> =>
+  (await response.json()) as SummaryBody;
+
+/** Reads the dashboard as a principal, failing loudly on anything but a 200. */
+async function dashboardAs(
+  principal: Principal,
+  query: Record<string, string>
+): Promise<SummaryBody> {
+  authAs(principal);
+  const response = await dashboard(query);
+  if (response.status !== 200) {
+    throw new Error(`dashboard read failed with ${response.status}: ${await response.text()}`);
+  }
+  return summaryBody(response);
+}
+
+/** The `ok` value of a section, or a failure naming the state it was in instead. */
+function sectionValue<T>(section: Section<T>): T {
+  if (section.status !== 'ok') throw new Error(`expected an ok section, got ${section.status}`);
+  return section.value;
+}
+
+/** Every live work order in scope, summed across the catalogue's own states. */
+const liveTotal = (view: SummaryBody): number =>
+  sectionValue(view.sections.workOrdersByState).reduce((total, bucket) => total + bucket.count, 0);
+
+/** The single trend point for a one-day period. */
+function onlyPoint(view: SummaryBody): TrendPoint {
+  const points = sectionValue(view.sections.intakeCompletionTrend);
+  expect(points).toHaveLength(1);
+  const point = points[0];
+  if (point === undefined) throw new Error('the trend carried no point');
+  return point;
+}
+
+/** The four edges a work order takes before the closure command may be sent. */
+const OVW_CLOSURE_PATH = [
+  { toState: 'open' },
+  { toState: 'in_progress' },
+  { toState: 'qc_pending' },
+  { toState: 'ready_to_close' },
+] as const;
+
+/**
+ * Shifts a `YYYY-MM-DD` by whole days, computed HERE rather than imported.
+ *
+ * `@/modules/overview` exports the same arithmetic, and using it would make the
+ * expected dates and the produced ones two readings of one function — a case
+ * that cannot fail for the reason it names. This is four lines of UTC
+ * arithmetic over a calendar string: a different implementation of the same
+ * idea, which is what makes the comparison worth making.
+ */
+function shiftLocalDay(day: string, days: number): string {
+  const shifted = new Date(`${day}T00:00:00.000Z`);
+  shifted.setUTCDate(shifted.getUTCDate() + days);
+  return shifted.toISOString().slice(0, 10);
+}
+
+/**
+ * A SCOPED grant carrying one branch scope row per named branch.
+ *
+ * `seedPrincipal` models one grant with one scope, and two of this block's
+ * principals need more: a reach role over a branch they hold no dashboard
+ * authority in, and a split-authority caller whose base codes reach both
+ * branches while its stock code reaches one. A scoped grant must carry at least
+ * one scope, enforced by a DEFERRABLE constraint trigger, so the grant and its
+ * scopes land in ONE transaction.
+ */
+async function seedScopedGrant(
+  grantId: string,
+  userId: string,
+  roleId: string,
+  branchIds: readonly string[],
+  companyId: string = COMPANY_D
+): Promise<void> {
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+      [grantId, TENANT_A, userId, roleId, USER_A]
+    );
+    for (const branchId of branchIds) {
+      await client.query(
+        `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+         VALUES ($1,$2,'branch',$3,$4,$5)`,
+        [TENANT_A, grantId, companyId, branchId, USER_A]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+describe('ovw.dashboard-summary-read — the tenant operations overview', () => {
+  /** Local today and yesterday in `BRANCH_TIMEZONE`, read from the database. */
+  let localToday = '';
+  let localYesterday = '';
+  /** The one order that is still waiting on parts and on an approval decision. */
+  let waitingOrder = '';
+  /** Closed inside the reported day. The only completion `today` may count. */
+  let closedToday = '';
+  /** Closed and then RETIRED, so nothing may count it at all. */
+  let closedAndDeleted = '';
+
+  /** A work order of `COMPANY_D`, opened now, from a real reception visit. */
+  async function seedDashboardOrder(branchId: string): Promise<string> {
+    const visit = await seedAuthorizedVisit({ companyId: COMPANY_D, branchId });
+    const inserted = await admin.query<{ id: string }>(
+      `INSERT INTO wo.work_orders
+         (tenant_id, company_id, branch_id, reception_visit_id, vehicle_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [TENANT_A, COMPANY_D, branchId, visit.visitId, visit.vehicleId, USER_A]
+    );
+    return inserted.rows[0]?.id ?? '';
+  }
+
+  /**
+   * Drives a work order to `closed` through the routes a client must use.
+   *
+   * `alreadyOpen` drops the first edge for an order this block has already taken
+   * to `open` in order to hang a job on it — `open -> open` is not an edge the
+   * graph holds, and asking for it would fail the fixture rather than the case.
+   */
+  async function closeDashboardOrder(workOrderId: string, alreadyOpen = false): Promise<void> {
+    const path = alreadyOpen ? OVW_CLOSURE_PATH.slice(1) : OVW_CLOSURE_PATH;
+    const version = await advance(workOrderId, [...path], FULL);
+    authAs(FULL);
+    const response = await CLOSE_WORK_ORDER(
+      new Request(`http://localhost/api/v1/work-orders/${workOrderId}/closure`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': randomUUID(),
+          'if-match': String(version),
+        },
+        body: JSON.stringify({ toState: 'closed' }),
+      }),
+      { params: Promise.resolve({ workOrderId }) }
+    );
+    if (response.status !== 200) {
+      throw new Error(`fixture closure failed with ${response.status}: ${await response.text()}`);
+    }
+  }
+
+  /**
+   * Moves this order's whole transition ledger back one day.
+   *
+   * The ledger is append-only and trigger-emitted, so a fixture cannot ask for a
+   * back-dated closure; it closes the order now and moves the recorded instants,
+   * which is the only way to put a completion OUTSIDE the reported day without
+   * inventing a row the platform would never write. Jordan keeps no summer clock,
+   * so twenty-four hours back is the same wall-clock time on the previous local
+   * day.
+   */
+  async function backdateLedger(workOrderId: string): Promise<void> {
+    await admin.query(
+      `UPDATE wo.work_order_status_history
+          SET occurred_at = occurred_at - interval '1 day'
+        WHERE tenant_id = $1 AND work_order_id = $2`,
+      [TENANT_A, workOrderId]
+    );
+  }
+
+  /** A job on a work order, created through the shipped route. */
+  async function seedJob(workOrderId: string, title: string): Promise<string> {
+    authAs(FULL);
+    const response = await CREATE_JOB(
+      new Request(`http://localhost/api/v1/work-orders/${workOrderId}/jobs`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'idempotency-key': randomUUID() },
+        body: JSON.stringify({ title }),
+      }),
+      { params: Promise.resolve({ workOrderId }) }
+    );
+    if (response.status !== 201) {
+      throw new Error(`fixture job failed with ${response.status}: ${await response.text()}`);
+    }
+    return ((await response.json()) as { id: string }).id;
+  }
+
+  /** Cancels a job — a TERMINAL job state — through the shipped route. */
+  async function cancelJob(jobId: string): Promise<void> {
+    const current = await admin.query<{ record_version: number }>(
+      `SELECT record_version FROM wo.jobs WHERE id = $1`,
+      [jobId]
+    );
+    authAs(FULL);
+    const response = await TRANSITION_JOB(
+      new Request(`http://localhost/api/v1/jobs/${jobId}/transition`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': randomUUID(),
+          'if-match': String(current.rows[0]?.record_version ?? 1),
+        },
+        body: JSON.stringify({ toState: 'cancelled', reason: 'Dashboard fixture cancellation' }),
+      }),
+      { params: Promise.resolve({ jobId }) }
+    );
+    if (response.status !== 200) {
+      throw new Error(
+        `fixture job cancel failed with ${response.status}: ${await response.text()}`
+      );
+    }
+  }
+
+  /** An ACTIVE assignment row: the shape the board counts from. */
+  async function assign(jobId: string, branchId: string): Promise<void> {
+    await admin.query(
+      `INSERT INTO wo.job_assignments
+         (tenant_id, company_id, branch_id, job_id, technician_profile_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [TENANT_A, COMPANY_D, branchId, jobId, TECH_PROFILE_D, USER_A]
+    );
+  }
+
+  beforeAll(async () => {
+    await admin.query(
+      `INSERT INTO org.legal_companies
+         (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+       VALUES ($1,$2,'fx_ovw_dashboard','Dashboard Company','USD',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [COMPANY_D, TENANT_A, USER_A]
+    );
+    for (const [id, code, name] of [
+      [BRANCH_D1, 'fx_ovw_branch_d1', 'Dashboard Branch A'],
+      [BRANCH_D2, 'fx_ovw_branch_d2', 'Dashboard Branch B'],
+    ]) {
+      await admin.query(
+        `INSERT INTO org.branches
+           (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+        [id, TENANT_A, COMPANY_D, code, name, BRANCH_TIMEZONE, USER_A]
+      );
+    }
+
+    for (const principal of [OVW_FULL, OVW_NO_STOCK, OVW_SCOPED_D2]) {
+      await seedPrincipal(principal);
+    }
+
+    // The reach role: an unrelated permission scoped to BRANCH_D1, so D1 is inside
+    // OVW_SCOPED_D2's permission-blind branch union with no dashboard authority
+    // there. Without it the isolation case would pass because RLS returned
+    // nothing, which proves the wrong control.
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,'fx_ovw_reach','Dashboard reach only',$3) ON CONFLICT (id) DO NOTHING`,
+      [OVW_REACH_ROLE, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+        WHERE p.permission_code = $4
+       ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+      [TENANT_A, OVW_REACH_ROLE, USER_A, REACH_ONLY]
+    );
+    await seedScopedGrant(OVW_REACH_GRANT, OVW_SCOPED_D2.userId, OVW_REACH_ROLE, [BRANCH_D1]);
+
+    // The split-authority principal: base codes in BOTH branches, stock in ONE.
+    // Seeded by hand because it needs two grants with different scopes, which
+    // `seedPrincipal` does not model.
+    await admin.query(
+      `INSERT INTO iam.user_accounts
+         (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+       VALUES ($1,$2,$3,$4,$4||'@example.test','Dashboard split authority','active',$5)
+       ON CONFLICT (id) DO NOTHING`,
+      [OVW_STOCK_D1.userId, TENANT_A, IDENTITY_PROVIDER, OVW_STOCK_D1.subject, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,$3,'Dashboard base codes',$4) ON CONFLICT (id) DO NOTHING`,
+      [OVW_STOCK_D1.roleId, TENANT_A, OVW_STOCK_D1.subject, USER_A]
+    );
+    for (const code of OVW_STOCK_D1.permissions) {
+      await admin.query(
+        `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+         SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+          WHERE p.permission_code = $4
+         ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+        [TENANT_A, OVW_STOCK_D1.roleId, USER_A, code]
+      );
+    }
+    await seedScopedGrant(OVW_STOCK_BASE_GRANT, OVW_STOCK_D1.userId, OVW_STOCK_D1.roleId, [
+      BRANCH_D1,
+      BRANCH_D2,
+    ]);
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,'fx_ovw_stock_only','Dashboard stock in one branch',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [OVW_STOCK_ROLE, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+        WHERE p.permission_code = $4
+       ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+      [TENANT_A, OVW_STOCK_ROLE, USER_A, STOCK_READ]
+    );
+    await seedScopedGrant(OVW_STOCK_GRANT, OVW_STOCK_D1.userId, OVW_STOCK_ROLE, [BRANCH_D1]);
+
+    // The technician: an identity, an operational profile, and nothing else.
+    await admin.query(
+      `INSERT INTO iam.user_accounts
+         (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+       VALUES ($1,$2,$3,'fx_ovw_technician','fx_ovw_technician@example.test',$4,'active',$5)
+       ON CONFLICT (id) DO NOTHING`,
+      [TECH_USER_D, TENANT_A, IDENTITY_PROVIDER, TECH_DISPLAY_NAME, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO tech.technician_profiles
+         (id, tenant_id, company_id, branch_id, user_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING`,
+      [TECH_PROFILE_D, TENANT_A, COMPANY_D, BRANCH_D1, TECH_USER_D, USER_A]
+    );
+
+    // The one low part, configured in BOTH branches. No balance row is needed:
+    // an item with a level and nothing on the shelf is available zero, which is
+    // at or below any level — the alert's own rule, unmodified.
+    await admin.query(
+      `INSERT INTO inv.units_of_measure (id, scope, tenant_id, code, name, dimension, created_by)
+       VALUES ($1,'tenant',$2,'fx_ovw_each','Dashboard each','count',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [OVW_UOM, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO inv.item_categories (id, tenant_id, code, name, created_by)
+       VALUES ($1,$2,'fx_ovw_parts','Dashboard parts',$3) ON CONFLICT (id) DO NOTHING`,
+      [OVW_CATEGORY, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO inv.item_master
+         (id, tenant_id, item_category_id, sku, name, uom_id, created_by)
+       VALUES ($1,$2,$3,'FX-OVW-PART','Dashboard part',$4,$5) ON CONFLICT (id) DO NOTHING`,
+      [OVW_ITEM, TENANT_A, OVW_CATEGORY, OVW_UOM, USER_A]
+    );
+    for (const branchId of [BRANCH_D1, BRANCH_D2]) {
+      await admin.query(
+        `INSERT INTO inv.item_reorder_levels
+           (tenant_id, item_id, company_id, branch_id, reorder_level_qty, created_by)
+         VALUES ($1,$2,$3,$4,5,$5)`,
+        [TENANT_A, OVW_ITEM, COMPANY_D, branchId, USER_A]
+      );
+    }
+
+    // ---- The work orders, and what each one is for ------------------------
+    waitingOrder = await seedDashboardOrder(BRANCH_D1);
+    await admin.query(`UPDATE wo.work_orders SET parts_forward_state = 'requested' WHERE id = $1`, [
+      waitingOrder,
+    ]);
+    await admin.query(
+      `INSERT INTO wo.additional_work_requests
+         (tenant_id, company_id, branch_id, work_order_id, summary, created_by)
+       VALUES ($1,$2,$3,$4,'Dashboard fixture request',$5)`,
+      [TENANT_A, COMPANY_D, BRANCH_D1, waitingOrder, USER_A]
+    );
+    await seedDashboardOrder(BRANCH_D1);
+
+    closedToday = await seedDashboardOrder(BRANCH_D1);
+    await closeDashboardOrder(closedToday);
+
+    const closedYesterday = await seedDashboardOrder(BRANCH_D1);
+    await closeDashboardOrder(closedYesterday);
+    await backdateLedger(closedYesterday);
+
+    closedAndDeleted = await seedDashboardOrder(BRANCH_D1);
+    await closeDashboardOrder(closedAndDeleted);
+    await admin.query(
+      `UPDATE wo.work_orders SET deleted_at = now(), deleted_by = $2 WHERE id = $1`,
+      [closedAndDeleted, USER_A]
+    );
+
+    // The technician's live order: one job they are still on, and one they are
+    // not. Both assignments are UNENDED rows — nothing stamps `valid_to` when a
+    // job finishes — so only the job STATE can tell the two apart.
+    const openOrder = await seedDashboardOrder(BRANCH_D1);
+    await advance(openOrder, [{ toState: 'open' }], FULL);
+    await assign(await seedJob(openOrder, 'Dashboard live job'), BRANCH_D1);
+    const cancelledJob = await seedJob(openOrder, 'Dashboard abandoned job');
+    await assign(cancelledJob, BRANCH_D1);
+    await cancelJob(cancelledJob);
+
+    // The technician's FINISHED order. Its job had to be terminated first — a
+    // non-terminal job is closure blocker B1 — so this row is excluded twice
+    // over, and the case it decides is that a work order nobody can work on any
+    // more contributes nothing to a workload.
+    const finishedOrder = await seedDashboardOrder(BRANCH_D1);
+    await advance(finishedOrder, [{ toState: 'open' }], FULL);
+    const finishedJob = await seedJob(finishedOrder, 'Dashboard finished job');
+    await assign(finishedJob, BRANCH_D1);
+    await cancelJob(finishedJob);
+    await closeDashboardOrder(finishedOrder, true);
+    await backdateLedger(finishedOrder);
+
+    await seedDashboardOrder(BRANCH_D2);
+
+    const days = await admin.query<{ today: string; yesterday: string }>(
+      `SELECT to_char((now() AT TIME ZONE $1)::date, 'YYYY-MM-DD')     AS today,
+              to_char((now() AT TIME ZONE $1)::date - 1, 'YYYY-MM-DD') AS yesterday`,
+      [BRANCH_TIMEZONE]
+    );
+    localToday = days.rows[0]?.today ?? '';
+    localYesterday = days.rows[0]?.yesterday ?? '';
+    __resetAuthenticatorForTests();
+  });
+
+  it('counts one branch, the sibling, and both together, from the rows inserted', async () => {
+    const first = await dashboardAs(OVW_FULL, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'today',
+    });
+    expect(first.branchIds).toEqual([BRANCH_D1]);
+    // Seven visits were accepted in this branch; six work orders survive, because
+    // one was retired. The two figures differ on purpose and neither is the other.
+    expect(first.sections.receptionsOpened).toEqual({ status: 'ok', value: 7 });
+    expect(liveTotal(first)).toBe(6);
+    expect(onlyPoint(first)).toEqual({ date: localToday, opened: 6, completed: 1 });
+    expect(first.sections.activeWorkOrders).toEqual({ status: 'ok', value: 3 });
+    expect(first.sections.readyForDelivery).toEqual({ status: 'ok', value: 3 });
+    expect(first.sections.completedInPeriod).toEqual({ status: 'ok', value: 1 });
+    expect(first.sections.awaitingParts).toEqual({ status: 'ok', value: 1 });
+    expect(first.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 1 });
+    expect(first.sections.awaitingApproval).toEqual({ status: 'ok', value: 1 });
+
+    const sibling = await dashboardAs(OVW_FULL, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D2,
+      period: 'today',
+    });
+    expect(sibling.branchIds).toEqual([BRANCH_D2]);
+    expect(sibling.sections.receptionsOpened).toEqual({ status: 'ok', value: 1 });
+    expect(liveTotal(sibling)).toBe(1);
+    expect(onlyPoint(sibling)).toEqual({ date: localToday, opened: 1, completed: 0 });
+    // Per-branch facts, and the sibling holds none of them.
+    expect(sibling.sections.awaitingParts).toEqual({ status: 'ok', value: 0 });
+    expect(sibling.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 0 });
+    expect(sibling.sections.readyForDelivery).toEqual({ status: 'ok', value: 0 });
+    expect(sibling.sections.technicianWorkload).toEqual({ status: 'ok', value: [] });
+
+    const both = await dashboardAs(OVW_FULL, { companyId: COMPANY_D, period: 'today' });
+    expect(both.branchIds).toEqual([BRANCH_D1, BRANCH_D2]);
+    expect(both.sections.receptionsOpened).toEqual({ status: 'ok', value: 8 });
+    expect(liveTotal(both)).toBe(7);
+    expect(onlyPoint(both)).toEqual({ date: localToday, opened: 7, completed: 1 });
+    expect(both.sections.activeWorkOrders).toEqual({ status: 'ok', value: 4 });
+    expect(both.sections.awaitingParts).toEqual({ status: 'ok', value: 1 });
+  });
+
+  it('counts the technician once per LIVE job, not once per unended assignment', async () => {
+    const view = await dashboardAs(OVW_FULL, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'today',
+    });
+    // Three unended assignment rows exist for this technician. One is on a live
+    // job of a live order; one is on a cancelled job of that same live order; one
+    // is on a job of a closed order. `valid_to` is null on all three, because
+    // nothing stamps it when work finishes — so a figure built on that column
+    // alone would report three.
+    expect(sectionValue(view.sections.technicianWorkload)).toEqual([
+      { technicianId: TECH_PROFILE_D, displayName: TECH_DISPLAY_NAME, activeCount: 1 },
+    ]);
+    const unended = await admin.query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM wo.job_assignments
+        WHERE tenant_id = $1 AND technician_profile_id = $2 AND valid_to IS NULL
+          AND deleted_at IS NULL`,
+      [TENANT_A, TECH_PROFILE_D]
+    );
+    expect(unended.rows[0]?.total).toBe('3');
+  });
+
+  it('does not count a completion recorded against a retired work order', async () => {
+    // The ledger row is real and still there: the history is append-only, so
+    // retiring the order cannot remove it. Only the join to the live master keeps
+    // it out of the figure.
+    const ledger = await admin.query<{ total: string }>(
+      `SELECT count(*)::text AS total FROM wo.work_order_status_history
+        WHERE tenant_id = $1 AND work_order_id = $2 AND to_state = 'closed'`,
+      [TENANT_A, closedAndDeleted]
+    );
+    expect(ledger.rows[0]?.total).toBe('1');
+
+    const view = await dashboardAs(OVW_FULL, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'today',
+    });
+    // One, and not two: `closedToday` is the only completion the day may claim.
+    expect(view.sections.completedInPeriod).toEqual({ status: 'ok', value: 1 });
+    expect(onlyPoint(view).completed).toBe(1);
+  });
+
+  it('counts a part that is low in two branches once', async () => {
+    const first = await dashboardAs(OVW_FULL, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'today',
+    });
+    expect(first.sections.lowStock).toEqual({ status: 'ok', value: 1 });
+
+    const sibling = await dashboardAs(OVW_FULL, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D2,
+      period: 'today',
+    });
+    expect(sibling.sections.lowStock).toEqual({ status: 'ok', value: 1 });
+
+    // Two branches, two configured levels, ONE part running out. A figure that
+    // added the branches would say two and send somebody to order twice.
+    const both = await dashboardAs(OVW_FULL, { companyId: COMPANY_D, period: 'today' });
+    expect(both.sections.lowStock).toEqual({ status: 'ok', value: 1 });
+  });
+
+  it('answers a zero as a computed figure and names the zone the days were cut in', async () => {
+    const view = await dashboardAs(OVW_FULL, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D2,
+      period: 'today',
+    });
+    expect(view.period).toEqual({
+      kind: 'today',
+      from: localToday,
+      to: localToday,
+      timezone: BRANCH_TIMEZONE,
+    });
+    expect(Number.isNaN(Date.parse(view.generatedAt))).toBe(false);
+    // A zero is an `ok` carrying 0, never an absence: "nothing was finished
+    // today" is an answer about the workshop.
+    expect(view.sections.completedInPeriod).toEqual({ status: 'ok', value: 0 });
+    // Every catalogue state is published, including the empty ones, and each
+    // carries the catalogue's own terminal flag rather than a name a client
+    // would have to recognise.
+    const buckets = sectionValue(view.sections.workOrdersByState);
+    expect(buckets.length).toBeGreaterThan(1);
+    expect(buckets.some((bucket) => bucket.count === 0)).toBe(true);
+    expect(buckets.every((bucket) => typeof bucket.label === 'string')).toBe(true);
+    expect(buckets.some((bucket) => bucket.isTerminal)).toBe(true);
+  });
+
+  it('reports overdue as unavailable, because no work order carries a due instant', async () => {
+    const view = await dashboardAs(OVW_FULL, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'today',
+    });
+    expect(view.sections.overdue.status).toBe('unavailable');
+    if (view.sections.overdue.status !== 'unavailable') throw new Error('unreachable');
+    expect(view.sections.overdue.reason.length).toBeGreaterThan(20);
+  });
+
+  it('withholds only the section whose module code the caller lacks', async () => {
+    const view = await dashboardAs(OVW_NO_STOCK, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'today',
+    });
+    expect(view.sections.lowStock).toEqual({ status: 'unauthorized' });
+    // Everything the caller does hold a code for still answers, with the same
+    // values the full principal was given — which is what separates a withheld
+    // section from a refused request.
+    expect(view.sections.receptionsOpened).toEqual({ status: 'ok', value: 7 });
+    expect(view.sections.readyForDelivery).toEqual({ status: 'ok', value: 3 });
+    expect(view.sections.activeWorkOrders).toEqual({ status: 'ok', value: 3 });
+    expect(sectionValue(view.sections.technicianWorkload)).toHaveLength(1);
+  });
+
+  it('withholds a section the caller cannot read in EVERY branch it is counting', async () => {
+    // Stock in the first branch only, base codes in both. Asked for one branch it
+    // may read stock in, the section answers.
+    const narrow = await dashboardAs(OVW_STOCK_D1, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'today',
+    });
+    expect(narrow.sections.lowStock).toEqual({ status: 'ok', value: 1 });
+
+    // Asked for the whole company, the resolved set is BOTH branches — and a
+    // figure summed over a branch this caller may not read would be a company
+    // total that is really a branch total, with nothing on the response to say so.
+    const company = await dashboardAs(OVW_STOCK_D1, { companyId: COMPANY_D, period: 'today' });
+    expect(company.branchIds).toEqual([BRANCH_D1, BRANCH_D2]);
+    expect(company.sections.lowStock).toEqual({ status: 'unauthorized' });
+    expect(company.sections.receptionsOpened).toEqual({ status: 'ok', value: 8 });
+    expect(company.sections.activeWorkOrders).toEqual({ status: 'ok', value: 4 });
+  });
+
+  it('excludes today from yesterday', async () => {
+    const view = await dashboardAs(OVW_FULL, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'yesterday',
+    });
+    expect(view.period).toMatchObject({
+      kind: 'yesterday',
+      from: localYesterday,
+      to: localYesterday,
+    });
+    expect(view.sections.receptionsOpened).toEqual({ status: 'ok', value: 0 });
+    // The two orders whose ledgers were moved back a day, and only those.
+    expect(view.sections.completedInPeriod).toEqual({ status: 'ok', value: 2 });
+    expect(onlyPoint(view)).toEqual({ date: localYesterday, opened: 0, completed: 2 });
+    // The live board is a SNAPSHOT and is not bounded by the period, so the same
+    // six orders are still there. A figure that moved with the period would mean
+    // the board had quietly become a historical count.
+    expect(liveTotal(view)).toBe(6);
+    expect(view.sections.readyForDelivery).toEqual({ status: 'ok', value: 3 });
+  });
+
+  it('returns one trend entry per day of a custom range, in order', async () => {
+    const from = shiftLocalDay(localToday, -2);
+    const view = await dashboardAs(OVW_FULL, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'custom',
+      from,
+      to: localToday,
+    });
+    expect(view.period).toEqual({
+      kind: 'custom',
+      from,
+      to: localToday,
+      timezone: BRANCH_TIMEZONE,
+    });
+    // One entry per day INCLUDING the empty ones, so a chart draws the period it
+    // is labelled with rather than a shorter one.
+    expect(sectionValue(view.sections.intakeCompletionTrend)).toEqual([
+      { date: from, opened: 0, completed: 0 },
+      { date: localYesterday, opened: 0, completed: 2 },
+      { date: localToday, opened: 6, completed: 1 },
+    ]);
+    // The period total is the series total, so the headline and the chart cannot
+    // disagree.
+    expect(view.sections.completedInPeriod).toEqual({ status: 'ok', value: 3 });
+  });
+
+  it('returns seven entries for last7, ending today', async () => {
+    const view = await dashboardAs(OVW_FULL, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'last7',
+    });
+    const points = sectionValue(view.sections.intakeCompletionTrend);
+    expect(points).toHaveLength(7);
+    expect(points[0]?.date).toBe(shiftLocalDay(localToday, -6));
+    expect(points[6]).toEqual({ date: localToday, opened: 6, completed: 1 });
+    expect(view.period).toMatchObject({ kind: 'last7', from: points[0]?.date, to: localToday });
+  });
+
+  it('refuses an inverted custom range without reading a row', async () => {
+    authAs(OVW_FULL);
+    const response = await dashboard({
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'custom',
+      from: '2027-03-10',
+      to: '2027-03-01',
+    });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ code: 'ERR-VAL-001' });
+  });
+
+  it('refuses a custom range longer than a quarter', async () => {
+    authAs(OVW_FULL);
+    // 93 days inclusive — one past the bound, so the case fails if the comparison
+    // is off by one in either direction.
+    const response = await dashboard({
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'custom',
+      from: shiftLocalDay(localToday, -92),
+      to: localToday,
+    });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ code: 'ERR-VAL-001' });
+
+    // 92 days inclusive is accepted, which is what makes the refusal above a
+    // bound rather than a blanket refusal of long ranges.
+    const accepted = await dashboardAs(OVW_FULL, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'custom',
+      from: shiftLocalDay(localToday, -91),
+      to: localToday,
+    });
+    expect(sectionValue(accepted.sections.intakeCompletionTrend)).toHaveLength(92);
+  });
+
+  it('refuses a branch the caller has RLS reach into but no work-order authority in', async () => {
+    authAs(OVW_SCOPED_D2);
+    const refused = await dashboard({
+      companyId: COMPANY_D,
+      branchId: BRANCH_D1,
+      period: 'today',
+    });
+    expect(refused.status).toBe(403);
+    expect(await refused.json()).toMatchObject({ code: 'ERR-IAM-001' });
+
+    // The same caller, on the branch it is actually granted in, is answered —
+    // so the refusal above is the scope decision and not a broken fixture.
+    const allowed = await dashboardAs(OVW_SCOPED_D2, {
+      companyId: COMPANY_D,
+      branchId: BRANCH_D2,
+      period: 'today',
+    });
+    expect(allowed.branchIds).toEqual([BRANCH_D2]);
+
+    // And with no branch named, the resolved set is the ONE branch it may read —
+    // never the company's whole reachable union.
+    const resolved = await dashboardAs(OVW_SCOPED_D2, {
+      companyId: COMPANY_D,
+      period: 'today',
+    });
+    expect(resolved.branchIds).toEqual([BRANCH_D2]);
+    expect(resolved.sections.receptionsOpened).toEqual({ status: 'ok', value: 1 });
+  });
+
+  it('refuses a branch of another company, even to an unrestricted caller', async () => {
+    authAs(OVW_FULL);
+    // `BRANCH_R1` is real, is in this tenant, and belongs to `COMPANY_R`. An
+    // unrestricted grant satisfies `iam.has_permission_in_scope` for any pair it
+    // is given, so nothing but the tenant-coherence probe can refuse this.
+    const response = await dashboard({
+      companyId: COMPANY_D,
+      branchId: BRANCH_R1,
+      period: 'today',
+    });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'ERR-IAM-001' });
+  });
+
+  it('never counts another tenant, and never answers one', async () => {
+    authAs(RPT_TENANT_B);
+    const response = await dashboard({ companyId: COMPANY_D, period: 'today' });
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ code: 'ERR-IAM-001' });
+
+    // The same company read by a tenant-A caller still reports exactly the rows
+    // this block inserted, so the refusal above removed nothing from the answer.
+    const mine = await dashboardAs(OVW_FULL, { companyId: COMPANY_D, period: 'today' });
+    expect(mine.sections.receptionsOpened).toEqual({ status: 'ok', value: 8 });
+  });
+
+  it('does not count a sibling company of the same tenant', async () => {
+    const view = await dashboardAs(OVW_FULL, { companyId: COMPANY_D, period: 'today' });
+    // `COMPANY_R` above holds six work orders of its own in the same tenant and
+    // the same timezone. None of them may reach this answer.
+    expect(liveTotal(view)).toBe(7);
+    expect(view.branchIds).toEqual([BRANCH_D1, BRANCH_D2]);
+  });
+
+  it('refuses a query field it does not publish', async () => {
+    authAs(OVW_FULL);
+    const response = await dashboard({
+      companyId: COMPANY_D,
+      period: 'today',
+      departmentId: BRANCH_D1,
+    });
+    expect(response.status).toBe(422);
+    expect(await response.json()).toMatchObject({ code: 'ERR-VAL-001' });
+  });
+});
+
+beforeAll(async () => {
+  admin = adminPool();
+  await ensureTestLogins(admin);
+  await cleanBackendFixtures(admin);
+  await ensureBackendFixtures(admin);
+  await establishP1_19Fixtures(admin);
+
+  await admin.query(
+    `INSERT INTO org.legal_companies
+       (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+     VALUES ($1,$2,'fx_p1_31_reports','P1-31 Reporting Company','USD',$3)
+     ON CONFLICT (id) DO NOTHING`,
+    [COMPANY_R, TENANT_A, USER_A]
+  );
+  for (const [id, code, name] of [
+    [BRANCH_R1, 'fx_p1_31_branch_r1', 'P1-31 Reported Branch'],
+    [BRANCH_R2, 'fx_p1_31_branch_r2', 'P1-31 Sibling Branch'],
+  ]) {
+    await admin.query(
+      `INSERT INTO org.branches
+         (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+      [id, TENANT_A, COMPANY_R, code, name, BRANCH_TIMEZONE, USER_A]
+    );
+  }
+
+  for (const principal of PRINCIPALS) await seedPrincipal(principal);
+
+  // The reach role: an unrelated permission scoped to BRANCH_R1, so R1 is inside
+  // RPT_SCOPED_R2's permission-blind branch union without any report or
+  // work-order authority there. Without it the isolation case would pass because
+  // RLS returned nothing, which proves the wrong control.
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$2,'fx_p1_31_reach','P1-31 reach only',$3) ON CONFLICT (id) DO NOTHING`,
+    [REACH_ROLE, TENANT_A, USER_A]
+  );
+  await admin.query(
+    `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+     SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+      WHERE p.permission_code = $4
+     ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+    [TENANT_A, REACH_ROLE, USER_A, REACH_ONLY]
+  );
+  const reach = await admin.connect();
+  try {
+    await reach.query('BEGIN');
+    await reach.query(
+      `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+      [REACH_GRANT, TENANT_A, RPT_SCOPED_R2.userId, REACH_ROLE, USER_A]
+    );
+    await reach.query(
+      `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+       VALUES ($1,$2,'branch',$3,$4,$5)`,
+      [TENANT_A, REACH_GRANT, COMPANY_R, BRANCH_R1, USER_A]
+    );
+    await reach.query('COMMIT');
+  } catch (error) {
+    await reach.query('ROLLBACK');
+    throw error;
+  } finally {
+    reach.release();
+  }
+
+  await seedReportConfiguration({ code: UNREGISTERED_CODE, scopeLevel: 'branch' });
+
+  runtime = runtimeAppPool(6);
+  __setPrimaryPoolForTests(runtime);
+
+  const bounds = await admin.query<{ opens: Date; closes: Date }>(
+    `SELECT (($1::date)::timestamp AT TIME ZONE $3) AS opens,
+            (($2::date)::timestamp AT TIME ZONE $3) AS closes`,
+    [FROM, TO, BRANCH_TIMEZONE]
+  );
+  periodOpens = (bounds.rows[0]?.opens ?? new Date(0)).toISOString();
+  periodCloses = (bounds.rows[0]?.closes ?? new Date(0)).toISOString();
+  beforePeriod = shift(periodOpens, -1000);
+  middleInstant = shift(periodOpens, 12 * 60 * 60 * 1000);
+  lateInstant = shift(periodCloses, -30 * 60 * 1000);
+
+  const before = await seedWorkOrder({ openedAt: beforePeriod });
+  excludedBefore = before.workOrderId;
+  const first = await seedWorkOrder({ openedAt: periodOpens });
+  firstOrder = first.workOrderId;
+  const middle = await seedWorkOrder({ openedAt: middleInstant });
+  middleOrder = middle.workOrderId;
+  middleVehicleId = middle.vehicleId;
+  middlePartnerId = middle.partnerId;
+  const late = await seedWorkOrder({ openedAt: lateInstant });
+  lateOrder = late.workOrderId;
+  const after = await seedWorkOrder({ openedAt: periodCloses });
+  excludedAfter = after.workOrderId;
+  const sibling = await seedWorkOrder({ openedAt: middleInstant, branchId: BRANCH_R2 });
+  otherBranchOrder = sibling.workOrderId;
+
+  // States taken through the REAL graph, because `state` is not immutable and the
+  // transition guard is what decides which edges exist. `firstOrder` stays in
+  // `draft`, the frozen column default reception leaves behind.
+  await advance(middleOrder, [{ toState: 'open' }], FULL);
+  await advance(lateOrder, [{ toState: 'open' }, { toState: 'in_progress' }], FULL);
+  await advance(otherBranchOrder, [{ toState: 'open' }], FULL);
+  __resetAuthenticatorForTests();
+});
+
+afterEach(() => __resetAuthenticatorForTests());
+afterAll(async () => {
+  __setPrimaryPoolForTests(undefined);
+  if (runtime) await runtime.end();
+  if (admin) {
+    await admin.query(
+      `DELETE FROM rpt.report_configuration_versions WHERE tenant_id = ANY($1::uuid[])`,
+      [[TENANT_A, TENANT_B]]
+    );
+    await admin.query(`DELETE FROM rpt.report_configurations WHERE tenant_id = ANY($1::uuid[])`, [
+      [TENANT_A, TENANT_B],
+    ]);
+    await cleanBackendFixtures(admin);
+    await admin.end();
+  }
+});
+
+describe('rpt.report-run — the rows and the counts', () => {
+  it('returns the branch page and every column the dataset declares', async () => {
+    authAs(RPT_FULL);
+    const response = await report();
+    expect(response.status).toBe(200);
+    const view = await body(response);
+
+    expect(view.reportCode).toBe(REPORT_CODE);
+    expect(view.titleKey).toBe('reports.work_orders_by_status.title');
+    expect(view.scope).toBe('branch');
+    // `live` is a claim about where the rows came from: the operational tables,
+    // inside this request's own transaction. There is no snapshot behind it.
+    expect(view.freshness).toBe('live');
+    expect(view.columns.map((column) => column.key)).toEqual([
+      'workOrder',
+      'branch',
+      'customer',
+      'vehicle',
+      'openedAt',
+      'state',
+    ]);
+    // Newest opened first — the work-order list's own ordering contract, reused
+    // rather than reinvented, so a cursor means the same thing in both.
+    expect(view.rows.items.map((row) => cellValue(row, 'workOrder'))).toEqual([
+      lateOrder,
+      middleOrder,
+      firstOrder,
+    ]);
+  });
+
+  it('counts every state over the whole selection, including the states with none', async () => {
+    authAs(RPT_FULL);
+    const view = await body(await report());
+
+    // Three orders, three different states, one each.
+    expect(countOf(view, 'draft')).toBe(1);
+    expect(countOf(view, 'open')).toBe(1);
+    expect(countOf(view, 'in_progress')).toBe(1);
+    // Present at zero rather than absent. "No order is awaiting parts" is an
+    // answer a manager needs to be able to read, and a `GROUP BY` alone cannot
+    // give it — the state catalogue is what fills the gap.
+    expect(countOf(view, 'awaiting_parts')).toBe(0);
+    expect(countOf(view, 'closed')).toBe(0);
+    expect(countOf(view, 'cancelled')).toBe(0);
+    // The labels come from `wo.work_order_states.name` through the tenant/platform
+    // override, never from a constant in the API.
+    expect(view.countsByState.find((entry) => entry.stateCode === 'draft')?.stateName).toBe(
+      'Draft'
+    );
+  });
+
+  it('counts the SELECTION and not the page', async () => {
+    authAs(RPT_FULL);
+    // One row per page. A report that counted what it returned would answer 1, 0,
+    // 0 here — the P1-28 round-two defect, a paged read answering for a set.
+    const view = await body(await report({ limit: '1' }));
+    expect(view.rows.items).toHaveLength(1);
+    expect(view.rows.hasMore).toBe(true);
+    expect(countOf(view, 'draft') + countOf(view, 'open') + countOf(view, 'in_progress')).toBe(3);
+  });
+});
+
+describe('rpt.report-run — the period is half-open in the BRANCH timezone', () => {
+  it('reports the zone the period was resolved in', async () => {
+    authAs(RPT_FULL);
+    const view = await body(await report());
+    expect(view.period).toEqual({ from: FROM, to: TO, timezone: BRANCH_TIMEZONE });
+  });
+
+  it('is anchored to the branch zone and not to the server one', () => {
+    // NON-VACUITY, and it comes first. Every boundary case below would pass just as
+    // happily if the bounds had been resolved in UTC — unless the zone actually
+    // moves them. Local midnight in the branch zone is NOT midnight UTC, so a UTC
+    // reading of this period selects a different set of instants.
+    expect(periodOpens).not.toBe(`${FROM}T00:00:00.000Z`);
+    expect(periodCloses).not.toBe(`${TO}T00:00:00.000Z`);
+    // And the period is two whole days, however the offset falls.
+    expect(new Date(periodCloses).getTime() - new Date(periodOpens).getTime()).toBe(
+      2 * 24 * 60 * 60 * 1000
+    );
+  });
+
+  it('includes 23:30 on the last day and excludes 00:00 on the next one', async () => {
+    authAs(RPT_FULL);
+    const ids = (await body(await report())).rows.items.map((row) => cellValue(row, 'workOrder'));
+    // Local 23:30 on the last included day: inside, by thirty minutes.
+    expect(ids).toContain(lateOrder);
+    // Local 00:00 on the EXCLUDED day. `to` is exclusive, so this instant is the
+    // first one outside the period — and under a UTC reading of the same two
+    // calendar days it would fall inside.
+    expect(ids).not.toContain(excludedAfter);
+    // One second before the period opens, excluded for that reason and no other.
+    expect(ids).not.toContain(excludedBefore);
+    // The first included instant — the boundary is inclusive at the bottom, which
+    // is the other half of half-open.
+    expect(ids).toContain(firstOrder);
+  });
+
+  it('refuses a period whose end is not after its start', async () => {
+    authAs(RPT_FULL);
+    // `to` is EXCLUSIVE, so `from === to` is an empty period rather than one day.
+    // Answering it with an empty report would read as "no work orders", which is a
+    // wrong answer rather than an empty one.
+    const empty = await report({ to: FROM });
+    expect(empty.status).toBe(422);
+    expect(((await empty.json()) as Problem).code).toBe('ERR-VAL-001');
+    authAs(RPT_FULL);
+    expect((await report({ from: '2027-03-04', to: '2027-03-02' })).status).toBe(422);
+  });
+});
+
+describe('rpt.report-run — the cells a client renders', () => {
+  it('carries the drill-through target, the branch, the customer and the vehicle', async () => {
+    authAs(RPT_FULL);
+    const view = await body(await report());
+    const row = view.rows.items.find((entry) => cellValue(entry, 'workOrder') === middleOrder);
+    expect(row).toBeDefined();
+    if (row === undefined) return;
+
+    // The reference column names the route TEMPLATE; the cell carries the id that
+    // fills it. The API does not build the client's URLs.
+    const reference = view.columns.find((column) => column.key === 'workOrder');
+    expect(reference?.kind).toBe('reference');
+    expect(reference?.drillThrough).toBe('/work-orders/{id}');
+
+    expect(cellValue(row, 'branch')).toBe(BRANCH_R1);
+    expect(cellLabel(row, 'branch')).toBe('P1-31 Reported Branch');
+    // The dated party projection, resolved at this order's `opened_at`.
+    expect(cellValue(row, 'customer')).toBe(middlePartnerId);
+    expect(cellLabel(row, 'customer')).not.toBeNull();
+    expect(cellValue(row, 'vehicle')).toBe(middleVehicleId);
+    expect(cellValue(row, 'openedAt')).toBe(middleInstant);
+    // The state cell carries both halves: the catalogue code a client filters on
+    // and the catalogue name a human reads.
+    expect(cellValue(row, 'state')).toBe('open');
+    expect(cellLabel(row, 'state')).toBe('Open');
+  });
+});
+
+describe('rpt.report-run — authorization', () => {
+  it('401 without an authenticator', async () => {
+    __resetAuthenticatorForTests();
+    expect((await report()).status).toBe(401);
+  });
+
+  it('refuses a caller holding wo.work_order.read but not rpt.report.read', async () => {
+    authAs(WO_ONLY);
+    const denied = await report();
+    expect(denied.status).toBe(403);
+    const problem = (await denied.json()) as Problem;
+    expect(problem.code).toBe('ERR-IAM-001');
+    // The ROUTE refused: the operation's own declared code is what is missing.
+    expect(problem.requiredPermissions).toEqual(['rpt.report.read']);
+  });
+
+  it('refuses a caller holding rpt.report.read but not the dataset read code', async () => {
+    authAs(RPT_ONLY);
+    const denied = await report();
+    expect(denied.status).toBe(403);
+    const problem = (await denied.json()) as Problem;
+    // The SERVICE refused, and it answers the same uniform failure the route does
+    // — so a caller cannot tell the two checks apart and cannot use the difference
+    // to discover which datasets exist.
+    expect(problem.code).toBe('ERR-IAM-001');
+    expect(problem.requiredPermissions).toEqual(['wo.work_order.read']);
+  });
+
+  it('refuses a branch the caller is not granted in, while RLS can still see it', async () => {
+    authAs(RPT_SCOPED_R2);
+    // Granted in R2 only, with R1 inside its permission-blind branch union. RLS
+    // alone would return R1's rows; only the scoped evaluation refuses.
+    const denied = await report();
+    expect(denied.status).toBe(403);
+    expect(((await denied.json()) as Problem).code).toBe('ERR-IAM-001');
+
+    authAs(RPT_SCOPED_R2);
+    const allowed = await run({
+      companyId: COMPANY_R,
+      branchId: BRANCH_R2,
+      from: FROM,
+      to: TO,
+    });
+    expect(allowed.status).toBe(200);
+    // Not a vacuous pass: the branch it IS granted in answers with its own order.
+    expect((await body(allowed)).rows.items.map((row) => cellValue(row, 'workOrder'))).toEqual([
+      otherBranchOrder,
+    ]);
+  });
+
+  it('reports one branch only — a sibling branch order never appears', async () => {
+    authAs(RPT_FULL);
+    const ids = (await body(await report())).rows.items.map((row) => cellValue(row, 'workOrder'));
+    expect(ids).not.toContain(otherBranchOrder);
+  });
+
+  it('refuses a foreign tenant branch before the report is ever run', async () => {
+    authAs(RPT_TENANT_B);
+    // Unrestricted IN ITS OWN TENANT, so BOTH permission checks pass on scope
+    // alone: `iam.has_permission_in_scope` short-circuits on an unrestricted
+    // grant before any `org.*` row is read, and does not know whose branch this
+    // is. What refuses it is `requireScopeTargetInTenant` (P1-30 CC-14), the
+    // platform probe that resolves the (company, branch) pair under the caller's
+    // OWN RLS — so the refusal arrives before the handler, and the run service's
+    // own null-branch refusal is never reached through this route.
+    //
+    // ERR-IAM-001 and not ERR-RES-001, deliberately: a not-found would confirm
+    // the existence boundary the uniform denial exists to hide. The refusal is
+    // identical for a foreign tenant's real pair, a pair that exists nowhere and
+    // an in-tenant pair belonging to another company.
+    const denied = await report();
+    expect(denied.status).toBe(403);
+    expect(((await denied.json()) as Problem).code).toBe('ERR-IAM-001');
+  });
+});
+
+describe('rpt.report-run — the code and the query', () => {
+  it('answers an unregistered report code as not found', async () => {
+    authAs(RPT_FULL);
+    // Including one the tenant has PUBLISHED a configuration for: a configuration
+    // row is not a data source, and this is the whole reason `executable` exists.
+    const unimplemented = await run(
+      { companyId: COMPANY_R, branchId: BRANCH_R1, from: FROM, to: TO },
+      UNREGISTERED_CODE
+    );
+    expect(unimplemented.status).toBe(404);
+    expect(((await unimplemented.json()) as Problem).code).toBe('ERR-RES-001');
+
+    authAs(RPT_FULL);
+    const absent = await run(
+      { companyId: COMPANY_R, branchId: BRANCH_R1, from: FROM, to: TO },
+      'p1_31_never_existed'
+    );
+    expect(absent.status).toBe(404);
+  });
+
+  it('refuses a missing scope, an unknown parameter and a non-calendar day', async () => {
+    authAs(RPT_FULL);
+    // 422 and not 403: `scopeTargetOption` yields NO target when the pair is
+    // incomplete, so the pre-handler check falls back to the scope-blind
+    // evaluation an unrestricted grant satisfies, and the schema is what refuses.
+    expect((await run({ companyId: COMPANY_R, from: FROM, to: TO })).status).toBe(422);
+    authAs(RPT_FULL);
+    expect((await report({ unexpected: 'x' })).status).toBe(422);
+    authAs(RPT_FULL);
+    // An instant carries an offset the caller chose, which would silently
+    // override the branch timezone the period is expressed in.
+    expect((await report({ from: '2027-03-02T00:00:00Z' })).status).toBe(422);
+  });
+});
+
+describe('rpt.report-run — pagination', () => {
+  it('pages the rows disjointly and refuses a malformed or foreign cursor', async () => {
+    authAs(RPT_FULL);
+    const first = await body(await report({ limit: '2' }));
+    expect(first.rows.items).toHaveLength(2);
+    expect(first.rows.hasMore).toBe(true);
+    expect(first.rows.nextCursor).not.toBeNull();
+
+    authAs(RPT_FULL);
+    const second = await body(await report({ limit: '2', cursor: first.rows.nextCursor ?? '' }));
+    expect(second.rows.items).toHaveLength(1);
+    expect(second.rows.hasMore).toBe(false);
+    const firstIds = first.rows.items.map((row) => cellValue(row, 'workOrder'));
+    const secondIds = second.rows.items.map((row) => cellValue(row, 'workOrder'));
+    expect(firstIds.filter((id) => secondIds.includes(id))).toEqual([]);
+    // The counts are the same on both pages, because they are the selection's.
+    expect(second.countsByState).toEqual(first.countsByState);
+
+    authAs(RPT_FULL);
+    const malformed = await report({ cursor: 'not-a-cursor' });
+    expect(malformed.status).toBe(400);
+    expect(((await malformed.json()) as Problem).code).toBe('ERR-PAG-001');
+  });
+
+  it('clamps an oversized page rather than trusting the caller', async () => {
+    authAs(RPT_FULL);
+    expect((await report({ limit: '100000' })).status).toBe(422);
+  });
+});
+
+describe('the catalogue reports what the engine can actually run', () => {
+  it('marks a registered baseline executable and an unimplemented tenant row not', async () => {
+    const page = await withTransaction(
+      contextFor({
+        tenantId: TENANT_A,
+        userId: RPT_FULL.userId,
+        operation: 'rpt.report-catalogue',
+      }),
+      (db) => reportingModule().catalogue.listPublished(db, {})
+    );
+    const baseline = page.items.find((item) => item.reportCode === REPORT_CODE);
+    expect(baseline?.executable).toBe(true);
+    expect(baseline?.source).toBe('platform');
+    // A baseline names no export permission, because report export is P-12 and
+    // `rpt.export` is deliberately excluded (change control CC-04).
+    expect(baseline?.exportPermissionCode).toBeNull();
+    expect(baseline?.titleKey).toBe('reports.work_orders_by_status.title');
+
+    const configured = page.items.find((item) => item.reportCode === UNREGISTERED_CODE);
+    expect(configured?.source).toBe('tenant');
+    // Published, readable, and NOT runnable: the platform has no dataset for it.
+    expect(configured?.executable).toBe(false);
+    expect(configured?.exportPermissionCode).toBe('rpt.export');
+  });
+
+  it('reads a registered code that the tenant has not configured', async () => {
+    const view = await withTransaction(
+      contextFor({ tenantId: TENANT_A, userId: RPT_FULL.userId, operation: 'rpt.report-read' }),
+      (db) => reportingModule().catalogue.readByCode(db, REPORT_CODE)
+    );
+    // The engineering decision this slice records: a configuration row is
+    // CUSTOMIZATION of a report the platform implements, not a precondition for
+    // it existing. `rpt.report_configurations` has no seed and no writer yet, so
+    // the alternative would leave every report unreachable in every tenant.
+    expect(view.source).toBe('platform');
+    expect(view.executable).toBe(true);
+    expect(view.recordVersion).toBe(0);
+  });
+
+  it('still refuses an unconfigured, unregistered code', async () => {
+    const denied = (await withTransaction(
+      contextFor({ tenantId: TENANT_A, userId: RPT_FULL.userId, operation: 'rpt.report-read' }),
+      (db) =>
+        reportingModule()
+          .catalogue.readByCode(db, 'p1_31_never_existed')
+          .then(() => null)
+          .catch((error: unknown) => error)
+    )) as AppFailure;
+    expect(denied).toBeInstanceOf(AppFailure);
+    expect(denied.code).toBe('ERR-RES-001');
+  });
+
+  it('does not leak the baselines into another tenant as tenant rows', async () => {
+    const page = await withTransaction(
+      contextFor({
+        tenantId: TENANT_B,
+        userId: RPT_TENANT_B.userId,
+        operation: 'rpt.report-catalogue',
+      }),
+      (db) => reportingModule().catalogue.listPublished(db, {})
+    );
+    // Baselines ARE visible to every tenant — they are platform code, not tenant
+    // data — but tenant A's configured row is not, and the baseline arrives
+    // marked `platform` rather than as something tenant B configured.
+    expect(page.items.map((item) => item.reportCode)).toContain(REPORT_CODE);
+    expect(page.items.map((item) => item.reportCode)).not.toContain(UNREGISTERED_CODE);
+    expect(page.items.find((item) => item.reportCode === REPORT_CODE)?.source).toBe('platform');
+  });
+
+  it('registers exactly the datasets the engine implements', async () => {
+    // Non-vacuity for the whole slice: a registry that had quietly emptied would
+    // make every `executable` assertion above pass for the wrong reason.
+    //
+    // FOUR codes from engine slice 4 onward — the whole of what D-4 approves —
+    // and the list is exhaustive rather than a `toContain`: a fifth dataset is a
+    // deliberate edit here instead of a silent widening of the catalogue.
+    expect([...REPORT_DATASET_CODES]).toEqual([
+      REPORT_CODE,
+      'technician_labor_time',
+      'inventory_movements',
+      'invoice_payment_summary',
+    ]);
+  });
+});
+
+describe('tenant report restrictions remain visible to a read-only report caller', () => {
+  const allowedFilters = {
+    companyId: { type: 'uuid' },
+    branchId: { type: 'uuid' },
+    from: { type: 'date' },
+    to: { type: 'date' },
+  };
+
+  async function readerConfiguration(id: string) {
+    return withTransaction(
+      contextFor({ tenantId: TENANT_A, userId: RPT_FULL.userId, operation: 'rpt.report-read' }),
+      async (db) => {
+        const visible = await db.query<{ status: string; scope_level: string }>(
+          `SELECT status, scope_level FROM rpt.report_configurations
+            WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL`,
+          [TENANT_A, id]
+        );
+        return {
+          configure: await callerHoldsPermission(db, 'rpt.report.configure', {
+            companyId: COMPANY_R,
+            branchId: BRANCH_R1,
+          }),
+          export: await callerHoldsPermission(db, 'rpt.export', {
+            companyId: COMPANY_R,
+            branchId: BRANCH_R1,
+          }),
+          visible: visible.rows,
+        };
+      }
+    );
+  }
+
+  it('runs the absent-configuration baseline without granting export authority', async () => {
+    const authority = await readerConfiguration(randomUUID());
+    expect(authority).toEqual({ configure: false, export: false, visible: [] });
+    authAs(RPT_FULL);
+    const result = await report();
+    expect(result.status).toBe(200);
+    expect((await body(result)).rows.items.map((row) => cellValue(row, 'workOrder'))).toContain(
+      middleOrder
+    );
+
+    authAs(RPT_FULL);
+    const definition = await readReportDefinition();
+    expect(definition.status).toBe(200);
+    expect(await definition.json()).toMatchObject({
+      source: 'platform',
+      exportPermissionCode: null,
+    });
+  });
+
+  it.each(['draft', 'archived'] as const)(
+    'can see a same-tenant %s configuration under runtime RLS, and both routes refuse fallback',
+    async (status) => {
+      await withExplicitReportConfiguration({ status, parameterSchema: {} }, async (id) => {
+        // If RLS hid this row from a caller without configure, the engine would
+        // see null and incorrectly run the code baseline. This proves the actual
+        // runtime visibility separately from the route's refusal.
+        expect(await readerConfiguration(id)).toEqual({
+          configure: false,
+          export: false,
+          visible: [{ status, scope_level: 'branch' }],
+        });
+        authAs(RPT_FULL);
+        const denied = await report();
+        expect(denied.status).toBe(404);
+        expect(((await denied.json()) as Problem).code).toBe('ERR-RES-001');
+
+        authAs(RPT_FULL);
+        const definition = await readReportDefinition();
+        expect(definition.status).toBe(404);
+        expect(((await definition.json()) as Problem).code).toBe('ERR-RES-001');
+      });
+    }
+  );
+
+  it('sees a published restrictive allowlist without configure permission and refuses execution', async () => {
+    await withExplicitReportConfiguration(
+      { parameterSchema: { filters: { branchId: { type: 'uuid' } } } },
+      async (id) => {
+        expect(await readerConfiguration(id)).toEqual({
+          configure: false,
+          export: false,
+          visible: [{ status: 'published', scope_level: 'branch' }],
+        });
+        authAs(RPT_FULL);
+        const denied = await report();
+        expect(denied.status).toBe(403);
+        expect(((await denied.json()) as Problem).code).toBe('ERR-IAM-001');
+
+        // Configuration metadata remains readable, including its separate
+        // export requirement. Reading it confers neither configure nor export.
+        authAs(RPT_FULL);
+        const definition = await readReportDefinition();
+        expect(definition.status).toBe(200);
+        expect(await definition.json()).toMatchObject({
+          source: 'tenant',
+          scopeLevel: 'branch',
+          exportPermissionCode: 'rpt.export',
+          parameterSchema: { filters: { branchId: { type: 'uuid' } } },
+        });
+      }
+    );
+  });
+
+  it('keeps the frozen published schema default {} executable for a reader without configure or export', async () => {
+    await withExplicitReportConfiguration({ parameterSchema: {} }, async (id) => {
+      expect(await readerConfiguration(id)).toMatchObject({ configure: false, export: false });
+      authAs(RPT_FULL);
+      const result = await report();
+      expect(result.status).toBe(200);
+      expect((await body(result)).rows.items.map((row) => cellValue(row, 'workOrder'))).toContain(
+        middleOrder
+      );
+    });
+  });
+
+  it('does not let a published branch configuration widen the caller scoped to its sibling', async () => {
+    await withExplicitReportConfiguration(
+      { parameterSchema: { filters: allowedFilters } },
+      async () => {
+        authAs(RPT_SCOPED_R2);
+        const denied = await report();
+        expect(denied.status).toBe(403);
+        expect(((await denied.json()) as Problem).code).toBe('ERR-IAM-001');
+
+        authAs(RPT_SCOPED_R2);
+        const permitted = await report({ branchId: BRANCH_R2 });
+        expect(permitted.status).toBe(200);
+        expect(
+          (await body(permitted)).rows.items.map((row) => cellValue(row, 'workOrder'))
+        ).toEqual([otherBranchOrder]);
+      }
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ovw.dashboard-summary-read — every linked figure counts the list it links to
+// (Owner directive, P1-32-PRE-OD-UX)
+// ---------------------------------------------------------------------------
+
+/** This block's OWN company, so nothing another block inserts can move a count. */
+const COMPANY_E = 'f1310000-0000-4000-8000-0000000000e0';
+const BRANCH_E1 = 'f1310000-0000-4000-8000-0000000000e1';
+const BRANCH_E2 = 'f1310000-0000-4000-8000-0000000000e2';
+/**
+ * A branch that holds an ACTIVE order and a reception, and is then RETIRED.
+ * "All my branches" is whatever the shared resolver answers, on both sides: for
+ * a caller with no branch narrowing it answers "the company", which every list
+ * filters on alone, so the retired branch's rows are listed and counted; for a
+ * branch-narrowed caller its narrowed arm drops a retired branch, so they are
+ * in neither.
+ */
+const BRANCH_E3 = 'f1310000-0000-4000-8000-0000000000e3';
+
+/** Unrestricted, holding every code the dashboard's sections and the board ask for. */
+const OVW_LINKS: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000301',
+  userId: 'f1310000-0000-4000-8000-000000000302',
+  subject: 'fx_ovw_links',
+  tenantId: TENANT_A,
+  permissions: [...DASHBOARD_CODES],
+};
+
+/**
+ * Branch-restricted: every dashboard code in the FIRST branch and in the branch
+ * that is later RETIRED, and an unrelated code in the sibling — so the sibling
+ * is inside its permission-blind RLS reach with no work-order authority there,
+ * the retired branch still carries a grant scope, and "all my branches" must
+ * resolve to the first branch alone on BOTH sides.
+ */
+const OVW_LINKS_E1: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000311',
+  userId: 'f1310000-0000-4000-8000-000000000312',
+  subject: 'fx_ovw_links_e1',
+  tenantId: TENANT_A,
+  permissions: [...DASHBOARD_CODES],
+  scope: { companyId: COMPANY_E, branchId: BRANCH_E1 },
+  grantId: 'f1310000-0000-4000-8000-000000000313',
+};
+const OVW_LINKS_REACH_ROLE = 'f1310000-0000-4000-8000-000000000314';
+const OVW_LINKS_REACH_GRANT = 'f1310000-0000-4000-8000-000000000315';
+
+describe('ovw.dashboard-summary-read — every linked figure counts the list it links to', () => {
+  /** Unfinished, parts requested: waiting for parts. */
+  let partsRequested = '';
+  /** Unfinished, parts reserved in another system and never issued: waiting. */
+  let partsReservedElsewhere = '';
+  /** Parts requested and then CLOSED: a finished order is not waiting. */
+  let finishedWithParts = '';
+  /** Parts requested and a pending request, then RETIRED: counted by nothing. */
+  let retiredWithRequest = '';
+  /** Two pending requests on ONE order: one work order, two requests. */
+  let twoRequests = '';
+  /** Active, waiting on parts and a decision, in a branch that is then RETIRED. */
+  let inRetiredBranch = '';
+
+  async function seedLinkOrder(branchId: string): Promise<string> {
+    const visit = await seedAuthorizedVisit({ companyId: COMPANY_E, branchId });
+    const inserted = await admin.query<{ id: string }>(
+      `INSERT INTO wo.work_orders
+         (tenant_id, company_id, branch_id, reception_visit_id, vehicle_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6) RETURNING id`,
+      [TENANT_A, COMPANY_E, branchId, visit.visitId, visit.vehicleId, USER_A]
+    );
+    return inserted.rows[0]?.id ?? '';
+  }
+
+  async function setParts(workOrderId: string, value: string): Promise<void> {
+    await admin.query(`UPDATE wo.work_orders SET parts_forward_state = $2 WHERE id = $1`, [
+      workOrderId,
+      value,
+    ]);
+  }
+
+  async function pendingRequest(workOrderId: string, branchId: string): Promise<void> {
+    await admin.query(
+      `INSERT INTO wo.additional_work_requests
+         (tenant_id, company_id, branch_id, work_order_id, summary, state, is_required, created_by)
+       VALUES ($1,$2,$3,$4,'Dashboard link fixture request','pending',false,$5)`,
+      [TENANT_A, COMPANY_E, branchId, workOrderId, USER_A]
+    );
+  }
+
+  /** Drives an order to `closed` through the shipped transition and closure routes. */
+  async function closeLinkOrder(workOrderId: string): Promise<void> {
+    const version = await advance(workOrderId, [...OVW_CLOSURE_PATH], FULL);
+    authAs(FULL);
+    const response = await CLOSE_WORK_ORDER(
+      new Request(`http://localhost/api/v1/work-orders/${workOrderId}/closure`, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'idempotency-key': randomUUID(),
+          'if-match': String(version),
+        },
+        body: JSON.stringify({ toState: 'closed' }),
+      }),
+      { params: Promise.resolve({ workOrderId }) }
+    );
+    if (response.status !== 200) {
+      throw new Error(`fixture closure failed with ${response.status}: ${await response.text()}`);
+    }
+  }
+
+  /**
+   * Every work-order id the BOARD returns for one query, walking every page.
+   *
+   * The figure is compared with the list's own answer rather than with a count
+   * written here, so the case fails the moment the two definitions part —
+   * whichever side moves.
+   */
+  async function boardIds(
+    query: Record<string, string>,
+    principal: Principal = OVW_LINKS
+  ): Promise<readonly string[]> {
+    const ids: string[] = [];
+    let cursor: string | null = null;
+    do {
+      __resetRateLimitForTests();
+      authAs(principal);
+      const url = new URL('http://localhost/api/v1/work-orders');
+      for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+      url.searchParams.set('limit', '100');
+      if (cursor !== null) url.searchParams.set('cursor', cursor);
+      const response = await LIST_WORK_ORDERS(new Request(url));
+      if (response.status !== 200) {
+        throw new Error(`board read failed with ${response.status}: ${await response.text()}`);
+      }
+      const body = (await response.json()) as {
+        items: readonly { id: string }[];
+        nextCursor: string | null;
+        hasMore: boolean;
+      };
+      ids.push(...body.items.map((item) => item.id));
+      cursor = body.hasMore ? body.nextCursor : null;
+    } while (cursor !== null);
+    return ids;
+  }
+
+  /**
+   * Every reception the reception BOARD returns for one query, walking every
+   * page — the list the dashboard's receptions figure links to.
+   */
+  async function receptionRows(
+    query: Record<string, string>,
+    principal: Principal = OVW_LINKS
+  ): Promise<readonly { readonly id: string; readonly branchId: string }[]> {
+    const rows: { id: string; branchId: string }[] = [];
+    let cursor: string | null = null;
+    do {
+      __resetRateLimitForTests();
+      authAs(principal);
+      const url = new URL('http://localhost/api/v1/receptions');
+      for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+      url.searchParams.set('limit', '100');
+      if (cursor !== null) url.searchParams.set('cursor', cursor);
+      const response = await LIST_RECEPTIONS(new Request(url));
+      if (response.status !== 200) {
+        throw new Error(`reception read failed with ${response.status}: ${await response.text()}`);
+      }
+      const body = (await response.json()) as {
+        items: readonly { id: string; branchId: string }[];
+        nextCursor: string | null;
+        hasMore: boolean;
+      };
+      rows.push(...body.items.map((item) => ({ id: item.id, branchId: item.branchId })));
+      cursor = body.hasMore ? body.nextCursor : null;
+    } while (cursor !== null);
+    return rows;
+  }
+
+  /**
+   * The reception board's inclusive instant bounds for the calendar days a
+   * dashboard answer was cut in — its first local midnight, and the last
+   * millisecond before the local midnight after its last day — converted by the
+   * database in the zone the answer names, not by this process.
+   */
+  async function receptionWindow(view: SummaryBody): Promise<Record<string, string>> {
+    const bounds = await admin.query<{ opens: Date; closes: Date }>(
+      `SELECT (($1::date)::timestamp AT TIME ZONE $3) AS opens,
+              ((($2::date + 1)::timestamp AT TIME ZONE $3) - interval '1 millisecond') AS closes`,
+      [view.period.from, view.period.to, view.period.timezone]
+    );
+    const row = bounds.rows[0];
+    if (row === undefined) throw new Error('the period bounds did not resolve');
+    return { from: row.opens.toISOString(), to: row.closes.toISOString() };
+  }
+
+  beforeAll(async () => {
+    await admin.query(
+      `INSERT INTO org.legal_companies
+         (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+       VALUES ($1,$2,'fx_ovw_links','Dashboard Links Company','USD',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [COMPANY_E, TENANT_A, USER_A]
+    );
+    for (const [id, code, name] of [
+      [BRANCH_E1, 'fx_ovw_branch_e1', 'Dashboard Links Branch A'],
+      [BRANCH_E2, 'fx_ovw_branch_e2', 'Dashboard Links Branch B'],
+      [BRANCH_E3, 'fx_ovw_branch_e3', 'Dashboard Links Branch C'],
+    ]) {
+      await admin.query(
+        `INSERT INTO org.branches
+           (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT (id) DO NOTHING`,
+        [id, TENANT_A, COMPANY_E, code, name, BRANCH_TIMEZONE, USER_A]
+      );
+    }
+    await seedPrincipal(OVW_LINKS);
+    await seedPrincipal(OVW_LINKS_E1);
+    // The restricted principal's authority reaches the branch retired below as
+    // well, so leaving it out is the resolver's retired-branch rule at work and
+    // not a caller that never had the branch.
+    await admin.query(
+      `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+       VALUES ($1,$2,'branch',$3,$4,$5)`,
+      [TENANT_A, OVW_LINKS_E1.grantId, COMPANY_E, BRANCH_E3, USER_A]
+    );
+    // The reach role: an unrelated code scoped to the sibling branch, so the
+    // restricted principal's RLS reach covers both branches while its
+    // work-order authority covers one. Without it the restricted case would
+    // pass because RLS returned nothing, which proves the wrong control.
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,'fx_ovw_links_reach','Dashboard links reach only',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [OVW_LINKS_REACH_ROLE, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+        WHERE p.permission_code = $4
+       ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+      [TENANT_A, OVW_LINKS_REACH_ROLE, USER_A, REACH_ONLY]
+    );
+    await seedScopedGrant(
+      OVW_LINKS_REACH_GRANT,
+      OVW_LINKS_E1.userId,
+      OVW_LINKS_REACH_ROLE,
+      [BRANCH_E2],
+      COMPANY_E
+    );
+
+    partsRequested = await seedLinkOrder(BRANCH_E1);
+    await setParts(partsRequested, 'requested');
+
+    partsReservedElsewhere = await seedLinkOrder(BRANCH_E1);
+    await setParts(partsReservedElsewhere, 'reserved_elsewhere');
+    await pendingRequest(partsReservedElsewhere, BRANCH_E1);
+
+    finishedWithParts = await seedLinkOrder(BRANCH_E1);
+    await setParts(finishedWithParts, 'requested');
+    await closeLinkOrder(finishedWithParts);
+
+    retiredWithRequest = await seedLinkOrder(BRANCH_E1);
+    await setParts(retiredWithRequest, 'requested');
+    await pendingRequest(retiredWithRequest, BRANCH_E1);
+    await admin.query(
+      `UPDATE wo.work_orders SET deleted_at = now(), deleted_by = $2 WHERE id = $1`,
+      [retiredWithRequest, USER_A]
+    );
+
+    twoRequests = await seedLinkOrder(BRANCH_E1);
+    await pendingRequest(twoRequests, BRANCH_E1);
+    await pendingRequest(twoRequests, BRANCH_E1);
+
+    // An untouched order, so no view is trivially "every order".
+    await seedLinkOrder(BRANCH_E1);
+
+    // The sibling branch: one order waiting on both, so the branch scope and the
+    // all-branches scope are each tested against a set that differs.
+    const sibling = await seedLinkOrder(BRANCH_E2);
+    await setParts(sibling, 'requested');
+    await pendingRequest(sibling, BRANCH_E2);
+
+    // The retired branch: an active order waiting on parts and on a decision,
+    // seeded while the branch is live, and then the BRANCH is retired — the
+    // order and its reception stay live. Every figure it could move is linked,
+    // so the all-branches equality above would part the moment one side counted
+    // it and the other did not.
+    inRetiredBranch = await seedLinkOrder(BRANCH_E3);
+    await setParts(inRetiredBranch, 'requested');
+    await pendingRequest(inRetiredBranch, BRANCH_E3);
+    await admin.query(`UPDATE org.branches SET deleted_at = now(), deleted_by = $2 WHERE id = $1`, [
+      BRANCH_E3,
+      USER_A,
+    ]);
+
+    __resetAuthenticatorForTests();
+  });
+
+  /** The three scopes a dashboard can be asked for, and the board query for each. */
+  const SCOPES = [
+    { name: 'the first branch', branchId: BRANCH_E1 },
+    { name: 'the sibling branch', branchId: BRANCH_E2 },
+    { name: 'every authorized branch', branchId: null },
+  ] as const;
+
+  for (const scope of SCOPES) {
+    it(`matches every linked figure to its board view for ${scope.name}`, async () => {
+      const where: Record<string, string> =
+        scope.branchId === null
+          ? { companyId: COMPANY_E }
+          : { companyId: COMPANY_E, branchId: scope.branchId };
+      const view = await dashboardAs(OVW_LINKS, { ...where, period: 'today' });
+
+      // Each pair is the card's figure and the board view its link opens. A
+      // snapshot figure is not bounded by the period, and neither is the view.
+      const pairs = [
+        { card: view.sections.awaitingParts, query: { awaitingParts: 'true' } },
+        { card: view.sections.awaitingApproval, query: { awaitingApproval: 'true' } },
+        { card: view.sections.activeWorkOrders, query: { stateGroup: 'active' } },
+        { card: view.sections.readyForDelivery, query: { readyForDelivery: 'true' } },
+      ] as const;
+      for (const pair of pairs) {
+        const ids = await boardIds({ ...where, ...pair.query });
+        expect(sectionValue(pair.card), JSON.stringify(pair.query)).toBe(ids.length);
+      }
+    });
+  }
+
+  it('counts parts not in hand on unfinished orders, and nothing retired or finished', async () => {
+    const view = await dashboardAs(OVW_LINKS, {
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      period: 'today',
+    });
+    expect(view.sections.awaitingParts).toEqual({ status: 'ok', value: 2 });
+
+    const ids = await boardIds({
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      awaitingParts: 'true',
+    });
+    expect([...ids].sort()).toEqual([partsRequested, partsReservedElsewhere].sort());
+    expect(ids).not.toContain(finishedWithParts);
+    expect(ids).not.toContain(retiredWithRequest);
+
+    // Three live-branch orders and the one standing in the retired branch: an
+    // unrestricted caller's board lists it, so the figure counts it.
+    const everywhere = await dashboardAs(OVW_LINKS, { companyId: COMPANY_E, period: 'today' });
+    expect(everywhere.sections.awaitingParts).toEqual({ status: 'ok', value: 4 });
+  });
+
+  it('counts work orders waiting on a decision once each, and requests separately', async () => {
+    const view = await dashboardAs(OVW_LINKS, {
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      period: 'today',
+    });
+    // Two ORDERS: the reserved one and the one holding two requests. The retired
+    // order's request is still a live row and is counted by neither figure.
+    expect(view.sections.awaitingApproval).toEqual({ status: 'ok', value: 2 });
+    expect(view.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 3 });
+
+    const ids = await boardIds({
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      awaitingApproval: 'true',
+    });
+    expect([...ids].sort()).toEqual([partsReservedElsewhere, twoRequests].sort());
+    expect(ids).not.toContain(retiredWithRequest);
+
+    // Adds the sibling's order and the retired branch's, one request each.
+    const everywhere = await dashboardAs(OVW_LINKS, { companyId: COMPANY_E, period: 'today' });
+    expect(everywhere.sections.awaitingApproval).toEqual({ status: 'ok', value: 4 });
+    expect(everywhere.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 5 });
+  });
+
+  it('matches every all-branches figure to its board view for a branch-restricted caller', async () => {
+    const where = { companyId: COMPANY_E };
+    const view = await dashboardAs(OVW_LINKS_E1, { ...where, period: 'today' });
+    // Resolved to the one branch it holds the read in — not the sibling its
+    // reach grant touches, and not the company.
+    expect(view.branchIds).toEqual([BRANCH_E1]);
+
+    const pairs = [
+      { card: view.sections.awaitingParts, query: { awaitingParts: 'true' } },
+      { card: view.sections.awaitingApproval, query: { awaitingApproval: 'true' } },
+      { card: view.sections.activeWorkOrders, query: { stateGroup: 'active' } },
+      { card: view.sections.readyForDelivery, query: { readyForDelivery: 'true' } },
+    ] as const;
+    for (const pair of pairs) {
+      const ids = await boardIds({ ...where, ...pair.query }, OVW_LINKS_E1);
+      expect(sectionValue(pair.card), JSON.stringify(pair.query)).toBe(ids.length);
+    }
+
+    // The restricted figure is the first branch's own, and it is strictly less
+    // than the unrestricted caller's — so the equality above is not two sides
+    // agreeing on the whole company.
+    const firstBranch = await dashboardAs(OVW_LINKS, {
+      ...where,
+      branchId: BRANCH_E1,
+      period: 'today',
+    });
+    const everywhere = await dashboardAs(OVW_LINKS, { ...where, period: 'today' });
+    expect(view.sections.awaitingParts).toEqual(firstBranch.sections.awaitingParts);
+    expect(sectionValue(view.sections.awaitingParts)).toBeLessThan(
+      sectionValue(everywhere.sections.awaitingParts)
+    );
+  });
+
+  it('counts an active order in a retired branch exactly where the board lists it', async () => {
+    const LINKED = [
+      { awaitingParts: 'true' },
+      { awaitingApproval: 'true' },
+      { stateGroup: 'active' },
+      {},
+    ] as const;
+
+    // Unrestricted: the resolver answers "the company", the board filters on
+    // the company alone, and the retired branch is in the dashboard's set...
+    const everywhere = await dashboardAs(OVW_LINKS, { companyId: COMPANY_E, period: 'today' });
+    expect([...everywhere.branchIds].sort()).toEqual([BRANCH_E1, BRANCH_E2, BRANCH_E3].sort());
+    // ...its order is on every board view the figures link to...
+    for (const query of LINKED) {
+      const ids = await boardIds({ companyId: COMPANY_E, ...query });
+      expect(ids, JSON.stringify(query)).toContain(inRetiredBranch);
+    }
+    // ...and the figures count it: the per-branch cases pin three and three for
+    // the two live branches, and the retired branch adds one to each.
+    expect(everywhere.sections.awaitingParts).toEqual({ status: 'ok', value: 4 });
+    expect(everywhere.sections.awaitingApproval).toEqual({ status: 'ok', value: 4 });
+    const active = await boardIds({ companyId: COMPANY_E, stateGroup: 'active' });
+    expect(sectionValue(everywhere.sections.activeWorkOrders)).toBe(active.length);
+
+    // Branch-restricted, with authority granted in the retired branch too: the
+    // resolver's narrowed arm drops a retired branch, so its order is in
+    // neither the figure nor the list.
+    const restricted = await dashboardAs(OVW_LINKS_E1, { companyId: COMPANY_E, period: 'today' });
+    expect(restricted.branchIds).toEqual([BRANCH_E1]);
+    for (const query of LINKED) {
+      const ids = await boardIds({ companyId: COMPANY_E, ...query }, OVW_LINKS_E1);
+      expect(ids, JSON.stringify(query)).not.toContain(inRetiredBranch);
+    }
+    const restrictedParts = await boardIds(
+      { companyId: COMPANY_E, awaitingParts: 'true' },
+      OVW_LINKS_E1
+    );
+    expect(sectionValue(restricted.sections.awaitingParts)).toBe(restrictedParts.length);
+    expect(restricted.sections.awaitingParts).toEqual({ status: 'ok', value: 2 });
+
+    // The order itself is live: it is the BRANCH that was retired, so this case
+    // measures the branch rule and not the work-order tombstone.
+    const row = await admin.query<{ deleted_at: Date | null }>(
+      `SELECT deleted_at FROM wo.work_orders WHERE id = $1`,
+      [inRetiredBranch]
+    );
+    expect(row.rows[0]?.deleted_at).toBeNull();
+  });
+
+  it('counts the receptions the reception board lists for the same period and branches', async () => {
+    // Unrestricted, all branches: the retired branch holds a reception in the
+    // period, and both sides include it.
+    const everywhere = await dashboardAs(OVW_LINKS, { companyId: COMPANY_E, period: 'today' });
+    const everywhereRows = await receptionRows({
+      companyId: COMPANY_E,
+      ...(await receptionWindow(everywhere)),
+    });
+    expect(sectionValue(everywhere.sections.receptionsOpened)).toBe(everywhereRows.length);
+    expect(everywhereRows.map((row) => row.branchId)).toContain(BRANCH_E3);
+
+    // Unrestricted, one named branch: the same equality, over a smaller set.
+    const firstBranch = await dashboardAs(OVW_LINKS, {
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      period: 'today',
+    });
+    const firstBranchRows = await receptionRows({
+      companyId: COMPANY_E,
+      branchId: BRANCH_E1,
+      ...(await receptionWindow(firstBranch)),
+    });
+    expect(sectionValue(firstBranch.sections.receptionsOpened)).toBe(firstBranchRows.length);
+    expect(firstBranchRows.length).toBeLessThan(everywhereRows.length);
+
+    // Branch-restricted, all branches: the reception board resolves its own set
+    // through the same resolver, for its own code, and lands on the first branch
+    // alone — the sibling carries no reception authority and the retired branch
+    // is dropped — exactly as the dashboard does.
+    const restricted = await dashboardAs(OVW_LINKS_E1, { companyId: COMPANY_E, period: 'today' });
+    const restrictedRows = await receptionRows(
+      { companyId: COMPANY_E, ...(await receptionWindow(restricted)) },
+      OVW_LINKS_E1
+    );
+    expect(sectionValue(restricted.sections.receptionsOpened)).toBe(restrictedRows.length);
+    expect(new Set(restrictedRows.map((row) => row.branchId))).toEqual(new Set([BRANCH_E1]));
+    expect(restrictedRows.length).toBe(firstBranchRows.length);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ovw.dashboard-summary-read — a company with no branch at all
+// ---------------------------------------------------------------------------
+
+/** A company of tenant A that holds NO branch, live or retired. */
+const COMPANY_Z = 'f1310000-0000-4000-8000-0000000000f0';
+/** A company id no tenant holds. */
+const COMPANY_NOWHERE = 'f1310000-0000-4000-8000-0000000000f9';
+
+/**
+ * Company-scoped in `COMPANY_Z` for every dashboard code except stock, and
+ * company-scoped for stock in `COMPANY_R` ONLY.
+ *
+ * No branch-typed scope row anywhere, so the caller carries no branch
+ * narrowing and the resolver answers "the company" for `COMPANY_Z`. The stock
+ * grant elsewhere is the decisive part: a section decision that asked "does
+ * this caller hold the code anywhere in the tenant" would answer yes and show
+ * a low-stock zero for a company in which the caller may not read stock.
+ */
+const OVW_EMPTY_SCOPED = {
+  userId: 'f1310000-0000-4000-8000-000000000401',
+  subject: 'fx_ovw_empty_scoped',
+  baseRoleId: 'f1310000-0000-4000-8000-000000000402',
+  baseGrantId: 'f1310000-0000-4000-8000-000000000403',
+  stockRoleId: 'f1310000-0000-4000-8000-000000000404',
+  stockGrantId: 'f1310000-0000-4000-8000-000000000405',
+} as const;
+
+/**
+ * This block's own unrestricted callers — every dashboard code, and the same
+ * minus stock — so the block depends on no other block's fixtures.
+ */
+const OVW_EMPTY_FULL: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000411',
+  userId: 'f1310000-0000-4000-8000-000000000412',
+  subject: 'fx_ovw_empty_full',
+  tenantId: TENANT_A,
+  permissions: [...DASHBOARD_CODES],
+};
+const OVW_EMPTY_NO_STOCK: Principal = {
+  roleId: 'f1310000-0000-4000-8000-000000000421',
+  userId: 'f1310000-0000-4000-8000-000000000422',
+  subject: 'fx_ovw_empty_no_stock',
+  tenantId: TENANT_A,
+  permissions: DASHBOARD_CODES.filter((code) => code !== STOCK_READ),
+};
+
+/** A role holding `codes`, granted to one user scoped to ONE company. */
+async function seedCompanyScopedRole(input: {
+  readonly userId: string;
+  readonly roleId: string;
+  readonly roleCode: string;
+  readonly grantId: string;
+  readonly companyId: string;
+  readonly codes: readonly string[];
+}): Promise<void> {
+  await admin.query(
+    `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+     VALUES ($1,$2,$3,'Dashboard company-scoped role',$4) ON CONFLICT (id) DO NOTHING`,
+    [input.roleId, TENANT_A, input.roleCode, USER_A]
+  );
+  for (const code of input.codes) {
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1::uuid,$2::uuid,p.id,'allow',$3::uuid FROM iam.permissions p
+        WHERE p.permission_code = $4
+       ON CONFLICT (tenant_id, role_id, permission_id) DO NOTHING`,
+      [TENANT_A, input.roleId, USER_A, code]
+    );
+  }
+  // A scoped grant must carry at least one scope, enforced by a DEFERRABLE
+  // constraint trigger, so the grant and its scope land in ONE transaction.
+  const client = await admin.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query(
+      `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+      [input.grantId, TENANT_A, input.userId, input.roleId, USER_A]
+    );
+    await client.query(
+      `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+       VALUES ($1,$2,'company',$3,NULL,$4)`,
+      [TENANT_A, input.grantId, input.companyId, USER_A]
+    );
+    await client.query('COMMIT');
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+describe('ovw.dashboard-summary-read — a company with no branch at all', () => {
+  const EMPTY_SCOPED_PRINCIPAL: Principal = {
+    roleId: OVW_EMPTY_SCOPED.baseRoleId,
+    userId: OVW_EMPTY_SCOPED.userId,
+    subject: OVW_EMPTY_SCOPED.subject,
+    tenantId: TENANT_A,
+    permissions: DASHBOARD_CODES.filter((code) => code !== STOCK_READ),
+  };
+
+  beforeAll(async () => {
+    await admin.query(
+      `INSERT INTO org.legal_companies
+         (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+       VALUES ($1,$2,'fx_ovw_no_branch','Dashboard Company Without Branches','USD',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [COMPANY_Z, TENANT_A, USER_A]
+    );
+    await seedPrincipal(OVW_EMPTY_FULL);
+    await seedPrincipal(OVW_EMPTY_NO_STOCK);
+    await admin.query(
+      `INSERT INTO iam.user_accounts
+         (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+       VALUES ($1,$2,$3,$4,$4||'@example.test','Dashboard company-scoped','active',$5)
+       ON CONFLICT (id) DO NOTHING`,
+      [OVW_EMPTY_SCOPED.userId, TENANT_A, IDENTITY_PROVIDER, OVW_EMPTY_SCOPED.subject, USER_A]
+    );
+    await seedCompanyScopedRole({
+      userId: OVW_EMPTY_SCOPED.userId,
+      roleId: OVW_EMPTY_SCOPED.baseRoleId,
+      roleCode: 'fx_ovw_empty_base',
+      grantId: OVW_EMPTY_SCOPED.baseGrantId,
+      companyId: COMPANY_Z,
+      codes: EMPTY_SCOPED_PRINCIPAL.permissions,
+    });
+    await seedCompanyScopedRole({
+      userId: OVW_EMPTY_SCOPED.userId,
+      roleId: OVW_EMPTY_SCOPED.stockRoleId,
+      roleCode: 'fx_ovw_empty_stock_elsewhere',
+      grantId: OVW_EMPTY_SCOPED.stockGrantId,
+      companyId: COMPANY_R,
+      codes: [STOCK_READ],
+    });
+    __resetAuthenticatorForTests();
+  });
+
+  it('answers every section the caller holds as a computed zero', async () => {
+    __resetRateLimitForTests();
+    const view = await dashboardAs(OVW_EMPTY_FULL, { companyId: COMPANY_Z, period: 'today' });
+    expect(view.branchIds).toEqual([]);
+    expect(view.period.timezone).toBe('UTC');
+    expect(view.sections.receptionsOpened).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.activeWorkOrders).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.awaitingApproval).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.awaitingParts).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.readyForDelivery).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.completedInPeriod).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.technicianWorkload).toEqual({ status: 'ok', value: [] });
+    expect(view.sections.lowStock).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 0 });
+    expect(view.sections.overdue.status).toBe('unavailable');
+  });
+
+  it('withholds a section the caller lacks rather than answering it with zero', async () => {
+    __resetRateLimitForTests();
+    // Unrestricted and one code short: the section the code gates is withheld,
+    // and every other section is still a computed zero.
+    const unrestricted = await dashboardAs(OVW_EMPTY_NO_STOCK, {
+      companyId: COMPANY_Z,
+      period: 'today',
+    });
+    expect(unrestricted.branchIds).toEqual([]);
+    expect(unrestricted.sections.lowStock).toEqual({ status: 'unauthorized' });
+    expect(unrestricted.sections.receptionsOpened).toEqual({ status: 'ok', value: 0 });
+    expect(unrestricted.sections.readyForDelivery).toEqual({ status: 'ok', value: 0 });
+    expect(unrestricted.sections.technicianWorkload).toEqual({ status: 'ok', value: [] });
+    expect(unrestricted.sections.activeWorkOrders).toEqual({ status: 'ok', value: 0 });
+
+    // Company-scoped here, and holding stock only in ANOTHER company: the stock
+    // section is decided at THIS company's scope, so it is withheld too.
+    const scoped = await dashboardAs(EMPTY_SCOPED_PRINCIPAL, {
+      companyId: COMPANY_Z,
+      period: 'today',
+    });
+    expect(scoped.branchIds).toEqual([]);
+    expect(scoped.sections.lowStock).toEqual({ status: 'unauthorized' });
+    expect(scoped.sections.receptionsOpened).toEqual({ status: 'ok', value: 0 });
+    expect(scoped.sections.readyForDelivery).toEqual({ status: 'ok', value: 0 });
+    expect(scoped.sections.technicianWorkload).toEqual({ status: 'ok', value: [] });
+    expect(scoped.sections.pendingApprovalsCount).toEqual({ status: 'ok', value: 0 });
+  });
+
+  it('still refuses a company the caller cannot see', async () => {
+    __resetRateLimitForTests();
+    // Another tenant's caller, on a real company of this one.
+    authAs(RPT_TENANT_B);
+    const foreign = await dashboard({ companyId: COMPANY_Z, period: 'today' });
+    expect(foreign.status).toBe(403);
+    expect(await foreign.json()).toMatchObject({ code: 'ERR-IAM-001' });
+
+    // An unrestricted caller, on a company that exists nowhere: an empty branch
+    // list is the same answer as for the branchless company above, and only
+    // the visibility read turns this one into a refusal.
+    authAs(OVW_EMPTY_FULL);
+    const nowhere = await dashboard({ companyId: COMPANY_NOWHERE, period: 'today' });
+    expect(nowhere.status).toBe(403);
+    expect(await nowhere.json()).toMatchObject({ code: 'ERR-IAM-001' });
+
+    // The company-scoped caller, on a company where it holds stock but not the
+    // work-order read the operation is entitled by.
+    authAs(EMPTY_SCOPED_PRINCIPAL);
+    const outside = await dashboard({ companyId: COMPANY_R, period: 'today' });
+    expect(outside.status).toBe(403);
+    expect(await outside.json()).toMatchObject({ code: 'ERR-IAM-001' });
+  });
+});

@@ -55,7 +55,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ candidateId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -63,14 +63,17 @@ export async function POST(
   return handleOperation(
     DUPLICATE_REVIEW_OPERATION,
     request,
-    async ({ db, request: raw }) => ({
-      status: 200,
-      body: await crmModule().customerIdentity.reviewCandidate(
-        db,
-        params.candidateId,
-        await parseJsonBody(raw, Body)
-      ),
-    }),
-    { params, body }
+    async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        status: 200,
+        body: await crmModule().customerIdentity.reviewCandidate(
+          db,
+          params.candidateId,
+          await parseJsonBody(raw, Body)
+        ),
+      };
+    },
+    { params: rawParams, body }
   );
 }

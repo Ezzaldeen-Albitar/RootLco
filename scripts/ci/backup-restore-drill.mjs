@@ -32,9 +32,12 @@ import { writeFileSync, existsSync, mkdtempSync, rmSync, statSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { resolveDatabaseTargetOrExit } from '../lib/db-target.mjs';
 
-const HOST = process.env.DB_HOST ?? '127.0.0.1';
-const PORT = process.env.DB_PORT ?? '54322';
+// Resolved in main(), never at import: the unit tier imports this module's pure
+// helpers, and scripts/lib/db-target.mjs refuses a missing or inconsistent port.
+let HOST = '';
+let PORT = 0;
 const USER = process.env.DB_USER ?? 'postgres';
 const SOURCE_DB = process.env.DB_NAME ?? 'postgres';
 const RESTORE_DB = 'rootlco_restore_probe';
@@ -322,6 +325,7 @@ function main(argv) {
     return i === -1 ? undefined : argv[i + 1];
   };
 
+  ({ host: HOST, port: PORT } = resolveDatabaseTargetOrExit({ consumer: 'backup-restore-drill' }));
   const evidence = { host: HOST, sourceDatabase: SOURCE_DB, restoreDatabase: RESTORE_DB };
   const failures = [];
 

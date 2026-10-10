@@ -592,7 +592,7 @@ permission `rec.reception.evidence.manage`, scope `branch`.
 | field                 | rule                                                                                                      |
 | --------------------- | --------------------------------------------------------------------------------------------------------- |
 | `category`            | `mechanical`, `electrical`, `body`, `noise`, `performance`, `other` — `ck_complaints_category`            |
-| `severity`            | `low`, `medium`, `high`, `critical` — `ck_complaints_severity`, defaults to `medium`                      |
+| `severity`            | Optional: `low`, `medium`, `high`, `critical`; omitted, stored as `not_stated` — `ck_complaints_severity` |
 | `complaintText`       | Required, 1 to 4000 characters (`MAX_COMPLAINT_TEXT`). Stored in `rec.complaint_details`, **restricted**. |
 | `reportedByPartnerId` | Optional. Names the customer or agent who reported it.                                                    |
 | `evidenceDocumentId`  | Optional. A document, not a payload.                                                                      |

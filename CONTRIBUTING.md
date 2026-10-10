@@ -63,6 +63,7 @@ Rules:
 ## 3. Pull request process
 
 - Pull requests target `develop`. Never `main`.
+- **Temporary development-path CI policy TDP-2026-10** (Owner approval 2026-10-05; policy text, review point and restoration order in [pr-gate.md](docs/engineering/ci-automation/pr-gate.md)). A pull request into `develop` merges on the required check `ci-gate (development)`, which runs the jobs its change needs and escalates to the full set for workflow, gate, dependency and configuration changes. A merge into `develop` is reported as "merged, full checkpoint verification pending" and never as fully verified. Full verification is still owed at the next checkpoint, at every phase gate, and on the promotion pull request into `main`, whose required checks are unchanged.
 - `main` receives changes only through a reviewed promotion from `develop`, performed by the technical owner.
 - One pull request addresses one task or one coherent group of tasks. Mixed, unrelated changes are rejected.
 - The pull request must use the repository pull request template and complete every section of it.
@@ -99,6 +100,7 @@ The following checks must pass locally before a pull request is opened, and must
 Rules:
 
 - A check that has not been executed is reported as not executed. It is never reported as passing.
+- On the development machine only focused checks run, one heavy operation at a time: the checks for the files a change touches, the affected test files, and the validators the change activates. Full suites, coverage runs and clean-room builds run on GitHub. A local result is recorded as local and is never presented as a GitHub check.
 - Failing checks are fixed, not skipped, disabled or annotated away.
 - `@ts-ignore`, `@ts-expect-error`, `eslint-disable` and equivalent suppressions require an explicit justification in the pull request and reviewer agreement.
 - Independent QA ownership is **not assigned**. Technical tests are currently executed by Eng. Ezzaldeen Al-Bitar under the owner-approved [Solo Developer Review Policy](docs/governance/solo-developer-review-policy.md). This is a recorded, owner-accepted gap; it must remain visible in the risk record and must never be presented as independent verification.
@@ -123,10 +125,22 @@ are enforced by Stylelint where a machine can enforce them, and by review otherw
 - Maximum nesting depth is 2. `!important` requires a documented `stylelint-disable`
   comment explaining why.
 - `npm run style:check` must pass (zero warnings) before every pull request.
-- Do not introduce Tailwind CSS, shadcn/ui, or any other utility framework or component
-  library without an owner decision — their adoption is Open (ADR-002). If adopted, the
+- The component layer is Material UI with the MUI X Community (MIT) editions, and Tailwind
+  CSS coexists for layout and spacing utilities (ADR-022, which supersedes ADR-020). The
   division of responsibility recorded in ADR-013 applies, and the same rule must not be
-  duplicated across Sass, the framework, and inline styles without a documented reason.
+  duplicated across Sass, Tailwind, Material style objects and inline styles without a
+  documented reason.
+  - Cascade layers (`src/styles/_layers.scss`): `rootlco-reset`, then `mui`, then unlayered
+    Tailwind utilities and SCSS Modules, which win over Material.
+  - `sx`, `styled()` and theme objects use tokens only (`var(--…)` or the generated
+    `src/styles/tokens/generated/tokens.ts`), logical properties only, and no raw length,
+    duration or colour. `npm run validate:web-tokens` enforces it.
+  - Shared RootLco wrappers live in `apps/web/src/components/` — the foundation in
+    `components/ui-foundation/`, the operational grid at `components/data/OperationalGrid*`.
+    Feature code uses the wrappers.
+  - No competing design system and no second utility framework. Base UI only where Material
+    has no primitive. MUI X Pro or Premium packages and `@mui/x-license` are forbidden without a
+    recorded licence entitlement.
 - Brand colours are not approved. All colour tokens are neutral defaults pending design
   approval; do not invent brand values.
 
@@ -192,13 +206,68 @@ Rules:
 
 ### Pre-push step for schema and seed changes
 
-No local aggregate runs the Database tier. `npm run verify:workspaces` deliberately does not, because it is the command run before **every** commit — including a documentation-only one — and the hosted clean room mirrors it to claim that a fresh clone passes exactly what a developer runs. Requiring a live PostgreSQL would make that claim false for anyone without the stack up.
+No local aggregate runs the Database tier. `npm run verify:workspaces` deliberately does not, because it is the command run before **every** commit — including a documentation-only one — and the hosted clean room mirrors it to claim that a fresh clone passes exactly what a developer runs. (While TDP-2026-10 is in force, the clean room of a pull request into `develop` runs a development profile that leaves out the parts other jobs of the same run already prove; the full aggregate runs at every checkpoint and on every pull request into `main`.) Requiring a live PostgreSQL would make that claim false for anyone without the stack up.
 
-So any change touching `supabase/seeds/**` or `supabase/migrations/**` runs this before pushing, with the local stack up:
+**Standing verification policy, recorded 2026-09-09 (Owner).** The sentence above describes what `verify:workspaces` is _for_; it is not a per-commit prerequisite. A contributor runs the targeted local checks relevant to the change — the typecheck, lint and format commands for the workspaces touched, the affected test tiers, and the validators the change activates — and relies on the required hosted checks, which run the production builds and the browser smoke, for the aggregate. The full local aggregate remains available and is recommended before a promotion, or whenever a change is wide enough that no targeted set covers it. This qualifies the convention; it removes no check. A check that was not run is reported as not run, and nothing in this policy permits stating that a gate passed when it was not executed.
+
+So any change touching `supabase/seeds/**` or `supabase/migrations/**` runs `verify:database` before pushing, against a **disposable** database — never against the shared local Supabase stack that holds the acceptance database.
+
+> **Never run `npm run supabase:reset` (`supabase db reset`) on the shared local stack.** It deletes every row in the local database, including the acceptance tenant, the Owner account and every fixture. An existing acceptance database is brought forward only with the non-destructive path in section 19.4 of [`docs/platform/environment-configuration.md`](docs/platform/environment-configuration.md); a reset is permitted only under its section 19.5, when an empty database is being rebuilt on purpose.
+
+The disposable path mirrors the hosted `database` job: a throwaway `postgres:17-alpine` container on a port of its own (55440 here, so it can never be confused with the stack on 54322 or with the isolated clusters earlier phase records name on 55432), `npm run db:apply-migrations` to replay every migration into it — that runner refuses any database that already holds module schemas — and then `verify:database`. The container uses `trust` authentication, so no password is involved; its port is published on loopback only (`127.0.0.1`), so nothing else on the network can reach it; and `--rm` deletes it when it stops. Each form waits, up to 30 tries one second apart, until `pg_isready` inside the container accepts a **TCP** connection — the image's first-start initialisation runs a temporary server on a socket only, so a socket probe can report ready too early — and fails clearly if it never does. Each form stops at the first failing step, and always clears `DB_PORT` and stops the container, whether it succeeded or not.
+
+PowerShell:
+
+```powershell
+& {
+  $ErrorActionPreference = 'Stop'
+  docker run --rm -d --name rootlco-migration-check -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:55440:5432 postgres:17-alpine
+  if ($LASTEXITCODE -ne 0) { throw "docker run failed (exit $LASTEXITCODE)" }
+  try {
+    $ready = $false
+    foreach ($attempt in 1..30) {
+      docker exec rootlco-migration-check pg_isready -h 127.0.0.1 -p 5432 -U postgres
+      if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+      Start-Sleep -Seconds 1
+    }
+    if (-not $ready) { throw 'PostgreSQL did not accept TCP connections within 30 seconds' }
+    $env:DB_PORT = '55440'
+    npm run db:apply-migrations
+    if ($LASTEXITCODE -ne 0) { throw "db:apply-migrations failed (exit $LASTEXITCODE)" }
+    npm run verify:database
+    if ($LASTEXITCODE -ne 0) { throw "verify:database failed (exit $LASTEXITCODE)" }
+  } finally {
+    Remove-Item Env:DB_PORT -ErrorAction SilentlyContinue
+    docker stop rootlco-migration-check
+  }
+}
+```
+
+bash:
 
 ```bash
-npm run supabase:start && npm run supabase:reset && npm run verify:database
+(
+  set -eu
+  docker run --rm -d --name rootlco-migration-check -e POSTGRES_HOST_AUTH_METHOD=trust -p 127.0.0.1:55440:5432 postgres:17-alpine
+  trap 'docker stop rootlco-migration-check' EXIT
+  tries=0
+  until docker exec rootlco-migration-check pg_isready -h 127.0.0.1 -p 5432 -U postgres; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 30 ]; then
+      echo 'PostgreSQL did not accept TCP connections within 30 seconds' >&2
+      exit 1
+    fi
+    sleep 1
+  done
+  export DB_PORT=55440
+  npm run db:apply-migrations
+  npm run verify:database
+)
 ```
+
+`DB_PORT` is cleared on purpose — the bash form sets it only inside the subshell, the PowerShell form removes it in `finally` — because while it is set, every database command in that shell targets the throwaway container. The container is plain PostgreSQL, not the Supabase stack, so role attributes differ exactly as they do in the hosted job (`docs/database/migration-standard.md` section 15).
+
+**Running `test:db`, `test:backend` or `test:db-fixture` locally.** Every database tier, and every database script, needs its target named: set `DB_PORT` to the disposable database's port (55440 above). There is no default port any more. If you also set `PGPORT`, it must hold the same value, and the same for `PGHOST` and `DB_HOST`. A missing or disagreeing port stops the command before it connects, with the reason, and so does port 54322 on this machine — the Supabase stack that holds the acceptance database — unless `ROOTLCO_ACCEPTANCE_DB=authorised-forward-apply` is set. That variable belongs to the backup, rehearsal and forward-apply procedure for the acceptance database only; never set it to make a test tier run. The rule, its single resolver (`scripts/lib/db-target.mjs`) and its exceptions are in [`docs/database/migration-standard.md`](docs/database/migration-standard.md) section 16. Hosted CI is unaffected: its database jobs already set `DB_PORT`.
 
 `verify:database` is the local mirror of the hosted `database` job in `ci.yml`, in that job’s own order: `validate:seed-state`, the six `verify:classifications` validators, then `test:db`.
 
@@ -237,7 +306,7 @@ The platform is multi-tenant, multi-company and multi-branch, and its behaviour 
 - All work reaches `develop` through a pull request from a working branch, reviewed under the [Solo Developer Review Policy](docs/governance/solo-developer-review-policy.md).
 - `main` is updated only by a reviewed promotion from `develop`, performed by the technical owner.
 - History on `main` and `develop` is not rewritten. No force push, no amend of published commits, no rebase of shared branches.
-- Enforcement note: the required-check names in the ruleset must match the names GitHub actually reports — see [github-required-checks.md](docs/phase-1/phase-1-1/github-required-checks.md). The live ruleset is administered in the GitHub UI; the build environment has no GitHub CLI or token and cannot inspect or change it.
+- Enforcement note: the required-check names in the ruleset must match the names GitHub actually reports — see [github-required-checks.md](docs/phase-1/phase-1-1/github-required-checks.md). While TDP-2026-10 is in force the names differ by branch: `main` requires `ci-gate` and the four `ci.yml` names, unchanged; `develop` is moved to `ci-gate (development)` in a separate, recorded ruleset step. The live ruleset is administered in the GitHub UI; the build environment has no GitHub CLI or token and cannot inspect or change it.
 
 ## 12. Phase discipline
 

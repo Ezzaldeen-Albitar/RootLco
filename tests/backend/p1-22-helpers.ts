@@ -61,6 +61,23 @@
  *    stamps the maker from the session and `sal.guard_dual_control_approval` refuses
  *    `approved_by = requested_by`, so maker ≠ approver has to be satisfiable by two
  *    real accounts rather than by one account used twice.
+ *  - `SAL_CASHIER` holds `sal.finance.view` and `sal.payment.allocate` ONLY — the
+ *    cash desk that applies receipts to invoices and authors none. It exists to prove
+ *    that finding an invoice to allocate to never demands an invoice-writing code
+ *    (Owner directive, P1-32-PRE-OD-UX, the branch invoice list).
+ *  - `SAL_FINANCE_NAMES` holds `sal.finance.view`, `crm.customer.read` and
+ *    `veh.vehicle.read` ONLY — the finance viewer who may also read customers and
+ *    vehicles. It is the positive control for the invoice list's least-privilege
+ *    rule: it is told the payer's name and its box matches a payer name, a plate and
+ *    a VIN, where `SAL_READER` and `SAL_CASHIER` (finance view without those reads)
+ *    are told nothing and match by invoice number alone.
+ *  - `SAL_FINANCE_CUSTOMERS` holds `sal.finance.view` and `crm.customer.read` ONLY,
+ *    and `SAL_FINANCE_VEHICLES` holds `sal.finance.view` and `veh.vehicle.read`
+ *    ONLY. Each holds exactly one of the two reads, so the list must answer each
+ *    read from its own code: the first is told the payer's name and matches by it
+ *    but not by plate or VIN; the second is told nothing of the payer and matches
+ *    by plate and VIN but not by payer name. A list that asked the two questions
+ *    the wrong way round would pass every principal holding both reads or neither.
  *  - `SAL_READER` holds `sal.finance.view` and `sal.delivery.view` only. It is the
  *    403 probe for every command: a principal that holds NEITHER
  *    `sal.payment.record` nor `wty.warranty.issue`, in a tenant where the rows are
@@ -97,13 +114,39 @@ export const INVOICE_ISSUE = 'sal.invoice.issue';
 export const PAYMENT_RECORD = 'sal.payment.record';
 export const PAYMENT_ALLOCATE = 'sal.payment.allocate';
 export const CREDIT_MANAGE = 'sal.credit.manage';
+/**
+ * Deciding a credit note (Owner decision D13, ADR-023, P1-32-PRE-OD-FD2C): the
+ * approval and the rejection declare it in place of `sal.credit.manage`. Held by every
+ * principal that holds the full `sal`/`wty` set, which models an operator with the
+ * whole finance authority; an approval additionally needs a credit-note limit, which
+ * `establishP1_22Fixtures` sets for each of them.
+ */
+export const CREDIT_APPROVE = 'sal.credit.approve';
 export const REVERSAL_APPROVE = 'sal.reversal.approve';
+/**
+ * Deciding a refund request (Owner decision D2, part 2, ADR-023, P1-32-PRE-OD-FD2B):
+ * the approval and the rejection declare it. Held by every principal that holds the
+ * full `sal`/`wty` set, as the other decision codes are.
+ */
+export const REFUND_APPROVE = 'sal.refund.approve';
 export const FINANCE_VIEW = 'sal.finance.view';
 export const DELIVERY_MANAGE = 'sal.delivery.manage';
 export const DELIVERY_COMPLETE = 'sal.delivery.complete';
 export const DELIVERY_VIEW = 'sal.delivery.view';
 export const POLICY_MANAGE = 'wty.policy.manage';
 export const WARRANTY_ISSUE = 'wty.warranty.issue';
+/**
+ * Minted by P1-31 prerequisite P-7 (2026-09-08).
+ *
+ * `wty.warranty-detail` used to declare `wty.warranty.issue`, so a caller holding
+ * the twelve codes below could read a warranty because it could create one. It now
+ * declares this read code, and the unrestricted principals hold it for the same
+ * reason they hold the other eleven: they model an operator with the full `sal`/`wty`
+ * authority, which after the re-point includes reading a warranty. The DENIAL cases
+ * are unaffected — `SAL_READER` holds neither code, and
+ * `tests/backend/p1-31-warranty-read-seam.test.ts` owns the read-code proof.
+ */
+export const WARRANTY_READ = 'wty.warranty.read';
 /**
  * Held so a `sal`/`wty` principal may read the work order a warranty cites.
  *
@@ -115,19 +158,31 @@ export const WARRANTY_ISSUE = 'wty.warranty.issue';
  */
 export const WORK_ORDER_READ = 'wo.work_order.read';
 
+/**
+ * The customer and vehicle read codes, held ONLY by `SAL_FINANCE_NAMES` (both) and by
+ * `SAL_FINANCE_CUSTOMERS` and `SAL_FINANCE_VEHICLES` (one each). Both are
+ * seeded platform codes (`supabase/seeds/04_iam_permission_catalog.sql`); nothing
+ * here invents one.
+ */
+export const CUSTOMER_READ = 'crm.customer.read';
+export const VEHICLE_READ = 'veh.vehicle.read';
+
 const ALL_SAL_WTY = [
   INVOICE_MANAGE,
   INVOICE_ISSUE,
   PAYMENT_RECORD,
   PAYMENT_ALLOCATE,
   CREDIT_MANAGE,
+  CREDIT_APPROVE,
   REVERSAL_APPROVE,
+  REFUND_APPROVE,
   FINANCE_VIEW,
   DELIVERY_MANAGE,
   DELIVERY_COMPLETE,
   DELIVERY_VIEW,
   POLICY_MANAGE,
   WARRANTY_ISSUE,
+  WARRANTY_READ,
   WORK_ORDER_READ,
 ];
 
@@ -138,13 +193,16 @@ const CATALOGUE: readonly (readonly [string, string])[] = [
   [PAYMENT_RECORD, 'sal'],
   [PAYMENT_ALLOCATE, 'sal'],
   [CREDIT_MANAGE, 'sal'],
+  [CREDIT_APPROVE, 'sal'],
   [REVERSAL_APPROVE, 'sal'],
+  [REFUND_APPROVE, 'sal'],
   [FINANCE_VIEW, 'sal'],
   [DELIVERY_MANAGE, 'sal'],
   [DELIVERY_COMPLETE, 'sal'],
   [DELIVERY_VIEW, 'sal'],
   [POLICY_MANAGE, 'wty'],
   [WARRANTY_ISSUE, 'wty'],
+  [WARRANTY_READ, 'wty'],
 ];
 
 /** An unrelated permission used only to widen a grant union. Never authority. */
@@ -259,6 +317,58 @@ export const SAL_NO_FINANCE: Principal = {
   permissions: ALL_SAL_WTY.filter((code) => code !== FINANCE_VIEW),
 };
 
+/** The cash desk: finance view and allocation, and no invoice-writing code. See the file header. */
+export const SAL_CASHIER: Principal = {
+  roleId: 'f1220000-0000-4000-8000-000000000171',
+  userId: 'f1220000-0000-4000-8000-000000000172',
+  subject: 'fx_p1_22_cashier',
+  tenantId: TENANT_A,
+  permissions: [FINANCE_VIEW, PAYMENT_ALLOCATE],
+};
+
+/** Finance view plus the customer and vehicle reads, and nothing else. See the file header. */
+export const SAL_FINANCE_NAMES: Principal = {
+  roleId: 'f1220000-0000-4000-8000-000000000181',
+  userId: 'f1220000-0000-4000-8000-000000000182',
+  subject: 'fx_p1_22_finance_names',
+  tenantId: TENANT_A,
+  permissions: [FINANCE_VIEW, CUSTOMER_READ, VEHICLE_READ],
+};
+
+/**
+ * The credit code and the finance view, with the customer read and the
+ * identity-directory read (finance checkpoint, DF-B4). The credit-note detail read
+ * names the invoice's payer only for a reader holding `crm.customer.read` and the
+ * people on the note only for one holding `iam.user.read`; no other principal
+ * here holds both beside the credit code, so without this one the read's naming
+ * branches could not be reached and its null branches would prove nothing.
+ */
+export const SAL_CREDIT_TRACE: Principal = {
+  roleId: 'f1220000-0000-4000-8000-0000000001c1',
+  userId: 'f1220000-0000-4000-8000-0000000001c2',
+  subject: 'fx_p1_22_credit_trace',
+  tenantId: TENANT_A,
+  permissions: [CREDIT_MANAGE, FINANCE_VIEW, CUSTOMER_READ, 'iam.user.read'],
+};
+
+/** Finance view plus the customer read ONLY. See the file header. */
+export const SAL_FINANCE_CUSTOMERS: Principal = {
+  roleId: 'f1220000-0000-4000-8000-000000000191',
+  userId: 'f1220000-0000-4000-8000-000000000192',
+  subject: 'fx_p1_22_finance_customers',
+  tenantId: TENANT_A,
+  permissions: [FINANCE_VIEW, CUSTOMER_READ],
+};
+
+/** Finance view plus the vehicle read ONLY. See the file header. */
+export const SAL_FINANCE_VEHICLES: Principal = {
+  roleId: 'f1220000-0000-4000-8000-0000000001a1',
+  userId: 'f1220000-0000-4000-8000-0000000001a2',
+  subject: 'fx_p1_22_finance_vehicles',
+  tenantId: TENANT_A,
+  permissions: [FINANCE_VIEW, VEHICLE_READ],
+};
+
 /** Reads only. A command refusal from it is about authority, not tenancy. */
 export const SAL_READER: Principal = {
   roleId: 'f1220000-0000-4000-8000-000000000131',
@@ -316,6 +426,11 @@ export const P1_22_PRINCIPALS: readonly Principal[] = [
   SAL_FULL,
   SAL_APPROVER,
   SAL_NO_FINANCE,
+  SAL_CASHIER,
+  SAL_FINANCE_NAMES,
+  SAL_FINANCE_CUSTOMERS,
+  SAL_FINANCE_VEHICLES,
+  SAL_CREDIT_TRACE,
   SAL_READER,
   SAL_SCOPED_A2,
   SAL_PERMISSION_ELSEWHERE,
@@ -604,6 +719,33 @@ export async function establishP1_22Fixtures(pool: Pool): Promise<void> {
     branchId: BRANCH_A9,
   });
 
+  // ---- Credit-note approval limits (ADR-023, D13) ----------------------------
+  //
+  // An approval needs a `credit_note` limit in the note's currency that somebody
+  // else set and that covers the invoice's approved credit. Every principal holding
+  // the approval code gets one per fixture currency in each company of its tenant,
+  // set by USER_A — who is none of them — and large enough that no P1-22 suite meets
+  // it by accident. `tests/backend/od-finance-credit-limits.test.ts` owns the limit
+  // proofs on principals of its own. Idempotent: one per (user, company, currency).
+  for (const principal of P1_22_PRINCIPALS) {
+    if (!principal.permissions.includes(CREDIT_APPROVE)) continue;
+    const companies = principal.tenantId === TENANT_A ? [COMPANY_A1, COMPANY_A9] : [COMPANY_B1];
+    for (const companyId of companies) {
+      for (const currency of ['USD', 'JOD']) {
+        await admin.query(
+          `INSERT INTO iam.approval_limits
+             (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+           SELECT $1, $2, $3, 'credit_note', 1000000, $4, '2020-01-01'::date, $5
+            WHERE NOT EXISTS (
+              SELECT 1 FROM iam.approval_limits
+               WHERE tenant_id = $1 AND company_id = $2 AND user_id = $3
+                 AND limit_type = 'credit_note' AND currency_code = $4)`,
+          [principal.tenantId, companyId, principal.userId, currency, USER_A]
+        );
+      }
+    }
+  }
+
   // ---- Numbering sequences --------------------------------------------------
   //
   // `shared.next_display_number` matches the scope EXACTLY
@@ -764,6 +906,65 @@ export interface WorkOrderChain {
  * privileged subject, so a test must call `authAs` again before the request it
  * asserts on.
  */
+/**
+ * The `org.employees` row a fixture delivery names, created on demand (P1-31 P-17).
+ *
+ * `sal.delivery_records.delivering_employee_id` carried NO foreign key until that
+ * slice, which is why every fixture in this repository used to pass `USER_A` — a
+ * LOGIN ACCOUNT id — as the person who handed the vehicle over. It now points at
+ * `org.employees` on `(tenant_id, id)`, and
+ * `sal.stamp_delivering_employee_identity` additionally requires the employee to be
+ * live and active. So a fixture must have one.
+ *
+ * The fixture is still created in the delivery's own branch, which is normal
+ * rather than required: the home branch is informational since the Owner
+ * clarification of 2026-09-10, and the cross-branch case is asserted where it
+ * belongs, in `p1-31-delivering-employee-seam.test.ts`.
+ *
+ * Deliberately created with NO `user_account_id`. Two reasons, and both are
+ * properties of the schema rather than preferences: `uq_employees_user_account_live`
+ * admits ONE employee per account per tenant, so linking `USER_A` would make a
+ * second branch's fixture employee impossible; and an accountless employee is the
+ * case the whole table exists for, so the shared fixture should be one.
+ *
+ * Keyed on `employment_ref` so it is created once per branch and reused, and so the
+ * row is recognisable as fixture state rather than as an organisation's real roster.
+ */
+export async function deliveringEmployeeFor(scope: {
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly tenantId?: string;
+}): Promise<string> {
+  const tenantId = scope.tenantId ?? TENANT_A;
+  const employmentRef = `fx_p122_emp_${scope.branchId}`;
+  const found = await admin.query<{ id: string }>(
+    `SELECT id FROM org.employees WHERE tenant_id = $1 AND employment_ref = $2`,
+    [tenantId, employmentRef]
+  );
+  const existing = found.rows[0]?.id;
+  if (existing !== undefined) return existing;
+  const created = await admin.query<{ id: string }>(
+    `INSERT INTO org.employees
+       (tenant_id, company_id, branch_id, display_name, employment_ref, created_by)
+     VALUES ($1,$2,$3,'Fixture handover officer',$4,$5) RETURNING id`,
+    [tenantId, scope.companyId, scope.branchId, employmentRef, USER_A]
+  );
+  const id = created.rows[0]?.id;
+  if (id === undefined) throw new Error('fixture employee insert returned no row');
+  return id;
+}
+
+/** The same employee, resolved from a work order's own company and branch. */
+export async function deliveringEmployeeForWorkOrder(workOrderId: string): Promise<string> {
+  const { rows } = await admin.query<{ company_id: string; branch_id: string }>(
+    `SELECT company_id, branch_id FROM wo.work_orders WHERE id = $1`,
+    [workOrderId]
+  );
+  const scope = rows[0];
+  if (scope === undefined) throw new Error(`work order ${workOrderId} is not visible`);
+  return deliveringEmployeeFor({ companyId: scope.company_id, branchId: scope.branch_id });
+}
+
 export async function seedWorkOrderChain(
   tag: string,
   options: { readonly companyId?: string; readonly branchId?: string } = {}
@@ -973,12 +1174,21 @@ export async function seedDelivery(
   const odometer = options.odometer ?? DELIVERY_ODOMETER;
   await linkSignatureDocumentToWorkOrder(chain.workOrderId);
 
+  // P1-31 P-17: the delivering employee is now a real `org.employees` identity,
+  // bound by a foreign key and re-checked by a BEFORE INSERT trigger. Resolved
+  // BEFORE the transaction so the fixture employee is committed and visible to the
+  // trigger's own lookup.
+  const deliveringEmployeeId = await deliveringEmployeeFor({
+    companyId: chain.companyId,
+    branchId: chain.branchId,
+  });
+
   return inTenantTransaction(TENANT_A, USER_A, async (client) => {
     const delivery = await client.query<{ id: string }>(
       `INSERT INTO sal.delivery_records
          (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id,
           delivering_employee_id, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING id`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [
         TENANT_A,
         chain.companyId,
@@ -986,6 +1196,7 @@ export async function seedDelivery(
         chain.workOrderId,
         chain.visitId,
         chain.vehicleId,
+        deliveringEmployeeId,
         USER_A,
       ]
     );
@@ -1193,6 +1404,8 @@ export async function cleanP1_22Fixtures(): Promise<void> {
       'sal.delivery_checklist_templates',
       'sal.payment_allocations',
       'sal.receipt_reversals',
+      'sal.refund_requests',
+      'sal.refund_obligations',
       'sal.credit_notes',
       'sal.receipts',
       'sal.invoice_status_history',
@@ -1202,6 +1415,9 @@ export async function cleanP1_22Fixtures(): Promise<void> {
       'sal.invoice_numbering_configs',
       'sal.invoices',
       'sal.payment_methods',
+      // AFTER sal.delivery_records, because fk_delivery_records_delivering_employee
+      // is ON DELETE RESTRICT and a surviving delivery blocks the employee's delete.
+      'org.employees',
     ]) {
       await client.query(`DELETE FROM ${table} WHERE tenant_id = ANY($1::uuid[])`, [tenants]);
     }

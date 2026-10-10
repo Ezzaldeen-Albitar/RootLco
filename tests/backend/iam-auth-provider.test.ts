@@ -19,6 +19,7 @@
  *   iam.auth-login: success denial audit
  *   iam.auth-logout: success audit idempotency
  *   iam.auth-session: success
+ *   iam.working-context-read: success
  *   iam.auth-password-reset: success denial
  *   iam.auth-password-reset-completion: success denial idempotency
  *   iam.invitation-create: success denial cross-tenant audit outbox
@@ -29,6 +30,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import type { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import {
+  COMPANY_A1,
   TENANT_A,
   TENANT_B,
   USER_A,
@@ -45,6 +47,10 @@ import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { withTransaction } from '@/server/db/transaction';
 import { AppFailure } from '@/server/errors/app-failure';
 import { setIdentityProvider, FakeIdentityProvider } from '@/modules/iam';
+import type { WorkingContextView } from '@/modules/iam';
+import { WorkingContextService } from '@/modules/iam/application/working-context-service';
+import { WorkingContextRepository } from '@/modules/iam/data/working-context-repository';
+import { resolveScopeFor } from '@/server/context/resolve-context';
 import { AuthenticationService } from '@/modules/iam/application/authentication-service';
 import { InvitationService } from '@/modules/iam/application/invitation-service';
 import { AuthorizationRepository } from '@/modules/iam/data/authorization-repository';
@@ -52,6 +58,8 @@ import { IdentityRepository } from '@/modules/iam/data/identity-repository';
 import { IdentityPolicy } from '@/modules/iam/domain/identity-policy';
 import { CredentialPolicy } from '@/modules/iam/domain/credential-policy';
 import { DelegationPolicy } from '@/modules/iam/domain/delegation-policy';
+import { OrganizationSettingsService } from '@/modules/iam/application/organization-settings-service';
+import { OrganizationRepository } from '@/modules/iam/data/organization-repository';
 
 const SECRET = 'iam-auth-provider-test-secret-not-real';
 const ISSUER = 'https://auth.test.local/auth/v1';
@@ -651,6 +659,35 @@ describe('iam.auth-session', () => {
     expect(summary.email).toBe(EMAIL_ACTIVE);
     expect(Array.isArray(summary.permissions)).toBe(true);
   });
+
+  /**
+   * P1-32-PRE-OD-FRX. The read is an authenticated self-read: it declares no
+   * permission code, so the service must be safe to answer for a principal that
+   * holds nothing. U_ACTIVE holds no role grant at all in this suite, and the
+   * answer is exactly its own seven facts with an empty permission list — no
+   * other account's identifier, address or name.
+   */
+  it('describeSession answers a principal with no role at all only its own facts', async () => {
+    const summary = await withTransaction(
+      contextFor({ userId: U_ACTIVE, operation: 'iam.auth-session', module: 'iam' }),
+      (db) => authService.describeSession(db)
+    );
+    expect(Object.keys(summary).sort()).toEqual([
+      'branchIds',
+      'companyIds',
+      'displayName',
+      'email',
+      'permissions',
+      'tenantId',
+      'userId',
+    ]);
+    expect(summary.permissions).toEqual([]);
+    expect(summary.displayName).toBe('Auth Active');
+    const serialised = JSON.stringify(summary);
+    for (const other of [U_ADMIN, U_NOAUTH, USER_A, EMAIL_ADMIN, EMAIL_NOAUTH]) {
+      expect(serialised).not.toContain(other);
+    }
+  });
 });
 
 // ===========================================================================
@@ -693,15 +730,41 @@ describe('iam.auth-password-reset-completion', () => {
     return fake.deliveries[0]!.token;
   }
 
-  it('completes a reset and invalidates every session issued before it', async () => {
+  /**
+   * DEF-T-11 on the RESET path.
+   *
+   * This case used to be called "completes a reset and invalidates every
+   * session issued before it" and asserted that the pre-reset ACCESS token
+   * stopped verifying. It was green only because the double revoked issued
+   * access tokens; the adapter ends a reset by calling the provider's global
+   * sign-out, which revokes REFRESH tokens and cannot reach a signed access
+   * token that has already been handed out. So the test proved a sign-out the
+   * deployed system does not perform — the same shape of false green that let
+   * the console tell an operator their other devices had been signed out.
+   *
+   * Both halves are asserted separately now: the refresh token IS gone, and the
+   * access token is NOT, which bounds the residual by the token's own expiry
+   * and by nothing else — this product publishes no refresh route.
+   */
+  it('completes a reset, ends the refresh token, and leaves an issued access token valid', async () => {
     const login = await authService.login(
       { tenantId: TENANT_A, email: EMAIL_ACTIVE, password: PASSWORD },
       META
     );
     const token = await recoveryToken();
     await authService.completePasswordReset({ token, password: 'a-new-strong-password' });
-    // The pre-reset access token no longer verifies (session revoked by the provider).
-    await expect(fake.verifyToken(login.accessToken)).rejects.toThrow();
+
+    // The old credential is gone, and the session cannot extend itself.
+    await expect(
+      authService.login({ tenantId: TENANT_A, email: EMAIL_ACTIVE, password: PASSWORD }, META)
+    ).rejects.toThrow();
+    expect(login.refreshToken).not.toBeNull();
+    await expect(fake.refreshSession(login.refreshToken as string)).rejects.toMatchObject({
+      reason: 'invalid-token',
+    });
+
+    // The residual, stated rather than assumed.
+    await expect(fake.verifyToken(login.accessToken)).resolves.toBeTruthy();
   });
 
   it('a replayed recovery token is refused (single use)', async () => {
@@ -954,5 +1017,294 @@ describe('iam.invitation-activate', () => {
       [id]
     );
     expect(status.rows[0]?.status).toBe('invited');
+  });
+});
+
+// ===========================================================================
+// iam.working-context-read (Owner directive, P1-32-PRE-OD-UX)
+//
+// The whole chain is exercised rather than a slice of it: real grants are
+// written, the scope is RESOLVED from them by `resolveScopeFor` exactly as the
+// request pipeline resolves it, that scope becomes the transaction's context,
+// and the service is then answered by `sel_legal_companies_tenant` /
+// `sel_branches_scope` under the deployed `app_runtime` identity. Nothing about
+// the narrowing is asserted from a value the test itself chose.
+// ===========================================================================
+describe('iam.working-context-read', () => {
+  // A second company and three further branches in tenant A, plus a company and
+  // branch in tenant B. Codes are `fx_wctx_*` so no other suite's prefix sweep
+  // touches them, and so the isolation assertion has a real foreign row to miss.
+  const COMPANY_W2 = 'a1000000-0000-4000-8000-000000000002';
+  const BRANCH_W1 = 'a1100000-0000-4000-8000-000000000011';
+  const BRANCH_W2 = 'a1100000-0000-4000-8000-000000000012';
+  const BRANCH_W3 = 'a1100000-0000-4000-8000-000000000013';
+  const COMPANY_WB = 'b1000000-0000-4000-8000-000000000001';
+  const BRANCH_WB = 'b1100000-0000-4000-8000-000000000001';
+
+  const U_WCTX_BRANCH = 'c1400000-0000-4000-8000-0000000000c1';
+  const U_WCTX_ALL = 'c1400000-0000-4000-8000-0000000000c2';
+  const U_WCTX_NONE = 'c1400000-0000-4000-8000-0000000000c3';
+  const ROLE_WCTX = 'd1400000-0000-4000-8000-0000000000c1';
+  const GRANT_WCTX_BRANCH = 'e1400000-0000-4000-8000-0000000000c1';
+  // Finance QA fixes D: a role carrying ONE branch-gated action code, granted to
+  // the branch-scoped caller in BRANCH_W1 only.
+  const ROLE_WCTX_CREDIT = 'd1400000-0000-4000-8000-0000000000c2';
+  const GRANT_WCTX_CREDIT = 'e1400000-0000-4000-8000-0000000000c2';
+  const WCTX_SUBJECTS: Readonly<Record<string, string>> = {
+    [U_WCTX_BRANCH]: 'fx_wctx_branch',
+    [U_WCTX_ALL]: 'fx_wctx_all',
+    [U_WCTX_NONE]: 'fx_wctx_none',
+  };
+
+  let workingContext: WorkingContextService;
+
+  /** Resolves the caller's scope from its GRANTS, then runs the read under it. */
+  async function readAs(userId: string): Promise<WorkingContextView> {
+    const scope = await withTransaction(
+      contextFor({ userId, operation: 'iam.working-context-read', module: 'iam' }),
+      (db) =>
+        resolveScopeFor(db, {
+          identityProvider: 'test_harness',
+          providerSubject: WCTX_SUBJECTS[userId] as string,
+          tenantId: TENANT_A,
+        })
+    );
+    expect(scope).not.toBeNull();
+    return withTransaction(
+      contextFor({
+        userId,
+        operation: 'iam.working-context-read',
+        module: 'iam',
+        companyIds: scope?.companyIds ?? [],
+        branchIds: scope?.branchIds ?? [],
+      }),
+      (db) => workingContext.describe(db)
+    );
+  }
+
+  beforeAll(async () => {
+    workingContext = new WorkingContextService(
+      new WorkingContextRepository(),
+      new OrganizationSettingsService(
+        new OrganizationRepository(),
+        new AuthorizationRepository(),
+        new DelegationPolicy()
+      )
+    );
+
+    await admin.query(
+      `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+       VALUES ($1, $2, 'fx_wctx_company_a2', 'Working Context Company A2', 'USD', $3)
+       ON CONFLICT (id) DO NOTHING`,
+      [COMPANY_W2, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO org.legal_companies (id, tenant_id, company_code, legal_name, base_currency_code, created_by)
+       VALUES ($1, $2, 'fx_wctx_company_b1', 'Working Context Company B1', 'USD', $3)
+       ON CONFLICT (id) DO NOTHING`,
+      [COMPANY_WB, TENANT_B, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+       VALUES ($1,$4,$5,'fx_wctx_b1','Working Context Branch One','UTC',$7),
+              ($2,$4,$5,'fx_wctx_b2','Working Context Branch Two','UTC',$7),
+              ($3,$4,$6,'fx_wctx_b3','Working Context Branch Three','UTC',$7)
+       ON CONFLICT (id) DO NOTHING`,
+      [BRANCH_W1, BRANCH_W2, BRANCH_W3, TENANT_A, COMPANY_A1, COMPANY_W2, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO org.branches (id, tenant_id, company_id, branch_code, name, timezone_name, created_by)
+       VALUES ($1,$2,$3,'fx_wctx_bb1','Working Context Branch Other Tenant','UTC',$4)
+       ON CONFLICT (id) DO NOTHING`,
+      [BRANCH_WB, TENANT_B, COMPANY_WB, USER_A]
+    );
+
+    for (const [id, subject] of Object.entries(WCTX_SUBJECTS)) {
+      await admin.query(
+        `INSERT INTO iam.user_accounts
+           (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+         VALUES ($1,$2,'test_harness',$3,$4,'Working Context Fixture','active',$5)
+         ON CONFLICT (id) DO NOTHING`,
+        [id, TENANT_A, subject, `${subject}@example.test`, USER_A]
+      );
+    }
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,'fx_wctx_reader','Working context reader',$3) ON CONFLICT (id) DO NOTHING`,
+      [ROLE_WCTX, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1,$2,id,'allow',$3 FROM iam.permissions
+        WHERE permission_code IN ('iam.user.read', 'org.company.read')
+       ON CONFLICT DO NOTHING`,
+      [TENANT_A, ROLE_WCTX, USER_A]
+    );
+    await admin.query('DELETE FROM iam.role_grants WHERE user_id = ANY($1::uuid[])', [
+      [U_WCTX_BRANCH, U_WCTX_ALL, U_WCTX_NONE],
+    ]);
+    // Branch-scoped over two branches of COMPANY_A1 and nothing in COMPANY_W2.
+    // The grant and its scopes land in ONE transaction because the "a scoped
+    // grant needs a scope" trigger is deferred.
+    const client = await admin.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+         VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+        [GRANT_WCTX_BRANCH, TENANT_A, U_WCTX_BRANCH, ROLE_WCTX, USER_A]
+      );
+      for (const branchId of [BRANCH_W1, BRANCH_W2]) {
+        await client.query(
+          `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+           VALUES ($1,$2,'branch',$3,$4,$5)`,
+          [TENANT_A, GRANT_WCTX_BRANCH, COMPANY_A1, branchId, USER_A]
+        );
+      }
+      await client.query(
+        `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+         VALUES ($1,$2,'fx_wctx_credit','Working context credit approver',$3)
+         ON CONFLICT (id) DO NOTHING`,
+        [ROLE_WCTX_CREDIT, TENANT_A, USER_A]
+      );
+      await client.query(
+        `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+         SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'sal.credit.approve'
+         ON CONFLICT DO NOTHING`,
+        [TENANT_A, ROLE_WCTX_CREDIT, USER_A]
+      );
+      await client.query(
+        `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+         VALUES ($1,$2,$3,$4,'scoped',$5,$5)`,
+        [GRANT_WCTX_CREDIT, TENANT_A, U_WCTX_BRANCH, ROLE_WCTX_CREDIT, USER_A]
+      );
+      await client.query(
+        `INSERT INTO iam.grant_scopes (tenant_id, grant_id, scope_type, company_id, branch_id, created_by)
+         VALUES ($1,$2,'branch',$3,$4,$5)`,
+        [TENANT_A, GRANT_WCTX_CREDIT, COMPANY_A1, BRANCH_W1, USER_A]
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    await admin.query(
+      `INSERT INTO iam.role_grants (tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+       VALUES ($1,$2,$3,'unrestricted','active',$4,$4)`,
+      [TENANT_A, U_WCTX_ALL, ROLE_WCTX, USER_A]
+    );
+  });
+
+  afterAll(async () => {
+    await admin.query('DELETE FROM iam.role_grants WHERE user_id = ANY($1::uuid[])', [
+      [U_WCTX_BRANCH, U_WCTX_ALL, U_WCTX_NONE],
+    ]);
+    await admin.query('DELETE FROM iam.role_permissions WHERE role_id = ANY($1::uuid[])', [
+      [ROLE_WCTX, ROLE_WCTX_CREDIT],
+    ]);
+    await admin.query('DELETE FROM iam.roles WHERE id = ANY($1::uuid[])', [
+      [ROLE_WCTX, ROLE_WCTX_CREDIT],
+    ]);
+    await admin.query('DELETE FROM iam.user_accounts WHERE id = ANY($1::uuid[])', [
+      [U_WCTX_BRANCH, U_WCTX_ALL, U_WCTX_NONE],
+    ]);
+    await admin.query('DELETE FROM org.branches WHERE id = ANY($1::uuid[])', [
+      [BRANCH_W1, BRANCH_W2, BRANCH_W3, BRANCH_WB],
+    ]);
+    await admin.query('DELETE FROM org.legal_companies WHERE id = ANY($1::uuid[])', [
+      [COMPANY_W2, COMPANY_WB],
+    ]);
+  });
+
+  it('a branch-scoped caller sees exactly its own branches, by name', async () => {
+    const view = await readAs(U_WCTX_BRANCH);
+    expect(view.tenantId).toBe(TENANT_A);
+    expect(view.unrestricted).toBe(false);
+    expect(view.branches.map((branch) => branch.name).sort()).toEqual([
+      'Working Context Branch One',
+      'Working Context Branch Two',
+    ]);
+    expect(view.branches.every((branch) => branch.companyId === COMPANY_A1)).toBe(true);
+    expect(view.branches[0]?.timezone).toBe('UTC');
+    expect(view.companies.map((company) => company.id)).toEqual([COMPANY_A1]);
+  });
+
+  it('an unrestricted administrator sees every active company and branch of the tenant', async () => {
+    const view = await readAs(U_WCTX_ALL);
+    expect(view.unrestricted).toBe(true);
+    expect(view.branches.map((branch) => branch.id)).toEqual(
+      expect.arrayContaining([BRANCH_W1, BRANCH_W2, BRANCH_W3])
+    );
+    expect(view.companies.map((company) => company.id).sort()).toEqual(
+      [COMPANY_A1, COMPANY_W2].sort()
+    );
+  });
+
+  it('a caller holding no active grant is answered with two empty arrays', async () => {
+    const view = await readAs(U_WCTX_NONE);
+    expect(view.unrestricted).toBe(false);
+    expect(view.companies).toEqual([]);
+    expect(view.branches).toEqual([]);
+  });
+
+  it('never names a company or a branch of another tenant', async () => {
+    for (const userId of [U_WCTX_BRANCH, U_WCTX_ALL, U_WCTX_NONE]) {
+      const view = await readAs(userId);
+      expect(view.branches.map((branch) => branch.id)).not.toContain(BRANCH_WB);
+      expect(view.companies.map((company) => company.id)).not.toContain(COMPANY_WB);
+      expect(view.companySettingsReadableIds).not.toContain(COMPANY_WB);
+    }
+  });
+
+  it('names the companies whose settings the caller may read, and none for a branch grant', async () => {
+    // The fixture role carries `org.company.read`. Held through a BRANCH grant it
+    // reaches no company's settings — the counter clerk's case, refused by
+    // `iam.company-settings-read` — while the tenant-wide holder reaches every
+    // company it is shown.
+    expect((await readAs(U_WCTX_BRANCH)).companySettingsReadableIds).toEqual([]);
+    const all = await readAs(U_WCTX_ALL);
+    expect([...all.companySettingsReadableIds].sort()).toEqual(
+      all.companies.map((company) => company.id).sort()
+    );
+    expect(all.companySettingsReadableIds).toEqual(
+      expect.arrayContaining([COMPANY_A1, COMPANY_W2])
+    );
+    expect((await readAs(U_WCTX_NONE)).companySettingsReadableIds).toEqual([]);
+  });
+
+  it('answers each branch-gated action code per branch, from the grants, never across tenants (finance QA fixes D)', async () => {
+    // The branch-scoped caller holds `sal.credit.approve` through a grant scoped
+    // to BRANCH_W1 alone: the session union carries the code, but only W1 may
+    // offer the decision, which is what the approval route enforces.
+    const branchScoped = await readAs(U_WCTX_BRANCH);
+    expect(branchScoped.branchPermissions.codes).toEqual(
+      expect.arrayContaining([
+        'sal.credit.approve',
+        'sal.reversal.approve',
+        'sal.payment.third_party',
+      ])
+    );
+    const held = Object.fromEntries(
+      branchScoped.branchPermissions.branches.map((entry) => [entry.branchId, entry.permissions])
+    );
+    expect(Object.keys(held).sort()).toEqual([BRANCH_W1, BRANCH_W2].sort());
+    expect(held[BRANCH_W1]).toEqual(['sal.credit.approve']);
+    expect(held[BRANCH_W2]).toEqual([]);
+    // The tenant-wide reader's role carries none of the codes, anywhere.
+    const all = await readAs(U_WCTX_ALL);
+    expect(all.branchPermissions.branches.every((entry) => entry.permissions.length === 0)).toBe(
+      true
+    );
+    // Nobody is answered for a branch of another tenant, and a grant-less caller
+    // for no branch at all.
+    for (const userId of [U_WCTX_BRANCH, U_WCTX_ALL, U_WCTX_NONE]) {
+      const view = await readAs(userId);
+      expect(view.branchPermissions.branches.map((entry) => entry.branchId)).not.toContain(
+        BRANCH_WB
+      );
+    }
+    expect((await readAs(U_WCTX_NONE)).branchPermissions.branches).toEqual([]);
   });
 });

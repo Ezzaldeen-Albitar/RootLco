@@ -130,8 +130,8 @@ const MUTATIONS = [
     edits: [
       {
         file: COMPANY_SETTINGS,
-        from: '    { params, authorizationTarget: { companyId: params.companyId } }\n  );\n}\n\nexport async function POST(',
-        to: '    { params }\n  );\n}\n\nexport async function POST(',
+        from: "    { params: raw, authorizationTarget: pathScopeTarget(raw, 'companyId') }\n  );\n}\n\nexport async function POST(",
+        to: '    { params: raw }\n  );\n}\n\nexport async function POST(',
       },
       {
         file: ORG_SETTINGS,

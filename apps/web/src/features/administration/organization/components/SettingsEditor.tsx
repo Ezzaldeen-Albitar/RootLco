@@ -1,14 +1,31 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
-import { CheckboxField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { useEffect, useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { MuiEmptyState, MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
-import { IDLE, type ActionState } from '@/lib/forms/action-result';
+import { IDLE, unreachable, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import { DirectoryEmptyNotice } from '@/features/working-context/components/WorkingBranchField';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import { readSettings } from '../api';
 import type { SettingValueType, SettingView, SettingsScope } from '../types';
 import { writeSettingAction } from '../actions';
+import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
+import { useSingleFlight } from './use-single-flight';
 
 /**
  * The settings editor.
@@ -25,17 +42,36 @@ import { writeSettingAction } from '../actions';
  * never what it should be. The operator types the value; nothing here defaults
  * one.
  *
- * ## Why the scope identifier is typed rather than chosen from a list
+ * ## The scope is CHOSEN BY NAME, and this paragraph used to say it could not be
  *
- * There is no company or branch directory operation (`P1-26-F-008`).
- * `GET /api/v1/auth/session` returns bare identifiers, and returns **none** for
- * an unrestricted actor. So the control offers the identifiers the session
- * resolved, and otherwise accepts one.
+ * It read: "There is no company or branch directory operation (`P1-26-F-008`).
+ * `GET /api/v1/auth/session` returns bare identifiers, and returns none for an
+ * unrestricted actor. So the control offers the identifiers the session
+ * resolved, and otherwise accepts one." Both halves were true and both have
+ * been answered. `GET /auth/working-context` publishes the named, active
+ * companies and branches the caller is authorized for, and states
+ * `unrestricted` explicitly instead of leaving an empty list to mean it — so
+ * the operator with the widest reach is no longer the one handed a box and
+ * asked to type a reference they have to find somewhere else.
  *
- * That is not client-authoritative scope. `requireCompanyInScope` runs
- * `assertScopeWithinAuthority` **before** `companyExists`, so an identifier
+ * What has NOT changed is where authority lives. The chosen reference is still
+ * sent and still re-authorized: `requireCompanyInScope` runs
+ * `assertScopeWithinAuthority` **before** `companyExists`, so a reference
  * outside the caller's authority is refused identically whether or not it names
- * a real company. Typing one buys no information and no access.
+ * a real company. Offering names buys the operator legibility, not access.
+ *
+ * ## On Material UI (ADR-022, P1-32-PRE-OD-ADM1)
+ *
+ * The scope, the setting, its kind and its value are the Material form fields;
+ * the sensitive mark is `FormCheckboxField`; the stored settings are Material's
+ * table (one bounded read, no cursor); a read that did not answer is the shared
+ * Material state, with Try again where trying again can help. The kind of value
+ * is said in words ("Text", "Yes or no"), never as the stored type name. A
+ * value typed and not saved — or a key, kind or sensitive mark changed from
+ * where the form started — is unsaved work: leaving the page or changing branch
+ * asks first, and discarding puts the form back. One write at a time
+ * (`useSingleFlight`). The screens that use this editor (Organisation, system
+ * settings, numbering rules, taxes, currencies) pass the same props as before.
  */
 
 export interface SuggestedKey {
@@ -45,17 +81,18 @@ export interface SuggestedKey {
   readonly hintKey?: string;
 }
 
+/** A stable empty set, so the refusal hook sees no new attempt on every render. */
+const NO_ERRORS: Readonly<Record<string, string>> = Object.freeze({});
+
 export function SettingsEditor({
   messages,
   scope,
-  scopeIds,
   canWrite,
   keyPrefix,
   suggestions = [],
 }: {
   readonly messages: Messages;
   readonly scope: SettingsScope;
-  readonly scopeIds: readonly string[];
   readonly canWrite: boolean;
   /** Only keys under this prefix are listed. Empty string lists everything. */
   readonly keyPrefix: string;
@@ -63,133 +100,226 @@ export function SettingsEditor({
 }) {
   const t = (key: string) => translate(messages, key as keyof Messages);
 
-  const [scopeId, setScopeId] = useState(scopeIds[0] ?? '');
+  /*
+   * The companies or branches this operator may act in, by name.
+   *
+   * Branches are labelled with their company, because two workshops in one
+   * organisation may share a name and the operator has to be able to tell them
+   * apart without reading a reference.
+   */
+  const { companies, branches, companySettingsReadableIds } = useWorkingContext();
+  const scopeOptions =
+    scope === 'company'
+      ? companies.map((company) => ({ value: company.id, label: company.name }))
+      : branches.map((branch) => {
+          const owner = companies.find((company) => company.id === branch.companyId);
+          return {
+            value: branch.id,
+            label: owner === undefined ? branch.name : `${branch.name} · ${owner.name}`,
+          };
+        });
+
+  const [scopeId, setScopeId] = useState(scopeOptions[0]?.value ?? '');
   const [settings, setSettings] = useState<readonly SettingView[] | null>(null);
-  const [readStatus, setReadStatus] = useState<'idle' | 'denied' | 'error'>('idle');
+  const [readStatus, setReadStatus] = useState<'idle' | 'denied' | 'unavailable' | 'error'>('idle');
+  const [readCorrelation, setReadCorrelation] = useState<string | null>(null);
   const [generation, setGeneration] = useState(0);
   const [state, setState] = useState<ActionState>(IDLE);
-  const [saving, startSaving] = useTransition();
+  const saving = useSingleFlight();
 
-  const [form, setForm] = useState({
+  const initialForm: SettingForm = {
     settingKey: suggestions[0]?.key ?? '',
-    valueType: (suggestions[0]?.valueType ?? 'string') as SettingValueType,
+    valueType: suggestions[0]?.valueType ?? 'string',
     settingValue: '',
     isSensitive: false,
+  };
+  const [form, setForm] = useState<SettingForm>(initialForm);
+  // Where the form "started": the first suggestion until a save, then what that
+  // save stored (with the value box emptied). Unsaved work is measured against
+  // this, so a saved key, kind or sensitive mark is not mistaken for unsaved work.
+  const [baseline, setBaseline] = useState<SettingForm>(initialForm);
+  // Question f: the cursor goes to the refused value, and its complaint goes once
+  // the value changes (route sweep B3).
+  const { errors: refusalErrors, formRef: refusalFormRef } = useHeldRefusal(
+    state.fieldErrors ?? NO_ERRORS,
+    { settingValue: form.settingValue }
+  );
+  // Typed and not saved is work a page change or a branch change would throw
+  // away, so it asks first; a confirmed discard puts the form back.
+  const dirty =
+    canWrite &&
+    (form.settingValue !== '' ||
+      form.settingKey !== baseline.settingKey ||
+      form.valueType !== baseline.valueType ||
+      form.isSensitive !== baseline.isSensitive);
+  useUnsavedGuard(dirty, () => {
+    setForm(baseline);
+    setState(IDLE);
   });
+
+  /*
+   * A company's settings are read only where the server said the read would be
+   * answered. Holding `org.company.read` is not enough: held through a branch
+   * grant (the counter clerk) it passes the session's codes and is refused by
+   * `iam.company-settings-read` on every load. The working context publishes the
+   * companies the read would answer for, decided by the same checks the read
+   * enforces, so for any other company no request is made and the screen says so
+   * plainly instead of reporting a refusal.
+   */
+  const selectedId = scopeId.trim();
+  const unreadableCompany =
+    scope === 'company' &&
+    selectedId.length > 0 &&
+    !companySettingsReadableIds.includes(selectedId);
 
   useEffect(() => {
     let cancelled = false;
     const id = scopeId.trim();
-    if (id.length === 0) return undefined;
+    if (id.length === 0 || unreadableCompany) return undefined;
     void (async () => {
       // Awaited before any state write, so this is not a synchronous setState
       // inside an effect body.
       const result = await readSettings(scope, id);
       if (cancelled) return;
+      setReadCorrelation(result.correlationId);
       if (result.status === 'ok') {
         setSettings(result.data ?? []);
         setReadStatus('idle');
       } else {
         setSettings(null);
-        setReadStatus(result.status === 'denied' ? 'denied' : 'error');
+        setReadStatus(
+          result.status === 'denied'
+            ? 'denied'
+            : result.status === 'unavailable'
+              ? 'unavailable'
+              : 'error'
+        );
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [scope, scopeId, generation]);
+  }, [scope, scopeId, generation, unreadableCompany]);
 
   const visible = (settings ?? []).filter((setting) => setting.settingKey.startsWith(keyPrefix));
+  const reading =
+    selectedId.length > 0 && !unreadableCompany && settings === null && readStatus === 'idle';
+  const typeLabel = (type: string) =>
+    VALUE_TYPES.includes(type as SettingValueType)
+      ? t(`organization.setting.kind.${type}`)
+      : t('organization.setting.kind.unknown');
 
   return (
     <div className="flex flex-col gap-5">
       <div className="max-w-md">
-        {scopeIds.length > 0 ? (
-          <SelectField
-            label={t(scope === 'company' ? 'admin.scope.companyId' : 'admin.scope.branchId')}
-            description={t('admin.contractGap.noDirectory')}
+        {scopeOptions.length > 0 ? (
+          <FormSelectField
+            label={t(scope === 'company' ? 'admin.scope.company' : 'admin.scope.branch')}
+            required
             value={scopeId}
-            onChange={(event) => setScopeId(event.target.value)}
-            options={scopeIds.map((id) => ({ value: id, label: id }))}
+            onChange={setScopeId}
+            options={scopeOptions}
+            placeholder={t('form.select.placeholder')}
           />
         ) : (
-          <TextField
-            label={t(scope === 'company' ? 'admin.scope.companyId' : 'admin.scope.branchId')}
-            description={t('admin.scope.noneResolved')}
-            value={scopeId}
-            spellCheck={false}
-            onChange={(event) => setScopeId(event.target.value)}
+          // Nothing to choose, or the directory could not be read. Saying which
+          // is the honest answer; a box asking for a typed reference was not.
+          <DirectoryEmptyNotice
+            messages={messages}
+            fallbackKey={
+              scope === 'company' ? 'workingContext.noCompany' : 'workingContext.noBranch'
+            }
           />
         )}
       </div>
 
-      {readStatus === 'denied' ? (
-        <p role="status" className="text-supporting text-text-secondary">
-          {t('state.denied.description')}
+      {unreadableCompany ? (
+        <p
+          role="status"
+          data-testid="company-settings-not-readable"
+          className="text-supporting text-text-secondary"
+        >
+          {t('organization.settings.companyNotReadable')}
         </p>
       ) : null}
-      {readStatus === 'error' ? (
-        <p role="alert" className="text-supporting text-error">
-          {t('state.error.description')}
-        </p>
+      {!unreadableCompany && readStatus !== 'idle' ? (
+        <MuiReadFailureState
+          messages={messages}
+          status={readStatus}
+          correlationId={readCorrelation}
+          onRetry={() => {
+            setReadStatus('idle');
+            setGeneration((value) => value + 1);
+          }}
+        />
       ) : null}
+      {reading ? <MuiLoadingState messages={messages} variant="inline" /> : null}
 
-      {settings !== null ? (
+      {settings !== null && !unreadableCompany ? (
         visible.length === 0 ? (
-          <p className="text-body text-text-secondary">{t('state.empty.description')}</p>
+          <MuiEmptyState messages={messages} />
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-border-subtle">
-            <table className="w-full border-collapse text-table-cell">
-              <caption className="sr-only">{t('organization.settings')}</caption>
-              <thead className="border-b border-table-border bg-table-header">
-                <tr>
-                  <Th>{t('organization.setting.key')}</Th>
-                  <Th>{t('organization.setting.value')}</Th>
-                  <Th>{t('organization.setting.type')}</Th>
-                  <Th>{t('organization.setting.version')}</Th>
-                </tr>
-              </thead>
-              <tbody>
+          <TableContainer className="rounded-xl border border-border-subtle">
+            <Table size="small" aria-label={t('organization.settings')}>
+              <TableHead>
+                <TableRow>
+                  <TableCell>{t('organization.setting.key')}</TableCell>
+                  <TableCell>{t('organization.setting.value')}</TableCell>
+                  <TableCell>{t('organization.setting.type')}</TableCell>
+                  <TableCell className="text-end">{t('organization.setting.version')}</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
                 {visible.map((setting) => (
-                  <tr key={setting.settingKey} className="border-t border-border-subtle">
-                    <td className="px-3 py-2 font-mono text-caption text-text-secondary">
-                      {setting.settingKey}
-                    </td>
-                    <td className="px-3 py-2 text-text-primary">
+                  <TableRow key={setting.settingKey}>
+                    <TableCell className="font-mono text-caption">
+                      <span dir="ltr">{setting.settingKey}</span>
+                    </TableCell>
+                    <TableCell>
                       {setting.isSensitive && !('settingValue' in setting) ? (
                         <span className="text-text-muted">
                           {t('organization.setting.withheld')}
                         </span>
                       ) : (
-                        <code className="break-all font-mono text-caption">
+                        <code className="break-all font-mono text-caption" dir="ltr">
                           {render(setting.settingValue)}
                         </code>
                       )}
-                    </td>
-                    <td className="px-3 py-2 text-text-secondary">{setting.valueType}</td>
-                    <td className="px-3 py-2 text-end tabular-nums text-text-secondary">
-                      {setting.version}
-                    </td>
-                  </tr>
+                    </TableCell>
+                    <TableCell>{typeLabel(setting.valueType)}</TableCell>
+                    <TableCell className="text-end tabular-nums">{setting.version}</TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </TableBody>
+            </Table>
+          </TableContainer>
         )
       ) : null}
 
       {canWrite ? (
         <form
+          ref={refusalFormRef}
+          noValidate
           className="flex max-w-xl flex-col gap-4 rounded-xl border border-border-subtle p-4"
           onSubmit={(event) => {
             event.preventDefault();
             const id = scopeId.trim();
             if (id.length === 0) return;
-            startSaving(async () => {
-              const result = await writeSettingAction(scope, id, form);
+            const input = form;
+            const previous = state;
+            saving.run(async () => {
+              let result: ActionState;
+              try {
+                result = await writeSettingAction(scope, id, input);
+              } catch {
+                // Numbered from the attempt before it, so a second failure in a
+                // row is a fresh announcement rather than the same one kept.
+                result = unreachable((previous.attempt ?? 0) + 1);
+              }
               setState(result);
               if (result.status === 'success') {
                 setForm((current) => ({ ...current, settingValue: '' }));
+                setBaseline({ ...input, settingValue: '' });
                 setGeneration((value) => value + 1);
               }
             });
@@ -202,15 +332,15 @@ export function SettingsEditor({
           <FormFeedback state={state} messages={messages} />
 
           {suggestions.length > 0 ? (
-            <SelectField
+            <FormSelectField
               label={t('organization.setting.key')}
               description={t('organization.setting.keyHint')}
               value={form.settingKey}
-              onChange={(event) => {
-                const chosen = suggestions.find((entry) => entry.key === event.target.value);
+              onChange={(value) => {
+                const chosen = suggestions.find((entry) => entry.key === value);
                 setForm((current) => ({
                   ...current,
-                  settingKey: event.target.value,
+                  settingKey: value,
                   valueType: chosen?.valueType ?? current.valueType,
                 }));
               }}
@@ -220,62 +350,63 @@ export function SettingsEditor({
               }))}
             />
           ) : (
-            <TextField
+            <FormTextField
               label={t('organization.setting.key')}
               description={t('organization.setting.keyHint')}
               value={form.settingKey}
               spellCheck={false}
-              onChange={(event) =>
-                setForm((current) => ({ ...current, settingKey: event.target.value }))
-              }
+              dir="ltr"
+              onChange={(value) => setForm((current) => ({ ...current, settingKey: value }))}
+              error={refusalErrors['settingKey'] ? t(refusalErrors['settingKey']) : undefined}
             />
           )}
 
-          <SelectField
+          <FormSelectField
             label={t('organization.setting.type')}
             value={form.valueType}
-            onChange={(event) =>
-              setForm((current) => ({
-                ...current,
-                valueType: event.target.value as SettingValueType,
-              }))
+            onChange={(value) =>
+              setForm((current) => ({ ...current, valueType: value as SettingValueType }))
             }
-            options={[
-              { value: 'string', label: 'string' },
-              { value: 'number', label: 'number' },
-              { value: 'boolean', label: 'boolean' },
-              { value: 'json', label: 'json' },
-            ]}
+            options={VALUE_TYPES.map((type) => ({ value: type, label: typeLabel(type) }))}
           />
 
-          <TextAreaField
+          {/*
+            The refusal about this box belongs beside this box.
+
+            Both refusals it can earn name `settingValue`: the local one, when
+            the text does not read as the kind of value chosen above, and the
+            server's, when the stored setting refuses the value against its own
+            declared kind. Neither was rendered anywhere — the banner shows the
+            whole-request sentence only — so an operator was refused with nothing
+            beside the control they had to change, and what they had typed stayed
+            in the box with no mark on it.
+          */}
+          <FormTextField
             label={t('organization.setting.value')}
             description={t('organization.setting.valueHint')}
             value={form.settingValue}
+            multiline
             rows={form.valueType === 'json' ? 5 : 2}
             spellCheck={false}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, settingValue: event.target.value }))
-            }
+            onChange={(value) => setForm((current) => ({ ...current, settingValue: value }))}
+            error={refusalErrors['settingValue'] ? t(refusalErrors['settingValue']) : undefined}
           />
 
-          <CheckboxField
+          <FormCheckboxField
             label={t('organization.setting.sensitive')}
             checked={form.isSensitive}
-            onChange={(event) =>
-              setForm((current) => ({ ...current, isSensitive: event.target.checked }))
-            }
+            onChange={(checked) => setForm((current) => ({ ...current, isSensitive: checked }))}
           />
 
           <div className="flex justify-end">
-            <button
+            <Button
               type="submit"
-              disabled={saving || scopeId.trim().length === 0}
-              aria-busy={saving || undefined}
-              className="rounded-lg bg-primary px-4 py-2 text-button font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-70"
+              variant="contained"
+              disabled={saving.pending || scopeId.trim().length === 0}
+              aria-busy={saving.pending || undefined}
             >
-              {saving ? t('admin.saving') : t('admin.save')}
-            </button>
+              {saving.pending ? t('admin.saving') : t('admin.save')}
+            </Button>
           </div>
         </form>
       ) : (
@@ -285,16 +416,15 @@ export function SettingsEditor({
   );
 }
 
-function Th({ children }: { readonly children: React.ReactNode }) {
-  return (
-    <th
-      scope="col"
-      className="px-3 py-2 text-start text-table-header font-semibold uppercase tracking-wide text-table-header-text"
-    >
-      {children}
-    </th>
-  );
+interface SettingForm {
+  readonly settingKey: string;
+  readonly valueType: SettingValueType;
+  readonly settingValue: string;
+  readonly isSensitive: boolean;
 }
+
+/** The kinds a setting may declare, in the order the select offers them. */
+const VALUE_TYPES: readonly SettingValueType[] = ['string', 'number', 'boolean', 'json'];
 
 /** Renders a stored value for display. Never parsed back. */
 function render(value: unknown): string {

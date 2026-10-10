@@ -70,7 +70,7 @@ import {
   priceListVersionOf,
   seedDiscountCeiling,
 } from './p1-20-helpers';
-import { TENANT_A } from './helpers';
+import { TENANT_A, USER_A } from './helpers';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
 import { withTransaction } from '@/server/db/transaction';
 import { callerApprovalCeiling } from '@/server/auth/authorization';
@@ -1379,6 +1379,115 @@ describe('callerApprovalCeiling respects grant scope', () => {
     // the limit reaches it. Without this half the fix could have been "always return
     // null", which no assertion above would have caught.
     expect(await ceilingFor(COMPANY_A1)).toEqual({ amount: '25.0000', currencyCode: 'JOD' });
+  });
+
+  /*
+   * QA row 7.1d, at the point of use. The administration service refuses a
+   * limit for yourself and for a role you hold when it is SET; this is the half
+   * that holds afterwards — a limit put on a role before its setter was granted
+   * it, or set before that refusal existed. A direct limit outranks a role
+   * limit, so without the exclusion the caller's own 9999 would be returned
+   * here; with it, the role limit somebody else set (25, by the fixtures'
+   * administrator) is the ceiling, and that same row still authorizes.
+   */
+  it('never counts a limit the caller set, and still honours one somebody else set', async () => {
+    await seedDiscountCeiling({
+      tenantId: TENANT_A,
+      companyId: COMPANY_A1,
+      roleId: SVC_PRICE_SCOPED_A2.roleId,
+      amount: '25.0000',
+      currencyCode: 'JOD',
+    });
+    const own = await admin.query<{ id: string }>(
+      `INSERT INTO iam.approval_limits
+         (tenant_id, company_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+       VALUES ($1, $2, $3, 'discount', 9999, 'JOD', $4::date, $3)
+       RETURNING id`,
+      [TENANT_A, COMPANY_A1, SVC_PRICE_SCOPED_A2.userId, EFFECTIVE_FROM]
+    );
+    try {
+      expect(await ceilingFor(COMPANY_A1)).toEqual({ amount: '25.0000', currencyCode: 'JOD' });
+    } finally {
+      await admin.query('DELETE FROM iam.approval_limits WHERE id = $1', [own.rows[0]?.id]);
+    }
+  });
+
+  /*
+   * The case the comment above names, played in order. The setter puts a limit
+   * on a role they do NOT hold — nothing refuses that — and is granted the role
+   * afterwards. The refusal at the moment of setting could not see it coming, so
+   * only the point of use can keep it from counting. A limit somebody else set
+   * on the same role, in the next window, counts for the same person.
+   *
+   * A role and a limit type of the case's own, so no limit another case seeded
+   * can answer for either half: a `null` here means the setter's own row was
+   * excluded, and nothing else.
+   */
+  it('a limit set on a role before its setter held it does not count for the setter; one set by somebody else does', async () => {
+    const LATE_ROLE = 'd2900000-0000-4000-8000-0000000007a1';
+    const LATE_GRANT = 'd2900000-0000-4000-8000-0000000007a2';
+    const LIMIT_TYPE = 'late_role_case';
+    const SECOND_WINDOW = '2021-01-01';
+    const setter = SVC_PRICE_SCOPED_A2.userId;
+    const ceilingAt = (asOf: string) =>
+      withTransaction(
+        contextFor({
+          userId: setter,
+          tenantId: TENANT_A,
+          companyIds: [COMPANY_A1, COMPANY_A2],
+          branchIds: [BRANCH_A1, BRANCH_A2_OF_COMPANY_A2],
+          operation: 'svc.price-resolve',
+          module: 'pricing',
+        }),
+        (db) => callerApprovalCeiling(db, COMPANY_A1, LIMIT_TYPE, asOf)
+      );
+    const cleanUp = async () => {
+      await admin.query('DELETE FROM iam.approval_limits WHERE tenant_id = $1 AND role_id = $2', [
+        TENANT_A,
+        LATE_ROLE,
+      ]);
+      await admin.query('DELETE FROM iam.role_grants WHERE id = $1', [LATE_GRANT]);
+      await admin.query('DELETE FROM iam.roles WHERE id = $1', [LATE_ROLE]);
+    };
+    await cleanUp();
+    try {
+      await admin.query(
+        `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+         VALUES ($1, $2, 'fx_p1_20_late_role', 'P1-20 late role', $3)`,
+        [LATE_ROLE, TENANT_A, USER_A]
+      );
+      // 1. Set by the person, while they do not hold the role.
+      await admin.query(
+        `INSERT INTO iam.approval_limits
+           (tenant_id, company_id, role_id, limit_type, amount, currency_code,
+            effective_from, effective_to, created_by)
+         VALUES ($1, $2, $3, $4, 9999, 'JOD', $5::date, $6::date, $7)`,
+        [TENANT_A, COMPANY_A1, LATE_ROLE, LIMIT_TYPE, EFFECTIVE_FROM, SECOND_WINDOW, setter]
+      );
+      expect(await ceilingAt(EFFECTIVE_FROM)).toBeNull();
+
+      // 2. Granted the role afterwards, by somebody else.
+      await admin.query(
+        `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, granted_by, created_by)
+         VALUES ($1, $2, $3, $4, 'unrestricted', $5, $5)`,
+        [LATE_GRANT, TENANT_A, setter, LATE_ROLE, USER_A]
+      );
+      // 3. Their own limit still does not count for them.
+      expect(await ceilingAt(EFFECTIVE_FROM)).toBeNull();
+
+      // 4. Somebody else's limit on the same role, next window, counts for them.
+      await admin.query(
+        `INSERT INTO iam.approval_limits
+           (tenant_id, company_id, role_id, limit_type, amount, currency_code, effective_from, created_by)
+         VALUES ($1, $2, $3, $4, 40, 'JOD', $5::date, $6)`,
+        [TENANT_A, COMPANY_A1, LATE_ROLE, LIMIT_TYPE, SECOND_WINDOW, USER_A]
+      );
+      expect(await ceilingAt(SECOND_WINDOW)).toEqual({ amount: '40.0000', currencyCode: 'JOD' });
+      // And the first window is still answered by nothing: the exclusion is per row.
+      expect(await ceilingAt(EFFECTIVE_FROM)).toBeNull();
+    } finally {
+      await cleanUp();
+    }
   });
 });
 

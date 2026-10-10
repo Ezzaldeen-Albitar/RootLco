@@ -40,8 +40,9 @@ shaped the design:
 │                                    performance, dependency and idempotency baselines
 ├── dependabot.yml                   npm · docker · github-actions
 └── workflows/
-    ├── pr-ci.yml                    14 governed jobs + one stable ci-gate
-    ├── protected-develop-verification.yml   never cancels
+    ├── pr-ci.yml                    14 governed jobs + one gate (ci-gate; ci-gate (development) into develop)
+    ├── protected-develop-verification.yml   never cancels; push to main + develop checkpoint dispatch
+    ├── develop-merge-integrity.yml  TDP-2026-10: tree identity + gate provenance + independent-review on every develop merge
     ├── nightly-assurance.yml        11 jobs + nightly-gate
     ├── release-verification.yml     build once, SBOM, provenance
     ├── deploy-staging.yml           foundation — checks preconditions, does not deploy
@@ -59,8 +60,8 @@ shaped the design:
 
 Counted precisely, because these numbers drifted once already and are now
 reconciled against the filesystem by `tests/ci/documented-counts.test.ts`:
-**10 reusable workflows**, **7 top-level workflows** (the six above plus the
-retained `ci.yml`), **1 composite action**, **63 scripts in `scripts/ci`**,
+**10 reusable workflows**, **8 top-level workflows** (the seven above plus the
+retained `ci.yml`), **1 composite action**, **68 scripts in `scripts/ci`**,
 **15 baselines**, **25 documents** under `docs/engineering/ci-automation`, and
 **14 workflow-security rules**.
 
@@ -110,6 +111,13 @@ checks, and §24 requires them to stay until `ci-gate` is proven on a real pull
 request and a real protected push. The cutover is
 [`rollout-plan.md`](rollout-plan.md).
 
+**TDP-2026-10 (temporary, Owner approval 2026-10-05).** `ci.yml` now runs only on
+a pull request into `main` and a push to `main`, where `main`'s ruleset still
+requires its four job names. A pull request into `develop` is judged by
+`ci-gate (development)` under the development profile; a pull request into `main`
+by `ci-gate`, exactly as before. The policy, its review point and its restoration
+order are in [`pr-gate.md`](pr-gate.md#tdp-2026-10--temporary-development-path-policy).
+
 ## Required PR jobs
 
 `change-detection` · `static-quality` · `unit-tests-coverage` ·
@@ -123,8 +131,10 @@ it was renamed, appeared in `needs` without being governed, or when the tested
 SHA differs from the SHA under review.
 
 Six jobs may be skipped on a documentation-only change, each with a reason
-recorded by change detection and re-checked by the gate. `hosted-clean-room`
-may **never** be skipped — a clean room that can be skipped is not one, and the
+recorded by change detection and re-checked by the gate; under TDP-2026-10 a pull
+request into `develop` may also skip `web-quality` and `authenticated-browser`
+when both the head and the base classifier record them as not required.
+`hosted-clean-room` may **never** be skipped — a clean room that can be skipped is not one, and the
 documentation-only gate PR has to demonstrate it.
 
 ## Test layers

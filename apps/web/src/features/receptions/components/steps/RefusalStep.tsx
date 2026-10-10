@@ -1,19 +1,19 @@
 'use client';
 
-import { useCallback, useEffect, useState, useTransition } from 'react';
-import { CursorPager } from '@/components/data-table/CursorPager';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import { readCompleteness } from '@/components/data-table/read-completeness';
 import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
-import { useServerTable } from '@/components/data-table/use-server-table';
-import { CheckboxField, SelectField } from '@/components/forms/Field';
+import { useServerTable, type ServerTable } from '@/components/data-table/use-server-table';
+import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
+import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
 import { PartyLabel } from '@/components/party/PartyLabel';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
-import { formatDateTime } from '@/lib/format';
-import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { listAuthorizations, recordRefusal } from '../../api';
 import { listRefusalReasons, type IntakeCatalogueResult } from '../../catalogue-api';
 import {
@@ -26,10 +26,12 @@ import type { CheckInStepProps } from '../../check-in/wizard';
 import {
   EvidenceSection,
   EvidenceStates,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
+  InstantOrRaw,
+  RetryButton,
   StepOutcome,
+  SubmitButton,
   WriteWithdrawn,
+  useStepForm,
 } from './EvidencePanels';
 
 /**
@@ -83,10 +85,42 @@ import {
  * BEFORE this step's `kind === 'refusal'` filter runs, so twenty-five decisions
  * fill a page and leave every refusal on the next one. The empty branch
  * therefore reports what the READ established — nothing recorded, or nothing
- * seen yet — and a pager reaches the pages the filter never saw.
+ * seen yet — and the grid's pager reaches the pages the filter never saw.
+ *
+ * ## On the Material UI wrappers (ADR-022)
+ *
+ * The read-back is `OperationalGrid` over the union's pages, drawing that
+ * page's refusal rows; the form is `useStepForm` — every refusal on its field,
+ * the cursor moved to the first, the entries kept and guarded as unsaved work;
+ * the refusing party is chosen by name.
  */
 
-const IDLE: ActionState = { status: 'idle' };
+interface RefusalDraft {
+  readonly refusalType: string;
+  readonly reasonId: string;
+  readonly partner: ChosenCustomer | null;
+  readonly witnessed: boolean;
+}
+
+const EMPTY_REFUSAL: RefusalDraft = {
+  refusalType: '',
+  reasonId: '',
+  partner: null,
+  witnessed: false,
+};
+
+/**
+ * The page the union answered, with only its refusal rows drawn. The page, its
+ * cursor and its `hasMore` are the server's; nothing is fetched or ordered here.
+ */
+function refusalsOf(table: ServerTable<AuthorizationEntry>): ServerTable<AuthorizationEntry> {
+  const response = table.response;
+  if (response === null) return table;
+  return {
+    ...table,
+    response: { ...response, rows: response.rows.filter((row) => row.kind === 'refusal') },
+  };
+}
 
 export function RefusalStep({
   locale,
@@ -129,13 +163,6 @@ export function RefusalStep({
     };
   }, [attempt]);
 
-  const [refusalType, setRefusalType] = useState('');
-  const [reasonId, setReasonId] = useState('');
-  const [partner, setPartner] = useState<SelectedCustomer | null>(null);
-  const [witnessed, setWitnessed] = useState(false);
-  const [state, setState] = useState<ActionState>(IDLE);
-  const [pending, startTransition] = useTransition();
-
   const canWrite = !writesLocked && capabilities.manageSignatures;
   /*
    * The filter runs AFTER paging, which is why the empty case cannot be stated
@@ -149,57 +176,79 @@ export function RefusalStep({
    * empty branch now asks the READ whether it covered the set, and the pager
    * below reaches the rows the filter could not.
    */
-  const rows = (table.response?.rows ?? []).filter((row) => row.kind === 'refusal');
+  const refusals = useMemo(() => refusalsOf(table), [table]);
+  const rows = refusals.response?.rows ?? [];
   const completeness = readCompleteness(table.status, table.response?.hasMore, table.request.page);
 
-  const submit = () => {
-    const nextAttempt = (state.attempt ?? 0) + 1;
-    if (refusalType === '') {
-      setState({
-        status: 'invalid',
-        messageKey: 'receptions.refusal.error.typeRequired',
-        attempt: nextAttempt,
-      });
-      return;
-    }
-    if (refusalRequiresPartner(refusalType as RefusalType) && partner === null) {
-      // The mirror of `assertRefusalAttributable`: an authorization refusal
-      // becomes the party's STANDING decision, so it must name the party.
-      setState({
-        status: 'invalid',
-        messageKey: 'receptions.refusal.error.partnerRequired',
-        attempt: nextAttempt,
-      });
-      return;
-    }
+  const columns = useMemo<readonly OperationalColumn<AuthorizationEntry>[]>(
+    () => [
+      {
+        id: 'partner',
+        headerKey: 'receptions.acknowledgement.columnParty',
+        flex: 2,
+        cell: (row) => (
+          <PartyLabel
+            messages={messages}
+            party={{ partnerName: row.partnerDisplayName, partnerNumber: null, partnerType: null }}
+          />
+        ),
+      },
+      {
+        id: 'standing',
+        headerKey: 'receptions.authorization.standingHeader',
+        cell: (row) =>
+          row.isStanding ? translate(messages, 'receptions.authorization.standing') : '',
+      },
+      {
+        id: 'occurredAt',
+        headerKey: 'receptions.acknowledgement.columnRecordedAt',
+        cell: (row) => <InstantOrRaw value={row.occurredAt} locale={locale} />,
+      },
+    ],
+    [locale, messages]
+  );
 
-    startTransition(async () => {
-      const result = await recordRefusal(
+  const form = useStepForm<RefusalDraft>({
+    messages,
+    empty: EMPTY_REFUSAL,
+    errorNames: { reasonId: 'refusalReasonId', partner: 'refusingPartnerId' },
+    check: (draft) => {
+      const found: Record<string, string> = {};
+      if (draft.refusalType === '') {
+        found['refusalType'] = 'receptions.refusal.error.typeRequired';
+      } else if (
+        // The mirror of `assertRefusalAttributable`: an authorization refusal
+        // becomes the party's STANDING decision, so it must name the party.
+        refusalRequiresPartner(draft.refusalType as RefusalType) &&
+        draft.partner === null
+      ) {
+        found['refusingPartnerId'] = 'receptions.refusal.error.partnerRequired';
+      }
+      return found;
+    },
+    send: (draft, attempt) =>
+      recordRefusal(
         visitId,
         {
-          refusalType: refusalType as RefusalType,
+          refusalType: draft.refusalType as RefusalType,
           // Omitted, never blanked: every one of these is `optional()` on a
           // `.strict()` schema, so an untouched control leaves the key off.
-          ...(reasonId === '' ? {} : { refusalReasonId: reasonId }),
-          ...(partner === null ? {} : { refusingPartnerId: partner.id }),
-          ...(witnessed ? { witnessEmployeeId: session.userId } : {}),
+          ...(draft.reasonId === '' ? {} : { refusalReasonId: draft.reasonId }),
+          ...(draft.partner === null ? {} : { refusingPartnerId: draft.partner.id }),
+          ...(draft.witnessed ? { witnessEmployeeId: session.userId } : {}),
         },
-        nextAttempt
-      );
-      setState(result);
-      if (result.status === 'success') {
-        setRefusalType('');
-        setReasonId('');
-        setPartner(null);
-        setWitnessed(false);
-      }
+        attempt
+      ),
+    settle: async (result) => {
       notifyActionResult(result, messages);
       if (result.status === 'success' || result.status === 'conflict') {
         await refresh();
         table.refresh();
       }
-    });
-  };
+    },
+  });
+  const { draft } = form;
+  const formRef = useFocusFirstInvalid(form.state);
 
   return (
     <div className="flex flex-col gap-4">
@@ -219,14 +268,18 @@ export function RefusalStep({
           {translate(messages, 'receptions.refusal.readBackLimits')}
         </p>
 
-        {table.status !== 'idle' ? (
-          <EvidenceStates
-            messages={messages}
-            status={table.status}
-            correlationId={table.correlationId}
-            onRetry={table.refresh}
-          />
-        ) : rows.length === 0 ? (
+        <OperationalGrid<AuthorizationEntry>
+          messages={messages}
+          locale={locale}
+          label={translate(messages, 'receptions.refusal.heading')}
+          columns={columns}
+          rowId={(row) => row.id}
+          table={refusals}
+          density="compact"
+          suppressEmptyState
+          testId="refusal-grid"
+        />
+        {table.status === 'idle' && table.response !== null && rows.length === 0 ? (
           <p data-testid="refusal-read-back" className="text-body text-text-secondary">
             {translate(
               messages,
@@ -235,43 +288,12 @@ export function RefusalStep({
                 : 'receptions.refusal.empty'
             )}
           </p>
-        ) : (
-          <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-            {rows.map((row) => (
-              <li key={row.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
-                <PartyLabel
-                  messages={messages}
-                  party={{
-                    partnerName: row.partnerDisplayName,
-                    partnerNumber: null,
-                    partnerType: null,
-                  }}
-                />
-                <span className="rounded-full bg-surface-subtle px-2 py-0.5 text-caption text-text-secondary">
-                  {translate(messages, 'receptions.authorization.kindRefusal')}
-                </span>
-                {row.isStanding ? (
-                  <span className="rounded-full border border-border px-2 py-0.5 text-caption text-text-secondary">
-                    {translate(messages, 'receptions.authorization.standing')}
-                  </span>
-                ) : null}
-                <time className="text-caption text-text-muted" dateTime={row.occurredAt} dir="ltr">
-                  {formatDateTime(row.occurredAt, locale)}
-                </time>
-              </li>
-            ))}
-          </ul>
-        )}
+        ) : null}
         {table.status === 'idle' && completeness === 'truncated' && rows.length > 0 ? (
           <p data-testid="refusal-more-pages" className="text-caption text-text-muted">
             {translate(messages, 'receptions.refusal.morePages')}
           </p>
         ) : null}
-        <CursorPager
-          messages={messages}
-          table={table}
-          label={translate(messages, 'receptions.refusal.pagerLabel')}
-        />
       </EvidenceSection>
 
       <EvidenceSection
@@ -289,45 +311,48 @@ export function RefusalStep({
           />
         ) : (
           <form
+            ref={formRef}
             aria-label={translate(messages, 'receptions.refusal.formLabel')}
-            onSubmit={(event) => {
-              event.preventDefault();
-              submit();
-            }}
+            onSubmit={form.onSubmit}
+            noValidate
             className="flex flex-col gap-3"
           >
-            <SelectField
+            <FormSelectField
               label={translate(messages, 'receptions.refusal.type')}
               description={translate(messages, 'receptions.refusal.typeHint')}
               required
-              value={refusalType}
-              onChange={(event) => setRefusalType(event.target.value)}
+              value={draft.refusalType}
+              onChange={(value) => form.update('refusalType', value)}
               options={REFUSAL_TYPES.map((value) => ({
                 value,
                 label: translateDynamic(messages, `receptions.refusalType.${value}`),
               }))}
               placeholder={translate(messages, 'form.select.placeholder')}
+              error={form.fieldError('refusalType')}
             />
 
             <RefusalReasonField
               locale={locale}
               messages={messages}
               catalogue={catalogue}
-              value={reasonId}
-              onChange={setReasonId}
+              value={draft.reasonId}
+              onChange={(value) => form.update('reasonId', value)}
+              error={form.fieldError('refusalReasonId')}
               onRetry={() => setAttempt((current) => current + 1)}
             />
 
             {capabilities.readCustomers ? (
-              <CustomerSelector
-                locale={locale}
+              <CustomerPicker
                 messages={messages}
-                name="refusingPartnerId"
-                labelKey="receptions.refusal.partner"
-                value={partner}
-                onChange={setPartner}
-                required={refusalRequiresPartner(refusalType as RefusalType)}
-                attempt={state.attempt ?? 0}
+                locale={locale}
+                material
+                label={translate(messages, 'receptions.refusal.partner')}
+                value={draft.partner}
+                onChange={(chosen) => form.update('partner', chosen)}
+                canSearch
+                error={form.fieldError('refusingPartnerId')}
+                countsAsUnsaved={false}
+                testId="refusal-partner"
               />
             ) : (
               <WriteWithdrawn
@@ -337,22 +362,20 @@ export function RefusalStep({
               />
             )}
 
-            <CheckboxField
+            <FormCheckboxField
               label={`${translate(messages, 'receptions.refusal.witness')} — ${session.displayName}`}
               description={translate(messages, 'receptions.refusal.witnessHint')}
-              checked={witnessed}
-              onChange={(event) => setWitnessed(event.target.checked)}
+              checked={draft.witnessed}
+              onChange={(checked) => form.update('witnessed', checked)}
             />
 
-            <StepOutcome messages={messages} state={state} />
+            <StepOutcome messages={messages} state={form.state} />
 
-            <div>
-              <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-                {pending
-                  ? translate(messages, 'form.pending')
-                  : translate(messages, 'receptions.refusal.record')}
-              </button>
-            </div>
+            <SubmitButton
+              messages={messages}
+              pending={form.pending}
+              labelKey="receptions.refusal.record"
+            />
           </form>
         )}
       </EvidenceSection>
@@ -373,6 +396,7 @@ function RefusalReasonField({
   catalogue,
   value,
   onChange,
+  error,
   onRetry,
 }: {
   readonly locale: Locale;
@@ -380,12 +404,14 @@ function RefusalReasonField({
   readonly catalogue: IntakeCatalogueResult | null;
   readonly value: string;
   readonly onChange: (value: string) => void;
+  readonly error?: string | undefined;
   readonly onRetry: () => void;
 }) {
   if (catalogue === null) {
     return (
       <EvidenceStates
         messages={messages}
+        locale={locale}
         status="loading"
         correlationId={undefined}
         onRetry={onRetry}
@@ -398,6 +424,7 @@ function RefusalReasonField({
     return (
       <EvidenceStates
         messages={messages}
+        locale={locale}
         status={catalogue.status}
         correlationId={catalogue.correlationId ?? undefined}
         onRetry={onRetry}
@@ -417,22 +444,20 @@ function RefusalReasonField({
           {translate(messages, 'receptions.refusal.reasonsNotConfigured')}
         </p>
         <div>
-          <button type="button" onClick={onRetry} className={SECONDARY_BUTTON}>
-            {translate(messages, 'state.retry')}
-          </button>
+          <RetryButton messages={messages} onRetry={onRetry} />
         </div>
       </div>
     );
   }
 
   return (
-    <SelectField
+    <FormSelectField
       label={translate(messages, 'receptions.refusal.reason')}
-      optionalHint={translate(messages, 'form.optional')}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={onChange}
       options={catalogue.options.map((option) => ({ value: option.id, label: option.name }))}
       placeholder={translate(messages, 'form.select.placeholder')}
+      error={error}
     />
   );
 }

@@ -146,6 +146,7 @@ import {
   linkSignatureDocumentToWorkOrder,
   seedWorkOrderChain,
   type WorkOrderChain,
+  deliveringEmployeeFor,
 } from './p1-22-helpers';
 import { __resetAuthenticatorForTests } from '@/server/context/principal';
 import { __setPrimaryPoolForTests } from '@/server/db/pool';
@@ -772,12 +773,20 @@ async function seedEligibleDelivery(tag: string): Promise<EligibleDelivery> {
     throw new Error(`fixture invoice ${invoice.invoiceId} still owes ${open}, so it would block`);
   }
 
+  // P1-31 P-17: `delivering_employee_id` is an `org.employees` id now, bound by a
+  // foreign key and re-checked by a BEFORE INSERT trigger. Resolved outside the
+  // transaction so the fixture employee is committed before the trigger looks.
+  const deliveringEmployeeId = await deliveringEmployeeFor({
+    companyId: chain.companyId,
+    branchId: chain.branchId,
+  });
+
   const deliveryId = await asTenant(async (client) => {
     const delivery = await client.query<{ id: string }>(
       `INSERT INTO sal.delivery_records
          (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id,
           delivering_employee_id, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$7) RETURNING id`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
       [
         TENANT_A,
         chain.companyId,
@@ -785,6 +794,7 @@ async function seedEligibleDelivery(tag: string): Promise<EligibleDelivery> {
         chain.workOrderId,
         chain.visitId,
         chain.vehicleId,
+        deliveringEmployeeId,
         USER_A,
       ]
     );

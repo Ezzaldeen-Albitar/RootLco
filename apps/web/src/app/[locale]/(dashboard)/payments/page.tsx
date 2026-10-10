@@ -21,7 +21,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * the payment form AND the method list it needs (that reference read is gated
  * by the recording authority, a least-privilege gap the read-surface matrix
  * records); `sal.payment.allocate` the act of applying a receipt to an invoice;
- * `org.branch.read` whether a branch list is requested for the target picker.
+ * `org.branch.read` whether a branch list is requested for the target picker;
+ * `sal.reversal.approve` whether a reversal somebody else requested may be
+ * approved or rejected here (ADR-023 D4); `sal.payment.third_party` whether a
+ * receipt may be applied to another customer's invoice as a third-party payment
+ * (ADR-023 D14) — the server checks it again in the receipt's own company and
+ * branch. The signed-in person is passed so the
+ * screen knows whose reversal request is whose; it is never shown.
  *
  * This is where the cashier shape reaches the open balance (FE-019): the
  * invoice screen of `W6` is gated on `sal.invoice.manage`, which a cashier does
@@ -68,8 +74,14 @@ export default async function PaymentsPage({
     return candidate && UUID.test(candidate) ? candidate : null;
   };
 
+  /*
+   * The header and the body share one print scope, as the invoice page does
+   * (finance retest DF-R2-1): while a receipt's printable copy is open, the page
+   * title and its description stay off the paper and the copy prints alone
+   * (checkpoint browser QA at 3cf622c3 found them printed above it).
+   */
   return (
-    <>
+    <div data-print-scope="document">
       <PageHeader
         locale={locale}
         messages={messages}
@@ -86,9 +98,14 @@ export default async function PaymentsPage({
           canRecord={holds(session.permissions, PAYMENT_PERMISSIONS.record)}
           canAllocate={holds(session.permissions, PAYMENT_PERMISSIONS.allocate)}
           canReadBranches={holds(session.permissions, PAYMENT_PERMISSIONS.branchRead)}
+          canReadCustomers={holds(session.permissions, PAYMENT_PERMISSIONS.customerRead)}
+          canListInvoices={holds(session.permissions, PAYMENT_PERMISSIONS.invoiceList)}
+          canDecideReversals={holds(session.permissions, PAYMENT_PERMISSIONS.reversalApprove)}
+          canAllocateThirdParty={holds(session.permissions, PAYMENT_PERMISSIONS.thirdParty)}
+          currentUserId={session.userId}
         />
       </PageBody>
-    </>
+    </div>
   );
 }
 

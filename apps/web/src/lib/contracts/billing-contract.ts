@@ -16,9 +16,11 @@
  * Issue and cancel carry `If-Match` = the INVOICE's `recordVersion` from
  * `sal.invoice-detail`; create does not.
  *
- * W6 mirrors these two writes. Credit notes belong to no P1-30 screen and the
- * payment writes to W7; they stay declared PENDING in the gate rather than
- * mirrored without a consumer.
+ * W6 mirrors these two writes; the payment writes belong to W7. Raising a
+ * credit note is mirrored below because the invoice screen raises one, and it
+ * is the one write here that carries an amount: the credit the operator types,
+ * as a decimal string. Approving a credit note sends no body and is declared
+ * bodyless in the gate.
  */
 
 /** `sal.invoice-create` — `POST /invoices`. Idempotent through the transport key; not version-guarded. */
@@ -32,4 +34,113 @@ export interface InvoiceCreateBody {
 export interface InvoiceCancelBody {
   /** One to two thousand characters, not blank. */
   readonly reason: string;
+}
+
+/**
+ * `sal.credit-note-create` — `POST /invoices/{invoiceId}/credit-notes`.
+ * Idempotent through the transport key; not version-guarded.
+ *
+ * The requester is the session and the note is born pending; it counts for
+ * nothing until a different person approves it (`sal.credit-note-approve`,
+ * bodyless). The server bounds the amount by the invoice's open receivable.
+ */
+export interface CreditNoteCreateBody {
+  /** A decimal string, unsigned, at most fourteen integer digits and four decimals. */
+  readonly amount: string;
+  /** One to two thousand characters, not blank. */
+  readonly reason: string;
+  /**
+   * The note's currency is always the invoice's. The route accepts this only to
+   * refuse a caller that believes otherwise; the screen never sends it.
+   */
+  readonly currency?: string;
+}
+
+/**
+ * `sal.credit-note-reject` — `POST /credit-notes/{creditNoteId}/rejection`
+ * (ADR-023, D3). Idempotent through the transport key; `If-Match` required.
+ *
+ * Another authorised person turns a pending note down; the requester withdraws
+ * instead (`sal.credit-note-withdraw`, bodyless). The reason is the record.
+ */
+export interface CreditNoteRejectBody {
+  /** One to two thousand characters, not blank. */
+  readonly reason: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * ADR-023 D2, part 2 (P1-32-PRE-OD-FD2B) — refund requests. Sent by the
+ * refunds panel of the invoice screen. Approving and withdrawing send no
+ * body and are declared bodyless in the gate.
+ * ------------------------------------------------------------------ */
+
+/**
+ * `sal.refund-request` — `POST /refund-obligations/{obligationId}/refund-requests`.
+ * Idempotent through the transport key; not version-guarded. The payee and the
+ * currency are the obligation's own, never the caller's.
+ */
+export interface RefundRequestBody {
+  /** A decimal string, unsigned, at most fourteen integer digits and four decimals. */
+  readonly amount: string;
+  /** The tenant payment method the money is to be paid back by. */
+  readonly paymentMethodId: string;
+  /** One to two thousand characters, not blank. */
+  readonly reason: string;
+}
+
+/**
+ * `sal.refund-reject` — `POST /refund-requests/{requestId}/rejection`. `If-Match`
+ * required; the requester withdraws instead.
+ */
+export interface RefundRejectBody {
+  /** One to two thousand characters, not blank. */
+  readonly reason: string;
+}
+
+/**
+ * `sal.refund-execute` — `POST /refund-requests/{requestId}/execution`. Idempotent
+ * through the transport key; `If-Match` required. Records, once, that an approved
+ * refund was paid out.
+ */
+export interface RefundExecuteBody {
+  /** The method the request was approved with. */
+  readonly paymentMethodId: string;
+  /** One to two hundred characters, not blank. */
+  readonly payoutReference: string;
+  /** `YYYY-MM-DD`, not in the future. */
+  readonly payoutDate: string;
+}
+
+/* ------------------------------------------------------------------ *
+ * P1-32 — the counter sale. Sent by the counter-sale screen under
+ * `app/[locale]/(dashboard)/inventory/counter-sales`.
+ * ------------------------------------------------------------------ */
+
+/**
+ * One line of `sal.counter-sale-create`: what was sold and where it comes off.
+ *
+ * No price, no total, no tax and no discount — the route's body is `.strict()`,
+ * so there is no field through which a client-supplied amount could arrive.
+ * Every line is priced inside the database from the item's configured selling
+ * price, and an item with no configured price refuses the whole sale rather than
+ * leaving at zero.
+ */
+export interface CounterSaleCreateLine {
+  readonly itemId: string;
+  readonly locationId: string;
+  /** A decimal string, up to nine integer digits and three decimals. */
+  readonly quantity: string;
+}
+
+/**
+ * `sal.counter-sale-create` — `POST /counter-sales`. Creates a DRAFT invoice
+ * with no work order; issuing it is `sal.invoice-issue`, which is what moves the
+ * stock. The transport attaches the header key, derived once per confirmation.
+ */
+export interface CounterSaleCreateBody {
+  readonly companyId: string;
+  readonly branchId: string;
+  /** The buyer: a partner of the selling tenant. No account is created for it. */
+  readonly customerPartnerId: string;
+  readonly lines: readonly CounterSaleCreateLine[];
 }

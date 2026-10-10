@@ -30,7 +30,13 @@ import { defineOperation } from '@/server/auth/operation-registry';
 import { handleOperation } from '@/server/http/route-handler';
 import { parseOrFail, schemas } from '@/server/http/validation';
 import { INTERNAL_CODE } from '@/modules/service-catalog';
-import { MAX_ITEMS_PER_REVISION, MAX_ITEM_DESCRIPTION, quotationModule } from '@/modules/quotation';
+import {
+  MAX_ITEMS_PER_REVISION,
+  MAX_ITEM_DESCRIPTION,
+  ITEM_KINDS,
+  quotationModule,
+  refineQuotationLine,
+} from '@/modules/quotation';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -44,7 +50,13 @@ export const dynamic = 'force-dynamic';
  */
 const Line = z
   .object({
-    serviceId: schemas.uuid,
+    // A SERVICE line (the default, so a caller that names no kind is unchanged) or a
+    // PART line (ADR-023 D6). A part line names an item of the catalogue and is
+    // priced by the server at the item selling price that applies to the work
+    // order's branch — never at cost, and never at a price the caller sends.
+    kind: z.enum(ITEM_KINDS).optional(),
+    serviceId: schemas.uuid.optional(),
+    itemId: schemas.uuid.optional(),
     quantity: z
       .string()
       .regex(
@@ -60,8 +72,11 @@ const Line = z
       .optional(),
     description: z.string().min(1).max(MAX_ITEM_DESCRIPTION).optional(),
     sourceServiceLineRef: schemas.uuid.optional(),
+    // The work order's required part this line quotes, when it was quoted from one.
+    sourceRequiredPartRef: schemas.uuid.optional(),
   })
-  .strict();
+  .strict()
+  .superRefine(refineQuotationLine);
 
 export const Body = z
   .object({
@@ -69,10 +84,11 @@ export const Body = z
     payerPartnerRef: schemas.uuid.optional(),
     customerClass: z.string().regex(INTERNAL_CODE, 'must be a lower-snake class code').optional(),
     lines: z.array(Line).min(1).max(MAX_ITEMS_PER_REVISION),
-    // Who ASKED for a discount, when that is someone other than the caller. The
-    // maker/approver separation in `svc.pricing_approval_policies` compares this
-    // against the actor, and a company with the flag set refuses them being equal.
-    discountRequestedBy: schemas.uuid.optional(),
+    // There is no requester field. A discount that needs approval is recorded as a
+    // request by the SIGNED-IN person and approved separately by somebody else
+    // (`quo.discount-approval-decide`). The schema is `.strict()`, so a client that
+    // still sends `discountRequestedBy` is refused with a 422 naming the key rather
+    // than having it silently ignored (P1-32-PRE-OD-DISC-01).
   })
   .strict();
 
@@ -85,10 +101,11 @@ export const QUOTATION_CREATE_OPERATION = defineOperation({
   summary: 'Create a quotation with its first draft revision and priced lines.',
   // A CONJUNCTION, and both halves are load-bearing. Creating a quotation reads
   // the work order to derive its company and branch - that order is the scope
-  // authority - and RLS on wo.work_orders is permission-based, so a caller without
-  // wo.work_order.read cannot see it at all. Declaring only quo.quotation.manage
-  // produced a 404 that looked like a missing work order rather than a missing
-  // permission.
+  // authority - so the create exercises a work-order read and declares its code.
+  // Row security on wo.work_orders (sel_work_orders_scope) is scope-based, not
+  // permission-based: it narrows by tenant and by the caller's company and
+  // branch grant union, and never looks at a permission code. The work-order
+  // half is therefore enforced by this declaration, not by the table.
   permissions: ['quo.quotation.manage', 'wo.work_order.read'],
   scope: 'branch',
   auditClass: 'financial',
@@ -115,7 +132,6 @@ export async function POST(request: Request): Promise<Response> {
           payerPartnerRef: parsed.payerPartnerRef,
           customerClass: parsed.customerClass,
           lines: parsed.lines,
-          discountRequestedBy: parsed.discountRequestedBy,
         },
         authorizeScope
       );

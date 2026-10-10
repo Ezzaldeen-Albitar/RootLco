@@ -47,8 +47,9 @@ export const DISCOUNT_LIMIT_TYPE = 'discount';
 /**
  * SQL for the discount base — the amount a percentage discount applies to.
  *
- * `ck_quotation_items_tax_amount` fixes the tax base as
- * `(unit_price * quantity) - discount`, so the discount itself must be computed
+ * `tg_quotation_items_money` fixes the tax base as the line net
+ * `(unit_price * quantity) - discount`, rounded half-up to the currency's minor
+ * unit (ADR-023, D1), so the discount itself must be computed
  * from `unit_price * quantity` **before** tax. This fragment is interpolated into
  * a parameterised statement with the caller's own placeholders; it contains no
  * user input, only the two placeholder names the caller passes.

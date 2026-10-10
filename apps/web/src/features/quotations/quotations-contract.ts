@@ -14,6 +14,8 @@
  * | `quo.quotation-issue`                    | POST   | `/quotations/{quotationId}/issue`             | `quo.quotation.manage` |
  * | `quo.quotation-revision-decide`          | POST   | `/quotation-revisions/{revisionId}/decisions` | `quo.decision.record`  |
  * | `quo.quotation-item-decide`              | POST   | `/quotation-items/{itemId}/decisions`         | `quo.decision.record`  |
+ * | `quo.discount-approval-list`             | GET    | `/discount-approvals`                         | `quo.quotation.read`   |
+ * | `quo.discount-approval-decide`           | POST   | `/discount-approvals/{approvalId}/decision`   | `quo.quotation.read`   |
  *
  * Typed from the routes that own the shapes and from the views in
  * `apps/api/src/modules/quotation/application/*`. Nothing here is invented;
@@ -26,7 +28,9 @@
  * A revision carries `subtotal`, `discountTotal`, `taxTotal` and `grandTotal`,
  * and every line carries `unitPrice`, `quantity`, `discount`, `taxRate`,
  * `taxAmount` and `lineTotal` — all decimal STRINGS the database computed and
- * constrained (`ck_quotation_revisions_totals`, `ck_quotation_items_line_total`).
+ * constrained (`ck_quotation_revisions_totals`, `tg_quotation_items_money`; each
+ * line rounded to the currency's minor unit and every total the sum of the
+ * rounded lines, ADR-023 D1).
  * A screen renders them and never re-derives one from another; that is the
  * phase's closure condition (`P1-30 RENDERS SERVER ARITHMETIC ONLY`).
  *
@@ -38,21 +42,38 @@
  * `QuotationDetail` (its ETag), never one from a revision's answer, and the
  * detail is re-read after every write.
  *
- * ## There is no discount request
+ * ## A discount over the threshold is a request somebody else approves
  *
- * A discount is a field on a line. The backend authorizes it synchronously
- * inside the quotation write — a policy threshold decides whether an elevated
- * permission is needed, and the actor's approval limit decides whether the
- * amount is within reach — and refuses the whole document otherwise. So the
- * "discount request" of FE-005 is that field, and an approval-limit refusal is
- * rendered as the refusal it is, with its message and reference.
+ * A discount is a field on a line. When the revision's discount reaches the
+ * company's threshold in force at that moment, the server records it as a
+ * PENDING request against the signed-in person (P1-32-PRE-OD-DISC-01) and
+ * returns it on the revision as `discountApproval`. Nobody names a requester:
+ * the requester is whoever created the revision. The revision cannot be issued
+ * until a DIFFERENT person approves the request within their own approval
+ * limit (`quo.discount-approval-decide`); a request that was turned down means
+ * the revision can never be issued. `requestedByCaller` tells the screen when
+ * the request is the signed-in person's own, which is waiting for another
+ * approver and is never offered to them to decide.
+ *
+ * Who may decide is the SERVER's answer, per row, and approving and turning down
+ * are answered apart. `canApprove` is true only when the request is pending, the
+ * signed-in person did not ask for it, holds the permission the request recorded,
+ * and has a limit that counts and covers it; `cannotApproveReason` says which of
+ * those failed. `canReject` needs the same first three and no limit — refusing money
+ * being given away needs no ceiling. No approver limit is ever part of a request —
+ * the decision route is gated by the quotation read code and the recorded
+ * permission is checked on the row. Every revision of a quotation is measured
+ * against the threshold in force when the quotation was written
+ * (P1-32-PRE-OD-DISC-07): a revision supersedes an open request, which is never
+ * offered for a decision again.
  *
  * ## Reads the backend does not publish, said here rather than hidden
  *
  * - No quotation list wider than one work order: quotations are reached FROM a
  *   work order.
  * - No line list of its own: lines arrive inside a revision.
- * - No read of a discount policy, a discount request, or a status history.
+ * - No status history. The company discount threshold is read and changed on the
+ *   administration screen (`svc.discount-threshold-read`/`-set`), not here.
  * - Approval LIMITS are readable only through `iam.approval-limit-list`, which
  *   needs `iam.approval.manage`; without it the screen says the limits cannot
  *   be shown rather than pretending there are none.
@@ -68,9 +89,46 @@ export const QUOTATION_PERMISSIONS = {
   limitsRead: 'iam.approval.manage',
   /** The service picker's own code. */
   serviceRead: 'svc.service.read',
+  /** The part picker's own code: a part line (ADR-023 D6) is found in the item catalogue. */
+  itemRead: 'inv.item.read',
   /** Creating a quotation demands the work order be readable too. */
   workOrderRead: 'wo.work_order.read',
+  /** The paying customer is FOUND among customers, which `crm.customer-search` answers. */
+  customerRead: 'crm.customer.read',
 } as const;
+
+/**
+ * `ck_discount_approvals_status`, mirrored. `withdrawn` (ADR-023, D3) is the
+ * requester's own withdrawal of a pending request: terminal, never decided.
+ */
+export const DISCOUNT_APPROVAL_STATES = [
+  'pending',
+  'approved',
+  'rejected',
+  'superseded',
+  'withdrawn',
+] as const;
+export type DiscountApprovalState = (typeof DISCOUNT_APPROVAL_STATES)[number];
+
+/**
+ * Why the signed-in person cannot approve a request, as the server names it —
+ * never with an amount. Mirrored from `DISCOUNT_DECISION_BLOCKS`.
+ */
+export const DISCOUNT_DECISION_BLOCKS = [
+  'not_pending',
+  'own_request',
+  'missing_permission',
+  'no_approval_limit',
+  'over_approval_limit',
+] as const;
+export type DiscountDecisionBlock = (typeof DISCOUNT_DECISION_BLOCKS)[number];
+
+/** The two decisions an approver records, mirrored from the decision route. */
+export const DISCOUNT_APPROVAL_DECISIONS = ['approved', 'rejected'] as const;
+export type DiscountApprovalDecision = (typeof DISCOUNT_APPROVAL_DECISIONS)[number];
+
+/** The longest reason a decision may carry, mirrored from the decision route. */
+export const MAX_DISCOUNT_DECISION_REASON = 500;
 
 /** `ck_quotations_status`, mirrored. `cancelled` is in the constraint but no code path writes it. */
 export const QUOTATION_STATES = [
@@ -119,6 +177,10 @@ export const DISCOUNT = /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,4})?$/;
 export const MAX_ITEM_DESCRIPTION = 2000;
 export const MAX_ITEMS_PER_REVISION = 200;
 export const MAX_REFERENCE_NOTE = 2000;
+/** `ck_acceptance_records_contact_name` and the route bound, mirrored. */
+export const MAX_CONTACT_NAME = 200;
+/** The longest telephone number the route accepts as typed, before normalisation. */
+export const MAX_CONTACT_PHONE_INPUT = 40;
 /** The most rows the decisions read answers with; it has no cursor. */
 export const DECISIONS_BOUND = 200;
 /** The most rows the approval-limit list answers with; it has no cursor or count. */
@@ -134,6 +196,10 @@ export interface QuotationLine {
   readonly lineNumber: number;
   readonly itemKind: ItemKind;
   readonly serviceId: string | null;
+  /** `QuotationLineItemView` — the item a PART line quotes, as quoted; `null` on a service line. */
+  readonly item: QuotationLineItem | null;
+  /** `QuotationLineUnitView` — the unit a part line's quantity is in, as quoted. */
+  readonly unit: QuotationLineUnit | null;
   readonly description: string | null;
   readonly currency: string;
   readonly unitPrice: string;
@@ -143,6 +209,19 @@ export interface QuotationLine {
   readonly taxAmount: string;
   readonly lineTotal: string;
   readonly priceRuleRef: string | null;
+}
+
+/** The item a part line quotes, as it was quoted (ADR-023 D6). `code` is the stock code. */
+export interface QuotationLineItem {
+  readonly id: string;
+  readonly code: string;
+  readonly name: string;
+}
+
+/** The unit a part line's quantity is in, as it was quoted. */
+export interface QuotationLineUnit {
+  readonly code: string;
+  readonly name: string;
 }
 
 /**
@@ -166,6 +245,88 @@ export interface QuotationRevision {
   readonly grandTotal: string;
   readonly recordVersion: number;
   readonly lines: readonly QuotationLine[];
+  /**
+   * The discount request this revision carries, or `null` when its discount needs
+   * no approval. While it is `pending` or `rejected` the revision cannot be issued.
+   */
+  readonly discountApproval: DiscountApproval | null;
+}
+
+/** A person named on a discount request. `displayName` is `null` when it cannot be shown. */
+export interface DiscountApprovalPerson {
+  readonly id: string;
+  readonly displayName: string | null;
+}
+
+/** The threshold version a request was measured against; `null` when none was set. */
+export interface DiscountApprovalThreshold {
+  readonly policyId: string;
+  readonly versionNo: number;
+  readonly kind: 'amount' | 'percentage';
+  /** Decimal STRING: an amount in `currency`, or a percentage of the line. */
+  readonly value: string;
+  readonly currency: string | null;
+}
+
+/**
+ * A recorded discount request and its decision — `DiscountApprovalView`: a row
+ * of `quo.discount-approval-list`, the body of `quo.discount-approval-decide`,
+ * and `QuotationRevision.discountApproval`. The amounts are decimal STRINGS.
+ */
+export interface DiscountApproval {
+  readonly id: string;
+  readonly quotationId: string;
+  readonly quotationNumber: string;
+  readonly revisionId: string;
+  readonly revisionNumber: number;
+  readonly companyId: string;
+  readonly branchId: string;
+  readonly status: DiscountApprovalState;
+  /** `requested`, or `backfilled` for a draft written before the two-step flow. */
+  readonly origin: 'requested' | 'backfilled';
+  readonly currency: string;
+  readonly discountTotal: string;
+  readonly discountBase: string;
+  readonly elevatedLineCount: number;
+  readonly threshold: DiscountApprovalThreshold | null;
+  readonly requiredPermission: string;
+  readonly requestedBy: DiscountApprovalPerson;
+  readonly requestedAt: string;
+  /** True for the signed-in person's own request: it waits for ANOTHER approver. */
+  readonly requestedByCaller: boolean;
+  /** The server's answer: may the signed-in person approve this request now. */
+  readonly canApprove: boolean;
+  /** Why not, when `canApprove` is false; `null` when it is true. */
+  readonly cannotApproveReason: DiscountDecisionBlock | null;
+  /** The server's answer: may the signed-in person turn this request down now. */
+  readonly canReject: boolean;
+  readonly decidedBy: DiscountApprovalPerson | null;
+  readonly decidedAt: string | null;
+  readonly decisionReason: string | null;
+  /** When a newer revision replaced this request, or `null`. */
+  readonly supersededAt: string | null;
+  /**
+   * ADR-023, D8: the requester set the discount threshold version the quotation is
+   * held to, so another person must approve any discount on it.
+   */
+  readonly requesterSetPolicy: boolean;
+  /** ADR-023, D8: the requester set a price one of the lines was priced at. */
+  readonly requesterSetPrice: boolean;
+  /** The server's answer: may the signed-in person withdraw this request now (D3). */
+  readonly canWithdraw: boolean;
+  /** The requester who withdrew the request, or `null`. */
+  readonly withdrawnBy: DiscountApprovalPerson | null;
+  readonly withdrawnAt: string | null;
+  readonly recordVersion: number;
+}
+
+/**
+ * The body of `quo.discount-approval-withdraw` — `DiscountApprovalWithdrawal`: the
+ * request after the withdrawal, and `replayed` when it had already been withdrawn.
+ */
+export interface DiscountApprovalWithdrawal {
+  readonly discountApproval: DiscountApproval;
+  readonly replayed: boolean;
 }
 
 /**
@@ -261,6 +422,41 @@ export interface RevisionDecisions {
   readonly decidedCount: number;
   readonly outcome: 'accepted' | 'rejected' | null;
   readonly decisions: readonly LineDecision[];
+  /**
+   * The revision's acceptance record (ADR-023 D11), or `null`. `null` beside an
+   * `accepted` outcome is a revision accepted before records existed: it was not
+   * backfilled, and the screen says so rather than inventing one.
+   */
+  readonly acceptance: AcceptanceRecord | null;
+}
+
+/** The employee who recorded an acceptance — `AcceptanceRecorderView`. */
+export interface AcceptanceRecorder {
+  readonly id: string;
+  /** `null` for a caller who may not read users; the screen never prints the id. */
+  readonly displayName: string | null;
+}
+
+/**
+ * The acceptance record of an accepted revision — `AcceptanceRecordView`.
+ * A record of what the employee was told and did, not a signature. Every
+ * optional part is `null` when it was not given.
+ */
+export interface AcceptanceRecord {
+  readonly id: string;
+  readonly quotationRevisionId: string;
+  /** The quotation's payer, when the employee said the payer decided. */
+  readonly customerPartnerId: string | null;
+  readonly contactName: string | null;
+  /** Normalised: an optional leading `+` and ASCII digits. */
+  readonly contactPhone: string | null;
+  readonly channel: DecisionChannel;
+  readonly evidenceKind: EvidenceKind | null;
+  readonly referenceNote: string | null;
+  readonly documentVersionId: string | null;
+  readonly acceptedAt: string;
+  readonly recordedBy: AcceptanceRecorder;
+  readonly recordedByCaller: boolean;
 }
 
 /** The body of `quo.quotation-item-decide` — `DecisionView`, the write's echo. */

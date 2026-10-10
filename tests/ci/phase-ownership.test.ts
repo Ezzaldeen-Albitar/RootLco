@@ -1389,3 +1389,153 @@ describe('the step is wired to the decision, and the callers are wired to the st
     expect(checked, 'no pull-request caller of web-quality was found at all').toBeGreaterThan(0);
   });
 });
+
+describe('owner-directive-saas-operation profile', () => {
+  /*
+   * The Owner directive of 2026-09-16 spans the product AND the API workspace's
+   * environment template. No committed profile permitted that combination:
+   * `pre-p1-29-initiative` forbids `apiConfig` by name, and `api-boundary`
+   * forbids `migrations`. Borrowing either would have refused the directive's
+   * own first requirement — a complete, tracked environment configuration.
+   */
+  const DIRECTIVE_CHANGES = [
+    'apps/api/src/modules/platform/application/subscription-service.ts',
+    'apps/api/.env.example',
+    'supabase/migrations/20260917090000_subscription_terms.sql',
+    'supabase/seeds/04_iam_permission_catalog.sql',
+    'apps/web/src/app/[locale]/platform/organizations/page.tsx',
+    'docs/product/owner-directive-2026-09-16/README.md',
+    'scripts/ci/check-phase-ownership.mjs',
+    'tests/backend/platform-subscription.test.ts',
+    '.env.example',
+  ];
+
+  it('permits one path from every bucket the directive declares', () => {
+    const { failures, counts } = evaluate(DIRECTIVE_CHANGES, 'owner-directive-saas-operation');
+    expect(failures).toEqual([]);
+    for (const bucket of [
+      'apiSource',
+      'apiConfig',
+      'migrations',
+      'dbSeeds',
+      'web',
+      'docs',
+      'tooling',
+      'tests',
+      'rootConfig',
+    ]) {
+      // Anti-vacuity: an empty bucket would let the assertion above pass while
+      // proving nothing about that bucket.
+      expect(counts[bucket], `no path classified as ${bucket}`).toBeGreaterThan(0);
+    }
+  });
+
+  it('still refuses the database harness, and names itself doing it', () => {
+    const { failures } = evaluate(
+      [...DIRECTIVE_CHANGES, 'supabase/config.toml'],
+      'owner-directive-saas-operation'
+    );
+    expect(
+      failures.some((f) => f.startsWith('supabase:') && f.includes('supabase/config.toml'))
+    ).toBe(true);
+    expect(failures.join('\n')).toContain('the database HARNESS');
+  });
+
+  it('resolves its branch family against the committed map, and swallows nothing', () => {
+    const resolve = (headBranch: string) =>
+      decideOwnershipRun({
+        headBranch,
+        baseRef: 'develop',
+        eventName: 'pull_request',
+        rules: RULES,
+      }) as { action: string; profile: string | null };
+
+    expect(resolve('feature/owner-directive-environment-configuration').profile).toBe(
+      'owner-directive-saas-operation'
+    );
+    // The rule sits immediately before the bare `planning/` rule. A short
+    // sibling must reach the directive profile and not fall through to the
+    // planning one, which permits nothing this directive needs.
+    expect(resolve('feature/owner-directive-x').profile).not.toBe('p1-29-planning');
+    expect(resolve('feature/owner-directive-x').profile).toBe('owner-directive-saas-operation');
+  });
+});
+
+describe('acceptance-harness profile', () => {
+  /*
+   * The profile above is the reason this one exists. `owner-directive-saas-operation`
+   * refuses `supabase` by name — the directive must not change the database
+   * harness, because config.toml and the local bootstrap are their own review —
+   * and so does every other profile in the file. That refusal is right, and it
+   * only works if the review it defers to is somewhere. When local password
+   * recovery broke, the repair belonged to a file no branch could carry.
+   */
+  const HARNESS_CHANGES = [
+    'supabase/config.toml',
+    'scripts/dev/dev-config.mjs',
+    'tests/ci/phase-ownership.test.ts',
+    'docs/product/owner-directive-2026-09-16/change-control.md',
+  ];
+
+  it('permits the local harness, its tooling, its tests and its record', () => {
+    const { failures, counts } = evaluate(HARNESS_CHANGES, 'acceptance-harness');
+    expect(failures).toEqual([]);
+    // Anti-vacuity: an empty bucket would let the assertion above pass while
+    // proving nothing about that bucket.
+    for (const bucket of ['supabase', 'tooling', 'tests', 'docs']) {
+      expect(counts[bucket], `no path classified as ${bucket}`).toBeGreaterThan(0);
+    }
+  });
+
+  it.each([
+    ['API source', 'apps/api/src/modules/iam/provider/supabase-provider.ts', 'apiSource'],
+    ['a migration', 'supabase/migrations/20260919120000_recovery.sql', 'migrations'],
+  ])('refuses %s, and names itself doing it', (_label, path, bucket) => {
+    const { failures } = evaluate([...HARNESS_CHANGES, path], 'acceptance-harness');
+    const refusal = failures.find((f) => f.startsWith(`${bucket}:`) && f.includes(path));
+    expect(refusal, `${bucket} was not refused`).toBeDefined();
+    // The message has to say what refused it, or a reader sees a bucket name and
+    // no reason to accept it. `a harness repair …` is the profile's own voice.
+    expect(refusal).toContain('harness repair');
+  });
+
+  it('refuses a seed and the web tree too, which are the other two ways product travels', () => {
+    const { failures } = evaluate(
+      [
+        ...HARNESS_CHANGES,
+        'supabase/seeds/04_iam_permission_catalog.sql',
+        'apps/web/src/app/[locale]/(auth)/reset-password/page.tsx',
+      ],
+      'acceptance-harness'
+    );
+    expect(failures.some((f) => f.startsWith('dbSeeds:'))).toBe(true);
+    expect(failures.some((f) => f.startsWith('web:'))).toBe(true);
+  });
+
+  it('resolves the harness branch against the committed map', () => {
+    const resolve = (headBranch: string) =>
+      decideOwnershipRun({
+        headBranch,
+        baseRef: 'develop',
+        eventName: 'pull_request',
+        rules: RULES,
+      }) as { action: string; profile: string | null };
+
+    const verdict = resolve('chore/acceptance-harness-recovery');
+    expect(verdict.action).toBe('check');
+    expect(verdict.profile).toBe('acceptance-harness');
+  });
+
+  it('leaves every other chore/ branch resolving exactly where it did', () => {
+    // First match wins, so a new rule is only safe if no existing prefix
+    // reaches it and it reaches no existing branch. Asserted rather than
+    // asserted-about: the real committed rules, in their committed order.
+    const prefixes = RULES.map((r) => r.branchPrefix);
+    const added = 'chore/acceptance-harness-';
+    expect(prefixes.filter((p) => p === added)).toHaveLength(1);
+    for (const other of prefixes.filter((p) => p !== added)) {
+      expect(added.startsWith(other), `${other} would swallow ${added}`).toBe(false);
+      expect(other.startsWith(added), `${added} would swallow ${other}`).toBe(false);
+    }
+  });
+});

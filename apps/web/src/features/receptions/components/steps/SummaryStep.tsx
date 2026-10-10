@@ -1,23 +1,18 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useState, useTransition } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
-import { useServerTable } from '@/components/data-table/use-server-table';
-import { TextAreaField } from '@/components/forms/Field';
+import { useServerTable, type ServerTable } from '@/components/data-table/use-server-table';
+import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { PartyLabel } from '@/components/party/PartyLabel';
-import {
-  ErrorState,
-  LoadingState,
-  PermissionDeniedState,
-  SessionExpiredState,
-} from '@/components/states/States';
+import { FailureExplanation } from '@/components/states/States';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
-import { formatDateTime } from '@/lib/format';
-import type { ActionState } from '@/lib/forms/action-result';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
+import { IDLE, unreachable, type ActionState } from '@/lib/forms/action-result';
 import {
   approveReception,
   closeReceptionWithoutWork,
@@ -40,7 +35,11 @@ import {
   isCustomerReported,
   nextVersionAfter,
   receptionAffordances,
+  refusalFixStepId,
+  refusalReasonKey,
 } from '../../check-in/closure';
+import { InstantOrRaw } from './EvidencePanels';
+import { PartyRoleGrid, authorizationColumns } from './PartiesStep';
 
 /**
  * The reception summary, the approval, and the two terminal exits (`FE-020`).
@@ -70,7 +69,10 @@ import {
  *
  * Both exits release the vehicle from `uq_reception_visits_open_vehicle`, which
  * is what lets an abandoned visit's vehicle be received again, and both take one
- * mandatory bounded reason that lands in the append-only status ledger.
+ * mandatory bounded reason that lands in the append-only status ledger. Both
+ * are terminal and irreversible, so each asks in `ReasonDialog` — an alert
+ * dialog with Cancel focused, the reason box refused on itself when empty or
+ * too long, Escape cancels and a click outside does not.
  *
  * `rec.reception-refuse` is NOT `rec.reception-refusal`: the refusal EVIDENCE
  * this step never touches records that a party declined a step and changes no
@@ -93,9 +95,16 @@ import {
  * renders the category, the severity and who reported it, and states plainly
  * that the wording is held on the restricted record rather than paraphrasing it
  * into a finding nobody made.
+ *
+ * ## On the Material UI wrappers (ADR-022)
+ *
+ * The three read-backs are `OperationalGrid` (the server's pages, never
+ * counted); the commands are Material buttons whose handlers await the send
+ * AND the re-read that settles it inside one `try` and clear their pending
+ * state in its `finally`: an answer that never arrives is said as that and the
+ * button is usable again, and a command cannot be pressed a second time with
+ * the version it has just spent while that re-read is still running.
  */
-
-const IDLE: ActionState = { status: 'idle' };
 
 export function SummaryStep({
   locale,
@@ -106,6 +115,7 @@ export function SummaryStep({
   capabilities,
   writesLocked,
   refresh,
+  goToStep,
 }: CheckInStepProps) {
   const readKey = `${visitId}:${recordVersion}`;
   const affordances = receptionAffordances(detail.receptionStatus);
@@ -158,17 +168,24 @@ export function SummaryStep({
       <div className="grid gap-4 lg:grid-cols-2">
         <section
           aria-labelledby="summary-parties-heading"
-          className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+          className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
         >
           <h4 id="summary-parties-heading" className="text-body font-medium text-text-primary">
             {translate(messages, 'receptions.summary.partiesHeading')}
           </h4>
-          <RoleSummary messages={messages} table={roles} />
+          <PartyRoleGrid
+            locale={locale}
+            messages={messages}
+            table={roles}
+            showInterval={false}
+            emptyKey="receptions.summary.partiesEmpty"
+            testId="summary-party-grid"
+          />
         </section>
 
         <section
           aria-labelledby="summary-authorizations-heading"
-          className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+          className="flex min-w-0 flex-col gap-3 rounded-lg border border-border bg-surface p-4"
         >
           <h4
             id="summary-authorizations-heading"
@@ -215,6 +232,7 @@ export function SummaryStep({
                   visitId={visitId}
                   recordVersion={recordVersion}
                   settle={settle}
+                  goToStep={goToStep}
                 />
               ) : (
                 <p className="text-caption text-text-muted" lang={locale}>
@@ -263,14 +281,15 @@ export function SummaryStep({
           </>
         )}
 
-        <p className="border-t border-border pt-3">
-          <Link
+        <div className="border-t border-border pt-3">
+          <Button
+            component={Link}
             href={`/${locale}/receptions/check-in/${visitId}/acknowledgement`}
-            className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
+            variant="outlined"
           >
             {translate(messages, 'receptions.summary.openAcknowledgement')}
-          </Link>
-        </p>
+          </Button>
+        </div>
       </section>
     </div>
   );
@@ -280,85 +299,18 @@ export function SummaryStep({
  * Read-backs
  * ---------------------------------------------------------------------- */
 
-function ListStates({
-  messages,
-  status,
-  correlationId,
-  onRetry,
-}: {
-  readonly messages: Messages;
-  readonly status: string;
-  readonly correlationId: string | undefined;
-  readonly onRetry: () => void;
-}) {
-  if (status === 'loading') return <LoadingState messages={messages} />;
-  if (status === 'denied') {
-    return (
-      <PermissionDeniedState messages={messages} {...(correlationId ? { correlationId } : {})} />
-    );
-  }
-  if (status === 'expired') return <SessionExpiredState messages={messages} />;
-  return (
-    <ErrorState
-      messages={messages}
-      action={
-        <button
-          type="button"
-          onClick={onRetry}
-          className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
-          {translate(messages, 'state.retry')}
-        </button>
-      }
-      {...(correlationId ? { correlationId } : {})}
-    />
-  );
-}
-
-function RoleSummary({
-  messages,
-  table,
-}: {
-  readonly messages: Messages;
-  readonly table: ReturnType<typeof useServerTable<PartyRoleEntry>>;
-}) {
-  if (table.status !== 'idle') {
-    return (
-      <ListStates
-        messages={messages}
-        status={table.status}
-        correlationId={table.correlationId}
-        onRetry={table.refresh}
-      />
-    );
-  }
-  const rows = table.response?.rows ?? [];
-  if (rows.length === 0) {
-    return (
-      <p className="text-body text-text-secondary">
-        {translate(messages, 'receptions.summary.partiesEmpty')}
-      </p>
-    );
-  }
-  return (
-    <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-      {rows.map((row) => (
-        <li key={row.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
-          <PartyLabel
-            messages={messages}
-            party={{
-              partnerName: row.partnerDisplayName,
-              partnerNumber: row.partnerDisplayNumber,
-              partnerType: null,
-            }}
-          />
-          <span className="text-caption text-text-secondary">
-            {translateDynamic(messages, `receptions.partyRole.${row.relationshipRole}`)}
-          </span>
-        </li>
-      ))}
-    </ul>
-  );
+/**
+ * Standing FIRST, and marked. `isStanding` is each partner's CURRENT decision
+ * across both tables; a superseded row is history and is shown as history, so
+ * a withdrawn consent can never read as consent. The page the server answered
+ * is only re-ordered, never filtered, and the grid is handed that page.
+ */
+function standingFirst(table: ServerTable<AuthorizationEntry>): ServerTable<AuthorizationEntry> {
+  const response = table.response;
+  if (response === null) return table;
+  const standing = response.rows.filter((row) => row.isStanding);
+  const superseded = response.rows.filter((row) => !row.isStanding);
+  return { ...table, response: { ...response, rows: [...standing, ...superseded] } };
 }
 
 function AuthorizationSummary({
@@ -368,74 +320,34 @@ function AuthorizationSummary({
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly table: ReturnType<typeof useServerTable<AuthorizationEntry>>;
+  readonly table: ServerTable<AuthorizationEntry>;
 }) {
-  if (table.status !== 'idle') {
-    return (
-      <ListStates
-        messages={messages}
-        status={table.status}
-        correlationId={table.correlationId}
-        onRetry={table.refresh}
-      />
-    );
-  }
+  const columns = useMemo(
+    () => authorizationColumns(locale, messages, 'summary'),
+    [locale, messages]
+  );
+  const ordered = useMemo(() => standingFirst(table), [table]);
   const rows = table.response?.rows ?? [];
-  if (rows.length === 0) {
-    return (
-      <p className="text-body text-text-secondary">
-        {translate(messages, 'receptions.summary.authorizationsEmpty')}
-      </p>
-    );
-  }
-  /*
-   * Standing FIRST, and marked. `isStanding` is each partner's CURRENT decision
-   * across both tables; a superseded row is history and is shown as history, so
-   * a withdrawn consent can never read as consent.
-   */
-  const standing = rows.filter((row) => row.isStanding);
-  const superseded = rows.filter((row) => !row.isStanding);
+
   return (
-    <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-      {[...standing, ...superseded].map((row) => (
-        <li key={`${row.kind}-${row.id}`} className="flex flex-wrap items-center gap-3 px-3 py-2">
-          <PartyLabel
-            messages={messages}
-            party={{ partnerName: row.partnerDisplayName, partnerNumber: null, partnerType: null }}
-          />
-          <span
-            className={
-              row.decision === 'approved'
-                ? 'text-caption font-medium text-success'
-                : 'text-caption font-medium text-error'
-            }
-          >
-            {translate(
-              messages,
-              row.decision === 'approved'
-                ? 'receptions.authorization.approved'
-                : 'receptions.authorization.declined'
-            )}
-          </span>
-          <span className="text-caption text-text-secondary">
-            {translate(
-              messages,
-              row.kind === 'refusal'
-                ? 'receptions.authorization.kindRefusal'
-                : 'receptions.authorization.kindAuthorization'
-            )}
-          </span>
-          <span className="text-caption text-text-muted">
-            {row.isStanding
-              ? translate(messages, 'receptions.authorization.standing')
-              : translate(messages, 'receptions.summary.supersededDecision')}
-          </span>
-          <span className="text-caption text-text-muted">
-            {formatDateTime(row.occurredAt, locale)}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <OperationalGrid<AuthorizationEntry>
+        messages={messages}
+        locale={locale}
+        label={translate(messages, 'receptions.summary.authorizationsHeading')}
+        columns={columns}
+        rowId={(row) => `${row.kind}-${row.id}`}
+        table={ordered}
+        density="compact"
+        suppressEmptyState
+        testId="summary-authorization-grid"
+      />
+      {table.status === 'idle' && table.response !== null && rows.length === 0 ? (
+        <p className="text-body text-text-secondary">
+          {translate(messages, 'receptions.summary.authorizationsEmpty')}
+        </p>
+      ) : null}
+    </>
   );
 }
 
@@ -446,74 +358,73 @@ function EvidenceSummary({
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly table: ReturnType<typeof useServerTable<ConditionEvidenceEntry>>;
+  readonly table: ServerTable<ConditionEvidenceEntry>;
 }) {
-  if (table.status !== 'idle') {
-    return (
-      <ListStates
-        messages={messages}
-        status={table.status}
-        correlationId={table.correlationId}
-        onRetry={table.refresh}
-      />
-    );
-  }
+  const columns = useMemo<readonly OperationalColumn<ConditionEvidenceEntry>[]>(
+    () => [
+      {
+        id: 'kind',
+        headerKey: 'receptions.acknowledgement.columnEvidence',
+        flex: 2,
+        cell: (row) => translateDynamic(messages, `receptions.evidenceKind.${row.kind}`),
+      },
+      {
+        id: 'source',
+        headerKey: 'receptions.acknowledgement.columnSource',
+        flex: 2,
+        cell: (row) =>
+          isCustomerReported(row.kind) ? (
+            <span className="flex flex-col">
+              <span>{translate(messages, 'receptions.summary.customerReported')}</span>
+              <span className="text-caption text-text-muted" lang={locale}>
+                {translate(messages, 'receptions.summary.complaintWordsRestricted')}
+              </span>
+            </span>
+          ) : (
+            translate(messages, 'receptions.summary.staffObserved')
+          ),
+      },
+      {
+        id: 'media',
+        headerKey: 'receptions.acknowledgement.columnMedia',
+        // Existence only, and no lifecycle state: this row publishes
+        // `evidenceDocumentId` and no status beside it, so naming one
+        // would name a state this screen never read. Never the
+        // identifier either — it is an internal reference.
+        cell: (row) =>
+          hasRegisteredMedia(row.evidenceDocumentId)
+            ? translate(messages, 'receptions.summary.mediaRegistered')
+            : '',
+      },
+      {
+        id: 'recordedAt',
+        headerKey: 'receptions.acknowledgement.columnRecordedAt',
+        cell: (row) => <InstantOrRaw value={row.recordedAt} locale={locale} />,
+      },
+    ],
+    [locale, messages]
+  );
   const rows = table.response?.rows ?? [];
-  if (rows.length === 0) {
-    return (
-      <p className="text-body text-text-secondary">
-        {translate(messages, 'receptions.summary.evidenceEmpty')}
-      </p>
-    );
-  }
+
   return (
     <>
-      <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-        {rows.map((row) => {
-          const reported = isCustomerReported(row.kind);
-          return (
-            <li key={`${row.kind}-${row.id}`} className="flex flex-col gap-1 px-3 py-2">
-              <div className="flex flex-wrap items-center gap-3">
-                <span className="text-body text-text-primary">
-                  {translateDynamic(messages, `receptions.evidenceKind.${row.kind}`)}
-                </span>
-                <span
-                  className={
-                    reported
-                      ? 'rounded-full border border-border px-2 py-0.5 text-caption text-text-secondary'
-                      : 'rounded-full bg-surface-subtle px-2 py-0.5 text-caption text-text-secondary'
-                  }
-                >
-                  {translate(
-                    messages,
-                    reported
-                      ? 'receptions.summary.customerReported'
-                      : 'receptions.summary.staffObserved'
-                  )}
-                </span>
-                {hasRegisteredMedia(row.evidenceDocumentId) ? (
-                  // Existence only, and no lifecycle state: this row publishes
-                  // `evidenceDocumentId` and no status beside it, so naming one
-                  // would name a state this screen never read. Never the
-                  // identifier either — it is an internal reference.
-                  <span className="text-caption text-text-muted">
-                    {translate(messages, 'receptions.summary.mediaRegistered')}
-                  </span>
-                ) : null}
-                <span className="text-caption text-text-muted">
-                  {formatDateTime(row.recordedAt, locale)}
-                </span>
-              </div>
-              {reported ? (
-                <p className="text-caption text-text-muted" lang={locale}>
-                  {translate(messages, 'receptions.summary.complaintWordsRestricted')}
-                </p>
-              ) : null}
-            </li>
-          );
-        })}
-      </ul>
-      {table.response?.hasMore ? (
+      <OperationalGrid<ConditionEvidenceEntry>
+        messages={messages}
+        locale={locale}
+        label={translate(messages, 'receptions.summary.evidenceHeading')}
+        columns={columns}
+        rowId={(row) => `${row.kind}-${row.id}`}
+        table={table}
+        density="compact"
+        suppressEmptyState
+        testId="summary-evidence-grid"
+      />
+      {table.status === 'idle' && table.response !== null && rows.length === 0 ? (
+        <p className="text-body text-text-secondary">
+          {translate(messages, 'receptions.summary.evidenceEmpty')}
+        </p>
+      ) : null}
+      {table.status === 'idle' && table.response?.hasMore ? (
         <p className="text-caption text-text-muted" lang={locale}>
           {translate(messages, 'receptions.summary.evidenceTruncated')}
         </p>
@@ -523,7 +434,7 @@ function EvidenceSummary({
 }
 
 /* ---------------------------------------------------------------------- *
- * Commands
+ * The commands
  * ---------------------------------------------------------------------- */
 
 function ApprovalPanel({
@@ -532,21 +443,35 @@ function ApprovalPanel({
   visitId,
   recordVersion,
   settle,
+  goToStep,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly visitId: string;
   readonly recordVersion: number;
   readonly settle: (state: ActionState) => Promise<void>;
+  readonly goToStep: (stepId: string) => void;
 }) {
   const [state, setState] = useState<ActionState>(IDLE);
   const [approvedVersion, setApprovedVersion] = useState<number | null>(null);
   const [appliedTransitions, setAppliedTransitions] = useState<readonly string[]>([]);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
-  const submit = () => {
-    startTransition(async () => {
-      const result = await approveReception(visitId, recordVersion, (state.attempt ?? 0) + 1);
+  const submit = async () => {
+    const attempt = (state.attempt ?? 0) + 1;
+    setPending(true);
+    // Pending covers the send AND the re-read that settles it: until the
+    // re-read lands the only version on hand is the one just spent, so a
+    // second press would send it again and meet a stale-version conflict.
+    try {
+      let result: Awaited<ReturnType<typeof approveReception>>;
+      try {
+        result = await approveReception(visitId, recordVersion, attempt);
+      } catch {
+        // No answer came back: said as that, and the button works again.
+        setState(unreachable(attempt));
+        return;
+      }
       setState(result);
       if (result.status === 'success' && result.approved) {
         // The RESPONSE's version, never `recordVersion + 1`: approve applies one
@@ -555,7 +480,9 @@ function ApprovalPanel({
         setAppliedTransitions(result.approved.appliedTransitions);
       }
       await settle(result);
-    });
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
@@ -564,16 +491,19 @@ function ApprovalPanel({
         {translate(messages, 'receptions.summary.approveBody')}
       </p>
       <div>
-        <button
+        <Button
           type="button"
-          onClick={submit}
+          variant="contained"
+          onClick={() => {
+            if (!pending) void submit();
+          }}
           disabled={pending}
-          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          aria-busy={pending || undefined}
         >
           {pending
             ? translate(messages, 'form.pending')
             : translate(messages, 'receptions.summary.approve')}
-        </button>
+        </Button>
       </div>
 
       {state.status === 'success' && approvedVersion !== null ? (
@@ -595,7 +525,7 @@ function ApprovalPanel({
         </div>
       ) : null}
 
-      <CommandOutcome locale={locale} messages={messages} state={state} />
+      <CommandOutcome locale={locale} messages={messages} state={state} goToStep={goToStep} />
     </div>
   );
 }
@@ -631,6 +561,14 @@ const CLOSURE_COPY: Readonly<
   },
 };
 
+/**
+ * One terminal exit, asked in `ReasonDialog`.
+ *
+ * The reason is checked here before anything is sent (`closureReasonProblem`:
+ * present, and no longer than the record allows) and refused ON the reason box,
+ * which keeps what was typed. A server refusal of the reason lands on the same
+ * box; any other answer closes the dialog and is said beside the button.
+ */
 function ClosurePanel({
   locale,
   messages,
@@ -646,66 +584,104 @@ function ClosurePanel({
   readonly kind: ClosureKind;
   readonly settle: (state: ActionState) => Promise<void>;
 }) {
-  const [reason, setReason] = useState('');
-  const [problem, setProblem] = useState<string | null>(null);
+  const [open, setOpen] = useState(false);
+  const [reasonError, setReasonError] = useState<string | undefined>(undefined);
+  const [dialogError, setDialogError] = useState<string | undefined>(undefined);
   const [state, setState] = useState<ActionState>(IDLE);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
   const copy = CLOSURE_COPY[kind];
 
-  const submit = () => {
+  const close = () => {
+    setOpen(false);
+    setReasonError(undefined);
+    setDialogError(undefined);
+  };
+
+  const submit = async (reason: string) => {
     const found = closureReasonProblem(reason);
-    setProblem(found);
-    if (found !== null) return;
-    startTransition(async () => {
-      const attempt = (state.attempt ?? 0) + 1;
-      const input = { reason: reason.trim() };
-      const result =
-        kind === 'refuse'
-          ? await refuseReception(visitId, recordVersion, input, attempt)
-          : await closeReceptionWithoutWork(visitId, recordVersion, input, attempt);
+    if (found !== null) {
+      setReasonError(translateDynamic(messages, found));
+      return;
+    }
+    setReasonError(undefined);
+    setDialogError(undefined);
+    const attempt = (state.attempt ?? 0) + 1;
+    const input = { reason: reason.trim() };
+    setPending(true);
+    // Pending covers the send AND the re-read that settles it, so the exit
+    // cannot be pressed again with the version this command just spent.
+    try {
+      let result: ActionState;
+      try {
+        result =
+          kind === 'refuse'
+            ? await refuseReception(visitId, recordVersion, input, attempt)
+            : await closeReceptionWithoutWork(visitId, recordVersion, input, attempt);
+      } catch {
+        // No answer came back: the dialog stays open with the reason typed.
+        const lost = unreachable(attempt);
+        setState(lost);
+        setDialogError(translate(messages, 'state.unavailable.message'));
+        return;
+      }
+      const refusedReason = result.fieldErrors?.['reason'];
+      if (result.status === 'invalid' && refusedReason !== undefined) {
+        // The service refused the reason itself: said on the box, still open.
+        setState(result);
+        setReasonError(translateDynamic(messages, refusedReason));
+        return;
+      }
       setState(result);
-      if (result.status === 'success') setReason('');
+      close();
       await settle(result);
-    });
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
-    <form
-      aria-label={translate(messages, copy.heading)}
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
-      noValidate
-      className="flex flex-col gap-2"
-    >
+    <div className="flex flex-col gap-2">
       <h5 className="text-body font-medium text-text-primary">
         {translate(messages, copy.heading)}
       </h5>
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, copy.body)}
       </p>
-      <TextAreaField
-        label={translate(messages, 'receptions.closure.reason')}
-        description={translate(messages, 'receptions.closure.reasonHint')}
-        required
-        rows={3}
-        maxLength={MAX_CLOSURE_REASON}
-        value={reason}
-        onChange={(event) => setReason(event.target.value)}
-        {...(problem !== null ? { error: translateDynamic(messages, problem) } : {})}
-      />
       <div>
-        <button
-          type="submit"
+        <Button
+          type="button"
+          variant="outlined"
+          color="error"
+          onClick={() => setOpen(true)}
           disabled={pending}
-          className="rounded-md border border-border-strong px-4 py-2 text-body font-medium text-text-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
         >
-          {pending ? translate(messages, 'form.pending') : translate(messages, copy.submit)}
-        </button>
+          {translate(messages, copy.submit)}
+        </Button>
       </div>
-      <CommandOutcome locale={locale} messages={messages} state={state} />
-    </form>
+      <CommandOutcome
+        locale={locale}
+        messages={messages}
+        state={state.status === 'unavailable' && open ? IDLE : state}
+      />
+      <ReasonDialog
+        open={open}
+        onCancel={close}
+        onConfirm={(reason) => void submit(reason)}
+        title={translate(messages, copy.heading)}
+        description={`${translate(messages, copy.body)} ${translate(messages, 'receptions.closure.reasonHint')}`}
+        confirmLabel={translate(messages, copy.submit)}
+        reasonLabel={translate(messages, 'receptions.closure.reason')}
+        messages={messages}
+        destructive
+        pending={pending}
+        error={dialogError}
+        reasonError={reasonError}
+        maxLength={MAX_CLOSURE_REASON}
+        testId={`closure-dialog-${kind}`}
+        // A typed closure reason is unsaved work: leaving the page asks first.
+        countsAsUnsaved
+      />
+    </div>
   );
 }
 
@@ -716,30 +692,64 @@ function ClosurePanel({
  * cured by the re-read that has just happened, and the operator is invited to
  * try again; a blocked state is not cured by anything the operator can do here,
  * and inviting a retry would invite the same refusal.
+ *
+ * ## A blocked refusal names its precondition, and offers the step (DEF-T-10)
+ *
+ * "The visit's current state does not allow this command" was printed for
+ * every blocked 409, including the one an operator CAN cure: approval refused
+ * because no verified authorization had been recorded, which is a form two
+ * steps back. The sentence was true, said nothing about what was missing, and
+ * pointed nowhere.
+ *
+ * So when the API published a reason token — `refusalReasonKey` recognises the
+ * ones the approval path can produce — that sentence is shown instead of the
+ * generic one, and when the reason is one a step satisfies
+ * (`refusalFixStepId`), a button opens that step. Nothing is invented here: a
+ * reason this module has not been told about still gets the generic sentence
+ * rather than a guess dressed up as an explanation.
  */
 export function CommandOutcome({
   locale,
   messages,
   state,
+  goToStep,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly state: ActionState;
+  /** Opens a step of the wizard; absent where the outcome is not in one. */
+  readonly goToStep?: (stepId: string) => void;
 }) {
   if (state.status === 'idle' || state.status === 'success') return null;
 
   if (state.status === 'conflict') {
     const kind = conflictKindOf(state.messageKey);
+    const reasonKey = kind === 'blocked' ? refusalReasonKey(state.messageKey) : null;
+    const fixStepId = reasonKey === null ? null : refusalFixStepId(reasonKey);
     return (
       <div role="alert" className="rounded-md border border-border bg-surface-subtle p-3">
         <p className="text-body text-text-primary" lang={locale}>
-          {translate(
-            messages,
-            kind === 'stale'
-              ? 'receptions.command.conflictStale'
-              : 'receptions.command.conflictBlocked'
-          )}
+          {reasonKey !== null
+            ? translateDynamic(messages, reasonKey)
+            : translate(
+                messages,
+                kind === 'stale'
+                  ? 'receptions.command.conflictStale'
+                  : 'receptions.command.conflictBlocked'
+              )}
         </p>
+        {fixStepId !== null && goToStep !== undefined ? (
+          <p className="mt-2">
+            <Button
+              type="button"
+              variant="outlined"
+              size="small"
+              onClick={() => goToStep(fixStepId)}
+            >
+              {translate(messages, 'receptions.command.goToAuthorization')}
+            </Button>
+          </p>
+        ) : null}
         {state.correlationId ? (
           <p className="mt-1 text-caption text-text-muted">
             {translate(messages, 'state.correlationId')}{' '}
@@ -753,8 +763,9 @@ export function CommandOutcome({
   return (
     <p role="alert" className="text-body text-error" lang={locale}>
       {state.messageKey
-        ? translateDynamic(messages, state.messageKey)
+        ? translateWithValues(messages, state.messageKey, state.messageValues)
         : translate(messages, 'action.failed')}
+      <FailureExplanation messages={messages} messageKey={state.messageKey ?? ''} />
       {state.correlationId ? (
         <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
       ) : null}

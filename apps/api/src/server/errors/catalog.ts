@@ -23,6 +23,8 @@ export const ERROR_CODES = [
   'ERR-PAG-001',
   'ERR-IAM-001',
   'ERR-IAM-002',
+  'ERR-IAM-003',
+  'ERR-IAM-004',
   'ERR-TEN-001',
   'ERR-CTX-001',
   'ERR-RES-001',
@@ -39,11 +41,15 @@ export const ERROR_CODES = [
   'ERR-NTF-001',
   'ERR-EXP-001',
   'ERR-TRN-001',
+  'ERR-INV-001',
   'ERR-WO-001',
   'ERR-WO-002',
   'ERR-TECH-001',
   'ERR-DIA-001',
   'ERR-QMS-001',
+  'ERR-CAP-001',
+  'ERR-CAP-002',
+  'ERR-CAP-003',
   'ERR-SYS-001',
 ] as const;
 
@@ -75,6 +81,7 @@ export interface ErrorDefinition {
     | 'notification'
     | 'export'
     | 'transition'
+    | 'capacity'
     | 'platform';
   /** Advisory: may the same request succeed later without modification? */
   readonly retryable: boolean;
@@ -142,6 +149,26 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     retryable: false,
     class: 'security',
     description: 'No authenticated principal could be resolved for the request.',
+  },
+  'ERR-IAM-003': {
+    code: 'ERR-IAM-003',
+    title: 'Current password did not verify',
+    status: 422,
+    owner: 'authorization',
+    retryable: false,
+    class: 'security',
+    description:
+      'A caller changing their own password supplied a current password the identity provider would not verify. Deliberately NOT ERR-IAM-002: the session is valid and must stay valid, and answering 401 would sign the caller out for a typing mistake. Deliberately NOT ERR-IAM-001 either, because the caller IS permitted to perform the operation. 422 so a client renders it against the field the caller must correct. Security-classed: it is a failed credential verification and is triaged as one. No provider text and no fragment of either password reaches the response.',
+  },
+  'ERR-IAM-004': {
+    code: 'ERR-IAM-004',
+    title: 'The new password was refused',
+    status: 422,
+    owner: 'validation',
+    retryable: false,
+    class: 'client',
+    description:
+      'The identity provider refused the new password by its own credential policy. RootLco holds no second strength policy (ADR-019), so this code is the only place such a verdict exists; the provider bounds nothing else about it. The provider’s own sentence is written to the operator log and is never placed in the problem document, which carries a violation on the new-password field and nothing more. Distinct from ERR-VAL-001 so a client can tell "the provider will not accept this password" from "the request document is malformed", which have different remedies.',
   },
   'ERR-TEN-001': {
     code: 'ERR-TEN-001',
@@ -303,6 +330,16 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     description:
       'The requested target state is registered for this aggregate, but the aggregate is not in a state the transition may start from — including the case where it is already in the target state. Distinct from ERR-CON-001, which means the caller held a stale record version: re-reading and retrying fixes a version conflict and cannot fix this one.',
   },
+  'ERR-INV-001': {
+    code: 'ERR-INV-001',
+    title: 'Material draw not covered by an approved requirement',
+    status: 409,
+    owner: 'transition',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'A reservation or issue for a work order drew on no material requirement or on one that does not allow it: no requirement on the work order covers the item at all (no_requirement — the absence of a requirement is a refusal, never an unlimited draw), the requirement is not approved, the item has no exact conversion into the requirement unit, no confirmed specification supplied the allowance, or the quantity would take the committed total past the approved allowance plus approved exceptions. The response carries materialDraw with the effective allowance, the quantity already committed and the quantity requested, all in the requirement unit as exact decimal strings, and the reason. Nothing moved. Deliberately NOT ERR-TRN-001: the stock may be there and the work order may accept parts; what refuses the draw is the approved demand, and the remedy is an approval, a reference fact or an approved exception.',
+  },
   'ERR-WO-001': {
     code: 'ERR-WO-001',
     title: 'Work order cannot be closed yet',
@@ -352,6 +389,36 @@ const DEFINITIONS: Readonly<Record<ErrorCode, ErrorDefinition>> = Object.freeze(
     class: 'conflict',
     description:
       'Covers the QMS refusals that are not closure blockers: an attempt to reopen a closed work order (BR-WO-002 — recorded as a rejected attempt in qms.reopen_attempts and never mutating the order), and a rework resolution lacking the independent sign-off BR-QMS-001 requires for safety-critical work. Distinct from ERR-WO-001, which is specifically the B1..B6 closure gate.',
+  },
+  'ERR-CAP-001': {
+    code: 'ERR-CAP-001',
+    title: 'Subscription capacity limit reached',
+    status: 409,
+    owner: 'capacity',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'The organisation already holds as many companies, branches or user seats as its active subscription plan permits, so org.assert_capacity_available refused the write at the database. Deliberately NOT ERR-TEN-001: that code says the plan does not include a feature at all, while this one says the plan includes it and the allowance is spent. Deliberately not a validation failure either — the request was well formed and nothing about it can be corrected; either a seat is released or the plan changes. `capacity` carries which ceiling was reached, what it is and what is in use, because a refusal that cannot name the limit leaves the administrator with nothing to act on.',
+  },
+  'ERR-CAP-002': {
+    code: 'ERR-CAP-002',
+    title: 'Organisation is not active',
+    status: 409,
+    owner: 'capacity',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'The write would have grown the organisation while the tenant is suspended or closed, and org.assert_capacity_available refused it. Distinct from ERR-CAP-001, which means the allowance is spent: here there is no allowance to spend, because the organisation itself is not running. A caller cannot fix this by retrying or by changing the request.',
+  },
+  'ERR-CAP-003': {
+    code: 'ERR-CAP-003',
+    title: 'Plan capacity is below current usage',
+    status: 409,
+    owner: 'capacity',
+    retryable: false,
+    class: 'conflict',
+    description:
+      'The subscription plan the request would assign declares a ceiling below what the organisation already holds, so assigning it would leave the organisation over its own allowance on at least one kind. Reported per kind — `overCapacity` names every one of them with what is in use and what the new plan would permit — because an operator told only that a downgrade is too small would correct one kind and be refused for the next. Distinct from ERR-CAP-001, which is a single write meeting a ceiling that is already in force. The refusal is not absolute: an operator who states a reason may accept the over-capacity deliberately, after which existing records stay and the creation triggers go on refusing anything new.',
   },
   'ERR-SYS-001': {
     code: 'ERR-SYS-001',

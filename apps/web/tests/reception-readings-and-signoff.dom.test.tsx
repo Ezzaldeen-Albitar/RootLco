@@ -3,7 +3,10 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
-import { renderLtr, renderRtl } from './render';
+import { TEST_COMPANY, branchSnapshot, inBranch, renderLtr, renderRtl } from './render';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import { getMessages } from '@/i18n/get-messages';
 import type { CheckInStepProps } from '@/features/receptions/check-in/wizard';
 import type { ReceptionDetail, SignatureEntry } from '@/features/receptions/receptions-contract';
 
@@ -99,8 +102,8 @@ vi.mock('@/features/vehicles/history-api', () => ({
 }));
 
 const searchCustomerDirectory = vi.fn();
-vi.mock('@/lib/customers/directory', () => ({
-  searchCustomerDirectory: (...args: unknown[]) => searchCustomerDirectory(...args),
+vi.mock('@/lib/customers/directory-read', () => ({
+  searchCustomerDirectoryCancellable: (...args: unknown[]) => searchCustomerDirectory(...args),
 }));
 
 const { ReadingsStep } = await import('@/features/receptions/components/steps/ReadingsStep');
@@ -181,6 +184,7 @@ function stepProps(over: Partial<CheckInStepProps> = {}): CheckInStepProps {
     session: { userId: 'user-1', displayName: 'Front Desk' },
     writesLocked: false,
     refresh: vi.fn().mockResolvedValue(undefined),
+    goToStep: vi.fn(),
     ...over,
   };
 }
@@ -301,34 +305,122 @@ describe('the readings step — odometer (FE-013)', () => {
     expect(panel).toHaveTextContent(EN['receptions.evidence.notRecorded']!);
   });
 
+  /** The visit's own branch, published by the working context with its clock. */
+  const VISIT_BRANCH = {
+    id: 'branch-1',
+    companyId: TEST_COMPANY.id,
+    code: 'B1',
+    name: 'Main workshop',
+    city: null,
+    timezone: 'Asia/Riyadh',
+    status: 'active',
+  } as const;
+
   it('records a reading through the vehicle operation, bound to the visit vehicle', async () => {
     const user = userEvent.setup();
-    renderLtr(<ReadingsStep {...stepProps()} />);
+    renderLtr(
+      <UiFoundationProvider locale="en" text={muiTextOf(getMessages('en'))}>
+        {inBranch(<ReadingsStep {...stepProps()} />, {
+          snapshot: branchSnapshot([VISIT_BRANCH]),
+        })}
+      </UiFoundationProvider>
+    );
 
-    // `RecordForm` has no accessible name, so it is not exposed as `role="form"`.
-    // The submit control is the anchor, and its own form is the scope.
-    const submit = await screen.findByRole('button', { name: EN['receptions.odometer.record']! });
-    const form = submit.closest('form') as HTMLElement;
-    // Anchored, not exact: a required field's label carries a trailing asterisk
-    // that `getByLabelText` sees (it does not honour `aria-hidden`).
+    const form = await screen.findByRole('form', { name: EN['receptions.odometer.record']! });
     await user.type(
-      within(form).getByLabelText(new RegExp(`^${EN['vehicles.odometer.reading']}`)),
+      within(form).getByRole('textbox', { name: EN['vehicles.odometer.reading']! }),
       '120500'
     );
     await user.selectOptions(
-      within(form).getByLabelText(new RegExp(`^${EN['vehicles.odometer.unit']}`)),
+      within(form).getByRole('combobox', { name: EN['vehicles.odometer.unit']! }),
       'km'
     );
-    await user.type(
-      within(form).getByLabelText(new RegExp(`^${EN['vehicles.odometer.observedAt']}`)),
-      '2026-08-13T09:30'
-    );
-    await user.click(submit);
+    // The moment is typed part by part on the VISIT's branch clock (Riyadh).
+    const moment = within(form).getByRole('group', {
+      name: new RegExp(`^${EN['vehicles.odometer.observedAt']}`),
+    });
+    await user.click(within(moment).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('130820260930');
+    await user.click(within(form).getByRole('button', { name: EN['receptions.odometer.record']! }));
 
     await waitFor(() => expect(recordOdometerAction).toHaveBeenCalled());
     // The adapter is bound to the vehicle id, so the reception screen cannot
     // write a reading against any other vehicle.
     expect(recordOdometerAction.mock.calls.at(-1)![0]).toBe('veh-9');
+    const sent = recordOdometerAction.mock.calls.at(-1)![2] as FormData;
+    expect(sent.get('value')).toBe('120500');
+    expect(sent.get('unit')).toBe('km');
+    // Emitted with the branch's own offset for that moment, never the laptop's.
+    expect(String(sent.get('observedAt'))).toMatch(/^2026-08-13T09:30(:00(\.000)?)?\+03:00$/);
+  });
+
+  it('refuses a reading with no moment ON the moment, and keeps what was typed', async () => {
+    const user = userEvent.setup();
+    renderLtr(
+      <UiFoundationProvider locale="en" text={muiTextOf(getMessages('en'))}>
+        {inBranch(<ReadingsStep {...stepProps()} />, {
+          snapshot: branchSnapshot([VISIT_BRANCH]),
+        })}
+      </UiFoundationProvider>
+    );
+    const form = await screen.findByRole('form', { name: EN['receptions.odometer.record']! });
+    const reading = within(form).getByRole('textbox', { name: EN['vehicles.odometer.reading']! });
+    await user.type(reading, '120500');
+    await user.selectOptions(
+      within(form).getByRole('combobox', { name: EN['vehicles.odometer.unit']! }),
+      'km'
+    );
+    await user.click(within(form).getByRole('button', { name: EN['receptions.odometer.record']! }));
+
+    expect(await within(form).findByText(EN['vehicles.odometer.error.observedAt']!)).toBeVisible();
+    expect(reading).toHaveValue('120500');
+    expect(recordOdometerAction).not.toHaveBeenCalled();
+  });
+
+  it('refuses a moment typed only in part as unfinished, not as missing, and sends nothing', async () => {
+    // A partly typed moment holds no value, so the form used to answer it with
+    // the "give the date and time" sentence meant for an empty one (2026-10-07
+    // browser retest). The field reports it as unfinished, and that is said.
+    const user = userEvent.setup();
+    renderLtr(
+      <UiFoundationProvider locale="en" text={muiTextOf(getMessages('en'))}>
+        {inBranch(<ReadingsStep {...stepProps()} />, {
+          snapshot: branchSnapshot([VISIT_BRANCH]),
+        })}
+      </UiFoundationProvider>
+    );
+    const form = await screen.findByRole('form', { name: EN['receptions.odometer.record']! });
+    await user.type(
+      within(form).getByRole('textbox', { name: EN['vehicles.odometer.reading']! }),
+      '120500'
+    );
+    await user.selectOptions(
+      within(form).getByRole('combobox', { name: EN['vehicles.odometer.unit']! }),
+      'km'
+    );
+    const moment = within(form).getByRole('group', {
+      name: new RegExp(`^${EN['vehicles.odometer.observedAt']}`),
+    });
+    // Day and month only.
+    await user.click(within(moment).getAllByRole('spinbutton')[0] as HTMLElement);
+    await user.keyboard('1308');
+    await user.click(within(form).getByRole('button', { name: EN['receptions.odometer.record']! }));
+
+    expect(await within(form).findByText(EN['field.dateTimeIncomplete']!)).toBeVisible();
+    expect(within(form).queryByText(EN['vehicles.odometer.error.observedAt']!)).toBeNull();
+    expect(within(form).queryByText(EN['field.required']!)).toBeNull();
+    expect(moment).toHaveAttribute('aria-invalid', 'true');
+    expect(recordOdometerAction).not.toHaveBeenCalled();
+  });
+
+  it('takes no moment on a visit whose branch clock is not published, and says so', async () => {
+    // No working context lists the visit's branch: a moment typed on a guessed
+    // clock would be sent off by the branch's real offset.
+    renderLtr(<ReadingsStep {...stepProps()} />);
+    expect(await screen.findByTestId('odometer-zone-unknown')).toHaveTextContent(
+      EN['dateField.zoneUnknown']!
+    );
+    expect(screen.getByRole('button', { name: EN['receptions.odometer.record']! })).toBeDisabled();
   });
 
   it('withdraws the form without veh.vehicle.odometer.record, saying why', async () => {
@@ -787,7 +879,9 @@ describe('the signature step (FE-018)', () => {
     expect(screen.queryByTestId('signature-repudiate-open-sig-2')).not.toBeInTheDocument();
     await user.click(open);
     const submit = screen.getByTestId('signature-repudiate-submit-sig-1');
-    const reason = screen.getByLabelText(EN['receptions.signature.repudiateReason']!);
+    const reason = screen.getByRole('textbox', {
+      name: EN['receptions.signature.repudiateReason']!,
+    });
     expect(submit).toBeDisabled();
 
     // Whitespace is not a reason — the check is `trim()`, and a form that only
@@ -1323,7 +1417,9 @@ describe('F1 — the refusal read-back never reports an unread page as an absenc
     renderLtr(<RefusalStep {...stepProps()} />);
     await screen.findByTestId('refusal-read-back');
 
-    const pager = screen.getByRole('navigation', { name: EN['receptions.refusal.pagerLabel']! });
+    const pager = within(screen.getByTestId('refusal-grid')).getByRole('navigation', {
+      name: EN['table.pagination']!,
+    });
     listAuthorizations.mockResolvedValue(page([REFUSAL_ROW]));
     await user.click(within(pager).getByRole('button', { name: EN['table.nextPage']! }));
 
@@ -1350,9 +1446,15 @@ describe('F1 — the refusal read-back never reports an unread page as an absenc
     await screen.findByText(EN['receptions.authorization.standing']!);
 
     expect(screen.queryByTestId('refusal-more-pages')).not.toBeInTheDocument();
+    // The grid's pager is always drawn (G3); over a covered union it offers no
+    // next page.
     expect(
-      screen.queryByRole('navigation', { name: EN['receptions.refusal.pagerLabel']! })
-    ).not.toBeInTheDocument();
+      within(
+        within(screen.getByTestId('refusal-grid')).getByRole('navigation', {
+          name: EN['table.pagination']!,
+        })
+      ).getByRole('button', { name: EN['table.nextPage']! })
+    ).toBeDisabled();
   });
 
   it('renders the truncated sentence in Arabic, not as a key', async () => {

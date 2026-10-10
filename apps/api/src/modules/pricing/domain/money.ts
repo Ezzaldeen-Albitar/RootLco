@@ -113,9 +113,28 @@ export class Money {
 export interface MoneyView {
   readonly amount: string;
   readonly currency: string;
+  /**
+   * How many decimals the currency is written with — `shared.currencies.minor_unit`,
+   * the platform's own record (Owner decision D1). Present where the read looked the
+   * currency up; a client writes the amount with it rather than with whatever its
+   * own locale data says, which disagrees for some currencies. It is a count of
+   * digits, never an amount, and nothing is rounded with it here.
+   */
+  readonly minorUnit?: number;
 }
 
-/** Renders a stored `numeric(18,4)` string and its currency as the wire shape. */
-export function moneyView(amount: string, currency: string): MoneyView {
-  return Money.fromDatabase(amount, currency).toJSON();
+/**
+ * The minor unit of each currency a read needs, by code, as `shared.currencies`
+ * records it. A code missing from the map is simply not stamped.
+ */
+export type MinorUnits = ReadonlyMap<string, number>;
+
+/**
+ * Renders a stored `numeric(18,4)` string and its currency as the wire shape,
+ * with the currency's minor unit when the caller looked it up.
+ */
+export function moneyView(amount: string, currency: string, minorUnits?: MinorUnits): MoneyView {
+  const view = Money.fromDatabase(amount, currency).toJSON();
+  const minorUnit = minorUnits?.get(view.currency);
+  return minorUnit === undefined ? view : { ...view, minorUnit };
 }

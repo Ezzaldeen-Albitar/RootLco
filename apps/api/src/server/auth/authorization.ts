@@ -27,6 +27,7 @@ import type { RequestContext } from '../context/request-context';
 import { contextLogFields } from '../context/request-context';
 import { log } from '../observability/logger';
 import { metrics, METRICS } from '../observability/metrics';
+import { withPermissionRefusal } from '../audit/business-refusals';
 import type { RegisteredOperation, ScopeRequirement } from './operation-registry';
 
 /** Target the permission is evaluated against, when narrower than the tenant. */
@@ -44,6 +45,18 @@ export interface AuthorizationTarget {
  * in their APPLICATION layer, once the row is locked (P1-18-A-01).
  */
 export type ScopeAuthorizer = (target: AuthorizationTarget) => Promise<void>;
+
+/**
+ * Resolves the branches one company's read may cover (Owner directive,
+ * P1-32-PRE-OD-UX).
+ *
+ * `undefined` means "every branch of that company the policies admit" and is the
+ * answer for a caller carrying no branch narrowing at all; a list means "exactly
+ * these". It is never an empty list — a caller with no branch it may read is
+ * refused rather than answered with a page that reads as "nothing happened
+ * today".
+ */
+export type BranchScopeResolver = (companyId: string) => Promise<readonly string[] | undefined>;
 
 export interface AuthorizationDecision {
   readonly allowed: boolean;
@@ -118,6 +131,12 @@ export async function evaluatePermissions(
   options: EvaluationOptions = {}
 ): Promise<AuthorizationDecision> {
   if (operation.public) return { allowed: true, failedPermissions: [] };
+  // An authenticated self-read (P1-32-PRE-OD-FRX) declares no code by
+  // construction: the pipeline has already authenticated the caller and resolved
+  // its context, and the operation answers only the caller's own facts. Stated
+  // here rather than left to an empty loop, so the decision is a declaration the
+  // registry vetted and not an accident of an empty list.
+  if (operation.selfRead) return { allowed: true, failedPermissions: [] };
 
   // `forceScoped` says "a caller discovered this scope and named it", which is
   // a stronger statement than the declaration makes. It only ever ADDS scope to
@@ -150,10 +169,15 @@ export async function evaluatePermissions(
 /**
  * Enforces authorization, throwing the uniform denial on failure.
  *
- * A denial is a security-event candidate: it is logged at warn with the
- * correlation ID and counted. Persisting it to `iam.security_events` requires a
- * write privilege the runtime role does not currently hold — see
- * `security-events.ts` and DBCR-P1-13-001.
+ * A denial is logged at warn with the correlation ID and counted, for every
+ * operation. It is also MARKED as a permission refusal (`withPermissionRefusal`),
+ * naming the codes that evaluated false, the branch of the target and whether
+ * this was the pipeline's gate (`route`) or the deferred check against a
+ * discovered scope (`scope`). The mark changes nothing the caller receives. The
+ * route pipeline persists it to `iam.security_events` after the rollback for the
+ * four financial approval decisions only (ADR-023, D12 extension); for every
+ * other operation this mark is not persisted, and the denial remains a log line
+ * unless the service marks it as a `*_permission_missing` business rule.
  */
 export async function requirePermissions(
   db: DbHandle,
@@ -173,12 +197,118 @@ export async function requirePermissions(
     context: { failedPermissions: decision.failedPermissions },
   });
 
-  throw new AppFailure('ERR-IAM-001', {
+  const denial = new AppFailure('ERR-IAM-001', {
     message: `Denied ${operation.id}: missing ${decision.failedPermissions.join(', ')}`,
     // The required codes are safe to disclose — they are documented API metadata,
     // and telling a caller which permission they lack is a usability win with no
     // information gain for an attacker. The *resource* is never mentioned.
     safeDetails: { requiredPermissions: operation.permissions },
+  });
+  throw withPermissionRefusal(denial, {
+    source: options.forceScoped === true ? 'scope' : 'route',
+    missing: decision.failedPermissions,
+    branchId: target.branchId ?? null,
+  });
+}
+
+/**
+ * The branches of one company this caller may run this operation in (Owner
+ * directive, P1-32-PRE-OD-UX).
+ *
+ * ## The question the branch-optional reads had to answer first
+ *
+ * A reception board, a calendar, a work-order board, a delivery list and a
+ * warranty list all used to REQUIRE a branch. Making the branch optional is a
+ * usability change with an authorization problem underneath it, because
+ * `iam.has_permission_in_scope` cannot be asked "may this caller read the whole
+ * company": its company arm matches only a grant scope row whose `scope_type` is
+ * `company`, so a genuinely branch-scoped operator — the person the feature is
+ * FOR — would be refused by a company-only target, while an unrestricted one
+ * would sail through. Fail-closed in the wrong place is still wrong.
+ *
+ * So the question is asked once per branch instead, and the answer is the SET of
+ * branches that said yes. The page is then built over that set. Nothing is
+ * widened: a branch that says no is a branch the page does not contain.
+ *
+ * ## Three cases, and the middle one is the whole point
+ *
+ *   no branch narrowing at all (unrestricted, or company-scoped grants only)
+ *     — `app.branch_ids` is unset, the policies impose no branch narrowing, and
+ *       the honest target IS the company. `requireScopedPermissions` decides it
+ *       and `undefined` is returned, meaning "every branch of the company".
+ *
+ *   branch-narrowed — the caller holds `app.branch_ids`, so row-level security
+ *       already bounds every row to that union whatever this function returns.
+ *       The union is nonetheless resolved against THIS company and filtered to
+ *       the branches that carry this operation's codes, which is strictly
+ *       narrower than the policy: a caller holding the read in one branch and
+ *       some other grant in a second is answered for the first alone.
+ *
+ *   nothing left — refused, and with the SAME document the other scope refusals
+ *       carry. A caller naming a company none of its branches belongs to is the
+ *       case the middle branch cannot answer by itself, because
+ *       `iam.has_permission_in_scope`'s branch arm matches a branch id without
+ *       consulting the company beside it; resolving the candidates against
+ *       `org.branches` first is what turns that into a refusal instead of an
+ *       empty page.
+ *
+ * The candidate read runs under the CALLER'S OWN RLS and carries the tenant from
+ * the CONTEXT, exactly like `branchVisibleInTenant`, so it answers "visible to
+ * this caller inside its tenant" and is not an existence oracle.
+ */
+export async function resolveAuthorizedBranches(
+  db: DbHandle,
+  operation: RegisteredOperation,
+  companyId: string
+): Promise<readonly string[] | undefined> {
+  const context: RequestContext = db.context;
+  const held = context.branchIds;
+
+  if (held.length === 0) {
+    // No branch narrowing: the company IS the scope, and the ordinary scoped
+    // check is the right decision to make about it.
+    await requireScopedPermissions(db, operation, { companyId });
+    return undefined;
+  }
+
+  const candidates = await db.query<{ id: string }>(
+    `SELECT id
+       FROM org.branches
+      WHERE tenant_id = $1 AND company_id = $2
+        AND id = ANY($3::uuid[])
+        AND deleted_at IS NULL
+      ORDER BY id`,
+    [context.principal.tenantId, companyId, [...held]]
+  );
+
+  const permitted: string[] = [];
+  for (const row of candidates.rows) {
+    const decision = await evaluatePermissions(
+      db,
+      operation,
+      { companyId, branchId: row.id },
+      { forceScoped: true }
+    );
+    if (decision.allowed) permitted.push(row.id);
+  }
+  if (permitted.length > 0) return permitted;
+
+  metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
+  log.warn('Authorization denied', {
+    ...contextLogFields(context),
+    result: 'denied',
+    errorCode: 'ERR-IAM-001',
+    context: { reason: 'no-authorized-branch-in-company', declaredScope: operation.scope },
+  });
+  throw new AppFailure('ERR-IAM-001', {
+    // `safeDetails` first, for the reason `requireScopeTargetInTenant` states:
+    // the P1-24 mutation matrix anchors M2 on the two-line sequence in
+    // `requirePermissions`, and that anchor must match exactly one site.
+    safeDetails: { requiredPermissions: operation.permissions },
+    // Names the operation, never the company and never a branch.
+    message:
+      `Denied ${operation.id}: the caller holds no branch of the named company ` +
+      `it may run this operation in`,
   });
 }
 
@@ -218,6 +348,35 @@ export async function callerHoldsPermission(
 }
 
 /**
+ * Whether the caller holds a permission at ONE company's scope — through an
+ * unrestricted grant or a company-typed scope row naming that company.
+ *
+ * The company-level counterpart of `callerHoldsPermission`, asking the same
+ * deployed function with the branch left out. It is the question
+ * `resolveAuthorizedBranches` already puts to the operation's own codes for a
+ * caller with no branch narrowing, asked here of a bare code: the dashboard
+ * decides each section of a company that has NO branch this way, because there
+ * is no branch to ask about and "every branch of an empty set" would answer yes
+ * for any caller at all. A branch-typed grant never satisfies it — the scoped
+ * arm of `iam.has_permission_in_scope` matches a branch row on `branch_id`
+ * only — which is the right answer for a company in which no branch exists.
+ *
+ * Like `callerHoldsPermission`, it answers only about the caller and takes a
+ * REQUIRED company, so it is not a scope-blind variant.
+ */
+export async function callerHoldsPermissionInCompany(
+  db: DbHandle,
+  permissionCode: string,
+  companyId: string
+): Promise<boolean> {
+  const result = await db.query<{ allowed: boolean }>(
+    'SELECT iam.has_permission_in_scope($1, $2, NULL, NULL) AS allowed',
+    [permissionCode, companyId]
+  );
+  return result.rows[0]?.allowed === true;
+}
+
+/**
  * Whether the caller holds a permission TENANT-WIDE, i.e. through an unrestricted grant.
  *
  * Some writes are not scoped to a company or branch because the row they produce is not
@@ -246,6 +405,34 @@ export async function callerHoldsPermissionTenantWide(
     'SELECT iam.has_permission_in_scope($1, NULL, NULL, NULL) AS allowed',
     [permissionCode]
   );
+  return result.rows[0]?.allowed === true;
+}
+
+/**
+ * Whether the caller holds a permission code ANYWHERE in its tenant (Owner
+ * directive, P1-32-PRE-OD-UX).
+ *
+ * Scope-blind on purpose, and it is the right question for exactly one job: a
+ * free-text search box that can filter on another domain's data. The unified
+ * search on the reception, appointment, delivery and warranty lists matches a
+ * customer's display name and the tail of their phone number, both of which live
+ * in `crm.*`; the operation declaring only `rec.reception.read` must not turn
+ * into a way of probing the customer register.
+ *
+ * `iam.has_permission` rather than `iam.has_permission_in_scope`, because the
+ * question is "does this caller work with customer data at all", not "in this
+ * branch" — and the scoped form's company arm matches only a company-typed grant
+ * row, which would answer NO for the branch-scoped operator the whole feature is
+ * for. The answer is used ONLY to DISABLE two arms of a disjunction, so it can
+ * narrow a page and can never widen one.
+ */
+export async function callerHoldsPermissionAnywhere(
+  db: DbHandle,
+  permissionCode: string
+): Promise<boolean> {
+  const result = await db.query<{ allowed: boolean }>('SELECT iam.has_permission($1) AS allowed', [
+    permissionCode,
+  ]);
   return result.rows[0]?.allowed === true;
 }
 
@@ -296,6 +483,59 @@ export async function callerHoldsPermissionTenantWide(
  * granularity there is to match, and a branch-scoped approver keeps the ceiling their
  * company grants them.
  *
+ * ## A ceiling the caller set authorizes nothing for the caller
+ *
+ * `al.created_by <> caller` is separation of duties at the point of use (QA row
+ * 7.1d). The administration service refuses a limit for yourself and for a role
+ * you hold when the limit is SET, but that check sees the moment of creation
+ * only: a limit put on a role the administrator did not yet hold reaches them
+ * once they are granted it, and a limit set before that refusal existed is still
+ * on file. Excluding the rows the caller created closes both without a second
+ * rule to keep in step — whoever set a ceiling is never the person approving
+ * against it. A ceiling set by somebody else is unaffected, and the same row
+ * still authorizes every other holder of the role.
+ *
+ * ## Nor does a ceiling the requester set (ADR-023, D8)
+ *
+ * `excludeCreatedBy` names the person whose request is being approved. A ceiling
+ * they created — on the approver, or on a role the approver holds — never counts
+ * either: raising a colleague's limit must not get one's own discount through.
+ *
+ * Nor does any ceiling once they moved a limit's window. A limit's amount is
+ * immutable but its `effective_to` is not, so the requester could reopen or extend
+ * a limit somebody else set, or end the approver's own smaller limit so that a
+ * larger role limit applies. When the requester EVER changed the end date of ANY
+ * limit of this type of the caller in the company — on the caller or on a role whose
+ * grant reaches it, in force or not — the caller has no ceiling that counts for that
+ * request.
+ *
+ * ## Nor, once the caller moved the window of one of their own limits
+ *
+ * Reopening, extending or ending one's own limit (or a limit on a role one holds)
+ * is raising one's own ceiling, as creating it is. When the CALLER ever changed the
+ * end date of any limit of this type of theirs in the company, they have no ceiling
+ * that counts, for any request.
+ *
+ * Who changed an end date is `window_changed_by`: every person who ever moved it,
+ * appended from the session by `iam.record_approval_limit_window_change` and never
+ * removed — not `updated_by`, which names only the last writer, so a later save of
+ * the same date would wipe the requester's change. The database guard
+ * `quo.guard_discount_approval` applies the same rules.
+ *
+ * ## A role's limit counts only through a grant that counts (ADR-023, D8)
+ *
+ * Giving the caller a role is raising the caller's ceiling by that role's limit, so a
+ * role limit is chosen only when a grant that COUNTS brings the role to the caller in
+ * the company: not granted or issued by the requester (`granted_by` is the writer's
+ * claim, `issued_by` the session's, stamped by `iam.record_role_grant_provenance`),
+ * never reopened, extended or otherwise changed by the requester
+ * (`grant_changed_by`), and — when scoped — reaching the company through a scope the
+ * requester neither created nor added (`iam.grant_scopes.added_by`). A grant the
+ * caller issued to themselves, changed themselves or scoped themselves does not
+ * count either. A limit on the caller as a person is unaffected, and the window
+ * rules above still read every role an active grant brings, counting or not. The
+ * database guard applies the same rule (migration 20261007140000).
+ *
  * `null` means the actor has **no** ceiling, which callers must treat as no
  * authority and never as unlimited.
  */
@@ -303,14 +543,133 @@ export async function callerApprovalCeiling(
   db: DbHandle,
   companyId: string,
   limitType: string,
-  asOf: string
+  asOf: string,
+  excludeCreatedBy: string | null = null
 ): Promise<{ amount: string; currencyCode: string } | null> {
   const result = await db.query<{ amount: string; currency_code: string }>(
-    `SELECT al.amount::text AS amount, al.currency_code
+    `WITH caller_limits AS (
+       SELECT al.*
+         FROM iam.approval_limits al
+        WHERE al.tenant_id = $1 AND al.company_id = $2 AND al.limit_type = $3
+          AND (al.user_id = $4
+               OR (al.user_id IS NULL AND al.role_id IN (
+                     SELECT g.role_id
+                       FROM iam.role_grants g
+                      WHERE g.tenant_id = $1 AND g.user_id = $4
+                        AND g.status = 'active'
+                        AND g.valid_from <= now()
+                        AND (g.valid_to IS NULL OR g.valid_to > now())
+                        AND (
+                          g.scope_mode = 'unrestricted'
+                          OR EXISTS (
+                            SELECT 1 FROM iam.grant_scopes s
+                             WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id
+                               AND s.company_id = $2
+                          )
+                        ))))
+     ),
+     counting_roles AS (
+       SELECT g.role_id
+         FROM iam.role_grants g
+        WHERE g.tenant_id = $1 AND g.user_id = $4
+          AND g.status = 'active'
+          AND g.valid_from <= now()
+          AND (g.valid_to IS NULL OR g.valid_to > now())
+          AND g.issued_by IS DISTINCT FROM $4::uuid
+          AND NOT ($4::uuid = ANY (g.grant_changed_by))
+          AND ($6::uuid IS NULL OR (
+                g.granted_by <> $6::uuid
+                AND g.issued_by IS DISTINCT FROM $6::uuid
+                AND NOT ($6::uuid = ANY (g.grant_changed_by))))
+          AND (
+            g.scope_mode = 'unrestricted'
+            OR EXISTS (
+              SELECT 1 FROM iam.grant_scopes s
+               WHERE s.tenant_id = g.tenant_id AND s.grant_id = g.id
+                 AND s.company_id = $2
+                 AND s.created_by <> $4::uuid
+                 AND s.added_by IS DISTINCT FROM $4::uuid
+                 AND ($6::uuid IS NULL OR (
+                       s.created_by <> $6::uuid
+                       AND s.added_by IS DISTINCT FROM $6::uuid))
+            )
+          )
+     )
+     SELECT al.amount::text AS amount, al.currency_code
+       FROM caller_limits al
+      WHERE al.effective_from <= $5::date
+        AND (al.effective_to IS NULL OR al.effective_to > $5::date)
+        AND al.created_by <> $4
+        AND ($6::uuid IS NULL OR al.created_by <> $6::uuid)
+        AND (al.user_id IS NOT NULL OR al.role_id IN (SELECT role_id FROM counting_roles))
+        AND NOT EXISTS (
+          SELECT 1 FROM caller_limits moved
+           WHERE $4::uuid = ANY (moved.window_changed_by)
+              OR ($6::uuid IS NOT NULL AND $6::uuid = ANY (moved.window_changed_by)))
+      ORDER BY (al.user_id IS NOT NULL) DESC, al.amount DESC
+      LIMIT 1`,
+    [
+      db.context.principal.tenantId,
+      companyId,
+      limitType,
+      db.context.principal.userId,
+      asOf,
+      excludeCreatedBy,
+    ]
+  );
+  const row = result.rows[0];
+  return row ? { amount: row.amount, currencyCode: row.currency_code } : null;
+}
+
+/**
+ * Where the CALLER stands against a per-currency approval limit (ADR-023, D13).
+ *
+ * `counted` carries the limit that counts; every other value names why none does.
+ * The four outcomes are the ones `sal.guard_credit_note_decision` raises, in the
+ * same precedence, because this is the application's mirror of that guard: the
+ * service names the refusal first and the database decides again.
+ */
+export type ApprovalLimitStanding =
+  | { readonly standing: 'counted'; readonly amount: string; readonly currencyCode: string }
+  | { readonly standing: 'none' }
+  | { readonly standing: 'self-created' }
+  | { readonly standing: 'currency-mismatch' };
+
+/**
+ * The CALLER's approval limit of one type IN ONE CURRENCY, with the reason when
+ * none counts (ADR-023, D13 — the credit-note limit).
+ *
+ * The same reach as `callerApprovalCeiling` — the caller's own limit or a role whose
+ * active grant reaches the company, in force on `asOf` — and the same separation of
+ * duties: a limit the caller created never counts. It differs in one respect: a
+ * subject may hold one limit of this type per currency (the credit-note exclusion
+ * constraint keys on the currency), so the limit in `currencyCode` is the one
+ * consulted, and among those the caller's own limit wins over a role's, then the
+ * largest.
+ *
+ * One ordered read decides all four outcomes, in the precedence the database guard
+ * uses: a limit that counts sorts first; failing that, a row the caller created
+ * means every limit on file is their own (`self-created`); failing that, a row in
+ * another currency means none is in this one (`currency-mismatch`); no row at all is
+ * `none`. Each outcome other than `counted` is no authority, never unlimited.
+ */
+export async function callerApprovalLimitStanding(
+  db: DbHandle,
+  companyId: string,
+  limitType: string,
+  currencyCode: string,
+  asOf: string
+): Promise<ApprovalLimitStanding> {
+  const result = await db.query<{
+    amount: string;
+    currency_code: string;
+    own_creation: boolean;
+  }>(
+    `SELECT al.amount::text AS amount, al.currency_code, (al.created_by = $4) AS own_creation
        FROM iam.approval_limits al
       WHERE al.tenant_id = $1 AND al.company_id = $2 AND al.limit_type = $3
-        AND al.effective_from <= $5::date
-        AND (al.effective_to IS NULL OR al.effective_to > $5::date)
+        AND al.effective_from <= $6::date
+        AND (al.effective_to IS NULL OR al.effective_to > $6::date)
         AND (al.user_id = $4
              OR (al.user_id IS NULL AND al.role_id IN (
                    SELECT g.role_id
@@ -327,12 +686,25 @@ export async function callerApprovalCeiling(
                              AND s.company_id = $2
                         )
                       ))))
-      ORDER BY (al.user_id IS NOT NULL) DESC, al.amount DESC
+      ORDER BY (al.created_by <> $4) DESC,
+               (al.currency_code = $5) DESC,
+               (al.user_id IS NOT NULL) DESC,
+               al.amount DESC
       LIMIT 1`,
-    [db.context.principal.tenantId, companyId, limitType, db.context.principal.userId, asOf]
+    [
+      db.context.principal.tenantId,
+      companyId,
+      limitType,
+      db.context.principal.userId,
+      currencyCode,
+      asOf,
+    ]
   );
   const row = result.rows[0];
-  return row ? { amount: row.amount, currencyCode: row.currency_code } : null;
+  if (!row) return { standing: 'none' };
+  if (row.own_creation) return { standing: 'self-created' };
+  if (row.currency_code !== currencyCode) return { standing: 'currency-mismatch' };
+  return { standing: 'counted', amount: row.amount, currencyCode: row.currency_code };
 }
 
 /**
@@ -376,6 +748,12 @@ export async function requireScopedPermissions(
   // restored by an omission, and it would look completely correct at the call
   // site. The public exemption stays: a public operation has no principal to
   // narrow.
+  //
+  // A self-read (P1-32-PRE-OD-FRX) never reaches a deferred scope check: it names
+  // no target and declares no code to judge against one. Reaching here with it is
+  // a defect at the call site, and `evaluatePermissions` would allow it, so it is
+  // refused before that can happen, target or not.
+  if (operation.selfRead) refuseSelfReadTarget(db, operation, target, { always: true });
   if (!operation.public && target.companyId === undefined && target.branchId === undefined) {
     const context: RequestContext = db.context;
     metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
@@ -460,24 +838,15 @@ export async function requireScopeTargetInTenant(
   target: AuthorizationTarget
 ): Promise<void> {
   if (operation.public) return;
+  // A self-read names no target (P1-32-PRE-OD-FRX). One that arrives here with any
+  // half of a target is a defect at its call site, and it fails closed with the
+  // same refusal rather than being resolved.
+  if (operation.selfRead) refuseSelfReadTarget(db, operation, target);
   if (target.companyId === undefined || target.branchId === undefined) return;
 
   const context: RequestContext = db.context;
 
-  // The same predicate `PricingRepository.branchBelongsToCompany` and the
-  // service-catalogue repository already use, kept identical on purpose: one
-  // statement, the tenant from the CONTEXT rather than from the request, and
-  // `deleted_at IS NULL` so a soft-deleted branch is refused like a missing one.
-  const result = await db.query<{ ok: boolean }>(
-    `SELECT EXISTS (
-       SELECT 1 FROM org.branches b
-        WHERE b.tenant_id = $1 AND b.company_id = $2 AND b.id = $3
-          AND b.deleted_at IS NULL
-     ) AS ok`,
-    [context.principal.tenantId, target.companyId, target.branchId]
-  );
-
-  if (result.rows[0]?.ok === true) return;
+  if (await branchVisibleInTenant(db, target.companyId, target.branchId)) return;
 
   metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
   log.warn('Authorization denied', {
@@ -506,4 +875,209 @@ export async function requireScopeTargetInTenant(
       `Denied ${operation.id}: the named company and branch are not visible ` +
       `to the caller inside its tenant`,
   });
+}
+
+/**
+ * Resolves a WRITE's scope CLAIM — the company, or the company and branch, that a
+ * body-scoped create names as the place to write into — and refuses it with the
+ * same 403 the reads use (CC-56, applying CC-14 § 2).
+ *
+ * ## Why a create needs this at all, and why the database was not enough
+ *
+ * `authorizeScope` decides whether the CALLER may write in the named scope. It
+ * cannot decide whether the named scope is the caller's to name: a holder of an
+ * unrestricted grant satisfies `iam.has_permission_in_scope` for any pair it cares
+ * to invent, exactly as CC-14 records for the reads. What used to answer such a
+ * claim was the composite foreign key and row-level security, at the INSERT —
+ * `fk_warranty_policies_company` and `fk_delivery_checklist_templates_company`
+ * resolve `(tenant_id, company_id)` with the tenant from the session, and
+ * `org.employee-create` probed `org.branches` and raised its register's
+ * not-found. So one surface answered `422` and another `404` for the same act.
+ *
+ * CC-14 § 2 settles which is right, and the answer is neither: a scope-target
+ * mismatch "is a refusal, not a not-found and not a validation error. A `404`
+ * would confirm the existence boundary the refusal exists to hide; a `422` would
+ * claim the input was malformed" when it was well-formed and merely unauthorized.
+ * So the claim is resolved HERE, before the insert, and the foreign key and the
+ * policy stay behind it as defence in depth rather than as the answer.
+ *
+ * ## Uniform across both variants, which is the property that matters
+ *
+ * A company that belongs to another tenant, a company that exists nowhere, an
+ * in-tenant company this caller's grants do not reach, and a soft-deleted branch
+ * are ONE answer with ONE message. The probe runs under the caller's own RLS —
+ * `sel_legal_companies_tenant` and `sel_branches_scope` both narrow by
+ * `iam.allowed_company_ids()` — so it answers "not visible to this caller inside
+ * its tenant", never "does not exist", and the surface is not an existence oracle
+ * for another organisation's structure.
+ *
+ * ## The SAME document as the other two refusals of the same request
+ *
+ * It takes the `RegisteredOperation` rather than reading the operation id off the
+ * context, and it is bound to that declaration by the route handler exactly as
+ * `authorizeScope` is (`route-handler.ts`). So it publishes
+ * `safeDetails.requiredPermissions` from `operation.permissions`, which makes all
+ * three refusals a POST can produce carry the same shape: the permission denial
+ * from `requirePermissions`, the deferred scope denial from
+ * `requireScopedPermissions`, and this one. A caller cannot tell from the DOCUMENT
+ * which of the three refused it, which is the property that matters — the
+ * alternative, resolving the declaration out of the operation registry inside the
+ * service, would make the response depend on which route modules a process had
+ * loaded.
+ *
+ * The message names the operation, which is public API metadata, and never the
+ * company or the branch, which would echo a guess back. It does not cross the
+ * wire at all — `problemFor` publishes the type, title, status, code,
+ * correlation id and declared safe details, and nothing else.
+ *
+ * ## Granularity comes from the CLAIM, not from a second definition of scope
+ *
+ * A create whose table has no branch column claims a company and is resolved
+ * against `org.legal_companies`; one that claims a pair is resolved against
+ * `org.branches` by the same predicate the reads use. An empty claim names no
+ * scope at all and returns without a statement.
+ *
+ * ## A half claim is refused, not resolved (CC-56 (c))
+ *
+ * A claim that names a branch and no company is one this probe cannot resolve:
+ * a branch is only meaningful inside its company, and there is no company to
+ * resolve it against. It used to return without a statement, which is a guard
+ * that fails OPEN on input it does not understand. The read probe's matching
+ * early return is justified by operations that legitimately pass one half; no
+ * write that reaches this probe does — every body-scoped create requires the
+ * company in its schema — so here the half claim is refused with the same
+ * `ERR-IAM-001`, the same safe details and the same message a foreign pair
+ * receives, and no statement is run to decide it.
+ */
+export async function requireScopeClaimInTenant(
+  db: DbHandle,
+  operation: RegisteredOperation,
+  claim: AuthorizationTarget
+): Promise<void> {
+  if (operation.public) return;
+  // A self-read is a GET that claims no scope; see `requireScopeTargetInTenant`.
+  if (operation.selfRead) refuseSelfReadTarget(db, operation, claim);
+
+  const companyId = claim.companyId;
+  const branchId = claim.branchId;
+  if (companyId === undefined && branchId === undefined) return;
+
+  const context: RequestContext = db.context;
+  const visible =
+    companyId === undefined
+      ? false
+      : branchId === undefined
+        ? await companyVisibleInTenant(db, companyId)
+        : await branchVisibleInTenant(db, companyId, branchId);
+
+  if (visible) return;
+
+  metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
+  log.warn('Authorization denied', {
+    ...contextLogFields(context),
+    result: 'denied',
+    errorCode: 'ERR-IAM-001',
+    context: { reason: 'scope-claim-not-visible-in-tenant', declaredScope: operation.scope },
+  });
+
+  throw new AppFailure('ERR-IAM-001', {
+    // `safeDetails` FIRST, for the reason `requireScopeTargetInTenant` states above:
+    // the P1-24 mutation matrix anchors M2 on the two-line sequence
+    // `safeDetails: { requiredPermissions: operation.permissions },` / `});`, which
+    // must match exactly ONE site. Putting the message after it keeps that anchor on
+    // `requirePermissions`, where the mutation is aimed.
+    safeDetails: { requiredPermissions: operation.permissions },
+    // Names the operation, never the company or the branch.
+    message:
+      `Denied ${operation.id}: ` +
+      (branchId === undefined
+        ? 'the named company is not visible '
+        : 'the named company and branch are not visible ') +
+      `to the caller inside its tenant`,
+  });
+}
+
+/**
+ * Refuses a self-read that was handed a scope (P1-32-PRE-OD-FRX).
+ *
+ * A self-read is registered as a tenant-scope GET with no permission code, and
+ * the registry refuses one that declares a target-shaped feature. So a company or
+ * branch arriving here is a defect at a call site, never a request to honour. It
+ * fails closed with the uniform `ERR-IAM-001`, naming the operation and never the
+ * company or branch. With `always`, it refuses even an empty target: the deferred
+ * scope check has no business with a self-read at all.
+ */
+function refuseSelfReadTarget(
+  db: DbHandle,
+  operation: RegisteredOperation,
+  target: AuthorizationTarget,
+  options: { readonly always?: boolean } = {}
+): void {
+  const named = target.companyId !== undefined || target.branchId !== undefined;
+  if (!named && options.always !== true) return;
+
+  const context: RequestContext = db.context;
+  metrics().increment(METRICS.errorCount, { code: 'ERR-IAM-001', operation: operation.id });
+  log.warn('Authorization denied', {
+    ...contextLogFields(context),
+    result: 'denied',
+    errorCode: 'ERR-IAM-001',
+    context: { reason: 'self-read-given-a-scope', declaredScope: operation.scope },
+  });
+  throw new AppFailure('ERR-IAM-001', {
+    // `safeDetails` first, for the mutation-matrix anchor reason
+    // `requireScopeTargetInTenant` states. A self-read declares no code, so the
+    // list is empty.
+    safeDetails: { requiredPermissions: operation.permissions },
+    message: `Denied ${operation.id}: a self-read answers about the caller and names no scope`,
+  });
+}
+
+/**
+ * Whether the (company, branch) pair resolves to a branch row this session can see.
+ *
+ * The same predicate `PricingRepository.branchBelongsToCompany` and the
+ * service-catalogue repository already use, kept identical on purpose: one
+ * statement, the tenant from the CONTEXT rather than from the request, and
+ * `deleted_at IS NULL` so a soft-deleted branch is refused like a missing one.
+ * Shared by the read probe and the write probe so the two cannot drift into two
+ * definitions of the same question.
+ */
+async function branchVisibleInTenant(
+  db: DbHandle,
+  companyId: string,
+  branchId: string
+): Promise<boolean> {
+  const context: RequestContext = db.context;
+  const result = await db.query<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM org.branches b
+        WHERE b.tenant_id = $1 AND b.company_id = $2 AND b.id = $3
+          AND b.deleted_at IS NULL
+     ) AS ok`,
+    [context.principal.tenantId, companyId, branchId]
+  );
+  return result.rows[0]?.ok === true;
+}
+
+/**
+ * Whether the company resolves to a row this session can see.
+ *
+ * The company-level counterpart of the branch probe, for the creates whose table
+ * has no branch column at all. `sel_legal_companies_tenant` narrows by the tenant
+ * AND by `iam.allowed_company_ids()`, so this is "reachable by this caller", not
+ * "exists"; `deleted_at IS NULL` keeps a soft-deleted company refused like an
+ * absent one, matching the branch probe.
+ */
+async function companyVisibleInTenant(db: DbHandle, companyId: string): Promise<boolean> {
+  const context: RequestContext = db.context;
+  const result = await db.query<{ ok: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1 FROM org.legal_companies c
+        WHERE c.tenant_id = $1 AND c.id = $2
+          AND c.deleted_at IS NULL
+     ) AS ok`,
+    [context.principal.tenantId, companyId]
+  );
+  return result.rows[0]?.ok === true;
 }

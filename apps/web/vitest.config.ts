@@ -21,6 +21,19 @@ const alias = { '@': fileURLToPath(new URL('./src', import.meta.url)) };
  * The instrumented surface — the P1-27 CRM and Vehicle screens, the routes that
  * mount them, and the shared library they are built on (`P1-27-QA-001`).
  *
+ * The three P1-31 feature trees — delivery, warranty and reports — joined on
+ * 2026-09-15 (`P1-31-QA-001`, coverage hole H-2): before that no line of P1-31
+ * feature code could be instrumented at all. Their critical-module floors are in
+ * `.github/ci-baselines/coverage-baseline.web.json`.
+ *
+ * The Platform Owner Console — `src/features/platform/**` and the
+ * `(platform)` route group — joined for the same reason, and the same way. A
+ * surface absent from this list is not measured at a low number; it is absent
+ * from the report, so the touched-file floor in the baseline skips every one of
+ * its files (`coverage-gate.mjs` iterates the report, not the tree) and the
+ * global floors are computed over a denominator it never joins. Its
+ * critical-module floors sit beside the P1-31 ones.
+ *
  * ## The escaping is load-bearing, not decoration
  *
  * The dashboard pages live at `src/app/[locale]/(dashboard)/`. Written into a
@@ -39,7 +52,12 @@ const alias = { '@': fileURLToPath(new URL('./src', import.meta.url)) };
 export const COVERAGE_INCLUDE = [
   'src/features/crm/**',
   'src/features/vehicles/**',
+  'src/features/delivery/**',
+  'src/features/warranty/**',
+  'src/features/reports/**',
+  'src/features/platform/**',
   'src/app/\\[locale\\]/\\(dashboard\\)/**',
+  'src/app/\\[locale\\]/\\(platform\\)/**',
   'src/lib/**',
 ];
 
@@ -49,7 +67,7 @@ export const COVERAGE_INCLUDE = [
  * This is a decision, not an oversight, and it is recorded here because an
  * empty exclusion list is exactly what a reader assumes was forgotten.
  *
- * The four roots above were searched for the classes that genuinely cannot be
+ * The roots above were searched for the classes that genuinely cannot be
  * executed by a unit tier, and this tree contains none of them: no `.d.ts`
  * (declarations emit no runtime statement), no barrel `index.ts` (v8 attributes
  * a re-export to the defining module as well, so counting a barrel counts the
@@ -92,15 +110,21 @@ export default defineConfig({
       reporter: ['text-summary', 'json-summary', 'json'],
       reportsDirectory: 'coverage/web',
       /**
-       * Files no test imports are still measured, at 0%. Without this a screen
+       * Files no test imports are still measured, at 0%. Without that a screen
        * nothing loads simply leaves the denominator, and the tier reports a
        * flattering number for the small part of itself it happens to touch.
        * It also arms the trap this project has already written down: a
        * percentage can FALL because v8 newly ENTERS code that was never loaded
-       * before. With `all`, that code was in the denominator all along, so the
+       * before. Because the untouched code is in the denominator all along, the
        * fall shows up as the coverage work it is rather than as a surprise.
+       *
+       * Vitest 4 REMOVED `coverage.all`, which used to carry that guarantee.
+       * The `include` list below now carries it instead: when a whole tier is
+       * run, the provider adds every file matching `include` that no test
+       * loaded, at zero, before the report is written. So the guarantee did not
+       * weaken — it moved, and it is `include` that must never be narrowed.
+       * `apps/web/tests/security.test.ts` pins `include` for exactly that reason.
        */
-      all: true,
       include: [...COVERAGE_INCLUDE],
       exclude: [...COVERAGE_EXCLUDE],
     },

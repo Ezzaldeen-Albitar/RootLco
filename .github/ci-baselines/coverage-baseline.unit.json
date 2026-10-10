@@ -3,18 +3,33 @@
   "description": "Unit-tier coverage baseline. Scope is the `include` allow-list in vitest.config.ts — the pure-logic modules the unit tier genuinely exercises. Database-bound modules are measured separately in coverage-baseline.backend.json; merging the two would overstate both.",
   "policy": "docs/engineering/ci-automation/coverage-policy.md",
   "establishedBy": "local measurement at the Wave 0 audit; corrected from the first GitHub-hosted run",
-  "lastConfirmedBy": "PR CI run 19 (run id 30431556718), job `unit-tests-coverage / unit-coverage`, artifact `evidence-unit-coverage`, files `coverage/unit/coverage-summary.json` and `coverage-gate.json`, at feature head 8d7bfff09cf914e00ff5ff4587341ece261185c3, started 2026-07-29T07:24:48Z, GitHub-hosted ubuntu-latest. 1082 unit tests across 249 files, 0 failed.",
-  "lastConfirmedNote": "That run measured lines 93.26, statements 93.26, functions 84.43, branches 93.41 — so functions sits 0.32 pp and branches 0.20 pp BELOW the recorded baseline, both inside the 0.5 pp tolerance. The numbers below were deliberately NOT lowered to match. Rewriting a floor down to whatever was last measured turns a ratchet into a rubber stamp: it would convert a real 0.32 pp decline into a new baseline of record and make the next 0.5 pp of decline free. The gate is passing on its own terms; if functions drifts a further 0.2 pp the gate goes red, and that is the mechanism doing its job rather than a fault to pre-empt. Raise these numbers when coverage genuinely rises; lower them only in a commit that says why.",
+  "lastConfirmedBy": "RE-ESTABLISHED at the vitest 4 upgrade. GitHub-hosted run id 34321869051, job `unit-tests-coverage / unit-coverage`, artifact `evidence-unit-coverage`, files `coverage/unit/coverage-summary.json` and `coverage-gate.json`, at branch head 64b8cb08b9f81be02ee627bcde83286c0bc25331, ubuntu-latest. 19 instrumented source files — the same 19 the vitest-3 control run measured.",
+  "reEstablishmentReason": "@vitest/coverage-v8 moved from 3.2.7 to 4.1.11 (forced: the 3.x line carries no patched release for GHSA-82fw-gwwq-j7x9). Vitest 4 replaced the v8 provider's RANGE mapping with AST-aware remapping, so covered/total is computed over a different unit of account. The old and the new numbers are not comparable, and the branch that moved them changes NO application source. The control that proves the basis changed rather than the code: the same tier reports the same 19 instrumented files either side, and `lines` and `statements` — byte-identical in every vitest-3 measurement this tier ever produced, which is the v8 range-mapping signature — now DIVERGE (407/449 lines against 454/511 statements). See docs/engineering/ci-automation/coverage-policy.md, `When the coverage provider changes major version`.",
+  "previousBaselineBeforeReEstablishment": {
+    "lines": 93.26,
+    "statements": 93.26,
+    "functions": 84.75,
+    "branches": 93.61,
+    "measuredUnder": "@vitest/coverage-v8 3.2.7",
+    "why": "Kept so the re-establishment is a visible diff rather than a silent overwrite. Three of these four are HIGHER than the numbers now recorded. That is not a coverage regression: no test was removed and no source was added. It is the same code measured with a different instrument."
+  },
+  "lastConfirmedNote": "The superseded note argued against lowering a floor to whatever was last measured, and that argument still holds for an ordinary run — a ratchet rewritten to its own transcript is a rubber stamp. It does NOT apply to a provider major, because there is no drift to absorb: the previous numbers describe a unit of account that no longer exists. The figures below are therefore re-established from the hosted run named above, at its measurement, not derived from the old ones. From here the ordinary rule resumes: raise these when coverage genuinely rises, lower them only in a commit that says why.",
   "tolerancePercentagePoints": 0.5,
   "touchedFileMinimum": 60,
   "touchedFileExemptPrefixes": ["apps/api/src/app/", "apps/api/src/styles/"],
   "global": {
-    "lines": 93.26,
-    "statements": 93.26,
-    "functions": 84.75,
-    "branches": 93.61
+    "lines": 90.65,
+    "statements": 88.85,
+    "functions": 86.33,
+    "branches": 83.56
   },
-  "globalNote": "Lines and statements rose from 91.06 because src/shared/errors/app-error.ts was DELETED as dead code, not because anything became better tested: covered lines are unchanged at 1355 and only the total fell, by exactly the 35 lines that file contributed. Functions (84.87 -> 84.75) and branches (93.62 -> 93.61) fell rather than rose, because v8 counted that module's top-level scope as one covered function and one covered branch even though no statement in it ever executed. Both reductions are deliberate and are inside the 0.5 pp tolerance.",
+  "globalRawCounts": {
+    "lines": "407/449",
+    "statements": "454/511",
+    "functions": "120/139",
+    "branches": "310/371"
+  },
+  "globalNote": "Re-established at the vitest 4 upgrade from the hosted run named in `lastConfirmedBy`; the raw counts above are that run's own. Read them against the vitest-3 counts this file used to carry (1355/1453 lines and statements, 100/118 functions, 337/360 branches) and the change of instrument is the whole story: the denominators moved in every metric at once, across the same 19 files, with no test added or removed and no application source touched. LINES AND STATEMENTS ARE NO LONGER EQUAL — 407/449 against 454/511. Under vitest 3's v8 range mapping they were byte-identical in every measurement this tier ever produced, and that identity breaking exactly at the major is the cleanest single signal that the basis changed. Functions ROSE (84.75 -> 86.33) while lines, statements and branches fell, which is another thing a coverage regression does not do. Nothing here says the code became better or worse tested; it says it is now counted differently.",
   "knownGaps": [],
   "criticalModules": [
     {
@@ -22,6 +37,7 @@
       "pathPrefix": "apps/api/src/server/errors",
       "metric": "lines",
       "minimum": 95,
+      "measuredAtReEstablishment": 96.55,
       "why": "decides which text reaches a caller; a leak here discloses SQL, paths or tenant data",
       "minMatchedFiles": 3
     },
@@ -30,6 +46,7 @@
       "pathPrefix": "apps/api/src/server/http",
       "metric": "lines",
       "minimum": 88,
+      "measuredAtReEstablishment": 90.53,
       "why": "input validation, rate limiting and trusted-proxy handling are the outermost guard",
       "minMatchedFiles": 3
     },
@@ -38,6 +55,7 @@
       "pathPrefix": "apps/api/src/server/db",
       "metric": "lines",
       "minimum": 90,
+      "measuredAtReEstablishment": 96.67,
       "why": "optimistic-concurrency and pagination bugs corrupt data or truncate results silently",
       "minMatchedFiles": 2
     },
@@ -46,6 +64,7 @@
       "pathPrefix": "apps/api/src/server/cache",
       "metric": "lines",
       "minimum": 92,
+      "measuredAtReEstablishment": 95.12,
       "why": "a cache that ignores tenant scope is a cross-tenant disclosure",
       "minMatchedFiles": 3
     },
@@ -54,6 +73,7 @@
       "pathPrefix": "apps/api/src/server/observability",
       "metric": "lines",
       "minimum": 86,
+      "measuredAtReEstablishment": 86.4,
       "why": "correlation identifiers are how a workflow is reconstructed after an incident",
       "minMatchedFiles": 5
     },
@@ -62,6 +82,7 @@
       "pathPrefix": "apps/api/src/server/worker",
       "metric": "lines",
       "minimum": 95,
+      "measuredAtReEstablishment": 100,
       "why": "outbox retry behaviour decides whether an event is delivered once, never, or forever",
       "minMatchedFiles": 1
     },
@@ -69,18 +90,22 @@
       "id": "log-redaction",
       "pathPrefix": "apps/api/src/lib/logging",
       "metric": "lines",
-      "minimum": 72,
+      "minimum": 60,
+      "measuredAtReEstablishment": 64,
       "why": "the redaction path is the last thing between a credential and a public Actions log",
-      "minMatchedFiles": 1
+      "minMatchedFiles": 1,
+      "floorNote": "LOWERED 72 -> 60 at the vitest 4 upgrade, and the reason is the instrument rather than the module. The 72 was set against a vitest-3 measurement of 77.78 on the one file this prefix matches, apps/api/src/lib/logging/logger.ts. Vitest 4's AST-aware remapping measures the same untouched file at 64.00 (16 of 25 lines). No line of that file changed in this branch and no test of it was removed. 60 is chosen as ONE line below the new measurement: the file carries 25 lines, so one line is exactly 4 pp and 15/25 is exactly 60.00. That reproduces the shape of the old floor — a small, stated margin under a real measurement — rather than pinning the floor to the last number seen, which would make the very next uncovered line free. The floor is deliberately NOT set at 64: a floor equal to its own measurement is a transcript, not a guard. Raising it is log-redaction coverage work, not baseline work."
     },
     {
       "id": "environment-validation",
       "pathPrefix": "apps/api/src/config",
       "metric": "lines",
       "minimum": 50,
+      "measuredAtReEstablishment": 100,
       "why": "a missing or malformed environment value must fail at start, not at first request",
       "minMatchedFiles": 1
     }
   ],
-  "criticalModulesNote": "minMatchedFiles is the number of files vitest currently instruments under each prefix. A coverage include list narrows silently; without this, removing files shrinks what the floor protects while the percentage stays reassuring."
+  "criticalModulesNote": "minMatchedFiles is the number of files vitest currently instruments under each prefix. A coverage include list narrows silently; without this, removing files shrinks what the floor protects while the percentage stays reassuring.",
+  "criticalModulesMeasurementNote": "`measuredAtReEstablishment` on every rule above is that module's LINE coverage in the hosted run named in `lastConfirmedBy` — run id 34321869051, at head 64b8cb08b9f81be02ee627bcde83286c0bc25331, under @vitest/coverage-v8 4.1.11 — recorded so no floor in this file is compared against a vitest-3 number it can no longer be read with. NO FLOOR MOVED to record them: `error-mapping` 96.55 (28/29) over 95, `http-validation-and-limits` 90.53 (86/95) over 88, `db-concurrency-and-pagination` 96.67 (58/60) over 90, `cache` 95.12 (78/82) over 92, `observability` 86.40 (108/125) over 86, `worker-backoff` 100 (7/7) over 95, `log-redaction` 64.00 (16/25) over 60, `environment-validation` 100 (26/26) over 50. All eight pass, and every prefix matches exactly its pinned file count. The one to watch is `observability`: 0.40 pp of headroom is half a line of a 125-line denominator, and `tolerancePercentagePoints` does NOT apply to a critical module — coverage-gate.mjs compares a module measurement against its floor directly — so the next uncovered line there turns this gate red. That is recorded as a fact about where the tier stands, NOT as a case for widening the floor — the fix is a test."
 }

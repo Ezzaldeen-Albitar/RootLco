@@ -12,7 +12,9 @@ import { SubmitButton } from '@/features/authentication/components/SubmitButton'
 import { useServerTable } from '../../shared/use-server-table';
 import { listRoles } from '../api';
 import type { RoleRow } from '../types';
+import { roleDisplayName } from '../role-name';
 import { createRoleAction, updateRoleAction } from '../actions';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 
 /**
  * Roles.
@@ -48,7 +50,9 @@ export function RolesScreen({
     {
       id: 'name',
       headerKey: 'roles.column.name',
-      cell: (row) => <span className="font-medium text-text-primary">{row.name}</span>,
+      cell: (row) => (
+        <span className="font-medium text-text-primary">{roleDisplayName(messages, row)}</span>
+      ),
     },
     {
       id: 'roleCode',
@@ -180,8 +184,17 @@ function CreateRoleDialog({
    */
   const [draft, setDraft] = useState<Record<string, string>>({});
   const retained = (name: string) => draft[name] ?? '';
-  const retain = (name: string) => (event: { target: { value: string } }) =>
+  // Question f: the cursor goes to the refused field, and its complaint goes
+  // once the operator edits it (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const retain = (name: string) => (event: { target: { value: string } }) => {
+    refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: event.target.value }));
+  };
   const t = (key: string) => translate(messages, key as keyof Messages);
 
   return (
@@ -192,7 +205,7 @@ function CreateRoleDialog({
       title={t('roles.create.title')}
       description={t('roles.create.description')}
     >
-      <form action={formAction} className="flex flex-col gap-4" noValidate>
+      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
         <TextField
           key={`roleCode-${state.attempt ?? 0}`}
@@ -203,7 +216,7 @@ function CreateRoleDialog({
           spellCheck={false}
           defaultValue={retained('roleCode')}
           onChange={retain('roleCode')}
-          error={state.fieldErrors?.roleCode ? t(state.fieldErrors.roleCode) : undefined}
+          error={refusalErrorKey('roleCode') ? t(refusalErrorKey('roleCode') as string) : undefined}
         />
         <TextField
           key={`name-${state.attempt ?? 0}`}
@@ -212,7 +225,7 @@ function CreateRoleDialog({
           required
           defaultValue={retained('name')}
           onChange={retain('name')}
-          error={state.fieldErrors?.name ? t(state.fieldErrors.name) : undefined}
+          error={refusalErrorKey('name') ? t(refusalErrorKey('name') as string) : undefined}
         />
         {/*
           The longest thing an operator types on this form, and the one whose

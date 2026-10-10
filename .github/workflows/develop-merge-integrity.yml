@@ -1,0 +1,90 @@
+# =============================================================================
+# RootLco — develop merge integrity. TDP-2026-10 (temporary).
+#
+# The Owner approved a temporary development-path CI policy on 2026-10-05. Under
+# it, a push to develop no longer re-runs `ci.yml` or the protected verification
+# workflow: measured over 26 merges, every one of those runs re-proved a tree
+# that was byte-identical to the pull-request head the PR gate had already
+# proved. What a merge CAN still get wrong is cheap to check, and this job
+# checks exactly that:
+#
+#   1. the pushed commit is a MERGE (two parents) — nothing reached develop
+#      except through a pull request;
+#   2. its tree is identical to the tree of its second parent, the pull-request
+#      head — so the merge introduced nothing the PR gate did not see;
+#   3. that head — the TESTED CANDIDATE — carries a SUCCESSFUL
+#      `ci-gate (development)` check run, from GitHub Actions, at exactly that
+#      commit, in the latest attempt, produced by `.github/workflows/pr-ci.yml`;
+#   4. that head — the APPROVED HEAD — carries a SUCCESSFUL `independent-review`
+#      commit status, which the pull request's one landing owner sets on the head
+#      they approved immediately before merging (scripts/ci/landing-guard.mjs).
+#      A missing status, a status on another commit, or one that is not
+#      `success` fails. `independent-review` is in NO ruleset;
+#   5. exactly one pull request names the pushed commit as its merge commit, it
+#      was based on develop, and its recorded head is the second parent. Only
+#      that pull request is cited.
+#
+# The checks live in scripts/ci/develop-merge-integrity.mjs, where
+# tests/ci/develop-merge-integrity.test.ts exercises every refusal.
+#
+# It proves PROVENANCE, not quality. Its success means "merged, full checkpoint
+# verification pending", and that is what it prints. Full verification happens
+# at the next checkpoint: `protected-develop-verification.yml` dispatched on
+# develop, pinned to a candidate commit. Every integrity run since the previous
+# checkpoint must be green before a checkpoint is dispatched.
+#
+# Least privilege: read-only, a sparse checkout of scripts/ci only, no secrets
+# beyond the job token, no deployment and no database. It never cancels a
+# pending run.
+# Policy, review point and restoration order: docs/engineering/ci-automation/pr-gate.md.
+# =============================================================================
+
+name: Develop merge integrity
+
+on:
+  push:
+    branches: [develop]
+
+# Keyed on the commit, so a later merge never displaces a pending check of an
+# earlier one.
+concurrency:
+  group: develop-merge-integrity-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  merge-integrity:
+    name: develop-merge-integrity
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      checks: read
+      actions: read
+      pull-requests: read
+      statuses: read
+    steps:
+      # Sparse and shallow: the check is one self-contained script, and nothing
+      # else of the tree is needed. No credentials are persisted.
+      - name: Check out the integrity script
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          sparse-checkout: scripts/ci
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Set up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
+      - name: The merge is the pull-request head that the PR gate proved and the landing owner approved
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          MERGE_SHA: ${{ github.sha }}
+        run: node scripts/ci/develop-merge-integrity.mjs

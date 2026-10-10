@@ -17,12 +17,13 @@
  *     contract to bind to. This repository therefore reads definitions and does
  *     not run anything — see the service for what that means for the phase.
  *
- * Only `published` configurations are visible. A draft is an unfinished
- * decision and an archived one is a withdrawn decision; neither is something a
- * caller should be able to run or export.
+ * Only `published` configurations are visible in the catalogue. Internal
+ * lookups also detect drafts and withdrawals so baseline fallback cannot make
+ * them runnable.
  */
 import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
+import { localMidnight } from '@/server/db/period';
 import {
   buildPage,
   keysetFragment,
@@ -78,6 +79,7 @@ const PUBLISHED_VERSION = `
      WHERE v2.tenant_id = c.tenant_id
        AND v2.report_configuration_id = c.id
        AND v2.status = 'published'
+       AND v2.deleted_at IS NULL
      ORDER BY v2.version_number DESC
      LIMIT 1
   ) v ON true
@@ -85,6 +87,21 @@ const PUBLISHED_VERSION = `
 
 export class ReportCatalogueRepository extends Repository {
   protected readonly module = 'reporting';
+
+  /** An explicit tenant decision, including an unpublished or withdrawn one. */
+  async findByCode(db: DbHandle, reportCode: string): Promise<ReportConfigurationRow | null> {
+    const context = this.assertContext(db);
+    return this.runOne<ReportConfigurationRow>(
+      db,
+      `SELECT ${COLUMNS}
+         FROM rpt.report_configurations c
+         ${PUBLISHED_VERSION}
+        WHERE c.tenant_id = $1
+          AND c.report_code = $2
+          AND c.deleted_at IS NULL`,
+      [context.principal.tenantId, reportCode]
+    );
+  }
 
   /**
    * A page of published report definitions in the caller's tenant, by code.
@@ -126,22 +143,69 @@ export class ReportCatalogueRepository extends Repository {
     }));
   }
 
-  /** One published report definition by its stable code. */
-  async findPublishedByCode(
+  /**
+   * The explicit configurations for a BOUNDED set of codes (P1-31 P-11).
+   *
+   * Used by the catalogue list to decide which code-registered baseline entries
+   * a tenant has configured — unpublished and archived rows suppress fallback
+   * too, without appearing in the published catalogue.
+   *
+   * Unpaginated, and unlike the list above that is safe rather than an
+   * inconsistency: the codes come from `REPORT_DATASETS`, an in-code frozen
+   * object, so the result set is bounded by the SOURCE TREE and not by anything
+   * a tenant writes. That is the same argument `shared.export-catalogue` makes
+   * for returning a static array, and it is the argument `listPublished` cannot
+   * make.
+   */
+  async findByCodes(
     db: DbHandle,
-    reportCode: string
-  ): Promise<ReportConfigurationRow | null> {
+    reportCodes: readonly string[]
+  ): Promise<readonly ReportConfigurationRow[]> {
+    if (reportCodes.length === 0) return [];
     const context = this.assertContext(db);
-    return this.runOne<ReportConfigurationRow>(
+    const result = await this.run<ReportConfigurationRow>(
       db,
       `SELECT ${COLUMNS}
          FROM rpt.report_configurations c
          ${PUBLISHED_VERSION}
         WHERE c.tenant_id = $1
-          AND c.report_code = $2
-          AND c.status = 'published'
-          AND c.deleted_at IS NULL`,
-      [context.principal.tenantId, reportCode]
+          AND c.report_code = ANY($2::text[])
+          AND c.deleted_at IS NULL
+        ORDER BY c.report_code`,
+      [context.principal.tenantId, [...reportCodes]]
     );
+    return result.rows;
+  }
+
+  /**
+   * The instants a half-open local-day period opens and closes, in the named zone
+   * (Owner decision D16, P1-32-PRE-OD-FD16A).
+   *
+   * Read through `localMidnight`, the expression `halfOpenLocalDayRange` compares
+   * documents against, so the as-of moment a report defaults to — the period's
+   * exclusive end — is exactly the instant its selection stops at. No table is
+   * read; the zone is a bind parameter, never interpolated.
+   *
+   * `readAt` is the DATABASE's reading of "now": the transaction's own `now()`
+   * (P1-32-PRE-OD-FD16B). Every instant a report compares — `issued_at`,
+   * `received_at`, `allocated_at`, `reversed_at` — is stamped by `now()` in the
+   * transaction that wrote it, so the default moment and "as of now" are read on
+   * that same clock rather than on the application server's or the browser's. It
+   * is constant for the whole transaction, so every page one request reads sees
+   * the same "now".
+   */
+  async periodInstants(
+    db: DbHandle,
+    period: { readonly from: string; readonly toExclusive: string; readonly timezoneName: string }
+  ): Promise<{ readonly opens: Date; readonly closes: Date; readonly readAt: Date }> {
+    this.assertContext(db);
+    const row = await this.runOne<{ opens: Date; closes: Date; read_at: Date }>(
+      db,
+      `SELECT ${localMidnight(1, 3)} AS opens, ${localMidnight(2, 3)} AS closes,
+              now() AS read_at`,
+      [period.from, period.toExclusive, period.timezoneName]
+    );
+    if (row === null) throw new Error('periodInstants: the bounds query returned no row');
+    return { opens: row.opens, closes: row.closes, readAt: row.read_at };
   }
 }

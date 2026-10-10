@@ -1,6 +1,37 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { readSignedInAccount } from './account-manifest';
+
+/**
+ * This file assumes the ACCEPTANCE OWNER, so it runs only when that is who signed in.
+ *
+ * Every case below was written against the world `npm run acceptance:create-owner`
+ * builds — its two tenants, its roles, its branch scoping and its permission set — and
+ * several of them name a row of it outright. They are correct about that world and say
+ * nothing about any other.
+ *
+ * `auth.setup.ts` will sign in as a different person when one is offered: a local P1-31
+ * acceptance run points `ROOTLCO_P131_HANDOFF` at the journey's own organisation
+ * administrator, who is a member of an organisation none of these rows exist in. Run
+ * unguarded against that session, this file reports failures about a fixture that was
+ * never provisioned rather than about the product — measured, in the 2026-09-13 re-run,
+ * as 125 such failures across the seven legacy specs while all forty P1-31 cases passed.
+ *
+ * So the account is READ and the file skips with the account named. Nothing changes in
+ * the governed job, which signs in as the acceptance owner and executes every case here;
+ * what changes is that a handoff-driven local run says "this file wants a different
+ * account" instead of asserting on a world it can see is absent. No assertion below is
+ * altered, relaxed or removed.
+ */
+test.beforeEach(() => {
+  const account = readSignedInAccount();
+  // test-honesty-allow: TH-002 -- this file's fixture belongs to the owner-acceptance account; the reason names the account actually signed in
+  test.skip(
+    account.kind !== 'owner-acceptance',
+    `requires the owner-acceptance account; signed in as ${account.kind}`
+  );
+});
 
 /**
  * Automated accessibility over the AUTHENTICATED routes.
@@ -103,11 +134,18 @@ const ALSO = { 'label-content-name-mismatch': { enabled: true } };
  *   would be worse than an honest skip.
  *
  * The three creation routes below need no data and are listed normally.
+ *
+ * `/administration/users/[userId]` is deliberately absent: it needs a user id
+ * this sweep has no way to obtain without inventing one, and a scan of a route
+ * that answered "not found" would be a green that proved nothing. Its roles and
+ * scopes panels are covered by the DOM tier instead.
  */
 const ROUTES = [
   '/administration',
   '/administration/organization',
   '/administration/users',
+  '/administration/departments',
+  '/administration/employees',
   '/administration/roles',
   '/administration/permissions',
   '/administration/approval-limits',
@@ -283,8 +321,17 @@ test.describe('authenticated accessibility', () => {
     }
     await opener.click();
 
-    const dialog = page.getByRole('dialog');
+    // The invitation is the shared Material decision dialog since
+    // P1-32-PRE-OD-ADM3 (ADR-022), which is an `alertdialog` named by its title.
+    const dialog = page.getByRole('alertdialog');
     await expect(dialog).toBeVisible();
+    // Material fades a dialog in. Measured mid-fade, its buttons are part-
+    // transparent and the contrast rule reads the blend, not the colours the
+    // operator sees once it has opened — so the scan waits for the entrance to
+    // finish (no CSS transition or animation still running).
+    await page.waitForFunction(() =>
+      document.getAnimations().every((animation) => animation.playState !== 'running')
+    );
     const violations = await scan(page);
     const blocking = violations.filter((v) => v.impact === 'critical' || v.impact === 'serious');
     expect(blocking, 'the open dialog must be free of critical/serious violations').toEqual([]);

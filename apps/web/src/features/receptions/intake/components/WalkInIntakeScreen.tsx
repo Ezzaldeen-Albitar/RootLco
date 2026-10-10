@@ -2,9 +2,13 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
+import Button from '@mui/material/Button';
+import {
+  CustomerPicker,
+  type ChosenCustomer as PickedCustomer,
+} from '@/components/party/CustomerPicker';
 import { PartyLabel } from '@/components/party/PartyLabel';
-import { Icon } from '@/components/primitives/Icon';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -36,15 +40,15 @@ import { IntakeVehicleStep, type ChosenVehicle } from './IntakeVehicleStep';
  * act, which is why the import direction is honest here where it would not be
  * between the CRM and Vehicle features themselves.
  *
- * ## One stated degradation, on screen (`G-CRM-PHONE`)
+ * ## Phone search is real (P1-32, closing `G-CRM-PHONE`)
  *
- * Customer search by PHONE NUMBER is not supported by the platform's customer
- * directory (remediation `R7` is open with the Backend). The first thing a
- * receptionist will try is the caller's phone number, so the search step SAYS
- * the capability is missing, beside the boxes where the number would be typed
- * — in both languages — instead of silently returning nothing. No disabled
- * phone box is offered: a control that cannot work advertises a capability
- * the product does not have.
+ * The first thing a receptionist tries is the caller's phone number. Until
+ * P1-32 the customer directory could not search by it and this step said so in
+ * a notice. The directory now accepts a phone number and one free-text box
+ * (`q`: part of a name, a customer number or a phone number), so the notice is
+ * gone. On Material UI (ADR-022) the customer is chosen through
+ * `CustomerPicker` — one combobox over that box, the term sent as typed,
+ * Arabic-Indic digits included, the server's matches in the server's order.
  *
  * ## The handoff is truthful about the wizard's existence
  *
@@ -66,12 +70,13 @@ export interface ChosenCustomer {
   readonly partyType: string | null;
 }
 
-export function toChosenCustomer(selected: SelectedCustomer): ChosenCustomer {
+/** The directory's choice, as this flow holds it — the kind travels when known. */
+export function toChosenCustomer(selected: PickedCustomer): ChosenCustomer {
   return {
     id: selected.id,
     displayName: selected.displayName,
     displayNumber: selected.displayNumber,
-    partyType: selected.partyType,
+    partyType: selected.partyType ?? null,
   };
 }
 
@@ -125,6 +130,26 @@ export function WalkInIntakeScreen({
         : linkOutcome === null
           ? 'link'
           : 'done';
+
+  /*
+   * Unsaved work, declared to the shell, so a branch changed mid-assembly asks
+   * before it discards the pair.
+   *
+   * NOT at `done`. Everything the wizard had to record has been recorded by
+   * then — the customer exists, the vehicle exists, and the relationship has
+   * been answered — so what is on screen is a read-back, not a draft. Asking
+   * about it would be asking the operator to confirm the discarding of work
+   * that is already stored, and a guard that fires on a finished screen teaches
+   * them to dismiss the question without reading it.
+   */
+  useUnsavedGuard(step !== 'done' && (customer !== null || vehicle !== null), () => {
+    // A confirmed discard starts the wizard again. The customer and the vehicle
+    // are the tenant's, not the branch's, so nothing here follows a switch on
+    // its own — and the question said the pair would go.
+    setCustomer(null);
+    setVehicle(null);
+    setLinkOutcome(null);
+  });
 
   const chooseVehicle = (chosen: ChosenVehicle) => {
     setVehicle(chosen);
@@ -278,44 +303,10 @@ function ChosenCustomerSummary({
         />
       </div>
       {changeable ? (
-        <button
-          type="button"
-          onClick={onChange}
-          className="shrink-0 rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
+        <Button type="button" variant="outlined" size="small" onClick={onChange}>
           {translate(messages, 'receptions.intake.customer.change')}
-        </button>
+        </Button>
       ) : null}
-    </div>
-  );
-}
-
-/**
- * The stated phone degradation (`G-CRM-PHONE`).
- *
- * Rendered BESIDE the search controls — where a receptionist would type the
- * caller's number — not in a help page. It is a statement about a capability
- * the platform does not have yet, so it names the alternative that works
- * rather than apologising in general.
- */
-function PhoneSearchNotice({ messages }: { readonly messages: Messages }) {
-  return (
-    <div
-      role="note"
-      data-testid="phone-search-notice"
-      className="flex items-start gap-2 rounded-md border border-warning bg-surface p-3"
-    >
-      <span aria-hidden="true" className="mt-0.5 text-warning">
-        <Icon name="reports" size={18} />
-      </span>
-      <div>
-        <p className="text-body font-medium text-text-primary">
-          {translate(messages, 'receptions.intake.phone.title')}
-        </p>
-        <p className="mt-0.5 text-caption text-text-secondary">
-          {translate(messages, 'receptions.intake.phone.body')}
-        </p>
-      </div>
     </div>
   );
 }
@@ -323,9 +314,10 @@ function PhoneSearchNotice({ messages }: { readonly messages: Messages }) {
 /**
  * Find or create the customer.
  *
- * The search is `CustomerSelector` — the one customer-search surface, reused,
- * so a customer reads identically here and on every vehicle screen. The
- * create paths are offered beside it, not behind a failed search: a
+ * The search is `CustomerPicker` on Material UI — the shared customer chooser
+ * over `crm.customer-search`, so a customer reads identically here and on every
+ * other screen that chooses one. Choosing a match moves the flow on at once.
+ * The create paths are offered beside it, not behind a failed search: a
  * receptionist facing a brand-new customer knows they are new.
  */
 function CustomerStep({
@@ -380,40 +372,33 @@ function CustomerStep({
         {translate(messages, 'receptions.intake.customer.heading')}
       </h2>
 
-      <CustomerSelector
-        locale={locale}
+      <CustomerPicker
         messages={messages}
-        name="intakeCustomerId"
-        labelKey="receptions.intake.customer.selectorLabel"
+        locale={locale}
+        material
+        label={translate(messages, 'receptions.intake.customer.selectorLabel')}
         value={null}
         onChange={(selected) => {
           if (selected !== null) onChosen(toChosenCustomer(selected));
         }}
-        required
-        attempt={0}
+        canSearch
+        // The flow declares its own unsaved work (the pair), so a term typed
+        // here and not chosen is not a question on its own.
+        countsAsUnsaved={false}
+        testId="intake-customer-picker"
       />
-
-      <PhoneSearchNotice messages={messages} />
 
       {canCreateCustomer ? (
         <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
           <span className="text-caption text-text-secondary">
             {translate(messages, 'receptions.intake.customer.createOffer')}
           </span>
-          <button
-            type="button"
-            onClick={() => setMode('individual')}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
+          <Button type="button" variant="outlined" onClick={() => setMode('individual')}>
             {translate(messages, 'crm.customers.create.individualTitle')}
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode('company')}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
+          </Button>
+          <Button type="button" variant="outlined" onClick={() => setMode('company')}>
             {translate(messages, 'crm.customers.create.companyTitle')}
-          </button>
+          </Button>
         </div>
       ) : null}
     </section>
@@ -517,12 +502,13 @@ function DoneStep({
 
       {checkInAvailable ? (
         <div>
-          <Link
+          <Button
+            component={Link}
             href={checkInWizardHref(locale, { customerId: customer.id, vehicleId: vehicle.id })}
-            className="inline-block rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary"
+            variant="contained"
           >
             {translate(messages, 'receptions.intake.done.continue')}
-          </Link>
+          </Button>
         </div>
       ) : (
         // Stating the wizard's absence is the honest alternative to a link
@@ -536,32 +522,22 @@ function DoneStep({
       )}
 
       <div className="flex flex-wrap items-center gap-2">
-        <Link
+        <Button
+          component={Link}
           href={`/${locale}/crm/customers/${customer.id}`}
-          className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary"
+          variant="outlined"
         >
           {translate(messages, 'receptions.intake.done.openCustomer')}
-        </Link>
-        <Link
-          href={`/${locale}/vehicles/${vehicle.id}`}
-          className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary"
-        >
+        </Button>
+        <Button component={Link} href={`/${locale}/vehicles/${vehicle.id}`} variant="outlined">
           {translate(messages, 'receptions.intake.done.openVehicle')}
-        </Link>
-        <button
-          type="button"
-          onClick={onChangeVehicle}
-          className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
+        </Button>
+        <Button type="button" variant="outlined" onClick={onChangeVehicle}>
           {translate(messages, 'receptions.intake.vehicle.change')}
-        </button>
-        <button
-          type="button"
-          onClick={onStartOver}
-          className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-        >
+        </Button>
+        <Button type="button" variant="outlined" onClick={onStartOver}>
           {translate(messages, 'receptions.intake.done.startOver')}
-        </button>
+        </Button>
       </div>
     </section>
   );

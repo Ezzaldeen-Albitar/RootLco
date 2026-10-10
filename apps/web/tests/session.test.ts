@@ -62,6 +62,9 @@ vi.mock('next/navigation', () => ({
 }));
 
 const { requireSession, readSession } = await import('@/features/authentication/api/session');
+const { loadWorkingContext } = await import('@/features/working-context/api');
+const { WORKING_CONTEXT_PATH, isWorkingContextShape, permitsInBranch, preferenceKeyFor } =
+  await import('@/features/working-context/working-context-contract');
 const { GET } = await import('@/app/[locale]/(auth)/session-ended/route');
 
 const SESSION = {
@@ -236,8 +239,10 @@ describe('ending a session cross-site', () => {
 
 describe('a 403 is not an expired session', () => {
   it('keeps the cookie — clearing a VALID credential was the lockout', async () => {
-    // `P1-26-F-022`: the account authenticates but lacks `iam.user.read`.
-    // Clearing on 403 produced sign in -> 403 -> cleared -> sign in, for ever.
+    // `P1-26-F-022`: the account authenticated and its session read was refused
+    // (then for lacking `iam.user.read`, which the read no longer declares since
+    // P1-32-PRE-OD-FRX). Clearing on 403 produced sign in -> 403 -> cleared ->
+    // sign in, for ever, and a 403 from any cause must still keep the cookie.
     answerSessionWith(403);
     const target = await redirectTarget(() => requireSession('en'));
     expect(target).toBe('/en/login?reason=forbidden');
@@ -274,6 +279,73 @@ describe('the other failures keep their cookie too', () => {
   });
 });
 
+/**
+ * P1-32-PRE-OD-FRX — the session read is an authenticated self-read.
+ *
+ * It used to require `iam.user.read`, so a role without the user-directory code
+ * — the seeded technician and cashier roles, a quotations-only role — was
+ * refused its own session on every dashboard page and sent back to sign-in with
+ * `reason=forbidden`. The backend now answers any authenticated caller its own
+ * facts; these cases hold the web half of that contract.
+ */
+describe('a role without the user-directory code opens the product', () => {
+  const QUOTATIONS_ONLY = {
+    ...SESSION,
+    permissions: ['quo.quotation.read', 'quo.quotation.manage', 'wo.work_order.read'],
+  };
+
+  function answerByPath(session: unknown) {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const path = new URL(url).pathname;
+        calls.push(path);
+        if (path === '/api/v1/auth/session') return respond(200, session);
+        if (path === WORKING_CONTEXT_PATH) return respond(200, CONTEXT_BODY);
+        return respond(404);
+      })
+    );
+    return calls;
+  }
+
+  it('is answered, not redirected to forbidden, when it holds only quo.* and wo.work_order.read', async () => {
+    answerByPath(QUOTATIONS_ONLY);
+    const session = await requireSession('en');
+    expect(session.permissions).toEqual(QUOTATIONS_ONLY.permissions);
+    expect(session.permissions).not.toContain('iam.user.read');
+    expect(jar.deleted).toEqual([]);
+  });
+
+  it('renders the dashboard layout with its own permissions and working context', async () => {
+    const calls = answerByPath(QUOTATIONS_ONLY);
+    const { default: DashboardLayout } = await import('@/app/[locale]/(dashboard)/layout');
+    // Throws NEXT_REDIRECT if the layout sends the operator anywhere; it must not.
+    const tree = (await DashboardLayout({
+      children: null,
+      params: Promise.resolve({ locale: 'en' }),
+    })) as { props: Record<string, unknown> };
+    const snapshot = tree.props.snapshot as { status: string };
+    expect(snapshot.status).toBe('ready');
+    const scope = tree.props.children as { props: Record<string, unknown> };
+    expect(scope.props.permissions).toEqual(QUOTATIONS_ONLY.permissions);
+    expect(calls).toEqual(['/api/v1/auth/session', WORKING_CONTEXT_PATH]);
+  });
+
+  it('still sends an account holding NO code at all to sign-in as forbidden, cookie kept', async () => {
+    // Answered 200 with its own facts now, where it used to be refused 403 — and
+    // it still opens nothing, so the sign-in page's "not permitted to open the
+    // application" stays the true sentence. The platform session is asked first
+    // (the stub refuses it), which is how the platform operator still reaches
+    // the console.
+    const calls = answerByPath({ ...SESSION, permissions: [] });
+    const target = await redirectTarget(() => requireSession('en'));
+    expect(target).toBe('/en/login?reason=forbidden');
+    expect(jar.deleted).toEqual([]);
+    expect(calls).toContain('/api/v1/platform/session');
+  });
+});
+
 describe('a valid session', () => {
   it('renders, redirecting nowhere and clearing nothing', async () => {
     // The control. Without it every assertion above could pass against a
@@ -281,5 +353,159 @@ describe('a valid session', () => {
     answerSessionWith(200, SESSION);
     await expect(requireSession('en')).resolves.toMatchObject({ email: SESSION.email });
     expect(jar.deleted).toEqual([]);
+  });
+});
+
+/**
+ * The working-context read (`iam.working-context-read`).
+ *
+ * It sits beside the session read on purpose: the two are the same kind of
+ * call, made in the same layout, against the same cookie, and the interesting
+ * cases are the same ones. What the session read publishes is bare references
+ * with an empty list standing for "unrestricted"; what this one publishes is
+ * named, active entities plus an explicit `unrestricted`, which is the whole
+ * reason the branch pickers could stop asking for a typed reference.
+ */
+const CONTEXT_BODY = {
+  tenantId: '2f1c5b3e-6a4d-4b21-9c8e-1f2a3b4c5d6e',
+  unrestricted: false,
+  companies: [{ id: 'c-1', name: 'Northern Operations', code: 'NORTH' }],
+  branches: [
+    {
+      id: 'b-1',
+      companyId: 'c-1',
+      code: 'B1',
+      name: 'Main workshop',
+      city: null,
+      timezone: 'Asia/Riyadh',
+      status: 'active',
+    },
+  ],
+};
+
+describe('the working-context read', () => {
+  it('calls the published path and returns a ready snapshot', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        calls.push(new URL(url).pathname);
+        return respond(200, CONTEXT_BODY);
+      })
+    );
+    const snapshot = await loadWorkingContext('user-1');
+    expect(calls).toEqual([WORKING_CONTEXT_PATH]);
+    expect(snapshot.status).toBe('ready');
+    expect(snapshot.tenantId).toBe(CONTEXT_BODY.tenantId);
+    expect(snapshot.accountId).toBe('user-1');
+    expect(snapshot.branches).toHaveLength(1);
+  });
+
+  it('reports NO branch as its own state, not as a failure', async () => {
+    // An operator with no branch has nothing to choose and nothing broken.
+    // Collapsing this into `unavailable` would offer them a retry that can
+    // never change the answer.
+    answerSessionWith(200, { ...CONTEXT_BODY, branches: [] });
+    const snapshot = await loadWorkingContext('user-1');
+    expect(snapshot.status).toBe('none');
+  });
+
+  it('treats a 200 of the wrong shape as unreadable rather than as an empty workshop', async () => {
+    // The failure this closes: a 200 carrying an error envelope would otherwise
+    // publish `branches: undefined` and every screen would decide for itself
+    // what that meant.
+    answerSessionWith(200, { tenantId: 'x' });
+    expect((await loadWorkingContext('user-1')).status).toBe('unavailable');
+  });
+
+  it('never throws, whatever the backend answers', async () => {
+    for (const status of [401, 403, 429, 500, 503]) {
+      answerSessionWith(status);
+      const snapshot = await loadWorkingContext('user-1');
+      expect(snapshot.status, String(status)).toBe('unavailable');
+      expect(snapshot.branches).toEqual([]);
+    }
+  });
+
+  it('reports no session as unreadable rather than as an error page', async () => {
+    jar.token = null;
+    expect((await loadWorkingContext('user-1')).status).toBe('unavailable');
+  });
+
+  it('refuses a body whose branch entries are not the published shape', () => {
+    expect(isWorkingContextShape(CONTEXT_BODY)).toBe(true);
+    expect(isWorkingContextShape({ ...CONTEXT_BODY, unrestricted: 'yes' })).toBe(false);
+    expect(
+      isWorkingContextShape({ ...CONTEXT_BODY, branches: [{ id: 'b-1', companyId: 'c-1' }] })
+    ).toBe(false);
+    expect(isWorkingContextShape(null)).toBe(false);
+  });
+
+  it('carries the companies whose settings may be read, and none when the field is absent', async () => {
+    // Added to a published read, so an answer without it is still a working
+    // context — but one that names no readable company, so no settings screen
+    // makes a read the server would refuse. A present value of the wrong shape
+    // fails closed like the rest of the body.
+    answerSessionWith(200, { ...CONTEXT_BODY, companySettingsReadableIds: ['c-1'] });
+    expect((await loadWorkingContext('user-1')).companySettingsReadableIds).toEqual(['c-1']);
+    answerSessionWith(200, CONTEXT_BODY);
+    const withoutField = await loadWorkingContext('user-1');
+    expect(withoutField.status).toBe('ready');
+    expect(withoutField.companySettingsReadableIds).toEqual([]);
+    expect(isWorkingContextShape({ ...CONTEXT_BODY, companySettingsReadableIds: 'c-1' })).toBe(
+      false
+    );
+    expect(isWorkingContextShape({ ...CONTEXT_BODY, companySettingsReadableIds: [1] })).toBe(false);
+  });
+
+  it('carries the per-branch answer for the branch-scoped action codes, and nothing when absent (finance QA fixes D)', async () => {
+    const answer = {
+      codes: ['sal.credit.approve'],
+      branches: [
+        { branchId: 'b-1', permissions: [] },
+        { branchId: 'b-2', permissions: ['sal.credit.approve'] },
+      ],
+    };
+    answerSessionWith(200, { ...CONTEXT_BODY, branchPermissions: answer });
+    const carried = await loadWorkingContext('user-1');
+    expect(carried.branchPermissions).toEqual(answer);
+    answerSessionWith(200, CONTEXT_BODY);
+    expect((await loadWorkingContext('user-1')).branchPermissions).toBeUndefined();
+    // A present value of the wrong shape fails closed like the rest of the body.
+    for (const broken of [
+      'all',
+      { codes: 'sal.credit.approve', branches: [] },
+      { codes: [], branches: [{ branchId: 'b-1' }] },
+      { codes: [], branches: [{ branchId: 1, permissions: [] }] },
+    ]) {
+      expect(isWorkingContextShape({ ...CONTEXT_BODY, branchPermissions: broken })).toBe(false);
+    }
+  });
+
+  it('offers a covered code only in a branch the answer names it under; any other code is left to the session check', () => {
+    const answer = {
+      codes: ['sal.credit.approve'],
+      branches: [
+        { branchId: 'b-1', permissions: [] },
+        { branchId: 'b-2', permissions: ['sal.credit.approve'] },
+      ],
+    };
+    expect(permitsInBranch(answer, 'sal.credit.approve', 'b-2')).toBe(true);
+    // Held in another branch only: not offered here.
+    expect(permitsInBranch(answer, 'sal.credit.approve', 'b-1')).toBe(false);
+    // A branch outside the answer, or none at all, fails closed.
+    expect(permitsInBranch(answer, 'sal.credit.approve', 'b-9')).toBe(false);
+    expect(permitsInBranch(answer, 'sal.credit.approve', null)).toBe(false);
+    // A code the answer does not cover, or no answer, keeps the tenant-wide check.
+    expect(permitsInBranch(answer, 'sal.payment.record', 'b-1')).toBe(true);
+    expect(permitsInBranch(undefined, 'sal.credit.approve', 'b-1')).toBe(true);
+  });
+
+  it('keys the remembered choice to the workspace AND the account', () => {
+    // A shared office machine is ordinary. Two operators signing in one after
+    // the other must not inherit each other's branch.
+    expect(preferenceKeyFor('t-1', 'u-1')).toBe('rootlco.working-context.t-1.u-1');
+    expect(preferenceKeyFor('t-1', 'u-1')).not.toBe(preferenceKeyFor('t-1', 'u-2'));
+    expect(preferenceKeyFor('t-1', 'u-1')).not.toBe(preferenceKeyFor('t-2', 'u-1'));
   });
 });

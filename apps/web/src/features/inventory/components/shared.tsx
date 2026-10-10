@@ -1,11 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import Button from '@mui/material/Button';
 
-import { SelectField, TextField } from '@/components/forms/Field';
+import { FormSelectField, type FormSelectOption } from '@/components/forms/mui/FormSelectField';
 import type { BranchOption } from '@/features/services/services-contract';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
 
 import { listBranches, listItemCategories, listLocations } from '../api';
@@ -26,6 +28,13 @@ import type {
  * attempt worth making — because a read in flight is a WAIT, never a refusal,
  * and the two used to render identically. Quantities are decimal strings and
  * are rendered as such.
+ *
+ * Every control here is on Material UI (ADR-022): the branch, location and
+ * category pickers are `FormSelectField` (a native select, F6) and the retry is
+ * Material's button. `P1-32-PRE-OD-MUI7A1` put the location and category
+ * pickers on Material behind a `material` flag; `P1-32-PRE-OD-INV1B` removed the
+ * flag and the older drawing and moved `BranchPairPicker`, so no later slice
+ * edits this file to move a screen.
  */
 
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -36,12 +45,12 @@ export const SECONDARY_BUTTON =
   'rounded-md border border-border bg-surface px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard';
 
 /**
- * The branch list as one of six outcomes rather than three fields.
+ * The branch list as one of five outcomes rather than three fields.
  *
  * The old shape (`items | null`, `refused`, `offered`) could not tell "the read
  * is in flight" from "the caller may not read branches" — `items` is `null` in
- * both — so the picker resolved the ambiguity toward the identifier fields and
- * a permitted operator met two free-text boxes on every first paint (P1-30
+ * both — so the picker resolved the ambiguity toward identifier fields and a
+ * permitted operator met two free-text boxes on every first paint (P1-30
  * CC-15). It could not tell "no branch is listed" from "a branch is listed"
  * either, because `[]` is not `null`, and it flattened all five
  * `ReadFailureStatus` values into one sentence.
@@ -50,19 +59,38 @@ export const SECONDARY_BUTTON =
  * items: null, pending: false }` representable, and that combination IS the
  * defect.
  *
+ * ## No phase carries a typed reference any more
+ *
+ * Every phase that is not `listed` used to render two free-text boxes asking
+ * the operator to paste a company reference and a branch reference. The
+ * argument for it was that `org.branch-list` lists what a caller may REACH and
+ * that reachability for listing is not reachability for operating, so an empty
+ * list must not block the form. That argument survives; the CONTROL does not.
+ * A reference is not something anybody can look up, and the operator most
+ * likely to meet those boxes was the one whose directory read was refused —
+ * exactly the person with the least to go on (Owner directive,
+ * `P1-32-PRE-OD-UX`).
+ *
+ * The working context replaces it: `GET /auth/working-context` publishes the
+ * named, active branches this caller is authorized for, and is an authenticated
+ * self-read that declares no permission code (P1-32-PRE-OD-FRX), so anyone
+ * signed in can read their own. Where it answers
+ * there is a list. Where it does not, the screen says so in words and names the
+ * one control that can change it.
+ *
  * `retry` is `null` where a second attempt cannot help. That is not a taste:
  * `components/party/CustomerSelector.tsx` decided it for the identical problem
  * — re-issuing the same request on the same dead session fails identically, and
  * offering the button suggests otherwise — and a refusal is the same shape.
  */
 export type Branches =
-  /** No `org.branch.read`. Identifier fields are the DESIGN, not a fallback. */
+  /** No `org.branch.read`, and no working context to fall back on. */
   | { readonly phase: 'not-offered' }
-  /** Permitted, and `org.branch-list` has not answered. The only phase with no field. */
+  /** Permitted, and `org.branch-list` has not answered. */
   | { readonly phase: 'loading' }
-  /** Answered with at least one row. */
+  /** Answered with at least one row. The only phase in which a pair can be named. */
   | { readonly phase: 'listed'; readonly items: readonly BranchOption[] }
-  /** Answered with no row. Identifiers are still offered — the server re-authorizes the pair. */
+  /** Answered with no row. There is nothing to choose, and the screen says so. */
   | { readonly phase: 'none' }
   /** Did not answer. `retry` is null for a refusal and for a dead session. */
   | {
@@ -76,14 +104,49 @@ const LOADING: Branches = { phase: 'loading' };
 const NO_BRANCH: Branches = { phase: 'none' };
 
 /**
- * Whether a pair can be named at all. ONLY `loading` says no: every other phase
- * mounts either the select or the two identifier fields.
+ * Whether a pair can be named at all.
+ *
+ * Only `listed` says yes now. It used to be "anything but `loading`", because
+ * every other phase mounted two boxes to type a reference into; with those gone
+ * there is nothing to submit unless a branch can be chosen, and a submit left
+ * enabled over an absent control is a button whose only outcome is a refusal.
  */
 export function canNameBranch(branches: Branches): boolean {
-  return branches.phase !== 'loading';
+  return branches.phase === 'listed';
+}
+
+/**
+ * The working context, mapped onto the shape this picker already speaks.
+ *
+ * The layout reads `GET /auth/working-context` ONCE per request and publishes
+ * the named, active branches this operator is authorized for. Where that answer
+ * exists there is nothing for a second read of `org.branch-list` to add: it is
+ * the same operator, the same workspace, the same moment — and issuing it
+ * anyway is one request per screen for a fact the shell already holds, which is
+ * what five separate branch hooks across inventory and pricing were each doing.
+ *
+ * `countryCode` is the one field the working context does not publish. It is
+ * `null` rather than invented; nothing in these pickers reads it.
+ */
+function branchesFromContext(
+  context: ReturnType<typeof useWorkingContext>
+): readonly BranchOption[] | null {
+  if (context.status !== 'ready' || context.branches.length === 0) return null;
+  return context.branches.map((branch) => ({
+    id: branch.id,
+    companyId: branch.companyId,
+    branchCode: branch.code,
+    name: branch.name,
+    city: branch.city,
+    countryCode: null,
+    timezoneName: branch.timezone,
+    status: branch.status,
+  }));
 }
 
 export function useBranches(canRead: boolean): Branches {
+  const context = useWorkingContext();
+  const fromContext = branchesFromContext(context);
   const [items, setItems] = useState<readonly BranchOption[] | null>(null);
   const [failure, setFailure] = useState<{ key: string; retryable: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -98,7 +161,9 @@ export function useBranches(canRead: boolean): Branches {
   }, []);
 
   useEffect(() => {
-    if (!canRead) return;
+    // Not read at all when the shell already holds the answer. This is the
+    // request that stopped being made once per screen.
+    if (!canRead || fromContext !== null) return;
     let live = true;
     void listBranches().then((state) => {
       if (!live) return;
@@ -113,7 +178,7 @@ export function useBranches(canRead: boolean): Branches {
       if (state.status === 'denied') {
         setFailure({ key: 'inventory.common.branchesRefused', retryable: false });
       } else if (state.status === 'expired') {
-        setFailure({ key: 'state.expired.title', retryable: false });
+        setFailure({ key: 'state.expired.message', retryable: false });
       } else {
         setFailure({ key: 'inventory.common.branchesUnavailable', retryable: true });
       }
@@ -121,11 +186,24 @@ export function useBranches(canRead: boolean): Branches {
     return () => {
       live = false;
     };
-  }, [canRead, attempt]);
+  }, [canRead, attempt, fromContext]);
 
-  // Derived last and in this order: permission, then failure, then arrival, then
-  // emptiness. Nothing outside this function can observe the raw fields, so no
-  // caller can read `null` as "denied" again.
+  /*
+   * Derived last, and the working context comes FIRST.
+   *
+   * It used to be tested after the permission, so an operator without
+   * `org.branch.read` was reported as `not-offered` even though the shell was
+   * holding their named branches at that moment — and `not-offered` was the
+   * phase that rendered two boxes asking them to paste a reference. The
+   * directory read is an optimisation on top of the context, never the
+   * authority over it: `GET /auth/working-context` publishes what this caller
+   * may act in, `org.branch-list` publishes what they may administer, and the
+   * server re-authorizes the pair on every request either way.
+   *
+   * It is also tested before the failure branch, so a screen mounted during an
+   * `org.branch-list` hiccup still lists names.
+   */
+  if (fromContext !== null) return { phase: 'listed', items: fromContext };
   if (!canRead) return NOT_OFFERED;
   if (failure !== null) {
     return { phase: 'failed', messageKey: failure.key, retry: failure.retryable ? retry : null };
@@ -176,6 +254,7 @@ export function BranchPairPicker({
    * contain the pair, is the narrowest possible fix: it discards nothing on a
    * retry that fails, and it cannot fire in any other phase.
    */
+  const workingContext = useWorkingContext();
   const listedItems = branches.phase === 'listed' ? branches.items : null;
   const stale =
     listedItems !== null &&
@@ -213,12 +292,12 @@ export function BranchPairPicker({
   if (branches.phase === 'listed') {
     const { items } = branches;
     return (
-      <SelectField
+      <FormSelectField
         label={label}
         required
         value={stale ? '' : value.branchId}
-        onChange={(event) => {
-          const chosen = items.find((branch) => branch.id === event.target.value);
+        onChange={(next) => {
+          const chosen = items.find((branch) => branch.id === next);
           onChange(
             chosen ? { companyId: chosen.companyId, branchId: chosen.id } : { ...EMPTY_PAIR }
           );
@@ -228,64 +307,70 @@ export function BranchPairPicker({
           label: `${branch.branchCode} — ${branch.name}`,
         }))}
         placeholder={placeholder}
-        error={errors?.['branchId']}
+        /*
+         * EITHER half's complaint lands here, because there is one control for
+         * the pair now. The route refuses a branch with no company against
+         * `body.companyId`, and with the company field gone that sentence had
+         * nowhere to render at all — it was read from the map and drawn
+         * nowhere, which is the defect `CC-59 (c)` names in another feature.
+         */
+        error={errors?.['branchId'] ?? errors?.['companyId']}
       />
     );
   }
 
   /*
-   * `not-offered`, `none` and `failed`. All three take the pair as identifiers,
-   * because in all three the operator may still be authorised for a branch this
-   * screen cannot name — `org.branch-list` is tenant-scoped and lists what the
-   * caller may REACH; nothing says reachability for listing equals reachability
-   * for operating, and the server re-authorizes the pair on every read
-   * regardless. An empty list is therefore a SENTENCE, never a blocked form.
+   * Everything that is not a list: `not-offered`, `none`, `failed`, and a
+   * working context that could not be read at all.
+   *
+   * One shape for all four, because all four are the same fact from the
+   * operator's side — there is no branch to choose here — and they differ only
+   * in the sentence that says why and in whether asking again could help. What
+   * they no longer differ in is the CONTROL: none of them offers a box to type
+   * a reference into. The reason each sentence is distinct is the same reason
+   * the phases are: "you may not" and "it did not answer" have different next
+   * steps, and a screen that collapses them sends an operator to the wrong
+   * person.
+   *
+   * `present` rather than `status` decides the context case, because a
+   * component rendered with no provider above it reports `unavailable` too, and
+   * that is a test harness rather than an outage.
    */
-  const description =
-    branches.phase === 'failed'
+  const contextFailed = workingContext.present && workingContext.status === 'unavailable';
+  const sentence = contextFailed
+    ? translate(messages, 'workingContext.unavailable')
+    : branches.phase === 'failed'
       ? translateDynamic(messages, branches.messageKey)
       : branches.phase === 'none'
         ? translate(messages, 'inventory.common.branchesNone')
-        : translate(messages, 'inventory.common.identifierHelp');
+        : translate(messages, 'inventory.common.branchesNotOffered');
+  const retry = branches.phase === 'failed' ? branches.retry : null;
 
   return (
-    <>
-      <TextField
-        label={translate(messages, 'inventory.common.companyIdField')}
-        description={description}
-        required
-        spellCheck={false}
-        dir="ltr"
-        value={value.companyId}
-        onChange={(event) => onChange({ ...value, companyId: event.target.value })}
-        error={errors?.['companyId']}
-      />
-      <TextField
-        label={translate(messages, 'inventory.common.branchIdField')}
-        required
-        spellCheck={false}
-        dir="ltr"
-        value={value.branchId}
-        onChange={(event) => onChange({ ...value, branchId: event.target.value })}
-        error={errors?.['branchId']}
-      />
-      {branches.phase === 'failed' && branches.retry !== null ? (
+    <div className="flex flex-col gap-1.5 sm:col-span-3">
+      <p className="text-label font-medium text-text-primary">{label}</p>
+      <p
+        role="status"
+        data-testid="branch-pair-unavailable"
+        className="text-supporting text-text-secondary"
+      >
+        {sentence}
+      </p>
+      {retry === null ? (
+        // The header is where a branch is chosen and where a failed context is
+        // read again, so it is named rather than left to be guessed at.
+        <p className="text-supporting text-text-muted">
+          {translate(messages, 'workingContext.retryInHeader')}
+        </p>
+      ) : (
+        // `type="button"`: every caller renders this picker inside a form.
         <div>
-          {/*
-            `type="button"`. Every caller renders this picker inside a <form> and
-            a bare <button> there submits it.
-
-            The pair is NOT cleared. A retry that fails again must not cost the
-            operator what they typed; a retry that succeeds is handled by the
-            reconciliation effect above, which clears only when a list has
-            arrived that cannot contain the pair.
-          */}
-          <button type="button" onClick={branches.retry} className={SECONDARY_BUTTON}>
+          <Button type="button" variant="outlined" onClick={retry}>
             {translate(messages, 'state.retry')}
-          </button>
+          </Button>
         </div>
-      ) : null}
-    </>
+      )}
+    </div>
   );
 }
 
@@ -342,7 +427,14 @@ export function OutcomeNote({
   const key = outcome.messageKey ?? 'action.failed';
   return (
     <p role="alert" className="text-body text-error">
-      {translateDynamic(messages, key)}
+      {/*
+        CC-OD-32: `translateDynamic` alone printed a refusal sentence with its
+        `{placeholders}` still in it, so the figures a refused draw publishes —
+        how much is approved, how much is already used, how much was asked for —
+        could not be said here at all. The values are server strings; nothing is
+        computed in the browser.
+      */}
+      {translateWithValues(messages, key, outcome.messageValues)}
       {outcome.correlationId ? (
         <>
           {' '}
@@ -424,17 +516,18 @@ export function LocationPicker({
     : locations.truncated
       ? translate(messages, 'inventory.locations.truncated')
       : undefined;
+  const options = (locations.items ?? []).map((location) => ({
+    value: location.id,
+    label: `${location.locationCode} — ${location.name}`,
+  }));
   return (
-    <SelectField
+    <FormSelectField
       label={label}
-      {...(required ? { required: true } : {})}
-      {...(note ? { description: note } : {})}
+      required={required}
+      description={note}
       value={value}
-      onChange={(event) => onChange(event.target.value)}
-      options={(locations.items ?? []).map((location) => ({
-        value: location.id,
-        label: `${location.locationCode} — ${location.name}`,
-      }))}
+      onChange={onChange}
+      options={options}
       placeholder={placeholder}
       error={error}
     />
@@ -530,31 +623,46 @@ export function CategoryPicker({
   readonly required?: boolean;
   readonly error?: string | undefined;
 }) {
+  const { options, note } = categoryChoices(messages, categories, help);
+  return (
+    <FormSelectField
+      label={label}
+      required={required}
+      description={note}
+      value={value}
+      onChange={onChange}
+      options={options}
+      placeholder={placeholder}
+      error={error}
+    />
+  );
+}
+
+/**
+ * The category list as a select's options and the line under it — what
+ * `CategoryPicker` draws, for a caller that hands the select to a toolbar
+ * (`FilterToolbar`'s `select` filter) rather than drawing it itself.
+ */
+export function categoryChoices(
+  messages: Messages,
+  categories: Categories,
+  help?: string | undefined
+): { readonly options: readonly FormSelectOption[]; readonly note: string | undefined } {
   const truncated = categories.truncated
     ? translate(messages, 'inventory.setup.categories.truncated')
     : undefined;
   const note = categories.refused
     ? translateDynamic(messages, categories.refused)
     : [truncated, help].filter(Boolean).join(' ') || undefined;
-  return (
-    <SelectField
-      label={label}
-      {...(required ? { required: true } : {})}
-      {...(note ? { description: note } : {})}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      options={(categories.items ?? []).map((category) => ({
-        value: category.id,
-        label:
-          category.status === 'active'
-            ? `${category.code} — ${category.name}`
-            : `${category.code} — ${category.name} (${translate(
-                messages,
-                'inventory.setup.status.inactive'
-              )})`,
-      }))}
-      placeholder={placeholder}
-      error={error}
-    />
-  );
+  const options = (categories.items ?? []).map((category) => ({
+    value: category.id,
+    label:
+      category.status === 'active'
+        ? `${category.code} — ${category.name}`
+        : `${category.code} — ${category.name} (${translate(
+            messages,
+            'inventory.setup.status.inactive'
+          )})`,
+  }));
+  return { options, note };
 }

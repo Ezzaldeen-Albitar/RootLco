@@ -41,11 +41,23 @@ export interface NavigationItem {
   /**
    * Permission required to SEE the item.
    *
-   * `null` means "no permission gates visibility" — used only for the overview.
-   * Anything else must be held by the actor. A permission this client does not
-   * recognise is treated as NOT held: unknown means denied, never allowed.
+   * `null` means "no permission gates visibility" — used only for the design
+   * gallery. Anything else must be held by the actor. A permission this client
+   * does not recognise is treated as NOT held: unknown means denied, never
+   * allowed.
    */
   readonly permission: PermissionCode | null;
+  /**
+   * Further codes the destination's page requires before it shows anything
+   * other than a refusal — ALL of them, beside `permission`.
+   *
+   * A conjunction, never "any of": the entry is shown only when every code is
+   * held. Used where the page is one read that declares several codes and
+   * holds nothing for a caller missing one of them, so the sidebar does not
+   * offer a page that could only refuse. Each code must exist in the catalogue,
+   * which `tests/navigation.test.ts` checks the same way it checks `permission`.
+   */
+  readonly alsoRequires?: readonly PermissionCode[];
   readonly status: NavigationStatus;
   readonly scope: NavigationScope;
   /** Optional numeric badge, e.g. unread notifications. */
@@ -116,11 +128,58 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
     labelKey: 'nav.group.work',
     items: [
       {
+        /*
+         * The key stays `overview` — it is the entry's identity, and `isActive`,
+         * the ownership records and the console's own separate entry all name
+         * it. What changed is the LABEL: the screen behind it is now the
+         * workshop's dashboard rather than a description of the product, and an
+         * entry whose word does not match the screen sends people looking
+         * elsewhere for the figures that are right here.
+         *
+         * Gated on `wo.work_order.read` (Owner directive, P1-32-PRE-OD-UX).
+         * It used to be ungated on the reasoning that every signed-in person
+         * lands here — but `ovw.dashboard-summary-read` is entitled by exactly
+         * that code, so a member of staff without it was offered an entry, and
+         * landed after sign-in on, a page that could only refuse them. The gate
+         * names the one code the page itself needs; each SECTION still gates
+         * itself on the status the summary publishes for it.
+         *
+         * A session without the code does not land here at all:
+         * `landingRoute` in `lib/permissions.ts` picks the first entry of this
+         * map it can open, and both the sign-in redirect and the page send it
+         * there (`features/authentication/api/landing.ts`).
+         */
         key: 'overview',
-        labelKey: 'nav.overview',
+        labelKey: 'nav.dashboard',
         icon: 'overview',
         href: '/',
-        permission: null,
+        permission: 'wo.work_order.read',
+        status: 'available',
+        scope: 'branch',
+      },
+      /*
+       * Attention (Owner directive, operational alerts): what is about to stop
+       * working — stock at its reorder level, counted differences, unusual
+       * consumption, consignments still in transit, and the subscription
+       * allowance.
+       *
+       * Gated on `inv.stock.read`, which four of the five cards declare. The
+       * fifth is `org.tenant.read` and the PAGE says so: a session holding only
+       * that code is not refused the screen, it simply sees the card its code
+       * answers for. A navigation gate names one code, as every other row here
+       * does, and naming the one that opens most of the screen is the honest
+       * choice.
+       *
+       * The icon is the attention glyph — the same one the duplicate queues use,
+       * and for the same stated reason: a list that needs a human decision is
+       * not the same thing as a list.
+       */
+      {
+        key: 'attention',
+        labelKey: 'nav.attention',
+        icon: 'duplicate-review',
+        href: '/attention',
+        permission: 'inv.stock.read',
         status: 'available',
         scope: 'branch',
       },
@@ -376,6 +435,138 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         permission: 'inv.item.read',
         status: 'available',
         scope: 'branch',
+        children: [
+          {
+            // The parent's own route, named by a child for the reason
+            // `work-orders.queue` records: an expanded parent is a disclosure
+            // button, and a button can carry no current-page marker.
+            key: 'inventory.stock',
+            labelKey: 'nav.inventoryStock',
+            icon: 'inventory',
+            href: '/inventory',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          /*
+           * P1-32: the stock-operation screens. Each page gates on
+           * `inv.stock.read` — the code every list it reads declares — before
+           * any read, so each entry is gated on that code too.
+           */
+          {
+            key: 'inventory.transfers',
+            labelKey: 'nav.inventoryTransfers',
+            icon: 'inventory',
+            href: '/inventory/transfers',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.goods-receipts',
+            labelKey: 'nav.inventoryReceipts',
+            icon: 'inventory',
+            href: '/inventory/goods-receipts',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.adjustments',
+            labelKey: 'nav.inventoryAdjustments',
+            icon: 'inventory',
+            href: '/inventory/adjustments',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.counts',
+            labelKey: 'nav.inventoryCounts',
+            icon: 'inventory',
+            href: '/inventory/counts',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          /*
+           * P1-32: the counter, the returns desk and the label printer. Each
+           * entry carries the code its PAGE gates on, which is not the same code
+           * for all three: labels are `inv.item.read` (a label carries no stock
+           * figure and no price), a customer return is `inv.stock.read`, and a
+           * counter sale is `sal.invoice.manage` — it is an invoice, and the
+           * authority to write one is the authority the entry must name.
+           */
+          {
+            key: 'inventory.counterSales',
+            labelKey: 'nav.inventoryCounterSales',
+            icon: 'inventory',
+            href: '/inventory/counter-sales',
+            permission: 'sal.invoice.manage',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.customerReturns',
+            labelKey: 'nav.inventoryCustomerReturns',
+            icon: 'inventory',
+            href: '/inventory/customer-returns',
+            permission: 'inv.stock.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.labels',
+            labelKey: 'nav.inventoryLabels',
+            icon: 'inventory',
+            href: '/inventory/labels',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          /*
+           * P1-32: the two facts a work-order material requirement is derived
+           * from. Both carry `inv.item.read`, the code their LIST operations
+           * declare and the code their pages gate on. Stating a conversion or
+           * confirming a capacity needs a second, tenant-wide code each
+           * (`inv.unit_conversion.manage`, `inv.specification.manage`); naming
+           * those here would hide the reference data from everyone who may read
+           * it and only needs to look a figure up.
+           */
+          /*
+           * P1-32-PRE-OD-INV2B: the item category tree, read only. Its two reads
+           * — the category list and the item search by category — both declare
+           * `inv.item.read`, and the page gates on it before either. Categories
+           * are the organisation's, never one branch's, hence `tenant`.
+           */
+          {
+            key: 'inventory.categories',
+            labelKey: 'nav.inventoryCategories',
+            icon: 'inventory',
+            href: '/inventory/categories',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'tenant',
+          },
+          {
+            key: 'inventory.unitConversions',
+            labelKey: 'nav.inventoryUnitConversions',
+            icon: 'inventory',
+            href: '/inventory/unit-conversions',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'inventory.vehicleSpecifications',
+            labelKey: 'nav.inventoryVehicleSpecifications',
+            icon: 'inventory',
+            href: '/inventory/vehicle-specifications',
+            permission: 'inv.item.read',
+            status: 'available',
+            scope: 'branch',
+          },
+        ],
       },
       {
         key: 'billing',
@@ -387,6 +578,34 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         // in no catalogue — RES-05). Built by P1-30 W6.
         href: '/invoices',
         permission: 'sal.invoice.manage',
+        status: 'available',
+        scope: 'branch',
+      },
+      /*
+       * DEF-T-07. A customer return raises a credit note, tells the operator a
+       * second person must approve it, and until this entry existed nothing in
+       * the tenant navigation could open one — so the second person had nothing
+       * to approve and nobody could see what was waiting.
+       *
+       * Gated on `sal.credit.manage`, the authority both credit-note reads
+       * declare. They also require `sal.finance.view`, which a navigation entry
+       * cannot express: the page checks BOTH before it issues a read, so a
+       * caller holding only this one meets a refusal on the page rather than an
+       * empty list that would read as "nothing has been credited".
+       *
+       * In a freshly provisioned organisation this entry is HIDDEN, because
+       * `sal.credit.manage` is not among the codes the tenant administrator
+       * bundle writes and an unheld code cannot be delegated either. The gap
+       * predates these reads — the credit-note writes declare the same code —
+       * and the list route's docblock on the API side states where the decision
+       * to carry it belongs.
+       */
+      {
+        key: 'creditNotes',
+        labelKey: 'nav.creditNotes',
+        icon: 'billing',
+        href: '/credit-notes',
+        permission: 'sal.credit.manage',
         status: 'available',
         scope: 'branch',
       },
@@ -404,12 +623,59 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         scope: 'branch',
       },
       {
+        key: 'refunds',
+        labelKey: 'nav.refunds',
+        icon: 'payments',
+        // ADR-023 D2, part 2 (P1-32-PRE-OD-FD2B): a branch's refund requests —
+        // asked, decided and paid out. Gated on `sal.finance.view`, the ONLY code the
+        // list declares; asking, deciding and recording a payout are offered on the
+        // invoice's own refunds panel to the holders of their codes.
+        href: '/refunds',
+        permission: 'sal.finance.view',
+        status: 'available',
+        scope: 'branch',
+      },
+      {
         key: 'delivery',
         labelKey: 'nav.delivery',
         icon: 'delivery',
+        // `/delivery`: the ready-for-delivery queue, built by P1-31 FE-001 on the
+        // Owner's D-3 decision. P1-31 P-8 re-pointed this gate at
+        // `sal.delivery.view`, the code every shipped delivery read declares;
+        // `sal.delivery.read`, named here until then, exists in no catalogue
+        // (RES-05) — the seeds carry `sal.delivery.manage`, `.complete` and
+        // `.view` only, and the rule is to correct the reference, never to seed a
+        // `.read` code. See the permission-reuse register under
+        // docs/phase-1/pre-p1-29-multi-tenant-admin-rbac-workflow/.
+        //
+        // The queue is ONE read, `sal.delivery-readiness-list`, and it declares
+        // three codes: this one, `wo.work_order.read` and `sal.finance.view`.
+        // The page holds nothing for a caller missing any of them — it checks
+        // all three before any read and draws the shared refusal, which names
+        // no code — so offering the entry on the delivery code alone was an
+        // offer that lands on a refusal. The entry now asks for all three
+        // (route sweep B3). The handover list, which the delivery code alone
+        // could read, has no screen yet (a recorded backend prerequisite).
         href: '/delivery',
-        permission: 'sal.delivery.read',
-        status: 'planned',
+        permission: 'sal.delivery.view',
+        alsoRequires: ['wo.work_order.read', 'sal.finance.view'],
+        status: 'available',
+        scope: 'branch',
+      },
+      {
+        key: 'warranty',
+        labelKey: 'nav.warranty',
+        // The delivery glyph, deliberately reused. A warranty is issued from a
+        // handover and reached from beside it, and inventing a second glyph for a
+        // screen one step along the same act would say they are unrelated things.
+        icon: 'delivery',
+        // `/warranty`: the branch's warranty records, built by P1-31 FE-008. Gated
+        // on `wty.warranty.read`, the code BOTH warranty reads declare — minted by
+        // P-7 so that reading a warranty no longer borrows the authority to issue
+        // one. Issuing is offered on the handover screen, not by this gate.
+        href: '/warranty',
+        permission: 'wty.warranty.read',
+        status: 'available',
         scope: 'branch',
       },
     ],
@@ -441,10 +707,65 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
         key: 'reports',
         labelKey: 'nav.reports',
         icon: 'reports',
+        // `/reports`: the report catalogue, built by P1-31 FE-011 … FE-014 on the
+        // Owner's D-4 decision, with the operational overview of the four approved
+        // domains below it (FE-010, D-19). Gated on `rpt.report.read`, the code all
+        // three report operations declare — the catalogue, the definition read and
+        // the run. The rows a given report returns need that report's own dataset
+        // codes as well, which are per-report and evaluated server-side on every
+        // run; naming one of them here would hide the whole module from an
+        // operator who may read the catalogue.
+        //
+        // `tenant`, not `company`: the catalogue operation is tenant-scoped, so
+        // the set of reports a caller may read is not a company's. The RUN is
+        // branch-scoped and the screen asks for a company and a branch, which is
+        // a question about the resource rather than about the caller.
         href: '/reports',
         permission: 'rpt.report.read',
-        status: 'planned',
-        scope: 'company',
+        status: 'available',
+        scope: 'tenant',
+        children: [
+          {
+            /*
+             * The catalogue itself, naming the SAME route as its parent — the
+             * `work-orders.queue` and `administration.overview` pattern, for the
+             * same reason: a parent with children is a disclosure BUTTON when the
+             * sidebar is expanded, and a button carries no `aria-current`, so
+             * `/reports` would mark nothing as the current page without this row.
+             *
+             * `exact`, because `/reports` is a path prefix of both the overview
+             * and every single-report route, and two items claiming to be the
+             * current page is the `P1-28` duplicate-marker defect.
+             */
+            key: 'reports.catalogue',
+            labelKey: 'nav.reportsAll',
+            icon: 'reports',
+            href: '/reports',
+            permission: 'rpt.report.read',
+            status: 'available',
+            scope: 'tenant',
+            exact: true,
+          },
+          {
+            /*
+             * P1-31 FE-010: the operational overview of the four approved report
+             * domains, at `/reports/overview`. Gated on the same `rpt.report.read`
+             * as its parent — the overview issues the same runs, and each report's
+             * own dataset codes are evaluated server-side on every one of them.
+             *
+             * FE-016 is this route with the branch named in the address, so it
+             * needs no entry of its own: a rail link to a branch would be a branch
+             * written into the source, which is exactly what D-19 forbids.
+             */
+            key: 'reports.overview',
+            labelKey: 'nav.reportsOverview',
+            icon: 'reports',
+            href: '/reports/overview',
+            permission: 'rpt.report.read',
+            status: 'available',
+            scope: 'branch',
+          },
+        ],
       },
     ],
   },
@@ -503,6 +824,30 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             status: 'available',
             scope: 'tenant',
           },
+          /*
+           * Organisation structure beneath companies and branches (P1-32
+           * preparation). Each is gated on the list operation's own read code —
+           * `org.department-list` and `org.employee-list` — so the entry is
+           * shown to exactly the sessions whose first request would succeed.
+           */
+          {
+            key: 'administration.departments',
+            labelKey: 'nav.departments',
+            icon: 'administration',
+            href: '/administration/departments',
+            permission: 'org.department.read',
+            status: 'available',
+            scope: 'branch',
+          },
+          {
+            key: 'administration.employees',
+            labelKey: 'nav.employees',
+            icon: 'technicians',
+            href: '/administration/employees',
+            permission: 'org.employee.read',
+            status: 'available',
+            scope: 'branch',
+          },
           {
             key: 'administration.roles',
             labelKey: 'nav.roles',
@@ -527,6 +872,37 @@ export const NAVIGATION: readonly NavigationGroup[] = Object.freeze([
             icon: 'administration',
             href: '/administration/approval-limits',
             permission: 'iam.approval.manage',
+            status: 'available',
+            scope: 'tenant',
+          },
+          /*
+           * P1-32-PRE-OD-DISC-01: the company discount threshold — the point at
+           * which a discount needs approval by somebody other than the person who
+           * asked for it. Gated on `svc.price.read`, the code its read declares;
+           * changing it needs `svc.price.manage`, which the page checks.
+           */
+          {
+            key: 'administration.discountThreshold',
+            labelKey: 'nav.discountThreshold',
+            icon: 'administration',
+            href: '/administration/discount-threshold',
+            permission: 'svc.price.read',
+            status: 'available',
+            scope: 'company',
+          },
+          /*
+           * Appointment setup (Owner decision 2026-09-29): the organisation's own
+           * appointment types, booking channels and cancellation reasons. Gated on
+           * `apt.catalogue.manage`, the code its management list declares, so the
+           * entry is shown to exactly the sessions whose first request succeeds.
+           * Tenant-wide: the entries are the organisation's, not a branch's.
+           */
+          {
+            key: 'administration.appointmentSetup',
+            labelKey: 'nav.appointmentSetup',
+            icon: 'appointments',
+            href: '/administration/appointment-setup',
+            permission: 'apt.catalogue.manage',
             status: 'available',
             scope: 'tenant',
           },

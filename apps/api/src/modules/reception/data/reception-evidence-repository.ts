@@ -25,13 +25,13 @@ import { Repository } from '@/server/db/repository';
 import type { DbHandle } from '@/server/db/transaction';
 import type {
   ComplaintCategory,
-  ComplaintSeverity,
   DamageMarkType,
   FindingCategory,
   FindingSeverity,
   SignatureCaptureMethod,
   SignaturePurpose,
   SignerRole,
+  StoredComplaintSeverity,
 } from '../domain/reception-evidence';
 
 /** Branch scope every evidence row inherits from its reception visit. */
@@ -85,7 +85,7 @@ export class ReceptionEvidenceRepository extends Repository {
     input: EvidenceScope & {
       readonly receptionVisitId: string;
       readonly category: ComplaintCategory;
-      readonly severity: ComplaintSeverity;
+      readonly severity: StoredComplaintSeverity;
       readonly reportedByPartnerId: string | null;
       readonly evidenceDocumentId: string | null;
     }

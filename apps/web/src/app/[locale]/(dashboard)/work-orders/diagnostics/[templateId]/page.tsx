@@ -34,8 +34,8 @@ export default async function TemplateDetailPage({
   const session = await requireSession(locale);
   const messages = getMessages(locale);
   const crumbs = [
-    { labelKey: 'nav.workOrders', href: '/work-orders' },
-    { labelKey: 'nav.diagnostics', href: '/work-orders/diagnostics' },
+    { labelKey: 'nav.workOrders', href: `/${locale}/work-orders` },
+    { labelKey: 'nav.diagnostics', href: `/${locale}/work-orders/diagnostics` },
     { labelKey: 'diagnostics.template.crumb' },
   ];
 

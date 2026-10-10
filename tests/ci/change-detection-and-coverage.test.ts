@@ -42,6 +42,34 @@ describe('change classification', () => {
     expect(classifyPath('LICENSE')).toBe('other');
   });
 
+  it('classifies an EXECUTABLE under docs/ as tooling, not as prose', () => {
+    // PR #409 changed only `docs/user-manual/tools/build-pdf.mjs` and was
+    // classified documentation-only, so `code-security` was skipped on the pull
+    // request and CodeQL first saw the file on the merge commit.
+    expect(classifyPath('docs/user-manual/tools/build-pdf.mjs')).toBe('docsTooling');
+    expect(classifyPath('docs/user-manual/tools/markdown-to-html.mjs')).toBe('docsTooling');
+    // The carve-outs on either side of the new rule still hold.
+    expect(classifyPath('docs/x.md')).toBe('docs');
+    expect(classifyPath('docs/api/openapi.v1.json')).toBe('openapi');
+  });
+
+  it('requires code-security — and ONLY code-security — for a docs executable', () => {
+    const result = classify(['docs/user-manual/tools/build-pdf.mjs']);
+    expect(result.documentationOnly).toBe(false);
+    expect(result.jobs['code-security']?.required).toBe(true);
+    for (const job of [
+      'application-build',
+      'database-migration-replay',
+      'database-security',
+      'integration-tests',
+      'container-security',
+    ]) {
+      // Classing the file as `scripts` would have satisfied the assertion above
+      // while also running two database jobs a PDF builder cannot affect.
+      expect(result.jobs[job]?.required, job).toBe(false);
+    }
+  });
+
   it('normalises Windows separators, because the diff may be produced on either platform', () => {
     expect(parseFileList('src\\modules\\inventory\\x.ts\r\n')).toEqual([
       'src/modules/inventory/x.ts',

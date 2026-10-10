@@ -1,0 +1,809 @@
+'use client';
+
+import { useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
+
+import { DateField, type DayProblem } from '@/components/forms/mui/DateField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { FailureExplanation } from '@/components/states/States';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
+import type { Messages } from '@/i18n/get-messages';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
+
+import {
+  createCoverageWindow,
+  readWarrantyPolicy,
+  renameWarrantyPolicy,
+  setCoverageWindowStatus,
+  setWarrantyPolicyStatus,
+  type PolicyWriteState,
+} from '../warranty-api';
+import {
+  COVERAGE_DATE_FORMAT,
+  COVERED_SCOPES,
+  MAX_DURATION_MONTHS,
+  MAX_ODOMETER_ALLOWANCE,
+  MAX_POLICY_NAME,
+  MIN_DURATION_MONTHS,
+  MIN_ODOMETER_ALLOWANCE,
+  WHOLE_NUMBER,
+  type CoveredScope,
+  type WarrantyConfigurationStatus,
+  type WarrantyCoverageCreateBody,
+  type WarrantyCoverageTerms,
+  type WarrantyPolicyDetail,
+} from '../warranty-contract';
+import {
+  ConfigurationStatusLabel,
+  CoveredScopeLabel,
+  Distance,
+  Fact,
+  ReadFailure,
+  Reference,
+  Section,
+  isStaleView,
+  refusalKeyFor,
+  type MoreFailure,
+} from './shared';
+
+/**
+ * One warranty plan and the windows of cover terms it holds (P1-31, FE-008 plan
+ * administration).
+ *
+ * ## Every mutation re-reads, and the screen shows what came back
+ *
+ * Nothing on this screen is updated from the request that was sent. After a write
+ * succeeds the plan is read again and the answer replaces what was held, so the name,
+ * the state, the windows and — the part that matters — the two record versions are the
+ * server's rather than this side's guess at what they became. That is not tidiness: the
+ * next command is version-guarded, and a version inferred as "the one before plus one"
+ * would encode an assumption about the database trigger that this application does not
+ * own.
+ *
+ * ## The two record versions are never interchangeable
+ *
+ * The plan carries one and every window carries its own, on different rows. The rename
+ * and the plan state command take the PLAN's; a window's state command takes that
+ * WINDOW's. The path names both identifiers, which is what makes the confusion easy
+ * and silent — the wrong one is a refusal at best and a write against the wrong row's
+ * expectation at worst — so the two never share a variable here and each command is
+ * given the version off the row it is acting on.
+ *
+ * ## A stale view is the one refusal an operator can clear by doing nothing
+ *
+ * The conflict code covers three causes. Only one of them — the plan moved while this
+ * screen was open — is cleared by re-reading and sending the same thing again, and it
+ * is the one that carries no violation rule. A reload control is offered beside that
+ * message and beside no other, because offering it for an overlap would invite an
+ * operator to retry a write that will be refused every time.
+ *
+ * ## Terms are added, never edited
+ *
+ * There is no edit control for a window and no delete for either row, because the
+ * backend offers neither. A window's plan and start date are frozen by the database,
+ * and the end date is deliberately not editable either: warranties cite their window
+ * for their whole life, so re-closing one in place would restate terms a customer is
+ * already bound to. Retire the window and add the one you meant — which leaves the
+ * superseded terms readable beside the warranties that cite them.
+ *
+ * ## Nothing here computes a term
+ *
+ * No duration is summed, no window is compared against today, no distance is parsed.
+ * `odometerAllowance` is an exact decimal string on the way in and on the way out; the
+ * only value converted at all is the count of months, which the route takes as a whole
+ * number because a count of months is not a measurement.
+ */
+
+/** Which control produced the outcome on screen, so it is reported where it happened. */
+type WriteArea = 'rename' | 'planState' | 'window' | 'windowState';
+
+interface Outcome {
+  readonly area: WriteArea;
+  readonly state: PolicyWriteState;
+}
+
+const ARCHIVED: WarrantyConfigurationStatus = 'archived';
+const ACTIVE: WarrantyConfigurationStatus = 'active';
+
+export function WarrantyPolicyScreen({
+  messages,
+  policyId,
+  initial,
+  canManagePolicies,
+}: {
+  readonly messages: Messages;
+  readonly policyId: string;
+  /** The plan as the page read it. Replaced by the server's answer after every write. */
+  readonly initial: WarrantyPolicyDetail;
+  /** `wty.policy.manage` — whether any control that changes the plan is drawn. */
+  readonly canManagePolicies: boolean;
+}) {
+  const context = useWorkingContext();
+  const [detail, setDetail] = useState<WarrantyPolicyDetail>(initial);
+  const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const [rereadFailed, setRereadFailed] = useState<MoreFailure | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const policy = detail.policy;
+
+  /**
+   * Read the plan again and keep whatever came back.
+   *
+   * A failed re-read is reported and the previously held plan is kept: the write it
+   * followed may well have succeeded, and blanking the screen would suggest otherwise.
+   */
+  const refresh = async () => {
+    const next = await readWarrantyPolicy(policyId);
+    if (next.status !== 'ok') {
+      setRereadFailed({ status: next.status, correlationId: next.correlationId });
+      return;
+    }
+    setRereadFailed(null);
+    setDetail(next.data);
+  };
+
+  /*
+   * Each control has its own handler, and each handler ends with its own re-read.
+   *
+   * These four were one `run(area, write)` helper that took the command as a
+   * callback. The behaviour was the same, and that is the point: a reader of the
+   * rename control saw a version go out and had to leave the call site to learn
+   * whether anything renewed it. The version discipline is the reason this screen
+   * is written the way it is, so the renewal belongs beside the command that spends
+   * the version rather than one indirection away from it. Four short handlers that
+   * repeat three lines each state it where it can be read.
+   */
+
+  /** Rename the plan against the PLAN's version, then take the server's answer. */
+  const renamePlan = async (name: string) => {
+    if (busy) return;
+    setBusy(true);
+    const state = await renameWarrantyPolicy(policyId, { name }, policy.recordVersion);
+    setOutcome({ area: 'rename', state });
+    if (state.status === 'success') await refresh();
+    setBusy(false);
+  };
+
+  /** Retire or restore the plan against the PLAN's version, then read it back. */
+  const changePlanState = async () => {
+    if (busy) return;
+    setBusy(true);
+    const next = policy.status === ACTIVE ? ARCHIVED : ACTIVE;
+    const state = await setWarrantyPolicyStatus(policyId, { status: next }, policy.recordVersion);
+    setOutcome({ area: 'planState', state });
+    if (state.status === 'success') await refresh();
+    setBusy(false);
+  };
+
+  /**
+   * Retire or restore one window against THAT WINDOW's version, then read back.
+   *
+   * The version comes off the row the button belongs to, handed in by that row. The
+   * plan's is a different counter on a different row, and the path names both
+   * identifiers, which is what makes the confusion easy and silent.
+   */
+  const changeWindowState = async (terms: WarrantyCoverageTerms) => {
+    if (busy) return;
+    setBusy(true);
+    const next = terms.status === ACTIVE ? ARCHIVED : ACTIVE;
+    const state = await setCoverageWindowStatus(
+      policyId,
+      terms.id,
+      { status: next },
+      terms.recordVersion
+    );
+    setOutcome({ area: 'windowState', state });
+    if (state.status === 'success') await refresh();
+    setBusy(false);
+  };
+
+  /**
+   * Add one window of terms, then read the plan back.
+   *
+   * This command carries no version of its own, but the plan it lands under moves,
+   * so the re-read is owed here for the same reason as everywhere else: the next
+   * guarded command takes its version from what this read returned.
+   */
+  const addCoverageWindow = async (body: WarrantyCoverageCreateBody): Promise<boolean> => {
+    if (busy) return false;
+    setBusy(true);
+    const state = await createCoverageWindow(policyId, body);
+    setOutcome({ area: 'window', state });
+    if (state.status === 'success') await refresh();
+    setBusy(false);
+    // Said back to the form, which empties itself only after the terms are stored.
+    return state.status === 'success';
+  };
+
+  const report = (area: WriteArea) =>
+    outcome && outcome.area === area ? (
+      <WriteOutcome
+        messages={messages}
+        state={outcome.state}
+        onReload={() => {
+          setOutcome(null);
+          void refresh();
+        }}
+      />
+    ) : null;
+
+  return (
+    <div className="flex flex-col gap-6">
+      <Section
+        headingId="warranty-policy-summary-heading"
+        titleKey="warranty.policies.summaryHeading"
+        messages={messages}
+        description={translate(messages, 'warranty.policies.summaryExplain')}
+      >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Fact label={translate(messages, 'warranty.policies.nameField')}>
+            <bdi>{policy.name}</bdi>
+          </Fact>
+          <Fact label={translate(messages, 'warranty.policies.columnState')}>
+            <ConfigurationStatusLabel messages={messages} status={policy.status} />
+          </Fact>
+          <Reference
+            label={translate(messages, 'warranty.policies.codeField')}
+            value={policy.policyCode}
+          />
+          <Fact label={translate(messages, 'warranty.policies.columnCompany')}>
+            {/*
+              The name the platform published for this company, never its
+              reference: a reader cannot recognise a workshop by a string they
+              have never seen. A company outside this reader's own working
+              context has no name here, and it is said in words rather than by
+              its reference (Browser QA part 7, row 4.3b).
+            */}
+            {context.companies.find((company) => company.id === policy.companyId)?.name ??
+              translate(messages, 'warranty.policies.companyOutsideContext')}
+          </Fact>
+        </div>
+        {rereadFailed === null ? null : (
+          <div className="mt-3">
+            <p className="text-body text-text-secondary">
+              {translate(messages, 'warranty.policies.rereadFailed')}
+            </p>
+            <ReadFailure
+              messages={messages}
+              status={rereadFailed.status}
+              correlationId={rereadFailed.correlationId}
+            />
+          </div>
+        )}
+      </Section>
+
+      {canManagePolicies ? (
+        <Section
+          headingId="warranty-policy-rename-heading"
+          titleKey="warranty.policies.renameHeading"
+          messages={messages}
+          description={translate(messages, 'warranty.policies.renameExplain')}
+        >
+          <RenameForm
+            messages={messages}
+            currentName={policy.name}
+            busy={busy}
+            onSubmit={(name) => void renamePlan(name)}
+          />
+          {report('rename')}
+        </Section>
+      ) : null}
+
+      {canManagePolicies ? (
+        <Section
+          headingId="warranty-policy-state-heading"
+          titleKey="warranty.policies.stateHeading"
+          messages={messages}
+          description={translate(messages, 'warranty.policies.stateExplain')}
+        >
+          <Button
+            type="button"
+            variant="outlined"
+            disabled={busy}
+            onClick={() => void changePlanState()}
+          >
+            {translate(
+              messages,
+              policy.status === ACTIVE
+                ? 'warranty.policies.retirePlan'
+                : 'warranty.policies.restorePlan'
+            )}
+          </Button>
+          {report('planState')}
+        </Section>
+      ) : null}
+
+      <Section
+        headingId="warranty-policy-coverage-heading"
+        titleKey="warranty.policies.coverageHeading"
+        messages={messages}
+        description={translate(messages, 'warranty.policies.coverageExplain')}
+      >
+        {detail.coverage.length === 0 ? (
+          <p className="text-body text-text-secondary">
+            {translate(messages, 'warranty.policies.noCoverage')}
+          </p>
+        ) : (
+          <TableContainer>
+            <Table size="small">
+              <caption className="sr-only">
+                {translate(messages, 'warranty.policies.coverageTableCaption')}
+              </caption>
+              <TableHead>
+                <TableRow>
+                  <TableCell scope="col">
+                    {translate(messages, 'warranty.coverage.coveredScope')}
+                  </TableCell>
+                  <TableCell scope="col">
+                    {translate(messages, 'warranty.coverage.durationMonths')}
+                  </TableCell>
+                  <TableCell scope="col">
+                    {translate(messages, 'warranty.coverage.odometerAllowance')}
+                  </TableCell>
+                  <TableCell scope="col">
+                    {translate(messages, 'warranty.coverage.effectiveFrom')}
+                  </TableCell>
+                  <TableCell scope="col">
+                    {translate(messages, 'warranty.coverage.effectiveTo')}
+                  </TableCell>
+                  <TableCell scope="col">
+                    {translate(messages, 'warranty.coverage.status')}
+                  </TableCell>
+                  {canManagePolicies ? (
+                    <TableCell scope="col">
+                      {translate(messages, 'warranty.policies.columnAction')}
+                    </TableCell>
+                  ) : null}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {detail.coverage.map((terms) => (
+                  <TableRow key={terms.id}>
+                    <TableCell>
+                      <CoveredScopeLabel messages={messages} scope={terms.coveredScope} />
+                    </TableCell>
+                    <TableCell>{terms.durationMonths}</TableCell>
+                    <TableCell>
+                      {terms.odometerAllowance === null ? (
+                        translate(messages, 'warranty.coverage.unlimitedDistance')
+                      ) : (
+                        <Distance value={terms.odometerAllowance} />
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <span dir="ltr">{terms.effectiveFrom}</span>
+                    </TableCell>
+                    <TableCell>
+                      {terms.effectiveTo === null ? (
+                        translate(messages, 'warranty.coverage.openEnded')
+                      ) : (
+                        <span dir="ltr">{terms.effectiveTo}</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <ConfigurationStatusLabel messages={messages} status={terms.status} />
+                    </TableCell>
+                    {canManagePolicies ? (
+                      <TableCell>
+                        <WindowStateButton
+                          messages={messages}
+                          terms={terms}
+                          busy={busy}
+                          onClick={() => void changeWindowState(terms)}
+                        />
+                      </TableCell>
+                    ) : null}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        )}
+        {report('windowState')}
+      </Section>
+
+      {canManagePolicies ? (
+        <Section
+          headingId="warranty-policy-add-coverage-heading"
+          titleKey="warranty.policies.addCoverageHeading"
+          messages={messages}
+          description={translate(messages, 'warranty.policies.addCoverageExplain')}
+        >
+          <CoverageForm
+            messages={messages}
+            busy={busy}
+            onSubmit={(body) => addCoverageWindow(body)}
+          />
+          {report('window')}
+        </Section>
+      ) : null}
+    </div>
+  );
+}
+
+/** The result of one write, with a reload offered for the one refusal it clears. */
+function WriteOutcome({
+  messages,
+  state,
+  onReload,
+}: {
+  readonly messages: Messages;
+  readonly state: PolicyWriteState;
+  readonly onReload: () => void;
+}) {
+  if (state.status === 'success') {
+    return (
+      <p role="status" className="mt-3 text-body text-text-primary">
+        {translateDynamic(messages, state.messageKey ?? 'action.succeeded')}
+      </p>
+    );
+  }
+  return (
+    <div className="mt-3 flex flex-col items-start gap-2">
+      <p role="alert" className="text-body text-error">
+        {translateWithValues(messages, refusalKeyFor(state), state.messageValues)}
+        <FailureExplanation messages={messages} messageKey={refusalKeyFor(state)} />
+        {state.correlationId ? (
+          <>
+            {' '}
+            <span className="text-caption text-text-muted">
+              {translate(messages, 'state.correlationId')}{' '}
+              <code className="font-mono" dir="ltr">
+                {state.correlationId}
+              </code>
+            </span>
+          </>
+        ) : null}
+      </p>
+      {isStaleView(state) ? (
+        <Button type="button" variant="outlined" size="small" onClick={onReload}>
+          {translate(messages, 'warranty.policies.reload')}
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+/** Retire or restore one window, labelled by what it will do. */
+function WindowStateButton({
+  messages,
+  terms,
+  busy,
+  onClick,
+}: {
+  readonly messages: Messages;
+  readonly terms: WarrantyCoverageTerms;
+  readonly busy: boolean;
+  readonly onClick: () => void;
+}) {
+  return (
+    <Button type="button" variant="outlined" size="small" disabled={busy} onClick={onClick}>
+      {translate(
+        messages,
+        terms.status === ACTIVE
+          ? 'warranty.policies.retireWindow'
+          : 'warranty.policies.restoreWindow'
+      )}
+    </Button>
+  );
+}
+
+/** The name, and nothing else: the reference is not renameable and no field offers it. */
+function RenameForm({
+  messages,
+  currentName,
+  busy,
+  onSubmit,
+}: {
+  readonly messages: Messages;
+  readonly currentName: string;
+  readonly busy: boolean;
+  readonly onSubmit: (name: string) => void;
+}) {
+  const [draft, setDraft] = useState(currentName);
+  const [error, setError] = useState<string | null>(null);
+  const [refusals, setRefusals] = useState(0);
+  /*
+   * The box follows the plan's name when the server's answer changes it (after a
+   * rename is read back), adjusted DURING render — React's documented shape for
+   * "reset state when an input changes".
+   */
+  const [lastName, setLastName] = useState(currentName);
+  if (currentName !== lastName) {
+    setLastName(currentName);
+    setDraft(currentName);
+  }
+  // A name typed and not yet sent is unsaved work; leaving puts the plan's name back.
+  useUnsavedGuard(draft.trim() !== currentName, () => {
+    setDraft(currentName);
+    setError(null);
+  });
+  const formRef = useFocusFirstInvalid(
+    error === null
+      ? { status: 'idle', attempt: refusals }
+      : { status: 'invalid', fieldErrors: { name: error }, attempt: refusals }
+  );
+
+  return (
+    <form
+      ref={formRef}
+      noValidate
+      aria-label={translate(messages, 'warranty.policies.renameFormLabel')}
+      className="flex flex-col gap-3 sm:flex-row sm:items-start"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const trimmed = draft.trim();
+        if (trimmed.length === 0 || trimmed.length > MAX_POLICY_NAME) {
+          setError('warranty.policies.nameLength');
+          setRefusals((count) => count + 1);
+          return;
+        }
+        setError(null);
+        onSubmit(trimmed);
+      }}
+    >
+      <div className="grow">
+        <FormTextField
+          label={translate(messages, 'warranty.policies.nameField')}
+          required
+          maxLength={MAX_POLICY_NAME}
+          value={draft}
+          onEdit={() => setError(null)}
+          onChange={setDraft}
+          error={error ? translateDynamic(messages, error) : undefined}
+        />
+      </div>
+      <Button type="submit" variant="contained" disabled={busy}>
+        {translate(messages, 'warranty.policies.renameSubmit')}
+      </Button>
+    </form>
+  );
+}
+
+/**
+ * Is this string of digits inside the distance the column accepts?
+ *
+ * Compared as a STRING, by length and then lexically, because that is exact for
+ * digits and needs no conversion. Turning a distance into a number to range-check it
+ * is the one place a reading could quietly change, and the value is sent onward as
+ * the string it arrived as.
+ */
+function withinDistanceBound(digits: string): boolean {
+  const floor = String(MIN_ODOMETER_ALLOWANCE);
+  const ceiling = String(MAX_ODOMETER_ALLOWANCE);
+  const trimmed = digits.replace(/^0+/, '');
+  if (trimmed.length < floor.length) return false;
+  if (trimmed.length === floor.length && trimmed < floor) return false;
+  if (trimmed.length > ceiling.length) return false;
+  return trimmed.length < ceiling.length || trimmed <= ceiling;
+}
+
+/** One window of cover terms, in the shape the add operation accepts. */
+function CoverageForm({
+  messages,
+  busy,
+  onSubmit,
+}: {
+  readonly messages: Messages;
+  readonly busy: boolean;
+  readonly onSubmit: (body: {
+    readonly coveredScope: CoveredScope;
+    readonly durationMonths: number;
+    readonly odometerAllowance?: string;
+    readonly effectiveFrom: string;
+    readonly effectiveTo?: string;
+  }) => Promise<boolean>;
+}) {
+  const [coveredScope, setCoveredScope] = useState<CoveredScope>('all');
+  const [durationMonths, setDurationMonths] = useState('');
+  const [odometerAllowance, setOdometerAllowance] = useState('');
+  const [effectiveFrom, setEffectiveFrom] = useState('');
+  const [effectiveTo, setEffectiveTo] = useState('');
+  /*
+   * Whether a date picker holds something that is not a whole day (a part still
+   * being typed). The picker reports its value as `''` then, so without this a
+   * half-typed end date would read as "no end date" and be left out silently.
+   */
+  const [fromUnfinished, setFromUnfinished] = useState(false);
+  const [toUnfinished, setToUnfinished] = useState(false);
+  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const [refusals, setRefusals] = useState(0);
+
+  const reset = () => {
+    setCoveredScope('all');
+    setDurationMonths('');
+    setOdometerAllowance('');
+    setEffectiveFrom('');
+    setEffectiveTo('');
+    setFromUnfinished(false);
+    setToUnfinished(false);
+    setErrors({});
+  };
+  // Terms typed and not yet added are unsaved work; leaving drops them unsent.
+  useUnsavedGuard(
+    durationMonths.trim().length > 0 ||
+      odometerAllowance.trim().length > 0 ||
+      effectiveFrom.length > 0 ||
+      effectiveTo.length > 0 ||
+      fromUnfinished ||
+      toUnfinished ||
+      coveredScope !== 'all',
+    reset
+  );
+  const formRef = useFocusFirstInvalid(
+    Object.keys(errors).length > 0
+      ? { status: 'invalid', fieldErrors: errors, attempt: refusals }
+      : { status: 'idle', attempt: refusals }
+  );
+  /** Withdraws one field's complaint the moment its value is edited. */
+  const corrected = (field: string) =>
+    setErrors((previous) => {
+      if (!(field in previous)) return previous;
+      const next = { ...previous };
+      delete next[field];
+      return next;
+    });
+  /**
+   * A date picker's parts stopped being half typed. Either they became a whole
+   * day (the picker's own change already withdrew the complaint) or every part
+   * was erased, which the picker publishes as no change at all — yet an erased
+   * optional end date is a correction, so its complaint is withdrawn here too.
+   */
+  const settled = (
+    field: 'effectiveFrom' | 'effectiveTo',
+    problem: DayProblem,
+    setUnfinished: (unfinished: boolean) => void
+  ) => {
+    setUnfinished(problem !== null);
+    if (problem === null) corrected(field);
+  };
+
+  return (
+    <form
+      ref={formRef}
+      noValidate
+      aria-label={translate(messages, 'warranty.policies.addCoverageFormLabel')}
+      className="grid gap-3 sm:grid-cols-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const found: Record<string, string> = {};
+        const months = durationMonths.trim();
+        const distance = odometerAllowance.trim();
+        const from = effectiveFrom.trim();
+        const to = effectiveTo.trim();
+
+        const monthsAreWhole = WHOLE_NUMBER.test(months);
+        const monthCount = monthsAreWhole ? Number.parseInt(months, 10) : 0;
+        if (
+          !monthsAreWhole ||
+          monthCount < MIN_DURATION_MONTHS ||
+          monthCount > MAX_DURATION_MONTHS
+        ) {
+          found['durationMonths'] = 'warranty.policies.monthsRange';
+        }
+        if (
+          distance.length > 0 &&
+          !(WHOLE_NUMBER.test(distance) && withinDistanceBound(distance))
+        ) {
+          found['odometerAllowance'] = 'warranty.policies.distanceRange';
+        }
+        if (fromUnfinished || !COVERAGE_DATE_FORMAT.test(from))
+          found['effectiveFrom'] = 'warranty.policies.dateFormat';
+        if (toUnfinished || (to.length > 0 && !COVERAGE_DATE_FORMAT.test(to))) {
+          found['effectiveTo'] = 'warranty.policies.dateFormat';
+        }
+        if (to.length > 0 && COVERAGE_DATE_FORMAT.test(to) && to <= from) {
+          // Mirrors the database CHECK, so an inverted window is named by the control
+          // rather than answered as a refusal of the whole request. The constraint is
+          // still the authority and refuses it again.
+          found['effectiveTo'] = 'warranty.policies.endAfterStart';
+        }
+        setErrors(found);
+        if (Object.keys(found).length > 0) {
+          setRefusals((count) => count + 1);
+          return;
+        }
+
+        void onSubmit({
+          coveredScope,
+          durationMonths: monthCount,
+          // Omitted rather than sent empty: an absent allowance is what an unlimited
+          // distance means, and the route is strict about a value it does not expect.
+          ...(distance.length === 0 ? {} : { odometerAllowance: distance }),
+          effectiveFrom: from,
+          ...(to.length === 0 ? {} : { effectiveTo: to }),
+        }).then((stored) => {
+          // Emptied only once the terms are stored, so a refusal keeps every value.
+          if (stored) reset();
+        });
+      }}
+    >
+      <FormSelectField
+        label={translate(messages, 'warranty.coverage.coveredScope')}
+        required
+        value={coveredScope}
+        onChange={(value) => setCoveredScope(value as CoveredScope)}
+        options={COVERED_SCOPES.map((scope) => ({
+          value: scope,
+          label: translate(messages, `warranty.coveredScope.${scope}`),
+        }))}
+      />
+
+      <FormTextField
+        label={translate(messages, 'warranty.coverage.durationMonths')}
+        required
+        inputMode="numeric"
+        dir="ltr"
+        value={durationMonths}
+        onEdit={() => corrected('durationMonths')}
+        onChange={setDurationMonths}
+        error={
+          errors['durationMonths']
+            ? translateDynamic(messages, errors['durationMonths'])
+            : undefined
+        }
+      />
+
+      <FormTextField
+        label={translate(messages, 'warranty.coverage.odometerAllowance')}
+        description={translate(messages, 'warranty.policies.distanceHelp')}
+        inputMode="numeric"
+        dir="ltr"
+        value={odometerAllowance}
+        onEdit={() => corrected('odometerAllowance')}
+        onChange={setOdometerAllowance}
+        error={
+          errors['odometerAllowance']
+            ? translateDynamic(messages, errors['odometerAllowance'])
+            : undefined
+        }
+      />
+
+      {/*
+        Calendar days on the MIT date picker (ADR-022, E1–E4): the value is the
+        same `YYYY-MM-DD` the native box produced and the route accepts, and the
+        picker's own object never leaves the field.
+      */}
+      <DateField
+        label={translate(messages, 'warranty.coverage.effectiveFrom')}
+        required
+        value={effectiveFrom}
+        onEdit={() => corrected('effectiveFrom')}
+        onChange={setEffectiveFrom}
+        onProblem={(problem) => settled('effectiveFrom', problem, setFromUnfinished)}
+        error={
+          errors['effectiveFrom'] ? translateDynamic(messages, errors['effectiveFrom']) : undefined
+        }
+      />
+
+      <DateField
+        label={translate(messages, 'warranty.coverage.effectiveTo')}
+        description={translate(messages, 'warranty.policies.endHelp')}
+        value={effectiveTo}
+        onEdit={() => corrected('effectiveTo')}
+        onChange={setEffectiveTo}
+        onProblem={(problem) => settled('effectiveTo', problem, setToUnfinished)}
+        error={
+          errors['effectiveTo'] ? translateDynamic(messages, errors['effectiveTo']) : undefined
+        }
+      />
+
+      <div className="sm:col-span-2">
+        <Button type="submit" variant="contained" disabled={busy}>
+          {translate(messages, 'warranty.policies.addCoverageSubmit')}
+        </Button>
+      </div>
+    </form>
+  );
+}

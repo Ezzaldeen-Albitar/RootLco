@@ -1,0 +1,461 @@
+import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import type { ReactElement } from 'react';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  MuiEmptyState,
+  MuiErrorState,
+  MuiExpiredState,
+  MuiLoadingState,
+  MuiNoResultsState,
+  MuiNotFoundState,
+  MuiReadFailureState,
+  MuiRefusedState,
+  MuiSearchStates,
+  MuiStaleState,
+  MuiUnavailableState,
+} from '@/components/states/MuiStates';
+import { UiFoundationProvider } from '@/components/ui-foundation/UiFoundationProvider';
+import { muiTextOf } from '@/components/ui-foundation/mui-text';
+import type { Locale } from '@/i18n/config';
+import { getMessages, type Messages } from '@/i18n/get-messages';
+import type { SearchPhase } from '@/lib/api/use-search-request';
+import { renderLtr, renderRtl } from './render';
+
+/**
+ * The read states on Material UI (ADR-022 PR1): the catalogue's own words, a
+ * retry only where retrying can change the answer, the correlation reference as
+ * the only diagnostic, and no state drawn as another.
+ */
+
+function mount(ui: ReactElement, locale: Locale = 'en') {
+  const messages = getMessages(locale);
+  const renderIn = locale === 'ar' ? renderRtl : renderLtr;
+  return renderIn(
+    <UiFoundationProvider locale={locale} text={muiTextOf(messages)}>
+      {ui}
+    </UiFoundationProvider>
+  );
+}
+
+afterEach(() => {
+  for (const style of document.head.querySelectorAll('style')) style.remove();
+});
+
+type Case = readonly [
+  name: string,
+  render: (messages: Messages, onRetry: () => void) => ReactElement,
+  testId: string,
+  title: keyof Messages,
+  description: keyof Messages,
+  retry: boolean,
+];
+
+const CASES: readonly Case[] = [
+  [
+    'empty',
+    (m) => <MuiEmptyState messages={m} />,
+    'state-empty',
+    'state.empty.title',
+    'state.empty.description',
+    false,
+  ],
+  [
+    'no results',
+    (m) => <MuiNoResultsState messages={m} />,
+    'state-no-results',
+    'state.noResults.title',
+    'state.noResults.description',
+    false,
+  ],
+  [
+    'error',
+    (m, r) => <MuiErrorState messages={m} onRetry={r} correlationId="corr-5" />,
+    'state-error',
+    'state.error.title',
+    'state.error.description',
+    true,
+  ],
+  [
+    'unavailable',
+    (m, r) => <MuiUnavailableState messages={m} onRetry={r} correlationId="corr-5" />,
+    'state-unavailable',
+    'state.unavailable.title',
+    'state.unavailable.description',
+    true,
+  ],
+  [
+    'refused',
+    (m) => <MuiRefusedState messages={m} correlationId="corr-5" />,
+    'state-refused',
+    'state.denied.title',
+    'state.denied.description',
+    false,
+  ],
+  [
+    'expired',
+    (m) => <MuiExpiredState messages={m} locale="en" />,
+    'state-expired',
+    'state.expired.title',
+    'state.expired.description',
+    false,
+  ],
+  [
+    'not found',
+    (m) => <MuiNotFoundState messages={m} />,
+    'state-not-found',
+    'state.notFound.title',
+    'state.notFound.description',
+    false,
+  ],
+  [
+    'stale',
+    (m, r) => <MuiStaleState messages={m} onRetry={r} />,
+    'state-stale',
+    'state.conflict.title',
+    'state.conflict.description',
+    true,
+  ],
+];
+
+describe('each state says its own sentence', () => {
+  it.each(CASES)('%s', async (_name, render, testId, title, description, retry) => {
+    for (const locale of ['en', 'ar'] as const) {
+      const messages = getMessages(locale);
+      const onRetry = vi.fn();
+      const user = userEvent.setup();
+      const { unmount } = mount(render(messages, onRetry), locale);
+      const state = screen.getByTestId(testId);
+      expect(state).toHaveAttribute('role', 'status');
+      expect(within(state).getByRole('heading', { level: 2 })).toHaveTextContent(messages[title]);
+      expect(state).toHaveTextContent(messages[description]);
+      const button = within(state).queryByRole('button', { name: messages['state.retry'] });
+      if (retry) {
+        await user.click(button as HTMLElement);
+        expect(onRetry).toHaveBeenCalledTimes(1);
+      } else {
+        expect(button).toBeNull();
+      }
+      // No raw code: nothing that looks like a status or an error identifier.
+      expect(state.textContent).not.toMatch(/\b[1-5]\d\d\b|[a-z]+\.[a-z]+\.[a-z]+|undefined|null/);
+      unmount();
+    }
+  });
+
+  it('shows the correlation reference and nothing else diagnostic', () => {
+    const messages = getMessages('en');
+    mount(<MuiUnavailableState messages={messages} correlationId="corr-5" />);
+    const state = screen.getByTestId('state-unavailable');
+    expect(state).toHaveTextContent(`${messages['state.correlationId']} corr-5`);
+    expect(within(state).getByText('corr-5').tagName).toBe('CODE');
+  });
+
+  it('offers an ended session the way back to signing in, in its language', () => {
+    const messages = getMessages('ar');
+    mount(<MuiExpiredState messages={messages} locale="ar" />, 'ar');
+    expect(screen.getByRole('link', { name: messages['auth.backToLogin'] })).toHaveAttribute(
+      'href',
+      '/ar/login'
+    );
+  });
+
+  it('announces loading once, in words, over skeleton rows or a spinner', () => {
+    const messages = getMessages('en');
+    const { unmount } = mount(<MuiLoadingState messages={messages} rows={3} />);
+    const rows = screen.getByTestId('state-loading');
+    expect(rows).toHaveAttribute('aria-live', 'polite');
+    expect(rows).toHaveTextContent(messages['state.loading']);
+    expect(rows.querySelectorAll('.MuiSkeleton-root')).toHaveLength(3);
+    unmount();
+
+    mount(<MuiLoadingState messages={messages} variant="inline" />);
+    expect(screen.getByTestId('state-loading')).toHaveTextContent(messages['state.loading']);
+    expect(document.querySelector('.MuiCircularProgress-root')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    );
+  });
+
+  it('says a panel’s own sentence for the wait when given one, in either language (INV1b)', () => {
+    for (const locale of ['en', 'ar'] as const) {
+      const messages = getMessages(locale);
+      const { unmount } = mount(
+        <MuiLoadingState
+          messages={messages}
+          variant="inline"
+          labelKey="inventory.identifiers.loading"
+        />,
+        locale
+      );
+      const status = screen.getByRole('status');
+      expect(status).toHaveTextContent(messages['inventory.identifiers.loading']);
+      expect(status).not.toHaveTextContent(messages['state.loading']);
+      expect(status).toHaveAttribute('aria-live', 'polite');
+      unmount();
+
+      const second = mount(
+        <MuiLoadingState messages={messages} rows={2} labelKey="inventory.prices.loading" />,
+        locale
+      );
+      const rows = screen.getByTestId('state-loading');
+      expect(rows).toHaveTextContent(messages['inventory.prices.loading']);
+      expect(rows.querySelectorAll('.MuiSkeleton-root')).toHaveLength(2);
+      second.unmount();
+    }
+  });
+});
+
+/*
+ * The two extensions the delivery, warranty and attention screens needed
+ * (Owner directive, the Material UI slice for those screens): a screen may say
+ * WHAT has not happened yet in its own words, and put its own sentence under the
+ * shared heading of an error, an outage or a refusal. Neither may turn one state
+ * into another: the heading, the retry rule and the reference stay the shared
+ * ones, and unset, every state says exactly what it said before.
+ */
+describe('a screen may say a state in its own words, and the state stays itself', () => {
+  it('draws an empty panel with its own title and sentence, and the shared ones unset', () => {
+    for (const locale of ['en', 'ar'] as const) {
+      const messages = getMessages(locale);
+      const { unmount } = mount(
+        <MuiEmptyState
+          messages={messages}
+          titleKey="delivery.history.noneTitle"
+          descriptionKey="delivery.history.noneDescription"
+        />,
+        locale
+      );
+      const state = screen.getByTestId('state-empty');
+      expect(within(state).getByRole('heading', { level: 2 })).toHaveTextContent(
+        messages['delivery.history.noneTitle']
+      );
+      expect(state).toHaveTextContent(messages['delivery.history.noneDescription']);
+      expect(state).not.toHaveTextContent(messages['state.empty.title']);
+      unmount();
+    }
+    const messages = getMessages('en');
+    mount(<MuiEmptyState messages={messages} />);
+    expect(screen.getByTestId('state-empty')).toHaveTextContent(messages['state.empty.title']);
+  });
+
+  const OVERRIDES: readonly [
+    name: string,
+    render: (messages: Messages, onRetry: () => void) => ReactElement,
+    testId: string,
+    title: keyof Messages,
+    shared: keyof Messages,
+    retry: boolean,
+  ][] = [
+    [
+      'error',
+      (m, r) => <MuiErrorState messages={m} onRetry={r} descriptionKey="attention.state.error" />,
+      'state-error',
+      'state.error.title',
+      'state.error.description',
+      true,
+    ],
+    [
+      'unavailable',
+      (m, r) => (
+        <MuiUnavailableState
+          messages={m}
+          onRetry={r}
+          correlationId="corr-429"
+          descriptionKey="attention.state.unavailable"
+        />
+      ),
+      'state-unavailable',
+      'state.unavailable.title',
+      'state.unavailable.description',
+      true,
+    ],
+    [
+      'refused',
+      (m) => (
+        <MuiRefusedState
+          messages={m}
+          correlationId="corr-403"
+          descriptionKey="attention.state.denied"
+        />
+      ),
+      'state-refused',
+      'state.denied.title',
+      'state.denied.description',
+      false,
+    ],
+  ];
+
+  it.each(OVERRIDES)(
+    '%s keeps its heading and retry rule under the screen’s sentence',
+    async (name, render, testId, title, shared, retry) => {
+      const sentence = `attention.state.${name === 'refused' ? 'denied' : name}` as keyof Messages;
+      for (const locale of ['en', 'ar'] as const) {
+        const messages = getMessages(locale);
+        const onRetry = vi.fn();
+        const user = userEvent.setup();
+        const { unmount } = mount(render(messages, onRetry), locale);
+        const state = screen.getByTestId(testId);
+        expect(state).toHaveAttribute('role', 'status');
+        expect(within(state).getByRole('heading', { level: 2 })).toHaveTextContent(messages[title]);
+        expect(state).toHaveTextContent(messages[sentence]);
+        expect(state).not.toHaveTextContent(messages[shared]);
+        const button = within(state).queryByRole('button', { name: messages['state.retry'] });
+        if (retry) {
+          await user.click(button as HTMLElement);
+          expect(onRetry).toHaveBeenCalledTimes(1);
+        } else {
+          expect(button).toBeNull();
+        }
+        unmount();
+      }
+    }
+  );
+});
+
+describe('MuiSearchStates keeps SearchStates’ decisions', () => {
+  const PHASES: readonly [SearchPhase, string | null, boolean][] = [
+    ['loading', 'state-loading', false],
+    ['empty', 'state-no-results', false],
+    ['unavailable', 'state-unavailable', true],
+    ['refused', 'state-refused', false],
+    ['expired', 'state-expired', false],
+    ['failed', 'state-error', true],
+  ];
+
+  it.each(PHASES)('%s → %s', (phase, testId, retry) => {
+    const messages = getMessages('en');
+    mount(<MuiSearchStates messages={messages} phase={phase} onRetry={() => undefined} />);
+    const state = screen.getByTestId(testId as string);
+    expect(within(state).queryByRole('button', { name: messages['state.retry'] }) !== null).toBe(
+      retry
+    );
+  });
+
+  it('says a search found nothing, not that filters did, when a search comes back empty', () => {
+    const messages = getMessages('en');
+    mount(<MuiSearchStates messages={messages} phase="empty" />);
+    const state = screen.getByTestId('state-no-results');
+    expect(within(state).getByText(messages['state.noSearchMatches.title'])).toBeInTheDocument();
+    expect(
+      within(state).getByText(messages['state.noSearchMatches.description'])
+    ).toBeInTheDocument();
+    expect(within(state).queryByText(messages['state.noResults.title'])).toBeNull();
+    expect(within(state).queryByText(messages['state.noResults.description'])).toBeNull();
+  });
+
+  it('says what narrowed an empty answer when the screen says so, in both languages', () => {
+    /*
+     * `emptyReason` (the reception slice). A board narrowed by a period and a
+     * status says a filter can be cleared; a search matched on fewer details
+     * for this account says THAT rather than "no matches" (Browser QA part 7,
+     * row 2.8). Each reason is its own pair of sentences — no two alike.
+     */
+    const REASONS = [
+      ['filters', 'state.noResults.title', 'state.noResults.description'],
+      ['search', 'state.noSearchMatches.title', 'state.noSearchMatches.description'],
+      [
+        'searchLimited',
+        'state.noSearchMatchesLimited.title',
+        'state.noSearchMatchesLimited.description',
+      ],
+    ] as const;
+    for (const locale of ['en', 'ar'] as const) {
+      const messages = getMessages(locale);
+      for (const [reason, title, description] of REASONS) {
+        const { unmount } = mount(
+          <MuiSearchStates
+            messages={messages}
+            phase="empty"
+            emptyReason={reason}
+            onClearFilters={<button type="button">clear</button>}
+          />,
+          locale
+        );
+        const state = screen.getByTestId('state-no-results');
+        expect(within(state).getByRole('heading', { level: 2 })).toHaveTextContent(messages[title]);
+        expect(state).toHaveTextContent(messages[description]);
+        // The caller's own way back still rides with every reason.
+        expect(within(state).getByRole('button', { name: 'clear' })).toBeInTheDocument();
+        for (const [other, otherTitle] of REASONS) {
+          if (other !== reason) expect(within(state).queryByText(messages[otherTitle])).toBeNull();
+        }
+        unmount();
+      }
+    }
+    // The same reasons on the bare state, so a grid's own empty state can say them too.
+    const messages = getMessages('en');
+    mount(<MuiNoResultsState messages={messages} reason="searchLimited" />);
+    expect(screen.getByTestId('state-no-results')).toHaveTextContent(
+      messages['state.noSearchMatchesLimited.description']
+    );
+  });
+
+  it('renders nothing for an answer and the caller’s words before one', () => {
+    const messages = getMessages('en');
+    const { unmount } = mount(<MuiSearchStates messages={messages} phase="ready" />);
+    expect(screen.queryByRole('status')).toBeNull();
+    unmount();
+    mount(<MuiSearchStates messages={messages} phase="idle" idle={<p>Type a name.</p>} />);
+    expect(screen.getByText('Type a name.')).toBeInTheDocument();
+    expect(screen.queryByTestId('state-no-results')).toBeNull();
+  });
+});
+
+/*
+ * `MuiReadFailureState` (Owner directive slice 4): a failed `ReadState` drawn as
+ * the state it is. The panels it replaced printed every failure as one red line
+ * with no retry, a refusal and an outage alike. Each status maps to its own
+ * state, and a retry is offered only where trying again can change the answer.
+ */
+describe('a failed read is drawn as the state it is (MuiReadFailureState)', () => {
+  const MAP = [
+    ['unavailable', 'state-unavailable', 'state.unavailable.title', true],
+    ['error', 'state-error', 'state.error.title', true],
+    ['denied', 'state-refused', 'state.denied.title', false],
+    ['expired', 'state-expired', 'state.expired.title', false],
+    ['not-found', 'state-not-found', 'state.notFound.title', false],
+  ] as const;
+
+  it.each(MAP)('%s', async (status, testId, title, retry) => {
+    const messages = getMessages('en');
+    const onRetry = vi.fn();
+    const user = userEvent.setup();
+    mount(
+      <MuiReadFailureState
+        messages={messages}
+        locale="en"
+        status={status}
+        correlationId="corr-read"
+        onRetry={onRetry}
+      />
+    );
+    const state = screen.getByTestId(testId);
+    expect(within(state).getByRole('heading', { level: 2 })).toHaveTextContent(messages[title]);
+    const button = within(state).queryByRole('button', { name: messages['state.retry'] });
+    if (retry) {
+      await user.click(button as HTMLElement);
+      expect(onRetry).toHaveBeenCalledTimes(1);
+    } else {
+      // A refusal, an ended session and an absent record are not retried: the
+      // same request gets the same answer.
+      expect(button).toBeNull();
+    }
+  });
+
+  it('says a panel’s own sentence under the shared heading, in Arabic too', () => {
+    const messages = getMessages('ar');
+    mount(
+      <MuiReadFailureState
+        messages={messages}
+        locale="ar"
+        status="unavailable"
+        descriptionKey="workOrders.history.unavailable"
+        testId="history-failure"
+      />,
+      'ar'
+    );
+    const state = screen.getByTestId('history-failure');
+    expect(state).toHaveTextContent(messages['state.unavailable.title']);
+    expect(state).toHaveTextContent(messages['workOrders.history.unavailable']);
+  });
+});

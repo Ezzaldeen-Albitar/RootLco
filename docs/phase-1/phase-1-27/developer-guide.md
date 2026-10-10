@@ -123,7 +123,17 @@ Thirteen is still the P1-27 figure and the route tree still contributes none.
   `download=` attribute, `createObjectURL`, a `new Blob(`, `text/csv`,
   `application/pdf` or a `Content-Disposition` header. P1-27 publishes no export
   surface — `canonical-plan.md` §6 names the operation behind all 29 Frontend
-  tasks and none of them is one,
+  tasks and none of them is one. The PLATFORM does publish one, since P1-31: the
+  report export the Owner authorized, whose screen sits in the dashboard tree this
+  gate scans. So the rule recognizes that ONE contract and nothing else, by the
+  names registered for it — the `rpt.export` permission code, the registered
+  export operation and the `ReportExportPanel` control the write-shape gate pairs
+  with its mirror — and only in a file that names one of them. No path is
+  allow-listed, the decision is taken per match rather than per file, and every
+  other export or download construct still fails inside that file too. If you are
+  building an export, the question the gate asks is whether an authorized contract
+  accounts for it, and the answer is a registered operation and a permission code,
+  never an entry added to this rule,
 - any invented media limit — a `MAX_FILE_SIZE_`-style constant, byte arithmetic
   such as `10 * 1024`, an accepted-MIME list, an extension allow-list or an
   `accept=` attribute. Resolving `P1-OD-025` relaxed nothing here. The ceiling

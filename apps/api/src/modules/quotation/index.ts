@@ -6,8 +6,8 @@
  * ## What this module owns
  *
  * The whole `quo` schema: `quotations`, `quotation_revisions`, `quotation_items`,
- * `approval_decisions`, `approval_evidence`, and the trigger-written
- * `quotation_status_history`. No other module reads or writes those tables.
+ * `approval_decisions`, `approval_evidence`, `discount_approvals`, and the
+ * trigger-written `quotation_status_history`. No other module reads or writes those tables.
  *
  * ## What it consumes, and through whose surface
  *
@@ -15,7 +15,9 @@
  * | ---- | -------- |
  * | Work-order identity, scope and terminality | `@/modules/work-order` |
  * | Service availability on a date | `@/modules/service-catalog` |
- * | Price, tax rate, discount authorization | `@/modules/pricing` |
+ * | Price, tax rate, discount assessment and approval authority | `@/modules/pricing` |
+ * | A part's selling price, words and unit at a branch (ADR-023 D6) | `@/modules/inventory` |
+ * | Display names of the people on a discount approval | `@/modules/iam` |
  * | Quotation number, evidence attachment | `@/modules/shared-services` |
  *
  * Nothing here reads another module's tables. In particular the money types come
@@ -36,8 +38,32 @@ import { QuotationService } from './application/quotation-service';
 import { QuotationDecisionService } from './application/quotation-decision-service';
 
 export type {
+  DecideDiscountInput,
+  DiscountApprovalDecision,
+  DiscountApprovalListQuery,
+  DiscountDecisionBlock,
+  DiscountApprovalPerson,
+  DiscountApprovalState,
+  DiscountApprovalThresholdView,
+  DiscountApprovalView,
+  DiscountApprovalWithdrawal,
+  ListableDiscountApprovalState,
+} from './application/discount-approval-service';
+export {
+  DISCOUNT_APPROVAL_DECISIONS,
+  DISCOUNT_APPROVAL_STATES,
+  DISCOUNT_DECISION_BLOCKS,
+  DISCOUNT_WITHDRAWAL_REFUSALS,
+  LISTABLE_DISCOUNT_APPROVAL_STATES,
+  MAX_DISCOUNT_DECISION_REASON,
+} from './application/discount-approval-service';
+import { DiscountApprovalService } from './application/discount-approval-service';
+
+export type {
+  AcceptanceRecordRow,
   DecisionRow,
   DecisionTally,
+  DiscountApprovalRow,
   EvidenceRow,
   ItemRow,
   NewItemInput,
@@ -57,6 +83,8 @@ export type {
 } from './application/quotation-service';
 
 export type {
+  AcceptanceRecordView,
+  AcceptanceRecorderView,
   DecideInput,
   DecisionAuditView,
   DecisionView,
@@ -67,10 +95,13 @@ export type {
 } from './application/quotation-decision-service';
 
 export {
+  AcceptanceContactError,
   DECISIONS,
   DECISION_CHANNELS,
   EVIDENCE_KINDS,
   ITEM_KINDS,
+  MAX_CONTACT_NAME,
+  MAX_CONTACT_PHONE_INPUT,
   MAX_ITEMS_PER_REVISION,
   MAX_ITEM_DESCRIPTION,
   MAX_REFERENCE_NOTE,
@@ -83,7 +114,9 @@ export {
   assertRevisionEditable,
   hasExpired,
   isTerminalRevision,
+  normalizeAcceptanceContact,
   rollUpDecisions,
+  type AcceptanceContact,
   type Decision,
   type DecisionChannel,
   type EvidenceKind,
@@ -91,6 +124,18 @@ export {
   type QuotationState,
   type RevisionState,
 } from './domain/quotation';
+
+export { refineQuotationLine } from './application/quotation-line-shape';
+
+export {
+  PART_PRICE_REFUSALS,
+  PART_PRICE_SOURCES,
+  resolveAuthorisedPartPrice,
+  type AuthorisedPartPrice,
+  type PartPriceRefusal,
+  type PartPriceResolution,
+  type PartPriceSource,
+} from './domain/part-price-source';
 
 /** Composition root: constructs the module's services once per process. */
 export const quotationModule = composeModule({
@@ -100,6 +145,7 @@ export const quotationModule = composeModule({
     return {
       quotations: new QuotationService(repository),
       decisions: new QuotationDecisionService(repository),
+      discountApprovals: new DiscountApprovalService(repository),
     };
   },
 });

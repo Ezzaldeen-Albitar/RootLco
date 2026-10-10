@@ -105,6 +105,14 @@ function score(templateSegments: readonly string[], pathSegments: readonly strin
     const template = templateSegments[index] as string;
     const actual = pathSegments[index] as string;
     if (template.startsWith('{') && template.endsWith('}')) continue;
+    const actionParameter = /^\{[^}]+\}(:[A-Za-z][A-Za-z0-9-]*)$/.exec(template);
+    if (actionParameter) {
+      const suffix = actionParameter[1]!;
+      if (!actual.endsWith(suffix) || actual.length <= suffix.length) return -1;
+      // More specific than a bare parameter, less specific than a literal segment.
+      literals += 0.5;
+      continue;
+    }
     if (template !== actual) return -1;
     literals += 1;
   }

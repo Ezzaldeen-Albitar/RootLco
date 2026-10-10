@@ -63,8 +63,8 @@ export default async function ApprovalLimitsPage({
           locale={locale}
           messages={messages}
           roles={roles}
-          companyIds={session.companyIds}
           canManage
+          canReadUsers={holds(session.permissions, PERMISSIONS.userRead)}
         />
       </PageBody>
     </>

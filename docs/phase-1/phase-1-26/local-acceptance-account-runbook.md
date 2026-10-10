@@ -2,6 +2,18 @@
 
 **Classification:** Confidential — Commercial Product and Pilot Planning
 
+> **Current guidance (2026-09-24) — read before running anything below.** This is the
+> Phase 1-26 runbook, kept as that phase's record; where it and
+> [`docs/platform/environment-configuration.md`](../../platform/environment-configuration.md)
+> section 19 disagree, section 19 is the supported local launch path.
+> **Never run `npm run supabase:reset` (`supabase db reset`) on the shared local stack that
+> holds the acceptance database.** It deletes every row in the local database — the acceptance
+> tenant, the Owner account and every fixture. A database that is behind the checkout is brought
+> forward with the non-destructive path of section 19.4; a reset is permitted only under section
+> 19.5, when an empty database is being rebuilt on purpose. The Database tier runs against a
+> disposable database ([`CONTRIBUTING.md`](../../../CONTRIBUTING.md) section 8), not the shared
+> stack.
+
 How to bring up the local system, create the Owner acceptance account, verify it,
 and take it down again. Everything here is **local only** and refuses to run
 against anything else.
@@ -48,16 +60,30 @@ carries BYPASSRLS in the Supabase local stack. Readiness proves the constraint:
 
 ## 3. Bring it up
 
-```bash
-npm run supabase:start          # Kong 54321 · DB 54322 · Studio 54323 · Mailpit 54324
-npm run supabase:reset          # 119 migrations + the platform seeds
+PowerShell (in bash, the `ROOTLCO_ENV` line is `export ROOTLCO_ENV=local-acceptance`):
 
-$env:ROOTLCO_ENV = 'local-acceptance'   # PowerShell
+```powershell
+npm run supabase:start          # Kong 54321 · DB 54322 · Studio 54323 · Mailpit 54324
+
+$env:ROOTLCO_ENV = 'local-acceptance'
 npm run acceptance:create-owner
 
 npm run acceptance:serve        # API 3000 · Web 3100 — THE ACCEPTANCE STACK
 npm run acceptance:status-owner # proves the account can actually sign in
 ```
+
+Nothing in this block deletes data. If the checkout carries migrations the database has not yet
+applied, bring the database forward with section 19.4 of
+[`docs/platform/environment-configuration.md`](../../platform/environment-configuration.md)
+before `acceptance:create-owner` — never with a reset.
+
+> **First time only, on an empty database — DESTROYS EXISTING DATA.** When this phase was run,
+> the database was rebuilt between `supabase:start` and `acceptance:create-owner` with
+> `npm run supabase:reset` (119 migrations and the platform seeds at the time). That step deletes
+> every row in the local database, including the acceptance tenant, the Owner account and every
+> fixture. Run it only under section 19.5 of the same document: on a stack being built from
+> nothing on purpose, after deciding nothing in it is wanted — never on the shared stack that
+> holds the acceptance database, and never as part of a routine start.
 
 > **`acceptance:serve`, not `dev:all`.** An Owner acceptance session **must** be
 > run against the production mode. `dev:all` is for development and will
@@ -439,8 +465,12 @@ audit trail behind.
 
 Separately, running `npm run test:backend` and then `npm run test:db` without a
 reset between them produces well over a hundred failures on the Database tier's
-_own_ fixtures. That ordering dependency predates this phase; `npm run
-supabase:reset` clears it.
+_own_ fixtures. That ordering dependency predates this phase. When this runbook
+was written, `npm run supabase:reset` was used to clear it; **do not do that on the
+shared local stack** — it deletes the acceptance database along with the leftovers.
+Run the Database tier against a disposable database instead
+([`CONTRIBUTING.md`](../../../CONTRIBUTING.md) section 8), which starts clean every
+time and leaves the shared stack untouched.
 
 ## 5b. `next dev` and `next start` must not share a build directory
 

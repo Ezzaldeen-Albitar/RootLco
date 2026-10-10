@@ -29,6 +29,7 @@ import {
   SUBJECT_UNPERMITTED,
   TENANT_A,
   TENANT_B,
+  USER_A,
   adminPool,
   cleanBackendFixtures,
   ensureBackendFixtures,
@@ -526,5 +527,88 @@ describe('P1-29 W3 — the detail answers a real actor with the real record', ()
     // mirror rather than the disposition table, because a disposition can be
     // re-added while the field stays missing.
     expect(mirrorFields(PAYLOAD_MIRROR, 'JobUpdateBody')).toContain('departmentId');
+  });
+});
+
+// ===========================================================================
+// `assignedTechnician.displayName` and the code that opens it
+// (Owner directive, P1-32-PRE-OD-UX)
+//
+// The assignment is a WORK-ORDER fact and the person's NAME is the iam module's
+// to withhold, so a caller without `iam.user.read` is given the row and the
+// profile id with a null name rather than a refusal. Both directions are
+// asserted on one principal: a field that is ALWAYS null would satisfy the first
+// half on its own while the directory resolution was completely broken, and a
+// field that is always populated would satisfy the second while the withholding
+// had never been implemented.
+// ===========================================================================
+describe('the detail row names the technician only when the caller may read the directory', () => {
+  const NAME_ROLE = 'c1290000-0000-4000-8000-0000000004a1';
+  const NAME_GRANT = 'c1290000-0000-4000-8000-0000000004a2';
+
+  /** Grants READER `iam.user.read` tenant-wide for the body of one case. */
+  async function withDirectoryAccess<T>(body: () => Promise<T>): Promise<T> {
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,'fx_w3_dir_names','Detail directory reader',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [NAME_ROLE, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1,$2,id,'allow',$3 FROM iam.permissions WHERE permission_code = 'iam.user.read'
+       ON CONFLICT DO NOTHING`,
+      [TENANT_A, NAME_ROLE, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_grants
+         (id, tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'unrestricted','active',$5,$5)
+       ON CONFLICT (id) DO NOTHING`,
+      [NAME_GRANT, TENANT_A, READER.userId, NAME_ROLE, USER_A]
+    );
+    try {
+      return await body();
+    } finally {
+      // Removed again so the rest of this file sees the principal it was written
+      // against: a grant left behind silently widens every later case.
+      await admin.query('DELETE FROM iam.role_grants WHERE id = $1', [NAME_GRANT]);
+      await admin.query('DELETE FROM iam.role_permissions WHERE role_id = $1', [NAME_ROLE]);
+      await admin.query('DELETE FROM iam.roles WHERE id = $1', [NAME_ROLE]);
+    }
+  }
+
+  it('withholds the name without iam.user.read and publishes it with the code', async () => {
+    const seeded = await seedWorkOrderWithJob('Assigned for the directory case');
+    await admin.query(
+      `INSERT INTO wo.job_assignments
+         (tenant_id, company_id, branch_id, job_id, technician_profile_id, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [TENANT_A, COMPANY_A1, BRANCH_A1, seeded.jobId, TECH_A1, USER_A]
+    );
+
+    // WITHOUT the code: the row still names the assignment.
+    authAs(READER);
+    const withheld = await body<DetailBody>(await detail(seeded.workOrderId));
+    const withheldTechnician = (
+      withheld.workOrder as unknown as {
+        assignedTechnician: { id: string; displayName: string | null } | null;
+      }
+    ).assignedTechnician;
+    expect(withheldTechnician?.id).toBe(TECH_A1);
+    expect(withheldTechnician?.displayName).toBeNull();
+
+    // WITH the code: the same row carries the name.
+    await withDirectoryAccess(async () => {
+      authAs(READER);
+      const named = await body<DetailBody>(await detail(seeded.workOrderId));
+      const namedTechnician = (
+        named.workOrder as unknown as {
+          assignedTechnician: { id: string; displayName: string | null } | null;
+        }
+      ).assignedTechnician;
+      expect(namedTechnician?.id).toBe(TECH_A1);
+      expect(namedTechnician?.displayName).toBe('Fixture Technician');
+    });
   });
 });

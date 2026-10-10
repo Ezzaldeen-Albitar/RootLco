@@ -39,11 +39,22 @@ export const SCRIPT_ROOTS = ['scripts'];
 export const VITEST_CONFIGS = [
   'vitest.config.ts',
   'vitest.config.db.ts',
+  'vitest.config.db-fixture.ts',
   'vitest.config.backend.ts',
 ];
 
-/** Vitest configs whose suites share one mutable database and must stay serial. */
-export const DATABASE_BOUND_CONFIGS = ['vitest.config.db.ts', 'vitest.config.backend.ts'];
+/**
+ * Vitest configs whose suites share one mutable database and must stay serial.
+ *
+ * `vitest.config.db-fixture.ts` includes exactly one file today and is listed here
+ * anyway: it is database-bound, and a rule that only applies while an include list
+ * happens to hold one entry is not a rule.
+ */
+export const DATABASE_BOUND_CONFIGS = [
+  'vitest.config.db.ts',
+  'vitest.config.db-fixture.ts',
+  'vitest.config.backend.ts',
+];
 
 export const VACUOUS_ASSERTIONS = [
   /expect\(\s*true\s*\)\s*\.\s*(toBe|toEqual|toStrictEqual)\(\s*true\s*\)/,

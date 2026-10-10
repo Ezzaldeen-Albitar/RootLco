@@ -4,13 +4,18 @@ import { z } from 'zod';
 import type { TableRequest } from '@/components/data-table/table-state';
 import type { ServerPage } from '@/components/data-table/use-server-table';
 import { authorizedClient } from '@/lib/api/server-client';
-import { fromFailure, invalid, type ActionState } from '@/lib/forms/action-result';
+import {
+  fromFailure,
+  fromStateRefusal,
+  invalid,
+  type ActionState,
+} from '@/lib/forms/action-result';
 import { fieldErrorsFrom } from '@/lib/forms/field-errors';
 import {
   STATUS_BY_KIND,
-  branchTargetQuery,
+  branchScopeQuery,
   readOperation,
-  type BranchTarget,
+  type BranchScope,
   type CursorPage,
   type ReadState,
 } from '@/lib/api/read-operation';
@@ -30,10 +35,10 @@ import {
 /**
  * Appointment adapters (P1-28, Wave A).
  *
- * Reads follow the vehicle-search shape; the list is a BRANCH CALENDAR, so the
- * mandatory `companyId`/`branchId` pair travels through `branchTargetQuery` —
- * the one door `lib/api` opens for a branch resource selector — and never as a
- * loose filter. Writes follow the P1-27 write-adapter order: validate, then
+ * Reads follow the vehicle-search shape; the list is a BRANCH CALENDAR, so its
+ * company — and its branch, when the operator is working in one — travels
+ * through `branchScopeQuery`, one of the two doors `lib/api` opens for a branch
+ * resource selector, and never as a loose filter. Writes follow the P1-27 write-adapter order: validate, then
  * session, then send, then map. No adapter sets an `Idempotency-Key` (the
  * contract-derived client authority does), and the three guarded lifecycle
  * commands pass the record version the CALLER read — `ifMatch` is a required
@@ -94,13 +99,20 @@ const cancelSchema = z.object({ cancellationReasonId: z.string().uuid() }).stric
  * ------------------------------------------------------------------ */
 
 /**
- * The branch calendar (`apt.appointment-list`), soonest effective window
- * first. `target` names WHICH branch's calendar — a resource selector the
- * `.strict()` schema requires, not a scope assertion. `retries: 0`: the
- * operation is `expensive-read` and the table offers Retry.
+ * The branch calendar (`apt.appointment-list`), soonest effective window first.
+ *
+ * `scope` names WHICH calendar — a resource selector the `.strict()` schema
+ * requires, never a scope assertion. The company is mandatory; the branch is
+ * OPTIONAL since the Owner directive (`P1-32-PRE-OD-UX`), and omitting it asks
+ * for every branch of that company the caller may read. The API resolves that
+ * set one branch at a time against this operation's own permission code, so an
+ * unnamed branch widens nothing. `branchScopeQuery` is the one door `lib/api`
+ * opens for that shape, and `apps/web/tests/security.test.ts` pins its call
+ * sites. `retries: 0`: the operation is `expensive-read` and the screen offers
+ * Retry.
  */
 export async function listAppointments(
-  target: BranchTarget,
+  scope: BranchScope,
   criteria: AppointmentListCriteria,
   request: TableRequest,
   cursor: string | null
@@ -110,11 +122,12 @@ export async function listAppointments(
 
   const path =
     '/api/v1/appointments' +
-    branchTargetQuery(target, {
+    branchScopeQuery(scope, {
       status: criteria.status,
       vehicleId: criteria.vehicleId,
       from: criteria.from,
       to: criteria.to,
+      q: criteria.q,
       cursor,
       limit: request.pageSize,
     });
@@ -171,7 +184,7 @@ export async function createAppointment(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<AppointmentCreated>('POST', '/api/v1/appointments', parsed.data);
   if (!result.ok) return fromFailure(result, attempt);
@@ -199,7 +212,7 @@ export async function rescheduleAppointment(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<AppointmentChanged>(
     'POST',
@@ -207,7 +220,7 @@ export async function rescheduleAppointment(
     parsed.data,
     { ifMatch }
   );
-  if (!result.ok) return fromFailure(result, attempt);
+  if (!result.ok) return fromStateRefusal(result, attempt);
 
   return { status: 'success', correlationId: result.correlationId, attempt, changed: result.data };
 }
@@ -227,7 +240,7 @@ export async function cancelAppointment(
   if (!parsed.success) return invalid(fieldErrorsFrom(parsed.error), attempt);
 
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<AppointmentChanged>(
     'POST',
@@ -235,7 +248,7 @@ export async function cancelAppointment(
     parsed.data,
     { ifMatch }
   );
-  if (!result.ok) return fromFailure(result, attempt);
+  if (!result.ok) return fromStateRefusal(result, attempt);
 
   return { status: 'success', correlationId: result.correlationId, attempt, changed: result.data };
 }
@@ -252,7 +265,7 @@ export async function recordAppointmentNoShow(
   attempt = 1
 ): Promise<AppointmentChangeState> {
   const client = await authorizedClient();
-  if (!client) return { status: 'expired', messageKey: 'state.expired.title', attempt };
+  if (!client) return { status: 'expired', messageKey: 'state.expired.message', attempt };
 
   const result = await client.send<AppointmentChanged>(
     'POST',
@@ -260,7 +273,7 @@ export async function recordAppointmentNoShow(
     undefined,
     { ifMatch }
   );
-  if (!result.ok) return fromFailure(result, attempt);
+  if (!result.ok) return fromStateRefusal(result, attempt);
 
   return { status: 'success', correlationId: result.correlationId, attempt, changed: result.data };
 }

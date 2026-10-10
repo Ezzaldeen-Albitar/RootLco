@@ -187,12 +187,30 @@ runs:
         fi
         echo "OK: complete tree, ${present} of ${tracked} tracked files present"
 
+    # The npm cache is used ONLY by a job that installs. Measured 2026-10-05: a
+    # job with `install: 'false'` still saved an npm cache entry, and with no
+    # install there was nothing in it — the saved entries were 677–972 bytes,
+    # every installing job then restored that empty entry as an exact hit and
+    # `npm ci` downloaded all 778 packages anyway while reporting "cache hit:
+    # true". Two inputs keep a non-installing job out of the cache: `cache` is
+    # empty for it, and `package-manager-cache` is false for it, because
+    # setup-node v7 otherwise caches npm on its own whenever package.json names
+    # npm as its `packageManager` (measured on 609d8628: a non-installing job
+    # logged "Auto caching has been enabled for npm" with `cache` empty).
+    # `npm-cache.version` is part of the key and is bumped whenever an empty
+    # entry may already hold the current key. Whether an installing job now
+    # restores a non-trivial entry is UNVERIFIED until a hosted log shows it.
+    # `npm ci` itself is unchanged. TDP-2026-10.
     - name: Set up Node
       id: node
       uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
       with:
         node-version: ${{ inputs.node-version }}
-        cache: npm
+        cache: ${{ inputs.install == 'true' && 'npm' || '' }}
+        package-manager-cache: ${{ inputs.install == 'true' }}
+        cache-dependency-path: |
+          package-lock.json
+          .github/actions/setup-project/npm-cache.version
 
     - name: Install dependencies (locked)
       if: inputs.install == 'true'

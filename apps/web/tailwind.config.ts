@@ -13,6 +13,14 @@ import type { Config } from 'tailwindcss';
  */
 const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
+  // ADR-022. Tailwind 3 emits its preflight UNLAYERED, and unlayered CSS beats
+  // Material UI's `@layer mui` whatever the specificity — preflight's
+  // `button { background-color: transparent }` would empty every contained
+  // button. The same rules are vendored into the `rootlco-reset` layer in
+  // `src/styles/base/_preflight.scss`, below Material UI.
+  corePlugins: {
+    preflight: false,
+  },
   theme: {
     extend: {
       colors: {

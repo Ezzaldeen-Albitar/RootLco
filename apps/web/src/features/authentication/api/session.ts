@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { authorizedClient } from '@/lib/api/server-client';
 import type { Locale } from '@/i18n/config';
+import { readPlatformSession } from '@/features/platform/api/session';
 import { SESSION_ENDED_SEGMENT } from './session-ended';
 import type { SessionState, SessionSummary } from '../types/session';
 
@@ -44,6 +45,20 @@ export async function readSession(): Promise<SessionState> {
     if (!isSessionShape(result.data)) {
       return { ok: false, problem: 'unavailable', correlationId: result.correlationId };
     }
+    /*
+     * An account that holds no permission code at all is answered 200 since the
+     * session read became an authenticated self-read (P1-32-PRE-OD-FRX), where it
+     * used to be refused 403. Nothing in the workspace is open to it, so it is
+     * still `forbidden`: the sign-in page's sentence — "not permitted to open the
+     * application; an administrator needs to grant it access" — is the true one,
+     * the cookie is kept, and `requireSession` still asks the platform session
+     * first, which is how the platform operator (no tenant role by construction)
+     * keeps reaching the console. An account holding ANY code is answered, which
+     * is the defect this closed: a quotations-only role used to be refused here.
+     */
+    if (result.data.permissions.length === 0) {
+      return { ok: false, problem: 'forbidden', correlationId: result.correlationId };
+    }
     return { ok: true, session: result.data };
   }
 
@@ -57,12 +72,14 @@ export async function readSession(): Promise<SessionState> {
   /*
    * A 403 is NOT an expired session, and treating it as one was a lockout.
    *
-   * `GET /api/v1/auth/session` requires `iam.user.read`. An account that
-   * authenticates successfully but does not hold that permission gets a 403 —
+   * `GET /api/v1/auth/session` used to require `iam.user.read`. An account that
+   * authenticated successfully but did not hold that permission got a 403 —
    * and clearing the cookie on it produced an unbreakable loop: sign in, receive
    * a valid cookie, load the dashboard, 403, cookie cleared, back to sign-in,
    * for ever. The operator has correct credentials and cannot get in
-   * (finding `P1-26-F-022`).
+   * (finding `P1-26-F-022`). The read declares no code since P1-32-PRE-OD-FRX,
+   * so that 403 no longer happens for a missing code; a 403 here is still kept
+   * as a refusal and never treated as an ended session.
    *
    * So the cookie is KEPT — it is valid, and destroying a valid credential
    * because a permission is missing is the wrong remedy — and the sign-in page
@@ -102,6 +119,15 @@ export async function requireSession(locale: Locale): Promise<SessionSummary> {
   const state = await readSession();
   if (state.ok) return state.session;
   if (state.problem === 'expired') redirect(`/${locale}/${SESSION_ENDED_SEGMENT}`);
+  // A forbidden workspace session may belong to the platform operator, who holds
+  // no tenant role by construction. When the platform session answers, the
+  // operator is routed to the console rather than stranded on sign-in
+  // (P1-32-PRE-061). A tenant user never reaches this branch: their own session
+  // read succeeds above.
+  if (state.problem === 'forbidden') {
+    const platform = await readPlatformSession();
+    if (platform.ok) redirect(`/${locale}/platform`);
+  }
   // The reason is a fixed enum, not free text and not an identifier. It changes
   // which sentence the sign-in page shows; it names no user and no record.
   redirect(`/${locale}/login?reason=${state.problem}`);

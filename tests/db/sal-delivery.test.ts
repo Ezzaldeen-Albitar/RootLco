@@ -12,21 +12,27 @@ import {
   ensureTestLogins,
   ensureOrgFixtures,
   cleanFixtures,
+  withCommittedTx,
   withRolledBackTx,
   TENANT_A,
+  TENANT_B,
   COMPANY_A1,
   BRANCH_A1,
   USER_A,
+  USER_B,
 } from './helpers';
 import {
   seedP111Base,
   ctxA,
   expectFail,
+  deliveringEmployee,
   makeWorkOrder,
   buildReadyDelivery,
   seedCompletedDelivery,
   completeDelivery,
   seedPartner,
+  insertMandatoryChecklist,
+  passAllMandatory,
 } from './p1-11-helpers';
 import { seedVehicle } from './p1-10-helpers';
 
@@ -130,12 +136,17 @@ describe('p1-11 sal delivery / custody closure', () => {
     await withRolledBackTx(runtime, ctxA, async (c) => {
       const { wo, visit } = await makeWorkOrder(c, 'coh');
       const otherVehicle = await seedVehicle(c, 'cohX');
+      // A REAL employee, so the refusal below is M-dlv-1 and nothing else. Passing
+      // a login-account id here would still fail, but by the P1-31 P-17 eligibility
+      // trigger if the two BEFORE INSERT triggers were ever reordered — a green
+      // that would have stopped meaning what the case name says.
+      const employee = await deliveringEmployee(c, 'coh');
       await expectFail(
         c,
         '23514',
         `INSERT INTO sal.delivery_records (tenant_id, company_id, branch_id, work_order_id, reception_visit_id, vehicle_id, delivering_employee_id, created_by)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$7)`,
-        [TENANT_A, COMPANY_A1, BRANCH_A1, wo, visit, otherVehicle, USER_A]
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        [TENANT_A, COMPANY_A1, BRANCH_A1, wo, visit, otherVehicle, employee, USER_A]
       );
     });
   });
@@ -163,5 +174,217 @@ describe('p1-11 sal delivery / custody closure', () => {
         [sig]
       );
     });
+  });
+});
+
+// ===========================================================================
+// P1-31 P-9b — only an ACTIVE, non-deleted template is in force
+// (migration 20260909090000_sal_complete_delivery_active_template_gate.sql,
+//  closing CC-14). Before it, `sal.complete_delivery` filtered mandatory items
+//  on the ITEM's deleted_at alone and never joined the parent template, so a
+//  template that had been retired — or soft-deleted, and therefore unreachable
+//  from every read — went on refusing every handover in the company.
+// ===========================================================================
+describe('p1-31 P-9b sal.complete_delivery template lifecycle gate', () => {
+  const deactivate = (c: { query: Client['query'] }, template: string): Promise<unknown> =>
+    c.query(`UPDATE sal.delivery_checklist_templates SET status='inactive' WHERE id=$1`, [
+      template,
+    ]);
+  const reactivate = (c: { query: Client['query'] }, template: string): Promise<unknown> =>
+    c.query(`UPDATE sal.delivery_checklist_templates SET status='active' WHERE id=$1`, [template]);
+  const softDelete = (c: { query: Client['query'] }, template: string): Promise<unknown> =>
+    c.query(
+      `UPDATE sal.delivery_checklist_templates SET deleted_at=now(), deleted_by=$2 WHERE id=$1`,
+      [template, USER_A]
+    );
+  const statusOf = async (c: { query: Client['query'] }, delivery: string): Promise<string> =>
+    (await c.query(`SELECT status FROM sal.delivery_records WHERE id=$1`, [delivery])).rows[0]
+      .status;
+
+  it('still refuses while the template is ACTIVE, and lets the handover through once it is deactivated', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const b = await buildReadyDelivery(c, 'p9bdeact', { addChecklistResults: false });
+
+      // The unmet mandatory item blocks, exactly as L-dlv-1 pins it. This half is the
+      // regression guard: the join must not have withdrawn an item that IS in force.
+      await expectFail(c, '23514', `SELECT sal.complete_delivery($1,100000,'km')`, [b.delivery]);
+
+      // Retiring the TEMPLATE — not the item — is now the operator's remedy.
+      await deactivate(c, b.template);
+      const odo = await completeDelivery(c, b.delivery, 100001);
+      expect(odo).toBeTruthy();
+      expect(await statusOf(c, b.delivery)).toBe('delivered');
+    });
+  });
+
+  it('lets the handover through when the template is SOFT-DELETED, and the item row survives', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const b = await buildReadyDelivery(c, 'p9bdel', { addChecklistResults: false });
+      await expectFail(c, '23514', `SELECT sal.complete_delivery($1,100000,'km')`, [b.delivery]);
+
+      await softDelete(c, b.template);
+      expect(await completeDelivery(c, b.delivery, 100002)).toBeTruthy();
+      expect(await statusOf(c, b.delivery)).toBe('delivered');
+
+      // A soft delete, so every outcome ever recorded against the item stays
+      // resolvable: the gate stopped counting the item, nothing was destroyed.
+      const items = await c.query(
+        `SELECT deleted_at FROM sal.delivery_checklist_template_items WHERE id=$1`,
+        [b.item]
+      );
+      expect(items.rows).toHaveLength(1);
+      expect(items.rows[0].deleted_at).toBeNull();
+    });
+  });
+
+  it('gates again once a deactivated template is REACTIVATED', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const b = await buildReadyDelivery(c, 'p9breact', { addChecklistResults: false });
+
+      await deactivate(c, b.template);
+      // Proved not-blocking at this point by the savepoint probe rather than by
+      // completing, because completing is terminal and the case needs the delivery
+      // back in `ready` to test reactivation on the SAME record.
+      await c.query('SAVEPOINT sp_p9b_reactivate');
+      expect(await completeDelivery(c, b.delivery, 100003)).toBeTruthy();
+      await c.query('ROLLBACK TO SAVEPOINT sp_p9b_reactivate');
+      expect(await statusOf(c, b.delivery)).toBe('ready');
+
+      await reactivate(c, b.template);
+      await expectFail(c, '23514', `SELECT sal.complete_delivery($1,100000,'km')`, [b.delivery]);
+
+      // And recording the result is what clears it, with the template in force.
+      await passAllMandatory(c, b.delivery);
+      expect(await completeDelivery(c, b.delivery, 100004)).toBeTruthy();
+      expect(await statusOf(c, b.delivery)).toBe('delivered');
+    });
+  });
+
+  it('keeps excluding a WITHDRAWN item under an active template (the pre-existing rule)', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      const b = await buildReadyDelivery(c, 'p9bitem', { addChecklistResults: false });
+      await expectFail(c, '23514', `SELECT sal.complete_delivery($1,100000,'km')`, [b.delivery]);
+
+      // The template stays ACTIVE. The item's own deleted_at filter is untouched by
+      // this migration — the join ADDS a condition and removes none.
+      await c.query(
+        `UPDATE sal.delivery_checklist_template_items SET deleted_at=now(), deleted_by=$2 WHERE id=$1`,
+        [b.item, USER_A]
+      );
+      expect(await completeDelivery(c, b.delivery, 100005)).toBeTruthy();
+      expect(await statusOf(c, b.delivery)).toBe('delivered');
+    });
+  });
+
+  it('counts a mandatory item of a SECOND active template, and stops when that one is retired', async () => {
+    await withRolledBackTx(runtime, ctxA, async (c) => {
+      // The scan stays COMPANY-wide across all templates — that is unchanged, and it
+      // is what makes template status the operator's only company-level remedy.
+      const b = await buildReadyDelivery(c, 'p9bsecond');
+      const second = await insertMandatoryChecklist(c, 'p9bsecond_x');
+
+      await expectFail(c, '23514', `SELECT sal.complete_delivery($1,100000,'km')`, [b.delivery]);
+
+      await deactivate(c, second.template);
+      expect(await completeDelivery(c, b.delivery, 100006)).toBeTruthy();
+      expect(await statusOf(c, b.delivery)).toBe('delivered');
+    });
+  });
+});
+
+// ===========================================================================
+/**
+ * P1-31 QA-003 — the DATABASE layer of the two-layer isolation claim, for the seven
+ * delivery tables.
+ *
+ * Every case above this one runs as `ctxA` inside a rolled-back transaction: this is a
+ * CONSTRAINT suite, and until now it drove no cross-tenant negative at all. The
+ * structural half of isolation — RLS enabled and forced, a tenant-scoped SELECT and
+ * INSERT policy, and a refused cross-tenant INSERT — is auto-enumerated over every
+ * `sal` table by `p1-11-isolation.test.ts`, whose behavioural read negative covers
+ * `sal.invoices` and nothing of the delivery chain.
+ *
+ * That gap matters here more than elsewhere because six of these seven tables reach
+ * their tenant through the delivery record rather than carrying the boundary in a
+ * column a policy could be written against by accident: a predicate joined to the
+ * wrong parent would satisfy the structural check and still show one tenant another's
+ * handovers, receivers and signatures.
+ *
+ * The rows are COMMITTED, because a row inside the writer's own transaction is
+ * invisible to a second session for a reason that has nothing to do with tenancy, and
+ * they are removed by id afterwards — a mandatory checklist item left behind in
+ * `COMPANY_A1` is a company-wide gate on every other suite's handovers.
+ */
+describe('p1-31 QA-003 the delivery tables are hidden from another tenant at the database', () => {
+  it('shows a tenant-B and a no-context session none of a committed tenant-A handover', async () => {
+    const seeded = await withCommittedTx(runtime, ctxA, async (c) =>
+      buildReadyDelivery(c, 'p131iso')
+    );
+
+    /** Every delivery-chain table, with the column that addresses this handover. */
+    const rows: readonly (readonly [string, string, string])[] = [
+      ['sal.delivery_records', 'id', seeded.delivery],
+      ['sal.authorized_receivers', 'delivery_record_id', seeded.delivery],
+      ['sal.delivery_checklist_results', 'delivery_record_id', seeded.delivery],
+      ['sal.delivery_signatures', 'delivery_record_id', seeded.delivery],
+      ['sal.delivery_checklist_templates', 'id', seeded.template],
+      ['sal.delivery_checklist_template_items', 'id', seeded.item],
+    ];
+
+    try {
+      // The control first: as the owning tenant every one of the six answers with a
+      // row, so the zeros below are tenancy rather than an empty chain.
+      await withRolledBackTx(runtime, ctxA, async (c) => {
+        for (const [table, column, id] of rows) {
+          const own = await c.query(`SELECT 1 FROM ${table} WHERE ${column} = $1`, [id]);
+          expect({ table, visible: own.rowCount }).toEqual({ table, visible: 1 });
+        }
+      });
+
+      for (const context of [{ tenantId: TENANT_B, userId: USER_B }, {}]) {
+        await withRolledBackTx(runtime, context, async (c) => {
+          for (const [table, column, id] of rows) {
+            const seen = await c.query(`SELECT 1 FROM ${table} WHERE ${column} = $1`, [id]);
+            expect({ table, visible: seen.rowCount }).toEqual({ table, visible: 0 });
+          }
+          // The status ledger too, which carries no id of its own worth naming.
+          const history = await c.query(
+            `SELECT 1 FROM sal.delivery_status_history WHERE delivery_record_id = $1`,
+            [seeded.delivery]
+          );
+          expect(history.rowCount).toBe(0);
+
+          // Not merely unreadable: unwritable. The USING clause narrows the update to
+          // nothing rather than refusing it, so a row count of zero is the assertion.
+          const retired = await c.query(
+            `UPDATE sal.delivery_checklist_templates SET status = 'inactive' WHERE id = $1`,
+            [seeded.template]
+          );
+          expect(retired.rowCount).toBe(0);
+        });
+      }
+    } finally {
+      await admin.query(`DELETE FROM sal.delivery_signatures WHERE delivery_record_id = $1`, [
+        seeded.delivery,
+      ]);
+      await admin.query(
+        `DELETE FROM sal.delivery_checklist_results WHERE delivery_record_id = $1`,
+        [seeded.delivery]
+      );
+      await admin.query(`DELETE FROM sal.authorized_receivers WHERE delivery_record_id = $1`, [
+        seeded.delivery,
+      ]);
+      await admin.query(`DELETE FROM sal.delivery_status_history WHERE delivery_record_id = $1`, [
+        seeded.delivery,
+      ]);
+      await admin.query(`DELETE FROM sal.delivery_records WHERE id = $1`, [seeded.delivery]);
+      await admin.query(
+        `DELETE FROM sal.delivery_checklist_template_items WHERE template_id = $1`,
+        [seeded.template]
+      );
+      await admin.query(`DELETE FROM sal.delivery_checklist_templates WHERE id = $1`, [
+        seeded.template,
+      ]);
+    }
   });
 });

@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useState, useTransition } from 'react';
-import { CursorPager } from '@/components/data-table/CursorPager';
+import { useCallback, useId, useMemo, useState } from 'react';
+import Button from '@mui/material/Button';
+import { OperationalGrid, type OperationalColumn } from '@/components/data/OperationalGrid';
 import type { TableStatus } from '@/components/data-table/DataTable';
 import {
   membershipVerdict,
@@ -15,25 +16,42 @@ import {
   type ServerPage,
   type ServerTable,
 } from '@/components/data-table/use-server-table';
-import { RadioGroupField, SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { workingZone } from '@/components/forms/mui/DateField';
+import { FormNumberField } from '@/components/forms/mui/FormNumberField';
+import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
-import { CustomerSelector, type SelectedCustomer } from '@/components/party/CustomerSelector';
+import { CustomerPicker, type ChosenCustomer } from '@/components/party/CustomerPicker';
+import { MuiRefusedState } from '@/components/states/MuiStates';
+import { FailureExplanation } from '@/components/states/States';
 import {
-  ErrorState,
-  LoadingState,
-  PermissionDeniedState,
-  SessionExpiredState,
-} from '@/components/states/States';
+  RequiresConcreteBranch,
+  WorkingBranchField,
+} from '@/features/working-context/components/WorkingBranchField';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
+import { useClearOnCorrect } from '@/lib/forms/use-clear-on-correct';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
-import { translate, translateDynamic } from '@/i18n/get-messages';
-import { formatDateTime } from '@/lib/format';
-import type { ActionState } from '@/lib/forms/action-result';
-import { listCustomerVehicles } from '@/lib/customers/vehicles';
+import { translate, translateDynamic, translateWithValues } from '@/i18n/get-messages';
+import { formatInZone } from '@/lib/branch-time';
+import { formatDateTime, intlLocale } from '@/lib/format';
+import { unreachable, type ActionState } from '@/lib/forms/action-result';
+import { listCustomerVehiclesCancellable } from '@/lib/customers/vehicles-read';
 import type { CustomerVehicleEntry } from '@/lib/customers/vehicles-contract';
-import { createReception, listReceptions } from '../api';
+import { createReception } from '../api';
+import { listReceptionsCancellable } from '../reception-list-read';
 import type { IntakeCatalogueResult } from '../catalogue-api';
-import { MAX_WALK_IN_NOTE, type ReceptionCreated } from '../receptions-contract';
+import {
+  MAX_WALK_IN_NOTE,
+  type ReceptionCreated,
+  type ReceptionListEntry,
+} from '../receptions-contract';
 import {
   INITIAL_ORIGIN,
   buildCreateInput,
@@ -49,6 +67,7 @@ import {
   type CheckInAppointmentCandidate,
   type ReceivingEmployeeCandidate,
 } from '../support-api';
+import { RetryButton } from './steps/EvidencePanels';
 
 /**
  * The check-in start screen (`FE-007`) — opening or resuming a reception visit.
@@ -101,9 +120,43 @@ import {
  * deliberately cleared. A vehicle the customer's list does not hold is said so
  * rather than silently ignored, and a half or malformed pair never gets here
  * at all — `parseWalkInHandoff` refuses it and the page passes `null`.
+ *
+ * ## On the Material UI wrappers (ADR-022)
+ *
+ * The origin is `FormRadioGroupField`; the service requester is chosen by name,
+ * number or phone through `CustomerPicker` (one combobox, the server's search as
+ * typed); the confirmed appointments, the requester's vehicles, the vehicle's
+ * visits and the eligible employees are each `OperationalGrid` over the same
+ * read (the server's pages walked with its cursor, never counted), every row's
+ * Choose a real button named with what it chooses; the intake facts are
+ * `FormSelectField` and `FormNumberField`. The submit awaits inside `try` and
+ * clears its pending state in `finally`: a create whose answer never arrives is
+ * said as that, with every entry kept.
  */
 
 const IDLE: ActionState = { status: 'idle' };
+
+/**
+ * The control each of the form's own refusals is about.
+ *
+ * `buildCreateInput` names the first thing missing as a sentence key. The
+ * sentence used to be drawn once, beside the submit button — for "Choose the
+ * service requester." some 460 px below the customer selector, with the
+ * selector itself unmarked; for an EV charge of "abc", with the charge box
+ * still grey and unfocused (browser QA part 7, rows 6.6 and 6.7b). Each key is
+ * filed here under the name of the value it is about, which is the name the
+ * service's own refusal of that value arrives under, so a local refusal and a
+ * server one land in the same place, are marked the same way and clear the
+ * same way.
+ */
+const LOCAL_REFUSAL_FIELD: Readonly<Record<string, string>> = {
+  'receptions.checkIn.error.targetRequired': 'branchId',
+  'receptions.checkIn.error.employeeRequired': 'receivingEmployeeId',
+  'receptions.checkIn.error.appointmentRequired': 'appointmentId',
+  'receptions.checkIn.error.requesterRequired': 'serviceRequesterPartnerId',
+  'receptions.checkIn.error.vehicleRequired': 'vehicleId',
+  'receptions.checkIn.error.socInvalid': 'evSocPercent',
+};
 
 const UNASKED = {
   status: 'ok',
@@ -122,7 +175,7 @@ const UNASKED = {
  * page passes `null` and the operator starts from the ordinary empty form.
  */
 export interface WalkInHandoffStart {
-  readonly requester: SelectedCustomer;
+  readonly requester: ChosenCustomer;
   readonly vehicleId: string;
 }
 
@@ -182,9 +235,9 @@ const HANDOFF_NOTICE_KEYS = {
  * `truncated` is the seventh, and it is not a failure: the read succeeded and
  * the server says more rows exist for this vehicle than were returned. An open
  * visit could be among them, so the absence is not established and the notice
- * says so — with the pager the rule in `read-completeness.ts` requires, because
- * a sentence that says "more exists" and offers no way to reach it tells an
- * operator their answer is somewhere they cannot go.
+ * says so — with the vehicle's visits in a grid whose pager reaches the rest,
+ * because a sentence that says "more exists" and offers no way to reach it tells
+ * an operator their answer is somewhere they cannot go.
  *
  * `none` — the read covered the set and found no open visit — is the one state
  * whose honest rendering is nothing at all: the create form beneath it is the
@@ -243,9 +296,6 @@ interface Props {
   readonly messages: Messages;
   readonly sessionUserId: string;
   readonly sessionUserName: string;
-  /** The session's resolved scope. Empty means unrestricted within the tenant. */
-  readonly companyIds: readonly string[];
-  readonly branchIds: readonly string[];
   /** `rec.reception.manage` — may this operator open a visit at all. */
   readonly canCreate: boolean;
   /** `apt.appointment.read` — may the appointment picker read the calendar. */
@@ -275,8 +325,6 @@ export function CheckInStartScreen({
   messages,
   sessionUserId,
   sessionUserName,
-  companyIds,
-  branchIds,
   canCreate,
   canListAppointments,
   canPickEmployee,
@@ -286,9 +334,22 @@ export function CheckInStartScreen({
 }: Props) {
   /* --- the branch the visit is FOR --------------------------------------- */
 
-  const [companyId, setCompanyId] = useState(companyIds.length === 1 ? (companyIds[0] ?? '') : '');
-  const [branchId, setBranchId] = useState(branchIds.length === 1 ? (branchIds[0] ?? '') : '');
-  const targetReady = companyId !== '' && branchId !== '';
+  /*
+   * The branch is the working context's NAMED selection, chosen once in the
+   * header, not a pair typed or picked here.
+   *
+   * It used to be two controls on this form: a select over raw references, or —
+   * for the operator whose grant is not narrowed, whose session resolves to
+   * EMPTY lists — two free-text boxes asking them to type one. A check-in is
+   * the moment custody of a vehicle is recorded, so the branch it is recorded
+   * against is exactly the fact that must not be a typing exercise.
+   */
+  const branchTarget = useBranchTarget();
+  const companyId = branchTarget.kind === 'ready' ? branchTarget.target.companyId : '';
+  const branchId = branchTarget.kind === 'ready' ? branchTarget.target.branchId : '';
+  const targetReady = branchTarget.kind === 'ready';
+  /** The working branch's clock, for the times the appointment rows carry. */
+  const zone = workingZone(useWorkingContext()) ?? null;
 
   /* --- origin ------------------------------------------------------------- */
 
@@ -296,7 +357,7 @@ export function CheckInStartScreen({
   const [appointment, setAppointment] = useState<
     (ChosenAppointment & { readonly label: string }) | null
   >(null);
-  const [requester, setRequester] = useState<SelectedCustomer | null>(
+  const [requester, setRequester] = useState<ChosenCustomer | null>(
     walkInHandoff?.requester ?? null
   );
   const [walkInVehicle, setWalkInVehicle] = useState<CustomerVehicleEntry | null>(null);
@@ -341,9 +402,13 @@ export function CheckInStartScreen({
 
   const requesterId = requester?.id ?? null;
   const loadVehicles = useCallback(
-    (request: TableRequest, cursor: string | null): Promise<ServerPage<CustomerVehicleEntry>> =>
+    (
+      request: TableRequest,
+      cursor: string | null,
+      signal: AbortSignal
+    ): Promise<ServerPage<CustomerVehicleEntry>> =>
       requesterId !== null && canSearchCustomers
-        ? listCustomerVehicles(requesterId, request, cursor)
+        ? listCustomerVehiclesCancellable(requesterId, request, cursor, signal)
         : Promise.resolve(UNASKED),
     [requesterId, canSearchCustomers]
   );
@@ -379,7 +444,7 @@ export function CheckInStartScreen({
    * which printed "that vehicle is not in this customer's list" for a customer
    * whose twenty-sixth vehicle was the handed-over one, and for a list that
    * never answered at all. `hasMore` and the read status separate the three, and
-   * the pager under the picker makes the truncated case reachable.
+   * the grid's pager under the picker makes the truncated case reachable.
    */
   const handoffVerdict: MembershipVerdict =
     handoff === null
@@ -401,9 +466,15 @@ export function CheckInStartScreen({
       : (effectiveVehicle?.vehicleId ?? null);
 
   const loadOpenVisits = useCallback(
-    (request: TableRequest, cursor: string | null) =>
+    (request: TableRequest, cursor: string | null, signal: AbortSignal) =>
       targetReady && chosenVehicleId !== null
-        ? listReceptions({ companyId, branchId }, { vehicleId: chosenVehicleId }, request, cursor)
+        ? listReceptionsCancellable(
+            { companyId, branchId },
+            { vehicleId: chosenVehicleId },
+            request,
+            cursor,
+            signal
+          )
         : Promise.resolve(UNASKED),
     [targetReady, chosenVehicleId, companyId, branchId]
   );
@@ -522,11 +593,72 @@ export function CheckInStartScreen({
   /* --- submission ----------------------------------------------------------- */
 
   const [state, setState] = useState<ActionState>(IDLE);
-  const [localError, setLocalError] = useState<string | null>(null);
-  const [created, setCreated] = useState<ReceptionCreated | null>(null);
-  const [pending, startTransition] = useTransition();
 
-  const submit = () => {
+  /* --- what the last submission was refused about ------------------------ */
+
+  /*
+   * The two shared refusal behaviours, installed on the form rather than
+   * reimplemented panel by panel.
+   *
+   * `useFocusFirstInvalid` puts the cursor on the first control the refusal
+   * marked, so a long form that fails somewhere below the fold does not leave
+   * the operator hunting for red text. `useClearOnCorrect` retires a complaint
+   * the moment the value it was about changes.
+   */
+  const formRef = useFocusFirstInvalid(state);
+  const corrections = useClearOnCorrect(state);
+  const [created, setCreated] = useState<ReceptionCreated | null>(null);
+  /** Bumped when the operator discards this form; remounts the customer search. */
+  const [discarded, setDiscarded] = useState(0);
+  const [pending, setPending] = useState(false);
+
+  /*
+   * Unsaved work, declared to the shell.
+   *
+   * A check-in is assembled over several panels before anything is sent, and a
+   * branch changed halfway through would re-address the custody record itself.
+   * Anything the operator has chosen or typed counts, and it stops counting the
+   * moment the visit exists.
+   *
+   * The receiving employee is deliberately NOT in the list. This screen
+   * DEFAULTS it to the signed-in operator where they are eligible, so including
+   * it would make the form dirty on arrival — and a guard that is always dirty
+   * asks about every switch, which teaches the operator to dismiss the question
+   * without reading it. Only what a person actually entered counts.
+   */
+  useUnsavedGuard(
+    created === null &&
+      (appointment !== null ||
+        requester !== null ||
+        walkInVehicle !== null ||
+        fuelLevelId.length > 0 ||
+        evSocPercent.length > 0 ||
+        origin !== INITIAL_ORIGIN),
+    /*
+     * "Discard and change branch" discards (browser QA part 7, row 1c.3). The
+     * question promises the entries go, and this form holds its entries itself
+     * rather than following the branch, so it throws them away here: the
+     * origin and its note, the appointment, the customer and the search typed
+     * for one, the vehicle, the intake facts, the hand-over that pre-filled
+     * them and the complaints about any of it. The attempt counter is kept, so
+     * the next refusal is still a NEW attempt for the refusal hooks.
+     */
+    () => {
+      setOrigin(INITIAL_ORIGIN);
+      setAppointment(null);
+      setAppointmentsAsked(false);
+      setRequester(null);
+      setWalkInVehicle(null);
+      setHandoff(null);
+      setFuelLevelId('');
+      setEvSocPercent('');
+      setState((current) => ({ status: 'idle', attempt: current.attempt ?? 0 }));
+      setDiscarded((current) => current + 1);
+    }
+  );
+
+  const submit = async () => {
+    const attempt = (state.attempt ?? 0) + 1;
     const draft = buildCreateInput({
       companyId,
       branchId,
@@ -539,19 +671,103 @@ export function CheckInStartScreen({
       evSocPercent,
     });
     if (!draft.ok) {
-      setLocalError(draft.messageKey);
+      // Refused here, and filed under the control it is about: marked on that
+      // control, the cursor moved to it, and cleared once it is corrected — the
+      // same path a refusal from the service takes. A key with no control of
+      // its own (none today) still reaches the operator through the banner.
+      const field = LOCAL_REFUSAL_FIELD[draft.messageKey];
+      setState(
+        field === undefined
+          ? { status: 'invalid', messageKey: draft.messageKey, attempt }
+          : { status: 'invalid', fieldErrors: { [field]: draft.messageKey }, attempt }
+      );
       return;
     }
-    setLocalError(null);
-    startTransition(async () => {
-      const result = await createReception(draft.input, (state.attempt ?? 0) + 1);
-      setState(result);
-      notifyActionResult(result, messages);
-      if (result.status === 'success' && result.created) {
-        setCreated(result.created);
-      }
-    });
+    setPending(true);
+    let result: Awaited<ReturnType<typeof createReception>>;
+    try {
+      result = await createReception(draft.input, attempt);
+    } catch {
+      // No answer came back (the connection dropped): said as that, with every
+      // entry kept, and the button usable again.
+      setState(unreachable(attempt));
+      return;
+    } finally {
+      setPending(false);
+    }
+    setState(result);
+    notifyActionResult(result, messages);
+    if (result.status === 'success' && result.created) {
+      setCreated(result.created);
+    }
   };
+
+  /*
+   * What the service refused about ONE of the values this form sends.
+   *
+   * `rec.reception-create` publishes `body.branchId`, `body.vehicleId` and
+   * `body.receivingEmployeeId` violations, which reach this screen as field
+   * errors under those names. Nothing on this form read them, so an operator who
+   * chose a branch other than the appointment's, or a person who may not receive
+   * vehicles here, was shown only the shared refusal banner and no indication of
+   * which of the four panels above to go back to. Rendered beside the panel that
+   * carries the value, with everything they typed still in place.
+   *
+   * ## The shared cue, and the shared clearing rule
+   *
+   * The sentence carries the same shape-and-colour mark every other refused
+   * field in the product carries — a bordered exclamation beside the text —
+   * rather than colour alone, which is invisible to a reader who cannot see it
+   * and to a colour-blind one who can. And it stops being shown the moment the
+   * operator changes the value it was about, through `useClearOnCorrect`: a
+   * complaint about a value that is no longer there is a false statement, and
+   * leaving it up makes the operator resubmit to find out which of the
+   * complaints still stand.
+   *
+   * ## What this deliberately does NOT do
+   *
+   * It does not set `aria-invalid` on the paragraph. `useFocusFirstInvalid`
+   * finds `[aria-invalid="true"]`, which is the attribute assistive technology
+   * announces as an invalid CONTROL, and the values refused here are not
+   * controls: the branch is the header's selection, and the receiving employee
+   * is a person chosen from a directory. Marking the sentence would move the
+   * cursor onto a paragraph and would announce "invalid" about something nobody
+   * can edit. The CHOOSERS a refusal is about — the appointment and the vehicle
+   * grids — carry `data-invalid` on their container instead, so the cursor is
+   * moved into them (onto their first control), and the requester and the
+   * intake facts are ordinary fields marked the ordinary way.
+   */
+  const refusalFor = (name: string, id?: string) => {
+    const key = corrections.errorFor(name);
+    if (key === undefined) return null;
+    return (
+      <p
+        id={id}
+        role="alert"
+        data-testid={`check-in-refusal-${name}`}
+        className="mt-3 flex items-start gap-1.5 text-body text-error"
+      >
+        <span
+          aria-hidden="true"
+          className="mt-px inline-flex size-4 shrink-0 items-center justify-center rounded-full border border-error text-caption font-bold leading-none"
+        >
+          !
+        </span>
+        <span>{translateDynamic(messages, key)}</span>
+      </p>
+    );
+  };
+
+  const translatedErrorFor = (name: string): string | undefined => {
+    const key = corrections.errorFor(name);
+    return key === undefined ? undefined : translateDynamic(messages, key);
+  };
+  const requesterError = translatedErrorFor('serviceRequesterPartnerId');
+  const evSocError = translatedErrorFor('evSocPercent');
+  const fuelError = translatedErrorFor('fuelLevelId');
+  const noteError = translatedErrorFor('note');
+  const appointmentRefusalId = useId();
+  const vehicleRefusalId = useId();
 
   if (created !== null) {
     return (
@@ -581,19 +797,16 @@ export function CheckInStartScreen({
           </div>
         </dl>
         <div className="flex flex-wrap items-center gap-3">
-          <Link
+          <Button
+            component={Link}
             href={`/${locale}/receptions/check-in/${created.receptionVisitId}`}
-            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            variant="contained"
           >
             {translate(messages, 'receptions.checkIn.continue')}
-          </Link>
-          <button
-            type="button"
-            onClick={() => location.reload()}
-            className="rounded-md border border-border px-4 py-2 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
+          </Button>
+          <Button type="button" variant="outlined" onClick={() => location.reload()}>
             {translate(messages, 'receptions.checkIn.another')}
-          </button>
+          </Button>
         </div>
       </section>
     );
@@ -604,7 +817,7 @@ export function CheckInStartScreen({
     // more); OPENING a visit is `rec.reception.manage`, said plainly.
     return (
       <div className="flex flex-col gap-3">
-        <PermissionDeniedState messages={messages} />
+        <MuiRefusedState messages={messages} />
         <p className="text-caption text-text-muted" lang={locale}>
           {translate(messages, 'receptions.checkIn.createDenied')}
         </p>
@@ -614,14 +827,17 @@ export function CheckInStartScreen({
 
   return (
     <form
+      ref={formRef}
       aria-label={translate(messages, 'receptions.checkIn.formLabel')}
       onSubmit={(event) => {
         event.preventDefault();
-        submit();
+        if (pending) return;
+        void submit();
       }}
+      noValidate
       className="flex flex-col gap-4"
     >
-      <fieldset className="rounded-lg border border-border bg-surface p-4">
+      <fieldset className="min-w-0 rounded-lg border border-border bg-surface p-4">
         <legend className="px-1 text-caption text-text-secondary">
           {translate(messages, 'receptions.checkIn.targetLegend')}
         </legend>
@@ -629,28 +845,19 @@ export function CheckInStartScreen({
           {translate(messages, 'receptions.checkIn.targetHint')}
         </p>
         <div className="grid gap-3 sm:grid-cols-2">
-          <ScopeControl
-            messages={messages}
-            label={translate(messages, 'receptions.checkIn.company')}
-            options={companyIds}
-            value={companyId}
-            onChange={setCompanyId}
-          />
-          <ScopeControl
+          <WorkingBranchField
             messages={messages}
             label={translate(messages, 'receptions.checkIn.branch')}
-            options={branchIds}
-            value={branchId}
-            onChange={setBranchId}
           />
         </div>
+        {refusalFor('branchId')}
       </fieldset>
 
-      <fieldset className="rounded-lg border border-border bg-surface p-4">
+      <fieldset className="min-w-0 rounded-lg border border-border bg-surface p-4">
         <legend className="px-1 text-caption text-text-secondary">
           {translate(messages, 'receptions.checkIn.originLegend')}
         </legend>
-        <RadioGroupField
+        <FormRadioGroupField
           label={translate(messages, 'receptions.checkIn.originLabel')}
           description={translate(messages, 'receptions.checkIn.originHint')}
           required
@@ -672,7 +879,15 @@ export function CheckInStartScreen({
         />
 
         {origin.kind === 'appointment' ? (
-          <div className="mt-3 flex flex-col gap-3">
+          <div
+            className="mt-3 flex flex-col gap-3"
+            // The chooser is what the refusal is about: marked, so a refused
+            // form's cursor lands inside it, and described by the sentence.
+            data-invalid={corrections.errorFor('appointmentId') ? 'true' : undefined}
+            aria-describedby={
+              corrections.errorFor('appointmentId') ? appointmentRefusalId : undefined
+            }
+          >
             {!canListAppointments ? (
               <p className="text-caption text-text-muted" lang={locale}>
                 {translate(messages, 'receptions.checkIn.appointmentsDenied')}
@@ -680,31 +895,32 @@ export function CheckInStartScreen({
             ) : appointment !== null ? (
               <div className="flex items-center justify-between gap-3 rounded-md border border-border bg-surface-subtle px-3 py-2">
                 <span className="text-body text-text-primary">{appointment.label}</span>
-                <button
+                <Button
                   type="button"
+                  variant="outlined"
+                  size="small"
                   onClick={() => {
                     setAppointment(null);
                     setOrigin({ kind: 'appointment', appointmentId: null });
                   }}
-                  className="shrink-0 rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                 >
                   {translate(messages, 'receptions.checkIn.appointmentChange')}
-                </button>
+                </Button>
               </div>
             ) : (
               <>
                 <div>
-                  <button
+                  <Button
                     type="button"
+                    variant="outlined"
                     disabled={!targetReady}
                     onClick={() => {
                       setAppointmentsAsked(true);
                       appointments.refresh();
                     }}
-                    className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary disabled:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
                   >
                     {translate(messages, 'receptions.checkIn.loadAppointments')}
-                  </button>
+                  </Button>
                   {!targetReady ? (
                     <p className="mt-1 text-caption text-text-muted">
                       {translate(messages, 'receptions.checkIn.targetFirst')}
@@ -716,19 +932,22 @@ export function CheckInStartScreen({
                     locale={locale}
                     messages={messages}
                     table={appointments}
+                    zone={zone}
                     onChoose={(entry) => {
                       setAppointment({
                         id: entry.id,
                         vehicleId: entry.vehicleId,
                         requesterPartnerId: entry.requesterPartnerId,
-                        label: appointmentLabel(messages, locale, entry),
+                        label: appointmentLabel(messages, locale, entry, zone),
                       });
                       setOrigin({ kind: 'appointment', appointmentId: entry.id });
+                      corrections.noteEdited('appointmentId');
                     }}
                   />
                 ) : null}
               </>
             )}
+            {refusalFor('appointmentId', appointmentRefusalId)}
           </div>
         ) : (
           <div className="mt-3 flex flex-col gap-3">
@@ -749,43 +968,80 @@ export function CheckInStartScreen({
               </p>
             ) : null}
             {!canSearchCustomers ? (
-              <p className="text-caption text-text-muted" lang={locale}>
-                {translate(messages, 'receptions.checkIn.customersDenied')}
-              </p>
+              <>
+                <p className="text-caption text-text-muted" lang={locale}>
+                  {translate(messages, 'receptions.checkIn.customersDenied')}
+                </p>
+                {/* No selector to mark: the complaint still stands beside the
+                    sentence that says why there is none. */}
+                {refusalFor('serviceRequesterPartnerId')}
+              </>
             ) : (
               <>
-                <CustomerSelector
-                  locale={locale}
+                <CustomerPicker
+                  key={`requester-${discarded}`}
                   messages={messages}
-                  name="serviceRequesterPartnerId"
-                  labelKey="receptions.checkIn.requester"
+                  locale={locale}
+                  material
+                  label={translate(messages, 'receptions.checkIn.requester')}
                   value={requester}
                   onChange={(next) => {
+                    corrections.noteEdited('serviceRequesterPartnerId');
                     setRequester(next);
                     setWalkInVehicle(null);
                     // The handoff belonged to the customer it named.
                     setHandoff(null);
                   }}
-                  required
-                  attempt={state.attempt ?? 0}
+                  canSearch
+                  // The complaint about the requester is drawn ON the chooser,
+                  // which is marked invalid and receives the cursor (row 6.6).
+                  error={requesterError}
+                  // The form declares its own unsaved work, the requester included.
+                  countsAsUnsaved={false}
+                  testId="check-in-requester"
                 />
                 {requester !== null ? (
-                  <VehicleChoice
-                    messages={messages}
-                    table={vehicles}
-                    chosen={effectiveVehicle}
-                    onChoose={setWalkInVehicle}
-                  />
+                  <div
+                    // The vehicle chooser is what a vehicle refusal is about:
+                    // marked, so the cursor is moved into it, and described by
+                    // the sentence under it.
+                    data-invalid={corrections.errorFor('vehicleId') ? 'true' : undefined}
+                    aria-describedby={
+                      corrections.errorFor('vehicleId') ? vehicleRefusalId : undefined
+                    }
+                  >
+                    <VehicleChoice
+                      locale={locale}
+                      messages={messages}
+                      table={vehicles}
+                      chosen={effectiveVehicle}
+                      onChoose={(next) => {
+                        corrections.noteEdited('vehicleId');
+                        setWalkInVehicle(next);
+                      }}
+                    />
+                  </div>
                 ) : null}
+                {/*
+                 * `body.vehicleId` is published by `rec.reception-create` — a
+                 * vehicle of another workspace, or one already held on an open
+                 * visit — and was the one refusal of the three this form never
+                 * rendered. The operator saw only the shared banner and no
+                 * indication that it was the car they picked.
+                 */}
+                {refusalFor('vehicleId', vehicleRefusalId)}
               </>
             )}
-            <TextAreaField
+            <FormTextField
               label={translate(messages, 'receptions.checkIn.walkInNote')}
-              optionalHint={translate(messages, 'form.optional')}
+              multiline
+              rows={2}
               value={origin.kind === 'walk_in' ? origin.note : ''}
               maxLength={MAX_WALK_IN_NOTE}
-              onChange={(event) => setOrigin({ kind: 'walk_in', note: event.target.value })}
-              rows={2}
+              onEdit={() => corrections.noteEdited('note')}
+              onChange={(value) => setOrigin({ kind: 'walk_in', note: value })}
+              error={noteError}
+              testId="check-in-walk-in-note"
             />
           </div>
         )}
@@ -809,12 +1065,13 @@ export function CheckInStartScreen({
               · {translateDynamic(messages, `receptions.status.${openVisit.receptionStatus}`)}
             </p>
           </div>
-          <Link
+          <Button
+            component={Link}
             href={`/${locale}/receptions/check-in/${openVisit.id}`}
-            className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+            variant="contained"
           >
             {translate(messages, 'receptions.checkIn.resume')}
-          </Link>
+          </Button>
         </div>
       ) : openVisitAsked && openVisitLookup !== 'none' ? (
         /*
@@ -841,26 +1098,16 @@ export function CheckInStartScreen({
           ) : null}
           {OPEN_VISIT_RETRYABLE.includes(openVisitLookup) ? (
             <div>
-              <button
-                type="button"
-                onClick={visits.refresh}
-                className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-              >
-                {translate(messages, 'state.retry')}
-              </button>
+              <RetryButton messages={messages} onRetry={visits.refresh} />
             </div>
           ) : null}
           {openVisitLookup === 'truncated' ? (
-            <CursorPager
-              messages={messages}
-              table={visits}
-              label={translate(messages, 'receptions.checkIn.openVisitPagerLabel')}
-            />
+            <VisitPages locale={locale} messages={messages} table={visits} />
           ) : null}
         </div>
       ) : null}
 
-      <fieldset className="rounded-lg border border-border bg-surface p-4">
+      <fieldset className="min-w-0 rounded-lg border border-border bg-surface p-4">
         <legend className="px-1 text-caption text-text-secondary">
           {translate(messages, 'receptions.checkIn.employeeLegend')}
         </legend>
@@ -875,58 +1122,57 @@ export function CheckInStartScreen({
           sessionUserId={sessionUserId}
           sessionUserName={sessionUserName}
           employee={employee}
-          onChange={setChosenEmployee}
+          onChange={(next) => {
+            corrections.noteEdited('receivingEmployeeId');
+            setChosenEmployee(next);
+          }}
         />
+        {refusalFor('receivingEmployeeId')}
       </fieldset>
 
-      <fieldset className="rounded-lg border border-border bg-surface p-4">
+      <fieldset className="min-w-0 rounded-lg border border-border bg-surface p-4">
         <legend className="px-1 text-caption text-text-secondary">
           {translate(messages, 'receptions.checkIn.intakeLegend')}
         </legend>
         <div className="grid gap-3 sm:grid-cols-2">
-          <div>
-            <SelectField
-              label={translate(messages, 'receptions.checkIn.fuelLevel')}
-              optionalHint={translate(messages, 'form.optional')}
-              value={fuelLevelId}
-              onChange={(event) => setFuelLevelId(event.target.value)}
-              options={
-                fuelLevels.status === 'ok'
-                  ? fuelLevels.options.map((option) => ({ value: option.id, label: option.name }))
-                  : []
-              }
-              placeholder={translate(messages, 'form.select.placeholder')}
-              disabled={fuelLevels.status !== 'ok' || fuelLevels.options.length === 0}
-            />
-            <p className="mt-1 text-caption text-text-muted">
-              {fuelLevels.status !== 'ok'
+          <FormSelectField
+            label={translate(messages, 'receptions.checkIn.fuelLevel')}
+            value={fuelLevelId}
+            onEdit={() => corrections.noteEdited('fuelLevelId')}
+            onChange={setFuelLevelId}
+            options={
+              fuelLevels.status === 'ok'
+                ? fuelLevels.options.map((option) => ({ value: option.id, label: option.name }))
+                : []
+            }
+            placeholder={translate(messages, 'form.select.placeholder')}
+            disabled={fuelLevels.status !== 'ok' || fuelLevels.options.length === 0}
+            description={
+              fuelLevels.status !== 'ok'
                 ? translate(messages, 'receptions.checkIn.fuelUnavailable')
                 : fuelLevels.options.length === 0
                   ? // An empty catalogue is the catalogue WORKING (zero rows
                     // ship); the field is nullable, so the form degrades and
                     // the operation does not.
                     translate(messages, 'receptions.checkIn.fuelEmpty')
-                  : ''}
-            </p>
-          </div>
-          <TextField
+                  : undefined
+            }
+            error={fuelError}
+          />
+          <FormNumberField
             label={translate(messages, 'receptions.checkIn.evSoc')}
             description={translate(messages, 'receptions.checkIn.evSocHint')}
-            optionalHint={translate(messages, 'form.optional')}
             value={evSocPercent}
-            onChange={(event) => setEvSocPercent(event.target.value)}
-            inputMode="decimal"
-            dir="ltr"
+            // Marked, described by its complaint and given the cursor, where
+            // it used to be left grey and described only by its hint (row 6.7b).
+            error={evSocError}
+            onEdit={() => corrections.noteEdited('evSocPercent')}
+            onChange={setEvSocPercent}
             maxLength={6}
+            testId="check-in-ev-soc"
           />
         </div>
       </fieldset>
-
-      {localError !== null ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, localError)}
-        </p>
-      ) : null}
 
       {state.status === 'conflict' ? (
         <div role="alert" className="rounded-lg border border-border bg-surface-subtle p-4">
@@ -945,23 +1191,39 @@ export function CheckInStartScreen({
         </div>
       ) : state.status !== 'idle' && state.status !== 'success' && state.messageKey ? (
         <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, state.messageKey)}
+          {translateWithValues(messages, state.messageKey, state.messageValues)}
+          <FailureExplanation messages={messages} messageKey={state.messageKey} />
           {state.correlationId ? (
             <code className="ms-2 font-mono text-caption">{state.correlationId}</code>
           ) : null}
         </p>
       ) : null}
 
+      {/*
+        A visit is recorded against ONE branch, and the route demands both
+        halves of the pair. "All my branches" is not a target it can take, and
+        choosing one on the operator's behalf would put a vehicle into custody
+        at a workshop nobody named — on the screen where that matters most.
+      */}
+      {targetReady ? null : (
+        <RequiresConcreteBranch
+          messages={messages}
+          state={branchTarget}
+          testId="submit-needs-branch"
+        />
+      )}
+
       <div>
-        <button
+        <Button
           type="submit"
-          disabled={pending}
-          className="rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
+          variant="contained"
+          disabled={pending || !targetReady}
+          aria-busy={pending || undefined}
         >
           {pending
             ? translate(messages, 'form.pending')
             : translate(messages, 'receptions.checkIn.submit')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -972,178 +1234,200 @@ export function CheckInStartScreen({
  * ---------------------------------------------------------------------- */
 
 /**
- * One scope identifier: a select over the session's resolved ids, or a plain
- * identifier input when the session is UNRESTRICTED (an empty array means
- * "everything in the tenant", and the platform publishes no company/branch
- * directory read this screen could turn into names — rendering the identifier
- * is what the approval-limits precedent does, and inventing labels would be
- * fabricating data).
+ * An appointment in words: its number, who booked it, the vehicle and when —
+ * the time on the working branch's clock, where one is in force.
  */
-function ScopeControl({
-  messages,
-  label,
-  options,
-  value,
-  onChange,
-}: {
-  readonly messages: Messages;
-  readonly label: string;
-  readonly options: readonly string[];
-  readonly value: string;
-  readonly onChange: (next: string) => void;
-}) {
-  if (options.length > 0) {
-    return (
-      <SelectField
-        label={label}
-        required
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        options={options.map((id) => ({ value: id, label: id }))}
-        placeholder={translate(messages, 'form.select.placeholder')}
-      />
-    );
-  }
-  return (
-    <TextField
-      label={label}
-      description={translate(messages, 'receptions.checkIn.scopeUnrestricted')}
-      required
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      dir="ltr"
-    />
-  );
-}
-
 function appointmentLabel(
   messages: Messages,
   locale: Locale,
-  entry: CheckInAppointmentCandidate
+  entry: CheckInAppointmentCandidate,
+  zone: string | null
 ): string {
   const who =
     entry.requesterDisplayName ?? translate(messages, 'receptions.checkIn.partyUnavailable');
-  const when = entry.confirmedFrom !== null ? formatDateTime(entry.confirmedFrom, locale) : '';
+  const when =
+    entry.confirmedFrom === null
+      ? ''
+      : zone === null
+        ? formatDateTime(entry.confirmedFrom, locale)
+        : formatInZone(entry.confirmedFrom, intlLocale(locale), zone);
   const vehicle = entry.vehicleDisplayNumber ?? '';
   return [entry.displayNumber, who, vehicle, when].filter(Boolean).join(' · ');
 }
 
+/**
+ * The branch's confirmed appointments, in `OperationalGrid`: each row's Choose
+ * is a real button named with the appointment it chooses. Every state other
+ * than an answer is the grid's own (a 429 or a 5xx is "unavailable" with Try
+ * again); an empty answer is this screen's own sentence.
+ */
 function AppointmentResults({
   locale,
   messages,
   table,
+  zone,
   onChoose,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
-  readonly table: ReturnType<typeof useServerTable<CheckInAppointmentCandidate>>;
+  readonly table: ServerTable<CheckInAppointmentCandidate>;
+  readonly zone: string | null;
   readonly onChoose: (entry: CheckInAppointmentCandidate) => void;
 }) {
-  if (table.status === 'loading') return <LoadingState messages={messages} />;
-  if (table.status === 'denied') {
-    return (
-      <PermissionDeniedState
-        messages={messages}
-        {...(table.correlationId ? { correlationId: table.correlationId } : {})}
-      />
-    );
-  }
-  if (table.status === 'expired') return <SessionExpiredState messages={messages} />;
-  if (table.status !== 'idle') {
-    return (
-      <ErrorState
-        messages={messages}
-        action={
-          <button
-            type="button"
-            onClick={table.refresh}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
-            {translate(messages, 'state.retry')}
-          </button>
-        }
-        {...(table.correlationId ? { correlationId: table.correlationId } : {})}
-      />
-    );
-  }
-  const rows = table.response?.rows ?? [];
-  if (rows.length === 0) {
-    return (
-      <p className="text-body text-text-secondary">
-        {translate(messages, 'receptions.checkIn.noConfirmedAppointments')}
-      </p>
-    );
-  }
-  return (
-    <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-      {rows.map((entry) => (
-        <li key={entry.id}>
-          <button
-            type="button"
-            onClick={() => onChoose(entry)}
-            className="flex w-full flex-wrap items-center gap-3 px-3 py-2 text-start transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
+  const columns = useMemo<readonly OperationalColumn<CheckInAppointmentCandidate>[]>(
+    () => [
+      {
+        id: 'appointment',
+        headerKey: 'receptions.origin.appointment',
+        flex: 3,
+        cell: (entry) => (
+          <span className="flex flex-col">
             <span className="text-body text-text-primary">
-              {appointmentLabel(messages, locale, entry)}
+              {appointmentLabel(messages, locale, entry, zone)}
             </span>
             {entry.appointmentTypeName !== null ? (
               <span className="text-caption text-text-muted">{entry.appointmentTypeName}</span>
             ) : null}
-          </button>
-        </li>
-      ))}
-    </ul>
+          </span>
+        ),
+      },
+    ],
+    [locale, messages, zone]
+  );
+  const rows = table.response?.rows ?? [];
+
+  return (
+    <div className="flex flex-col gap-2">
+      <OperationalGrid<CheckInAppointmentCandidate>
+        messages={messages}
+        locale={locale}
+        label={translate(messages, 'receptions.checkIn.appointmentsLabel')}
+        columns={columns}
+        rowId={(entry) => entry.id}
+        table={table}
+        rowActions={(entry) => [
+          {
+            kind: 'button',
+            label: translate(messages, 'receptions.checkIn.choose'),
+            about: appointmentLabel(messages, locale, entry, zone),
+            onClick: () => onChoose(entry),
+          },
+        ]}
+        density="compact"
+        suppressEmptyState
+        testId="check-in-appointments"
+      />
+      {table.status === 'idle' && table.response !== null && rows.length === 0 ? (
+        <p className="text-body text-text-secondary">
+          {translate(messages, 'receptions.checkIn.noConfirmedAppointments')}
+        </p>
+      ) : null}
+    </div>
   );
 }
 
+/**
+ * The requester's recorded vehicles, in `OperationalGrid`, the chosen one said
+ * as chosen. "No recorded vehicles" is a claim about the SET, so it is only made
+ * by a read that covered the set; linking one is a CRM/Vehicle capability, and
+ * the sentence points there rather than offering a control this screen does not
+ * have.
+ */
 function VehicleChoice({
+  locale,
   messages,
   table,
   chosen,
   onChoose,
 }: {
+  readonly locale: Locale;
   readonly messages: Messages;
-  readonly table: ReturnType<typeof useServerTable<CustomerVehicleEntry>>;
+  readonly table: ServerTable<CustomerVehicleEntry>;
   readonly chosen: CustomerVehicleEntry | null;
   readonly onChoose: (entry: CustomerVehicleEntry) => void;
 }) {
-  if (table.status === 'loading') return <LoadingState messages={messages} />;
-  if (table.status === 'denied') {
-    return (
-      <PermissionDeniedState
-        messages={messages}
-        {...(table.correlationId ? { correlationId: table.correlationId } : {})}
-      />
-    );
-  }
-  if (table.status === 'expired') return <SessionExpiredState messages={messages} />;
-  if (table.status !== 'idle') {
-    return (
-      <ErrorState
-        messages={messages}
-        action={
-          <button
-            type="button"
-            onClick={table.refresh}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-          >
-            {translate(messages, 'state.retry')}
-          </button>
-        }
-        {...(table.correlationId ? { correlationId: table.correlationId } : {})}
-      />
-    );
-  }
+  const identityOf = useCallback(
+    (row: CustomerVehicleEntry): string =>
+      row.vehicleDisplayNumber ??
+      row.vin ??
+      translate(messages, 'receptions.checkIn.vehicleUnidentified'),
+    [messages]
+  );
+  const chosenId = chosen?.vehicleId ?? null;
+  const columns = useMemo<readonly OperationalColumn<CustomerVehicleEntry>[]>(
+    () => [
+      {
+        id: 'vehicle',
+        headerKey: 'receptions.wizard.vehicle',
+        flex: 2,
+        cell: (row) => (
+          <span className="text-body text-text-primary" dir="ltr">
+            {identityOf(row)}
+          </span>
+        ),
+      },
+      {
+        id: 'role',
+        headerKey: 'receptions.parties.role',
+        cell: (row) => (
+          <span className="flex flex-col">
+            <span>{translateDynamic(messages, `vehicles.role.${row.relationshipRole}`)}</span>
+            {!row.active ? (
+              <span className="text-caption text-text-muted">
+                {translate(messages, 'receptions.checkIn.vehicleLinkEnded')}
+              </span>
+            ) : null}
+          </span>
+        ),
+      },
+      {
+        id: 'chosen',
+        headerKey: 'receptions.wizard.status',
+        cell: (row) =>
+          chosenId !== null && row.vehicleId === chosenId ? (
+            <span className="text-caption font-medium text-primary">
+              {translate(messages, 'receptions.checkIn.vehicleChosen')}
+            </span>
+          ) : null,
+      },
+    ],
+    [chosenId, identityOf, messages]
+  );
   const rows = table.response?.rows ?? [];
   const completeness = readCompleteness(table.status, table.response?.hasMore, table.request.page);
-  if (rows.length === 0) {
-    return (
-      <div className="flex flex-col gap-2">
+
+  return (
+    <div className="flex flex-col gap-2" data-testid="check-in-vehicle-choice">
+      <span className="text-label font-medium text-text-primary">
+        {translate(messages, 'receptions.checkIn.vehicleLabel')}
+        <span aria-hidden="true" className="ms-1 text-error">
+          *
+        </span>
+      </span>
+      <OperationalGrid<CustomerVehicleEntry>
+        messages={messages}
+        locale={locale}
+        label={translate(messages, 'receptions.checkIn.vehicleLabel')}
+        columns={columns}
+        rowId={(row) => row.id}
+        table={table}
+        rowActions={(row) => [
+          {
+            kind: 'button',
+            label: translate(messages, 'receptions.checkIn.choose'),
+            about: identityOf(row),
+            // A choice among the rows: the chosen one is PRESSED, so which
+            // vehicle is being received is announced with its own button.
+            pressed: chosenId !== null && row.vehicleId === chosenId,
+            onClick: () => onChoose(row),
+          },
+        ]}
+        density="compact"
+        suppressEmptyState
+        testId="check-in-vehicles"
+      />
+      {table.status === 'idle' && table.response !== null && rows.length === 0 ? (
         <p className="text-body text-text-secondary">
-          {/* "No recorded vehicles" is a claim about the SET, so it is only made
-              by a read that covered the set. Linking one is a CRM/Vehicle
-              capability, and the sentence points there rather than offering a
-              control this screen does not have. */}
           {translate(
             messages,
             completeness === 'truncated'
@@ -1151,74 +1435,58 @@ function VehicleChoice({
               : 'receptions.checkIn.noCustomerVehicles'
           )}
         </p>
-        <CursorPager
-          messages={messages}
-          table={table}
-          label={translate(messages, 'receptions.checkIn.vehiclePagerLabel')}
-        />
-      </div>
-    );
-  }
-  return (
-    <div role="group" aria-label={translate(messages, 'receptions.checkIn.vehicleLabel')}>
-      <p className="mb-1 text-label font-medium text-text-primary">
-        {translate(messages, 'receptions.checkIn.vehicleLabel')}
-        <span aria-hidden="true" className="ms-1 text-error">
-          *
-        </span>
-      </p>
-      <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-        {rows.map((row) => {
-          const current = chosen !== null && chosen.vehicleId === row.vehicleId;
-          const identity =
-            row.vehicleDisplayNumber ??
-            row.vin ??
-            translate(messages, 'receptions.checkIn.vehicleUnidentified');
-          return (
-            <li key={row.id}>
-              <button
-                type="button"
-                aria-pressed={current}
-                onClick={() => onChoose(row)}
-                className={
-                  'flex w-full flex-wrap items-center gap-3 px-3 py-2 text-start transition-colors duration-fast ease-standard focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring ' +
-                  (current ? 'bg-surface-subtle' : 'hover:bg-surface-subtle')
-                }
-              >
-                <span className="text-body text-text-primary" dir="ltr">
-                  {identity}
-                </span>
-                <span className="text-caption text-text-muted">
-                  {translateDynamic(messages, `vehicles.role.${row.relationshipRole}`)}
-                </span>
-                {!row.active ? (
-                  <span className="text-caption text-text-muted">
-                    {translate(messages, 'receptions.checkIn.vehicleLinkEnded')}
-                  </span>
-                ) : null}
-                {current ? (
-                  <span className="ms-auto text-caption font-medium text-primary">
-                    {translate(messages, 'receptions.checkIn.vehicleChosen')}
-                  </span>
-                ) : null}
-              </button>
-            </li>
-          );
-        })}
-      </ul>
-      {completeness === 'truncated' ? (
-        <p data-testid="checkin-vehicles-truncated" className="mt-1 text-caption text-text-muted">
+      ) : null}
+      {rows.length > 0 && completeness === 'truncated' ? (
+        <p data-testid="checkin-vehicles-truncated" className="text-caption text-text-muted">
           {translate(messages, 'receptions.checkIn.vehiclesTruncated')}
         </p>
       ) : null}
-      <div className="mt-2">
-        <CursorPager
-          messages={messages}
-          table={table}
-          label={translate(messages, 'receptions.checkIn.vehiclePagerLabel')}
-        />
-      </div>
     </div>
+  );
+}
+
+/**
+ * The vehicle's visits, when the lookup read one page and more exist: the grid
+ * whose pager reaches the rest, each row named and its status in words. The
+ * open one, once reached, becomes the Resume offer above.
+ */
+function VisitPages({
+  locale,
+  messages,
+  table,
+}: {
+  readonly locale: Locale;
+  readonly messages: Messages;
+  readonly table: ServerTable<ReceptionListEntry>;
+}) {
+  const columns = useMemo<readonly OperationalColumn<ReceptionListEntry>[]>(
+    () => [
+      {
+        id: 'visit',
+        headerKey: 'receptions.wizard.visit',
+        cell: (row) =>
+          row.displayNumber ?? translate(messages, 'receptions.wizard.visitUnnumbered'),
+      },
+      {
+        id: 'status',
+        headerKey: 'receptions.wizard.status',
+        cell: (row) => translateDynamic(messages, `receptions.status.${row.receptionStatus}`),
+      },
+    ],
+    [messages]
+  );
+  return (
+    <OperationalGrid<ReceptionListEntry>
+      messages={messages}
+      locale={locale}
+      label={translate(messages, 'receptions.checkIn.openVisitsLabel')}
+      columns={columns}
+      rowId={(row) => row.id}
+      table={table}
+      density="compact"
+      suppressEmptyState
+      testId="check-in-open-visit-pages"
+    />
   );
 }
 
@@ -1237,9 +1505,10 @@ function VehicleChoice({
  * `rec.receiving-employee-list` answers the ACTIVE accounts whose live role
  * grants cover the branch this visit is being received into. It takes no search
  * term, and that is the shape rather than an omission: the question is "who may
- * accept custody here", which is a list an operator scans. The control this
- * replaced searched `iam.user-list` — every account in the tenant, at tenant
- * scope — because there was nothing narrower to read.
+ * accept custody here", which is a list an operator scans — drawn in
+ * `OperationalGrid`, a Choose button per person, named with the person. The
+ * control this replaced searched `iam.user-list` — every account in the tenant,
+ * at tenant scope — because there was nothing narrower to read.
  *
  * ## Three eligibility states, and `null` is not `false`
  *
@@ -1295,6 +1564,20 @@ function EmployeeControl({
         ? `${translate(messages, 'receptions.checkIn.employeeSelf')} — ${sessionUserName}`
         : employee.label;
 
+  const columns = useMemo<readonly OperationalColumn<ReceivingEmployeeCandidate>[]>(
+    () => [
+      {
+        id: 'name',
+        headerKey: 'receptions.wizard.receivingEmployee',
+        // The NAME and nothing else. The operation answers no email and no
+        // status — an inactive account is not offered — so there is no second
+        // column to render.
+        cell: (row) => row.displayName,
+      },
+    ],
+    []
+  );
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-3">
@@ -1302,22 +1585,25 @@ function EmployeeControl({
           {chosenLabel}
         </span>
         {employee.id !== sessionUserId && selfEligible !== false ? (
-          <button
+          <Button
             type="button"
+            variant="outlined"
+            size="small"
             onClick={() => onChange({ id: sessionUserId, label: sessionUserName })}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             {translate(messages, 'receptions.checkIn.employeeReset')}
-          </button>
+          </Button>
         ) : null}
         {canPickEmployee && targetReady ? (
-          <button
+          <Button
             type="button"
+            variant="outlined"
+            size="small"
+            aria-expanded={listOpen}
             onClick={() => setShowing((current) => !current)}
-            className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
           >
             {translate(messages, 'receptions.checkIn.employeeChoose')}
-          </button>
+          </Button>
         ) : null}
       </div>
 
@@ -1365,61 +1651,33 @@ function EmployeeControl({
 
       {listOpen && canPickEmployee && targetReady ? (
         <div className="flex flex-col gap-2 rounded-md border border-border p-3">
-          {table.status === 'loading' ? (
-            <LoadingState messages={messages} />
-          ) : table.status === 'denied' ? (
-            <PermissionDeniedState
-              messages={messages}
-              {...(table.correlationId ? { correlationId: table.correlationId } : {})}
-            />
-          ) : table.status === 'expired' ? (
-            <SessionExpiredState messages={messages} />
-          ) : table.status !== 'idle' ? (
-            <ErrorState
-              messages={messages}
-              action={
-                <button
-                  type="button"
-                  onClick={table.refresh}
-                  className="rounded-md border border-border px-3 py-1.5 text-body text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                >
-                  {translate(messages, 'state.retry')}
-                </button>
-              }
-              {...(table.correlationId ? { correlationId: table.correlationId } : {})}
-            />
-          ) : eligible.length === 0 ? (
+          <OperationalGrid<ReceivingEmployeeCandidate>
+            messages={messages}
+            locale={locale}
+            label={translate(messages, 'receptions.checkIn.employeePagerLabel')}
+            columns={columns}
+            rowId={(row) => row.id}
+            table={table}
+            rowActions={(row) => [
+              {
+                kind: 'button',
+                label: translate(messages, 'receptions.checkIn.choose'),
+                about: row.displayName,
+                onClick: () => {
+                  onChange({ id: row.id, label: row.displayName });
+                  setShowing(false);
+                },
+              },
+            ]}
+            density="compact"
+            suppressEmptyState
+            testId="check-in-employees"
+          />
+          {table.status === 'idle' && table.response !== null && eligible.length === 0 ? (
             <p data-testid="employee-none-eligible" className="text-body text-text-secondary">
               {translate(messages, 'receptions.checkIn.employeeNoneEligible')}
             </p>
-          ) : (
-            <>
-              <ul className="flex flex-col divide-y divide-border rounded-md border border-border">
-                {eligible.map((row) => (
-                  <li key={row.id}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        onChange({ id: row.id, label: row.displayName });
-                        setShowing(false);
-                      }}
-                      className="flex w-full items-center gap-3 px-3 py-2 text-start transition-colors duration-fast ease-standard hover:bg-surface-subtle focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring"
-                    >
-                      {/* The NAME and nothing else. The operation answers no
-                          email and no status — an inactive account is not
-                          offered — so there is no second column to render. */}
-                      <span className="text-body text-text-primary">{row.displayName}</span>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-              <CursorPager
-                messages={messages}
-                table={table}
-                label={translate(messages, 'receptions.checkIn.employeePagerLabel')}
-              />
-            </>
-          )}
+          ) : null}
         </div>
       ) : null}
     </div>

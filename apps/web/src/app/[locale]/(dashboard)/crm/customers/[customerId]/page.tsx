@@ -11,6 +11,7 @@ import { CustomerProfileScreen } from '@/features/crm/customers/components/Custo
 import { permittedWrites } from '@/features/crm/customers/governance-contract';
 import { readCustomer } from '@/features/crm/customers/profile-api';
 import { CRM_PERMISSIONS, holds } from '@/features/crm/permissions';
+import { RECEPTION_PERMISSIONS } from '@/features/receptions/receptions-contract';
 import { isLocale } from '@/i18n/config';
 import { getMessages } from '@/i18n/get-messages';
 import { pageMetadata } from '@/lib/page-metadata';
@@ -134,6 +135,25 @@ export default async function CustomerProfilePage({
           // (`P1-27-SEC-001`). Visibility only — the server decides, and
           // `permittedWrites` cannot make a forged call succeed.
           writes={permittedWrites(session.permissions)}
+          // The Owner's required entry point into reception (2026-09-17),
+          // carrying the codes the DESTINATION requires rather than ones
+          // invented for the button. Two, not one, and the second was missing:
+          //
+          //   - `rec.reception.manage` is what opening a visit needs
+          //     (`rec.reception-create`), which is where this path ends.
+          //   - `rec.reception.read` is what the check-in page the path ends at
+          //     DENIES on before it renders anything
+          //     (`receptions/check-in/page.tsx`). An operator holding manage
+          //     without read was offered the action, walked through the vehicle
+          //     choice, and refused on arrival.
+          //
+          // `crm.customer.read` is not repeated here: this page has already
+          // denied and returned without it, so an operator reading this profile
+          // holds it by construction.
+          canStartWorkOrder={
+            holds(session.permissions, RECEPTION_PERMISSIONS.manage) &&
+            holds(session.permissions, RECEPTION_PERMISSIONS.read)
+          }
         />
       </PageBody>
     </>

@@ -13,6 +13,7 @@ import {
   canCancel,
   canRecordNoShow,
   canReschedule,
+  classifyUtcOffset,
   hasExplicitUtcOffset,
   validateInstant,
   validateWindow,
@@ -293,11 +294,39 @@ describe('the window rules mirror the module domain', () => {
     expect(hasExplicitUtcOffset('2026-08-30T09:00:00')).toBe(false);
   });
 
-  it('refuses an offset wider than PostgreSQL accepts', () => {
+  it('refuses an offset outside the range in civil use', () => {
     // V8 parses +16:00 happily; timestamptz refuses it as 22009, which nothing
-    // maps — so the bound is enforced where the field is (±15:59).
-    expect(hasExplicitUtcOffset('2026-08-30T09:00:00+15:59')).toBe(true);
+    // maps — so a bound is enforced where the field is. The bound published is
+    // the civil range, -12:00 to +14:00, because that is the one a sentence can
+    // name: +14:00 is Kiribati and -12:00 the far side of the date line, while
+    // the wider timestamptz limit of ±15:59 corresponds to nowhere.
+    expect(hasExplicitUtcOffset('2026-08-30T09:00:00+14:00')).toBe(true);
+    expect(hasExplicitUtcOffset('2026-08-30T09:00:00-12:00')).toBe(true);
+    expect(hasExplicitUtcOffset('2026-08-30T09:00:00+14:01')).toBe(false);
+    expect(hasExplicitUtcOffset('2026-08-30T09:00:00-12:01')).toBe(false);
+    expect(hasExplicitUtcOffset('2026-08-30T09:00:00+15:59')).toBe(false);
     expect(hasExplicitUtcOffset('2026-08-30T09:00:00+16:00')).toBe(false);
+  });
+
+  it('tells a missing offset apart from a mistyped one and an impossible one', () => {
+    /*
+     * The three used to be one answer, and the answer was "include an offset" —
+     * which is the wrong instruction for the two entries that already end in
+     * one. The classifier is what picks the sentence, so the three cases are
+     * asserted here rather than only through the sentences.
+     *
+     * The date's own hyphens are the trap: a tail detector anchored on a sign
+     * alone reads the `-` in `2026-08-30` as the start of a displacement and
+     * calls every zone-less timestamp mistyped instead of missing. The first
+     * case below is what holds that.
+     */
+    expect(classifyUtcOffset('2026-08-30T09:00:00')).toBe('missing');
+    expect(classifyUtcOffset('2026-08-30T09:00:00+09')).toBe('unreadable');
+    expect(classifyUtcOffset('2026-08-30T09:00:00+9')).toBe('unreadable');
+    expect(classifyUtcOffset('2026-08-30T09:00:00+16:00')).toBe('out_of_range');
+    expect(classifyUtcOffset('2026-08-30T09:00:00+99:99')).toBe('out_of_range');
+    expect(classifyUtcOffset('2026-08-30T09:00:00+03:00')).toBe('ok');
+    expect(classifyUtcOffset('2026-08-30T09:00:00Z')).toBe('ok');
   });
 
   it('validates a single instant with a named refusal', () => {
@@ -305,6 +334,10 @@ describe('the window rules mirror the module domain', () => {
     expect(validateInstant('   ')).toBe('empty');
     expect(validateInstant('x'.repeat(MAX_INSTANT_LENGTH + 1))).toBe('too_long');
     expect(validateInstant('2026-08-30T09:00:00')).toBe('missing_offset');
+    // The two causes that used to answer `missing_offset` while the entry
+    // already carried an offset.
+    expect(validateInstant('2026-08-30T09:00:00+09')).toBe('offset_unreadable');
+    expect(validateInstant('2026-08-30T09:00:00+16:00')).toBe('offset_out_of_range');
     expect(validateInstant('not-a-date-at-allZ')).toBe('unparseable');
     expect(validateInstant('2026-08-30T09:00:00Z')).toBe('ok');
   });

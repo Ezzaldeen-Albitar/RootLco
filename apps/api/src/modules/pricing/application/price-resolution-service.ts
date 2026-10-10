@@ -75,6 +75,44 @@ export class PriceResolutionService {
   }
 
   /**
+   * The effective rate of a tax class for a company on a date, for a price that
+   * did not come from a price rule (P1-32-PRE-OD-FD6, ADR-023 D6: a quotation
+   * part line priced at the item selling price).
+   *
+   * The same treatment a counter sale gives the same price
+   * (`sal.create_counter_sale_invoice`): no class is untaxed (rate zero); a class
+   * with no effective rate for the company that day is REFUSED, never read as
+   * zero. No rate is invented here and no new tax behaviour is added — the rate is
+   * the `org.tax_rates` row the service lines read too. `taxClassCode` is `null`
+   * for an untaxed price.
+   */
+  public async taxRateFor(
+    db: DbHandle,
+    query: { readonly companyId: string; readonly taxClassId: string | null; readonly asOf: string }
+  ): Promise<{ readonly taxRate: string; readonly taxClassCode: string | null }> {
+    if (query.taxClassId === null) {
+      return { taxRate: Decimal.zero(TAX_RATE).toString(), taxClassCode: null };
+    }
+    const tax = await this.repository.findTaxRate(
+      db,
+      query.companyId,
+      query.taxClassId,
+      query.asOf
+    );
+    if (tax === null) {
+      throw new AppFailure('ERR-VAL-001', {
+        message:
+          `Tax class ${query.taxClassId} has no effective rate for company ` +
+          `${query.companyId} on ${query.asOf}`,
+      });
+    }
+    return {
+      taxRate: Decimal.fromDatabase(tax.rate, TAX_RATE).toString(),
+      taxClassCode: tax.taxClassCode,
+    };
+  }
+
+  /**
    * Resolves the one winning price and its effective tax rate.
    *
    * Throws rather than returning null, because every caller of this method is

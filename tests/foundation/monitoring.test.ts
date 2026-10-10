@@ -165,3 +165,192 @@ describe('recording transport', () => {
     expect(monitor.recorded()).toHaveLength(0);
   });
 });
+
+/*
+ * A database fault is logged by its structure, never by its words.
+ *
+ * The driver's message, its `detail` and a RAISE text routinely carry the value
+ * the caller submitted — `Key (base_currency_code)=(JOR)`, `invalid input syntax
+ * for type uuid: "…"`, an idempotency key. What an operator needs to find the
+ * fault is the SQLSTATE, the constraint and the relation it names, and the code
+ * path; those are copied field by field, and the stack is reduced to its frame
+ * lines, so a message that runs over several lines cannot ride along in it.
+ */
+describe('database faults are logged by structure', () => {
+  const FRAME = /^\s+at /;
+
+  function capturedLines(): string[] {
+    const lines: string[] = [];
+    __resetLoggerForTests({
+      write(chunk: string): void {
+        lines.push(chunk);
+      },
+    });
+    return lines;
+  }
+
+  function driverError(message: string, fields: Record<string, unknown>): Error {
+    const error = new Error(message);
+    error.name = 'error';
+    return Object.assign(error, { severity: 'ERROR', file: 'ri_triggers.c', ...fields });
+  }
+
+  function onlyLine(lines: readonly string[]): {
+    readonly raw: string;
+    readonly record: { msg: string; context: Record<string, unknown> };
+  } {
+    expect(lines).toHaveLength(1);
+    const raw = lines[0]!;
+    return { raw, record: JSON.parse(raw) as { msg: string; context: Record<string, unknown> } };
+  }
+
+  it('logs the SQLSTATE, the constraint and the relation of a foreign-key refusal, and never its detail', () => {
+    const lines = capturedLines();
+    const detail = 'Key (base_currency_code)=(JOR) is not present in table "currencies".';
+    captureException(
+      driverError(
+        'insert or update on table "legal_companies" violates foreign key constraint "fk_legal_companies_base_currency"',
+        {
+          code: '23503',
+          routine: 'ri_ReportViolation',
+          constraint: 'fk_legal_companies_base_currency',
+          schema: 'org',
+          table: 'legal_companies',
+          detail,
+          where: 'SQL statement "INSERT INTO org.legal_companies ... JOR"',
+          hint: 'JOR',
+        }
+      ),
+      { correlationId: CORRELATION_ID, errorCode: 'ERR-SYS-001' }
+    );
+
+    const event = monitor.recorded()[0]!;
+    expect(event.message).toBe('Database error 23503');
+    expect(event.database).toEqual({
+      sqlState: '23503',
+      constraint: 'fk_legal_companies_base_currency',
+      schema: 'org',
+      table: 'legal_companies',
+      routine: 'ri_ReportViolation',
+    });
+    expect(event.stackFrames?.length).toBeGreaterThan(0);
+    expect(event.stackFrames?.length).toBeLessThanOrEqual(20);
+    for (const frame of event.stackFrames ?? []) expect(frame).toMatch(FRAME);
+
+    const { raw, record } = onlyLine(lines);
+    expect(record.msg).toBe('Database error 23503');
+    const database = record.context.database as Record<string, unknown>;
+    expect(database.sqlState).toBe('23503');
+    expect(database.constraint).toBe('fk_legal_companies_base_currency');
+    expect(database.schema).toBe('org');
+    expect(database.table).toBe('legal_companies');
+    expect(Array.isArray(record.context.stackFrames)).toBe(true);
+    expect((record.context.stackFrames as unknown[]).length).toBeGreaterThan(0);
+    for (const leaked of ['JOR', 'Key (', detail, 'INSERT INTO']) {
+      expect(raw).not.toContain(leaked);
+    }
+  });
+
+  it('keeps a value embedded in a multi-line driver message out of the line and the frames', () => {
+    const lines = capturedLines();
+    captureException(
+      driverError(
+        'invalid input syntax for type uuid: "submitted-value-one"\ncontinued with submitted-value-two',
+        { code: '22P02', routine: 'string_to_uuid' }
+      ),
+      { correlationId: CORRELATION_ID }
+    );
+
+    const event = monitor.recorded()[0]!;
+    expect(event.message).toBe('Database error 22P02');
+    for (const frame of event.stackFrames ?? []) {
+      expect(frame).toMatch(FRAME);
+      expect(frame).not.toContain('submitted-value');
+    }
+    const { raw } = onlyLine(lines);
+    expect(raw).not.toContain('submitted-value');
+  });
+
+  it('drops a message line that itself looks like a frame from the line and the frames', () => {
+    const lines = capturedLines();
+    captureException(
+      driverError('invalid input syntax for type uuid: "x"\n    at injected (C:\\evil.js:1:1)', {
+        code: '22P02',
+        routine: 'string_to_uuid',
+      }),
+      { correlationId: CORRELATION_ID }
+    );
+
+    const event = monitor.recorded()[0]!;
+    expect(event.message).toBe('Database error 22P02');
+    expect(event.stackFrames?.length).toBeGreaterThan(0);
+    const { raw, record } = onlyLine(lines);
+    const frames = JSON.stringify(record.context.stackFrames);
+    for (const leaked of ['injected', 'evil']) {
+      expect(raw).not.toContain(leaked);
+      expect(frames).not.toContain(leaked);
+      expect(JSON.stringify(event.stackFrames)).not.toContain(leaked);
+    }
+  });
+
+  it('treats a SQLSTATE-shaped code without a server routine or file as an ordinary error', () => {
+    const lines = capturedLines();
+    const error = Object.assign(new Error('not raised by the server'), {
+      code: '23503',
+      severity: 'ERROR',
+    });
+    captureException(error, { correlationId: CORRELATION_ID });
+
+    const event = monitor.recorded()[0]!;
+    expect(event.message).toBe('not raised by the server');
+    expect(event.message).not.toBe('Database error 23503');
+    expect(Object.prototype.hasOwnProperty.call(event, 'database')).toBe(false);
+    const { record } = onlyLine(lines);
+    expect(record.msg).toBe('not raised by the server');
+    expect(record.context.database).toBeUndefined();
+  });
+
+  it('logs no idempotency key from a RAISE that names one', () => {
+    const lines = capturedLines();
+    const key = '7d4c2a10-9b8e-4f3a-a1b2-c3d4e5f6a7b8';
+    captureException(
+      driverError(`idempotency key ${key} was already used with a DIFFERENT request`, {
+        code: '23000',
+        routine: 'exec_stmt_raise',
+        file: 'pl_exec.c',
+      }),
+      { correlationId: CORRELATION_ID }
+    );
+
+    expect(monitor.recorded()[0]!.message).toBe('Database error 23000');
+    expect(JSON.stringify(monitor.recorded()[0]!.stackFrames)).not.toContain(key);
+    expect(onlyLine(lines).raw).not.toContain(key);
+  });
+
+  it('does not mistake an operating-system error code for a database fault', () => {
+    const lines = capturedLines();
+    const error = Object.assign(new Error('write EPIPE'), { code: 'EPIPE', syscall: 'write' });
+    captureException(error, { correlationId: CORRELATION_ID });
+
+    const event = monitor.recorded()[0]!;
+    expect(event.message).toBe('write EPIPE');
+    expect(Object.prototype.hasOwnProperty.call(event, 'database')).toBe(false);
+    expect(onlyLine(lines).record.context.database).toBeUndefined();
+  });
+
+  it('adds frame-only stack lines to an ordinary error and leaves its message and stack as they were', () => {
+    const lines = capturedLines();
+    captureException(new Error('ordinary failure'), { correlationId: CORRELATION_ID });
+
+    const event = monitor.recorded()[0]!;
+    expect(event.message).toBe('ordinary failure');
+    expect(event.stack).toContain('Error');
+    expect(event.stackFrames?.length).toBeGreaterThan(0);
+    for (const frame of event.stackFrames ?? []) expect(frame).toMatch(FRAME);
+    const { record } = onlyLine(lines);
+    expect(record.msg).toBe('ordinary failure');
+    expect(record.context.errorName).toBe('Error');
+    expect(record.context.monitored).toBe(true);
+    expect(record.context.stackFrames).toEqual(event.stackFrames);
+  });
+});

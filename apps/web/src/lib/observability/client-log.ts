@@ -425,6 +425,7 @@ export function report(event: ClientLogEvent): void {
   adapter?.(safe);
 
   const line = JSON.stringify({
+    time: new Date().toISOString(),
     level: safe.level,
     event: safe.event,
     correlationId: safe.correlationId ?? null,

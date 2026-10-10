@@ -1,59 +1,95 @@
 'use client';
 
 import { useCallback, useId, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { DataTable, type Column } from '@/components/data-table/DataTable';
-import { INITIAL_REQUEST, type TableRequest } from '@/components/data-table/table-state';
-import { useServerTable } from '@/components/data-table/use-server-table';
+import { INITIAL_REQUEST } from '@/components/data-table/table-state';
+import { DigitsEcho } from '@/components/forms/DigitsEcho';
+import { SearchBox } from '@/components/search/SearchBox';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import { useSearchRequest } from '@/lib/api/use-search-request';
+import type { CursorPage, ReadState } from '@/lib/api/read-operation';
 import { EmptyState } from '@/components/states/States';
 import type { Messages } from '@/i18n/get-messages';
 import { translate } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
-import { searchCustomers } from '../api';
+import { searchCustomerDirectoryCancellable } from '@/lib/customers/directory-read';
 import { CustomerCreateActions } from './CustomerCreateActions';
 import {
   LIFECYCLE_STATUSES,
   MAX_CUSTOMER_NUMBER_LENGTH,
   MAX_NAME_LENGTH,
+  MAX_PHONE_LENGTH,
   PARTY_TYPES,
   isEmptyCriteria,
+  isFreeTextTooShort,
   type CustomerSearchCriteria,
   type CustomerSearchHit,
 } from '../contract';
 
 /**
- * CRM customer search and its results (`P1-27-FE-001`, `P1-27-FE-002`).
+ * CRM customer search and its results (`P1-27-FE-001`, `P1-27-FE-002`, P1-32).
  *
- * ## It searches on intent, never on a keystroke
+ * ## One box first, the precise filters one step away (P1-32)
+ *
+ * A receptionist rarely knows which field the thing they were told belongs to.
+ * The prominent box sends `q`, which the backend tries as part of a name, a
+ * customer number and a phone number at once. "More filters" opens the precise
+ * fields — name, customer number, phone, type and status — for the operator who
+ * does know.
+ *
+ * Digits typed on an Arabic keyboard are echoed as Western digits under a box
+ * for reading only. What is sent is what was typed; the backend folds them.
+ *
+ * ## It searches on intent, never on a bare keystroke
  *
  * `crm.customer-search` is `expensive-read`: **30 requests per 60 seconds**,
- * keyed by operation, tenant and user. Search-as-you-type spends that in under
- * three seconds of typing, and the operator's reward for typing a customer's
- * name is a 429.
+ * keyed by operation, workspace and user. A request per CHARACTER spends that
+ * in under three seconds of typing, and the operator's reward for typing a
+ * customer's name is a refusal.
  *
- * So the primary action is an explicit Search button, Enter submits the form,
- * and typing does nothing at all. There is no debounce, because a debounce is
- * still a request per pause and this screen has no client-side suggestion source
- * to debounce against — inventing one would mean holding customer names in the
- * browser, which is the opposite of what `NFR-PRV-001` is protecting.
+ * So the primary action is an explicit Search button and Enter submits the form.
+ *
+ * ## The sentence that used to close this paragraph was wrong, and is corrected
+ *
+ * It read: "There is no debounce, because a debounce is still a request per
+ * pause." The first half is true and the conclusion does not follow. The
+ * comparison that decides it is not "debounced typing versus nothing" but
+ * "debounced typing versus what the operator actually does" — type, press
+ * Search, read, correct the spelling, press Search again — which is one request
+ * per attempt, uncancelled, with no upper bound. A 300 ms debounce that ABORTS
+ * the request before it sends one per pause and abandons the rest, which is
+ * fewer requests against the same limit, not more.
+ *
+ * The mechanism now exists (`lib/use-debounced-value.ts`,
+ * `lib/api/use-search-request.ts`, `components/search/SearchBox.tsx`) and is
+ * what a new search surface should be built on. This screen keeps its explicit
+ * Search for a reason that survives the correction: the results are a SEPARATELY
+ * MOUNTED component, which is what makes "no request before intent" structural
+ * here rather than a rule somebody has to remember.
  *
  * **The results are a separate component, mounted only after a submission.**
- * That is not organisation; it is the mechanism. `useServerTable` reads on
- * mount, so a version of this screen that held the hook at the top would issue a
- * request before the operator had asked for anything — and would then depend on
- * the adapter refusing empty criteria to stay correct. Not mounting the hook
- * makes "no request before intent" structural instead of guarded.
+ * `useServerTable` reads on mount, so not mounting the hook makes "no request
+ * before intent" structural instead of guarded.
+ *
+ * ## Nothing reaches the address bar
+ *
+ * `P1-27-SEC-002`: the criteria live in screen state. A customer's name or phone
+ * number in a URL would be in history, in a referrer and in proxy logs.
  *
  * ## What it does not offer
  *
  * **No sort control.** The operation publishes no `sort` parameter and its route
- * schema is `.strict()`, so a sortable column header would send a 422. The order
- * is `(created_at DESC, id DESC)`.
+ * schema is `.strict()`, so a sortable column header would send a 422.
  *
- * **No phone or email box.** They are not in the allow-list, deliberately —
- * see `contract.ts`.
+ * **No email box.** Email is not in the allow-list. Phone is, since P1-32, and
+ * the phone shown in a row is masked unless the operator may see it whole.
  *
  * **No total.** `hasMore` is the only end-of-set signal the backend publishes.
+ *
+ * **No "start a visit for this customer" link.** The walk-in desk takes no
+ * customer from its address and the check-in hand-off needs a customer AND a
+ * vehicle, so there is no existing route such a link could honestly open.
  */
 
 interface Props {
@@ -68,18 +104,26 @@ export function CustomerSearchScreen({ locale, messages, canCreate }: Props) {
   const formId = useId();
   const [draft, setDraft] = useState<CustomerSearchCriteria>(EMPTY_CRITERIA);
   const [committed, setCommitted] = useState<CustomerSearchCriteria | null>(null);
+  const [tooShort, setTooShort] = useState(false);
 
   const submit = useCallback(() => {
     // An empty form is not a search. Committing it would mount the results and
-    // ask the backend for "everything", which is neither what was asked nor
-    // something a 30-per-minute budget should spend on nothing.
+    // ask the backend for "everything".
     if (isEmptyCriteria(draft)) return;
+    // One character in the free-text box is refused by the backend. Saying so
+    // here is better than a validation failure the operator cannot read.
+    if (isFreeTextTooShort(draft)) {
+      setTooShort(true);
+      return;
+    }
+    setTooShort(false);
     setCommitted(draft);
   }, [draft]);
 
   const clear = useCallback(() => {
     setDraft(EMPTY_CRITERIA);
     setCommitted(null);
+    setTooShort(false);
   }, []);
 
   return (
@@ -88,13 +132,13 @@ export function CustomerSearchScreen({ locale, messages, canCreate }: Props) {
         formId={formId}
         messages={messages}
         draft={draft}
+        tooShort={tooShort}
         onChange={setDraft}
         onSubmit={submit}
         onClear={clear}
       />
       {committed === null ? (
         // Not an empty result — nothing has been asked, so nothing is missing.
-        // The screen says how to ask rather than reporting that it found nothing.
         <EmptyState
           messages={messages}
           titleKey="crm.customers.search.idleTitle"
@@ -117,9 +161,7 @@ export function CustomerSearchScreen({ locale, messages, canCreate }: Props) {
  * The results, mounted only once a search has been submitted.
  *
  * Keyed on the criteria, so a new search remounts rather than reusing a table
- * still holding the previous set's cursors. `useCursorPages` also resets on an
- * ordering change; the key is the coarser guarantee that does not depend on
- * getting the ordering key right.
+ * still holding the previous set's cursors.
  */
 function CustomerSearchResults({
   locale,
@@ -132,34 +174,62 @@ function CustomerSearchResults({
   readonly criteria: CustomerSearchCriteria;
   readonly canCreate: boolean;
 }) {
-  const router = useRouter();
+  const { version: workingContextVersion } = useWorkingContext();
 
   const load = useCallback(
-    (request: TableRequest, cursor: string | null) => searchCustomers(request, cursor, criteria),
-    [criteria]
+    async (
+      asked: CustomerSearchCriteria,
+      cursor: string | null,
+      signal: AbortSignal
+    ): Promise<ReadState<CursorPage<CustomerSearchHit>>> => {
+      // Cancellable (P1-32-PRE-OD-READ): the same read `searchCustomers`
+      // performs, through the route, so a superseded search is aborted.
+      const page = await searchCustomerDirectoryCancellable(INITIAL_REQUEST, cursor, asked, signal);
+      if (page.status !== 'ok') return { status: page.status, correlationId: page.correlationId };
+      return {
+        status: 'ok',
+        data: { items: page.rows, nextCursor: page.nextCursor, hasMore: page.hasMore },
+        correlationId: page.correlationId,
+      };
+    },
+    []
   );
 
-  const table = useServerTable<CustomerSearchHit>(load, { initial: INITIAL_REQUEST });
+  /*
+   * The search, not a table read (P1-32).
+   *
+   * `useServerTable` reads whenever its key moves and has no notion of a term
+   * settling, a submission, or an answer being superseded. `useSearchRequest`
+   * owns those three and hands back the same page contract, so the table and
+   * its pager below are unchanged — Previous and Next still walk the cursor
+   * stack, and a criteria or branch change still restarts at page one.
+   */
+  const search = useSearchRequest<CustomerSearchHit, CustomerSearchCriteria>({
+    criteria,
+    load,
+    version: workingContextVersion,
+  });
+  const table = search.table;
 
   const columns = useMemo<readonly Column<CustomerSearchHit>[]>(
     () => [
       {
         id: 'displayName',
         headerKey: 'crm.customers.column.name',
-        // Not sortable, and not because it was forgotten: the operation has no
-        // sort parameter. See the module note.
-        cell: (row) => <span className="font-medium text-text-primary">{row.displayName}</span>,
+        // Not sortable: the operation has no sort parameter.
+        cell: (row) => <bdi className="font-medium text-text-primary">{row.displayName}</bdi>,
       },
       {
         id: 'displayNumber',
         headerKey: 'crm.customers.column.reference',
         cell: (row) =>
           row.displayNumber ? (
-            <code className="font-mono text-caption text-text-secondary">{row.displayNumber}</code>
+            <code className="font-mono text-caption text-text-secondary" dir="ltr">
+              {row.displayNumber}
+            </code>
           ) : (
             // An em dash, not the id. A customer without a display number has
-            // not been numbered yet; showing its uuid would put an internal
-            // identifier in front of an operator as though it were a reference.
+            // not been numbered yet.
             <span className="text-text-muted">—</span>
           ),
       },
@@ -167,6 +237,32 @@ function CustomerSearchResults({
         id: 'partyType',
         headerKey: 'crm.customers.column.type',
         cell: (row) => translate(messages, `crm.partyType.${row.partyType}`),
+      },
+      {
+        id: 'primaryPhone',
+        headerKey: 'crm.customers.column.phone',
+        cell: (row) =>
+          row.primaryPhone ? (
+            <span className="flex flex-col">
+              {/* Exactly as the backend returned it. The mask is the backend's
+                  decision; this screen never reconstructs a hidden digit. */}
+              <span className="font-mono text-caption" dir="ltr">
+                {row.primaryPhone}
+              </span>
+              {row.phoneMasked ? (
+                <span className="text-caption text-text-muted">
+                  {translate(messages, 'crm.customers.search.phonePartlyHidden')}
+                </span>
+              ) : null}
+            </span>
+          ) : (
+            <span className="text-text-muted">—</span>
+          ),
+      },
+      {
+        id: 'vehicleCount',
+        headerKey: 'crm.customers.column.vehicles',
+        cell: (row) => <bdi>{row.vehicleCount}</bdi>,
       },
       {
         id: 'lifecycleStatus',
@@ -177,7 +273,16 @@ function CustomerSearchResults({
     [messages]
   );
 
-  const noResults = table.status === 'idle' && table.response?.rows.length === 0;
+  /*
+   * "No matches" is the PHASE, not a row count.
+   *
+   * `table.status === 'idle' && rows.length === 0` was true of an answered read
+   * with no rows — and also, for one render, of a table that had not been asked
+   * anything yet. `empty` is reachable only from a COMPLETED read that returned
+   * nothing, so the sentence cannot appear before there is an answer to base it
+   * on.
+   */
+  const noResults = search.phase === 'empty';
 
   return (
     <>
@@ -193,44 +298,26 @@ function CustomerSearchResults({
         correlationId={table.correlationId}
         caption={translate(messages, 'crm.customers.search.tableCaption')}
         /*
-         * `P1-27-FE-002`. This screen keeps its criteria OUTSIDE `TableRequest`
-         * — deliberately, so a customer's name never reaches the address bar —
-         * and mounts the table with `INITIAL_REQUEST`. `isNarrowed(request)` is
-         * therefore permanently false here, so the table chose "Nothing here yet
-         * · Once records exist they will be listed here": a claim about the
-         * tenant's whole customer list, on the evidence of one query that
-         * excluded everything, printed directly above the correct sentence this
-         * screen already renders below.
-         *
-         * The screen owns the zero-result state because it knows three things
-         * the table cannot: the domain wording, whether this operator may create
-         * the customer they failed to find, and that Clear filters would do
-         * nothing here.
+         * `P1-27-FE-002`. The criteria live OUTSIDE `TableRequest`, so the
+         * table's own empty state would make a claim about the tenant's whole
+         * customer list. The screen owns the zero-result state below.
          */
         suppressEmptyState
         rowActions={(row) => (
-          <button
-            type="button"
-            onClick={() => router.push(`/${locale}/crm/customers/${row.id}`)}
+          // A real link, so the profile can be opened in a new tab. The route
+          // key is the id, never the display number.
+          <Link
+            href={`/${locale}/crm/customers/${row.id}`}
             className="text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
           >
             {translate(messages, 'crm.customers.search.open')}
-          </button>
+          </Link>
         )}
       />
       {/*
         Repeated here, under a search that found nothing, because that is where
-        the thought "this customer is new" actually happens. The page header
-        carries the same two actions for the operator who already knows.
-
-        Only to someone who could actually create: showing it to an operator
-        without `crm.customer.create` would put a control in front of them whose
-        only possible outcome is a 403.
-
-        The sentence above them matters as much as the buttons. "No matching
-        customer was found" is a statement about the search; without it, two
-        buttons under an empty table read as an instruction to create rather than
-        as an answer to what was asked.
+        the thought "this customer is new" actually happens. Only to someone who
+        could actually create — `CustomerCreateActions` owns that rule.
       */}
       {noResults ? (
         <div className="flex flex-col items-center gap-3 pb-4 text-center">
@@ -253,6 +340,7 @@ function SearchForm({
   formId,
   messages,
   draft,
+  tooShort,
   onChange,
   onSubmit,
   onClear,
@@ -260,12 +348,16 @@ function SearchForm({
   readonly formId: string;
   readonly messages: Messages;
   readonly draft: CustomerSearchCriteria;
+  readonly tooShort: boolean;
   readonly onChange: (next: CustomerSearchCriteria) => void;
   readonly onSubmit: () => void;
   readonly onClear: () => void;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const filtersId = `${formId}-filters`;
   const nameId = `${formId}-name`;
   const numberId = `${formId}-number`;
+  const phoneId = `${formId}-phone`;
   const typeId = `${formId}-type`;
   const statusId = `${formId}-status`;
 
@@ -285,100 +377,165 @@ function SearchForm({
       <h2 id={`${formId}-legend`} className="sr-only">
         {translate(messages, 'crm.customers.search.formLabel')}
       </h2>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {/*
-          The hint is a SIBLING of the label, not a child of it. Inside the
-          label its text joins the accessible name, so the field announces
-          "Name Matches the start of the name" — which is both wrong and
-          unfindable by the name a user would say.
-        */}
-        <div className="flex flex-col gap-1">
-          <label className="text-caption font-medium text-text-secondary" htmlFor={nameId}>
-            {translate(messages, 'crm.customers.search.name')}
-          </label>
-          <input
-            id={nameId}
-            type="search"
-            value={draft.name ?? ''}
-            maxLength={MAX_NAME_LENGTH}
-            onChange={(event) => onChange({ ...draft, name: event.target.value })}
-            className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-            aria-describedby={`${nameId}-hint`}
-          />
-          {/* Stated, because prefix and substring are different promises and an
-              operator expecting substring concludes the data is missing. */}
-          <span id={`${nameId}-hint`} className="text-caption text-text-muted">
-            {translate(messages, 'crm.customers.search.nameHint')}
-          </span>
-        </div>
 
-        <div className="flex flex-col gap-1">
-          <label className="text-caption font-medium text-text-secondary" htmlFor={numberId}>
-            {translate(messages, 'crm.customers.search.reference')}
-          </label>
-          <input
-            id={numberId}
-            type="search"
-            value={draft.customerNumber ?? ''}
-            maxLength={MAX_CUSTOMER_NUMBER_LENGTH}
-            onChange={(event) => onChange({ ...draft, customerNumber: event.target.value })}
-            className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-            aria-describedby={`${numberId}-hint`}
-          />
-          <span id={`${numberId}-hint`} className="text-caption text-text-muted">
-            {translate(messages, 'crm.customers.search.referenceHint')}
-          </span>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-caption font-medium text-text-secondary" htmlFor={typeId}>
-            {translate(messages, 'crm.customers.search.type')}
-          </label>
-          <select
-            id={typeId}
-            value={draft.partyType ?? ''}
-            onChange={(event) =>
-              onChange({
-                ...draft,
-                partyType: (event.target.value || undefined) as CustomerSearchCriteria['partyType'],
-              })
-            }
-            className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-          >
-            <option value="">{translate(messages, 'crm.customers.search.anyType')}</option>
-            {PARTY_TYPES.map((value) => (
-              <option key={value} value={value}>
-                {translate(messages, `crm.partyType.${value}`)}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label className="text-caption font-medium text-text-secondary" htmlFor={statusId}>
-            {translate(messages, 'crm.customers.search.status')}
-          </label>
-          <select
-            id={statusId}
-            value={draft.lifecycleStatus ?? ''}
-            onChange={(event) =>
-              onChange({
-                ...draft,
-                lifecycleStatus: (event.target.value ||
-                  undefined) as CustomerSearchCriteria['lifecycleStatus'],
-              })
-            }
-            className="rounded-md border border-border bg-surface px-3 py-2 text-body"
-          >
-            <option value="">{translate(messages, 'crm.customers.search.anyStatus')}</option>
-            {LIFECYCLE_STATUSES.map((value) => (
-              <option key={value} value={value}>
-                {translate(messages, `crm.lifecycle.${value}`)}
-              </option>
-            ))}
-          </select>
-        </div>
+      {/*
+        The shared search box (P1-32), replacing a hand-rolled input.
+        
+        What it brings that the hand-rolled one did not: a clear control, Escape
+        to empty the box, Enter handled explicitly rather than relying on
+        implicit form submission, an `inputMode` that does not summon a
+        digits-only keypad for a box that also takes a name, and the same
+        non-colour error cue every other field carries. The words are still this
+        screen's: the label and the example say what may be typed HERE, because
+        a generic "Search…" is the shape of a control rather than a question.
+      */}
+      <div className="flex flex-col gap-1">
+        <SearchBox
+          messages={messages}
+          label={translate(messages, 'crm.customers.search.q')}
+          example={translate(messages, 'crm.customers.search.qHint')}
+          value={draft.q ?? ''}
+          maxLength={MAX_NAME_LENGTH}
+          onChange={(next) => onChange({ ...draft, q: next })}
+          onSubmit={onSubmit}
+          error={tooShort ? translate(messages, 'crm.customers.search.qTooShort') : undefined}
+          inlineSubmit={false}
+          testId="customer-search-box"
+        />
+        <DigitsEcho messages={messages} value={draft.q} />
       </div>
+
+      <div className="mt-3">
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-controls={filtersId}
+          onClick={() => setExpanded((open) => !open)}
+          className="text-body text-primary underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
+        >
+          {translate(
+            messages,
+            expanded ? 'crm.customers.search.fewerFilters' : 'crm.customers.search.moreFilters'
+          )}
+        </button>
+      </div>
+
+      {expanded ? (
+        <div id={filtersId} className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {/*
+            The hint is a SIBLING of the label, not a child of it. Inside the
+            label its text joins the accessible name.
+          */}
+          <div className="flex flex-col gap-1">
+            <label className="text-caption font-medium text-text-secondary" htmlFor={nameId}>
+              {translate(messages, 'crm.customers.search.name')}
+            </label>
+            <input
+              id={nameId}
+              type="search"
+              value={draft.name ?? ''}
+              maxLength={MAX_NAME_LENGTH}
+              onChange={(event) => onChange({ ...draft, name: event.target.value })}
+              className="rounded-md border border-border bg-surface px-3 py-2 text-body"
+              aria-describedby={`${nameId}-hint`}
+            />
+            <span id={`${nameId}-hint`} className="text-caption text-text-muted">
+              {translate(messages, 'crm.customers.search.nameHint')}
+            </span>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-caption font-medium text-text-secondary" htmlFor={numberId}>
+              {translate(messages, 'crm.customers.search.reference')}
+            </label>
+            <input
+              id={numberId}
+              type="search"
+              dir="ltr"
+              value={draft.customerNumber ?? ''}
+              maxLength={MAX_CUSTOMER_NUMBER_LENGTH}
+              onChange={(event) => onChange({ ...draft, customerNumber: event.target.value })}
+              className="rounded-md border border-border bg-surface px-3 py-2 text-body"
+              aria-describedby={`${numberId}-hint`}
+            />
+            <span id={`${numberId}-hint`} className="text-caption text-text-muted">
+              {translate(messages, 'crm.customers.search.referenceHint')}
+            </span>
+            <DigitsEcho messages={messages} value={draft.customerNumber} />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-caption font-medium text-text-secondary" htmlFor={phoneId}>
+              {translate(messages, 'crm.customers.search.phone')}
+            </label>
+            <input
+              id={phoneId}
+              type="search"
+              inputMode="tel"
+              dir="ltr"
+              value={draft.phone ?? ''}
+              maxLength={MAX_PHONE_LENGTH}
+              onChange={(event) => onChange({ ...draft, phone: event.target.value })}
+              className="rounded-md border border-border bg-surface px-3 py-2 text-body"
+              aria-describedby={`${phoneId}-hint`}
+            />
+            <span id={`${phoneId}-hint`} className="text-caption text-text-muted">
+              {translate(messages, 'crm.customers.search.phoneHint')}
+            </span>
+            <DigitsEcho messages={messages} value={draft.phone} />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-caption font-medium text-text-secondary" htmlFor={typeId}>
+              {translate(messages, 'crm.customers.search.type')}
+            </label>
+            <select
+              id={typeId}
+              value={draft.partyType ?? ''}
+              onChange={(event) =>
+                onChange({
+                  ...draft,
+                  partyType: (event.target.value ||
+                    undefined) as CustomerSearchCriteria['partyType'],
+                })
+              }
+              className="rounded-md border border-border bg-surface px-3 py-2 text-body"
+            >
+              <option value="">{translate(messages, 'crm.customers.search.anyType')}</option>
+              {PARTY_TYPES.map((value) => (
+                <option key={value} value={value}>
+                  {translate(messages, `crm.partyType.${value}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-caption font-medium text-text-secondary" htmlFor={statusId}>
+              {translate(messages, 'crm.customers.search.status')}
+            </label>
+            <select
+              id={statusId}
+              value={draft.lifecycleStatus ?? ''}
+              onChange={(event) =>
+                onChange({
+                  ...draft,
+                  lifecycleStatus: (event.target.value ||
+                    undefined) as CustomerSearchCriteria['lifecycleStatus'],
+                })
+              }
+              className="rounded-md border border-border bg-surface px-3 py-2 text-body"
+            >
+              <option value="">{translate(messages, 'crm.customers.search.anyStatus')}</option>
+              {LIFECYCLE_STATUSES.map((value) => (
+                <option key={value} value={value}>
+                  {translate(messages, `crm.lifecycle.${value}`)}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         <button

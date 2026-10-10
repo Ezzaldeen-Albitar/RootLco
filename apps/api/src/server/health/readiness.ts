@@ -24,6 +24,17 @@ import { preflightPrivileges } from '../db/capabilities';
 import { newCorrelationId } from '../observability/correlation';
 import { workerQuery } from '../worker/worker-db';
 import { queueHealth } from '../worker/outbox-worker';
+import { productionConfigurationProblems } from '../config/backend-config';
+
+/**
+ * The one check that asks whether the deployment was configured at all.
+ *
+ * Spelled once because two places must agree on it: the check that is pushed,
+ * and the blocking filter that turns it into `unavailable`. Outside
+ * `staging`/`production` it is `ok` by construction, so local and test
+ * readiness gains one passing check and its verdict cannot change.
+ */
+const CONFIGURATION_CHECK = 'configuration.production-required';
 
 export type ReadinessState = 'ready' | 'degraded' | 'unavailable';
 
@@ -48,6 +59,26 @@ export interface ReadinessReport {
  */
 export async function foundationReadiness(probeTenantId: string): Promise<ReadinessReport> {
   const checks: { name: string; ok: boolean; detail?: string }[] = [];
+
+  // Computed FIRST, and outside the try, so it survives a database failure: a
+  // deployment that is both unconfigured and unreachable must report both, and
+  // the catch below re-emits `checks` rather than replacing it.
+  //
+  // The detail carries variable NAMES only — `productionConfigurationProblems`
+  // never copies a value — and the HTTP projection in `HealthService.readiness`
+  // drops every `detail` regardless, so the list reaches an operator's log and
+  // not the response body.
+  const configurationProblems = productionConfigurationProblems(process.env);
+  if (configurationProblems.length === 0) {
+    checks.push({ name: CONFIGURATION_CHECK, ok: true });
+  } else {
+    checks.push({
+      name: CONFIGURATION_CHECK,
+      ok: false,
+      detail: configurationProblems.join(', '),
+    });
+  }
+
   try {
     const context = buildRequestContext({
       correlationId: newCorrelationId(),
@@ -68,7 +99,12 @@ export async function foundationReadiness(probeTenantId: string): Promise<Readin
       checks.push({ name: `capability.${capability.capability}`, ok: capability.available });
     }
 
-    const blocking = checks.filter((check) => !check.ok && check.name.startsWith('database.'));
+    // A missing required value is blocking for the same reason an unreachable
+    // database is: the instance cannot serve the request it would be sent.
+    const blocking = checks.filter(
+      (check) =>
+        !check.ok && (check.name.startsWith('database.') || check.name === CONFIGURATION_CHECK)
+    );
     const degraded = checks.some((check) => !check.ok);
     return {
       role: 'web',

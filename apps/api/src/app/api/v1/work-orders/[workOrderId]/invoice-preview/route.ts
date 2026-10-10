@@ -9,10 +9,12 @@
  *
  * ## Every amount is computed by PostgreSQL, not by TypeScript
  *
- * The totals come back from a read-only `SELECT` whose arithmetic is `round(… , 4)` —
- * the same shape `ck_invoice_amounts_gross` enforces and `sal.issue_invoice` later
- * applies when it recomputes the header from the lines. One engine, so the preview
- * cannot disagree with the invoice it is previewing.
+ * The totals come back from a read-only `SELECT` that sums the quotation lines' own
+ * captured amounts, each already rounded half-up to the currency's minor unit by
+ * `tg_quotation_items_money` (ADR-023, D1: a document total is the sum of its rounded
+ * lines). `sal.issue_invoice` later recomputes the header the same way, as the sum of
+ * the rounded invoice lines copied from those captured amounts. One engine, so the
+ * preview cannot disagree with the invoice it is previewing.
  *
  * That is the repository's own recorded decision rather than caution added here:
  * `Money` in `@/modules/pricing` deliberately has no `add` and no `multiply`, because

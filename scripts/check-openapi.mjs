@@ -150,9 +150,24 @@ for (const [path, item] of Object.entries(document.paths ?? {})) {
     } else if (
       permissions.length === 0 &&
       Array.isArray(operation.security) &&
-      operation.security.length > 0
+      operation.security.length > 0 &&
+      operation['x-self-read'] !== true
     ) {
       errors.push(`${label}: secured operation declares no required permissions`);
+    }
+    // A self-read (P1-32-PRE-OD-FRX) is authenticated and declares no code. The
+    // flag is accepted only in that exact shape, so it cannot excuse anything else.
+    if (operation['x-self-read'] !== undefined) {
+      const secured = Array.isArray(operation.security) && operation.security.length > 0;
+      if (operation['x-self-read'] !== true || !secured) {
+        errors.push(`${label}: x-self-read is only true, and only on a secured operation`);
+      }
+      if (Array.isArray(permissions) && permissions.length > 0) {
+        errors.push(`${label}: x-self-read declares required permissions`);
+      }
+      if (method !== 'get') {
+        errors.push(`${label}: x-self-read on a ${method.toUpperCase()} operation`);
+      }
     }
 
     // Every declared failure must use the shared problem response.

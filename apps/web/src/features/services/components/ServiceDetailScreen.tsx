@@ -1,20 +1,34 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Button from '@mui/material/Button';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
 
-import { SelectField, TextAreaField, TextField } from '@/components/forms/Field';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
+import { DateField, type DayProblem } from '@/components/forms/mui/DateField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { TreePicker } from '@/components/pickers/TreePicker';
+import { useBranchTarget } from '@/features/working-context/use-branch-target';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+  useWorkingContextChange,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
+import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
 import type { ServiceUpdateBody } from '@/lib/contracts/services-contract';
 
 import {
   createServiceVersion,
   listBranches,
-  listServiceCategories,
   publishServiceVersion,
   setBranchAvailability,
   updateService,
@@ -24,50 +38,64 @@ import {
   MAX_NAME,
   MAX_NOTES,
   type BranchOption,
-  type ServiceCategory,
   type ServiceDetail,
   type ServiceVersion,
 } from '../services-contract';
-import { LifecycleBadge, OutcomeNote } from './ServiceCatalogueScreen';
+import {
+  LifecycleBadge,
+  OutcomeNote,
+  branchesFromContext,
+  categoryTreeItems,
+  useTaxonomy,
+  type Taxonomy,
+} from './ServiceCatalogueScreen';
 
 /**
  * One service (P1-30, `W1`, FE-001) — `svc.service-detail`, with the four
- * writes that act on it.
+ * writes that act on it. On the shared Material UI wrappers since
+ * `P1-32-PRE-OD-MUISP` (ADR-022): `forms/mui` fields, the category tree,
+ * `DateField` for every day, and `ConfirmDialog` before retiring.
  *
  * ## The version the guarded writes send
  *
  * `svc.service-update` and `svc.service-version-publish` are version-guarded
- * and require `If-Match`. The version is the `recordVersion` the page read —
- * for publication too, because `svc.publish_service_version` locks the SERVICE
- * first. After any write that moved it, the page is refreshed so the next
- * write carries the current one; a stale one is a genuine conflict and renders
- * as one, never as a silent overwrite.
+ * and require `If-Match`. The version is the SERVICE's — for publication too,
+ * because `svc.publish_service_version` locks the SERVICE first. An edit is
+ * sent at the version of the BASELINE the form's work is based on
+ * (`useEditBaseline`), not of whatever the page last read: a refresh that
+ * arrives while the operator is typing moves neither their values nor that
+ * version, so a save built on replaced fields is the server's conflict, never a
+ * silent overwrite of them. The conflict offers to load the latest.
+ * Publication and retiring carry no field of the service row, so they are
+ * guarded by the row the page read last.
  *
  * ## What this screen cannot show, and says
  *
  * There is no read of a service's versions and no read of its availability.
  * The draft this screen creates is held in state for publication because its
- * id exists nowhere else; availability can be verified only through the
- * catalogue's branch filter. Both are stated on the screen rather than faked.
+ * id exists nowhere else — so a held draft is unsaved work, and leaving asks
+ * first; availability can be verified only through the catalogue's branch
+ * filter. Both are stated on the screen rather than faked.
  *
  * ## Retired is terminal
  *
  * `archived` cannot be reversed (`svc.guard_service_lifecycle`), so retiring
- * asks for an explicit acknowledgement, and a retired service offers no writes
+ * asks in a confirmation dialog first, and a retired service offers no writes
  * at all — an edit form on a frozen row would be an invitation to a refusal.
+ *
+ * ## Days are calendar days
+ *
+ * Every date here is a `DateField` holding `YYYY-MM-DD` — the value the native
+ * box produced and the routes accept. A day only partly typed is refused on its
+ * own field (with the cursor put on the part to finish) rather than read as no
+ * day at all.
  *
  * No money crosses this screen. `standardMinutes` would, as a decimal string,
  * if a version listed labour times; the create response carries the empty
  * draft's list, which is rendered as a count of entries and nothing more.
  */
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-
-const PRIMARY_BUTTON =
-  'rounded-md bg-primary px-4 py-2 text-body font-medium text-on-primary transition-colors duration-fast ease-standard hover:bg-primary-hover';
-const SECONDARY_BUTTON =
-  'rounded-md border border-border bg-surface px-4 py-2 text-body text-text-primary transition-colors duration-fast ease-standard';
 
 export function ServiceDetailScreen({
   locale,
@@ -84,12 +112,12 @@ export function ServiceDetailScreen({
 }) {
   const router = useRouter();
   const retired = service.lifecycleStatus === 'archived';
-  const categories = useCategories();
-  const branches = useBranchList(canReadBranches && canManage && !retired);
-  const categoryLabel = useMemo(() => {
-    const found = categories.items?.find((category) => category.id === service.categoryId);
-    return found ? `${found.code} — ${found.name}` : null;
-  }, [categories.items, service.categoryId]);
+  const taxonomy = useTaxonomy();
+  const branches = useBranchList(canReadBranches, canManage && !retired);
+  const categoryName = useMemo(
+    () => taxonomy.categories?.find((category) => category.id === service.categoryId)?.name ?? null,
+    [taxonomy.categories, service.categoryId]
+  );
 
   return (
     <div className="flex flex-col gap-4" lang={locale}>
@@ -110,12 +138,13 @@ export function ServiceDetailScreen({
             <bdi>{service.name}</bdi>
           </Field>
           <Field label={translate(messages, 'services.detail.category')}>
-            {categoryLabel ? (
-              <bdi>{categoryLabel}</bdi>
+            {categoryName !== null ? (
+              <bdi>{categoryName}</bdi>
             ) : (
-              <code className="font-mono text-caption" dir="ltr">
-                {service.categoryId}
-              </code>
+              // Said in words, never the identifier.
+              <span className="text-text-muted">
+                {translate(messages, 'services.catalogue.unknownCategory')}
+              </span>
             )}
           </Field>
           <Field label={translate(messages, 'services.detail.status')}>
@@ -147,7 +176,7 @@ export function ServiceDetailScreen({
           <EditPanel
             messages={messages}
             service={service}
-            categories={categories}
+            taxonomy={taxonomy}
             onDone={() => router.refresh()}
           />
           <AvailabilityPanel messages={messages} service={service} branches={branches} />
@@ -156,6 +185,7 @@ export function ServiceDetailScreen({
             messages={messages}
             service={service}
             onPublished={() => router.refresh()}
+            onReload={() => router.refresh()}
           />
         </>
       )}
@@ -184,28 +214,6 @@ function Field({
  * Reference data
  * ------------------------------------------------------------------ */
 
-interface Categories {
-  readonly items: readonly ServiceCategory[] | null;
-  readonly refused: string | null;
-}
-
-function useCategories(): Categories {
-  const [items, setItems] = useState<readonly ServiceCategory[] | null>(null);
-  const [refused, setRefused] = useState<string | null>(null);
-  useEffect(() => {
-    let live = true;
-    void listServiceCategories().then((state) => {
-      if (!live) return;
-      if (state.status === 'ok') setItems(state.data.items);
-      else setRefused('services.catalogue.categoriesRefused');
-    });
-    return () => {
-      live = false;
-    };
-  }, []);
-  return { items, refused };
-}
-
 /**
  * The branch list as one of six outcomes rather than three fields — the same
  * correction as the catalogue screen's, for the same reason (P1-30 CC-15).
@@ -228,7 +236,19 @@ const BRANCHES_NOT_OFFERED: BranchList = { phase: 'not-offered' };
 const BRANCHES_LOADING: BranchList = { phase: 'loading' };
 const BRANCHES_NONE: BranchList = { phase: 'none' };
 
-function useBranchList(wanted: boolean): BranchList {
+/**
+ * `active` says whether the panel that needs a branch is shown at all;
+ * `canRead` whether `org.branch-list` may be asked.
+ *
+ * The working context answers FIRST. It publishes the named branches this
+ * caller may act in, so a manager without `org.branch.read` is offered those
+ * rather than told there are none; the directory read is only the fallback
+ * when the shell holds no answer (Owner directive, `P1-32-PRE-OD-UX`).
+ */
+function useBranchList(canRead: boolean, active: boolean): BranchList {
+  const context = useWorkingContext();
+  const fromContext = active ? branchesFromContext(context) : null;
+  const wanted = active && canRead && fromContext === null;
   const [items, setItems] = useState<readonly BranchOption[] | null>(null);
   const [failure, setFailure] = useState<{ key: string; retryable: boolean } | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -251,7 +271,7 @@ function useBranchList(wanted: boolean): BranchList {
       if (state.status === 'denied') {
         setFailure({ key: 'services.catalogue.branchesRefused', retryable: false });
       } else if (state.status === 'expired') {
-        setFailure({ key: 'state.expired.title', retryable: false });
+        setFailure({ key: 'state.expired.message', retryable: false });
       } else {
         setFailure({ key: 'services.catalogue.branchesUnavailable', retryable: true });
       }
@@ -261,6 +281,7 @@ function useBranchList(wanted: boolean): BranchList {
     };
   }, [wanted, attempt]);
 
+  if (fromContext !== null) return { phase: 'listed', items: fromContext };
   if (!wanted) return BRANCHES_NOT_OFFERED;
   if (failure !== null) {
     return { phase: 'failed', messageKey: failure.key, retry: failure.retryable ? retry : null };
@@ -274,30 +295,81 @@ function useBranchList(wanted: boolean): BranchList {
  * Editing — `svc.service-update`, version-guarded
  * ------------------------------------------------------------------ */
 
+/** A type, not an interface: the form is also the `Record` the refusal hook reads. */
+type EditForm = {
+  readonly name: string;
+  readonly description: string;
+  readonly categoryId: string;
+};
+
+function formOf(service: ServiceDetail): EditForm {
+  return {
+    name: service.name,
+    description: service.description ?? '',
+    categoryId: service.categoryId,
+  };
+}
+
+function editDiffers(form: EditForm, baseline: EditForm): boolean {
+  return (
+    form.name.trim() !== baseline.name.trim() ||
+    form.description.trim() !== baseline.description.trim() ||
+    form.categoryId !== baseline.categoryId
+  );
+}
+
 function EditPanel({
   messages,
   service,
-  categories,
+  taxonomy,
   onDone,
 }: {
   readonly messages: Messages;
   readonly service: ServiceDetail;
-  readonly categories: Categories;
+  readonly taxonomy: Taxonomy;
   readonly onDone: () => void;
 }) {
-  const [form, setForm] = useState({
-    name: service.name,
-    description: service.description ?? '',
-    categoryId: service.categoryId,
+  /*
+   * The values and version the operator's edits are based on
+   * (`useEditBaseline`): a clean form follows a refresh, a dirty one keeps its
+   * typed values AND its baseline version, a save sends that baseline version,
+   * and a discard re-bases on what is stored now. Compared trimmed, as `save()`
+   * sends it: a trailing space alone is nothing to save.
+   */
+  const edit = useEditBaseline({
+    stored: formOf(service),
+    storedVersion: service.recordVersion,
+    differs: editDiffers,
   });
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  const { values: form, setValues: setForm, baseline, dirty } = edit;
+  const { errorKey, formRef, refuse } = useLocalRefusal(form);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
-  const [acknowledgeRetire, setAcknowledgeRetire] = useState(false);
+  const [confirmingRetire, setConfirmingRetire] = useState(false);
+  const [retireError, setRetireError] = useState<string | undefined>(undefined);
+  const items = useMemo(() => categoryTreeItems(taxonomy.categories), [taxonomy.categories]);
 
-  const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
-    return key ? translateDynamic(messages, key) : undefined;
+  useUnsavedGuard(dirty, () => {
+    edit.discard();
+    setOutcome(null);
+  });
+
+  /*
+   * The conflict's way out: what is stored now replaces the stale work, and
+   * the page is read again so a newer row than the one held arrives too.
+   */
+  const reload = () => {
+    edit.discard();
+    setOutcome(null);
+    onDone();
+  };
+
+  const errorFor = (...names: readonly string[]): string | undefined => {
+    for (const name of names) {
+      const key = errorKey(name) ?? outcome?.fieldErrors?.[name];
+      if (key) return translateDynamic(messages, key);
+    }
+    return undefined;
   };
 
   const problemKey = (state: ActionState): string =>
@@ -313,15 +385,16 @@ function EditPanel({
     const description = form.description.trim();
     if (description.length > MAX_DESCRIPTION)
       found['description'] = 'services.create.descriptionTooLong';
-    setErrors(found);
+    refuse(found);
     if (Object.keys(found).length > 0) return;
 
-    // Only what changed travels. `description` is three-way: a blank field on a
-    // service that had one CLEARS it (`null`); an unchanged field is omitted.
+    // Only what changed FROM THE BASELINE travels. `description` is three-way: a
+    // blank field on a service that had one CLEARS it (`null`); an unchanged
+    // field is omitted.
     const body: ServiceUpdateBody = {
-      ...(name !== service.name ? { name } : {}),
-      ...(form.categoryId !== service.categoryId ? { serviceCategoryId: form.categoryId } : {}),
-      ...(description !== (service.description ?? '')
+      ...(name !== baseline.name ? { name } : {}),
+      ...(form.categoryId !== baseline.categoryId ? { serviceCategoryId: form.categoryId } : {}),
+      ...(description !== baseline.description
         ? { description: description.length === 0 ? null : description }
         : {}),
     };
@@ -330,10 +403,14 @@ function EditPanel({
       return;
     }
     setBusy(true);
-    const result = await updateService(service.id, body, service.recordVersion);
+    // The BASELINE's version: work built on fields a refresh has since replaced
+    // is the server's conflict, never a silent overwrite of them.
+    const result = await updateService(service.id, body, edit.version);
     setBusy(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
+      // What was saved is the new baseline, as it was sent (trimmed).
+      edit.rebase({ name, description, categoryId: form.categoryId }, result.recordVersion);
       setOutcome(null);
       onDone();
       return;
@@ -342,7 +419,6 @@ function EditPanel({
   };
 
   const retire = async () => {
-    if (!acknowledgeRetire) return;
     setBusy(true);
     const result = await updateService(
       service.id,
@@ -352,60 +428,63 @@ function EditPanel({
     setBusy(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
+      setConfirmingRetire(false);
+      setRetireError(undefined);
       onDone();
       return;
     }
-    setOutcome({ ...result, messageKey: problemKey(result) });
+    // Said in the dialog that asked, which stays open on the refusal.
+    setRetireError(translateDynamic(messages, problemKey(result)));
   };
 
   return (
     <section
       aria-labelledby="service-edit-heading"
-      className="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4"
+      className="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4"
     >
       <h2 id="service-edit-heading" className="text-body font-medium text-text-primary">
         {translate(messages, 'services.detail.editHeading')}
       </h2>
       <form
+        ref={formRef}
         onSubmit={(event) => {
           event.preventDefault();
           void save();
         }}
         noValidate
-        className="flex flex-col gap-3"
+        aria-labelledby="service-edit-heading"
+        className="flex flex-col gap-4"
       >
-        <TextField
+        <FormTextField
           label={translate(messages, 'services.create.name')}
           required
           value={form.name}
-          onChange={(event) => setForm((f) => ({ ...f, name: event.target.value }))}
+          onChange={(name) => setForm((f) => ({ ...f, name }))}
           error={errorFor('name')}
         />
-        <SelectField
+        <TreePicker
           label={translate(messages, 'services.create.category')}
-          {...(categories.refused
-            ? { description: translateDynamic(messages, categories.refused) }
-            : {})}
+          description={taxonomy.refused ? translateDynamic(messages, taxonomy.refused) : undefined}
+          items={items}
           value={form.categoryId}
-          onChange={(event) => setForm((f) => ({ ...f, categoryId: event.target.value }))}
-          options={(categories.items ?? []).map((category) => ({
-            value: category.id,
-            label: `${category.code} — ${category.name}`,
-          }))}
-          error={errorFor('serviceCategoryId')}
+          onChange={(categoryId) => setForm((f) => ({ ...f, categoryId }))}
+          error={errorFor('serviceCategoryId', 'categoryId')}
+          testId="service-edit-category"
         />
-        <TextAreaField
+        <FormTextField
           label={translate(messages, 'services.create.description')}
           description={translate(messages, 'services.detail.descriptionHelp')}
+          multiline
+          rows={3}
           value={form.description}
-          onChange={(event) => setForm((f) => ({ ...f, description: event.target.value }))}
+          onChange={(description) => setForm((f) => ({ ...f, description }))}
           error={errorFor('description')}
         />
-        <OutcomeNote messages={messages} outcome={outcome} />
+        <OutcomeNote messages={messages} outcome={outcome} onReload={reload} />
         <div>
-          <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+          <Button type="submit" variant="contained" disabled={busy}>
             {translate(messages, 'services.detail.save')}
-          </button>
+          </Button>
         </div>
       </form>
 
@@ -416,26 +495,37 @@ function EditPanel({
         <p className="text-caption text-text-muted">
           {translate(messages, 'services.detail.retireConfirm')}
         </p>
-        <label className="flex items-center gap-2 text-body text-text-primary">
-          <input
-            type="checkbox"
-            className="h-4 w-4"
-            checked={acknowledgeRetire}
-            onChange={(event) => setAcknowledgeRetire(event.target.checked)}
-          />
-          {translate(messages, 'services.detail.retireAcknowledge')}
-        </label>
         <div>
-          <button
+          <Button
             type="button"
-            className={`${SECONDARY_BUTTON} text-error`}
-            disabled={busy || !acknowledgeRetire}
-            onClick={() => void retire()}
+            variant="outlined"
+            color="error"
+            disabled={busy}
+            onClick={() => {
+              setRetireError(undefined);
+              setConfirmingRetire(true);
+            }}
           >
             {translate(messages, 'services.detail.retire')}
-          </button>
+          </Button>
         </div>
       </div>
+      <ConfirmDialog
+        open={confirmingRetire}
+        messages={messages}
+        title={translate(messages, 'services.detail.retire')}
+        description={translate(messages, 'services.detail.retireConfirm')}
+        confirmLabel={translate(messages, 'services.detail.retire')}
+        destructive
+        pending={busy}
+        error={retireError}
+        onCancel={() => {
+          setConfirmingRetire(false);
+          setRetireError(undefined);
+        }}
+        onConfirm={() => void retire()}
+        testId="service-retire-dialog"
+      />
     </section>
   );
 }
@@ -453,12 +543,44 @@ function AvailabilityPanel({
   readonly service: ServiceDetail;
   readonly branches: BranchList;
 }) {
-  const [branchId, setBranchId] = useState('');
-  const [companyId, setCompanyId] = useState('');
+  /*
+   * Starts at the branch the operator is working in, when that is one branch:
+   * availability is set FOR a branch, and the header already says which.
+   */
+  const working = useBranchTarget();
+  const workingContext = useWorkingContext();
+  const workingBranch = (): string => (working.kind === 'ready' ? working.target.branchId : '');
+  const [branchId, setBranchId] = useState(workingBranch);
   const [offered, setOffered] = useState(true);
   const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  /*
+   * What the form last matched: the values it opened with, then the values
+   * last recorded. A change from it is unsaved work, declared to the shell so a
+   * branch switch asks before it resets the form.
+   */
+  const [baseline, setBaseline] = useState(() => ({ branchId: workingBranch(), offered: true }));
+  useUnsavedGuard(branchId !== baseline.branchId || offered !== baseline.offered);
+  // Which write is current. The reply to one made before a switch is not shown after it.
+  const attempt = useRef(0);
+
+  /*
+   * The branch FOLLOWS the header, not just its first value. Seeded once, the
+   * panel went on naming the previous branch after a switch. On every change it
+   * is reset to the new working branch (or to nothing, when the selection is
+   * not one branch), and a reply still in flight is superseded.
+   */
+  useWorkingContextChange(() => {
+    attempt.current += 1;
+    const next = workingBranch();
+    setBranchId(next);
+    setOffered(true);
+    setBaseline({ branchId: next, offered: true });
+    setErrors({});
+    setOutcome(null);
+    setBusy(false);
+  });
 
   const errorFor = (name: string): string | undefined => {
     const key = errors[name] ?? outcome?.fieldErrors?.[name];
@@ -468,48 +590,41 @@ function AvailabilityPanel({
   const listed = branches.phase === 'listed';
   const listedItems = branches.phase === 'listed' ? branches.items : null;
   /*
-   * The loading-window corruption path: an identifier typed into the fallback
-   * fields survives in this panel's own state, the list then arrives, and the
-   * select finds no matching option — React blanks the control while `branchId`
-   * still holds, and would still send, the typed value. Cleared only when a
-   * list has arrived that cannot contain it.
+   * A branch held in this panel's own state that the list in hand cannot
+   * contain is treated as nothing chosen — DERIVED, so the form can never send
+   * a pair the screen is not displaying.
    */
   const stale =
     listedItems !== null && branchId !== '' && !listedItems.some((one) => one.id === branchId);
-  /*
-   * DERIVED, not cleared in an effect. Clearing it with `setBranchId` inside a
-   * `useEffect` is the cascading-render shape this repository's lint rule
-   * refuses, and it is not needed: the select renders `chosen` and the submit
-   * reads `chosen`, so the form can never send a pair the screen is not
-   * displaying. The typed value is not destroyed either — if the list is
-   * refused on a later mount the operator still has it.
-   */
   const chosen = stale ? '' : branchId;
 
   const submit = async () => {
     const found: Record<string, string> = {};
+    /*
+     * The branch is chosen from the platform's own named list, and the company
+     * comes from that branch's own row. There is no typed half left, so the
+     * only rule is that a branch was chosen at all.
+     */
     const branch = chosen.trim();
     if (branch.length === 0) found['branchId'] = 'field.required';
-    else if (!UUID.test(branch)) found['branchId'] = 'services.catalogue.branchIdFormat';
-    // With a list, the company comes from the chosen branch's own row. Without
-    // one, the operator names both halves — the body requires the pair.
-    const company = listed
-      ? (listedItems?.find((option) => option.id === branch)?.companyId ?? '')
-      : companyId.trim();
+    const company = listedItems?.find((option) => option.id === branch)?.companyId ?? '';
     if (company.length === 0) found['companyId'] = 'field.required';
-    else if (!UUID.test(company)) found['companyId'] = 'services.catalogue.branchIdFormat';
     setErrors(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
+    attempt.current += 1;
+    const mine = attempt.current;
     const result = await setBranchAvailability(service.id, {
       companyId: company,
       branchId: branch,
       isAvailable: offered,
     });
-    setBusy(false);
     notifyActionResult(result, messages);
+    if (mine !== attempt.current) return;
+    setBusy(false);
     setOutcome(result.status === 'success' ? null : result);
+    if (result.status === 'success') setBaseline({ branchId: branch, offered });
   };
 
   return (
@@ -529,14 +644,11 @@ function AvailabilityPanel({
           void submit();
         }}
         noValidate
+        aria-labelledby="service-availability-heading"
         className="flex flex-col gap-3"
       >
         {branches.phase === 'loading' ? (
-          /*
-           * Deliberately NOT a disabled SelectField: `FieldFrame` binds its
-           * label to a control with `htmlFor` and there is no control yet.
-           * `role="status"` appears in no other phase of this panel.
-           */
+          // No control yet; `role="status"` appears in no other phase here.
           <div className="flex flex-col gap-1.5">
             <p className="text-label font-medium text-text-primary">
               {translate(messages, 'services.availability.branch')}
@@ -546,69 +658,68 @@ function AvailabilityPanel({
             </p>
           </div>
         ) : listed ? (
-          <SelectField
+          <FormSelectField
             label={translate(messages, 'services.availability.branch')}
             required
             value={chosen}
-            onChange={(event) => setBranchId(event.target.value)}
+            onChange={(next) => {
+              setBranchId(next);
+              // A complaint goes the moment the operator corrects it.
+              setErrors({});
+            }}
             options={(listedItems ?? []).map((branch) => ({
               value: branch.id,
               label: `${branch.branchCode} — ${branch.name}`,
             }))}
             placeholder={translate(messages, 'services.availability.chooseBranch')}
-            error={errorFor('branchId')}
+            // One control for the pair: the company's complaint lands here too.
+            error={errorFor('branchId') ?? errorFor('companyId')}
           />
         ) : (
-          <>
-            <TextField
-              label={translate(messages, 'services.availability.companyIdField')}
-              description={
-                branches.phase === 'failed'
+          /*
+           * No branch to choose, so nothing to say about one. Availability is
+           * set FOR a branch, so without one there is nothing to record, and
+           * saying so is the only honest answer (Owner directive,
+           * `P1-32-PRE-OD-UX`).
+           */
+          <div className="flex flex-col gap-1.5">
+            <p className="text-label font-medium text-text-primary">
+              {translate(messages, 'services.availability.branch')}
+            </p>
+            <p
+              role="status"
+              data-testid="service-availability-no-branch"
+              className="text-supporting text-text-secondary"
+            >
+              {workingContext.present && workingContext.status === 'unavailable'
+                ? translate(messages, 'workingContext.unavailable')
+                : branches.phase === 'failed'
                   ? translateDynamic(messages, branches.messageKey)
                   : branches.phase === 'none'
                     ? translate(messages, 'services.catalogue.branchesNone')
-                    : translate(messages, 'services.availability.idHelp')
-              }
-              required
-              spellCheck={false}
-              dir="ltr"
-              value={companyId}
-              onChange={(event) => setCompanyId(event.target.value)}
-              error={errorFor('companyId')}
-            />
-            <TextField
-              label={translate(messages, 'services.availability.branchIdField')}
-              required
-              spellCheck={false}
-              dir="ltr"
-              value={branchId}
-              onChange={(event) => setBranchId(event.target.value)}
-              error={errorFor('branchId')}
-            />
+                    : translate(messages, 'services.availability.noBranch')}
+            </p>
             {branches.phase === 'failed' && branches.retry !== null ? (
               <div>
-                {/* `type="button"`: this sits inside a <form> and a bare button submits it. */}
-                <button type="button" onClick={branches.retry} className={SECONDARY_BUTTON}>
+                <Button type="button" variant="outlined" size="small" onClick={branches.retry}>
                   {translate(messages, 'state.retry')}
-                </button>
+                </Button>
               </div>
             ) : null}
-          </>
+          </div>
         )}
-        <label className="flex items-center gap-2 text-body text-text-primary">
-          <input
-            type="checkbox"
-            className="h-4 w-4"
-            checked={offered}
-            onChange={(event) => setOffered(event.target.checked)}
-          />
-          {translate(messages, 'services.availability.offered')}
-        </label>
+        <FormControlLabel
+          control={
+            <Checkbox checked={offered} onChange={(event) => setOffered(event.target.checked)} />
+          }
+          label={translate(messages, 'services.availability.offered')}
+        />
         <OutcomeNote messages={messages} outcome={outcome} />
         <div>
-          <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+          {/* Nothing to submit without a branch to set it for. */}
+          <Button type="submit" variant="contained" disabled={busy || !listed}>
             {translate(messages, 'services.availability.submit')}
-          </button>
+          </Button>
         </div>
       </form>
     </section>
@@ -619,35 +730,129 @@ function AvailabilityPanel({
  * Versions — create a draft, then publish THAT draft
  * ------------------------------------------------------------------ */
 
+/** A type, not an interface: the form is also the `Record` the baseline compares. */
+type VersionForm = {
+  readonly effectiveFrom: string;
+  readonly effectiveTo: string;
+  readonly notes: string;
+  readonly publishFrom: string;
+};
+
+const EMPTY_VERSION: VersionForm = {
+  effectiveFrom: '',
+  effectiveTo: '',
+  notes: '',
+  publishFrom: '',
+};
+
+/** A held draft's form as nothing has been typed into it: its own day to publish from. */
+function heldDraftForm(draft: ServiceVersion): VersionForm {
+  return { ...EMPTY_VERSION, publishFrom: draft.effectiveFrom };
+}
+
+function versionDiffers(form: VersionForm, baseline: VersionForm): boolean {
+  return (
+    form.effectiveFrom !== baseline.effectiveFrom ||
+    form.effectiveTo !== baseline.effectiveTo ||
+    form.notes.trim() !== baseline.notes.trim() ||
+    form.publishFrom !== baseline.publishFrom
+  );
+}
+
 function VersionPanel({
   locale,
   messages,
   service,
   onPublished,
+  onReload,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly service: ServiceDetail;
   readonly onPublished: () => void;
+  /** Reads the page again, after a conflict. */
+  readonly onReload: () => void;
 }) {
-  const [form, setForm] = useState({ effectiveFrom: '', effectiveTo: '', notes: '' });
-  const [errors, setErrors] = useState<Readonly<Record<string, string>>>({});
+  /*
+   * Whether a date field holds parts of a day and not yet a whole one. The
+   * field reports `''` then, so without this a half-typed day would read as no
+   * day — and an unfinished end date would be left out silently.
+   */
+  const [unfinished, setUnfinished] = useState<Readonly<Record<string, boolean>>>({});
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
   const [draft, setDraft] = useState<ServiceVersion | null>(null);
-  const [publishFrom, setPublishFrom] = useState('');
+  /*
+   * The typed days and notes (`useEditBaseline`): a clean form follows a
+   * refresh, typed work is kept through one. None of these fields comes from
+   * the service row, so a refresh never replaces work they were built on, and
+   * publication follows the LIVE service version rather than the baseline's.
+   * Holding the baseline's here made the page's own rename look like somebody
+   * else's change and refused the publication behind it.
+   */
+  const edit = useEditBaseline({
+    stored: draft === null ? EMPTY_VERSION : heldDraftForm(draft),
+    storedVersion: service.recordVersion,
+    differs: versionDiffers,
+    pending: Object.values(unfinished).some(Boolean),
+  });
+  const { values: form, setValues: setForm } = edit;
+  const publishFrom = form.publishFrom;
+  const setPublishFrom = (next: string) => setForm((f) => ({ ...f, publishFrom: next }));
+  // Each field's value and whether it is half typed: erasing the parts of a
+  // refused day is a correction too, and withdraws its complaint.
+  const {
+    errorKey: refusedKey,
+    formRef: refusalFormRef,
+    refuse,
+  } = useLocalRefusal({
+    effectiveFrom: `${form.effectiveFrom}|${unfinished['effectiveFrom'] === true}`,
+    effectiveTo: `${form.effectiveTo}|${unfinished['effectiveTo'] === true}`,
+    notes: form.notes,
+    publishFrom: `${publishFrom}|${unfinished['publishFrom'] === true}`,
+  });
+
+  /*
+   * Typed and not yet created is unsaved work; so is a draft created and not
+   * yet published, because its id exists nowhere but here (there is no read of
+   * a service's versions) and leaving would lose the way to publish it.
+   */
+  useUnsavedGuard(edit.dirty || draft !== null, () => {
+    setUnfinished({});
+    setDraft(null);
+    edit.discard(EMPTY_VERSION);
+    setOutcome(null);
+  });
+
+  /*
+   * The conflict's way out. The held draft stays — it is stored, and its id
+   * exists nowhere else — while the typed day goes back to the draft's own and
+   * the version follows the page, read again.
+   */
+  const reload = () => {
+    setUnfinished({});
+    edit.discard();
+    setOutcome(null);
+    onReload();
+  };
 
   const errorFor = (name: string): string | undefined => {
-    const key = errors[name] ?? outcome?.fieldErrors?.[name];
+    const key = refusedKey(name) ?? outcome?.fieldErrors?.[name];
     return key ? translateDynamic(messages, key) : undefined;
   };
+  const noteDay = (field: string) => (problem: DayProblem) =>
+    setUnfinished((current) =>
+      current[field] === (problem !== null) ? current : { ...current, [field]: problem !== null }
+    );
 
   const createDraft = async () => {
     const found: Record<string, string> = {};
     const effectiveFrom = form.effectiveFrom.trim();
-    if (!ISO_DATE.test(effectiveFrom)) found['effectiveFrom'] = 'services.catalogue.dateFormat';
+    if (unfinished['effectiveFrom'] || !ISO_DATE.test(effectiveFrom)) {
+      found['effectiveFrom'] = 'services.catalogue.dateFormat';
+    }
     const effectiveTo = form.effectiveTo.trim();
-    if (effectiveTo.length > 0 && !ISO_DATE.test(effectiveTo)) {
+    if (unfinished['effectiveTo'] || (effectiveTo.length > 0 && !ISO_DATE.test(effectiveTo))) {
       found['effectiveTo'] = 'services.catalogue.dateFormat';
     } else if (effectiveTo.length > 0 && effectiveTo <= effectiveFrom) {
       // Two ISO dates compare correctly as strings; the range is half-open.
@@ -655,7 +860,7 @@ function VersionPanel({
     }
     const notes = form.notes.trim();
     if (notes.length > MAX_NOTES) found['notes'] = 'services.version.notesTooLong';
-    setErrors(found);
+    refuse(found);
     if (Object.keys(found).length > 0) return;
 
     setBusy(true);
@@ -667,9 +872,13 @@ function VersionPanel({
     setBusy(false);
     notifyActionResult(result.state, messages);
     if (result.state.status === 'success' && result.created) {
+      // What was typed is now the draft: the form is empty again, so once the
+      // draft is published nothing is left here to call unsaved. Creating a
+      // draft is not version-guarded, so the baseline version is kept.
+      setUnfinished({});
       setOutcome(null);
       setDraft(result.created);
-      setPublishFrom(result.created.effectiveFrom);
+      edit.rebase(heldDraftForm(result.created));
       return;
     }
     setOutcome(result.state);
@@ -678,12 +887,15 @@ function VersionPanel({
   const publish = async () => {
     if (!draft) return;
     const from = publishFrom.trim();
-    if (!ISO_DATE.test(from)) {
-      setErrors({ publishFrom: 'services.catalogue.dateFormat' });
+    if (unfinished['publishFrom'] || !ISO_DATE.test(from)) {
+      refuse({ publishFrom: 'services.catalogue.dateFormat' });
       return;
     }
-    setErrors({});
+    refuse({});
     setBusy(true);
+    // The LIVE version: nothing this form holds was read off the service row,
+    // so a newer read (the page's own rename included) is never foreign work
+    // here. A change not read yet is still the server's conflict.
     const result = await publishServiceVersion(
       service.id,
       draft.id,
@@ -693,13 +905,32 @@ function VersionPanel({
     setBusy(false);
     notifyActionResult(result, messages);
     if (result.status === 'success') {
+      // Published is saved: clean, and the refresh brings the new version.
+      setUnfinished({});
       setDraft(null);
+      edit.rebase(EMPTY_VERSION);
       setOutcome(null);
       onPublished();
       return;
     }
+    /*
+     * The publish refusal is filed against the control this form renders.
+     *
+     * `svc.service-version-publish` takes the date as `effectiveFrom`, so a
+     * forward-only refusal arrives keyed `effectiveFrom` — but the only date on
+     * screen at this point is `publishFrom`, and the control named
+     * `effectiveFrom` belongs to the draft form this branch has already
+     * replaced. Left as it arrived, the sentence would be written to a name
+     * nothing reads, which on screen is the same as dropping it.
+     */
+    const published = result.fieldErrors;
+    const forThisForm =
+      published && published['effectiveFrom'] !== undefined
+        ? { ...published, publishFrom: published['effectiveFrom'] }
+        : published;
     setOutcome({
       ...result,
+      ...(forThisForm ? { fieldErrors: forThisForm } : {}),
       messageKey:
         result.status === 'conflict'
           ? 'services.detail.conflict'
@@ -722,36 +953,40 @@ function VersionPanel({
 
       {draft === null ? (
         <form
+          ref={refusalFormRef}
           onSubmit={(event) => {
             event.preventDefault();
             void createDraft();
           }}
           noValidate
-          className="grid gap-3 sm:grid-cols-2"
+          aria-labelledby="service-versions-heading"
+          className="grid gap-4 sm:grid-cols-2"
         >
-          <TextField
+          <DateField
             label={translate(messages, 'services.version.effectiveFrom')}
             required
-            type="date"
-            dir="ltr"
             value={form.effectiveFrom}
-            onChange={(event) => setForm((f) => ({ ...f, effectiveFrom: event.target.value }))}
+            onChange={(effectiveFrom) => setForm((f) => ({ ...f, effectiveFrom }))}
+            onProblem={noteDay('effectiveFrom')}
             error={errorFor('effectiveFrom')}
+            testId="service-version-from"
           />
-          <TextField
+          <DateField
             label={translate(messages, 'services.version.effectiveTo')}
             description={translate(messages, 'services.version.effectiveToHelp')}
-            type="date"
-            dir="ltr"
             value={form.effectiveTo}
-            onChange={(event) => setForm((f) => ({ ...f, effectiveTo: event.target.value }))}
+            onChange={(effectiveTo) => setForm((f) => ({ ...f, effectiveTo }))}
+            onProblem={noteDay('effectiveTo')}
             error={errorFor('effectiveTo')}
+            testId="service-version-to"
           />
           <div className="sm:col-span-2">
-            <TextAreaField
+            <FormTextField
               label={translate(messages, 'services.version.notes')}
+              multiline
+              rows={3}
               value={form.notes}
-              onChange={(event) => setForm((f) => ({ ...f, notes: event.target.value }))}
+              onChange={(notes) => setForm((f) => ({ ...f, notes }))}
               error={errorFor('notes')}
             />
           </div>
@@ -759,13 +994,14 @@ function VersionPanel({
             <OutcomeNote messages={messages} outcome={outcome} />
           </div>
           <div className="sm:col-span-2">
-            <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+            <Button type="submit" variant="contained" disabled={busy}>
               {translate(messages, 'services.version.createDraft')}
-            </button>
+            </Button>
           </div>
         </form>
       ) : (
         <form
+          ref={refusalFormRef}
           onSubmit={(event) => {
             event.preventDefault();
             void publish();
@@ -806,31 +1042,33 @@ function VersionPanel({
               {draft.laborTimes.length}
             </code>
           </p>
-          <TextField
+          <DateField
             label={translate(messages, 'services.version.publishFrom')}
             required
-            type="date"
-            dir="ltr"
             value={publishFrom}
-            onChange={(event) => setPublishFrom(event.target.value)}
+            onChange={setPublishFrom}
+            onProblem={noteDay('publishFrom')}
             error={errorFor('publishFrom')}
+            testId="service-version-publish-from"
           />
-          <OutcomeNote messages={messages} outcome={outcome} />
+          <OutcomeNote messages={messages} outcome={outcome} onReload={reload} />
           <div className="flex flex-wrap items-center gap-3">
-            <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+            <Button type="submit" variant="contained" disabled={busy}>
               {translate(messages, 'services.version.publish')}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className={SECONDARY_BUTTON}
+              variant="outlined"
               disabled={busy}
               onClick={() => {
                 setDraft(null);
+                setUnfinished({});
+                edit.discard(EMPTY_VERSION);
                 setOutcome(null);
               }}
             >
               {translate(messages, 'services.version.discardDraft')}
-            </button>
+            </Button>
           </div>
         </form>
       )}

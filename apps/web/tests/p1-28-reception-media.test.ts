@@ -1277,8 +1277,10 @@ describe('P1-28-FE-017 — the waiver is a separate authority with a recorded re
     expect(STEP).toContain('overrideCaptureRequirement(visitId, {');
     expect(STEP).toContain('reason,');
     // The submit is refused locally while the reason is empty, so the operator
-    // is not spending a privileged audited write to learn that.
-    expect(STEP).toContain("disabled={reason.trim() === ''}");
+    // is not spending a privileged audited write to learn that. It is also held
+    // while the contract re-reads (fix round 2 of #511), which adds to the
+    // empty-reason guard and never replaces it.
+    expect(STEP).toContain("disabled={pending || reason.trim() === ''}");
     for (const key of [
       'receptions.capture.overrideOpen',
       'receptions.capture.overrideReason',
@@ -1303,13 +1305,16 @@ describe('P1-28-FE-017 — the waiver is a separate authority with a recorded re
     expect(STEP).toContain("translate(messages, 'receptions.capture.overrideWithheld')");
     expect(STEP).toContain('canOverride={capabilities.overrideEvidence && !writesLocked}');
 
-    // The open control carries no `disabled`; the only disables on this screen
-    // are the submit-while-pending and the empty-reason guard.
+    // The open control is never greyed out for a capability. The only disable
+    // it carries is the transient hold while the contract re-reads (fix round 2
+    // of #511), so a waiver cannot be opened against a contract about to be
+    // replaced; any other `disabled` on it would be a permission shown as grey.
     const openControl = /data-testid=\{`capture-override-open-\$\{code\}`\}[\s\S]{0,200}?>/.exec(
       STEP
     );
     expect(openControl, 'the waiver control is no longer rendered').not.toBeNull();
-    expect(openControl?.[0]).not.toContain('disabled');
+    expect(openControl?.[0]).toContain('disabled={pending}');
+    expect(openControl?.[0]).not.toMatch(/disabled(?!=\{pending\})/);
   });
 
   it('cannot silently satisfy a requirement — a waiver reads as a waiver', () => {
@@ -1434,7 +1439,7 @@ describe('P1-28 — P1-OD-025 is recorded as RESOLVED, and no copy says otherwis
     expect(AR_OPEN.test(AR['receptions.capture.intro'] ?? '')).toBe(false);
   });
 
-  it('exactly two strings anywhere still defer to an Owner decision — measured, not waved away', () => {
+  it('exactly four strings anywhere still defer to an Owner decision — measured, not waved away', () => {
     /*
      * A pin rather than a sweep, because the honest answer is not zero and
      * pretending otherwise would hide the interesting one.
@@ -1449,10 +1454,14 @@ describe('P1-28 — P1-OD-025 is recorded as RESOLVED, and no copy says otherwis
      * operation. It lived in P1-27's tree, which this wave did not own, so this
      * case REPORTED it — and pinning it is what carried it across the boundary
      * rather than losing it in a note. That tree has since been opened and the
-     * string rewritten to the truth, so the count falls to two.
+     * string rewritten to the truth, so the count falls to two. P1-32-PRE-OD-FRX
+     * added a third that is genuinely open (the two-quotation invoice refusal), and
+     * this pin is where it was declared rather than left to pass unnoticed.
+     * P1-32-PRE-OD-INV2B declared a fourth the same way (the category tree's
+     * read-only notice, CAT01).
      *
      * The pin stays, and stays exact: `toEqual` on a sorted list is what makes a
-     * FOURTH deferral fail here rather than pass unnoticed, and it is equally
+     * FIFTH deferral fail here rather than pass unnoticed, and it is equally
      * what would fail if the vehicle string quietly reverted.
      */
     const deferring = (catalogue: Record<string, string>, matcher: RegExp): string[] =>
@@ -1461,8 +1470,18 @@ describe('P1-28 — P1-OD-025 is recorded as RESOLVED, and no copy says otherwis
         .map(([key]) => key)
         .sort();
 
+    // A third since P1-32-PRE-OD-FRX, and a genuine one: approved lines on more than
+    // one quotation of a work order cannot be invoiced together while ADR-023's
+    // D5/D15 open point (VL-P132-003) waits on the Owner, and the invoice screen
+    // says so rather than showing a generic refusal.
+    //
+    // A fourth since P1-32-PRE-OD-INV2B, and genuine too: renaming, moving and
+    // retiring an item category have no operation while the Owner's decision
+    // CAT01 is open, and the read-only category tree says so.
     const expected = [
       'crm.duplicates.mergePendingDecision',
+      'inventory.categories.readOnly.body',
+      'invoices.refusal.sourceAmbiguous',
       'vehicles.duplicates.mergePendingDecision',
     ];
     expect(deferring(EN, EN_OPEN)).toEqual(expected);

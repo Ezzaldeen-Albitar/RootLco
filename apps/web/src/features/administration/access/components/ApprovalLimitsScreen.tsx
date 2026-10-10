@@ -11,11 +11,22 @@ import { formatMoney } from '@/lib/money';
 import { intlLocale } from '@/lib/format';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { FormFeedback } from '@/features/authentication/components/FormFeedback';
+import { DirectoryEmptyNotice } from '@/features/working-context/components/WorkingBranchField';
+import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
 import { SubmitButton } from '@/features/authentication/components/SubmitButton';
+import { AccountPicker, type ChosenAccount } from '../../users/components/AccountPicker';
 import { useServerTable } from '../../shared/use-server-table';
 import { listApprovalLimits } from '../api';
-import type { ApprovalLimitRow, RoleRow } from '../types';
+import {
+  APPROVAL_LIMIT_TYPES,
+  isKnownApprovalLimitType,
+  type ApprovalLimitRow,
+  type RoleRow,
+} from '../types';
 import { createApprovalLimitAction, endApprovalLimitAction } from '../actions';
+import { useActionRefusal } from '@/lib/forms/use-action-refusal';
+import { usePersonNames, type PersonName } from '../../shared/person-name';
+import { roleDisplayName } from '../role-name';
 
 /**
  * Approval limits.
@@ -30,10 +41,25 @@ import { createApprovalLimitAction, endApprovalLimitAction } from '../actions';
  *
  * ## No approval hierarchy is invented
  *
- * `limitType` and `currency` are operator-supplied. The contract fixes their
- * *shape* — `^[a-z][a-z0-9_]{1,62}$` and `^[A-Z]{3}$` — and not their meaning,
- * so this screen supplies neither a default limit type nor a default currency,
- * and implies no ordering between types.
+ * The limit type is CHOSEN from the types the platform consults
+ * (`APPROVAL_LIMIT_TYPES`): a discount approval limit and a credit-note approval
+ * limit (Owner decision D13, ADR-023). They are separate — neither counts for the
+ * other — and the screen names each in words. A row of any other type already on
+ * file is listed under its own code. `currency` stays operator-supplied, by
+ * shape (`^[A-Z]{3}$`). This screen supplies neither a default limit type nor a
+ * default currency, and implies no ordering between types. A credit-note limit
+ * must be above zero, and every amount must fit its currency's smallest coin; the
+ * server answers the second, on the amount field.
+ *
+ * ## A person and a role are NAMED (finance checkpoint, DF-B6)
+ *
+ * A limit held by a person used to read "Person: 0b3d8c05-…" — the account
+ * reference. The person is now named through administration's own directory
+ * read (`shared/person-name.ts`, one read per distinct person, only with
+ * `iam.user.read`); without that permission, or when the read fails, the cell
+ * says so in words and never prints the reference. A provisioned role is named
+ * in the reader's language (`roleDisplayName`); a role this screen cannot see is
+ * said to be one, never shown as its reference.
  *
  * ## The list is complete, and says so
  *
@@ -47,14 +73,19 @@ export function ApprovalLimitsScreen({
   locale,
   messages,
   roles,
-  companyIds,
   canManage,
+  canReadUsers = false,
 }: {
   readonly locale: Locale;
   readonly messages: Messages;
   readonly roles: readonly RoleRow[];
-  readonly companyIds: readonly string[];
   readonly canManage: boolean;
+  /**
+   * `iam.user.read` — whether a person can be FOUND by name for a limit. Without
+   * it the dialog keeps the labelled account reference it always had, because
+   * `iam.approval-limit-create` does not need the user read (route sweep B3).
+   */
+  readonly canReadUsers?: boolean;
 }) {
   const table = useServerTable<ApprovalLimitRow>(listApprovalLimits);
   const [createOpen, setCreateOpen] = useState(false);
@@ -64,8 +95,16 @@ export function ApprovalLimitsScreen({
   const [running, start] = useTransition();
 
   const t = (key: string) => translate(messages, key as keyof Messages);
-  const roleName = (id: string | null) =>
-    id ? (roles.find((role) => role.id === id)?.name ?? id) : null;
+  const roleName = (id: string) => {
+    const role = roles.find((candidate) => candidate.id === id);
+    return role ? roleDisplayName(messages, role) : t('approvalLimits.subject.roleUnknown');
+  };
+  const people = usePersonNames(
+    (table.response?.rows ?? []).flatMap((row) => (row.userId ? [row.userId] : [])),
+    canReadUsers
+  );
+  const personName = (id: string) =>
+    personLabel(messages, canReadUsers ? people.get(id) : { status: 'denied' });
 
   const columns: readonly Column<ApprovalLimitRow>[] = [
     {
@@ -80,14 +119,19 @@ export function ApprovalLimitsScreen({
         ) : (
           <span>
             <span className="text-text-muted">{t('approvalLimits.subject.user')}: </span>
-            <code className="font-mono text-caption">{row.userId}</code>
+            {row.userId ? personName(row.userId) : t('approvalLimits.person.unresolved')}
           </span>
         ),
     },
     {
       id: 'limitType',
       headerKey: 'approvalLimits.column.type',
-      cell: (row) => <code className="font-mono text-caption">{row.limitType}</code>,
+      cell: (row) =>
+        isKnownApprovalLimitType(row.limitType) ? (
+          <span>{t(`approvalLimits.type.${row.limitType}`)}</span>
+        ) : (
+          <code className="font-mono text-caption">{row.limitType}</code>
+        ),
     },
     {
       id: 'amount',
@@ -168,9 +212,10 @@ export function ApprovalLimitsScreen({
       {createOpen ? (
         <CreateDialog
           open
+          locale={locale}
           messages={messages}
           roles={roles}
-          companyIds={companyIds}
+          canReadUsers={canReadUsers}
           onClose={() => {
             setCreateOpen(false);
             table.refresh();
@@ -239,17 +284,35 @@ export function ApprovalLimitsScreen({
   );
 }
 
+/**
+ * A person behind a limit, as a name or as the reason there is none — never the
+ * account reference. `undefined` is a read still in flight.
+ */
+function personLabel(messages: Messages, resolved: PersonName | undefined): string {
+  if (resolved === undefined) return translate(messages, 'approvalLimits.person.loading');
+  if (resolved.status === 'named') return resolved.displayName;
+  return translate(messages, PERSON_NOTICE[resolved.status]);
+}
+
+const PERSON_NOTICE = {
+  denied: 'approvalLimits.person.denied',
+  unresolved: 'approvalLimits.person.unresolved',
+  unavailable: 'approvalLimits.person.unavailable',
+} as const satisfies Readonly<Record<Exclude<PersonName['status'], 'named'>, keyof Messages>>;
+
 function CreateDialog({
   open,
+  locale,
   messages,
   roles,
-  companyIds,
+  canReadUsers,
   onClose,
 }: {
   readonly open: boolean;
+  readonly locale: Locale;
   readonly messages: Messages;
   readonly roles: readonly RoleRow[];
-  readonly companyIds: readonly string[];
+  readonly canReadUsers: boolean;
   readonly onClose: () => void;
 }) {
   const [state, formAction] = useActionState<ActionState, FormData>(
@@ -289,13 +352,41 @@ function CreateDialog({
    */
   const [draft, setDraft] = useState<Record<string, string>>({});
   const retained = (name: string) => draft[name] ?? '';
-  const retain = (name: string) => (event: { target: { value: string } }) =>
+  // Question f: the cursor goes to the refused field, and its complaint goes
+  // once the operator edits it (route sweep B3).
+  const {
+    edited: refusalEdited,
+    errorKey: refusalErrorKey,
+    formRef: refusalFormRef,
+  } = useActionRefusal(state);
+  const retain = (name: string) => (event: { target: { value: string } }) => {
+    refusalEdited(name);
     setDraft((current) => ({ ...current, [name]: event.target.value }));
-  const [companyId, setCompanyId] = useState(companyIds[0] ?? '');
+  };
+  /*
+   * The companies this operator may act in, BY NAME.
+   *
+   * What this replaced was the session's `companyIds`: bare references with no
+   * names, whose EMPTY state meant unrestricted rather than none. Those two
+   * facts together produced the two controls this screen used to offer — a
+   * select over strings nobody can read, and a free-text box for the operator
+   * with the widest reach. The prop is gone from this component and from its
+   * page; the working context is the only source now.
+   */
+  const { companies: workingCompanies } = useWorkingContext();
+  const [companyId, setCompanyId] = useState(workingCompanies[0]?.id ?? '');
   const [roleId, setRoleId] = useState(roles[0]?.id ?? '');
+  // No default: the operator states what the limit covers (see the file header).
+  const [limitType, setLimitType] = useState('');
+  /*
+   * The person, FOUND by name or email (route sweep B3). Held in state like the
+   * selects above, so the Server Action's form reset cannot lose it; the
+   * account reference travels in a hidden field the reset cannot empty either.
+   */
+  const [person, setPerson] = useState<ChosenAccount | null>(null);
   const t = (key: string) => translate(messages, key as keyof Messages);
   const error = (name: string) => {
-    const key = state.fieldErrors?.[name];
+    const key = refusalErrorKey(name);
     return key ? t(key) : undefined;
   };
 
@@ -306,7 +397,7 @@ function CreateDialog({
       messages={messages}
       title={t('approvalLimits.create.title')}
     >
-      <form action={formAction} className="flex flex-col gap-4" noValidate>
+      <form ref={refusalFormRef} action={formAction} className="flex flex-col gap-4" noValidate>
         <FormFeedback state={state} messages={messages} />
 
         {/*
@@ -318,29 +409,44 @@ function CreateDialog({
           attempt forces the remount, `defaultValue` seeds it from state and is
           what `form.reset()` restores TO, and `onChange` keeps state current.
         */}
-        {companyIds.length > 0 ? (
+        {/*
+          NAMED companies, from the working context.
+          
+          This control was the origin of `admin.contractGap.noDirectory` — "the
+          service publishes no company or branch directory, so references are
+          shown rather than names" — and of the free-text fallback shown to an
+          operator whose session resolves to no company, which means
+          unrestricted rather than none. `GET /auth/working-context` publishes
+          the named, active companies this caller is authorized for, so both
+          have gone: there is a directory now, and the sentence that said there
+          was not would be false.
+
+          The reference is still what is SENT — the operation takes a company
+          identifier — and it is still authorized server-side. What changed is
+          that the operator chooses by name.
+        */}
+        {workingCompanies.length > 0 ? (
           <SelectField
             key={`companyId-${state.attempt ?? 0}`}
             name="companyId"
             label={t('approvalLimits.field.companyId')}
-            description={t('admin.contractGap.noDirectory')}
+            required
             defaultValue={companyId}
-            onChange={(event) => setCompanyId(event.target.value)}
-            options={companyIds.map((id) => ({ value: id, label: id }))}
+            onChange={(event) => {
+              refusalEdited('companyId');
+              setCompanyId(event.target.value);
+            }}
+            options={workingCompanies.map((company) => ({
+              value: company.id,
+              label: company.name,
+            }))}
+            placeholder={t('form.select.placeholder')}
             error={error('companyId')}
           />
         ) : (
-          <TextField
-            key={`companyId-text-${state.attempt ?? 0}`}
-            name="companyId"
-            label={t('approvalLimits.field.companyId')}
-            description={t('admin.scope.noneResolved')}
-            required
-            spellCheck={false}
-            defaultValue={retained('companyId')}
-            onChange={retain('companyId')}
-            error={error('companyId')}
-          />
+          // No company to choose, or the directory could not be read. Saying so
+          // is the honest answer; a box asking for a typed reference was not.
+          <DirectoryEmptyNotice messages={messages} fallbackKey="workingContext.noCompany" />
         )}
 
         {/*
@@ -370,32 +476,70 @@ function CreateDialog({
             name="roleId"
             label={t('approvalLimits.field.roleId')}
             defaultValue={roleId}
-            onChange={(event) => setRoleId(event.target.value)}
-            options={roles.map((role) => ({ value: role.id, label: role.name }))}
+            onChange={(event) => {
+              refusalEdited('roleId');
+              setRoleId(event.target.value);
+            }}
+            options={roles.map((role) => ({
+              value: role.id,
+              label: roleDisplayName(messages, role),
+            }))}
             error={error('roleId')}
           />
+        ) : canReadUsers ? (
+          <>
+            <AccountPicker
+              messages={messages}
+              locale={locale}
+              label={t('approvalLimits.field.person')}
+              value={person}
+              onChange={(next) => {
+                refusalEdited('userId');
+                setPerson(next);
+              }}
+              canSearch
+              error={error('userId')}
+              countsAsUnsaved
+              testId="approval-limit-person-picker"
+            />
+            <input type="hidden" name="userId" value={person?.id ?? ''} />
+          </>
         ) : (
+          // Without `iam.user.read` nobody can be looked up here, and creating a
+          // limit does not need that code: the account reference box stays,
+          // labelled and explained, and the action checks its shape.
           <TextField
             key={`userId-${state.attempt ?? 0}`}
             name="userId"
             label={t('approvalLimits.field.userId')}
+            description={t('approvalLimits.field.userIdHelp')}
             required
             spellCheck={false}
+            autoComplete="off"
+            dir="ltr"
             defaultValue={retained('userId')}
             onChange={retain('userId')}
             error={error('userId')}
+            data-testid="approval-limit-person-reference"
           />
         )}
 
-        <TextField
+        <SelectField
           key={`limitType-${state.attempt ?? 0}`}
           name="limitType"
           label={t('approvalLimits.field.limitType')}
           description={t('approvalLimits.field.limitTypeHint')}
           required
-          spellCheck={false}
-          defaultValue={retained('limitType')}
-          onChange={retain('limitType')}
+          defaultValue={limitType}
+          onChange={(event) => {
+            refusalEdited('limitType');
+            setLimitType(event.target.value);
+          }}
+          options={APPROVAL_LIMIT_TYPES.map((value) => ({
+            value,
+            label: t(`approvalLimits.type.${value}`),
+          }))}
+          placeholder={t('form.select.placeholder')}
           error={error('limitType')}
         />
 

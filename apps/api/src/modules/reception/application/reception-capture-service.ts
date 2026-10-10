@@ -946,7 +946,9 @@ export class ReceptionCaptureService extends ApplicationService {
   /**
    * Turns a domain rule violation into the platform's validation problem. The
    * path comes from the call site because `EvidenceRuleError` carries a message
-   * and no field reference.
+   * and no field reference; the TOKEN comes from the error, because only the
+   * domain knows which of its rules refused. Same reasoning, and the same list,
+   * as `ReceptionEvidenceService.ruleOrFail`.
    */
   private ruleOrFail<T>(build: () => T, path: string): T {
     try {
@@ -955,7 +957,7 @@ export class ReceptionCaptureService extends ApplicationService {
       if (error instanceof EvidenceRuleError) {
         throw new AppFailure('ERR-VAL-001', {
           message: error.message,
-          safeDetails: { violations: [{ path, rule: 'invalid_value' }] },
+          safeDetails: { violations: [{ path, rule: error.rule }] },
           cause: error,
         });
       }

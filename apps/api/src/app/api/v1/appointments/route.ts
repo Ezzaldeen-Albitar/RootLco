@@ -26,6 +26,7 @@ import {
   scopeTargetOption,
   searchParamsToObject,
 } from '@/server/http/validation';
+import { MAX_SEARCH_FRAGMENT, MIN_SEARCH_FRAGMENT } from '@/shared/text/search-terms';
 import { APPOINTMENT_STATUSES, receptionModule } from '@/modules/reception';
 
 export const runtime = 'nodejs';
@@ -113,12 +114,25 @@ export async function POST(request: Request): Promise<Response> {
 const ListQuery = z
   .object({
     companyId: schemas.uuid,
-    branchId: schemas.uuid,
+    /**
+     * OPTIONAL (Owner directive, P1-32-PRE-OD-UX). Omitting it asks for every
+     * branch of the company the caller may read; `authorizedBranches` decides
+     * that set one branch at a time against this operation's own declared codes
+     * and refuses a caller holding none. A named branch is decided exactly as
+     * before, by the `scopeTargetOption` target below.
+     */
+    branchId: schemas.uuid.optional(),
     status: z.enum(APPOINTMENT_STATUSES).optional(),
     vehicleId: schemas.uuid.optional(),
     /** Inclusive range bounds; the effective window must OVERLAP [from, to]. */
     from: z.string().datetime({ offset: true }).optional(),
     to: z.string().datetime({ offset: true }).optional(),
+    /**
+     * One free-text box (Owner directive, P1-32-PRE-OD-UX): part of the
+     * requester's name, the tail of their phone number, part of any plate the
+     * vehicle has carried, part of its VIN, or part of the appointment number.
+     */
+    q: z.string().min(MIN_SEARCH_FRAGMENT).max(MAX_SEARCH_FRAGMENT).optional(),
     cursor: schemas.cursor.optional(),
     limit: schemas.limit.optional(),
   })
@@ -157,6 +171,7 @@ export const APPOINTMENT_LIST_OPERATION = defineOperation({
   scope: 'branch',
   auditClass: 'none',
   rateLimitPolicy: 'expensive-read',
+  branchNarrowing: 'authorized-union',
   cacheCategory: 'never',
 });
 
@@ -165,18 +180,42 @@ export async function GET(request: Request): Promise<Response> {
   return handleOperation(
     APPOINTMENT_LIST_OPERATION,
     request,
-    async ({ db }) => ({
+    async ({ db, authorizedBranches }) => {
       // Parsed INSIDE the handler so a malformed query is rendered as the
       // shared problem document rather than an unhandled 500.
-      body: await receptionModule().appointmentRead.listAppointments(
-        db,
-        parseOrFail(ListQuery, raw, 'query')
-      ),
-    }),
-    // The pre-handler check must not be scope-blind, and it runs before the
-    // schema. `scopeTargetOption` reads the pair out of not-yet-validated input
-    // and yields NO target unless both are well-formed UUIDs — it can only ever
+      const query = parseOrFail(ListQuery, raw, 'query');
+      const branchIds =
+        query.branchId === undefined ? await authorizedBranches(query.companyId) : [query.branchId];
+      return {
+        body: await receptionModule().appointmentRead.listAppointments(db, {
+          companyId: query.companyId,
+          branchIds,
+          status: query.status,
+          vehicleId: query.vehicleId,
+          from: query.from,
+          to: query.to,
+          q: query.q,
+          cursor: query.cursor,
+          limit: query.limit,
+        }),
+      };
+    },
+    // The pre-handler target, and what now stands behind it.
+    //
+    // `scopeTargetOption` reads the pair out of not-yet-validated input and
+    // yields a target only when BOTH are well-formed UUIDs, so it can only ever
     // make authorization stricter (P1-18-A-01).
+    //
+    // What it can no longer do is carry the whole decision. Since the Owner
+    // directive (P1-32-PRE-OD-UX) an absent `branchId` is LEGAL, so an absent
+    // pair yields no target and this pre-handler check degrades to the
+    // scope-blind `iam.has_permission` — it is NOT refused by the schema any
+    // more, and a comment saying so would be describing the old contract. The
+    // decision for that request is made inside the transaction by
+    // `resolveAuthorizedBranches`, which evaluates this operation's declared
+    // codes once per candidate branch of the named company and refuses a caller
+    // that holds none. Tenant is never accepted from the client either way; it
+    // comes from the resolved principal.
     scopeTargetOption(raw)
   );
 }

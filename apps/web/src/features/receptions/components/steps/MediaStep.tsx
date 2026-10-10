@@ -1,9 +1,11 @@
 'use client';
 
 import { useCallback, useState, useTransition } from 'react';
+import Button from '@mui/material/Button';
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
 import { useServerTable, type ServerPage } from '@/components/data-table/use-server-table';
-import { TextAreaField } from '@/components/forms/Field';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
+import { useUnsavedGuard } from '@/features/working-context/WorkingContextProvider';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { Messages } from '@/i18n/get-messages';
 import type { Locale } from '@/i18n/config';
@@ -26,7 +28,7 @@ import {
 } from '../../receptions-contract';
 import type { CheckInStepProps } from '../../check-in/wizard';
 import { CaptureFileField } from '../CaptureFileField';
-import { EvidenceStates, PRIMARY_BUTTON, SECONDARY_BUTTON } from './EvidencePanels';
+import { EvidenceStates } from './EvidencePanels';
 
 /**
  * The reception evidence area — capture, binding and the authorized override
@@ -172,11 +174,42 @@ export function MediaStep({
     initial: { ...INITIAL_REQUEST, pageSize: 1 },
     loadKey: visitId,
   });
-  const contract = table.response?.rows[0] ?? null;
+  const read = table.response?.rows[0] ?? null;
   const status = table.status;
   const correlationId = table.correlationId;
 
-  if (status !== 'idle' || contract === null) {
+  /*
+   * The contract last read for THIS visit, held through a re-read.
+   *
+   * A waiver, capture or finalization on one requirement re-reads the
+   * contract, and the table answers `loading` with no rows until it lands.
+   * Replacing the whole list with the loading state then unmounted every
+   * requirement row, and a file chosen on a DIFFERENT row went with it,
+   * without a question (the review of #511): choosing files on several rows
+   * and sending them one at a time lost every file after the first. So once the
+   * contract has been read for this visit, a re-read keeps the rows mounted
+   * over the contract last read, and EVERY row action (capture, finalize, the
+   * waiver's open and submit) is held back until a fresh contract lands. A
+   * re-read that FAILS keeps them too (fix round 2 of #511): the failure and its
+   * retry are shown above the rows rather than in their place, so a file
+   * chosen on another row and its unsaved-work question survive a dropped
+   * network. The first read and a read for another visit still show the read's
+   * own state in place of the rows.
+   */
+  const [lastRead, setLastRead] = useState<{
+    readonly visitId: string;
+    readonly contract: CaptureContract;
+  } | null>(null);
+  if (read !== null && (lastRead?.contract !== read || lastRead.visitId !== visitId)) {
+    setLastRead({ visitId, contract: read });
+  }
+  const heldOver =
+    status !== 'idle' && read === null && lastRead !== null && lastRead.visitId === visitId;
+  const rereading = heldOver && status === 'loading';
+  const contract = read ?? (heldOver ? lastRead.contract : null);
+  const refreshing = pending || heldOver;
+
+  if ((status !== 'idle' && !heldOver) || contract === null) {
     return (
       <section aria-labelledby="check-in-evidence-heading" className="flex flex-col gap-3">
         <h3 id="check-in-evidence-heading" className="text-section-title font-medium">
@@ -184,6 +217,7 @@ export function MediaStep({
         </h3>
         <EvidenceStates
           messages={messages}
+          locale={locale}
           status={status}
           correlationId={correlationId}
           onRetry={table.refresh}
@@ -193,13 +227,27 @@ export function MediaStep({
   }
 
   return (
-    <section aria-labelledby="check-in-evidence-heading" className="flex flex-col gap-4">
+    <section
+      aria-labelledby="check-in-evidence-heading"
+      aria-busy={rereading}
+      className="flex flex-col gap-4"
+    >
       <h3 id="check-in-evidence-heading" className="text-section-title font-medium">
         {translate(messages, 'receptions.capture.heading')}
       </h3>
       <p className="text-caption text-text-muted" lang={locale}>
         {translate(messages, 'receptions.capture.intro')}
       </p>
+
+      {heldOver && !rereading ? (
+        <EvidenceStates
+          messages={messages}
+          locale={locale}
+          status={status}
+          correlationId={correlationId}
+          onRetry={table.refresh}
+        />
+      ) : null}
 
       <ul className="flex flex-col gap-3">
         {contract.requirements.map((requirement) => (
@@ -216,16 +264,15 @@ export function MediaStep({
               contract={contract}
               canCapture={capabilities.manageEvidence && !writesLocked}
               canOverride={capabilities.overrideEvidence && !writesLocked}
-              pending={pending}
+              pending={refreshing}
               onDone={(next) => {
                 setOutcome(next);
                 /*
                  * Re-read only when something on the server actually moved.
                  * A refused waiver and a capture that recorded nothing leave
-                 * the visit exactly as it was, and re-reading remounts this
-                 * row — which discards the reason the operator typed and is
-                 * being asked to correct. Reporting a refusal must not cost
-                 * them the text the refusal is about.
+                 * the visit exactly as it was, so there is nothing to read
+                 * back, and the reason the operator typed and is being asked
+                 * to correct stays where it is.
                  */
                 const moved =
                   next.kind === 'waiver' ? next.recorded : next.outcome.stage !== undefined;
@@ -245,7 +292,7 @@ export function MediaStep({
             act and the re-read this step does not hold it — so `pending` is
             passed through and the sentence stays at what is certain.
           */}
-          {translateDynamic(messages, outcomeKey(outcome, contract, pending))}
+          {translateDynamic(messages, outcomeKey(outcome, contract, refreshing))}
         </p>
       ) : null}
     </section>
@@ -375,6 +422,39 @@ function RequirementRow({
 }) {
   const [reason, setReason] = useState('');
   const [showOverride, setShowOverride] = useState(false);
+  // A typed waiver reason is unsaved work, like every other capture form of the
+  // wizard: leaving the page, switching branch or changing step asks first, and
+  // a confirmed discard closes the form empty. A form the operator closed with
+  // Cancel is no longer on screen and holds nothing they were asked about.
+  useUnsavedGuard(showOverride && reason !== '', () => {
+    setReason('');
+    setShowOverride(false);
+  });
+  /*
+   * A CHOSEN file is unsaved work too (Owner question 19, the review of #508).
+   *
+   * Only the open step is mounted, so a step change unmounts this row and the
+   * file control with it: a photograph picked and not yet sent was dropped
+   * without a question. Whether a file is chosen comes from the control's own
+   * `value` (`CaptureFileField` reads no bytes and makes no preview, so there
+   * is no object URL to release); a confirmed discard remounts the control
+   * empty, the way the delivery receiver panel removes a chosen document.
+   */
+  const [fileChosen, setFileChosen] = useState(false);
+  const [fileKey, setFileKey] = useState(0);
+  useUnsavedGuard(fileChosen, () => {
+    setFileChosen(false);
+    setFileKey((current) => current + 1);
+  });
+  /*
+   * Cancel closes the waiver form EMPTY, the same as a confirmed discard: a
+   * form that reopened showing the words it was cancelled with would be
+   * presenting text the operator had already thrown away.
+   */
+  const cancelOverride = () => {
+    setReason('');
+    setShowOverride(false);
+  };
   const code = requirement.requirementCode;
   const bound = contract.bindings.filter((entry) => entry.requirementCode === code);
   const override = contract.overrides.find((entry) => entry.requirementCode === code);
@@ -470,14 +550,15 @@ function RequirementRow({
                     onDone({ kind: 'capture', requirementCode: code, outcome: result });
                   }}
                 >
-                  <button
+                  <Button
                     type="submit"
+                    variant="outlined"
+                    size="small"
                     data-testid={`capture-finalize-${entry.id}`}
                     disabled={pending}
-                    className={SECONDARY_BUTTON}
                   >
                     {translate(messages, 'receptions.capture.finalize')}
-                  </button>
+                  </Button>
                 </form>
               ) : null}
             </li>
@@ -488,6 +569,10 @@ function RequirementRow({
       {canCapture && !requirement.overridden ? (
         <form
           action={async (formData: FormData) => {
+            // The file has been handed to the action, and React resets the
+            // form's controls once the action settles, so nothing chosen is
+            // left on the screen to lose.
+            setFileChosen(false);
             onDone({
               kind: 'capture',
               requirementCode: code,
@@ -497,12 +582,14 @@ function RequirementRow({
           className="flex flex-wrap items-center gap-2"
         >
           <CaptureFileField
+            key={`evidence-file-${String(fileKey)}`}
             name="evidenceFile"
             label={translate(messages, 'receptions.capture.chooseFile')}
+            onChosenChange={setFileChosen}
           />
-          <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
+          <Button type="submit" variant="contained" disabled={pending}>
             {translate(messages, 'receptions.capture.submit')}
-          </button>
+          </Button>
         </form>
       ) : null}
 
@@ -510,10 +597,18 @@ function RequirementRow({
         showOverride ? (
           <form
             action={async () => {
-              const result = await overrideCaptureRequirement(visitId, {
-                requirementCode: code,
-                reason,
-              });
+              let result: Awaited<ReturnType<typeof overrideCaptureRequirement>>;
+              try {
+                result = await overrideCaptureRequirement(visitId, {
+                  requirementCode: code,
+                  reason,
+                });
+              } catch {
+                // No answer came back: the reason stays typed, and the outcome
+                // line says the waiver was not recorded.
+                onDone({ kind: 'waiver', recorded: false });
+                return;
+              }
               notifyActionResult(result, messages);
               /*
                * Reported AS A WAIVER, and reported either way. The success
@@ -531,34 +626,36 @@ function RequirementRow({
             }}
             className="flex flex-col gap-2"
           >
-            <TextAreaField
+            <FormTextField
               label={translate(messages, 'receptions.capture.overrideReason')}
+              required
+              multiline
+              rows={3}
               value={reason}
               maxLength={MAX_OVERRIDE_REASON}
-              onChange={(event) => setReason(event.target.value)}
+              onChange={setReason}
             />
-            <div className="flex gap-2">
-              <button type="submit" disabled={reason.trim() === ''} className={PRIMARY_BUTTON}>
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" variant="contained" disabled={pending || reason.trim() === ''}>
                 {translate(messages, 'receptions.capture.overrideSubmit')}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowOverride(false)}
-                className={SECONDARY_BUTTON}
-              >
+              </Button>
+              <Button type="button" variant="outlined" onClick={cancelOverride}>
                 {translate(messages, 'form.cancel')}
-              </button>
+              </Button>
             </div>
           </form>
         ) : (
-          <button
-            type="button"
-            data-testid={`capture-override-open-${code}`}
-            onClick={() => setShowOverride(true)}
-            className={SECONDARY_BUTTON}
-          >
-            {translate(messages, 'receptions.capture.overrideOpen')}
-          </button>
+          <div>
+            <Button
+              type="button"
+              variant="outlined"
+              data-testid={`capture-override-open-${code}`}
+              disabled={pending}
+              onClick={() => setShowOverride(true)}
+            >
+              {translate(messages, 'receptions.capture.overrideOpen')}
+            </Button>
+          </div>
         )
       ) : null}
 

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import type { ReactElement } from 'react';
+import { Fragment, type ReactElement } from 'react';
 
 /** The acknowledgement route, read as SOURCE — a spy cannot see an absent call. */
 const ACKNOWLEDGEMENT_PAGE = join(
@@ -141,6 +141,29 @@ function findProps(node: unknown, marker: string): Record<string, unknown> | nul
   return null;
 }
 
+/**
+ * The children an element's children become in the DOM: a fragment adds none
+ * of its own, so its children are its parent's.
+ */
+function domChildren(props: Record<string, unknown>): ReactElement<Record<string, unknown>>[] {
+  const children = props['children'];
+  return (Array.isArray(children) ? children : [children]).flatMap((child: unknown) => {
+    if (child === null || typeof child !== 'object' || !('props' in child)) return [];
+    const element = child as ReactElement<Record<string, unknown>>;
+    return element.type === Fragment ? domChildren(element.props) : [element];
+  });
+}
+
+/** Every print scope in a returned element tree, outermost first. */
+function printScopes(node: unknown): Record<string, unknown>[] {
+  if (node === null || typeof node !== 'object') return [];
+  if (Array.isArray(node)) return node.flatMap(printScopes);
+  const props = (node as ReactElement<Record<string, unknown>>).props;
+  if (!props || typeof props !== 'object') return [];
+  const own = 'data-print-scope' in props ? [props as Record<string, unknown>] : [];
+  return [...own, ...printScopes((props as { children?: unknown }).children)];
+}
+
 const page = {
   status: 'ok' as const,
   rows: [],
@@ -171,29 +194,40 @@ describe('the queue route', () => {
   it('renders the board only for a holder of the read permission', async () => {
     PERMISSIONS = [RECEPTION_PERMISSIONS.read];
     const granted = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(granted, 'companyIds')).not.toBeNull();
+    expect(findProps(granted, 'canCreate')).not.toBeNull();
 
     PERMISSIONS = ALL.filter((p) => p !== RECEPTION_PERMISSIONS.read);
     const denied = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(denied, 'companyIds')).toBeNull();
+    expect(findProps(denied, 'canCreate')).toBeNull();
   });
 
   it('grants the check-in offer from the manage permission and nothing else', async () => {
     PERMISSIONS = [RECEPTION_PERMISSIONS.read, RECEPTION_PERMISSIONS.manage];
     const granted = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(granted, 'companyIds')?.['canCreate']).toBe(true);
+    expect(findProps(granted, 'canCreate')?.['canCreate']).toBe(true);
 
     PERMISSIONS = ALL.filter((p) => p !== RECEPTION_PERMISSIONS.manage);
     const denied = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    expect(findProps(denied, 'companyIds')?.['canCreate']).toBe(false);
+    expect(findProps(denied, 'canCreate')?.['canCreate']).toBe(false);
   });
 
-  it("passes the session's own resolved scope as the target options", async () => {
+  it('passes NO scope down — the branch is the working context, not the session', async () => {
+    /*
+     * The inverse of what this case used to assert, and for the reason the
+     * board itself changed: the session's `companyIds` and `branchIds` are bare
+     * references with no names, and an EMPTY pair of them means unrestricted
+     * rather than none. The route hands neither down now. The branch is chosen
+     * once in the header, and the route's job is the permission gate.
+     */
     PERMISSIONS = [RECEPTION_PERMISSIONS.read];
     const tree = await QueuePage({ params: Promise.resolve({ locale: 'en' }) });
-    const props = findProps(tree, 'companyIds');
-    expect(props?.['companyIds']).toEqual(['11111111-1111-4111-8111-111111111111']);
-    expect(props?.['branchIds']).toEqual(['22222222-2222-4222-8222-222222222222']);
+    const props = findProps(tree, 'canCreate');
+    expect(props, 'the reception board was not rendered at all').not.toBeNull();
+    expect(
+      props?.['companyIds'],
+      'the route still hands the board bare references'
+    ).toBeUndefined();
+    expect(props?.['branchIds'], 'the route still hands the board bare references').toBeUndefined();
   });
 });
 
@@ -292,6 +326,59 @@ describe('the acknowledgement route', () => {
     PERMISSIONS = [RECEPTION_PERMISSIONS.read];
     const granted = await AcknowledgementPage({ params });
     expect(findProps(granted, 'sections')).not.toBeNull();
+  });
+
+  it('prints the sheet alone: the print controls are a sibling of it inside the print scope', async () => {
+    /*
+     * Owner directive (the delivery sheet's rule): paper carries the whole
+     * sheet and nothing else. The page opts into the print scope, whose rule
+     * (`styles/print/_index.scss`) leaves off every direct child that holds no
+     * document — so the toolbar with Print and the way back must be a SIBLING
+     * of the sheet, and exactly one child may be the sheet.
+     */
+    PERMISSIONS = [RECEPTION_PERMISSIONS.read];
+    const tree = await AcknowledgementPage({ params });
+    // The scope the sheet itself sits in; the page's outer scope is the next case's.
+    const scope = printScopes(tree).find((each) =>
+      domChildren(each).some((child) => 'sections' in child.props)
+    );
+    expect(scope).toBeDefined();
+    const children = (Array.isArray(scope?.['children']) ? scope['children'] : []) as {
+      props: Record<string, unknown>;
+    }[];
+    expect(children).toHaveLength(2);
+    const toolbar = children.find((child) => 'printLabel' in child.props);
+    const sheet = children.find((child) => 'sections' in child.props);
+    expect(toolbar, 'no print toolbar beside the sheet').toBeDefined();
+    expect(sheet, 'the sheet is not a direct child of the print scope').toBeDefined();
+    expect(toolbar?.props['backHref']).toBe(`/en/receptions/check-in/${DETAIL.id}`);
+  });
+
+  it('prints the sheet without the page heading: the header and the body share an outer print scope', async () => {
+    /*
+     * Checkpoint browser QA at 3cf622c3: the printed acknowledgement carried the
+     * page's own title and description above the sheet, and in English the
+     * sheet then started on a second page. The header sat outside every print
+     * scope. Now the header and the body are the two children of an outer
+     * scope, as on the invoice page (DF-R2-1), so while the sheet is on the page
+     * the scope rule leaves the header off the paper.
+     */
+    PERMISSIONS = [RECEPTION_PERMISSIONS.read];
+    const tree = await AcknowledgementPage({ params });
+    const scopes = printScopes(tree);
+    expect(scopes).toHaveLength(2);
+    const children = domChildren(scopes[0] as Record<string, unknown>);
+    expect(children).toHaveLength(2);
+    const header = children.filter(
+      (child) => findProps(child, 'titleKey')?.['titleKey'] === 'receptions.acknowledgement.title'
+    );
+    const body = children.filter((child) => findProps(child, 'sections') !== null);
+    expect(header, 'the page header is not a child of the outer print scope').toHaveLength(1);
+    expect(body, 'the sheet is not inside the outer print scope').toHaveLength(1);
+    expect(header[0], 'the header and the sheet share one child').not.toBe(body[0]);
+    expect(findProps(header[0], 'descriptionKey')?.['descriptionKey']).toBe(
+      'receptions.acknowledgement.description'
+    );
   });
 
   it('reads the three sections on the server, so the first paint is the sheet', async () => {

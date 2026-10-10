@@ -32,7 +32,6 @@ import {
 } from '@/server/http/validation';
 import {
   COMPLAINT_CATEGORIES,
-  COMPLAINT_SEVERITIES,
   DAMAGE_MARK_TYPES,
   EVIDENCE_KINDS,
   FINDING_CATEGORIES,
@@ -48,6 +47,7 @@ import {
   MAX_NOTE,
   MAX_ZONE,
   MIN_COORD,
+  STORED_COMPLAINT_SEVERITIES,
   receptionModule,
 } from '@/modules/reception';
 
@@ -61,7 +61,8 @@ const Complaint = z
   .object({
     kind: z.literal('complaint'),
     category: z.enum(COMPLAINT_CATEGORIES),
-    severity: z.enum(COMPLAINT_SEVERITIES).optional(),
+    // Omitted when the customer gave none, and then stored as `not_stated`.
+    severity: z.enum(STORED_COMPLAINT_SEVERITIES).optional(),
     complaintText: z.string().min(1).max(MAX_COMPLAINT_TEXT),
     reportedByPartnerId: schemas.uuid.nullable().optional(),
     evidenceDocumentId: schemas.uuid.nullable().optional(),
@@ -214,7 +215,7 @@ export async function POST(
   request: Request,
   route: { params: Promise<{ receptionId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   const body = await request
     .clone()
     .json()
@@ -222,18 +223,21 @@ export async function POST(
   return handleOperation(
     RECEPTION_CONDITION_EVIDENCE_OPERATION,
     request,
-    async ({ db, request: raw, authorizeScope }) => ({
-      status: 201,
-      body: await receptionModule().receptionEvidence.recordConditionEvidence(
-        db,
-        params.receptionId,
-        await parseJsonBody(raw, Body),
-        // Re-authorized against the LOCKED visit's branch, not this request:
-        // `scope: 'branch'` is inert without a target (P1-18-A-01).
-        authorizeScope
-      ),
-    }),
-    { params, body }
+    async ({ db, request: raw, authorizeScope }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
+      return {
+        status: 201,
+        body: await receptionModule().receptionEvidence.recordConditionEvidence(
+          db,
+          params.receptionId,
+          await parseJsonBody(raw, Body),
+          // Re-authorized against the LOCKED visit's branch, not this request:
+          // `scope: 'branch'` is inert without a target (P1-18-A-01).
+          authorizeScope
+        ),
+      };
+    },
+    { params: rawParams, body }
   );
 }
 

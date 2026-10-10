@@ -39,15 +39,16 @@ export async function DELETE(
   request: Request,
   route: { params: Promise<{ userId: string }> }
 ): Promise<Response> {
-  const params = parseOrFail(Params, await route.params, 'path');
+  const rawParams = await route.params;
   return handleOperation(
     INVITATION_CANCEL_OPERATION,
     request,
     async ({ db, request: raw }) => {
+      const params = parseOrFail(Params, rawParams, 'path');
       const body = await parseJsonBody(raw, CancelBody);
       await iamModule().invitations.cancel(db, params.userId, body.reason);
       return { body: { status: 'cancelled' } };
     },
-    { params }
+    { params: rawParams }
   );
 }

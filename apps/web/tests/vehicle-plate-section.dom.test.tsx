@@ -591,6 +591,36 @@ describe('an odometer reading can be corrected', () => {
     expect(reasonSelect()).toBeTruthy();
   });
 
+  it('shows a refused reading beside the reading box, with the figure still typed', async () => {
+    /*
+     * `veh.vehicle-odometer-record` publishes `body.value` / `out_of_range`, so
+     * the sentence lands on the reading box itself.
+     *
+     * The wording is deliberately not "outside the allowed range": the same rule
+     * is published by a reception check that is no range at all, and one token
+     * carries one sentence. It says the value is not accepted here and sends the
+     * operator to what this entry allows — true wherever the token is raised.
+     */
+    send.mockResolvedValue({
+      ok: false,
+      kind: 'validation',
+      status: 422,
+      problem: {
+        code: 'ERR-VAL-001',
+        violations: [{ path: 'body.value', rule: 'out_of_range' }],
+      },
+      correlationId: 'fixed-correlation-id',
+    });
+
+    const user = await open();
+    await enterReading(user, '999999999');
+    await user.click(submit());
+
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(en['form.violation.out_of_range'])).toBeVisible();
+    expect(readingBox()).toHaveValue(999999999);
+  });
+
   it('keeps the reading, the prior choice and the reason when the write fails', async () => {
     /*
      * `NEW-FE-01`, on the two controls this wave added. A reverted select leaves

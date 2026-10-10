@@ -1,11 +1,13 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
-import { SelectField, TextField } from '@/components/forms/Field';
+import { useEffect, useState } from 'react';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
 import type { ActionState } from '@/lib/forms/action-result';
+import { useFocusFirstInvalid } from '@/lib/forms/use-focus-first-invalid';
 import { recordConditionEvidence } from '../../api';
 import { listWarningLightCodes, type IntakeCatalogueResult } from '../../catalogue-api';
 import { MAX_NOTE, WARNING_LIGHT_STATES, type WarningLightState } from '../../receptions-contract';
@@ -16,12 +18,13 @@ import {
   EvidenceReadBack,
   EvidenceSection,
   EvidenceStates,
-  PRIMARY_BUTTON,
-  SECONDARY_BUTTON,
+  RetryButton,
   SessionCaptureList,
   StepOutcome,
+  SubmitButton,
   WriteWithdrawn,
   useEvidenceTable,
+  useStepForm,
 } from './EvidencePanels';
 
 /**
@@ -74,8 +77,6 @@ import {
  * migration cited, and offered as a translated choice. Nothing is invented; the
  * list is the database's own.
  */
-
-const IDLE: ActionState = { status: 'idle' };
 
 export function WarningLightsStep({
   locale,
@@ -171,13 +172,10 @@ export function WarningLightsStep({
                   {translate(messages, 'receptions.warning.noManagementRoute')}
                 </p>
                 <div>
-                  <button
-                    type="button"
-                    onClick={() => setAttempt((current) => current + 1)}
-                    className={SECONDARY_BUTTON}
-                  >
-                    {translate(messages, 'state.retry')}
-                  </button>
+                  <RetryButton
+                    messages={messages}
+                    onRetry={() => setAttempt((current) => current + 1)}
+                  />
                 </div>
               </div>
             }
@@ -244,6 +242,13 @@ interface WarningDraft {
   readonly note: string;
 }
 
+const EMPTY_WARNING: WarningDraft = {
+  warningLightCodeId: '',
+  label: '',
+  observedState: '',
+  note: '',
+};
+
 function WarningLightForm({
   messages,
   options,
@@ -253,85 +258,65 @@ function WarningLightForm({
   readonly options: readonly { value: string; label: string }[];
   readonly onSubmit: (draft: WarningDraft, attempt: number) => Promise<ActionState>;
 }) {
-  const [draft, setDraft] = useState<WarningDraft>({
-    warningLightCodeId: '',
-    label: '',
-    observedState: '',
-    note: '',
+  const form = useStepForm<WarningDraft>({
+    messages,
+    empty: EMPTY_WARNING,
+    check: (draft) =>
+      draft.warningLightCodeId === ''
+        ? { warningLightCodeId: 'receptions.warning.error.codeRequired' }
+        : {},
+    send: onSubmit,
   });
-  const [state, setState] = useState<ActionState>(IDLE);
-  const [pending, startTransition] = useTransition();
-
-  const submit = () => {
-    const attempt = (state.attempt ?? 0) + 1;
-    if (draft.warningLightCodeId === '') {
-      setState({ status: 'invalid', messageKey: 'receptions.warning.error.codeRequired', attempt });
-      return;
-    }
-    startTransition(async () => {
-      const result = await onSubmit(draft, attempt);
-      setState(result);
-      if (result.status === 'success') {
-        setDraft({ warningLightCodeId: '', label: '', observedState: '', note: '' });
-      }
-    });
-  };
+  const { draft } = form;
+  const formRef = useFocusFirstInvalid(form.state);
 
   return (
     <form
+      ref={formRef}
       aria-label={translate(messages, 'receptions.warning.formLabel')}
-      onSubmit={(event) => {
-        event.preventDefault();
-        submit();
-      }}
+      onSubmit={form.onSubmit}
+      noValidate
       className="flex flex-col gap-3"
     >
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.warning.code')}
         required
         value={draft.warningLightCodeId}
-        onChange={(event) => {
-          const value = event.target.value;
-          setDraft((current) => ({
-            ...current,
-            warningLightCodeId: value,
-            label: options.find((option) => option.value === value)?.label ?? value,
-          }));
+        onChange={(value) => {
+          form.update('warningLightCodeId', value);
+          form.update('label', options.find((option) => option.value === value)?.label ?? value);
         }}
         options={options}
         placeholder={translate(messages, 'form.select.placeholder')}
+        error={form.fieldError('warningLightCodeId')}
       />
-      <SelectField
+      <FormSelectField
         label={translate(messages, 'receptions.warning.observedState')}
         description={translate(messages, 'receptions.warning.observedStateHint')}
-        optionalHint={translate(messages, 'form.optional')}
         value={draft.observedState}
         options={WARNING_LIGHT_STATES.map((state) => ({
           value: state,
           label: translateDynamic(messages, `receptions.warningState.${state}`),
         }))}
         placeholder={translate(messages, 'form.select.placeholder')}
-        onChange={(event) =>
-          setDraft((current) => ({ ...current, observedState: event.target.value }))
-        }
+        onChange={(value) => form.update('observedState', value)}
+        error={form.fieldError('observedState')}
       />
-      <TextField
+      <FormTextField
         label={translate(messages, 'receptions.finding.note')}
-        optionalHint={translate(messages, 'form.optional')}
         value={draft.note}
         maxLength={MAX_NOTE}
-        onChange={(event) => setDraft((current) => ({ ...current, note: event.target.value }))}
+        onChange={(value) => form.update('note', value)}
+        error={form.fieldError('note')}
       />
 
-      <StepOutcome messages={messages} state={state} />
+      <StepOutcome messages={messages} state={form.state} />
 
-      <div>
-        <button type="submit" disabled={pending} className={PRIMARY_BUTTON}>
-          {pending
-            ? translate(messages, 'form.pending')
-            : translate(messages, 'receptions.warning.record')}
-        </button>
-      </div>
+      <SubmitButton
+        messages={messages}
+        pending={form.pending}
+        labelKey="receptions.warning.record"
+      />
     </form>
   );
 }

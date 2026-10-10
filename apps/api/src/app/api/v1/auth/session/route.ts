@@ -14,13 +14,42 @@
  * `cacheCategory: 'never'` and the pipeline's `Cache-Control: no-store, private`
  * are both deliberate: a cached permission list is a stale permission list, and
  * a revoked grant must stop working immediately.
+ *
+ * ## An authenticated self-read, not a directory read (P1-32-PRE-OD-FRX)
+ *
+ * It used to declare `iam.user.read`, the code that opens the tenant's user
+ * directory. Every dashboard page reads this before it renders, so a role that
+ * legitimately lacks that code — the seeded technician and cashier roles, a
+ * quotations-only role — was refused its own session and could not open the
+ * product at all. It now registers as `selfRead`: the pipeline still requires an
+ * authenticated, resolved, non-revoked session (no session is a 401), and the
+ * body is the caller's own identity, scope and permissions and nothing about
+ * anybody else. A principal holding no role at all is answered with its own
+ * facts and an empty permission list. Other people's names stay behind
+ * `iam.user-detail`, which keeps `iam.user.read`.
+ *
+ * ## No query parameter is accepted (P1-32-PRE-OD-FRXR)
+ *
+ * The read names no target, so it takes no parameter at all. It used to ignore
+ * whatever query string arrived, which let `?userId=`, `?companyId=` or
+ * `?branchId=` look as though another user, company or branch could be
+ * substituted even though the answer stayed the caller's own. An empty
+ * `.strict()` schema now refuses any parameter with the standard validation
+ * error before anything is read, so no request can appear to ask about somebody
+ * else and no answer is given to one that tries.
  */
+import { z } from 'zod';
 import { defineOperation } from '@/server/auth/operation-registry';
+import { AppFailure } from '@/server/errors/app-failure';
 import { handleOperation } from '@/server/http/route-handler';
+import { parseOrFail, searchParamsToObject } from '@/server/http/validation';
 import { iamModule } from '@/modules/iam';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/** Deliberately empty and `.strict()`: any parameter is refused, never ignored. */
+const Query = z.object({}).strict();
 
 export const SESSION_OPERATION = defineOperation({
   id: 'iam.auth-session',
@@ -28,7 +57,10 @@ export const SESSION_OPERATION = defineOperation({
   method: 'GET',
   path: '/auth/session',
   summary: 'Describe the current session, its resolved scope, and its permissions.',
-  permissions: ['iam.user.read'],
+  selfRead: true,
+  selfReadReason:
+    'Answers the authenticated caller its own identity, resolved scope and permissions, and ' +
+    'nothing about any other account; every product page reads it before it renders.',
   scope: 'tenant',
   auditClass: 'none',
   rateLimitPolicy: 'low-risk-metadata',
@@ -36,7 +68,18 @@ export const SESSION_OPERATION = defineOperation({
 });
 
 export async function GET(request: Request): Promise<Response> {
-  return handleOperation(SESSION_OPERATION, request, async ({ db }) => ({
-    body: await iamModule().authentication.describeSession(db),
-  }));
+  return handleOperation(SESSION_OPERATION, request, async ({ db, request: raw }) => {
+    const params = new URL(raw.url).searchParams;
+    parseOrFail(Query, searchParamsToObject(params), 'query');
+    // `searchParamsToObject` omits a `__proto__` key by design, so the schema
+    // never sees one and `?__proto__=x` would otherwise answer 200. The raw
+    // query is the authority: any key at all is refused the same way.
+    if ([...params.keys()].length > 0) {
+      throw new AppFailure('ERR-VAL-001', {
+        message: 'Validation failed for query',
+        safeDetails: { violations: [{ path: 'query', rule: 'unrecognized_keys' }] },
+      });
+    }
+    return { body: await iamModule().authentication.describeSession(db) };
+  });
 }
