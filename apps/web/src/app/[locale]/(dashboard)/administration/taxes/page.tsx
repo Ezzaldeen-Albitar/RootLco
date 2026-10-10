@@ -9,12 +9,18 @@ import { pageMetadata } from '@/lib/page-metadata';
  * Taxes.
  *
  * `org.tax_classes` and `org.tax_rates` exist in the schema and **no route
- * handler exposes either** (`P1-26-F-004`).
+ * handler reads or writes either** (`P1-26-F-004`); tax policy waits on the
+ * Owner's accounting decisions (ACC01).
  *
- * Decision-neutral in the strict sense: no country is assumed, Jordan is not
- * hard-coded, no rate is supplied, and no effective date is presumed. The rate
- * is stored as a **string**, not a `number` — a rate is money-adjacent, exact in
- * the database, and a JavaScript number would round it on the way through.
+ * So this screen changes nothing (P1-32-PRE-OD-ADM5). A tax setting written to
+ * the company or branch settings would be applied by nothing — no part of the
+ * service reads a `tax.` setting when it prices or invoices — so an edit form here would be a
+ * control for an operation that does not exist. The screen shows the settings
+ * the company and branch settings operations genuinely hold under `tax.`, and
+ * says plainly what is not available and why.
+ *
+ * Decision-neutral in the strict sense: no country is assumed, no rate is
+ * supplied, and no effective date is presumed.
  */
 export default async function TaxesPage({
   params,
@@ -34,7 +40,9 @@ export default async function TaxesPage({
       navLabelKey="nav.taxes"
       keyPrefix={TAX_PREFIX}
       suggestions={TAX_KEYS}
-      noticeKeys={['admin.contractGap.noCatalogue', 'taxes.noJurisdiction']}
+      noticeKeys={['taxes.gap.catalogue', 'taxes.noJurisdiction']}
+      writable={false}
+      scopes={['company', 'branch']}
     />
   );
 }

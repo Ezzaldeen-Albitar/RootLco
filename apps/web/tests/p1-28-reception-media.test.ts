@@ -1439,7 +1439,7 @@ describe('P1-28 — P1-OD-025 is recorded as RESOLVED, and no copy says otherwis
     expect(AR_OPEN.test(AR['receptions.capture.intro'] ?? '')).toBe(false);
   });
 
-  it('exactly four strings anywhere still defer to an Owner decision — measured, not waved away', () => {
+  it('exactly six strings anywhere still defer to an Owner decision — measured, not waved away', () => {
     /*
      * A pin rather than a sweep, because the honest answer is not zero and
      * pretending otherwise would hide the interesting one.
@@ -1478,10 +1478,17 @@ describe('P1-28 — P1-OD-025 is recorded as RESOLVED, and no copy says otherwis
     // A fourth since P1-32-PRE-OD-INV2B, and genuine too: renaming, moving and
     // retiring an item category have no operation while the Owner's decision
     // CAT01 is open, and the read-only category tree says so.
+    //
+    // A fifth and a sixth since P1-32-PRE-OD-ADM5, both genuine: numbering
+    // formats have no operation while DOC01 (ADR-023 D10) is open, and tax
+    // classes and rates have none while ACC01 is open; the read-only Numbering
+    // rules and Taxes screens say so.
     const expected = [
       'crm.duplicates.mergePendingDecision',
       'inventory.categories.readOnly.body',
       'invoices.refusal.sourceAmbiguous',
+      'numbering.gap.formats',
+      'taxes.gap.catalogue',
       'vehicles.duplicates.mergePendingDecision',
     ];
     expect(deferring(EN, EN_OPEN)).toEqual(expected);

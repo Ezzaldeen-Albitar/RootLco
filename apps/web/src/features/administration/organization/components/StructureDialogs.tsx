@@ -422,23 +422,44 @@ export function AddBranchDialog({
  * version the draft was based on (`version` below) and sends that, so saving
  * over someone else's change is refused as the ordinary conflict instead of
  * the typed edits being silently replaced.
+ *
+ * The request lasts exactly ONE load (ADM-1 review follow-up, ADM-5). It used to
+ * be cleared only when the loaded version differed from the one seen, so a
+ * "Load the latest version" that brought back the same version, or none, left
+ * it standing — and a later Try again that happened to render a newer version
+ * then replaced the typed draft the operator never asked to replace. The
+ * request now ends when its refresh ends, whatever it brought; the draft is
+ * replaced only when that refresh actually delivered a NEWER version.
  */
 function useVersionGuard(version: number | undefined) {
   const router = useRouter();
   const [seen, setSeen] = useState(version);
   const [requested, setRequested] = useState(false);
+  // Whether the refresh this request started has been seen in flight, so its
+  // end can be told apart from the render that started it.
+  const [inFlight, setInFlight] = useState(false);
   const [conflicted, setConflicted] = useState(false);
   const [latestLoaded, setLatestLoaded] = useState(false);
   const [refreshing, startRefresh] = useTransition();
-  const moved = requested && version !== seen;
+  const newer = version !== undefined && (seen === undefined || version > seen);
+  const moved = requested && newer;
   if (moved) {
     setSeen(version);
     setRequested(false);
+    setInFlight(false);
     setConflicted(false);
     setLatestLoaded(true);
+  } else if (requested && refreshing && !inFlight) {
+    setInFlight(true);
+  } else if (requested && !refreshing && inFlight) {
+    // The load finished with the same version, no version, or a failure: the
+    // request is over and the typed draft stays exactly as it is.
+    setRequested(false);
+    setInFlight(false);
   }
   const loadLatest = () => {
     setRequested(true);
+    setInFlight(false);
     startRefresh(() => {
       setConflicted(false);
       router.refresh();

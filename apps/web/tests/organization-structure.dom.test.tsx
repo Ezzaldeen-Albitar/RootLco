@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useState } from 'react';
+import { useState, type ReactElement } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import en from '../src/i18n/messages/en.json';
 import ar from '../src/i18n/messages/ar.json';
@@ -1771,17 +1771,18 @@ describe.each(READERS)(
       expect(within(dialog).getByRole('button', { name: M('admin.save') })).toBeDisabled();
       expect(refresh).not.toHaveBeenCalled();
 
-      await user.click(within(dialog).getByRole('button', { name: M('form.loadLatest') }));
-      expect(refresh).toHaveBeenCalledTimes(1);
-
-      // The re-read brings the record as someone else left it, at its new version.
-      await act(async () => {
+      // The re-read brings the record as someone else left it, at its new
+      // version — inside the refresh, as the router delivers it, so the load
+      // the operator asked for is the one that brings it.
+      refresh.mockImplementationOnce(() => {
         view.rerender(
           structure({
             companies: ok([{ ...COMPANY_V, legalName: 'Main Holding', recordVersion: 5 }]),
           })
         );
       });
+      await user.click(within(dialog).getByRole('button', { name: M('form.loadLatest') }));
+      expect(refresh).toHaveBeenCalledTimes(1);
       const reread = field(screen.getByRole('dialog'), 'organization.company.legalName');
       await waitFor(() => expect(reread).toHaveValue('Main Holding'));
       expect(screen.getByText(M('organization.edit.latestLoaded'))).toBeVisible();
@@ -1872,6 +1873,119 @@ describe.each(READERS)(
       await user.click(within(dialog).getByRole('button', { name: M('form.loadLatest') }));
       expect(refresh).toHaveBeenCalledTimes(1);
       expect(send).not.toHaveBeenCalled();
+    });
+
+    /*
+     * ADM-1 review follow-up (ADM-5): a "Load the latest version" lasts one
+     * load. When it brings back the same version, or none, the request ends with
+     * it, so a later Try again that renders a newer version cannot replace the
+     * draft the operator typed.
+     */
+    const partialLists = { referenceValues: null, referenceUnavailable: true };
+    const cityIn = () => field(screen.getByRole('dialog'), 'organization.branch.city');
+
+    it('keeps the typed draft when the latest load brings the same version, and after a later Try again', async () => {
+      send.mockResolvedValueOnce(conflictFailure);
+      const user = userEvent.setup();
+      const view = paint(structure(partialLists));
+      await user.click(editButton(BRANCH.name));
+      const dialog = screen.getByRole('dialog', { name: M('organization.branch.edit') });
+      await user.type(field(dialog, 'organization.branch.city'), ' North');
+      await user.click(within(dialog).getByRole('button', { name: M('admin.save') }));
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(M('state.conflict.title'));
+
+      // The latest load answers with the version the draft was based on.
+      refresh.mockImplementationOnce(() => {
+        view.rerender(structure({ ...partialLists, branches: ok([{ ...BRANCH_V }]) }));
+      });
+      await user.click(within(dialog).getByRole('button', { name: M('form.loadLatest') }));
+      expect(refresh).toHaveBeenCalledTimes(1);
+      await waitFor(() =>
+        expect(
+          within(screen.getByRole('dialog')).queryByRole('button', { name: M('form.loadLatest') })
+        ).toBeNull()
+      );
+      expect(cityIn()).toHaveValue('Amman North');
+      expect(screen.queryByText(M('organization.edit.latestLoaded'))).toBeNull();
+
+      // A later Try again renders someone else's newer version: nothing is replaced.
+      refresh.mockImplementationOnce(() => {
+        view.rerender(
+          structure({
+            ...partialLists,
+            branches: ok([{ ...BRANCH_V, city: 'Irbid', recordVersion: 8 }]),
+          })
+        );
+      });
+      await user.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: M('form.retry') })
+      );
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(cityIn()).toHaveValue('Amman North');
+      expect(screen.queryByText(M('organization.edit.latestLoaded'))).toBeNull();
+    });
+
+    it('keeps the typed draft when the latest load brings no version, and after a later Try again', async () => {
+      const user = userEvent.setup();
+      const view = paint(structure({ ...partialLists, branches: ok([BRANCH]) }));
+      await user.click(editButton(BRANCH.name));
+      const dialog = screen.getByRole('dialog', { name: M('organization.branch.edit') });
+      await user.type(field(dialog, 'organization.branch.city'), ' North');
+
+      // The latest load answers, and the list still publishes no version.
+      refresh.mockImplementationOnce(() => {
+        view.rerender(structure({ ...partialLists, branches: ok([{ ...BRANCH }]) }));
+      });
+      await user.click(within(dialog).getByRole('button', { name: M('form.loadLatest') }));
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(cityIn()).toHaveValue('Amman North');
+      expect(
+        within(screen.getByRole('dialog')).getByText(M('organization.edit.versionUnknown'))
+      ).toBeVisible();
+
+      // A later Try again renders a versioned, newer record: nothing is replaced.
+      refresh.mockImplementationOnce(() => {
+        view.rerender(
+          structure({
+            ...partialLists,
+            branches: ok([{ ...BRANCH_V, city: 'Irbid', recordVersion: 8 }]),
+          })
+        );
+      });
+      await user.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: M('form.retry') })
+      );
+      expect(refresh).toHaveBeenCalledTimes(2);
+      expect(cityIn()).toHaveValue('Amman North');
+      expect(screen.queryByText(M('organization.edit.latestLoaded'))).toBeNull();
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('puts the saved values back when the latest load brings a newer version', async () => {
+      send.mockResolvedValueOnce(conflictFailure);
+      const user = userEvent.setup();
+      const view = paint(structure(partialLists));
+      await user.click(editButton(BRANCH.name));
+      const dialog = screen.getByRole('dialog', { name: M('organization.branch.edit') });
+      await user.type(field(dialog, 'organization.branch.city'), ' North');
+      await user.click(within(dialog).getByRole('button', { name: M('admin.save') }));
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(M('state.conflict.title'));
+
+      refresh.mockImplementationOnce(() => {
+        view.rerender(
+          structure({
+            ...partialLists,
+            branches: ok([{ ...BRANCH_V, city: 'Irbid', recordVersion: 8 }]),
+          })
+        );
+      });
+      await user.click(within(dialog).getByRole('button', { name: M('form.loadLatest') }));
+      expect(refresh).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(cityIn()).toHaveValue('Irbid'));
+      expect(screen.getByText(M('organization.edit.latestLoaded'))).toBeVisible();
+      expect(
+        within(screen.getByRole('dialog')).getByRole('button', { name: M('admin.save') })
+      ).toBeEnabled();
     });
 
     it('asks before Escape or Cancel throws typed work away, and keeps it on Cancel', async () => {
@@ -2255,3 +2369,323 @@ describe.each(READERS)(
     });
   }
 );
+
+// --- the settings screens (P1-32-PRE-OD-ADM5) ---------------------------------------
+
+/**
+ * Numbering rules, taxes, currencies and system settings on Material UI
+ * (P1-32-PRE-OD-ADM5), rendered through their route pages.
+ *
+ * The properties under test, in English and in Arabic:
+ *
+ *   - Currencies shows the platform's currency list exactly as
+ *     `org.reference-values-read` answered it — the codes in its order, the
+ *     names in the page's language and the decimal places — and only for a
+ *     holder of `org.tenant.read`; a read that did not answer is the shared
+ *     state, and an empty list says so;
+ *   - the enabled codes are written through the company settings write, and a
+ *     malformed, repeated or unheld code is refused beside the value before
+ *     anything is sent; someone else's write first is said as a conflict and the
+ *     typed value stays;
+ *   - numbering rules and taxes show the settings the settings reads hold under
+ *     their keys, name what is not available and why (the decision it waits
+ *     on), and offer no form, even to a holder of `org.settings.manage`;
+ *   - system settings says platform settings are unreachable and keeps the
+ *     company and branch editors it serves;
+ *   - a page the operator may read nothing of is refused as a whole, and no read
+ *     is made.
+ *
+ * The session is supplied by the test; no other case in this file reads it.
+ */
+let SESSION_PERMISSIONS: readonly string[] = [];
+vi.mock('@/features/authentication/api/session', () => ({
+  requireSession: async () => ({ permissions: SESSION_PERMISSIONS, email: 'reviewer@test.local' }),
+}));
+type RoutePage = (args: { params: Promise<Record<string, string>> }) => Promise<ReactElement>;
+const CurrenciesPage = (await import('@/app/[locale]/(dashboard)/administration/currencies/page'))
+  .default as unknown as RoutePage;
+const NumberingRulesPage = (
+  await import('@/app/[locale]/(dashboard)/administration/numbering-rules/page')
+).default as unknown as RoutePage;
+const TaxesPage = (await import('@/app/[locale]/(dashboard)/administration/taxes/page'))
+  .default as unknown as RoutePage;
+const SystemSettingsPage = (
+  await import('@/app/[locale]/(dashboard)/administration/system-settings/page')
+).default as unknown as RoutePage;
+
+const READ_TENANT = 'org.tenant.read';
+const READ_COMPANY = 'org.company.read';
+const READ_BRANCH = 'org.branch.read';
+const MANAGE_SETTINGS = 'org.settings.manage';
+
+const REFERENCES_PATH = '/api/v1/org/reference-values';
+const COMPANY_SETTINGS = `/api/v1/org/companies/${TEST_COMPANY.id}/settings`;
+const BRANCH_SETTINGS = `/api/v1/org/branches/${TEST_BRANCH.id}/settings`;
+
+/** What `org.reference-values-read` answers in these cases, in its code order. */
+const CURRENCIES = [
+  { code: 'EUR', name: 'Euro', minorUnit: 2 },
+  { code: 'JOD', name: 'Jordanian Dinar', minorUnit: 3 },
+  { code: 'USD', name: 'US Dollar', minorUnit: 2 },
+];
+
+const setting = (settingKey: string, settingValue: unknown, version = 1) => ({
+  settingKey,
+  settingValue,
+  valueType: typeof settingValue === 'string' ? 'string' : 'json',
+  isSensitive: false,
+  version,
+  effectiveFrom: '2026-10-01T00:00:00.000Z',
+});
+
+const okRead = (data: unknown) => ({ ok: true, status: 200, data, correlationId: 'corr-read' });
+
+let referenceAnswer: unknown;
+let companyItems: unknown[];
+let branchItems: unknown[];
+
+describe.each(READERS)('$locale: the settings screens (ADM-5)', ({ locale, M, paint }) => {
+  beforeEach(() => {
+    SESSION_PERMISSIONS = [];
+    referenceAnswer = okRead({ currencies: CURRENCIES, timezones: [], languages: [] });
+    companyItems = [];
+    branchItems = [];
+    get.mockImplementation(async (path: string) => {
+      if (path === REFERENCES_PATH) return referenceAnswer;
+      if (path === COMPANY_SETTINGS) return okRead({ items: companyItems });
+      if (path === BRANCH_SETTINGS) return okRead({ items: branchItems });
+      throw new Error(`unexpected read ${path}`);
+    });
+  });
+
+  async function open(route: RoutePage) {
+    const ui = await route({ params: Promise.resolve({ locale }) });
+    return paint(inBranch(ui, { locale }));
+  }
+  const notice = () => screen.getByTestId('contract-gap');
+  const valueBox = () =>
+    screen.getByLabelText(new RegExp(`^${escapeRegExp(M('organization.setting.value'))}`));
+
+  describe('currencies', () => {
+    it('lists exactly the currencies the read published, named in the page language', async () => {
+      SESSION_PERMISSIONS = [READ_TENANT, READ_COMPANY];
+      await open(CurrenciesPage);
+
+      const table = screen.getByRole('table', { name: M('currencies.catalogue.title') });
+      const rows = within(table).getAllByTestId('currency-row');
+      expect(rows.map((row) => within(row).getAllByRole('cell')[0]?.textContent)).toEqual([
+        'EUR',
+        'JOD',
+        'USD',
+      ]);
+      const names = new Intl.DisplayNames([locale], { type: 'currency' });
+      rows.forEach((row, index) => {
+        const [, name, places] = within(row).getAllByRole('cell');
+        const currency = CURRENCIES[index] as (typeof CURRENCIES)[number];
+        expect(name).toHaveTextContent(names.of(currency.code) as string);
+        expect(places).toHaveTextContent(String(currency.minorUnit));
+      });
+      if (locale === 'ar') {
+        // The reader's language, not the register's English name.
+        expect(rows[0]).not.toHaveTextContent('Euro');
+        expect(within(rows[0] as HTMLElement).getAllByRole('cell')[1]?.textContent).toMatch(
+          /[؀-ۿ]/
+        );
+      }
+      expect(get).toHaveBeenCalledWith(REFERENCES_PATH);
+    });
+
+    it('says what is not held or chosen here', async () => {
+      SESSION_PERMISSIONS = [READ_TENANT, READ_COMPANY];
+      await open(CurrenciesPage);
+      expect(notice()).toHaveTextContent(M('admin.contractGap.settingsBacked'));
+      expect(notice()).toHaveTextContent(M('currencies.noRates'));
+      expect(notice()).toHaveTextContent(M('currencies.noBase'));
+    });
+
+    it('makes no catalogue read without the code it declares, and keeps the company settings', async () => {
+      SESSION_PERMISSIONS = [READ_COMPANY];
+      await open(CurrenciesPage);
+      expect(screen.queryByRole('table', { name: M('currencies.catalogue.title') })).toBeNull();
+      expect(get).not.toHaveBeenCalledWith(REFERENCES_PATH);
+      expect(screen.getByText(M('organization.settings.company'))).toBeVisible();
+      await waitFor(() => expect(get).toHaveBeenCalledWith(COMPANY_SETTINGS));
+    });
+
+    it('shows the catalogue alone to a reader of the workspace who may not read company settings', async () => {
+      SESSION_PERMISSIONS = [READ_TENANT];
+      await open(CurrenciesPage);
+      expect(screen.getByRole('table', { name: M('currencies.catalogue.title') })).toBeVisible();
+      expect(screen.queryByText(M('organization.settings.company'))).toBeNull();
+    });
+
+    it('refuses the page when nothing on it may be read, and reads nothing', async () => {
+      SESSION_PERMISSIONS = [];
+      await open(CurrenciesPage);
+      expect(screen.getByTestId('settings-screen-refused')).toHaveTextContent(
+        M('state.denied.title')
+      );
+      expect(get).not.toHaveBeenCalled();
+    });
+
+    it('draws a catalogue read that did not answer as the shared state, with Try again', async () => {
+      SESSION_PERMISSIONS = [READ_TENANT, READ_COMPANY];
+      referenceAnswer = {
+        ok: false,
+        kind: 'unavailable',
+        status: 503,
+        correlationId: 'corr-ref-down',
+      };
+      await open(CurrenciesPage);
+      const failure = screen.getByTestId('currency-catalogue-failure');
+      expect(failure).toHaveTextContent(M('state.unavailable.title'));
+      expect(failure).toHaveTextContent('corr-ref-down');
+      expect(within(failure).getByRole('button', { name: M('state.retry') })).toBeVisible();
+    });
+
+    it('says so when the platform lists no currency', async () => {
+      SESSION_PERMISSIONS = [READ_TENANT, READ_COMPANY];
+      referenceAnswer = okRead({ currencies: [], timezones: [], languages: [] });
+      await open(CurrenciesPage);
+      expect(screen.getByTestId('currency-catalogue-empty')).toHaveTextContent(
+        M('currencies.catalogue.empty.title')
+      );
+    });
+
+    it('writes the enabled codes through the company settings write', async () => {
+      SESSION_PERMISSIONS = [READ_TENANT, READ_COMPANY, MANAGE_SETTINGS];
+      send.mockResolvedValue({ ok: true, status: 201, data: {}, correlationId: 'corr-write' });
+      const user = userEvent.setup();
+      await open(CurrenciesPage);
+      await user.click(valueBox());
+      await user.paste('["EUR","JOD"]');
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      expect(send).toHaveBeenCalledWith('POST', COMPANY_SETTINGS, {
+        settingKey: 'currency.enabled_codes',
+        settingValue: ['EUR', 'JOD'],
+        valueType: 'json',
+        isSensitive: false,
+      });
+    });
+
+    it.each([
+      ['a code the platform does not hold', '["GBP"]', 'currencies.error.notHeld'],
+      ['a repeated code', '["EUR","EUR"]', 'currencies.error.duplicate'],
+      ['a code that is not three capitals', '["eur"]', 'currencies.error.code'],
+      ['a value that is not a list', '"EUR"', 'currencies.error.list'],
+    ])('refuses %s beside the value and sends nothing', async (_case, typed, errorKey) => {
+      SESSION_PERMISSIONS = [READ_TENANT, READ_COMPANY, MANAGE_SETTINGS];
+      const user = userEvent.setup();
+      await open(CurrenciesPage);
+      await user.click(valueBox());
+      await user.paste(typed);
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+      expect(await screen.findByText(M(errorKey))).toBeVisible();
+      expect(valueBox()).toHaveAttribute('aria-invalid', 'true');
+      expect(valueBox()).toHaveValue(typed);
+      expect(send).not.toHaveBeenCalled();
+    });
+
+    it('says a conflict when someone else wrote first, and keeps the typed value', async () => {
+      SESSION_PERMISSIONS = [READ_TENANT, READ_COMPANY, MANAGE_SETTINGS];
+      send.mockResolvedValue(conflictFailure);
+      const user = userEvent.setup();
+      await open(CurrenciesPage);
+      await user.click(valueBox());
+      await user.paste('["USD"]');
+      await user.click(screen.getByRole('button', { name: M('admin.save') }));
+      expect(await screen.findByRole('alert')).toHaveTextContent(M('state.conflict.title'));
+      expect(valueBox()).toHaveValue('["USD"]');
+      expect(send).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe.each([
+    {
+      name: 'numbering rules',
+      route: () => NumberingRulesPage,
+      gapKey: 'numbering.gap.formats',
+      decision: 'DOC01',
+      stored: 'numbering.invoice.prefix',
+    },
+    {
+      name: 'taxes',
+      route: () => TaxesPage,
+      gapKey: 'taxes.gap.catalogue',
+      decision: 'ACC01',
+      stored: 'tax.code',
+    },
+  ])('$name', ({ route, gapKey, decision, stored }) => {
+    it('names what is not available and the decision it waits on', async () => {
+      SESSION_PERMISSIONS = [READ_COMPANY, READ_BRANCH, MANAGE_SETTINGS];
+      await open(route());
+      expect(notice()).toHaveTextContent(M(gapKey));
+      expect(notice()).toHaveTextContent(decision);
+      expect(notice()).toHaveTextContent(M('admin.contractGap.settingsShownOnly'));
+      expect(notice()).not.toHaveTextContent(M('admin.contractGap.settingsBacked'));
+    });
+
+    it('shows the stored settings of the company and the branch under its keys only, and offers no form', async () => {
+      SESSION_PERMISSIONS = [READ_COMPANY, READ_BRANCH, MANAGE_SETTINGS];
+      companyItems = [setting(stored, 'RC'), setting('org.working_hours.start', '08:00')];
+      branchItems = [setting(stored, 'BR', 2)];
+      await open(route());
+
+      const tables = await screen.findAllByRole('table', { name: M('organization.settings') });
+      expect(tables).toHaveLength(2);
+      const [companyTable, branchTable] = tables as [HTMLElement, HTMLElement];
+      expect(within(companyTable).getByText(stored)).toBeVisible();
+      expect(within(companyTable).getByText('RC')).toBeVisible();
+      expect(within(companyTable).queryByText('org.working_hours.start')).toBeNull();
+      expect(within(branchTable).getByText('BR')).toBeVisible();
+      expect(get).toHaveBeenCalledWith(COMPANY_SETTINGS);
+      expect(get).toHaveBeenCalledWith(BRANCH_SETTINGS);
+
+      // Even a holder of org.settings.manage is offered nothing to change here.
+      expect(screen.queryByRole('button', { name: M('admin.save') })).toBeNull();
+      expect(screen.getAllByTestId('settings-read-only')).toHaveLength(2);
+      for (const line of screen.getAllByTestId('settings-read-only')) {
+        expect(line).toHaveTextContent(M('admin.contractGap.notChangedHere'));
+      }
+    });
+
+    it('shows only the branch settings to a reader of branches alone', async () => {
+      SESSION_PERMISSIONS = [READ_BRANCH];
+      await open(route());
+      expect(screen.getByText(M('organization.settings.branch'))).toBeVisible();
+      expect(screen.queryByText(M('organization.settings.company'))).toBeNull();
+      await waitFor(() => expect(get).toHaveBeenCalledWith(BRANCH_SETTINGS));
+      expect(get).not.toHaveBeenCalledWith(COMPANY_SETTINGS);
+    });
+
+    it('refuses the page without a company or branch read, and reads nothing', async () => {
+      SESSION_PERMISSIONS = [READ_TENANT, MANAGE_SETTINGS];
+      await open(route());
+      expect(screen.getByTestId('settings-screen-refused')).toHaveTextContent(
+        M('state.denied.title')
+      );
+      expect(get).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('system settings', () => {
+    it('says platform settings are unreachable and keeps the company and branch editors', async () => {
+      SESSION_PERMISSIONS = [READ_COMPANY, READ_BRANCH, MANAGE_SETTINGS];
+      await open(SystemSettingsPage);
+      expect(notice()).toHaveTextContent(M('systemSettings.noPlatformScope'));
+      expect(screen.getByText(M('organization.settings.company'))).toBeVisible();
+      expect(screen.getByText(M('organization.settings.branch'))).toBeVisible();
+      expect(screen.getAllByRole('button', { name: M('admin.save') })).toHaveLength(2);
+    });
+
+    it('refuses the page without a company or branch read, and reads nothing', async () => {
+      SESSION_PERMISSIONS = [READ_TENANT];
+      await open(SystemSettingsPage);
+      expect(screen.getByTestId('settings-screen-refused')).toHaveTextContent(
+        M('state.denied.title')
+      );
+      expect(get).not.toHaveBeenCalled();
+    });
+  });
+});

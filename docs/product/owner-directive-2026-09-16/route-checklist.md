@@ -1751,18 +1751,18 @@ The preserved-behaviour cell names the contract items above that a migration mus
 | `/administration/appointment-setup`                   | form fields, `OperationalGrid`, `ConfirmDialog`, `DecisionDialog`, states                     | F1–F6; G1–G9; S1–S4                              | built on Material UI — see "Appointments for tenant administrators"          | focused suites, en and ar                             |
 | `/administration/approval-limits`                     | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated — its person picker is `EntityPicker` since `P1-32-PRE-OD-ADM3` | person picker case only, en — see `P1-32-PRE-OD-ADM3` |
 | `/administration/audit-log`                           | form fields, `OperationalGrid`, `EntityPicker`, states                                        | F1–F6; G1–G9; P1–P10; S1–S4                      | not migrated — its "Who" picker is `EntityPicker` since `P1-32-PRE-OD-ADM3`  | person picker case only, en — see `P1-32-PRE-OD-ADM3` |
-| `/administration/currencies`                          | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
+| `/administration/currencies`                          | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated (ADM5) — catalogue read-only; enabled codes editable; see below     | focused suites, en and ar — see below                 |
 | `/administration/departments`                         | form fields, `FormDialog`, `ConfirmDialog`, states                                            | F1–F4; D1–D4; S1–S4                              | migrated — see below the table (ADM2)                                        | focused suites, en and ar — see below                 |
 | `/administration/discount-threshold`                  | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
 | `/administration/employees`                           | form fields, `OperationalGrid`, `FormDialog`, `ConfirmDialog`, drawer, states                 | F1–F6; G1–G9, G11; D1–D4; S1–S4                  | migrated — see below the table (ADM2)                                        | focused suites, en and ar — see below                 |
 | `/administration/languages`                           | form fields, states                                                                           | F1–F6; S1–S4                                     | migrated — see below the table (ADM-1)                                       | focused suites, en and ar — see below                 |
-| `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
+| `/administration/numbering-rules`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated (ADM5) — read-only; F-003 open (DOC01, ADR-023 D10); see below      | focused suites, en and ar — see below                 |
 | `/administration/organization`                        | form fields, `ConfirmDialog`, `ReasonDialog`, states                                          | F1–F7; D1–D5; S1–S4                              | migrated — see below the table (ADM-1)                                       | focused suites, en and ar — see below                 |
 | `/administration`                                     | none found                                                                                    | —                                                | not migrated                                                                 | not run — nothing migrated                            |
 | `/administration/permissions`                         | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
 | `/administration/roles`                               | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | not migrated                                                                 | not run — nothing migrated                            |
-| `/administration/system-settings`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
-| `/administration/taxes`                               | form fields, states                                                                           | F1–F7; S1–S4                                     | shared editor only (ADM-1) — screen not migrated                             | shared editor: consumer suites, see ADM-1             |
+| `/administration/system-settings`                     | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated (ADM5) — company and branch only; F-007 open; see below             | focused suites, en and ar — see below                 |
+| `/administration/taxes`                               | form fields, states                                                                           | F1–F7; S1–S4                                     | migrated (ADM5) — read-only; F-004 open (ACC01); see below                   | focused suites, en and ar — see below                 |
 | `/administration/users/[userId]`                      | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see "Users and a person's access on Material UI" below the table  | focused suites, en and ar — see below                 |
 | `/administration/users`                               | form fields, `OperationalGrid`, states                                                        | F1–F6; G1–G9; S1–S4                              | migrated — see "Users and a person's access on Material UI" below the table  | focused suites, en and ar — see below                 |
 | `/appointments/[appointmentId]`                       | form fields, `ZonedDateTimeField`, `DecisionDialog`, states                                   | F1–F6; E1–E4; D1–D4; S1–S4                       | migrated — see below the table                                               | focused suites, en and ar — see below                 |
@@ -6235,3 +6235,85 @@ Known limitations and recorded gaps of this slice, one line each:
   run only in the authenticated tier and were not run locally.
 - Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds;
   W37 needs a database and was not run locally. They run in hosted CI.
+
+### Numbering rules, taxes, currencies and system settings on Material UI (`P1-32-PRE-OD-ADM5`)
+
+`/administration/currencies`, `/administration/numbering-rules`, `/administration/taxes` and
+`/administration/system-settings` moved onto the shared Material wrappers, showing only what the
+existing operations support. No migration, route, operation, permission code or audit action was
+added, and nothing new is written. The reads are the ones that already existed, each made only for
+a holder of the code it declares: `org.reference-values-read` (`org.tenant.read`),
+`iam.company-settings-read` (`org.company.read`) and `iam.branch-settings-read` (`org.branch.read`).
+The one write is the existing `iam.company-settings-write` (`org.settings.manage`), on the
+Currencies and System settings screens only.
+
+What each screen now shows:
+
+- Currencies (`SettingsBackedScreen.tsx` with `CurrencyCatalogue.tsx`, new) — the platform's
+  currency list, exactly as `org.reference-values-read` answered it: the code, the name in the
+  page's language and the decimal places (the register's minor unit), in the order of the read.
+  The register publishes one name per currency, so the name in the reader's language comes from the
+  ISO code through the runtime's currency names, and the registered name is shown where the runtime
+  has none. A read that did not answer is `MuiReadFailureState` (Try again for an outage only); an
+  empty list is `MuiEmptyState` with its own sentence. Below it, the company's enabled codes
+  (`currency.enabled_codes`), written through the company settings write: a value that is not a
+  list, a code that is not three capitals, a repeated code, or (when the list was read) a code the
+  platform does not hold is refused beside the value before anything is sent.
+- Numbering rules and Taxes (`SettingsBackedScreen.tsx`) — the settings the company and branch
+  settings reads hold under `numbering.` and `tax.`, each panel only for a holder of its read code,
+  and no form, even for a holder of `org.settings.manage`: nothing in the platform applies a
+  numbering or tax setting to a document, so an edit form would be a control for an operation that
+  does not exist. The notice names what is not available and the decision it waits on.
+- System settings (page frame) — the notice and a page the operator may not read are the shared
+  Material states; the editor stays scoped to the company and branch settings it serves.
+- All four — the notice is an outlined Material information alert (`MuiContractNotice`, announced as
+  a note, not an alert); a page the operator may read nothing of is `MuiRefusedState` and makes no
+  read.
+
+Carried from the `P1-32-PRE-OD-ADM1` review (`StructureDialogs.tsx`): "Load the latest version" now
+lasts one load. Its request used to be cleared only when the loaded version differed from the one
+seen, so a load that brought back the same version, or none, left it standing, and a later Try
+again that rendered a newer version replaced the typed draft. The request now ends when its refresh
+ends, whatever it brought, and the draft is replaced only when that refresh delivered a newer
+version.
+
+Preserved and added, each held by a case in `organization-structure.dom`, in English and Arabic (the
+settings-screen cases are a new block of that file; no web test file is added):
+
+| Property                                                                                    | Case                                                                        |
+| ------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| The currency list is the read's rows, in order, named in the page's language                | "lists exactly the currencies the read published…"                          |
+| No catalogue read without `org.tenant.read`; no settings panel without its read code        | "makes no catalogue read without the code…", "shows only the branch…"       |
+| A page with nothing readable is refused and reads nothing                                   | "refuses the page…" (each screen)                                           |
+| A catalogue read that did not answer is the shared state; an empty list says so             | "draws a catalogue read that did not answer…", "says so when the platform…" |
+| Enabled codes written through the company settings write; bad values refused before sending | "writes the enabled codes…", "refuses … beside the value and sends nothing" |
+| Someone else's write first is a conflict, and the typed value stays                         | "says a conflict when someone else wrote first…"                            |
+| Numbering and taxes name the gap and its decision, show stored settings, and offer no form  | "names what is not available…", "shows the stored settings…"                |
+| System settings says platform settings are unreachable and keeps both editors               | "says platform settings are unreachable…"                                   |
+| Load the latest version: same version or none keeps the draft, also after a later Try again | "keeps the typed draft when the latest load brings…" (two cases)            |
+| Load the latest version: a newer version puts the saved values back                         | "puts the saved values back when the latest load brings a newer version"    |
+
+Test changes forced by the fix, the asserted behaviour unchanged: in `organization-structure.dom`,
+"says a conflict, keeps the typed name…" now delivers the newer version from inside the mocked
+refresh, as the router does, instead of re-rendering after it; every assertion is as it was. The
+two same-version and no-version cases fail against the previous guard. `p1-28-reception-media.test.ts`
+declares `numbering.gap.formats` (DOC01) and `taxes.gap.catalogue` (ACC01) as the fifth and sixth
+catalogue strings that defer to an Owner decision, in both languages; its pin is retitled from four
+to six.
+
+Known limitations and recorded gaps of this slice, one line each:
+
+- Recorded gap: numbering formats — `sal.invoice_numbering_configs` and `shared.number_sequences`
+  have no route (`P1-26-F-003`, open); numbering of documents other than invoices waits on DOC01
+  (ADR-023 D10).
+- Recorded gap: tax classes and rates — `org.tax_classes` and `org.tax_rates` have no read or write
+  (`P1-26-F-004`, open); tax policy waits on ACC01.
+- Recorded gap: platform settings — `shared.system_settings` has no route (`P1-26-F-007`, open).
+- Recorded gap: which currencies the platform holds is the Owner's decision (OIR-04); the screen
+  shows the list and adds none. No base currency is chosen and no exchange rate is held.
+- The numbering and tax settings already stored stay visible and remain writable from System
+  settings, the general editor; nothing applies them.
+- The enabled codes are still typed as a list; a pick-from-the-list control is not part of this
+  slice.
+- Not run locally: the full unit, web, database and backend tiers, the browser tiers and the builds.
+  They run in hosted CI.
