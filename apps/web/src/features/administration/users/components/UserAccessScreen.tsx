@@ -3,7 +3,7 @@
 import { useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@mui/material/Button';
-import { ConfirmDialog, DecisionActions, DecisionDialog } from '@/components/dialogs/ConfirmDialog';
+import { ConfirmDialog } from '@/components/dialogs/ConfirmDialog';
 import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
 import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
 import { FormRadioGroupField } from '@/components/forms/mui/FormRadioGroupField';
@@ -25,6 +25,7 @@ import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { useActionRefusal } from '@/lib/forms/use-action-refusal';
 import { useEditBaseline } from '@/lib/forms/use-edit-baseline';
 import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
+import { FormDialog } from '../../shared/components/FormDialog';
 import { StatusPill } from '../../shared/components/StructureParts';
 import { listDepartments } from '../../departments/api';
 import type { DepartmentView } from '../../departments/types';
@@ -577,61 +578,45 @@ function EditDetailsDialog({
       : undefined;
 
   return (
-    <DecisionDialog
+    // A form, so the shared `FormDialog` — a dialog, not an alert (`P1-32-PRE-OD-ADM4`).
+    <FormDialog
+      messages={messages}
       title={t('users.edit.title')}
       description={t('users.edit.description')}
-      onCancel={onClose}
+      submitLabel={t('users.edit.save')}
       pending={saving}
+      error={refusal}
+      onCancel={onClose}
+      onSubmit={() => void submit()}
+      formRef={formRef}
       testId="users-edit-dialog"
-      actions={
-        <DecisionActions
-          messages={messages}
-          error={refusal}
-          pending={saving}
-          destructive={false}
-          confirmLabel={t('users.edit.save')}
-          onCancel={onClose}
-          onConfirm={() => void submit()}
-          focusCancel={false}
-        />
-      }
     >
-      <form
-        ref={formRef}
-        noValidate
-        className="flex flex-col gap-4 pt-2"
-        onSubmit={(event) => {
-          event.preventDefault();
-          void submit();
-        }}
-      >
-        <FormTextField
-          name="displayName"
-          label={t('users.edit.displayName')}
-          required
-          autoFocus
-          autoComplete="off"
-          maxLength={200}
-          value={edit.values.displayName}
-          onChange={(displayName) => edit.setValues((was) => ({ ...was, displayName }))}
-          error={errors['displayName'] ? t(errors['displayName']) : undefined}
-        />
-        <FormCheckboxField
-          name="mfaRequired"
-          label={t('users.edit.mfaRequired')}
-          description={t('users.edit.mfaRequiredHint')}
-          checked={edit.values.mfaRequired}
-          onChange={(mfaRequired) => edit.setValues((was) => ({ ...was, mfaRequired }))}
-        />
-        {outcome.status === 'conflict' ? (
-          <div>
-            <Button type="button" variant="outlined" size="small" onClick={loadLatest}>
-              {t('form.loadLatest')}
-            </Button>
-          </div>
-        ) : null}
-      </form>
-    </DecisionDialog>
+      <FormTextField
+        name="displayName"
+        label={t('users.edit.displayName')}
+        required
+        autoFocus
+        autoComplete="off"
+        maxLength={200}
+        value={edit.values.displayName}
+        onChange={(displayName) => edit.setValues((was) => ({ ...was, displayName }))}
+        error={errors['displayName'] ? t(errors['displayName']) : undefined}
+      />
+      <FormCheckboxField
+        name="mfaRequired"
+        label={t('users.edit.mfaRequired')}
+        description={t('users.edit.mfaRequiredHint')}
+        checked={edit.values.mfaRequired}
+        onChange={(mfaRequired) => edit.setValues((was) => ({ ...was, mfaRequired }))}
+      />
+      {outcome.status === 'conflict' ? (
+        <div>
+          <Button type="button" variant="outlined" size="small" onClick={loadLatest}>
+            {t('form.loadLatest')}
+          </Button>
+        </div>
+      ) : null}
+    </FormDialog>
   );
 }
 
@@ -786,169 +771,153 @@ function ScopeDialog({
 
   return (
     <>
-      <DecisionDialog
+      {/* A form, so the shared `FormDialog` — a dialog, not an alert (`P1-32-PRE-OD-ADM4`). */}
+      <FormDialog
+        messages={messages}
         title={title}
-        onCancel={onCancel}
+        submitLabel={submitLabel}
         pending={pending}
+        error={refusal}
+        onCancel={onCancel}
+        onSubmit={submit}
+        formRef={refusalFormRef}
         testId="users-scope-dialog"
-        actions={
-          <DecisionActions
-            messages={messages}
-            error={refusal}
-            pending={pending}
-            destructive={false}
-            confirmLabel={submitLabel}
-            onCancel={onCancel}
-            onConfirm={submit}
-            focusCancel={false}
-          />
-        }
       >
-        <form
-          ref={refusalFormRef}
-          className="flex flex-col gap-4 pt-2"
-          noValidate
-          onSubmit={(event) => {
-            event.preventDefault();
-            submit();
-          }}
-        >
-          {granting ? (
-            <FormSelectField
-              name="roleId"
-              label={t('users.access.role')}
-              required
-              placeholder={t('field.selectPlaceholder')}
-              value={roleId}
-              onEdit={() => refusalEdited('roleId')}
-              onChange={setRoleId}
-              options={roles.map((role) => ({
-                value: role.id,
-                label: roleDisplayName(messages, role),
-              }))}
-              error={roleError ? t(roleError) : undefined}
-            />
-          ) : null}
-
-          <FormRadioGroupField
-            name="scopeMode"
-            label={t('users.access.where')}
-            value={mode}
-            onEdit={() => refusalEdited('scopes')}
-            onChange={(value) => {
-              setMode(value as ScopeMode);
-              setChosen(new Map());
-            }}
-            options={modes.map((value) => ({
-              value,
-              label: t(`users.access.mode.${value}`),
-              description: t(`users.access.mode.${value}Hint`),
+        {granting ? (
+          <FormSelectField
+            name="roleId"
+            label={t('users.access.role')}
+            required
+            placeholder={t('field.selectPlaceholder')}
+            value={roleId}
+            onEdit={() => refusalEdited('roleId')}
+            onChange={setRoleId}
+            options={roles.map((role) => ({
+              value: role.id,
+              label: roleDisplayName(messages, role),
             }))}
-            error={placesError ? t(placesError) : undefined}
+            error={roleError ? t(roleError) : undefined}
           />
+        ) : null}
 
-          {mode === 'companies' ? (
-            <fieldset className="flex flex-col gap-1">
-              <legend className="text-label font-medium text-text-primary">
-                {t('users.access.pickCompanies')}
-              </legend>
-              {companies.map((company) => (
-                <FormCheckboxField
-                  key={company.id}
-                  label={company.legalName}
-                  checked={chosen.has(company.id)}
-                  onChange={(on) => {
-                    refusalEdited('scopes');
-                    toggle(company.id, { scopeType: 'company', companyId: company.id }, on);
-                  }}
-                />
-              ))}
-            </fieldset>
-          ) : null}
+        <FormRadioGroupField
+          name="scopeMode"
+          label={t('users.access.where')}
+          value={mode}
+          onEdit={() => refusalEdited('scopes')}
+          onChange={(value) => {
+            setMode(value as ScopeMode);
+            setChosen(new Map());
+          }}
+          options={modes.map((value) => ({
+            value,
+            label: t(`users.access.mode.${value}`),
+            description: t(`users.access.mode.${value}Hint`),
+          }))}
+          error={placesError ? t(placesError) : undefined}
+        />
 
-          {mode === 'branches' ? (
-            <fieldset className="flex flex-col gap-1">
-              <legend className="text-label font-medium text-text-primary">
-                {t('users.access.pickBranches')}
-              </legend>
-              {branches.map((row) => (
-                <FormCheckboxField
-                  key={row.id}
-                  label={branchLabel(row)}
-                  checked={chosen.has(row.id)}
-                  onChange={(on) => {
-                    refusalEdited('scopes');
-                    toggle(
-                      row.id,
-                      { scopeType: 'branch', companyId: row.companyId, branchId: row.id },
-                      on
-                    );
-                  }}
-                />
-              ))}
-            </fieldset>
-          ) : null}
-
-          {mode === 'departments' ? (
-            <div className="flex flex-col gap-2">
-              <FormSelectField
-                name="departmentBranch"
-                label={t('admin.scope.branch')}
-                placeholder={t('admin.scope.pickBranch')}
-                value={branchId}
-                onChange={chooseBranch}
-                options={ungroupedBranches}
-                groups={branchGroups}
+        {mode === 'companies' ? (
+          <fieldset className="flex flex-col gap-1">
+            <legend className="text-label font-medium text-text-primary">
+              {t('users.access.pickCompanies')}
+            </legend>
+            {companies.map((company) => (
+              <FormCheckboxField
+                key={company.id}
+                label={company.legalName}
+                checked={chosen.has(company.id)}
+                onChange={(on) => {
+                  refusalEdited('scopes');
+                  toggle(company.id, { scopeType: 'company', companyId: company.id }, on);
+                }}
               />
-              {branchId === '' ? null : departments === null ? (
-                <MuiLoadingState messages={messages} variant="inline" />
-              ) : departments.status !== 'ok' ? (
-                <MuiReadFailureState
-                  messages={messages}
-                  status={departments.status}
-                  correlationId={departments.correlationId}
-                  onRetry={() => chooseBranch(branchId)}
-                />
-              ) : departments.data.length === 0 ? (
-                <p className="text-supporting text-text-secondary">{t('departments.emptyTitle')}</p>
-              ) : (
-                <fieldset className="flex flex-col gap-1">
-                  <legend className="text-label font-medium text-text-primary">
-                    {t('users.access.pickDepartments')}
-                  </legend>
-                  {departments.data.map((department) => (
-                    <FormCheckboxField
-                      key={department.id}
-                      label={department.name}
-                      checked={chosen.has(department.id)}
-                      onChange={(on) => {
-                        refusalEdited('scopes');
-                        toggle(
-                          department.id,
-                          {
-                            scopeType: 'department',
-                            companyId: department.companyId,
-                            branchId: department.branchId,
-                            departmentId: department.id,
-                          },
-                          on
-                        );
-                      }}
-                    />
-                  ))}
-                </fieldset>
-              )}
-            </div>
-          ) : null}
+            ))}
+          </fieldset>
+        ) : null}
 
-          <p
-            aria-live="polite"
-            className="rounded-lg border border-border-subtle bg-surface-subtle p-3 text-supporting text-text-primary"
-          >
-            {summary}
-          </p>
-        </form>
-      </DecisionDialog>
+        {mode === 'branches' ? (
+          <fieldset className="flex flex-col gap-1">
+            <legend className="text-label font-medium text-text-primary">
+              {t('users.access.pickBranches')}
+            </legend>
+            {branches.map((row) => (
+              <FormCheckboxField
+                key={row.id}
+                label={branchLabel(row)}
+                checked={chosen.has(row.id)}
+                onChange={(on) => {
+                  refusalEdited('scopes');
+                  toggle(
+                    row.id,
+                    { scopeType: 'branch', companyId: row.companyId, branchId: row.id },
+                    on
+                  );
+                }}
+              />
+            ))}
+          </fieldset>
+        ) : null}
+
+        {mode === 'departments' ? (
+          <div className="flex flex-col gap-2">
+            <FormSelectField
+              name="departmentBranch"
+              label={t('admin.scope.branch')}
+              placeholder={t('admin.scope.pickBranch')}
+              value={branchId}
+              onChange={chooseBranch}
+              options={ungroupedBranches}
+              groups={branchGroups}
+            />
+            {branchId === '' ? null : departments === null ? (
+              <MuiLoadingState messages={messages} variant="inline" />
+            ) : departments.status !== 'ok' ? (
+              <MuiReadFailureState
+                messages={messages}
+                status={departments.status}
+                correlationId={departments.correlationId}
+                onRetry={() => chooseBranch(branchId)}
+              />
+            ) : departments.data.length === 0 ? (
+              <p className="text-supporting text-text-secondary">{t('departments.emptyTitle')}</p>
+            ) : (
+              <fieldset className="flex flex-col gap-1">
+                <legend className="text-label font-medium text-text-primary">
+                  {t('users.access.pickDepartments')}
+                </legend>
+                {departments.data.map((department) => (
+                  <FormCheckboxField
+                    key={department.id}
+                    label={department.name}
+                    checked={chosen.has(department.id)}
+                    onChange={(on) => {
+                      refusalEdited('scopes');
+                      toggle(
+                        department.id,
+                        {
+                          scopeType: 'department',
+                          companyId: department.companyId,
+                          branchId: department.branchId,
+                          departmentId: department.id,
+                        },
+                        on
+                      );
+                    }}
+                  />
+                ))}
+              </fieldset>
+            )}
+          </div>
+        ) : null}
+
+        <p
+          aria-live="polite"
+          className="rounded-lg border border-border-subtle bg-surface-subtle p-3 text-supporting text-text-primary"
+        >
+          {summary}
+        </p>
+      </FormDialog>
 
       <ConfirmDialog
         open={confirmingOrganisation}

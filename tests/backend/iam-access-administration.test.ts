@@ -577,3 +577,86 @@ describe('approval limits', () => {
     expect((error as AppFailure).code).toBe('ERR-VAL-001');
   });
 });
+
+/*
+ * `P1-32-PRE-OD-ADM4` — route checklist prerequisite 9. The approval-limit list
+ * names the person and the role behind each limit, and publishes each name only
+ * to a caller holding the code that reads it: `iam.user.read` for a person,
+ * `iam.role.read` for a role. Without them the names are `null` — never a
+ * substitute — and the references are published exactly as before.
+ */
+describe('listApprovalLimits — names are published only with the codes that read them', () => {
+  const U_READER = 'a0000000-0000-4000-8000-0000000ae0a1';
+  const ROLE_READER = 'd0000000-0000-4000-8000-00000000a0a1';
+  const GRANT_READER = 'c0000000-0000-4000-8000-00000000a0a1';
+  const created: string[] = [];
+
+  beforeEach(async () => {
+    await admin.query(
+      `INSERT INTO iam.user_accounts (id, tenant_id, identity_provider, provider_subject, email, display_name, status, created_by)
+       VALUES ($1,$2,'test_harness','fx_ae_reader','fx_ae_reader@example.test','fx_ae_reader','active',$3)
+       ON CONFLICT (id) DO NOTHING`,
+      [U_READER, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.roles (id, tenant_id, role_code, name, created_by)
+       VALUES ($1,$2,'fx_ae_reader','AE reader',$3) ON CONFLICT (id) DO NOTHING`,
+      [ROLE_READER, TENANT_A, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_permissions (tenant_id, role_id, permission_id, effect, created_by)
+       SELECT $1, $2, id, 'allow', $3 FROM iam.permissions
+        WHERE permission_code = ANY(ARRAY['iam.approval.manage','iam.user.read','iam.role.read'])
+       ON CONFLICT DO NOTHING`,
+      [TENANT_A, ROLE_READER, USER_A]
+    );
+    await admin.query(
+      `INSERT INTO iam.role_grants (id, tenant_id, user_id, role_id, scope_mode, status, granted_by, created_by)
+       VALUES ($1,$2,$3,$4,'unrestricted','active',$5,$5) ON CONFLICT (id) DO NOTHING`,
+      [GRANT_READER, TENANT_A, U_READER, ROLE_READER, USER_A]
+    );
+    // One limit held by a person and one held by a role, written on the
+    // BYPASSRLS connection: the subject of this case is the read, not the write.
+    const limits = await admin.query<{ id: string }>(
+      `INSERT INTO iam.approval_limits
+         (tenant_id, company_id, role_id, user_id, limit_type, amount, currency_code, effective_from, created_by)
+       VALUES ($1,$2,NULL,$3,'discount','10.00','USD','2026-01-01',$5),
+              ($1,$2,$4,NULL,'discount','20.00','USD','2026-01-01',$5)
+       RETURNING id`,
+      [TENANT_A, COMPANY_A1, U_GRANTEE, ROLE_TARGET, USER_A]
+    );
+    created.push(...limits.rows.map((row) => row.id));
+  });
+
+  afterEach(async () => {
+    await admin.query('DELETE FROM iam.approval_limits WHERE id = ANY($1::uuid[])', [created]);
+    created.length = 0;
+  });
+
+  const listAs = (userId: string) =>
+    withTransaction(
+      contextFor({ operation: 'iam.approval-limit-list', module: 'iam', userId }),
+      (db) => access.listApprovalLimits(db, { companyId: COMPANY_A1 })
+    );
+
+  it('without iam.user.read and iam.role.read, every name is null and the references stay', async () => {
+    const rows = await listAs(U_UNRESTRICTED);
+    const person = rows.find((row) => row.userId === U_GRANTEE);
+    const role = rows.find((row) => row.roleId === ROLE_TARGET);
+    expect(person).toBeDefined();
+    expect(role).toBeDefined();
+    expect(person?.userDisplayName).toBeNull();
+    expect(role?.roleName).toBeNull();
+    expect(rows.every((row) => row.userDisplayName === null && row.roleName === null)).toBe(true);
+  });
+
+  it('with iam.user.read and iam.role.read, the person and the role are named', async () => {
+    const rows = await listAs(U_READER);
+    const person = rows.find((row) => row.userId === U_GRANTEE);
+    const role = rows.find((row) => row.roleId === ROLE_TARGET);
+    expect(person?.userDisplayName).toBe('fx_ae_grantee');
+    expect(person?.roleName).toBeNull();
+    expect(role?.roleName).toBe('AE target');
+    expect(role?.userDisplayName).toBeNull();
+  });
+});

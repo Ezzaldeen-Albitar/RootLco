@@ -8,7 +8,6 @@ import {
   type RowAction,
 } from '@/components/data/OperationalGrid';
 import { withFilter, withSearch, withoutFilter } from '@/components/data-table/table-state';
-import { DecisionActions, DecisionDialog } from '@/components/dialogs/ConfirmDialog';
 import { ReasonDialog } from '@/components/dialogs/ReasonDialog';
 import { FilterToolbar } from '@/components/filters/FilterToolbar';
 import { FormCheckboxField } from '@/components/forms/mui/FormCheckboxField';
@@ -22,6 +21,7 @@ import { formatDate } from '@/lib/format';
 import { IDLE, type ActionState } from '@/lib/forms/action-result';
 import { useHeldRefusal } from '@/lib/forms/use-local-refusal';
 import { roleDisplayName } from '../../access/role-name';
+import { FormDialog } from '../../shared/components/FormDialog';
 import { useServerTable } from '../../shared/use-server-table';
 import { listUsers, type RoleOption, type UserRow } from '../api';
 import {
@@ -489,125 +489,90 @@ function InviteDialog({
   const fieldError = (name: string) => (errors[name] ? t(errors[name] as string) : undefined);
 
   return (
-    <DecisionDialog
+    /*
+     * A form, so the shared `FormDialog` (a dialog, not an alert —
+     * `P1-32-PRE-OD-ADM4`). Send belongs to the form, so Enter in the address
+     * or the name box and a press of Send are the same submission, behind the
+     * same single-flight guard; once sent, the outcome stays on screen and only
+     * Close remains.
+     */
+    <FormDialog
+      messages={messages}
       title={t('users.invite.title')}
       description={t('users.invite.description')}
-      onCancel={onClose}
+      submitLabel={t('users.invite.submit')}
       pending={sending}
+      error={refusal}
+      onCancel={onClose}
+      onSubmit={() => void submit()}
+      formRef={formRef}
+      completed={sent ? t('users.invite.done') : undefined}
       testId="users-invite-dialog"
-      actions={
-        sent ? (
-          <Button type="button" variant="contained" onClick={onClose} autoFocus>
-            {t('admin.close')}
-          </Button>
-        ) : (
-          <DecisionActions
-            messages={messages}
-            error={refusal}
-            pending={sending}
-            destructive={false}
-            confirmLabel={t('users.invite.submit')}
-            onCancel={onClose}
-            onConfirm={() => void submit()}
-            focusCancel={false}
-          />
-        )
-      }
     >
-      {sent ? (
-        <p role="status" className="pt-2 text-supporting text-text-primary">
-          {t('users.invite.done')}
-        </p>
-      ) : (
-        <form
-          ref={formRef}
-          noValidate
-          className="flex flex-col gap-4 pt-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void submit();
-          }}
-          // Send sits in the dialog's action row, outside this form, so the
-          // browser finds no submit button here and Enter in either box would
-          // do nothing. Enter in a text box submits this form instead, and the
-          // submit above is the one path both Enter and Send reach, behind the
-          // same single-flight guard. Enter on a checkbox and Enter while an
-          // input method is still composing a word are left alone.
-          onKeyDown={(event) => {
-            if (event.key !== 'Enter' || event.nativeEvent.isComposing) return;
-            const box = event.target;
-            if (!(box instanceof HTMLInputElement)) return;
-            if (box.type !== 'text' && box.type !== 'email') return;
-            event.preventDefault();
-            event.currentTarget.requestSubmit();
-          }}
+      <FormTextField
+        name="email"
+        type="email"
+        label={t('users.invite.email')}
+        required
+        autoFocus
+        autoComplete="off"
+        spellCheck={false}
+        dir="ltr"
+        maxLength={320}
+        value={draft.email}
+        onChange={(email) => setDraft((was) => ({ ...was, email }))}
+        error={fieldError('email')}
+      />
+      <FormTextField
+        name="displayName"
+        label={t('users.invite.displayName')}
+        required
+        autoComplete="off"
+        maxLength={200}
+        value={draft.displayName}
+        onChange={(displayName) => setDraft((was) => ({ ...was, displayName }))}
+        error={fieldError('displayName')}
+      />
+      <FormCheckboxField
+        name="mfaRequired"
+        label={t('users.invite.mfaRequired')}
+        checked={draft.mfaRequired}
+        onChange={(mfaRequired) => setDraft((was) => ({ ...was, mfaRequired }))}
+      />
+      {roles.length > 0 ? (
+        <fieldset
+          className="flex flex-col gap-1"
+          aria-describedby="users-invite-roles-hint"
+          data-invalid={errors['roleIds'] ? true : undefined}
         >
-          <FormTextField
-            name="email"
-            type="email"
-            label={t('users.invite.email')}
-            required
-            autoFocus
-            autoComplete="off"
-            spellCheck={false}
-            dir="ltr"
-            maxLength={320}
-            value={draft.email}
-            onChange={(email) => setDraft((was) => ({ ...was, email }))}
-            error={fieldError('email')}
-          />
-          <FormTextField
-            name="displayName"
-            label={t('users.invite.displayName')}
-            required
-            autoComplete="off"
-            maxLength={200}
-            value={draft.displayName}
-            onChange={(displayName) => setDraft((was) => ({ ...was, displayName }))}
-            error={fieldError('displayName')}
-          />
-          <FormCheckboxField
-            name="mfaRequired"
-            label={t('users.invite.mfaRequired')}
-            checked={draft.mfaRequired}
-            onChange={(mfaRequired) => setDraft((was) => ({ ...was, mfaRequired }))}
-          />
-          {roles.length > 0 ? (
-            <fieldset
-              className="flex flex-col gap-1"
-              aria-describedby="users-invite-roles-hint"
-              data-invalid={errors['roleIds'] ? true : undefined}
-            >
-              <legend className="text-label font-medium text-text-primary">
-                {t('users.invite.roles')}
-              </legend>
-              <p id="users-invite-roles-hint" className="text-caption text-text-secondary">
-                {t('users.invite.rolesHint')}
-              </p>
-              {roles.map((role) => (
-                <FormCheckboxField
-                  key={role.id}
-                  label={roleDisplayName(messages, role)}
-                  checked={draft.roleIds.includes(role.id)}
-                  onChange={(on) =>
-                    setDraft((was) => ({
-                      ...was,
-                      roleIds: on
-                        ? [...was.roleIds, role.id]
-                        : was.roleIds.filter((id) => id !== role.id),
-                    }))
-                  }
-                />
-              ))}
-              {errors['roleIds'] ? (
-                <p role="alert" className="text-caption text-error">
-                  {t(errors['roleIds'])}
-                </p>
-              ) : null}
-            </fieldset>
+          <legend className="text-label font-medium text-text-primary">
+            {t('users.invite.roles')}
+          </legend>
+          <p id="users-invite-roles-hint" className="text-caption text-text-secondary">
+            {t('users.invite.rolesHint')}
+          </p>
+          {roles.map((role) => (
+            <FormCheckboxField
+              key={role.id}
+              label={roleDisplayName(messages, role)}
+              checked={draft.roleIds.includes(role.id)}
+              onChange={(on) =>
+                setDraft((was) => ({
+                  ...was,
+                  roleIds: on
+                    ? [...was.roleIds, role.id]
+                    : was.roleIds.filter((id) => id !== role.id),
+                }))
+              }
+            />
+          ))}
+          {errors['roleIds'] ? (
+            <p role="alert" className="text-caption text-error">
+              {t(errors['roleIds'])}
+            </p>
           ) : null}
-        </form>
-      )}
-    </DecisionDialog>
+        </fieldset>
+      ) : null}
+    </FormDialog>
   );
 }

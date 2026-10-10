@@ -195,8 +195,10 @@ describe('the tree as it stands passes, and the run is not vacuous', () => {
         // screen's company and branch edits (P1-32-PRE-OD-ADM1), each sending the
         // version the company or branch list published for the row, for an org operation;
         // 47 with a person's "Edit details" (P1-32-PRE-OD-ADM3), the first caller of
-        // iam.user-update, which sends the account's version for an iam operation.
-        '47 versioned send(s) outside the subject.'
+        // iam.user-update, which sends the account's version for an iam operation;
+        // 48 with the permission screen's allow/deny change (P1-32-PRE-OD-ADM4), the
+        // first caller of iam.role-permission-update, which sends the mapping's version.
+        '48 versioned send(s) outside the subject.'
     );
     expect(out).toContain(
       'OK: every version-guarded P1-31 command sources its If-Match from a read or a command ' +

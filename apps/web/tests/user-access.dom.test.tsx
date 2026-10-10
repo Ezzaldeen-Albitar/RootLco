@@ -171,8 +171,37 @@ function renderAccess(over: Record<string, unknown> = {}, locale: 'en' | 'ar' = 
   return locale === 'en' ? renderLtr(ui) : renderRtl(ui);
 }
 
-/** The grant and add-place dialog, found by the title it is named by. */
-const scopeDialog = (title: string) => screen.getByRole('alertdialog', { name: title });
+/**
+ * Types a calendar day into a Material date picker, part by part, whatever order
+ * the language writes the parts in (P1-32-PRE-OD-ADM4: the approval-limit dates
+ * are the shared `DateField` now). The group is found by its label.
+ */
+async function typeDay(
+  user: ReturnType<typeof userEvent.setup>,
+  scope: HTMLElement,
+  label: string,
+  day: string
+): Promise<HTMLElement> {
+  const [year, month, date] = day.split('-') as [string, string, string];
+  const group = within(scope).getByRole('group', { name: new RegExp(`^${label}`) });
+  const named = (key: string) =>
+    new Set([(en as Record<string, string>)[key], (ar as Record<string, string>)[key]]);
+  const years = named('mui.pickers.year');
+  const months = named('mui.pickers.month');
+  for (const part of within(group).getAllByRole('spinbutton')) {
+    const name = part.getAttribute('aria-label') ?? '';
+    const digits = years.has(name) ? year : months.has(name) ? month : date;
+    await user.click(part);
+    await user.keyboard(digits);
+  }
+  return group;
+}
+
+/**
+ * The grant and add-place dialog, found by the title it is named by. A form is the
+ * shared `FormDialog` — a `dialog`, not an alert — since `P1-32-PRE-OD-ADM4`.
+ */
+const scopeDialog = (title: string) => screen.getByRole('dialog', { name: title });
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -703,22 +732,25 @@ describe('an approval limit’s effective window', () => {
     // states which companies this operator may act in rather than handing the
     // screen a bare reference.
     renderLtr(
-      inBranch(
-        <ApprovalLimitsScreen
-          locale="en"
-          messages={en}
-          roles={[
-            {
-              id: ROLE.id,
-              roleCode: ROLE.roleCode,
-              name: ROLE.name,
-              description: null,
-              isSystem: false,
-              recordVersion: 1,
-            },
-          ]}
-          canManage
-        />
+      withMui(
+        inBranch(
+          <ApprovalLimitsScreen
+            locale="en"
+            messages={en}
+            roles={[
+              {
+                id: ROLE.id,
+                roleCode: ROLE.roleCode,
+                name: ROLE.name,
+                description: null,
+                isSystem: false,
+                recordVersion: 1,
+              },
+            ]}
+            canManage
+          />
+        ),
+        'en'
       )
     );
 
@@ -736,14 +768,8 @@ describe('an approval limit’s effective window', () => {
       within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.currency')}`)),
       'JOD'
     );
-    await user.type(
-      within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.effectiveFrom')}`)),
-      '2026-10-01'
-    );
-    await user.type(
-      within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.effectiveTo')}`)),
-      '2026-09-01'
-    );
+    await typeDay(user, dialog, EN('approvalLimits.field.effectiveFrom'), '2026-10-01');
+    await typeDay(user, dialog, EN('approvalLimits.field.effectiveTo'), '2026-09-01');
     await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
 
     expect(await within(dialog).findByText(EN('form.violation.not_after_start'))).toBeVisible();
@@ -754,7 +780,9 @@ describe('an approval limit’s effective window', () => {
      * the previous render.
      */
     expect(
-      within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.effectiveTo')}`))
+      within(dialog).getByRole('group', {
+        name: new RegExp(`^${EN('approvalLimits.field.effectiveTo')}`),
+      })
     ).toHaveAttribute('aria-invalid', 'true');
     expect(
       within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.limitType')}`))
@@ -790,14 +818,17 @@ describe('a credit-note approval limit (ADR-023 D13)', () => {
     const user = userEvent.setup();
     const render = locale === 'en' ? renderLtr : renderRtl;
     render(
-      inBranch(
-        <ApprovalLimitsScreen
-          locale={locale}
-          messages={locale === 'en' ? en : ar}
-          roles={roles}
-          canManage
-        />,
-        { locale }
+      withMui(
+        inBranch(
+          <ApprovalLimitsScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            roles={roles}
+            canManage
+          />,
+          { locale }
+        ),
+        locale
       )
     );
     const text = locale === 'en' ? EN : AR;
@@ -821,11 +852,11 @@ describe('a credit-note approval limit (ADR-023 D13)', () => {
 
   it('refuses a zero credit-note limit on the amount, sends nothing, and keeps what was typed', async () => {
     get.mockResolvedValue(emptyList);
-    const { user, dialog, field } = await openCreate();
+    const { user, dialog, field, text } = await openCreate();
     await user.selectOptions(field('approvalLimits.field.limitType'), 'credit_note');
     await user.type(field('approvalLimits.field.amount'), '0.000');
     await user.type(field('approvalLimits.field.currency'), 'JOD');
-    await user.type(field('approvalLimits.field.effectiveFrom'), '2026-10-01');
+    await typeDay(user, dialog, text('approvalLimits.field.effectiveFrom'), '2026-10-01');
     await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
     expect(await within(dialog).findByText(EN('approvalLimits.error.positive'))).toBeVisible();
     expect(field('approvalLimits.field.amount')).toHaveAttribute('aria-invalid', 'true');
@@ -837,11 +868,11 @@ describe('a credit-note approval limit (ADR-023 D13)', () => {
   it('sends a credit-note limit as typed, and files the server refusal of a finer amount on the amount', async () => {
     get.mockResolvedValue(emptyList);
     send.mockResolvedValue(refusal([{ path: 'body.amount', rule: 'minor_unit_scale' }]));
-    const { user, dialog, field } = await openCreate();
+    const { user, dialog, field, text } = await openCreate();
     await user.selectOptions(field('approvalLimits.field.limitType'), 'credit_note');
     await user.type(field('approvalLimits.field.amount'), '250.0005');
     await user.type(field('approvalLimits.field.currency'), 'JOD');
-    await user.type(field('approvalLimits.field.effectiveFrom'), '2026-10-01');
+    await typeDay(user, dialog, text('approvalLimits.field.effectiveFrom'), '2026-10-01');
     await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     const [, path, body] = send.mock.calls[0] as [string, string, Record<string, unknown>];
@@ -873,7 +904,12 @@ describe('a credit-note approval limit (ADR-023 D13)', () => {
         nextCursor: null,
       },
     });
-    renderLtr(inBranch(<ApprovalLimitsScreen locale="en" messages={en} roles={roles} canManage />));
+    renderLtr(
+      withMui(
+        inBranch(<ApprovalLimitsScreen locale="en" messages={en} roles={roles} canManage />),
+        'en'
+      )
+    );
     expect(await screen.findByText(EN('approvalLimits.type.credit_note'))).toBeVisible();
     expect(screen.queryByText('credit_note')).toBeNull();
   });
@@ -906,18 +942,27 @@ describe('a credit-note approval limit (ADR-023 D13)', () => {
     recordVersion: 1,
     ...over,
   });
-  const namedList = (path: string) =>
-    path.startsWith(`/api/v1/iam/users/${PERSON_ID}`)
+  /*
+   * The list names the person and the role itself (`P1-32-PRE-OD-ADM4`, route
+   * checklist prerequisite 9) — and only for a caller holding `iam.user.read`.
+   * `named` is what the service answers that caller; without it the service
+   * publishes `null`, never the reference, and the screen reads nothing more.
+   */
+  const namedList = (path: string, named = true) =>
+    path.startsWith('/api/v1/iam/users')
       ? {
           ok: true,
           status: 200,
-          data: { id: PERSON_ID, displayName: 'Rana Khoury' },
+          data: { id: PERSON_ID, displayName: 'Someone Else' },
           correlationId: 'corr-user',
         }
       : {
           ...emptyList,
           data: {
-            items: [limitRow({ userId: PERSON_ID }), limitRow({ roleId: ADMIN_ROLE.id })],
+            items: [
+              limitRow({ userId: PERSON_ID, userDisplayName: named ? 'Rana Khoury' : null }),
+              limitRow({ roleId: ADMIN_ROLE.id }),
+            ],
             nextCursor: null,
           },
         };
@@ -925,14 +970,17 @@ describe('a credit-note approval limit (ADR-023 D13)', () => {
   it('names the person behind a limit and never prints the account reference (DF-B6)', async () => {
     get.mockImplementation(async (path: string) => namedList(path));
     renderLtr(
-      inBranch(
-        <ApprovalLimitsScreen
-          locale="en"
-          messages={en}
-          roles={[...roles, ADMIN_ROLE]}
-          canManage
-          canReadUsers
-        />
+      withMui(
+        inBranch(
+          <ApprovalLimitsScreen
+            locale="en"
+            messages={en}
+            roles={[...roles, ADMIN_ROLE]}
+            canManage
+            canReadUsers
+          />
+        ),
+        'en'
       )
     );
     expect(await screen.findByText('Rana Khoury')).toBeVisible();
@@ -944,8 +992,13 @@ describe('a credit-note approval limit (ADR-023 D13)', () => {
   });
 
   it('says why a person is not named without the user read, still without the reference (DF-B6)', async () => {
-    get.mockImplementation(async (path: string) => namedList(path));
-    renderLtr(inBranch(<ApprovalLimitsScreen locale="en" messages={en} roles={roles} canManage />));
+    get.mockImplementation(async (path: string) => namedList(path, false));
+    renderLtr(
+      withMui(
+        inBranch(<ApprovalLimitsScreen locale="en" messages={en} roles={roles} canManage />),
+        'en'
+      )
+    );
     expect(await screen.findByText(EN('approvalLimits.person.denied'))).toBeVisible();
     expect(document.body.textContent ?? '').not.toContain(PERSON_ID);
     // A role this screen cannot see is said to be one, not shown as its reference.
@@ -957,15 +1010,18 @@ describe('a credit-note approval limit (ADR-023 D13)', () => {
   it('names the person and the provisioned role in Arabic (DF-B6)', async () => {
     get.mockImplementation(async (path: string) => namedList(path));
     renderRtl(
-      inBranch(
-        <ApprovalLimitsScreen
-          locale="ar"
-          messages={ar}
-          roles={[...roles, ADMIN_ROLE]}
-          canManage
-          canReadUsers
-        />,
-        { locale: 'ar' }
+      withMui(
+        inBranch(
+          <ApprovalLimitsScreen
+            locale="ar"
+            messages={ar}
+            roles={[...roles, ADMIN_ROLE]}
+            canManage
+            canReadUsers
+          />,
+          { locale: 'ar' }
+        ),
+        'ar'
       )
     );
     expect(await screen.findByText('Rana Khoury')).toBeVisible();
@@ -977,14 +1033,17 @@ describe('a credit-note approval limit (ADR-023 D13)', () => {
   it('keeps a renamed standard role in the words the organisation chose (DF-B6)', async () => {
     get.mockImplementation(async (path: string) => namedList(path));
     renderRtl(
-      inBranch(
-        <ApprovalLimitsScreen
-          locale="ar"
-          messages={ar}
-          roles={[...roles, { ...ADMIN_ROLE, name: 'Workshop Owner' }]}
-          canManage
-        />,
-        { locale: 'ar' }
+      withMui(
+        inBranch(
+          <ApprovalLimitsScreen
+            locale="ar"
+            messages={ar}
+            roles={[...roles, { ...ADMIN_ROLE, name: 'Workshop Owner' }]}
+            canManage
+          />,
+          { locale: 'ar' }
+        ),
+        'ar'
       )
     );
     expect(await screen.findByText('Workshop Owner')).toBeVisible();
@@ -993,7 +1052,7 @@ describe('a credit-note approval limit (ADR-023 D13)', () => {
 
   it('labels the types and the zero refusal in Arabic', async () => {
     get.mockResolvedValue(emptyList);
-    const { user, dialog, field } = await openCreate('ar');
+    const { user, dialog, field, text } = await openCreate('ar');
     const type = field('approvalLimits.field.limitType') as HTMLSelectElement;
     expect([...type.options].map((o) => o.text)).toEqual(
       expect.arrayContaining([
@@ -1004,7 +1063,7 @@ describe('a credit-note approval limit (ADR-023 D13)', () => {
     await user.selectOptions(type, 'credit_note');
     await user.type(field('approvalLimits.field.amount'), '0');
     await user.type(field('approvalLimits.field.currency'), 'JOD');
-    await user.type(field('approvalLimits.field.effectiveFrom'), '2026-10-01');
+    await typeDay(user, dialog, text('approvalLimits.field.effectiveFrom'), '2026-10-01');
     await user.click(within(dialog).getByRole('button', { name: AR('admin.create') }));
     const sentence = await within(dialog).findByText(AR('approvalLimits.error.positive'));
     expect(sentence.textContent ?? '').toMatch(/[\u0600-\u06ff]/);
@@ -1047,22 +1106,25 @@ describe('an approval limit refused for separation of duties says why (QA rows 7
     const user = userEvent.setup();
     const render = locale === 'en' ? renderLtr : renderRtl;
     render(
-      inBranch(
-        <ApprovalLimitsScreen
-          locale={locale}
-          messages={locale === 'en' ? en : ar}
-          roles={[
-            {
-              id: ROLE.id,
-              roleCode: ROLE.roleCode,
-              name: ROLE.name,
-              description: null,
-              isSystem: false,
-              recordVersion: 1,
-            },
-          ]}
-          canManage
-        />
+      withMui(
+        inBranch(
+          <ApprovalLimitsScreen
+            locale={locale}
+            messages={locale === 'en' ? en : ar}
+            roles={[
+              {
+                id: ROLE.id,
+                roleCode: ROLE.roleCode,
+                name: ROLE.name,
+                description: null,
+                isSystem: false,
+                recordVersion: 1,
+              },
+            ]}
+            canManage
+          />
+        ),
+        'en'
       )
     );
     await user.click(await screen.findByRole('button', { name: text('approvalLimits.create') }));
@@ -1071,7 +1133,7 @@ describe('an approval limit refused for separation of duties says why (QA rows 7
     await user.selectOptions(field('approvalLimits.field.limitType'), 'discount');
     await user.type(field('approvalLimits.field.amount'), '10.0000');
     await user.type(field('approvalLimits.field.currency'), 'JOD');
-    await user.type(field('approvalLimits.field.effectiveFrom'), '2026-10-01');
+    await typeDay(user, dialog, text('approvalLimits.field.effectiveFrom'), '2026-10-01');
     await user.click(within(dialog).getByRole('button', { name: text('admin.create') }));
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     return dialog;
@@ -1140,14 +1202,17 @@ describe('an approval limit’s person is found by name (route sweep B3)', () =>
   async function openAsPerson(canReadUsers: boolean) {
     const user = userEvent.setup();
     renderLtr(
-      inBranch(
-        <ApprovalLimitsScreen
-          locale="en"
-          messages={en}
-          roles={[ROLE_ROW]}
-          canManage
-          canReadUsers={canReadUsers}
-        />
+      withMui(
+        inBranch(
+          <ApprovalLimitsScreen
+            locale="en"
+            messages={en}
+            roles={[ROLE_ROW]}
+            canManage
+            canReadUsers={canReadUsers}
+          />
+        ),
+        'en'
       )
     );
     await user.click(await screen.findByRole('button', { name: EN('approvalLimits.create') }));
@@ -1169,10 +1234,7 @@ describe('an approval limit’s person is found by name (route sweep B3)', () =>
       '1500.0000'
     );
     await user.type(within(dialog).getByLabelText(label('approvalLimits.field.currency')), 'JOD');
-    await user.type(
-      within(dialog).getByLabelText(label('approvalLimits.field.effectiveFrom')),
-      '2026-10-01'
-    );
+    await typeDay(user, dialog, EN('approvalLimits.field.effectiveFrom'), '2026-10-01');
   }
 
   it('with the user read, finds the person by name and sends only their account', async () => {
@@ -1206,7 +1268,9 @@ describe('an approval limit’s person is found by name (route sweep B3)', () =>
   it('without the user read, keeps the labelled reference box and offers no search', async () => {
     answerReads();
     const { dialog } = await openAsPerson(false);
-    const box = within(dialog).getByTestId('approval-limit-person-reference');
+    const box = within(within(dialog).getByTestId('approval-limit-person-reference')).getByRole(
+      'textbox'
+    );
     expect(box).toHaveAccessibleDescription(EN('approvalLimits.field.userIdHelp'));
     expect(within(dialog).queryByRole('searchbox')).toBeNull();
     expect(get.mock.calls.some(([path]) => String(path).startsWith('/api/v1/iam/users'))).toBe(
@@ -1227,7 +1291,12 @@ describe('an approval limit’s person is found by name (route sweep B3)', () =>
     ] as const) {
       SESSION_PERMISSIONS = permissions;
       const view = renderLtr(
-        inBranch((await ApprovalLimitsPage({ params: Promise.resolve({ locale: 'en' }) })) as never)
+        withMui(
+          inBranch(
+            (await ApprovalLimitsPage({ params: Promise.resolve({ locale: 'en' }) })) as never
+          ),
+          'en'
+        )
       );
       const user = userEvent.setup();
       await user.click(await screen.findByRole('button', { name: EN('approvalLimits.create') }));
@@ -1620,7 +1689,7 @@ describe('inviting a user (P1-32-PRE-OD-ADM3)', () => {
     get.mockResolvedValue(page([USER]));
     mountUsers(locale);
     await user.click(await screen.findByRole('button', { name: C('users.invite') }));
-    return screen.findByRole('alertdialog', { name: C('users.invite.title') });
+    return screen.findByRole('dialog', { name: C('users.invite.title') });
   }
 
   for (const locale of ['en', 'ar'] as const) {
@@ -1787,7 +1856,7 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
       const user = userEvent.setup();
       mountAccess(locale);
       await user.click(editButton(C));
-      const dialog = await screen.findByRole('alertdialog', { name: C('users.edit.title') });
+      const dialog = await screen.findByRole('dialog', { name: C('users.edit.title') });
       const name = within(dialog).getByLabelText(new RegExp(`^${C('users.edit.displayName')}`));
       expect(name).toHaveValue(USER.displayName);
       await user.clear(name);
@@ -1803,7 +1872,7 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
       );
       await waitFor(() => expect(refresh).toHaveBeenCalled());
       await waitFor(() =>
-        expect(screen.queryByRole('alertdialog', { name: C('users.edit.title') })).toBeNull()
+        expect(screen.queryByRole('dialog', { name: C('users.edit.title') })).toBeNull()
       );
     });
 
@@ -1812,7 +1881,7 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
       const user = userEvent.setup();
       mountAccess(locale);
       await user.click(editButton(C));
-      const dialog = await screen.findByRole('alertdialog', { name: C('users.edit.title') });
+      const dialog = await screen.findByRole('dialog', { name: C('users.edit.title') });
       const name = within(dialog).getByLabelText(new RegExp(`^${C('users.edit.displayName')}`));
       await user.clear(name);
       await user.click(within(dialog).getByRole('button', { name: C('users.edit.save') }));
@@ -1827,7 +1896,7 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
       const user = userEvent.setup();
       const view = mountAccess(locale);
       await user.click(editButton(C));
-      const dialog = await screen.findByRole('alertdialog', { name: C('users.edit.title') });
+      const dialog = await screen.findByRole('dialog', { name: C('users.edit.title') });
       const name = within(dialog).getByLabelText(new RegExp(`^${C('users.edit.displayName')}`));
       await user.clear(name);
       await user.type(name, 'Senior Supervisor');
@@ -1856,7 +1925,7 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
       };
       view.rerender(accessTree(locale, { user: NEWER }));
       const latest = within(
-        screen.getByRole('alertdialog', { name: C('users.edit.title') })
+        screen.getByRole('dialog', { name: C('users.edit.title') })
       ).getByLabelText(new RegExp(`^${C('users.edit.displayName')}`));
       await waitFor(() => expect(latest).toHaveValue(NEWER.displayName));
       expect(within(dialog).queryByRole('alert')).toBeNull();
@@ -1874,7 +1943,7 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
         { ifMatch: NEWER.recordVersion }
       );
       await waitFor(() =>
-        expect(screen.queryByRole('alertdialog', { name: C('users.edit.title') })).toBeNull()
+        expect(screen.queryByRole('dialog', { name: C('users.edit.title') })).toBeNull()
       );
     });
   }
@@ -1884,7 +1953,7 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
     const user = userEvent.setup();
     mountAccess('en');
     await user.click(editButton(EN));
-    const dialog = await screen.findByRole('alertdialog', { name: EN('users.edit.title') });
+    const dialog = await screen.findByRole('dialog', { name: EN('users.edit.title') });
     await user.click(within(dialog).getByLabelText(new RegExp(`^${EN('users.edit.mfaRequired')}`)));
     await user.click(within(dialog).getByRole('button', { name: EN('users.edit.save') }));
     await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
@@ -1900,7 +1969,7 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
     const user = userEvent.setup();
     mountAccess('en');
     await user.click(editButton(EN));
-    const dialog = await screen.findByRole('alertdialog', { name: EN('users.edit.title') });
+    const dialog = await screen.findByRole('dialog', { name: EN('users.edit.title') });
     await user.click(within(dialog).getByRole('button', { name: EN('users.edit.save') }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent(EN('users.edit.unchanged'));
     expect(send).not.toHaveBeenCalled();
@@ -1911,7 +1980,7 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
     const user = userEvent.setup();
     mountAccess('en');
     await user.click(editButton(EN));
-    const dialog = await screen.findByRole('alertdialog', { name: EN('users.edit.title') });
+    const dialog = await screen.findByRole('dialog', { name: EN('users.edit.title') });
     await user.type(within(dialog).getByLabelText(/^Display name/), ' Lead');
     const press = within(dialog).getByRole('button', { name: EN('users.edit.save') });
     act(() => {
@@ -1928,7 +1997,7 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
     const user = userEvent.setup();
     mountAccess('en');
     await user.click(editButton(EN));
-    const dialog = await screen.findByRole('alertdialog', { name: EN('users.edit.title') });
+    const dialog = await screen.findByRole('dialog', { name: EN('users.edit.title') });
     expect(await unsavedNow()).toBe('false');
     const name = within(dialog).getByLabelText(/^Display name/);
     await user.type(name, 'x');
@@ -1941,7 +2010,7 @@ describe('editing the account’s own details — iam.user-update (P1-32-PRE-OD-
 
     await user.click(within(dialog).getByRole('button', { name: EN('overlay.cancel') }));
     await waitFor(() =>
-      expect(screen.queryByRole('alertdialog', { name: EN('users.edit.title') })).toBeNull()
+      expect(screen.queryByRole('dialog', { name: EN('users.edit.title') })).toBeNull()
     );
     await waitFor(() => expect(editButton(EN)).toHaveFocus());
   });
@@ -2010,5 +2079,364 @@ describe('a grant cannot reach across companies by what it sends (P1-32-PRE-OD-A
     await user.click(within(dialog).getByRole('radio', { name: /^Selected branches/ }));
     await user.click(within(dialog).getByLabelText(/^North Branch/));
     expect(await unsavedNow()).toBe('true');
+  });
+});
+
+/*
+ * ---------------------------------------------------------------------------
+ * `/administration/permissions` and `/administration/approval-limits` on
+ * Material UI (`P1-32-PRE-OD-ADM4`).
+ *
+ * The permission screen changes an existing mapping between allow and deny
+ * through `iam.role-permission-update` — which had no caller before this slice —
+ * with the mapping's version as `If-Match`; the approval-limit list names the
+ * person and the role from the list's own answer (route checklist prerequisite
+ * 9) and says a withheld name in words; the service's refusal of a limit for
+ * yourself is said as that refusal; and every write is one act.
+ * ---------------------------------------------------------------------------
+ */
+
+const PERMISSION_ROLE = {
+  id: ROLE.id,
+  roleCode: ROLE.roleCode,
+  name: ROLE.name,
+  description: null,
+  isSystem: false,
+  recordVersion: 1,
+};
+const CATALOGUE_ITEMS = [
+  {
+    id: 'p-1',
+    code: 'wo.work-order.read',
+    domain: 'wo',
+    riskLevel: 'low',
+    description: 'See work orders',
+  },
+  {
+    id: 'p-2',
+    code: 'wo.work-order.manage',
+    domain: 'wo',
+    riskLevel: 'medium',
+    description: 'Change work orders',
+  },
+];
+const MAPPING = {
+  id: '90000000-0000-4000-8000-0000000000a1',
+  permissionCode: 'wo.work-order.read',
+  effect: 'allow' as const,
+  recordVersion: 3,
+};
+
+function answerPermissionReads(
+  mappings: unknown = { ok: true, status: 200, data: { items: [MAPPING] }, correlationId: 'm' }
+) {
+  get.mockImplementation(async (path: string) =>
+    path === '/api/v1/iam/permissions'
+      ? { ok: true, status: 200, data: { items: CATALOGUE_ITEMS }, correlationId: 'p' }
+      : mappings
+  );
+}
+
+function mountPermissions(locale: 'en' | 'ar' = 'en') {
+  const ui = withMui(
+    inBranch(
+      <PermissionsScreen
+        messages={locale === 'en' ? en : ar}
+        locale={locale}
+        roles={[PERMISSION_ROLE]}
+        canManage
+      />,
+      { locale }
+    ),
+    locale
+  );
+  return locale === 'en' ? renderLtr(ui) : renderRtl(ui);
+}
+
+describe('changing a permission mapping between allow and deny (iam.role-permission-update)', () => {
+  for (const locale of ['en', 'ar'] as const) {
+    it(`sends the other effect with the mapping version as If-Match, then reads again (${locale})`, async () => {
+      const C = CATALOGUE[locale];
+      answerPermissionReads();
+      send.mockResolvedValue({
+        ok: true,
+        status: 200,
+        data: { status: 'updated' },
+        correlationId: 'c',
+      });
+      const user = userEvent.setup();
+      mountPermissions(locale);
+      const change = await screen.findByRole('button', {
+        name: `${C('permissions.setDeny')}: wo.work-order.read`,
+      });
+      const readsBefore = get.mock.calls.length;
+      await user.click(change);
+      await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+      expect(send).toHaveBeenCalledWith(
+        'PATCH',
+        `/api/v1/iam/roles/${ROLE.id}/permissions/${MAPPING.id}`,
+        { effect: 'deny' },
+        { ifMatch: 3 }
+      );
+      await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(readsBefore));
+      // An unmapped permission is offered a mapping, not a change.
+      expect(
+        screen.queryByRole('button', {
+          name: `${C('permissions.setAllow')}: wo.work-order.manage`,
+        })
+      ).toBeNull();
+      expect(
+        await screen.findByRole('button', {
+          name: `${C('permissions.effect.allow')}: wo.work-order.manage`,
+        })
+      ).toBeVisible();
+    });
+  }
+
+  it('sends one change when it is pressed twice inside one frame', async () => {
+    answerPermissionReads();
+    const release = heldSend();
+    mountPermissions();
+    const change = await screen.findByRole('button', {
+      name: `${EN('permissions.setDeny')}: wo.work-order.read`,
+    });
+    act(() => {
+      change.click();
+      change.click();
+    });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    release({ ok: true, status: 200, data: { status: 'updated' }, correlationId: 'c' });
+    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(2));
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it('says a stale mapping is a conflict and loads the latest on request', async () => {
+    answerPermissionReads();
+    send.mockResolvedValue(STALE);
+    const user = userEvent.setup();
+    mountPermissions();
+    await user.click(
+      await screen.findByRole('button', {
+        name: `${EN('permissions.setDeny')}: wo.work-order.read`,
+      })
+    );
+    expect(await screen.findByText(EN('state.conflict.title'))).toBeVisible();
+    const readsBefore = get.mock.calls.length;
+    await user.click(screen.getByRole('button', { name: EN('form.loadLatest') }));
+    await waitFor(() => expect(get.mock.calls.length).toBeGreaterThan(readsBefore));
+  });
+
+  it('draws a refused mapping read as a refusal, never as a role that holds nothing', async () => {
+    answerPermissionReads({ ok: false, kind: 'forbidden', status: 403, correlationId: 'corr-map' });
+    mountPermissions();
+    expect(await screen.findByText(EN('state.denied.title'))).toBeVisible();
+    expect(screen.getByText('corr-map')).toBeVisible();
+    expect(screen.queryByText(EN('permissions.effect.unset'))).toBeNull();
+    expect(
+      screen.queryByRole('button', {
+        name: `${EN('permissions.effect.allow')}: wo.work-order.read`,
+      })
+    ).toBeNull();
+  });
+});
+
+describe('approval limits name their subject from the list (route checklist prerequisite 9)', () => {
+  const PERSON_ID = '0b3d8c05-228a-406c-8c4c-b9df5b3f8459';
+  const OTHER_ROLE_ID = '70000000-0000-4000-8000-0000000000be';
+  const row = (over: Record<string, unknown>) => ({
+    id: `limit-${String(over['userId'] ?? over['roleId'])}`,
+    companyId: 'company-1',
+    roleId: null,
+    userId: null,
+    limitType: 'discount',
+    amount: '250.0000',
+    currencyCode: 'JOD',
+    effectiveFrom: '2026-10-01',
+    effectiveTo: null,
+    recordVersion: 2,
+    ...over,
+  });
+  const list = (items: readonly unknown[]) => ({
+    ok: true,
+    status: 200,
+    data: { items, nextCursor: null },
+    correlationId: 'corr-limits',
+  });
+  function mountLimits(locale: 'en' | 'ar', canReadUsers: boolean) {
+    const ui = withMui(
+      inBranch(
+        <ApprovalLimitsScreen
+          locale={locale}
+          messages={locale === 'en' ? en : ar}
+          roles={[PERMISSION_ROLE]}
+          canManage
+          canReadUsers={canReadUsers}
+        />,
+        { locale }
+      ),
+      locale
+    );
+    return locale === 'en' ? renderLtr(ui) : renderRtl(ui);
+  }
+
+  for (const locale of ['en', 'ar'] as const) {
+    it(`shows the names the list publishes, and reads no person one by one (${locale})`, async () => {
+      get.mockResolvedValue(
+        list([
+          row({ userId: PERSON_ID, userDisplayName: 'Huda Mansour', roleName: null }),
+          row({ roleId: OTHER_ROLE_ID, roleName: 'Night shift', userDisplayName: null }),
+        ])
+      );
+      mountLimits(locale, true);
+      expect(await screen.findByText('Huda Mansour')).toBeVisible();
+      // A role this screen does not hold the code of is named by the list.
+      expect(screen.getByText('Night shift')).toBeVisible();
+      expect(document.body.textContent ?? '').not.toContain(PERSON_ID);
+      expect(document.body.textContent ?? '').not.toContain(OTHER_ROLE_ID);
+      expect(get.mock.calls.some(([path]) => String(path).startsWith('/api/v1/iam/users'))).toBe(
+        false
+      );
+    });
+
+    it(`says a withheld name is not available, in words, never the reference (${locale})`, async () => {
+      const C = CATALOGUE[locale];
+      get.mockResolvedValue(
+        list([row({ userId: PERSON_ID, userDisplayName: null, roleName: null })])
+      );
+      mountLimits(locale, true);
+      const sentence = await screen.findByText(C('approvalLimits.person.notAvailable'));
+      expect(sentence).toBeVisible();
+      if (locale === 'ar') expect(sentence.textContent ?? '').toMatch(/[؀-ۿ]/);
+      expect(document.body.textContent ?? '').not.toContain(PERSON_ID);
+    });
+  }
+
+  it('without the user read, says the caller may not see who it is', async () => {
+    get.mockResolvedValue(
+      list([row({ userId: PERSON_ID, userDisplayName: null, roleName: null })])
+    );
+    mountLimits('en', false);
+    expect(await screen.findByText(EN('approvalLimits.person.denied'))).toBeVisible();
+    expect(document.body.textContent ?? '').not.toContain(PERSON_ID);
+  });
+
+  it('ends a limit with the day chosen and the version the list showed', async () => {
+    get.mockResolvedValue(list([row({ roleId: ROLE.id })]));
+    send.mockResolvedValue({ ok: true, status: 200, data: { id: 'x' }, correlationId: 'c' });
+    const user = userEvent.setup();
+    mountLimits('en', true);
+    await user.click(
+      await screen.findByRole('button', {
+        name: `${EN('approvalLimits.end')} ${ROLE.name}, ${EN('approvalLimits.type.discount')}`,
+      })
+    );
+    const dialog = await screen.findByRole('dialog', { name: EN('approvalLimits.end.title') });
+    // Nothing chosen: refused on the day, and nothing is sent.
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.save') }));
+    expect(await within(dialog).findByText(EN('approvalLimits.error.date'))).toBeVisible();
+    expect(send).not.toHaveBeenCalled();
+    await typeDay(user, dialog, EN('approvalLimits.field.effectiveTo'), '2026-12-31');
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.save') }));
+    await waitFor(() =>
+      expect(send).toHaveBeenCalledWith(
+        'PATCH',
+        `/api/v1/iam/approval-limits/limit-${ROLE.id}`,
+        { effectiveTo: '2026-12-31' },
+        { ifMatch: 2 }
+      )
+    );
+  });
+});
+
+describe('an approval limit for yourself is refused as that, and the form is one act', () => {
+  const ownLimit = {
+    ok: false as const,
+    kind: 'forbidden' as const,
+    status: 403,
+    problem: {
+      type: 'urn:rootlco:error:ERR-IAM-001',
+      title: 'Forbidden',
+      status: 403,
+      code: 'ERR-IAM-001',
+      correlationId: 'corr-self',
+      violations: [{ path: 'body', rule: 'approval_limit_for_yourself' }],
+    },
+    correlationId: 'corr-self',
+  };
+
+  async function fill(user: ReturnType<typeof userEvent.setup>, dialog: HTMLElement) {
+    const field = (key: string) => within(dialog).getByLabelText(new RegExp(`^${EN(key)}`));
+    await user.selectOptions(field('approvalLimits.field.subject'), 'user');
+    await user.type(field('approvalLimits.field.userId'), USER.id);
+    await user.selectOptions(field('approvalLimits.field.limitType'), 'credit_note');
+    await user.type(field('approvalLimits.field.amount'), '75.500');
+    await user.type(field('approvalLimits.field.currency'), 'JOD');
+    await typeDay(user, dialog, EN('approvalLimits.field.effectiveFrom'), '2026-10-01');
+  }
+
+  function mountCreate() {
+    get.mockResolvedValue({
+      ok: true,
+      status: 200,
+      data: { items: [], nextCursor: null },
+      correlationId: 'corr-page',
+    });
+    renderLtr(
+      withMui(
+        inBranch(
+          <ApprovalLimitsScreen locale="en" messages={en} roles={[PERMISSION_ROLE]} canManage />
+        ),
+        'en'
+      )
+    );
+  }
+
+  it('says the service refused a limit for yourself, keeps every entry, and offers no way around it', async () => {
+    send.mockResolvedValue(ownLimit);
+    const user = userEvent.setup();
+    mountCreate();
+    await user.click(await screen.findByRole('button', { name: EN('approvalLimits.create') }));
+    const dialog = await screen.findByRole('dialog', { name: EN('approvalLimits.create.title') });
+    await fill(user, dialog);
+    await user.click(within(dialog).getByRole('button', { name: EN('admin.create') }));
+    expect(
+      await within(dialog).findByText(EN('form.violation.approval_limit_for_yourself'))
+    ).toBeVisible();
+    expect(within(dialog).queryByText(EN('state.denied.message'))).toBeNull();
+    expect(
+      within(dialog).getByLabelText(new RegExp(`^${EN('approvalLimits.field.amount')}`))
+    ).toHaveValue('75.500');
+    // No control on the form exempts anyone from the rule.
+    expect(within(dialog).queryByRole('checkbox')).toBeNull();
+  });
+
+  it('sends one limit when Create is pressed twice inside one frame, with the amount as typed', async () => {
+    const release = heldSend();
+    const user = userEvent.setup();
+    mountCreate();
+    await user.click(await screen.findByRole('button', { name: EN('approvalLimits.create') }));
+    const dialog = await screen.findByRole('dialog', { name: EN('approvalLimits.create.title') });
+    await fill(user, dialog);
+    const press = within(dialog).getByRole('button', { name: EN('admin.create') });
+    act(() => {
+      press.click();
+      press.click();
+    });
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    const [, path, body] = send.mock.calls[0] as [string, string, Record<string, unknown>];
+    expect(path).toBe('/api/v1/iam/approval-limits');
+    expect(body).toMatchObject({
+      limitType: 'credit_note',
+      amount: '75.500',
+      currency: 'JOD',
+      userId: USER.id,
+      roleId: null,
+      effectiveFrom: '2026-10-01',
+    });
+    release({ ok: true, status: 201, data: { id: 'x' }, correlationId: 'c' });
+    await waitFor(() =>
+      expect(screen.queryByRole('dialog', { name: EN('approvalLimits.create.title') })).toBeNull()
+    );
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });

@@ -61,6 +61,7 @@ export default async function PermissionsPage({
       <PageBody>
         <PermissionsScreen
           messages={messages}
+          locale={locale}
           roles={roles}
           canManage={holds(session.permissions, PERMISSIONS.roleManage)}
         />

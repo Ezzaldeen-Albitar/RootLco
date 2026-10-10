@@ -1,22 +1,35 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import Button from '@mui/material/Button';
+import Table from '@mui/material/Table';
+import TableBody from '@mui/material/TableBody';
+import TableCell from '@mui/material/TableCell';
+import TableContainer from '@mui/material/TableContainer';
+import TableHead from '@mui/material/TableHead';
+import TableRow from '@mui/material/TableRow';
 
-import { SelectField, TextField } from '@/components/forms/Field';
+import { workingZone } from '@/components/forms/mui/DateField';
+import { FormSelectField } from '@/components/forms/mui/FormSelectField';
+import { FormTextField } from '@/components/forms/mui/FormTextField';
 import { notifyActionResult } from '@/components/notifications/action-notifications';
+import { MuiLoadingState, MuiReadFailureState } from '@/components/states/MuiStates';
 import { RequiresConcreteBranch } from '@/features/working-context/components/WorkingBranchField';
 import { useBranchTarget } from '@/features/working-context/use-branch-target';
-import { useWorkingContext } from '@/features/working-context/WorkingContextProvider';
+import {
+  useUnsavedGuard,
+  useWorkingContext,
+} from '@/features/working-context/WorkingContextProvider';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { formatMessage, translate, translateDynamic } from '@/i18n/get-messages';
 import type { ReadState } from '@/lib/api/read-operation';
+import { formatDayInZone, formatInZone, zoneLabelAt } from '@/lib/branch-time';
 import type { ActionState } from '@/lib/forms/action-result';
 import { useLocalRefusal } from '@/lib/forms/use-local-refusal';
-import { formatDateTime } from '@/lib/format';
+import { intlLocale } from '@/lib/format';
 
 import { readDiscountThreshold, setDiscountThreshold } from '../api';
-import { PRIMARY_BUTTON } from './shared';
 import {
   CURRENCY_CODE,
   THRESHOLD_KINDS,
@@ -50,8 +63,17 @@ import {
  * ## Which version a save must match
  *
  * The `recordVersion` of the read travels as `If-Match` on every save, the first
- * included. A save that lost a race is refused, and the screen says to reload
- * rather than guessing.
+ * included. A save that lost a race is refused, and the screen offers "Load the
+ * latest version" rather than guessing.
+ *
+ * ## On Material UI (ADR-022, `P1-32-PRE-OD-ADM4`)
+ *
+ * The form is the shared Material fields; the read's loading, refusal and
+ * failure are the shared states (a refusal never offers a retry, an outage
+ * does); the save is sent once — a second press made before the button is
+ * disabled sends nothing — and a value typed and not yet saved counts as
+ * unsaved work, so a branch switch asks before it discards it. Every moment is
+ * written on the working branch's clock, with the clock's name beside it.
  */
 export function DiscountThresholdScreen({
   locale,
@@ -119,9 +141,11 @@ function CompanyThreshold({
 
   useEffect(() => {
     let live = true;
-    void readDiscountThreshold(companyId).then((next) => {
-      if (live) setState(next);
-    });
+    void readDiscountThreshold(companyId)
+      .catch((): ReadState<DiscountThreshold> => ({ status: 'unavailable', correlationId: null }))
+      .then((next) => {
+        if (live) setState(next);
+      });
     return () => {
       live = false;
     };
@@ -147,18 +171,22 @@ function CompanyThreshold({
           {translate(messages, 'discountThreshold.separationNote')}
         </p>
         {state === null ? (
-          <p className="text-body text-text-secondary" role="status">
-            {translate(messages, 'discountThreshold.loading')}
-          </p>
+          <MuiLoadingState
+            messages={messages}
+            variant="inline"
+            labelKey="discountThreshold.loading"
+            testId="discount-threshold-loading"
+          />
         ) : state.status !== 'ok' ? (
-          <p className="text-body text-error" role="alert">
-            {translate(
-              messages,
-              state.status === 'denied'
-                ? 'discountThreshold.denied'
-                : 'discountThreshold.unavailable'
-            )}
-          </p>
+          <MuiReadFailureState
+            messages={messages}
+            locale={locale}
+            status={state.status}
+            correlationId={state.correlationId}
+            onRetry={reload}
+            descriptionKey={failureSentence(state.status)}
+            testId="discount-threshold-failure"
+          />
         ) : (
           <CurrentThreshold locale={locale} messages={messages} view={state.data} />
         )}
@@ -182,6 +210,15 @@ function CompanyThreshold({
   );
 }
 
+/** The screen's own sentence under a failed read's shared heading. */
+function failureSentence(
+  status: 'denied' | 'expired' | 'unavailable' | 'error' | 'not-found'
+): keyof Messages | undefined {
+  if (status === 'denied') return 'discountThreshold.denied';
+  if (status === 'unavailable' || status === 'error') return 'discountThreshold.unavailable';
+  return undefined;
+}
+
 function describe(messages: Messages, version: DiscountThresholdVersion): string {
   return version.thresholdKind === 'percentage'
     ? formatMessage(translate(messages, 'discountThreshold.percentageValue'), {
@@ -193,6 +230,22 @@ function describe(messages: Messages, version: DiscountThresholdVersion): string
       });
 }
 
+/**
+ * A calendar day and a recorded moment on the working branch's clock — the
+ * clock the header names — and on UTC where no one branch's zone is known, with
+ * the clock's name beside a moment so a reader can tell which clock it is.
+ */
+function useBranchClock(locale: Locale) {
+  const context = useWorkingContext();
+  const zone = workingZone(context) ?? 'UTC';
+  const language = intlLocale(locale);
+  return {
+    day: (value: string) => formatDayInZone(value, language, zone),
+    moment: (value: string) =>
+      `${formatInZone(value, language, zone)} ${zoneLabelAt(value, language, zone)}`,
+  };
+}
+
 function CurrentThreshold({
   locale,
   messages,
@@ -202,6 +255,7 @@ function CurrentThreshold({
   readonly messages: Messages;
   readonly view: DiscountThreshold;
 }) {
+  const clock = useBranchClock(locale);
   if (view.source === 'none') {
     return (
       <p className="text-body text-text-primary" data-testid="discount-threshold-current">
@@ -224,13 +278,13 @@ function CurrentThreshold({
               ? 'discountThreshold.fromCompany'
               : 'discountThreshold.fromDefault'
           ),
-          { date: version.effectiveFrom, version: String(version.versionNo) }
+          { date: clock.day(version.effectiveFrom), version: String(version.versionNo) }
         )}
       </p>
       <p className="text-caption text-text-muted">
         {formatMessage(translate(messages, 'discountThreshold.recordedBy'), {
           name: version.recordedBy.displayName ?? translate(messages, 'discountThreshold.someone'),
-          when: formatDateTime(version.recordedAt, locale),
+          when: clock.moment(version.recordedAt),
         })}
       </p>
     </div>
@@ -251,16 +305,36 @@ function ThresholdForm({
   readonly onSaved: () => void;
 }) {
   const start = view.current ?? view.tenantDefault;
-  const [kind, setKind] = useState<ThresholdKind>(start?.thresholdKind ?? 'amount');
-  const [value, setValue] = useState(start?.thresholdValue ?? '');
-  const [currency, setCurrency] = useState(start?.currency ?? '');
+  const startKind: ThresholdKind = start?.thresholdKind ?? 'amount';
+  const startValue = start?.thresholdValue ?? '';
+  const startCurrency = start?.currency ?? '';
+  const [kind, setKind] = useState<ThresholdKind>(startKind);
+  const [value, setValue] = useState(startValue);
+  const [currency, setCurrency] = useState(startCurrency);
   const {
     errorKey: localErrorKey,
     formRef,
     refuse,
   } = useLocalRefusal({ thresholdValue: value, currency });
   const [busy, setBusy] = useState(false);
+  // One save sent at a time, before `busy` has disabled the button.
+  const sending = useRef(false);
   const [outcome, setOutcome] = useState<ActionState | null>(null);
+  const putBack = () => {
+    setKind(startKind);
+    setValue(startValue);
+    setCurrency(startCurrency);
+    setOutcome(null);
+  };
+  /*
+   * What was typed and not yet saved. A confirmed discard — a branch switch —
+   * puts back what is stored, and the screen remounts on the new company.
+   */
+  const dirty =
+    kind !== startKind ||
+    value.trim() !== startValue.trim() ||
+    (kind === 'amount' && currency.trim().toUpperCase() !== startCurrency.trim().toUpperCase());
+  useUnsavedGuard(dirty, putBack);
 
   const errorFor = (name: string): string | undefined => {
     const key = localErrorKey(name) ?? outcome?.fieldErrors?.[name];
@@ -268,6 +342,7 @@ function ThresholdForm({
   };
 
   const submit = async () => {
+    if (sending.current) return;
     const found: Record<string, string> = {};
     const trimmed = value.trim();
     if (trimmed.length === 0) found['thresholdValue'] = 'discountThreshold.valueRequired';
@@ -281,27 +356,35 @@ function ThresholdForm({
     refuse(found);
     if (Object.keys(found).length > 0) return;
 
+    sending.current = true;
     setBusy(true);
-    const result = await setDiscountThreshold(
-      companyId,
-      {
-        thresholdKind: kind,
-        thresholdValue: trimmed,
-        ...(kind === 'amount' ? { currency: code } : {}),
-      },
-      view.recordVersion
-    );
-    setBusy(false);
-    notifyActionResult(result.state, messages);
-    if (result.state.status === 'success') {
+    let state: ActionState;
+    try {
+      const result = await setDiscountThreshold(
+        companyId,
+        {
+          thresholdKind: kind,
+          thresholdValue: trimmed,
+          ...(kind === 'amount' ? { currency: code } : {}),
+        },
+        view.recordVersion
+      );
+      state = result.state;
+    } catch {
+      // No answer came back: what was typed stays, and the button works again.
+      state = { status: 'unavailable', messageKey: 'state.unavailable.message', attempt: 1 };
+    } finally {
+      sending.current = false;
+      setBusy(false);
+    }
+    notifyActionResult(state, messages);
+    if (state.status === 'success') {
       setOutcome(null);
       onSaved();
       return;
     }
     setOutcome(
-      result.state.status === 'conflict'
-        ? { ...result.state, messageKey: 'discountThreshold.conflict' }
-        : result.state
+      state.status === 'conflict' ? { ...state, messageKey: 'discountThreshold.conflict' } : state
     );
   };
 
@@ -324,10 +407,11 @@ function ThresholdForm({
         {translate(messages, 'discountThreshold.prospectiveNote')}
       </p>
       <div className="grid gap-3 sm:grid-cols-3">
-        <SelectField
+        <FormSelectField
+          name="thresholdKind"
           label={translate(messages, 'discountThreshold.kind')}
           value={kind}
-          onChange={(event) => setKind(event.target.value as ThresholdKind)}
+          onChange={(next) => setKind(next === 'percentage' ? 'percentage' : 'amount')}
           options={THRESHOLD_KINDS.map((option) => ({
             value: option,
             label: translate(
@@ -338,7 +422,8 @@ function ThresholdForm({
             ),
           }))}
         />
-        <TextField
+        <FormTextField
+          name="thresholdValue"
           label={translate(
             messages,
             kind === 'amount' ? 'discountThreshold.amount' : 'discountThreshold.percentage'
@@ -350,44 +435,67 @@ function ThresholdForm({
           inputMode="decimal"
           dir="ltr"
           required
+          autoComplete="off"
+          spellCheck={false}
           value={value}
-          onChange={(event) => setValue(event.target.value)}
+          onChange={setValue}
           error={errorFor('thresholdValue')}
         />
         {kind === 'amount' ? (
-          <TextField
+          <FormTextField
+            name="currency"
             label={translate(messages, 'discountThreshold.currency')}
             description={translate(messages, 'discountThreshold.currencyHelp')}
             dir="ltr"
             required
             maxLength={3}
             autoComplete="off"
+            spellCheck={false}
             value={currency}
-            onChange={(event) => setCurrency(event.target.value)}
+            onChange={setCurrency}
             error={errorFor('currency')}
           />
         ) : null}
       </div>
       {outcome && outcome.status !== 'success' && outcome.status !== 'idle' ? (
-        <p role="alert" className="text-body text-error">
-          {translateDynamic(messages, outcome.messageKey ?? 'action.failed')}
-          {outcome.correlationId ? (
-            <>
-              {' '}
-              <span className="text-caption text-text-muted">
-                {translate(messages, 'state.correlationId')}{' '}
-                <code className="font-mono" dir="ltr">
-                  {outcome.correlationId}
-                </code>
-              </span>
-            </>
+        <div className="flex flex-col gap-2" role="alert">
+          <p className="text-body text-error">
+            {translateDynamic(messages, outcome.messageKey ?? 'action.failed')}
+            {outcome.correlationId ? (
+              <>
+                {' '}
+                <span className="text-caption text-text-muted">
+                  {translate(messages, 'state.correlationId')}{' '}
+                  <code className="font-mono" dir="ltr">
+                    {outcome.correlationId}
+                  </code>
+                </span>
+              </>
+            ) : null}
+          </p>
+          {outcome.status === 'conflict' ? (
+            <div>
+              <Button
+                type="button"
+                variant="outlined"
+                size="small"
+                onClick={() => {
+                  // What is stored now replaces the stale work: the read is
+                  // taken again and the form remounts on its version.
+                  putBack();
+                  onSaved();
+                }}
+              >
+                {translate(messages, 'form.loadLatest')}
+              </Button>
+            </div>
           ) : null}
-        </p>
+        </div>
       ) : null}
       <div>
-        <button type="submit" className={PRIMARY_BUTTON} disabled={busy}>
+        <Button type="submit" variant="contained" disabled={busy} aria-busy={busy || undefined}>
           {translate(messages, 'discountThreshold.save')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -402,6 +510,7 @@ function History({
   readonly messages: Messages;
   readonly history: readonly DiscountThresholdVersion[];
 }) {
+  const clock = useBranchClock(locale);
   return (
     <section
       aria-labelledby="discount-threshold-history-heading"
@@ -414,59 +523,63 @@ function History({
       >
         {translate(messages, 'discountThreshold.historyHeading')}
       </h2>
-      <table className="w-full text-start text-body">
-        <caption className="sr-only">
-          {translate(messages, 'discountThreshold.historyCaption')}
-        </caption>
-        <thead>
-          <tr className="text-caption text-text-muted">
-            <th scope="col" className="py-1 text-start font-medium">
-              {translate(messages, 'discountThreshold.column.version')}
-            </th>
-            <th scope="col" className="py-1 text-start font-medium">
-              {translate(messages, 'discountThreshold.column.threshold')}
-            </th>
-            <th scope="col" className="py-1 text-start font-medium">
-              {translate(messages, 'discountThreshold.column.from')}
-            </th>
-            <th scope="col" className="py-1 text-start font-medium">
-              {translate(messages, 'discountThreshold.column.state')}
-            </th>
-            <th scope="col" className="py-1 text-start font-medium">
-              {translate(messages, 'discountThreshold.column.recordedBy')}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {history.map((version) => (
-            <tr key={version.id} className="border-t border-border">
-              <td className="py-1 font-mono" dir="ltr">
-                {version.versionNo}
-              </td>
-              <td className="py-1">
-                <bdi>{describe(messages, version)}</bdi>
-              </td>
-              <td className="py-1 font-mono" dir="ltr">
-                {version.effectiveFrom}
-              </td>
-              <td className="py-1">
-                {translate(
-                  messages,
-                  version.status === 'active'
-                    ? 'discountThreshold.state.active'
-                    : 'discountThreshold.state.replaced'
-                )}
-              </td>
-              <td className="py-1">
-                <bdi>
-                  {version.recordedBy.displayName ??
-                    translate(messages, 'discountThreshold.someone')}
-                </bdi>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <TableContainer>
+        <Table size="small">
+          <caption className="sr-only">
+            {translate(messages, 'discountThreshold.historyCaption')}
+          </caption>
+          <TableHead>
+            <TableRow>
+              <TableCell scope="col">
+                {translate(messages, 'discountThreshold.column.version')}
+              </TableCell>
+              <TableCell scope="col">
+                {translate(messages, 'discountThreshold.column.threshold')}
+              </TableCell>
+              <TableCell scope="col">
+                {translate(messages, 'discountThreshold.column.from')}
+              </TableCell>
+              <TableCell scope="col">
+                {translate(messages, 'discountThreshold.column.state')}
+              </TableCell>
+              <TableCell scope="col">
+                {translate(messages, 'discountThreshold.column.recordedBy')}
+              </TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {history.map((version) => (
+              <TableRow key={version.id}>
+                <TableCell>
+                  <span className="font-mono" dir="ltr">
+                    {version.versionNo}
+                  </span>
+                </TableCell>
+                <TableCell>
+                  <bdi>{describe(messages, version)}</bdi>
+                </TableCell>
+                <TableCell>
+                  <bdi>{clock.day(version.effectiveFrom)}</bdi>
+                </TableCell>
+                <TableCell>
+                  {translate(
+                    messages,
+                    version.status === 'active'
+                      ? 'discountThreshold.state.active'
+                      : 'discountThreshold.state.replaced'
+                  )}
+                </TableCell>
+                <TableCell>
+                  <bdi>
+                    {version.recordedBy.displayName ??
+                      translate(messages, 'discountThreshold.someone')}
+                  </bdi>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
     </section>
   );
 }

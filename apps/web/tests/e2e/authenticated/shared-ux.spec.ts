@@ -53,8 +53,12 @@ test.beforeEach(() => {
  */
 
 const ADMIN = '/en/administration/users';
-/** A list still drawn by the shared table (`DataTable`), for the table's own region. */
-const TABLE_ROUTE = '/en/administration/roles';
+/**
+ * A list still drawn by the shared table (`DataTable`), for the table's own region.
+ * The roles list was it until it moved onto the operational grid (P1-32-PRE-OD-ADM4);
+ * the audit log is still the shared table.
+ */
+const TABLE_ROUTE = '/en/administration/audit-log';
 const TOLERANCE = 2;
 
 /** Every viewport the acceptance criteria name, including two short ones. */
@@ -189,8 +193,9 @@ test.describe('scroll ownership', () => {
 
   test('the table stays inside its region and the pager stays reachable', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 700 });
-    // The roles list, which is still the shared table: the users list is the
-    // operational grid since P1-32-PRE-OD-ADM3 (ADR-022) and is measured below.
+    // The audit log, which is still the shared table: the users and roles lists
+    // are the operational grid since P1-32-PRE-OD-ADM3 and -ADM4 (ADR-022), and the
+    // users grid is measured below.
     await page.goto(TABLE_ROUTE);
     await expect(page.getByRole('table')).toBeVisible();
 
