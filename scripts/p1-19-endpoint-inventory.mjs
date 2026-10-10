@@ -182,6 +182,13 @@ function successorOwners(source) {
       // the same deliberate, reviewable act a BR contract performs. P1-29 W5 is
       // the first: `dia.diagnostic-type-list`, a read P1-19 never published.
       ...[...source.matchAll(/P1-29-W(\d)\b/g)].map((m) => `P1-29-W${m[1]}`),
+      // The Owner directive's technician administration slice — the third, and
+      // exactly one slice: `P1-32-PRE-OD-ADM2B` delivers `tech.skill-list`, the
+      // skill vocabulary the technician administration screens choose from.
+      // Named literally rather than by pattern, so no other directive slice
+      // that mentions itself in route prose becomes an owner by accident. A
+      // further slice is added here by name, as the same deliberate act.
+      ...[...source.matchAll(/\bP1-32-PRE-OD-ADM2B\b/g)].map(() => 'P1-32-PRE-OD-ADM2B'),
     ]),
   ].sort();
 }

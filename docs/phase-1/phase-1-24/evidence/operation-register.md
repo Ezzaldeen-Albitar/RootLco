@@ -9,10 +9,10 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Measure                  | Value |
 | ------------------------ | ----- |
-| Public operations        | 525   |
+| Public operations        | 526   |
 | Domains (modules)        | 21    |
-| OpenAPI paths            | 414   |
-| OpenAPI operations       | 525   |
+| OpenAPI paths            | 415   |
+| OpenAPI operations       | 526   |
 | OpenAPI schemas          | 3     |
 | OpenAPI security schemes | 1     |
 | Permission codes seeded  | 135   |
@@ -24,7 +24,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 
 | Classification    | Operations |
 | ----------------- | ---------- |
-| Covered           | 525        |
+| Covered           | 526        |
 | Partially covered | 0          |
 | Uncovered         | 0          |
 | Not applicable    | 0          |
@@ -51,7 +51,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | reporting       | 14         | 14      | 7      | 7       | 4          | 3               |
 | service-catalog | 9          | 9       | 6      | 6       | 6          | 2               |
 | shared-services | 28         | 28      | 18     | 18      | 6          | 6               |
-| technician      | 18         | 18      | 12     | 12      | 4          | 5               |
+| technician      | 19         | 19      | 12     | 12      | 4          | 5               |
 | vehicle         | 27         | 27      | 12     | 12      | 12         | 0               |
 | warranty        | 11         | 11      | 6      | 6       | 4          | 3               |
 | work-order      | 38         | 38      | 19     | 20      | 17         | 8               |
@@ -495,6 +495,7 @@ Regenerate with `node scripts/p1-24-operation-register.mjs`; CI runs it with `--
 | `tech.labor-session-list`                           | GET    | `/api/v1/jobs/{jobId}/labor-sessions`                                                   | branch  | `tech.technician.read`                                               | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `tech.labor-session-start`                          | POST   | `/api/v1/jobs/{jobId}/labor-sessions`                                                   | branch  | `tech.labor.record`                                                  | tech.labor.session_started                     | yes  | —   | audit authorization concurrency cross-tenant denial idempotency isolation outbox route service success                        | Covered |
 | `tech.labor-session-stop`                           | POST   | `/api/v1/labor-sessions/{sessionId}/stop`                                               | branch  | `tech.labor.record`                                                  | tech.labor.session_stopped                     | —    | yes | audit authorization cross-tenant denial isolation outbox route service stale-version success                                  | Covered |
+| `tech.skill-list`                                   | GET    | `/api/v1/technician-skills`                                                             | tenant  | `tech.technician.read`                                               | —                                              | —    | —   | authorization cross-tenant denial isolation route service success                                                             | Covered |
 | `tech.technician-availability-record`               | POST   | `/api/v1/technicians/{technicianProfileId}/availability`                                | branch  | `tech.technician.manage`                                             | tech.technician.availability_recorded          | yes  | —   | audit authorization cross-tenant denial idempotency isolation route service success                                           | Covered |
 | `tech.technician-availability-withdraw`             | DELETE | `/api/v1/technicians/{technicianProfileId}/availability/{availabilityId}`               | branch  | `tech.technician.manage`                                             | tech.technician.availability_withdrawn         | —    | yes | audit authorization cross-tenant denial isolation route service stale-version success                                         | Covered |
 | `tech.technician-available`                         | GET    | `/api/v1/technicians/available`                                                         | branch  | `tech.technician.read`                                               | —                                              | —    | —   | authorization denial isolation route service success                                                                          | Covered |

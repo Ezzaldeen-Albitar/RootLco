@@ -165,6 +165,11 @@ export const ROUTE_BRANCH_SCOPES: readonly RouteScopeDeclaration[] = Object.free
     why: "A technician's queue is read for one branch.",
   },
   {
+    pattern: '/technicians',
+    scope: 'concrete',
+    why: 'A roster is read and added to in one branch.',
+  },
+  {
     pattern: '/inventory',
     scope: 'concrete',
     why: 'Stock is read and reserved in one branch.',
@@ -331,6 +336,7 @@ export const ROUTE_BRANCH_SCOPES: readonly RouteScopeDeclaration[] = Object.free
   },
   { pattern: '/reports', scope: 'none', why: TENANT_WIDE },
   { pattern: '/services', scope: 'none', why: TENANT_WIDE },
+  { pattern: '/technicians/[technicianProfileId]', scope: 'none', why: ONE_RECORD },
   { pattern: '/vehicles', scope: 'none', why: TENANT_WIDE },
   { pattern: '/vehicles/[vehicleId]', scope: 'none', why: ONE_RECORD },
   { pattern: '/vehicles/duplicates', scope: 'none', why: TENANT_WIDE },

@@ -405,8 +405,10 @@ const INTENTIONALLY_GENERIC: Readonly<Record<string, string>> = Object.freeze({
  * catalogue.
  *
  * One hundred and one when this list was first taken. Eight of those are
- * decisions rather than debt and stand in the list above; sixty-nine have been
- * given sentences since; the twenty-four below are what remains. Each remaining
+ * decisions rather than debt and stand in the list above; seventy-two have been
+ * given sentences since (the last three — the technician roster's duplicate
+ * profile, duplicate certification and overlapping window — by
+ * P1-32-PRE-OD-ADM2B); the twenty-one below are what remains. Each remaining
  * entry renders as the catalogue's honest generic today; each is a sentence
  * somebody owes. The list is written down rather than tolerated silently,
  * because a backlog nobody can count is a backlog nobody will clear.
@@ -415,14 +417,11 @@ const OWED: readonly string[] = Object.freeze([
   'branch_requires_company',
   'catalogue_constraint',
   'digest_format',
-  'duplicate-active-profile',
-  'duplicate-certification',
   'incoherent_scope',
   'invalid_sha256',
   'not_allow_listed',
   'not_allowed',
   'one_subject_required',
-  'overlapping-window',
   'template_mismatch',
   'token_mismatch',
   'unknown_entity_type',
