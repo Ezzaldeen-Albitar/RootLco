@@ -1,7 +1,7 @@
 'use client';
 
 import { INITIAL_REQUEST } from '@/components/data-table/table-state';
-import { SearchPicker } from '@/components/search/SearchPicker';
+import { EntityPicker } from '@/components/pickers/EntityPicker';
 import type { Locale } from '@/i18n/config';
 import type { Messages } from '@/i18n/get-messages';
 import { translate, translateDynamic } from '@/i18n/get-messages';
@@ -27,6 +27,13 @@ import { listUsers, type UserRow } from '../api';
  * caller's operation is limited to active accounts, so the picker offers every
  * status and says which ones are not active. Narrowing it here would take away
  * a choice the server accepts.
+ *
+ * ## Drawn by `EntityPicker` (ADR-022, `P1-32-PRE-OD-ADM3`)
+ *
+ * One combobox and a listbox on Material UI's Autocomplete, with the same props
+ * and the same read: the server's rows in the server's order, one read per
+ * pause, nothing shorter than two characters sent. Every caller — the approval
+ * limits dialog and the audit log's "Who" filter — moved with this file.
  */
 export interface ChosenAccount {
   readonly id: string;
@@ -93,7 +100,7 @@ export function AccountPicker({
       : `${name} (${translateDynamic(messages, `users.status.${account.status}`)})`;
   };
   return (
-    <SearchPicker<ChosenAccount>
+    <EntityPicker<ChosenAccount>
       messages={messages}
       locale={locale}
       label={label}
